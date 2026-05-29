@@ -1,3 +1,4 @@
+import { Audio } from 'expo-av';
 import {
   View,
   Text,
@@ -34,6 +35,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [sound, setSound] = useState<any>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
 
   useEffect(() => {
     setup();
@@ -120,6 +123,47 @@ export default function HomeScreen() {
     return `${Math.floor(seconds / 86400)}d`;
   }
 
+  async function handlePlayAudio(postId: string, audioUrl: string) {
+  try {
+    // If something is already playing, stop it first
+    if (sound) {
+      await sound.stopAsync();
+      await sound.unloadAsync();
+      setSound(null);
+      if (playingId === postId) {
+        setPlayingId(null);
+        return;
+      }
+    }
+
+    setPlayingId(postId);
+
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+    });
+
+    const { sound: newSound } = await Audio.Sound.createAsync(
+      { uri: audioUrl },
+      { shouldPlay: true }
+    );
+
+    setSound(newSound);
+
+    newSound.setOnPlaybackStatusUpdate((status: any) => {
+      if (status.didJustFinish) {
+        setPlayingId(null);
+        setSound(null);
+      }
+    });
+
+  } catch (err) {
+    console.log('audio error:', err);
+    setPlayingId(null);
+  }
+}
+
   function renderPost({ item }: { item: Post }) {
     const isLiked = likedPosts.has(item.id);
     const likeCount = item.likes[0]?.count || 0;
@@ -160,14 +204,22 @@ export default function HomeScreen() {
 )}
 
         {item.type === 'audio' && (
-          <View style={styles.audioCard}>
-            <Text style={styles.audioIcon}>🎵</Text>
-            <Text style={styles.audioText}>Audio Track</Text>
-            <TouchableOpacity style={styles.playButton}>
-              <Text style={styles.playButtonText}>▶ Play</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+  <TouchableOpacity
+    style={styles.audioCard}
+    onPress={() => handlePlayAudio(item.id, item.media_url)}
+  >
+    <Text style={styles.audioIcon}>🎵</Text>
+    <Text style={styles.audioText}>Audio Track</Text>
+    <View style={[
+      styles.playButton,
+      playingId === item.id && { backgroundColor: COLORS.error }
+    ]}>
+      <Text style={styles.playButtonText}>
+        {playingId === item.id ? '■ Stop' : '▶ Play'}
+      </Text>
+    </View>
+  </TouchableOpacity>
+)}
 
         {item.type === 'video' && (
           <View style={styles.audioCard}>

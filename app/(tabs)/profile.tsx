@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
@@ -31,6 +32,7 @@ export default function ProfileScreen() {
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('main');
+  const [userPosts, setUserPosts] = useState<any[]>([]);
 
   useEffect(() => {
     fetchProfile();
@@ -69,6 +71,14 @@ export default function ProfileScreen() {
       posts: postsCount || 0,
     });
 
+    const { data: postsData } = await supabase
+  .from('posts')
+  .select('id, type, media_url, caption')
+  .eq('user_id', user.id)
+  .eq('is_public', true)
+  .order('created_at', { ascending: false });
+
+if (postsData) setUserPosts(postsData);
     setLoading(false);
   }
 
@@ -175,9 +185,35 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Tab Content */}
-      <View style={styles.tabContent}>
-        <Text style={styles.emptyText}>No {activeTab} yet</Text>
+<View style={styles.tabContent}>
+  {activeTab === 'main' || activeTab === 'posts' ? (
+    userPosts.length === 0 ? (
+      <Text style={styles.emptyText}>No posts yet</Text>
+    ) : (
+      <View style={styles.postsGrid}>
+        {userPosts.map((post) => (
+          <View key={post.id} style={styles.gridItem}>
+            {post.type === 'image' ? (
+              <Image
+                source={{ uri: post.media_url }}
+                style={styles.gridImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.gridPlaceholder}>
+                <Text style={styles.gridPlaceholderIcon}>
+                  {post.type === 'audio' ? '🎵' : '🎬'}
+                </Text>
+              </View>
+            )}
+          </View>
+        ))}
       </View>
+    )
+  ) : (
+    <Text style={styles.emptyText}>No {activeTab} yet</Text>
+  )}
+</View>
 
     </ScrollView>
   );
@@ -335,4 +371,27 @@ const styles = StyleSheet.create({
     color: COLORS.textTertiary,
     fontSize: 14,
   },
+  postsGrid: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  gap: 2,
+},
+gridItem: {
+  width: '32%',
+  aspectRatio: 1,
+},
+gridImage: {
+  width: '100%',
+  height: '100%',
+},
+gridPlaceholder: {
+  width: '100%',
+  height: '100%',
+  backgroundColor: COLORS.surface,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+gridPlaceholderIcon: {
+  fontSize: 28,
+},
 });
