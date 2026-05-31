@@ -1,7 +1,8 @@
 import { View, Text, TouchableOpacity, StyleSheet, Pressable } from 'react-native';
 import { useRef, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio } from '../contexts/AudioContext';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 
 function formatMs(ms: number): string {
@@ -33,7 +34,12 @@ export default function MiniPlayer() {
         onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
         onPress={handleSeek}
       >
-        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+        <LinearGradient
+          colors={GRADIENTS.primaryWarm}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[styles.progressFill, { width: `${progress * 100}%` }]}
+        />
       </Pressable>
 
       <View style={styles.inner}>
@@ -76,7 +82,7 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: COLORS.surface,
     borderTopWidth: 0.5,
-    borderTopColor: COLORS.primary + '88',
+    borderTopColor: COLORS.primaryLight + '66',
     zIndex: 100,
   },
   progressTrack: {

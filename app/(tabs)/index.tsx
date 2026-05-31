@@ -256,7 +256,7 @@ export default function HomeScreen() {
               color={isLiked ? COLORS.like : COLORS.textSecondary}
             />
             {likeCount > 0 && (
-              <Text style={[styles.actionCount, isLiked && { color: COLORS.like }]}>{likeCount}</Text>
+              <Text style={[styles.actionCount, isLiked && { color: COLORS.primaryLight }]}>{likeCount}</Text>
             )}
           </TouchableOpacity>
 
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   headerLogo: {
-    color: COLORS.primary,
+    color: COLORS.primaryLight,
     fontSize: 24,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  feedToggleActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  feedToggleActive: { backgroundColor: COLORS.primaryDark, borderColor: COLORS.primary },
   feedToggleText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500' },
   feedToggleTextActive: { color: COLORS.text, fontWeight: '700' },
 
@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: COLORS.primary + '88',
   },
   audioIconRingActive: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.primaryDark,
     borderColor: COLORS.primaryLight,
     ...SHADOWS.glow,
   },

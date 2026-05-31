@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
 
   statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
   statItem: { alignItems: 'center', gap: 2 },
-  statNumber: { color: COLORS.text, fontSize: 22, fontWeight: '800' },
+  statNumber: { color: COLORS.primaryLight, fontSize: 22, fontWeight: '800' },
   statLabel: { color: COLORS.textSecondary, fontSize: 12 },
 
   infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: 4 },

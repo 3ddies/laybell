@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 
 type Post = {
   id: string; type: string; media_url: string;
@@ -156,16 +156,23 @@ export default function ExploreScreen() {
           keyExtractor={item => item}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.genreList}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[styles.genrePill, selectedGenre === item && styles.genrePillActive]}
-              onPress={() => fetchByGenre(item)}
-            >
-              <Text style={[styles.genreText, selectedGenre === item && styles.genreTextActive]}>
-                {item}
-              </Text>
-            </TouchableOpacity>
-          )}
+          renderItem={({ item }) => {
+            const active = selectedGenre === item;
+            return active ? (
+              <TouchableOpacity onPress={() => fetchByGenre(item)} style={styles.genrePillWrap}>
+                <LinearGradient colors={GRADIENTS.primaryWarm} style={styles.genrePillGradient}>
+                  <Text style={styles.genreTextActive}>{item}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.genrePillWrap, styles.genrePill]}
+                onPress={() => fetchByGenre(item)}
+              >
+                <Text style={styles.genreText}>{item}</Text>
+              </TouchableOpacity>
+            );
+          }}
         />
       )}
 
@@ -277,15 +284,32 @@ const styles = StyleSheet.create({
   toggleText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
   toggleTextActive: { color: COLORS.text, fontWeight: '700' },
 
-  genreList: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm, gap: SPACING.sm },
-  genrePill: {
-    paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, backgroundColor: COLORS.surfaceLight,
-    borderWidth: 1, borderColor: COLORS.border,
+  genreList: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    gap: SPACING.sm,
+    alignItems: 'center',
   },
-  genrePillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  genrePillWrap: {
+    flexShrink: 0,
+    borderRadius: RADIUS.full,
+    overflow: 'hidden',
+  },
+  genrePill: {
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md + 2,
+    backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.full,
+  },
+  genrePillGradient: {
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md + 2,
+    borderRadius: RADIUS.full,
+  },
   genreText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
-  genreTextActive: { color: COLORS.text, fontWeight: '700' },
+  genreTextActive: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
 
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   listContent: { padding: SPACING.md, gap: SPACING.sm },

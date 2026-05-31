@@ -1,6 +1,39 @@
 import { Tabs } from 'expo-router';
-import { COLORS } from '../../constants/theme';
+import { TouchableOpacity, View, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { COLORS, GRADIENTS, SHADOWS } from '../../constants/theme';
+
+function PostButton({ onPress }: { onPress?: () => void }) {
+  return (
+    <TouchableOpacity style={styles.postWrap} onPress={onPress} activeOpacity={0.85}>
+      <LinearGradient colors={GRADIENTS.primary} style={styles.postBtn}>
+        <Ionicons name="add" size={28} color={COLORS.text} />
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  postWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -22,
+  },
+  postBtn: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.md,
+    shadowColor: COLORS.primary,
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+});
 
 export default function TabLayout() {
   return (
@@ -11,9 +44,11 @@ export default function TabLayout() {
           backgroundColor: COLORS.surface,
           borderTopColor: COLORS.border,
           borderTopWidth: 0.5,
-          height: 64,
+          height: 68,
           paddingBottom: 10,
-          paddingTop: 8,
+          paddingTop: 6,
+          overflow: 'visible',
+          elevation: 0,
         },
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.textTertiary,
@@ -39,9 +74,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="post"
         options={{
-          tabBarIcon: () => (
-            <Ionicons name="add-circle" size={42} color={COLORS.primary} />
-          ),
+          tabBarButton: ({ onPress }) => <PostButton onPress={onPress ?? undefined} />,
         }}
       />
       <Tabs.Screen
