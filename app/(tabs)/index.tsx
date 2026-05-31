@@ -10,12 +10,12 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
-import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
+import { Ionicons } from '@expo/vector-icons';
 
 type Post = {
   id: string;
@@ -39,8 +39,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
-  const { play: playAudio } = useAudioPlayer();
-  const { currentTrack, isPlaying } = useAudio();
+  const { play, currentTrack, isPlaying } = useAudio();
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
   const router = useRouter();
@@ -57,84 +56,70 @@ export default function HomeScreen() {
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      setCurrentUserId(user.id);
-      const { count } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('read', false);
-      setUnreadCount(count || 0);
-    }
-    await fetchPosts(user?.id);
+    const userId = user?.id ?? null;
+    if (userId) setCurrentUserId(userId);
+
+    await Promise.all([
+      fetchPosts(userId ?? undefined),
+      userId
+        ? supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId)
+            .eq('read', false)
+            .then(({ count }) => setUnreadCount(count || 0))
+        : Promise.resolve(),
+    ]);
+
     setInitialized(true);
   }
 
   async function fetchPosts(userId?: string) {
-  let query = supabase
-    .from('posts')
-    .select(`
-      *,
-      profiles!posts_user_id_fkey (username, display_name, avatar_url)
-    `)
-    .eq('is_public', true)
-    .order('created_at', { ascending: false })
-    .limit(50);
+    let query = supabase
+      .from('posts')
+      .select(`
+        *,
+        profiles!posts_user_id_fkey (username, display_name, avatar_url),
+        likes(count),
+        comments(count)
+      `)
+      .eq('is_public', true)
+      .order('created_at', { ascending: false })
+      .limit(50);
 
-  if (feedMode === 'following' && userId) {
-    const { data: followingData } = await supabase
-      .from('follows')
-      .select('following_id')
-      .eq('follower_id', userId);
+    if (feedMode === 'following' && userId) {
+      const { data: followingData } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', userId);
 
-    const followingIds = followingData?.map(f => f.following_id) || [];
-
-    if (followingIds.length === 0) {
-      setPosts([]);
-      setLoading(false);
-      setRefreshing(false);
-      return;
+      const followingIds = followingData?.map(f => f.following_id) ?? [];
+      if (followingIds.length === 0) {
+        setPosts([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+      query = query.in('user_id', followingIds);
     }
 
-    query = query.in('user_id', followingIds);
-  }
-
-  const { data } = await query;
-
-  if (data) {
-    const postIds = data.map(p => p.id);
-
-    const [{ data: likeCounts }, { data: commentCounts }] = await Promise.all([
-      supabase.from('likes').select('post_id').in('post_id', postIds),
-      supabase.from('comments').select('post_id').in('post_id', postIds),
+    const [{ data }, { data: likesData }, { data: savesData }] = await Promise.all([
+      query,
+      userId
+        ? supabase.from('likes').select('post_id').eq('user_id', userId)
+        : Promise.resolve({ data: null }),
+      userId
+        ? supabase.from('saves').select('post_id').eq('user_id', userId)
+        : Promise.resolve({ data: null }),
     ]);
 
-    const likeMap: Record<string, number> = {};
-    likeCounts?.forEach(l => { likeMap[l.post_id] = (likeMap[l.post_id] || 0) + 1; });
+    if (data) setPosts(data as any);
+    if (likesData) setLikedPosts(new Set(likesData.map((l: any) => l.post_id)));
+    if (savesData) setSavedPosts(new Set(savesData.map((s: any) => s.post_id)));
 
-    const commentMap: Record<string, number> = {};
-    commentCounts?.forEach(c => { commentMap[c.post_id] = (commentMap[c.post_id] || 0) + 1; });
-
-    setPosts(data.map(post => ({
-      ...post,
-      likes: [{ count: likeMap[post.id] || 0 }],
-      comments: [{ count: commentMap[post.id] || 0 }],
-    })) as any);
+    setLoading(false);
+    setRefreshing(false);
   }
-
-  if (userId) {
-    const [{ data: likesData }, { data: savesData }] = await Promise.all([
-      supabase.from('likes').select('post_id').eq('user_id', userId),
-      supabase.from('saves').select('post_id').eq('user_id', userId),
-    ]);
-
-    if (likesData) setLikedPosts(new Set(likesData.map(l => l.post_id)));
-    if (savesData) setSavedPosts(new Set(savesData.map(s => s.post_id)));
-  }
-
-  setLoading(false);
-  setRefreshing(false);
-}
 
   async function handleLike(postId: string) {
     if (!currentUserId) return;
@@ -201,8 +186,9 @@ export default function HomeScreen() {
 }
 
 
-  function renderPost({ item }: { item: Post }) {
+  const renderPost = useCallback(({ item }: { item: Post }) => {
     const isLiked = likedPosts.has(item.id);
+    const isSaved = savedPosts.has(item.id);
     const likeCount = item.likes[0]?.count || 0;
     const commentCount = item.comments[0]?.count || 0;
     const audioActive = isPlaying && currentTrack?.id === item.id;
@@ -254,7 +240,7 @@ export default function HomeScreen() {
         {item.type === 'audio' && (
   <TouchableOpacity
     style={styles.audioCard}
-    onPress={() => playAudio(item.id, item.media_url, item.caption, item.profiles?.display_name)}
+    onPress={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name })}
   >
     <Text style={styles.audioIcon}>🎵</Text>
     <Text style={styles.audioText}>Audio Track</Text>
@@ -312,10 +298,14 @@ export default function HomeScreen() {
       style={styles.actionButton}
       onPress={() => handleSaveTrack(item.id)}
     >
-      <Text style={styles.actionIcon}>
-        {savedPosts.has(item.id) ? '🔖' : '🎵'}
+      <Ionicons
+        name={isSaved ? 'bookmark' : 'bookmark-outline'}
+        size={20}
+        color={isSaved ? COLORS.primary : COLORS.textSecondary}
+      />
+      <Text style={[styles.actionCount, isSaved && { color: COLORS.primary }]}>
+        {isSaved ? 'Saved' : 'Save'}
       </Text>
-      <Text style={styles.actionCount}>Save</Text>
     </TouchableOpacity>
   )}
 
@@ -327,7 +317,7 @@ export default function HomeScreen() {
 
       </TouchableOpacity>
     );
-  }
+  }, [likedPosts, savedPosts, currentTrack, isPlaying, posts, currentUserId, router]);
 
   if (loading) {
     return (
@@ -379,6 +369,10 @@ export default function HomeScreen() {
         renderItem={renderPost}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.feedContent}
+        removeClippedSubviews
+        windowSize={5}
+        maxToRenderPerBatch={5}
+        initialNumToRender={5}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

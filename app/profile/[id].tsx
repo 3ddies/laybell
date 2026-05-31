@@ -45,57 +45,29 @@ export default function PublicProfileScreen() {
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) setCurrentUserId(user.id);
+    const currentUser = user ?? null;
+    if (currentUser) setCurrentUserId(currentUser.id);
 
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const [profileRes, followersRes, followingRes, postsCountRes, postsRes, followCheckRes] =
+      await Promise.all([
+        supabase.from('profiles').select('*').eq('id', id).single(),
+        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id),
+        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', id),
+        supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', id),
+        supabase.from('posts').select('id, type, media_url, caption').eq('user_id', id).eq('is_public', true).order('created_at', { ascending: false }),
+        currentUser
+          ? supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', id).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
 
-    if (profileData) setProfile(profileData);
-
-    const { count: followersCount } = await supabase
-      .from('follows')
-      .select('*', { count: 'exact', head: true })
-      .eq('following_id', id);
-
-    const { count: followingCount } = await supabase
-      .from('follows')
-      .select('*', { count: 'exact', head: true })
-      .eq('follower_id', id);
-
-    const { count: postsCount } = await supabase
-      .from('posts')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', id);
-
+    if (profileRes.data) setProfile(profileRes.data);
     setStats({
-      followers: followersCount || 0,
-      following: followingCount || 0,
-      posts: postsCount || 0,
+      followers: followersRes.count || 0,
+      following: followingRes.count || 0,
+      posts: postsCountRes.count || 0,
     });
-
-    const { data: postsData } = await supabase
-      .from('posts')
-      .select('id, type, media_url, caption')
-      .eq('user_id', id)
-      .eq('is_public', true)
-      .order('created_at', { ascending: false });
-
-    if (postsData) setPosts(postsData);
-
-    if (user) {
-      const { data: followData } = await supabase
-        .from('follows')
-        .select('*')
-        .eq('follower_id', user.id)
-        .eq('following_id', id)
-        .single();
-
-      setIsFollowing(!!followData);
-    }
-
+    if (postsRes.data) setPosts(postsRes.data);
+    setIsFollowing(!!followCheckRes.data);
     setLoading(false);
   }
 

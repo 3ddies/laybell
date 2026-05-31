@@ -59,8 +59,7 @@ export default function MusicScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setCurrentUserId(user.id);
-      await fetchPlaylists(user.id);
-      await fetchSavedTracks(user.id);
+      await Promise.all([fetchPlaylists(user.id), fetchSavedTracks(user.id)]);
     }
     setLoading(false);
   }

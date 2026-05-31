@@ -46,43 +46,21 @@ export default function ProfileScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+    const [profileRes, followersRes, followingRes, postsCountRes, postsRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', user.id).single(),
+      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
+      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
+      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
+      supabase.from('posts').select('id, type, media_url, caption').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
+    ]);
 
-    if (profileData) setProfile(profileData);
-
-    const { count: followersCount } = await supabase
-      .from('follows')
-      .select('*', { count: 'exact', head: true })
-      .eq('following_id', user.id);
-
-    const { count: followingCount } = await supabase
-      .from('follows')
-      .select('*', { count: 'exact', head: true })
-      .eq('follower_id', user.id);
-
-    const { count: postsCount } = await supabase
-      .from('posts')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id);
-
+    if (profileRes.data) setProfile(profileRes.data);
     setStats({
-      followers: followersCount || 0,
-      following: followingCount || 0,
-      posts: postsCount || 0,
+      followers: followersRes.count || 0,
+      following: followingRes.count || 0,
+      posts: postsCountRes.count || 0,
     });
-
-    const { data: postsData } = await supabase
-      .from('posts')
-      .select('id, type, media_url, caption')
-      .eq('user_id', user.id)
-      .eq('is_public', true)
-      .order('created_at', { ascending: false });
-
-    if (postsData) setUserPosts(postsData);
+    if (postsRes.data) setUserPosts(postsRes.data);
     setLoading(false);
     setRefreshing(false);
   }
