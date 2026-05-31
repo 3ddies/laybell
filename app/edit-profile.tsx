@@ -1,3 +1,5 @@
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'react-native';
 import {
   View,
   Text,
@@ -21,6 +23,7 @@ export default function EditProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProfile();
@@ -41,10 +44,59 @@ export default function EditProfileScreen() {
       setDisplayName(data.display_name || '');
       setUsername(data.username || '');
       setBio(data.bio || '');
+      setAvatarUrl(data.avatar_url || null);
     }
 
     setLoading(false);
   }
+
+  async function handleChangePhoto() {
+  const result = await ImagePicker.launchImageLibraryAsync({
+  mediaTypes: ['images'] as any,
+  allowsEditing: true,
+  aspect: [1, 1],
+  quality: 0.8,
+});
+
+  if (result.canceled || !result.assets[0]) return;
+
+  const file = result.assets[0];
+  const fileExt = file.uri.split('.').pop();
+  const filePath = `${userId}/${Date.now()}.${fileExt}`;
+
+  const formData = new FormData();
+  formData.append('file', {
+    uri: file.uri,
+    name: `${Date.now()}.${fileExt}`,
+    type: file.mimeType || 'image/jpeg',
+  } as any);
+
+  const { error: uploadError } = await supabase.storage
+    .from('avatars')
+    .upload(filePath, formData, {
+      contentType: file.mimeType || 'image/jpeg',
+      upsert: true,
+    });
+
+  if (uploadError) {
+    Alert.alert('Error', uploadError.message);
+    return;
+  }
+
+  const { data: { publicUrl } } = supabase.storage
+    .from('avatars')
+    .getPublicUrl(filePath);
+
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ avatar_url: publicUrl })
+    .eq('id', userId);
+
+  if (!updateError) {
+    setAvatarUrl(publicUrl);
+    Alert.alert('Success', 'Profile photo updated!');
+  }
+}
 
   async function handleSave() {
     if (!displayName.trim() || !username.trim()) {
@@ -111,15 +163,26 @@ export default function EditProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Avatar Placeholder */}
-      <View style={styles.avatarSection}>
-        <View style={styles.avatarPlaceholder}>
-          <Text style={styles.avatarText}>
-            {displayName?.charAt(0).toUpperCase()}
-          </Text>
-        </View>
-        <Text style={styles.changePhotoText}>Change Profile Photo</Text>
+      {/* Avatar Section */}
+<View style={styles.avatarSection}>
+  <TouchableOpacity onPress={handleChangePhoto}>
+    {avatarUrl ? (
+      <Image
+        source={{ uri: avatarUrl }}
+        style={styles.avatarImage}
+      />
+    ) : (
+      <View style={styles.avatarPlaceholder}>
+        <Text style={styles.avatarText}>
+          {displayName?.charAt(0).toUpperCase()}
+        </Text>
       </View>
+    )}
+  </TouchableOpacity>
+  <TouchableOpacity onPress={handleChangePhoto}>
+    <Text style={styles.changePhotoText}>Change Profile Photo</Text>
+  </TouchableOpacity>
+</View>
 
       {/* Form */}
       <View style={styles.form}>
@@ -289,4 +352,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     alignSelf: 'flex-end',
   },
+  avatarImage: {
+  width: 90,
+  height: 90,
+  borderRadius: RADIUS.full,
+},
 });

@@ -289,7 +289,8 @@ export default function HomeScreen() {
     style={styles.videoPlayer}
     useNativeControls
     resizeMode={ResizeMode.CONTAIN}
-    isLooping={false}
+    isLooping={true}
+    shouldPlay={false}
   />
 )}
 

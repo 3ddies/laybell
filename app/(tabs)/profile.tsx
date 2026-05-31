@@ -74,13 +74,13 @@ export default function ProfileScreen() {
     });
 
     const { data: postsData } = await supabase
-  .from('posts')
-  .select('id, type, media_url, caption')
-  .eq('user_id', user.id)
-  .eq('is_public', true)
-  .order('created_at', { ascending: false });
+      .from('posts')
+      .select('id, type, media_url, caption')
+      .eq('user_id', user.id)
+      .eq('is_public', true)
+      .order('created_at', { ascending: false });
 
-if (postsData) setUserPosts(postsData);
+    if (postsData) setUserPosts(postsData);
     setLoading(false);
   }
 
@@ -113,7 +113,7 @@ if (postsData) setUserPosts(postsData);
 
       {/* Header Bar */}
       <View style={styles.headerBar}>
-        <Text style={styles.username}>@{profile?.username}</Text>
+        <Text style={styles.username}>{'@'}{profile?.username}</Text>
         <TouchableOpacity onPress={handleLogout}>
           <Text style={styles.logoutText}>Log out</Text>
         </TouchableOpacity>
@@ -121,11 +121,18 @@ if (postsData) setUserPosts(postsData);
 
       {/* Badge Banner */}
       <View style={[styles.badgeBanner, { backgroundColor: getBadgeColor() + '22' }]}>
-        <View style={styles.avatarPlaceholder}>
-          <Text style={styles.avatarText}>
-            {profile?.display_name?.charAt(0).toUpperCase()}
-          </Text>
-        </View>
+        {profile?.avatar_url ? (
+          <Image
+            source={{ uri: profile.avatar_url }}
+            style={styles.avatarImage}
+          />
+        ) : (
+          <View style={styles.avatarPlaceholder}>
+            <Text style={styles.avatarText}>
+              {profile?.display_name?.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        )}
 
         {/* Stats */}
         <View style={styles.statsRow}>
@@ -157,11 +164,11 @@ if (postsData) setUserPosts(postsData);
       {/* Action Buttons */}
       <View style={styles.actionButtons}>
         <TouchableOpacity
-  style={styles.editButton}
-  onPress={() => router.push('/edit-profile')}
->
-  <Text style={styles.editButtonText}>Edit Profile</Text>
-</TouchableOpacity>
+          style={styles.editButton}
+          onPress={() => router.push('/edit-profile')}
+        >
+          <Text style={styles.editButtonText}>Edit Profile</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.friendsButton}>
           <Text style={styles.friendsButtonText}>Friends</Text>
         </TouchableOpacity>
@@ -181,7 +188,7 @@ if (postsData) setUserPosts(postsData);
           >
             <Text style={[
               styles.tabText,
-              activeTab === tab.toLowerCase() && styles.activeTabText
+              activeTab === tab.toLowerCase() && styles.activeTabText,
             ]}>
               {tab}
             </Text>
@@ -190,35 +197,35 @@ if (postsData) setUserPosts(postsData);
       </ScrollView>
 
       {/* Tab Content */}
-<View style={styles.tabContent}>
-  {activeTab === 'main' || activeTab === 'posts' ? (
-    userPosts.length === 0 ? (
-      <Text style={styles.emptyText}>No posts yet</Text>
-    ) : (
-      <View style={styles.postsGrid}>
-        {userPosts.map((post) => (
-          <View key={post.id} style={styles.gridItem}>
-            {post.type === 'image' ? (
-              <Image
-                source={{ uri: post.media_url }}
-                style={styles.gridImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.gridPlaceholder}>
-                <Text style={styles.gridPlaceholderIcon}>
-                  {post.type === 'audio' ? '🎵' : '🎬'}
-                </Text>
-              </View>
-            )}
-          </View>
-        ))}
+      <View style={styles.tabContent}>
+        {activeTab === 'main' || activeTab === 'posts' ? (
+          userPosts.length === 0 ? (
+            <Text style={styles.emptyText}>No posts yet</Text>
+          ) : (
+            <View style={styles.postsGrid}>
+              {userPosts.map((post) => (
+                <View key={post.id} style={styles.gridItem}>
+                  {post.type === 'image' ? (
+                    <Image
+                      source={{ uri: post.media_url }}
+                      style={styles.gridImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.gridPlaceholder}>
+                      <Text style={styles.gridPlaceholderIcon}>
+                        {post.type === 'audio' ? '🎵' : '🎬'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+          )
+        ) : (
+          <Text style={styles.emptyText}>No {activeTab} yet</Text>
+        )}
       </View>
-    )
-  ) : (
-    <Text style={styles.emptyText}>No {activeTab} yet</Text>
-  )}
-</View>
 
     </ScrollView>
   );
@@ -266,6 +273,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: RADIUS.full,
   },
   avatarText: {
     color: COLORS.text,
@@ -377,26 +389,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   postsGrid: {
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-  gap: 2,
-},
-gridItem: {
-  width: '32%',
-  aspectRatio: 1,
-},
-gridImage: {
-  width: '100%',
-  height: '100%',
-},
-gridPlaceholder: {
-  width: '100%',
-  height: '100%',
-  backgroundColor: COLORS.surface,
-  alignItems: 'center',
-  justifyContent: 'center',
-},
-gridPlaceholderIcon: {
-  fontSize: 28,
-},
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 2,
+  },
+  gridItem: {
+    width: '32%',
+    aspectRatio: 1,
+  },
+  gridImage: {
+    width: '100%',
+    height: '100%',
+  },
+  gridPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridPlaceholderIcon: {
+    fontSize: 28,
+  },
 });

@@ -163,11 +163,18 @@ export default function PublicProfileScreen() {
 
       {/* Avatar + Stats */}
       <View style={[styles.banner, { backgroundColor: getBadgeColor() + '22' }]}>
-        <View style={styles.avatarPlaceholder}>
-          <Text style={styles.avatarText}>
-            {profile?.display_name?.charAt(0).toUpperCase()}
-          </Text>
-        </View>
+        {profile?.avatar_url ? (
+          <Image
+            source={{ uri: profile.avatar_url }}
+            style={styles.avatarImage}
+          />
+        ) : (
+          <View style={styles.avatarPlaceholder}>
+            <Text style={styles.avatarText}>
+              {profile?.display_name?.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        )}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>{stats.followers}</Text>
@@ -214,11 +221,11 @@ export default function PublicProfileScreen() {
             )}
           </TouchableOpacity>
           <TouchableOpacity
-  style={styles.messageButton}
-  onPress={() => router.push(`/messages/${id}`)}
->
-  <Text style={styles.messageButtonText}>Message</Text>
-</TouchableOpacity>
+            style={styles.messageButton}
+            onPress={() => router.push(`/messages/${id}`)}
+          >
+            <Text style={styles.messageButtonText}>Message</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -328,6 +335,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: RADIUS.full,
   },
   avatarText: {
     color: COLORS.text,
