@@ -213,9 +213,12 @@ export default function PublicProfileScreen() {
               </Text>
             )}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.messageButton}>
-            <Text style={styles.messageButtonText}>Message</Text>
-          </TouchableOpacity>
+          <TouchableOpacity
+  style={styles.messageButton}
+  onPress={() => router.push(`/messages/${id}`)}
+>
+  <Text style={styles.messageButtonText}>Message</Text>
+</TouchableOpacity>
         </View>
       )}
 

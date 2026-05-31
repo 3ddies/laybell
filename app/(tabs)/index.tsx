@@ -369,9 +369,9 @@ export default function HomeScreen() {
         Following
       </Text>
     </TouchableOpacity>
-    <TouchableOpacity>
-      <Text style={styles.headerIcon}>✉️</Text>
-    </TouchableOpacity>
+    <TouchableOpacity onPress={() => router.push('/messages')}>
+  <Text style={styles.headerIcon}>✉️</Text>
+</TouchableOpacity>
   </View>
 </View>
 
