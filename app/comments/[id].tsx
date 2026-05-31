@@ -1,33 +1,22 @@
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
+  View, Text, StyleSheet, FlatList, TextInput,
+  TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useEffect, useState, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { timeAgo } from '../../lib/timeAgo';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 
 type Comment = {
-  id: string;
-  body: string;
-  created_at: string;
-  user_id: string;
-  profiles: {
-    username: string;
-    display_name: string;
-  };
+  id: string; body: string; created_at: string; user_id: string;
+  profiles: { username: string; display_name: string };
 };
 
 export default function CommentsScreen() {
-  const { id } = useLocalSearchParams();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const flatListRef = useRef<FlatList>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -38,30 +27,21 @@ export default function CommentsScreen() {
   const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
   const [postOwnerId, setPostOwnerId] = useState<string | null>(null);
 
-  useEffect(() => {
-    setup();
-  }, [id]);
+  useEffect(() => { setup(); }, [id]);
 
   useEffect(() => {
     const channel = supabase
       .channel(`comments-${id}`)
-      .on(
-        'postgres_changes',
+      .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'comments', filter: `post_id=eq.${id}` },
         async (payload) => {
           const incoming = payload.new as any;
           if (incoming.user_id === currentUserId) return;
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('username, display_name')
-            .eq('id', incoming.user_id)
-            .single();
+          const { data: profile } = await supabase.from('profiles').select('username, display_name').eq('id', incoming.user_id).single();
           setComments(prev => [...prev, { ...incoming, profiles: profile }]);
           setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
         }
-      )
-      .subscribe();
-
+      ).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [id, currentUserId]);
 
@@ -69,19 +49,12 @@ export default function CommentsScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setCurrentUserId(user.id);
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('username, display_name')
-        .eq('id', user.id)
-        .single();
-      if (profile) setCurrentUserProfile(profile);
-
-      const { data: postData } = await supabase
-        .from('posts')
-        .select('user_id')
-        .eq('id', id)
-        .single();
-      if (postData) setPostOwnerId(postData.user_id);
+      const [profileRes, postRes] = await Promise.all([
+        supabase.from('profiles').select('username, display_name').eq('id', user.id).single(),
+        supabase.from('posts').select('user_id').eq('id', id).single(),
+      ]);
+      if (profileRes.data) setCurrentUserProfile(profileRes.data);
+      if (postRes.data) setPostOwnerId(postRes.data.user_id);
     }
     await fetchComments();
     setLoading(false);
@@ -90,109 +63,72 @@ export default function CommentsScreen() {
   async function fetchComments() {
     const { data } = await supabase
       .from('comments')
-      .select(`
-        *,
-        profiles!comments_user_id_fkey (username, display_name)
-      `)
+      .select('*, profiles!comments_user_id_fkey(username, display_name)')
       .eq('post_id', id)
       .order('created_at', { ascending: true });
-
     if (data) setComments(data as any);
   }
 
   async function handleSendComment() {
     if (!newComment.trim() || !currentUserId || sending) return;
     setSending(true);
-
-    const commentBody = newComment.trim();
+    const body = newComment.trim();
     setNewComment('');
-
-    const { data, error } = await supabase
-      .from('comments')
-      .insert({
-        user_id: currentUserId,
-        post_id: id,
-        body: commentBody,
-      })
-      .select()
-      .single();
-
+    const { data, error } = await supabase.from('comments').insert({ user_id: currentUserId, post_id: id, body }).select().single();
     if (!error && data) {
       setComments(prev => [...prev, { ...data, profiles: currentUserProfile }]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       if (postOwnerId && postOwnerId !== currentUserId) {
-        await supabase.from('notifications').insert({
-          user_id: postOwnerId,
-          actor_id: currentUserId,
-          type: 'comment',
-          post_id: id,
-        }).then(({ error }) => { if (error) console.error('notification insert:', error.message); });
+        supabase.from('notifications').insert({ user_id: postOwnerId, actor_id: currentUserId, type: 'comment', post_id: id })
+          .then(({ error }) => { if (error) console.error('notification insert:', error.message); });
       }
     }
-
     setSending(false);
   }
 
   async function handleDeleteComment(commentId: string, commentUserId: string) {
     if (commentUserId !== currentUserId) return;
-
     await supabase.from('comments').delete().eq('id', commentId);
     setComments(prev => prev.filter(c => c.id !== commentId));
   }
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator color={COLORS.primary} />
-      </View>
-    );
+    return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      {/* Header */}
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backBtn}>‹</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Comments</Text>
-        <Text style={styles.commentCount}>{comments.length}</Text>
+        <View style={styles.countBadge}>
+          <Text style={styles.countText}>{comments.length}</Text>
+        </View>
       </View>
 
-      {/* Comments List */}
       <FlatList
         ref={flatListRef}
         data={comments}
-        keyExtractor={(item) => item.id}
+        keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>💬</Text>
+            <Ionicons name="chatbubbles-outline" size={44} color={COLORS.textTertiary} />
             <Text style={styles.emptyTitle}>No comments yet</Text>
             <Text style={styles.emptySubtitle}>Be the first to comment!</Text>
           </View>
         }
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.commentRow}
-            onLongPress={() => handleDeleteComment(item.id, item.user_id)}
-          >
-            <View style={styles.commentAvatar}>
-              <Text style={styles.commentAvatarText}>
-                {item.profiles?.display_name?.charAt(0).toUpperCase()}
-              </Text>
-            </View>
+          <TouchableOpacity style={styles.commentRow} onLongPress={() => handleDeleteComment(item.id, item.user_id)}>
+            <LinearGradient colors={GRADIENTS.primary} style={styles.commentAvatar}>
+              <Text style={styles.commentAvatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
+            </LinearGradient>
             <View style={styles.commentContent}>
               <View style={styles.commentHeader}>
-                <Text style={styles.commentUsername}>
-                  {item.profiles?.display_name}
-                </Text>
-                <Text style={styles.commentTime}>
-                  {timeAgo(item.created_at)}
-                </Text>
+                <Text style={styles.commentUsername}>{item.profiles?.display_name}</Text>
+                <Text style={styles.commentTime}>{timeAgo(item.created_at)}</Text>
               </View>
               <Text style={styles.commentBody}>{item.body}</Text>
             </View>
@@ -200,13 +136,10 @@ export default function CommentsScreen() {
         )}
       />
 
-      {/* Input */}
       <View style={styles.inputContainer}>
-        <View style={styles.inputAvatar}>
-          <Text style={styles.inputAvatarText}>
-            {currentUserProfile?.display_name?.charAt(0).toUpperCase()}
-          </Text>
-        </View>
+        <LinearGradient colors={GRADIENTS.primary} style={styles.inputAvatar}>
+          <Text style={styles.inputAvatarText}>{currentUserProfile?.display_name?.charAt(0).toUpperCase()}</Text>
+        </LinearGradient>
         <TextInput
           style={styles.input}
           placeholder="Add a comment..."
@@ -221,11 +154,7 @@ export default function CommentsScreen() {
           onPress={handleSendComment}
           disabled={!newComment.trim() || sending}
         >
-          {sending ? (
-            <ActivityIndicator color={COLORS.text} size="small" />
-          ) : (
-            <Text style={styles.sendBtnText}>↑</Text>
-          )}
+          {sending ? <ActivityIndicator color={COLORS.text} size="small" /> : <Ionicons name="arrow-up" size={18} color={COLORS.text} />}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -233,159 +162,33 @@ export default function CommentsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.xxl + SPACING.sm,
-    paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.border,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
+    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
   },
-  backBtn: {
-    color: COLORS.primary,
-    fontSize: 28,
-    fontWeight: '600',
-  },
-  headerTitle: {
-    color: COLORS.text,
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  commentCount: {
-    color: COLORS.textSecondary,
-    fontSize: 15,
-    width: 30,
-    textAlign: 'right',
-  },
-  listContent: {
-    padding: SPACING.md,
-    gap: SPACING.md,
-    flexGrow: 1,
-  },
-  commentRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-  commentAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  commentAvatarText: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  commentContent: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
-    padding: SPACING.sm,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  commentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  commentUsername: {
-    color: COLORS.text,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  commentTime: {
-    color: COLORS.textTertiary,
-    fontSize: 11,
-  },
-  commentBody: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: SPACING.xxl,
-    gap: SPACING.sm,
-  },
-  emptyIcon: {
-    fontSize: 40,
-  },
-  emptyTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  emptySubtitle: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: SPACING.md,
-    borderTopWidth: 0.5,
-    borderTopColor: COLORS.border,
-    gap: SPACING.sm,
-  },
-  inputAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inputAvatarText: {
-    color: COLORS.text,
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  input: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    color: COLORS.text,
-    fontSize: 15,
-    maxHeight: 100,
-  },
-  sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendBtnDisabled: {
-    opacity: 0.4,
-  },
-  sendBtnText: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
+  backBtn: { padding: SPACING.sm },
+  headerTitle: { flex: 1, color: COLORS.text, fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  countBadge: { width: 32, height: 32, borderRadius: RADIUS.full, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
+  countText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700' },
+  listContent: { padding: SPACING.md, gap: SPACING.md, flexGrow: 1 },
+  commentRow: { flexDirection: 'row', gap: SPACING.sm },
+  commentAvatar: { width: 36, height: 36, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  commentAvatarText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
+  commentContent: { flex: 1, backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md, padding: SPACING.sm, borderWidth: 1, borderColor: COLORS.border },
+  commentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
+  commentUsername: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
+  commentTime: { color: COLORS.textTertiary, fontSize: 11 },
+  commentBody: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
+  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl, gap: SPACING.md },
+  emptyTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
+  emptySubtitle: { color: COLORS.textSecondary, fontSize: 14 },
+  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md, borderTopWidth: 0.5, borderTopColor: COLORS.border, gap: SPACING.sm },
+  inputAvatar: { width: 32, height: 32, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
+  inputAvatarText: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
+  input: { flex: 1, backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, color: COLORS.text, fontSize: 15, maxHeight: 100 },
+  sendBtn: { width: 36, height: 36, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  sendBtnDisabled: { opacity: 0.35 },
 });

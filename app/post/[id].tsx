@@ -1,53 +1,33 @@
 import { Video, ResizeMode } from 'expo-av';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  FlatList,
+  View, Text, StyleSheet, TouchableOpacity,
+  Image, TextInput, KeyboardAvoidingView,
+  Platform, ActivityIndicator, FlatList,
 } from 'react-native';
 import { useEffect, useState, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import { useAudio } from '../../contexts/AudioContext';
 import { timeAgo } from '../../lib/timeAgo';
 
 type Post = {
-  id: string;
-  type: string;
-  media_url: string;
-  caption: string;
-  created_at: string;
-  user_id: string;
-  profiles: {
-    username: string;
-    display_name: string;
-    avatar_url: string | null;
-  };
+  id: string; type: string; media_url: string; caption: string;
+  created_at: string; user_id: string;
+  profiles: { username: string; display_name: string; avatar_url: string | null };
 };
-
 type Comment = {
-  id: string;
-  body: string;
-  created_at: string;
-  user_id: string;
-  profiles: {
-    username: string;
-    display_name: string;
-  };
+  id: string; body: string; created_at: string; user_id: string;
+  profiles: { username: string; display_name: string };
 };
 
 export default function PostDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { currentTrack, isPlaying, play, stop } = useAudio();
+  const flatListRef = useRef<any>(null);
 
   const [post, setPost] = useState<Post | null>(null);
   const [likeCount, setLikeCount] = useState(0);
@@ -62,33 +42,23 @@ export default function PostDetailScreen() {
   const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
 
   const audioPlaying = currentTrack?.id === id && isPlaying;
-  const flatListRef = useRef<any>(null);
 
-  useEffect(() => {
-    setup();
-  }, [id]);
+  useEffect(() => { setup(); }, [id]);
 
   useEffect(() => {
     const channel = supabase
       .channel(`post-comments-${id}`)
-      .on(
-        'postgres_changes',
+      .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'comments', filter: `post_id=eq.${id}` },
         async (payload) => {
           const incoming = payload.new as any;
           if (incoming.user_id === currentUserId) return;
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('username, display_name')
-            .eq('id', incoming.user_id)
-            .single();
+          const { data: profile } = await supabase.from('profiles').select('username, display_name').eq('id', incoming.user_id).single();
           setComments(prev => [...prev, { ...incoming, profiles: profile }]);
           setCommentCount(prev => prev + 1);
           setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
         }
-      )
-      .subscribe();
-
+      ).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [id, currentUserId]);
 
@@ -96,68 +66,41 @@ export default function PostDetailScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setCurrentUserId(user.id);
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('username, display_name')
-        .eq('id', user.id)
-        .single();
+      const { data: profile } = await supabase.from('profiles').select('username, display_name').eq('id', user.id).single();
       if (profile) setCurrentUserProfile(profile);
     }
 
     const [postRes, likesRes, commentsRes] = await Promise.all([
-      supabase.from('posts')
-        .select('*, profiles!posts_user_id_fkey (username, display_name, avatar_url)')
-        .eq('id', id)
-        .single(),
+      supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url)').eq('id', id).single(),
       supabase.from('likes').select('user_id').eq('post_id', id),
-      supabase.from('comments')
-        .select('*, profiles!comments_user_id_fkey (username, display_name)')
-        .eq('post_id', id)
-        .order('created_at', { ascending: true }),
+      supabase.from('comments').select('*, profiles!comments_user_id_fkey(username, display_name)').eq('post_id', id).order('created_at', { ascending: true }),
     ]);
 
     if (postRes.data) setPost(postRes.data as any);
-
     if (likesRes.data) {
       setLikeCount(likesRes.data.length);
       if (user) setIsLiked(likesRes.data.some(l => l.user_id === user.id));
     }
-
-    if (commentsRes.data) {
-      setComments(commentsRes.data as any);
-      setCommentCount(commentsRes.data.length);
-    }
+    if (commentsRes.data) { setComments(commentsRes.data as any); setCommentCount(commentsRes.data.length); }
 
     if (user) {
-      const { data: saveData } = await supabase
-        .from('saves')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('post_id', id)
-        .single();
+      const { data: saveData } = await supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', id).single();
       setIsSaved(!!saveData);
     }
-
     setLoading(false);
   }
 
   async function handleLike() {
     if (!currentUserId || !post) return;
-
     setIsLiked(prev => !prev);
     setLikeCount(prev => isLiked ? prev - 1 : prev + 1);
-
     if (isLiked) {
       await supabase.from('likes').delete().eq('user_id', currentUserId).eq('post_id', id);
     } else {
       await supabase.from('likes').insert({ user_id: currentUserId, post_id: id });
       if (post.user_id !== currentUserId) {
-        await supabase.from('notifications').insert({
-          user_id: post.user_id,
-          actor_id: currentUserId,
-          type: 'like',
-          post_id: id,
-        }).then(({ error }) => { if (error) console.error('notification insert:', error.message); });
+        supabase.from('notifications').insert({ user_id: post.user_id, actor_id: currentUserId, type: 'like', post_id: id })
+          .then(({ error }) => { if (error) console.error('notification insert:', error.message); });
       }
     }
   }
@@ -172,42 +115,19 @@ export default function PostDetailScreen() {
     }
   }
 
-  async function handleAudio() {
-    if (!post) return;
-    if (audioPlaying) {
-      await stop();
-    } else {
-      await play({
-        id: post.id,
-        uri: post.media_url,
-        caption: post.caption,
-        artist: post.profiles?.display_name,
-      });
-    }
-  }
-
   async function handleComment() {
     if (!newComment.trim() || !currentUserId || sending || !post) return;
     setSending(true);
     const body = newComment.trim();
     setNewComment('');
-
-    const { data, error } = await supabase
-      .from('comments')
-      .insert({ user_id: currentUserId, post_id: id, body })
-      .select()
-      .single();
-
+    const { data, error } = await supabase.from('comments').insert({ user_id: currentUserId, post_id: id, body }).select().single();
     if (!error && data) {
       setComments(prev => [...prev, { ...data, profiles: currentUserProfile }]);
       setCommentCount(prev => prev + 1);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       if (post.user_id !== currentUserId) {
-        await supabase.from('notifications').insert({
-          user_id: post.user_id,
-          actor_id: currentUserId,
-          type: 'comment',
-          post_id: id,
-        }).then(({ error }) => { if (error) console.error('notification insert:', error.message); });
+        supabase.from('notifications').insert({ user_id: post.user_id, actor_id: currentUserId, type: 'comment', post_id: id })
+          .then(({ error }) => { if (error) console.error('notification insert:', error.message); });
       }
     }
     setSending(false);
@@ -221,60 +141,47 @@ export default function PostDetailScreen() {
   }
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator color={COLORS.primary} size="large" />
-      </View>
-    );
+    return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
   }
-
   if (!post) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={{ color: COLORS.textSecondary }}>Post not found</Text>
-      </View>
-    );
+    return <View style={styles.loadingContainer}><Text style={{ color: COLORS.textSecondary }}>Post not found</Text></View>;
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backBtn}>‹</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Post</Text>
-        <View style={{ width: 28 }} />
+        <View style={{ width: 40 }} />
       </View>
 
       <FlatList
         ref={flatListRef}
         data={comments}
-        keyExtractor={(item) => item.id}
+        keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
-            {/* Post author */}
-            <TouchableOpacity
-              style={styles.postHeader}
-              onPress={() => router.push(`/profile/${post.user_id}`)}
-            >
+            {/* Author */}
+            <TouchableOpacity style={styles.postHeader} onPress={() => router.push(`/profile/${post.user_id}`)}>
               {post.profiles?.avatar_url ? (
                 <Image source={{ uri: post.profiles.avatar_url }} style={styles.avatar} />
               ) : (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {post.profiles?.display_name?.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
+                <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+                  <Text style={styles.avatarText}>{post.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
+                </LinearGradient>
               )}
               <View style={styles.postHeaderInfo}>
                 <Text style={styles.displayName}>{post.profiles?.display_name}</Text>
-                <Text style={styles.username}>
-                  {'@'}{post.profiles?.username} · {timeAgo(post.created_at)}
-                </Text>
+                <Text style={styles.username}>@{post.profiles?.username} · {timeAgo(post.created_at)}</Text>
+              </View>
+              <View style={styles.typeTag}>
+                <Ionicons
+                  name={post.type === 'audio' ? 'musical-notes' : post.type === 'video' ? 'videocam' : 'image-outline'}
+                  size={14} color={COLORS.primary}
+                />
               </View>
             </TouchableOpacity>
 
@@ -282,68 +189,64 @@ export default function PostDetailScreen() {
             {post.type === 'image' && post.media_url && (
               <Image source={{ uri: post.media_url }} style={styles.media} resizeMode="cover" />
             )}
-
             {post.type === 'video' && post.media_url && (
-              <Video
-                source={{ uri: post.media_url }}
-                style={styles.media}
-                useNativeControls
-                resizeMode={ResizeMode.CONTAIN}
-                isLooping
-                shouldPlay={false}
-              />
+              <Video source={{ uri: post.media_url }} style={styles.media} useNativeControls resizeMode={ResizeMode.CONTAIN} isLooping shouldPlay={false} />
             )}
-
             {post.type === 'audio' && (
-              <TouchableOpacity style={styles.audioCard} onPress={handleAudio}>
-                <Text style={styles.audioIcon}>🎵</Text>
-                <Text style={styles.audioLabel}>Audio Track</Text>
-                <View style={[styles.playBtn, audioPlaying && { backgroundColor: COLORS.error }]}>
-                  <Text style={styles.playBtnText}>{audioPlaying ? '■ Stop' : '▶ Play'}</Text>
-                </View>
+              <TouchableOpacity
+                style={styles.audioWrap}
+                onPress={() => audioPlaying ? stop() : play({ id: post.id, uri: post.media_url, caption: post.caption, artist: post.profiles?.display_name })}
+              >
+                <LinearGradient colors={audioPlaying ? ['#E8401C', '#C03010'] : ['#1C0E06', '#120A04']} style={styles.audioCard}>
+                  <View style={[styles.audioRing, audioPlaying && styles.audioRingActive]}>
+                    <Ionicons name={audioPlaying ? 'stop' : 'play'} size={24} color={COLORS.text} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.audioTitle} numberOfLines={1}>{post.caption || 'Audio Track'}</Text>
+                    <Text style={styles.audioArtist}>@{post.profiles?.username}</Text>
+                  </View>
+                  <Ionicons name="musical-notes" size={28} color={COLORS.primary + '44'} />
+                </LinearGradient>
               </TouchableOpacity>
             )}
 
             {/* Caption */}
-            {!!post.caption && <Text style={styles.caption}>{post.caption}</Text>}
+            {!!post.caption && post.type !== 'audio' && (
+              <Text style={styles.caption}>{post.caption}</Text>
+            )}
 
             {/* Actions */}
             <View style={styles.actions}>
               <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
-                <Text style={styles.actionIcon}>{isLiked ? '❤️' : '🤍'}</Text>
-                <Text style={[styles.actionCount, isLiked && { color: COLORS.error }]}>
-                  {likeCount}
-                </Text>
+                <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={24} color={isLiked ? COLORS.like : COLORS.textSecondary} />
+                {likeCount > 0 && <Text style={[styles.actionCount, isLiked && { color: COLORS.primaryLight }]}>{likeCount}</Text>}
               </TouchableOpacity>
               <View style={styles.actionBtn}>
-                <Text style={styles.actionIcon}>💬</Text>
-                <Text style={styles.actionCount}>{commentCount}</Text>
+                <Ionicons name="chatbubble-outline" size={22} color={COLORS.textSecondary} />
+                {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
               </View>
               {post.type === 'audio' && (
                 <TouchableOpacity style={styles.actionBtn} onPress={handleSave}>
-                  <Text style={styles.actionIcon}>{isSaved ? '🔖' : '🎵'}</Text>
-                  <Text style={styles.actionCount}>Save</Text>
+                  <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? COLORS.primary : COLORS.textSecondary} />
                 </TouchableOpacity>
               )}
+              <TouchableOpacity style={[styles.actionBtn, { marginLeft: 'auto' }]}>
+                <Ionicons name="share-social-outline" size={22} color={COLORS.textSecondary} />
+              </TouchableOpacity>
             </View>
 
             <View style={styles.divider} />
-            <Text style={styles.commentsLabel}>Comments</Text>
+            <Text style={styles.commentsLabel}>Comments · {commentCount}</Text>
           </>
         }
         ListEmptyComponent={
           <Text style={styles.emptyComments}>No comments yet — be the first!</Text>
         }
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.commentRow}
-            onLongPress={() => handleDeleteComment(item.id, item.user_id)}
-          >
-            <View style={styles.commentAvatar}>
-              <Text style={styles.commentAvatarText}>
-                {item.profiles?.display_name?.charAt(0).toUpperCase()}
-              </Text>
-            </View>
+          <TouchableOpacity style={styles.commentRow} onLongPress={() => handleDeleteComment(item.id, item.user_id)}>
+            <LinearGradient colors={GRADIENTS.primary} style={styles.commentAvatar}>
+              <Text style={styles.commentAvatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
+            </LinearGradient>
             <View style={styles.commentContent}>
               <View style={styles.commentHead}>
                 <Text style={styles.commentName}>{item.profiles?.display_name}</Text>
@@ -355,13 +258,10 @@ export default function PostDetailScreen() {
         )}
       />
 
-      {/* Comment input */}
       <View style={styles.inputBar}>
-        <View style={styles.inputAvatar}>
-          <Text style={styles.inputAvatarText}>
-            {currentUserProfile?.display_name?.charAt(0).toUpperCase()}
-          </Text>
-        </View>
+        <LinearGradient colors={GRADIENTS.primary} style={styles.inputAvatar}>
+          <Text style={styles.inputAvatarText}>{currentUserProfile?.display_name?.charAt(0).toUpperCase()}</Text>
+        </LinearGradient>
         <TextInput
           style={styles.input}
           placeholder="Add a comment..."
@@ -376,11 +276,7 @@ export default function PostDetailScreen() {
           onPress={handleComment}
           disabled={!newComment.trim() || sending}
         >
-          {sending ? (
-            <ActivityIndicator color={COLORS.text} size="small" />
-          ) : (
-            <Text style={styles.sendBtnText}>↑</Text>
-          )}
+          {sending ? <ActivityIndicator color={COLORS.text} size="small" /> : <Ionicons name="arrow-up" size={18} color={COLORS.text} />}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -391,119 +287,46 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.xxl + SPACING.sm,
-    paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
+    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
   },
-  backBtn: { color: COLORS.primary, fontSize: 28, fontWeight: '600' },
+  backBtn: { padding: SPACING.sm },
   headerTitle: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
   listContent: { paddingBottom: SPACING.xxl },
-  postHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: SPACING.md,
-    gap: SPACING.sm,
-  },
-  avatar: {
-    width: 40, height: 40, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
-  },
-  avatarText: { color: COLORS.text, fontSize: 16, fontWeight: 'bold' },
+  postHeader: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, gap: SPACING.sm },
+  avatar: { width: 40, height: 40, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
   postHeaderInfo: { flex: 1 },
   displayName: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   username: { color: COLORS.textTertiary, fontSize: 12, marginTop: 1 },
-  media: { width: '100%', height: 340, backgroundColor: COLORS.surface },
-  audioCard: {
-    margin: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
-    padding: SPACING.lg,
-    alignItems: 'center',
-    gap: SPACING.sm,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  audioIcon: { fontSize: 40 },
-  audioLabel: { color: COLORS.textSecondary, fontSize: 14 },
-  playBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: RADIUS.full,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-  },
-  playBtnText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  caption: {
-    color: COLORS.text, fontSize: 15, lineHeight: 22,
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
-  },
-  actions: {
-    flexDirection: 'row',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    gap: SPACING.lg,
-  },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
-  actionIcon: { fontSize: 20 },
-  actionCount: { color: COLORS.textSecondary, fontSize: 14 },
+  typeTag: { width: 28, height: 28, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center' },
+  media: { width: '100%', height: 340, backgroundColor: COLORS.surfaceLight },
+  audioWrap: { marginHorizontal: SPACING.md, marginVertical: SPACING.sm, borderRadius: RADIUS.md, overflow: 'hidden' },
+  audioCard: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, gap: SPACING.md, borderRadius: RADIUS.md },
+  audioRing: { width: 48, height: 48, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + '44', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.primary + '88' },
+  audioRingActive: { backgroundColor: COLORS.primaryDark, borderColor: COLORS.primaryLight, ...SHADOWS.glow },
+  audioTitle: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  audioArtist: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  caption: { color: COLORS.text, fontSize: 15, lineHeight: 22, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
+  actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.lg },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  actionCount: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '500' },
   divider: { height: 0.5, backgroundColor: COLORS.border, marginHorizontal: SPACING.md, marginTop: SPACING.sm },
-  commentsLabel: {
-    color: COLORS.textSecondary, fontSize: 13, fontWeight: '600',
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
-    textTransform: 'uppercase', letterSpacing: 0.5,
-  },
-  emptyComments: {
-    color: COLORS.textTertiary, fontSize: 14,
-    textAlign: 'center', paddingVertical: SPACING.xl,
-  },
-  commentRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-  },
-  commentAvatar: {
-    width: 32, height: 32, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  commentAvatarText: { color: COLORS.text, fontSize: 12, fontWeight: 'bold' },
-  commentContent: {
-    flex: 1, backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md, padding: SPACING.sm,
-    borderWidth: 1, borderColor: COLORS.border,
-  },
+  commentsLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
+  emptyComments: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center', paddingVertical: SPACING.xl },
+  commentRow: { flexDirection: 'row', gap: SPACING.sm, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
+  commentAvatar: { width: 32, height: 32, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  commentAvatarText: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
+  commentContent: { flex: 1, backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md, padding: SPACING.sm, borderWidth: 1, borderColor: COLORS.border },
   commentHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
   commentName: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
   commentTime: { color: COLORS.textTertiary, fontSize: 11 },
   commentBody: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
-  inputBar: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: SPACING.md,
-    borderTopWidth: 0.5,
-    borderTopColor: COLORS.border,
-    gap: SPACING.sm,
-  },
-  inputAvatar: {
-    width: 30, height: 30, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
-  },
-  inputAvatarText: { color: COLORS.text, fontSize: 12, fontWeight: 'bold' },
-  input: {
-    flex: 1, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
-    color: COLORS.text, fontSize: 15, maxHeight: 100,
-  },
-  sendBtn: {
-    width: 36, height: 36, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
-  },
-  sendBtnDisabled: { opacity: 0.4 },
-  sendBtnText: { color: COLORS.text, fontSize: 18, fontWeight: 'bold' },
+  inputBar: { flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md, borderTopWidth: 0.5, borderTopColor: COLORS.border, gap: SPACING.sm },
+  inputAvatar: { width: 30, height: 30, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
+  inputAvatarText: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
+  input: { flex: 1, backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, color: COLORS.text, fontSize: 15, maxHeight: 100 },
+  sendBtn: { width: 36, height: 36, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  sendBtnDisabled: { opacity: 0.35 },
 });

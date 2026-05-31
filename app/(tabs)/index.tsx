@@ -112,7 +112,22 @@ export default function HomeScreen() {
       userId ? supabase.from('saves').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
     ]);
 
-    if (data) setPosts(data as any);
+    if (data) {
+      const scored = [...data] as any[];
+      if (feedMode === 'all') {
+        // Engagement-weighted sort: likes*3 + comments*5, decay over time
+        scored.sort((a, b) => {
+          const score = (p: any) => {
+            const likes = p.likes?.[0]?.count || 0;
+            const comments = p.comments?.[0]?.count || 0;
+            const hoursOld = (Date.now() - new Date(p.created_at).getTime()) / 3_600_000;
+            return (likes * 3 + comments * 5) / Math.pow(hoursOld + 2, 1.2);
+          };
+          return score(b) - score(a);
+        });
+      }
+      setPosts(scored);
+    }
     if (likesData) setLikedPosts(new Set(likesData.map((l: any) => l.post_id)));
     if (savesData) setSavedPosts(new Set(savesData.map((s: any) => s.post_id)));
     setLoading(false);
@@ -348,8 +363,20 @@ export default function HomeScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="musical-notes" size={48} color={COLORS.textTertiary} />
-            <Text style={styles.emptyTitle}>No posts yet</Text>
-            <Text style={styles.emptySubtitle}>Be the first to post on Laybell</Text>
+            <Text style={styles.emptyTitle}>
+              {feedMode === 'following' ? 'No posts from people you follow' : 'No posts yet'}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {feedMode === 'following'
+                ? 'Follow some artists to see their posts here'
+                : 'Be the first to post on Laybell'}
+            </Text>
+            {feedMode === 'following' && (
+              <TouchableOpacity style={styles.exploreBtn} onPress={() => router.push('/(tabs)/explore')}>
+                <Text style={styles.exploreBtnText}>Discover Artists</Text>
+                <Ionicons name="arrow-forward" size={16} color={COLORS.text} />
+              </TouchableOpacity>
+            )}
           </View>
         }
       />
@@ -484,5 +511,12 @@ const styles = StyleSheet.create({
 
   emptyContainer: { alignItems: 'center', paddingTop: 100, gap: SPACING.md },
   emptyTitle: { color: COLORS.text, fontSize: 20, fontWeight: '700' },
-  emptySubtitle: { color: COLORS.textSecondary, fontSize: 14 },
+  emptySubtitle: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', paddingHorizontal: SPACING.lg },
+  exploreBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: COLORS.primary, borderRadius: RADIUS.full,
+    paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.lg,
+    marginTop: SPACING.sm,
+  },
+  exploreBtnText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
 });

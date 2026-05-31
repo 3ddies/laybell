@@ -20,11 +20,9 @@ export default function RootLayout() {
       setInitialized(true);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-      }
-    );
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
 
     return () => subscription.unsubscribe();
   }, []);
@@ -33,18 +31,38 @@ export default function RootLayout() {
     if (!initialized) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const inOnboarding = segments[0] === 'onboarding';
 
     if (!session && !inAuthGroup) {
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
-      router.replace('/(tabs)');
+      // New login — check if onboarded
+      checkOnboarding();
+    } else if (session && !inAuthGroup && !inOnboarding) {
+      // Already in app — silently verify onboarding in case they refreshed
+      checkOnboarding(true);
     }
   }, [session, initialized, segments]);
 
+  async function checkOnboarding(silent = false) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('onboarded')
+      .eq('id', user.id)
+      .single();
+
+    if (profile && profile.onboarded === false) {
+      router.replace('/onboarding');
+    } else if (!silent) {
+      router.replace('/(tabs)');
+    }
+  }
+
   if (!initialized) {
-    return (
-      <View style={{ flex: 1, backgroundColor: COLORS.background }} />
-    );
+    return <View style={{ flex: 1, backgroundColor: COLORS.background }} />;
   }
 
   return (
