@@ -100,7 +100,7 @@ export default function ProfileScreen() {
       </View>
 
       {/* Avatar + stats banner */}
-      <LinearGradient colors={['#1A1020', COLORS.background]} style={styles.banner}>
+      <LinearGradient colors={['#1C0A04', COLORS.background]} style={styles.banner}>
         <View style={styles.avatarWrap}>
           <LinearGradient colors={badgeGradient} style={styles.avatarRing}>
             {profile?.avatar_url ? (
@@ -169,7 +169,7 @@ export default function ProfileScreen() {
               {post.type === 'image' ? (
                 <Image source={{ uri: post.media_url }} style={styles.gridImage} resizeMode="cover" />
               ) : (
-                <LinearGradient colors={['#1E1A2E', '#141020']} style={styles.gridPlaceholder}>
+                <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
                   <Ionicons
                     name={post.type === 'audio' ? 'musical-notes' : 'videocam'}
                     size={28}

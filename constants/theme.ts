@@ -3,11 +3,11 @@ export const COLORS = {
   surface: '#111111',
   surfaceLight: '#181818',
   surfaceElevated: '#1E1E1E',
-  border: '#222222',
+  border: '#242424',
   borderSubtle: '#1A1A1A',
-  primary: '#A855F7',
-  primaryLight: '#C084FC',
-  primaryDark: '#7C3AED',
+  primary: '#F26522',
+  primaryLight: '#FAB525',
+  primaryDark: '#E8401C',
   text: '#F5F5F5',
   textSecondary: '#A0A0A0',
   textTertiary: '#484848',
@@ -21,8 +21,10 @@ export const COLORS = {
 };
 
 export const GRADIENTS = {
-  primary: ['#A855F7', '#7C3AED'] as const,
-  primarySoft: ['#A855F722', '#7C3AED11'] as const,
+  primary: ['#E8401C', '#F26522'] as const,
+  primaryWarm: ['#F26522', '#FAB525'] as const,
+  primarySoft: ['#F2652218', '#E8401C0A'] as const,
+  logo: ['#E8401C', '#F26522', '#FAB525'] as const,
   card: ['#1A1A1A', '#111111'] as const,
   gold: ['#F59E0B', '#D97706'] as const,
   diamond: ['#A5F3FC', '#67E8F9'] as const,
@@ -44,7 +46,7 @@ export const SHADOWS = {
     elevation: 5,
   },
   glow: {
-    shadowColor: '#A855F7',
+    shadowColor: '#F26522',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
     shadowRadius: 12,

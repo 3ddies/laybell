@@ -126,7 +126,7 @@ export default function MusicScreen() {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={['#1E1A2E', '#141020']} style={styles.emptyIcon}>
+              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
                 <Ionicons name="musical-notes" size={32} color={COLORS.primary} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>No playlists yet</Text>
@@ -194,7 +194,7 @@ export default function MusicScreen() {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={['#1E1A2E', '#141020']} style={styles.emptyIcon}>
+              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
                 <Ionicons name="bookmark" size={32} color={COLORS.primary} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>No saved songs yet</Text>

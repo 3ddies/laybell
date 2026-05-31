@@ -212,7 +212,7 @@ export default function HomeScreen() {
             style={styles.audioCardWrap}
             onPress={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name })}
           >
-            <LinearGradient colors={audioActive ? ['#7C3AED', '#4C1D95'] : ['#1E1A2E', '#141020']} style={styles.audioCard}>
+            <LinearGradient colors={audioActive ? ['#E8401C', '#C03010'] : ['#1C0E06', '#120A04']} style={styles.audioCard}>
               <View style={styles.audioLeft}>
                 <View style={[styles.audioIconRing, audioActive && styles.audioIconRingActive]}>
                   <Ionicons name={audioActive ? 'stop' : 'play'} size={22} color={COLORS.text} />

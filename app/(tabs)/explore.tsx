@@ -211,7 +211,7 @@ export default function ExploreScreen() {
                 {item.type === 'image' ? (
                   <Image source={{ uri: item.media_url }} style={styles.postThumb} />
                 ) : (
-                  <LinearGradient colors={['#1E1A2E', '#141020']} style={styles.postThumb}>
+                  <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.postThumb}>
                     <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={20} color={COLORS.primary} />
                   </LinearGradient>
                 )}
@@ -236,7 +236,7 @@ export default function ExploreScreen() {
               {item.type === 'image' ? (
                 <Image source={{ uri: item.media_url }} style={styles.gridImage} resizeMode="cover" />
               ) : (
-                <LinearGradient colors={['#1E1A2E', '#141020']} style={styles.gridImage}>
+                <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridImage}>
                   <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={32} color={COLORS.primary} />
                   <Text style={styles.gridCaption} numberOfLines={2}>{item.caption}</Text>
                 </LinearGradient>
