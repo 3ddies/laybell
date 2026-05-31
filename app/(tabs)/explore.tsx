@@ -1,43 +1,35 @@
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
+  View, Text, StyleSheet, TextInput,
+  FlatList, TouchableOpacity, Image, ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 
 type Post = {
-  id: string;
-  type: string;
-  media_url: string;
-  caption: string;
-  created_at: string;
-  user_id: string;
-  profiles: {
-    username: string;
-    display_name: string;
-  };
+  id: string; type: string; media_url: string;
+  caption: string; created_at: string; user_id: string;
+  profiles: { username: string; display_name: string };
 };
-
 type Profile = {
-  id: string;
-  username: string;
-  display_name: string;
-  avatar_url: string | null;
-  badge_tier: string;
+  id: string; username: string; display_name: string;
+  avatar_url: string | null; badge_tier: string;
 };
 
-const GENRES = [
-  'All', 'Rap', 'R&B', 'Pop', 'Rock', 'Jazz',
-  'Electronic', 'Gospel', 'Afrobeats', 'Lo-Fi', 'Soul'
-];
+const GENRES = ['All','Rap','R&B','Pop','Rock','Jazz','Electronic','Gospel','Afrobeats','Lo-Fi','Soul'];
+
+function getBadgeColor(tier: string) {
+  switch (tier) {
+    case 'gold': return COLORS.gold;
+    case 'silver': return COLORS.silver;
+    case 'bronze': return COLORS.bronze;
+    case 'diamond': return COLORS.diamond;
+    default: return COLORS.border;
+  }
+}
 
 export default function ExploreScreen() {
   const router = useRouter();
@@ -50,31 +42,24 @@ export default function ExploreScreen() {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
 
-  useEffect(() => {
-    fetchTrending();
-  }, []);
+  useEffect(() => { fetchTrending(); }, []);
 
   useEffect(() => {
     if (searchQuery.trim().length > 0) {
-      const timeout = setTimeout(() => handleSearch(), 500);
-      return () => clearTimeout(timeout);
+      const t = setTimeout(() => handleSearch(), 500);
+      return () => clearTimeout(t);
     } else {
-      setProfiles([]);
-      setPosts([]);
+      setProfiles([]); setPosts([]);
     }
   }, [searchQuery, searchType]);
 
   async function fetchTrending() {
     const { data } = await supabase
       .from('posts')
-      .select(`
-        *,
-        profiles!posts_user_id_fkey (username, display_name)
-      `)
+      .select('*, profiles!posts_user_id_fkey (username, display_name)')
       .eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(20);
-
     if (data) setTrendingPosts(data as any);
     setLoading(false);
   }
@@ -82,137 +67,101 @@ export default function ExploreScreen() {
   async function fetchByGenre(genre: string) {
     setLoading(true);
     setSelectedGenre(genre);
-
-    if (genre === 'All') {
-      await fetchTrending();
-      return;
-    }
-
+    if (genre === 'All') { await fetchTrending(); return; }
     const { data } = await supabase
       .from('post_tags')
-      .select(`
-        post_id,
-        posts!inner (
-          id, type, media_url, caption, created_at, user_id, is_public,
-          profiles!posts_user_id_fkey (username, display_name)
-        )
-      `)
+      .select('post_id, posts!inner(id,type,media_url,caption,created_at,user_id,is_public,profiles!posts_user_id_fkey(username,display_name))')
       .eq('genre', genre.toLowerCase())
       .limit(20);
-
     if (data) {
-      const formatted = data
-        .map((item: any) => item.posts)
-        .filter((p: any) => p?.is_public);
+      const formatted = data.map((item: any) => item.posts).filter((p: any) => p?.is_public);
       setTrendingPosts(formatted);
     }
-
     setLoading(false);
   }
 
   async function handleSearch() {
     if (!searchQuery.trim()) return;
     setSearching(true);
-
     if (searchType === 'accounts') {
       const { data } = await supabase
         .from('profiles')
         .select('id, username, display_name, avatar_url, badge_tier')
         .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
         .limit(20);
-
       if (data) setProfiles(data);
     } else {
       const { data } = await supabase
         .from('posts')
-        .select(`
-          *,
-          profiles!posts_user_id_fkey (username, display_name)
-        `)
+        .select('*, profiles!posts_user_id_fkey (username, display_name)')
         .ilike('caption', `%${searchQuery}%`)
         .eq('is_public', true)
         .limit(20);
-
       if (data) setPosts(data as any);
     }
-
     setSearching(false);
-  }
-
-  function getBadgeColor(tier: string) {
-    switch (tier) {
-      case 'gold': return COLORS.gold;
-      case 'silver': return COLORS.silver;
-      case 'bronze': return COLORS.bronze;
-      case 'diamond': return '#A5F3FC';
-      default: return COLORS.border;
-    }
   }
 
   const isSearching = searchQuery.trim().length > 0;
 
   return (
     <View style={styles.container}>
-
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Explore</Text>
       </View>
 
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search artists, songs, captions..."
-          placeholderTextColor={COLORS.textTertiary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-        />
+      {/* Search */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchBar}>
+          <Ionicons name="search-outline" size={18} color={COLORS.textTertiary} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Artists, songs, captions..."
+            placeholderTextColor={COLORS.textTertiary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      {/* Search Type Toggle */}
+      {/* Search type toggle */}
       {isSearching && (
-        <View style={styles.searchToggle}>
-          <TouchableOpacity
-            style={[styles.toggleBtn, searchType === 'posts' && styles.toggleBtnActive]}
-            onPress={() => setSearchType('posts')}
-          >
-            <Text style={[styles.toggleText, searchType === 'posts' && styles.toggleTextActive]}>
-              Posts
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleBtn, searchType === 'accounts' && styles.toggleBtnActive]}
-            onPress={() => setSearchType('accounts')}
-          >
-            <Text style={[styles.toggleText, searchType === 'accounts' && styles.toggleTextActive]}>
-              Accounts
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.toggleRow}>
+          {(['posts', 'accounts'] as const).map(type => (
+            <TouchableOpacity
+              key={type}
+              style={[styles.toggleBtn, searchType === type && styles.toggleBtnActive]}
+              onPress={() => setSearchType(type)}
+            >
+              <Text style={[styles.toggleText, searchType === type && styles.toggleTextActive]}>
+                {type.charAt(0).toUpperCase() + type.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
-      {/* Genre Pills */}
+      {/* Genre pills */}
       {!isSearching && (
         <FlatList
           horizontal
           data={GENRES}
-          keyExtractor={(item) => item}
+          keyExtractor={item => item}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.genreList}
           renderItem={({ item }) => (
             <TouchableOpacity
-              style={[
-                styles.genrePill,
-                selectedGenre === item && styles.genrePillActive,
-              ]}
+              style={[styles.genrePill, selectedGenre === item && styles.genrePillActive]}
               onPress={() => fetchByGenre(item)}
             >
-              <Text style={[
-                styles.genreText,
-                selectedGenre === item && styles.genreTextActive,
-              ]}>
+              <Text style={[styles.genreText, selectedGenre === item && styles.genreTextActive]}>
                 {item}
               </Text>
             </TouchableOpacity>
@@ -222,7 +171,7 @@ export default function ExploreScreen() {
 
       {/* Content */}
       {loading || searching ? (
-        <View style={styles.loadingContainer}>
+        <View style={styles.centered}>
           <ActivityIndicator color={COLORS.primary} />
         </View>
       ) : isSearching ? (
@@ -230,36 +179,23 @@ export default function ExploreScreen() {
           <FlatList
             key="accounts"
             data={profiles}
-            keyExtractor={(item) => item.id}
+            keyExtractor={item => item.id}
             contentContainerStyle={styles.listContent}
-            ListEmptyComponent={
-              <Text style={styles.emptyText}>No accounts found</Text>
-            }
+            ListEmptyComponent={<Text style={styles.emptyText}>No accounts found</Text>}
             renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.profileRow}
-                onPress={() => router.push(`/profile/${item.id}`)}
-              >
+              <TouchableOpacity style={styles.accountRow} onPress={() => router.push(`/profile/${item.id}`)}>
                 {item.avatar_url ? (
-                  <Image
-                    source={{ uri: item.avatar_url }}
-                    style={[styles.profileAvatar, { borderColor: getBadgeColor(item.badge_tier) }]}
-                  />
+                  <Image source={{ uri: item.avatar_url }} style={[styles.accountAvatar, { borderColor: getBadgeColor(item.badge_tier) }]} />
                 ) : (
-                  <View style={[styles.profileAvatar, { borderColor: getBadgeColor(item.badge_tier) }]}>
-                    <Text style={styles.profileAvatarText}>
-                      {item.display_name?.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
+                  <LinearGradient colors={GRADIENTS.primary} style={[styles.accountAvatar, { borderColor: getBadgeColor(item.badge_tier) }]}>
+                    <Text style={styles.accountAvatarText}>{item.display_name?.charAt(0).toUpperCase()}</Text>
+                  </LinearGradient>
                 )}
-                <View style={styles.profileInfo}>
-                  <Text style={styles.profileDisplayName}>
-                    {item.display_name}
-                  </Text>
-                  <Text style={styles.profileUsername}>
-                    {'@'}{item.username}
-                  </Text>
+                <View style={styles.accountInfo}>
+                  <Text style={styles.accountName}>{item.display_name}</Text>
+                  <Text style={styles.accountUsername}>@{item.username}</Text>
                 </View>
+                <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
               </TouchableOpacity>
             )}
           />
@@ -267,32 +203,23 @@ export default function ExploreScreen() {
           <FlatList
             key="posts"
             data={posts}
-            keyExtractor={(item) => item.id}
+            keyExtractor={item => item.id}
             contentContainerStyle={styles.listContent}
-            ListEmptyComponent={
-              <Text style={styles.emptyText}>No posts found</Text>
-            }
+            ListEmptyComponent={<Text style={styles.emptyText}>No posts found</Text>}
             renderItem={({ item }) => (
-              <View style={styles.searchPostRow}>
+              <TouchableOpacity style={styles.postRow} onPress={() => router.push(`/post/${item.id}`)}>
                 {item.type === 'image' ? (
-                  <Image
-                    source={{ uri: item.media_url }}
-                    style={styles.searchPostThumb}
-                  />
+                  <Image source={{ uri: item.media_url }} style={styles.postThumb} />
                 ) : (
-                  <View style={styles.searchPostThumbPlaceholder}>
-                    <Text>{item.type === 'audio' ? '🎵' : '🎬'}</Text>
-                  </View>
+                  <LinearGradient colors={['#1E1A2E', '#141020']} style={styles.postThumb}>
+                    <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={20} color={COLORS.primary} />
+                  </LinearGradient>
                 )}
-                <View style={styles.searchPostInfo}>
-                  <Text style={styles.searchPostCaption} numberOfLines={2}>
-                    {item.caption}
-                  </Text>
-                  <Text style={styles.searchPostUser}>
-                    {'@'}{item.profiles?.username}
-                  </Text>
+                <View style={styles.postInfo}>
+                  <Text style={styles.postCaption} numberOfLines={2}>{item.caption}</Text>
+                  <Text style={styles.postUser}>@{item.profiles?.username}</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             )}
           />
         )
@@ -300,257 +227,109 @@ export default function ExploreScreen() {
         <FlatList
           key="grid"
           data={trendingPosts}
-          keyExtractor={(item) => item.id}
+          keyExtractor={item => item.id}
           numColumns={2}
           contentContainerStyle={styles.gridContent}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No posts yet in this genre</Text>
-          }
+          ListEmptyComponent={<Text style={styles.emptyText}>No posts in this genre yet</Text>}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.gridItem} onPress={() => router.push(`/post/${item.id}`)}>
               {item.type === 'image' ? (
-                <Image
-                  source={{ uri: item.media_url }}
-                  style={styles.gridImage}
-                  resizeMode="cover"
-                />
+                <Image source={{ uri: item.media_url }} style={styles.gridImage} resizeMode="cover" />
               ) : (
-                <View style={styles.gridPlaceholder}>
-                  <Text style={styles.gridPlaceholderIcon}>
-                    {item.type === 'audio' ? '🎵' : '🎬'}
-                  </Text>
-                  <Text style={styles.gridPlaceholderCaption} numberOfLines={2}>
-                    {item.caption}
-                  </Text>
-                </View>
+                <LinearGradient colors={['#1E1A2E', '#141020']} style={styles.gridImage}>
+                  <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={32} color={COLORS.primary} />
+                  <Text style={styles.gridCaption} numberOfLines={2}>{item.caption}</Text>
+                </LinearGradient>
               )}
               <View style={styles.gridOverlay}>
-                <Text style={styles.gridUsername} numberOfLines={1}>
-                  {'@'}{item.profiles?.username}
-                </Text>
+                <Text style={styles.gridUsername} numberOfLines={1}>@{item.profiles?.username}</Text>
               </View>
             </TouchableOpacity>
           )}
         />
       )}
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.xxl + SPACING.sm,
-    paddingBottom: SPACING.sm,
-  },
-  headerTitle: {
-    color: COLORS.text,
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  searchContainer: {
-    paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.sm,
-  },
-  searchInput: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+  container: { flex: 1, backgroundColor: COLORS.background },
+  header: { paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm },
+  headerTitle: { color: COLORS.text, fontSize: 28, fontWeight: '800' },
+
+  searchRow: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.surfaceLight,
     borderRadius: RADIUS.full,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    color: COLORS.text,
-    fontSize: 15,
+    borderWidth: 1, borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md, gap: SPACING.sm,
   },
-  searchToggle: {
-    flexDirection: 'row',
-    paddingHorizontal: SPACING.md,
-    gap: SPACING.sm,
-    marginBottom: SPACING.sm,
-  },
+  searchIcon: { marginRight: -4 },
+  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15 },
+
+  toggleRow: { flexDirection: 'row', paddingHorizontal: SPACING.md, gap: SPACING.sm, marginBottom: SPACING.sm },
   toggleBtn: {
-    paddingVertical: SPACING.xs,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
   },
-  toggleBtnActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  toggleText: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  toggleTextActive: {
-    color: COLORS.text,
-    fontWeight: '700',
-  },
-  genreList: {
-    paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.sm,
-    gap: SPACING.sm,
-  },
+  toggleBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  toggleText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
+  toggleTextActive: { color: COLORS.text, fontWeight: '700' },
+
+  genreList: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm, gap: SPACING.sm },
   genrePill: {
-    paddingVertical: SPACING.xs,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1, borderColor: COLORS.border,
   },
-  genrePillActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  genreText: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  genreTextActive: {
-    color: COLORS.text,
-    fontWeight: '700',
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  listContent: {
+  genrePillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  genreText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
+  genreTextActive: { color: COLORS.text, fontWeight: '700' },
+
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  listContent: { padding: SPACING.md, gap: SPACING.sm },
+
+  accountRow: {
+    flexDirection: 'row', alignItems: 'center',
     padding: SPACING.md,
-    gap: SPACING.sm,
-  },
-  profileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: SPACING.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceLight,
     borderRadius: RADIUS.md,
-    gap: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderWidth: 1, borderColor: COLORS.border, gap: SPACING.md,
   },
-  profileAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: RADIUS.full,
+  accountAvatar: {
+    width: 48, height: 48, borderRadius: RADIUS.full,
     backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2,
   },
-  profileAvatarText: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  profileDisplayName: {
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  profileUsername: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    marginTop: 2,
-  },
-  searchPostRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: SPACING.sm,
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
-    gap: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  searchPostThumb: {
-    width: 56,
-    height: 56,
-    borderRadius: RADIUS.sm,
+  accountAvatarText: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
+  accountInfo: { flex: 1 },
+  accountName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  accountUsername: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
+
+  postRow: {
+    flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.surfaceLight,
+    borderRadius: RADIUS.md, gap: SPACING.md,
+    borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
   },
-  searchPostThumbPlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.surfaceLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchPostInfo: {
-    flex: 1,
-  },
-  searchPostCaption: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  searchPostUser: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  gridContent: {
-    padding: SPACING.xs,
-    gap: SPACING.xs,
-  },
+  postThumb: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface },
+  postInfo: { flex: 1, paddingRight: SPACING.md },
+  postCaption: { color: COLORS.text, fontSize: 14, fontWeight: '500' },
+  postUser: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+
+  gridContent: { padding: SPACING.xs, gap: SPACING.xs },
   gridItem: {
-    flex: 1,
-    margin: SPACING.xs,
-    aspectRatio: 1,
-    borderRadius: RADIUS.md,
-    overflow: 'hidden',
-    backgroundColor: COLORS.surface,
+    flex: 1, margin: SPACING.xs, aspectRatio: 1,
+    borderRadius: RADIUS.md, overflow: 'hidden',
+    backgroundColor: COLORS.surfaceLight,
   },
-  gridImage: {
-    width: '100%',
-    height: '100%',
-  },
-  gridPlaceholder: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: SPACING.sm,
-    gap: SPACING.xs,
-  },
-  gridPlaceholderIcon: {
-    fontSize: 32,
-  },
-  gridPlaceholderCaption: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
-    textAlign: 'center',
-  },
+  gridImage: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm },
+  gridCaption: { color: COLORS.textSecondary, fontSize: 11, textAlign: 'center', paddingHorizontal: SPACING.sm },
   gridOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: SPACING.xs,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: SPACING.sm, paddingVertical: 4,
   },
-  gridUsername: {
-    color: COLORS.text,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  emptyText: {
-    color: COLORS.textTertiary,
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: SPACING.xxl,
-  },
+  gridUsername: { color: COLORS.text, fontSize: 11, fontWeight: '600' },
+  emptyText: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center', marginTop: SPACING.xxl },
 });
