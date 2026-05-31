@@ -9,7 +9,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
@@ -36,6 +36,27 @@ export default function ChatScreen() {
   useEffect(() => {
     setup();
   }, [id]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const channel = supabase
+      .channel(`chat-${currentUserId}-${id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${currentUserId}` },
+        (payload) => {
+          const msg = payload.new as Message;
+          if (String(msg.sender_id) === String(id)) {
+            setMessages(prev => [...prev, msg]);
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUserId, id]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();

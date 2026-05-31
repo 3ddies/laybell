@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
   FlatList,
 } from 'react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
@@ -62,10 +62,35 @@ export default function PostDetailScreen() {
   const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
 
   const audioPlaying = currentTrack?.id === id && isPlaying;
+  const flatListRef = useRef<any>(null);
 
   useEffect(() => {
     setup();
   }, [id]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`post-comments-${id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'comments', filter: `post_id=eq.${id}` },
+        async (payload) => {
+          const incoming = payload.new as any;
+          if (incoming.user_id === currentUserId) return;
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('username, display_name')
+            .eq('id', incoming.user_id)
+            .single();
+          setComments(prev => [...prev, { ...incoming, profiles: profile }]);
+          setCommentCount(prev => prev + 1);
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [id, currentUserId]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -225,6 +250,7 @@ export default function PostDetailScreen() {
       </View>
 
       <FlatList
+        ref={flatListRef}
         data={comments}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}

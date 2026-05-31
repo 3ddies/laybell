@@ -1,19 +1,50 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Pressable } from 'react-native';
+import { useRef, useState } from 'react';
 import { useAudio } from '../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+
+function formatMs(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
 
 export default function MiniPlayer() {
-  const { currentTrack, isPlaying, stop } = useAudio();
+  const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, stop, seekTo } = useAudio();
+  const [barWidth, setBarWidth] = useState(0);
 
   if (!currentTrack) return null;
 
+  const progress = durationMs > 0 ? positionMs / durationMs : 0;
+
+  function handleSeek(evt: any) {
+    if (!barWidth || !durationMs) return;
+    const x = evt.nativeEvent.locationX;
+    const ratio = Math.max(0, Math.min(1, x / barWidth));
+    seekTo(Math.floor(ratio * durationMs));
+  }
+
   return (
     <View style={styles.container}>
-      <View style={styles.progressBar} />
+      {/* Seekable progress bar */}
+      <Pressable
+        style={styles.progressTrack}
+        onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
+        onPress={handleSeek}
+      >
+        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+      </Pressable>
+
       <View style={styles.inner}>
         <View style={styles.iconWrap}>
-          <Text style={styles.icon}>🎵</Text>
+          {isBuffering ? (
+            <Text style={styles.bufferingDot}>⟳</Text>
+          ) : (
+            <Text style={styles.icon}>🎵</Text>
+          )}
         </View>
+
         <View style={styles.trackInfo}>
           <Text style={styles.caption} numberOfLines={1}>
             {currentTrack.caption || 'Audio Track'}
@@ -22,10 +53,14 @@ export default function MiniPlayer() {
             {currentTrack.artist}
           </Text>
         </View>
+
         <View style={styles.controls}>
-          {isPlaying && <View style={styles.playingDot} />}
+          <Text style={styles.timeText}>
+            {formatMs(positionMs)}
+            {durationMs > 0 ? ` / ${formatMs(durationMs)}` : ''}
+          </Text>
           <TouchableOpacity style={styles.stopBtn} onPress={stop}>
-            <Text style={styles.stopIcon}>■</Text>
+            <Ionicons name="stop" size={14} color={COLORS.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -41,13 +76,18 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: COLORS.surface,
     borderTopWidth: 0.5,
-    borderTopColor: COLORS.primary + '66',
+    borderTopColor: COLORS.primary + '88',
     zIndex: 100,
   },
-  progressBar: {
-    height: 2,
+  progressTrack: {
+    height: 3,
+    backgroundColor: COLORS.border,
+    width: '100%',
+  },
+  progressFill: {
+    height: '100%',
     backgroundColor: COLORS.primary,
-    width: '40%',
+    borderRadius: 2,
   },
   inner: {
     flexDirection: 'row',
@@ -57,15 +97,17 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   iconWrap: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: RADIUS.sm,
     backgroundColor: COLORS.primary + '33',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  icon: {
+  icon: { fontSize: 16 },
+  bufferingDot: {
     fontSize: 18,
+    color: COLORS.primary,
   },
   trackInfo: {
     flex: 1,
@@ -85,22 +127,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.sm,
   },
-  playingDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.primary,
+  timeText: {
+    color: COLORS.textTertiary,
+    fontSize: 11,
+    fontVariant: ['tabular-nums'],
   },
   stopBtn: {
-    width: 32,
-    height: 32,
+    width: 30,
+    height: 30,
     borderRadius: RADIUS.full,
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  stopIcon: {
-    color: COLORS.text,
-    fontSize: 12,
   },
 });

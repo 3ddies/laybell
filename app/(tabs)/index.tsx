@@ -47,8 +47,23 @@ export default function HomeScreen() {
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-  if (initialized) fetchPosts(currentUserId || undefined);
-}, [feedMode]);
+    if (initialized) fetchPosts(currentUserId || undefined);
+  }, [feedMode]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const channel = supabase
+      .channel(`notif-badge-${currentUserId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${currentUserId}` },
+        () => { setUnreadCount(prev => prev + 1); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUserId]);
 
   useEffect(() => {
     setup();

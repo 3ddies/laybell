@@ -42,6 +42,29 @@ export default function CommentsScreen() {
     setup();
   }, [id]);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel(`comments-${id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'comments', filter: `post_id=eq.${id}` },
+        async (payload) => {
+          const incoming = payload.new as any;
+          if (incoming.user_id === currentUserId) return;
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('username, display_name')
+            .eq('id', incoming.user_id)
+            .single();
+          setComments(prev => [...prev, { ...incoming, profiles: profile }]);
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [id, currentUserId]);
+
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
