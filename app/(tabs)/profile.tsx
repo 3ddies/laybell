@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -33,6 +34,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('main');
   const [userPosts, setUserPosts] = useState<any[]>([]);
+  const router = useRouter();
 
   useEffect(() => {
     fetchProfile();
@@ -154,9 +156,12 @@ if (postsData) setUserPosts(postsData);
 
       {/* Action Buttons */}
       <View style={styles.actionButtons}>
-        <TouchableOpacity style={styles.editButton}>
-          <Text style={styles.editButtonText}>Edit Profile</Text>
-        </TouchableOpacity>
+        <TouchableOpacity
+  style={styles.editButton}
+  onPress={() => router.push('/edit-profile')}
+>
+  <Text style={styles.editButtonText}>Edit Profile</Text>
+</TouchableOpacity>
         <TouchableOpacity style={styles.friendsButton}>
           <Text style={styles.friendsButtonText}>Friends</Text>
         </TouchableOpacity>
