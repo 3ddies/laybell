@@ -155,6 +155,7 @@ export default function ExploreScreen() {
           data={GENRES}
           keyExtractor={item => item}
           showsHorizontalScrollIndicator={false}
+          style={styles.genreFlatList}
           contentContainerStyle={styles.genreList}
           renderItem={({ item }) => {
             const active = selectedGenre === item;
@@ -284,11 +285,15 @@ const styles = StyleSheet.create({
   toggleText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
   toggleTextActive: { color: COLORS.text, fontWeight: '700' },
 
+  genreFlatList: {
+    flexShrink: 0,
+    flexGrow: 0,
+  },
   genreList: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     gap: SPACING.sm,
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   genrePillWrap: {
     flexShrink: 0,
