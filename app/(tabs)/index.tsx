@@ -15,6 +15,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { timeAgo } from '../../lib/timeAgo';
+import { useAudio } from '../../contexts/AudioContext';
 
 type Post = {
   id: string;
@@ -38,8 +39,10 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
-  const { playingId, play: handlePlayAudio } = useAudioPlayer();
+  const { play: playAudio } = useAudioPlayer();
+  const { currentTrack, isPlaying } = useAudio();
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
+  const [unreadCount, setUnreadCount] = useState(0);
   const router = useRouter();
   const [feedMode, setFeedMode] = useState<'all' | 'following'>('all');
   const [initialized, setInitialized] = useState(false);
@@ -54,11 +57,17 @@ export default function HomeScreen() {
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) setCurrentUserId(user.id);
+    if (user) {
+      setCurrentUserId(user.id);
+      const { count } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('read', false);
+      setUnreadCount(count || 0);
+    }
     await fetchPosts(user?.id);
-
-  setInitialized(true);
-
+    setInitialized(true);
   }
 
   async function fetchPosts(userId?: string) {
@@ -149,13 +158,18 @@ export default function HomeScreen() {
     }));
 
     if (isLiked) {
-      await supabase.from('likes')
-        .delete()
-        .eq('user_id', currentUserId)
-        .eq('post_id', postId);
+      await supabase.from('likes').delete().eq('user_id', currentUserId).eq('post_id', postId);
     } else {
-      await supabase.from('likes')
-        .insert({ user_id: currentUserId, post_id: postId });
+      await supabase.from('likes').insert({ user_id: currentUserId, post_id: postId });
+      const post = posts.find(p => p.id === postId);
+      if (post && post.user_id !== currentUserId) {
+        await supabase.from('notifications').insert({
+          user_id: post.user_id,
+          actor_id: currentUserId,
+          type: 'like',
+          post_id: postId,
+        }).throwOnError().catch(() => {});
+      }
     }
   }
   async function handleSaveTrack(postId: string) {
@@ -191,9 +205,10 @@ export default function HomeScreen() {
     const isLiked = likedPosts.has(item.id);
     const likeCount = item.likes[0]?.count || 0;
     const commentCount = item.comments[0]?.count || 0;
+    const audioActive = isPlaying && currentTrack?.id === item.id;
 
     return (
-      <View style={styles.postCard}>
+      <TouchableOpacity style={styles.postCard} onPress={() => router.push(`/post/${item.id}`)}>
 
         {/* Post Header */}
 <TouchableOpacity
@@ -239,17 +254,16 @@ export default function HomeScreen() {
         {item.type === 'audio' && (
   <TouchableOpacity
     style={styles.audioCard}
-    onPress={() => handlePlayAudio(item.id, item.media_url)}
-
+    onPress={() => playAudio(item.id, item.media_url, item.caption, item.profiles?.display_name)}
   >
     <Text style={styles.audioIcon}>🎵</Text>
     <Text style={styles.audioText}>Audio Track</Text>
     <View style={[
       styles.playButton,
-      playingId === item.id && { backgroundColor: COLORS.error }
+      audioActive && { backgroundColor: COLORS.error }
     ]}>
       <Text style={styles.playButtonText}>
-        {playingId === item.id ? '■ Stop' : '▶ Play'}
+        {audioActive ? '■ Stop' : '▶ Play'}
       </Text>
     </View>
   </TouchableOpacity>
@@ -311,7 +325,7 @@ export default function HomeScreen() {
   </TouchableOpacity>
 </View>
 
-      </View>
+      </TouchableOpacity>
     );
   }
 
@@ -345,9 +359,17 @@ export default function HomeScreen() {
         Following
       </Text>
     </TouchableOpacity>
+    <TouchableOpacity onPress={() => { setUnreadCount(0); router.push('/notifications'); }} style={styles.bellWrap}>
+      <Text style={styles.headerIcon}>🔔</Text>
+      {unreadCount > 0 && (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+        </View>
+      )}
+    </TouchableOpacity>
     <TouchableOpacity onPress={() => router.push('/messages')}>
-  <Text style={styles.headerIcon}>✉️</Text>
-</TouchableOpacity>
+      <Text style={styles.headerIcon}>✉️</Text>
+    </TouchableOpacity>
   </View>
 </View>
 
@@ -540,6 +562,26 @@ const styles = StyleSheet.create({
   flexDirection: 'row',
   alignItems: 'center',
   gap: SPACING.sm,
+},
+bellWrap: {
+  position: 'relative',
+},
+badge: {
+  position: 'absolute',
+  top: -4,
+  right: -4,
+  minWidth: 16,
+  height: 16,
+  borderRadius: 8,
+  backgroundColor: COLORS.error,
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingHorizontal: 3,
+},
+badgeText: {
+  color: COLORS.text,
+  fontSize: 9,
+  fontWeight: 'bold',
 },
 feedToggle: {
   paddingVertical: 4,

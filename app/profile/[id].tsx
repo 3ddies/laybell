@@ -113,12 +113,13 @@ export default function PublicProfileScreen() {
       setIsFollowing(false);
       setStats(prev => ({ ...prev, followers: prev.followers - 1 }));
     } else {
-      await supabase
-        .from('follows')
-        .insert({
-          follower_id: currentUserId,
-          following_id: id,
-        });
+      await supabase.from('follows').insert({ follower_id: currentUserId, following_id: id });
+      await supabase.from('notifications').insert({
+        user_id: id,
+        actor_id: currentUserId,
+        type: 'follow',
+        post_id: null,
+      }).throwOnError().catch(() => {});
 
       setIsFollowing(true);
       setStats(prev => ({ ...prev, followers: prev.followers + 1 }));
@@ -267,7 +268,11 @@ export default function PublicProfileScreen() {
                 post.type === 'video'
               )
               .map((post) => (
-                <View key={post.id} style={styles.gridItem}>
+                <TouchableOpacity
+                  key={post.id}
+                  style={styles.gridItem}
+                  onPress={() => router.push(`/post/${post.id}`)}
+                >
                   {post.type === 'image' ? (
                     <Image
                       source={{ uri: post.media_url }}
@@ -281,7 +286,7 @@ export default function PublicProfileScreen() {
                       </Text>
                     </View>
                   )}
-                </View>
+                </TouchableOpacity>
               ))}
           </View>
         )}

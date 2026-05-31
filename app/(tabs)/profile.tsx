@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
@@ -34,6 +35,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('main');
   const [userPosts, setUserPosts] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -82,6 +84,7 @@ export default function ProfileScreen() {
 
     if (postsData) setUserPosts(postsData);
     setLoading(false);
+    setRefreshing(false);
   }
 
   async function handleLogout() {
@@ -109,7 +112,17 @@ export default function ProfileScreen() {
   const tabs = ['Main', 'Posts', 'Music', 'Videos', 'Tagged'];
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => { setRefreshing(true); fetchProfile(); }}
+          tintColor={COLORS.primary}
+        />
+      }
+    >
 
       {/* Header Bar */}
       <View style={styles.headerBar}>
@@ -204,7 +217,11 @@ export default function ProfileScreen() {
           ) : (
             <View style={styles.postsGrid}>
               {userPosts.map((post) => (
-                <View key={post.id} style={styles.gridItem}>
+                <TouchableOpacity
+                  key={post.id}
+                  style={styles.gridItem}
+                  onPress={() => router.push(`/post/${post.id}`)}
+                >
                   {post.type === 'image' ? (
                     <Image
                       source={{ uri: post.media_url }}
@@ -218,7 +235,7 @@ export default function ProfileScreen() {
                       </Text>
                     </View>
                   )}
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )

@@ -307,7 +307,7 @@ export default function ExploreScreen() {
             <Text style={styles.emptyText}>No posts yet in this genre</Text>
           }
           renderItem={({ item }) => (
-            <View style={styles.gridItem}>
+            <TouchableOpacity style={styles.gridItem} onPress={() => router.push(`/post/${item.id}`)}>
               {item.type === 'image' ? (
                 <Image
                   source={{ uri: item.media_url }}
@@ -329,7 +329,7 @@ export default function ExploreScreen() {
                   {'@'}{item.profiles?.username}
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
           )}
         />
       )}

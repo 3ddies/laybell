@@ -1,48 +1,14 @@
-import { useState } from 'react';
-import { Audio } from 'expo-av';
+import { useAudio } from '../contexts/AudioContext';
 
 export function useAudioPlayer() {
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
+  const { currentTrack, isPlaying, play, stop } = useAudio();
 
-  async function play(id: string, uri: string) {
-    try {
-      if (sound) {
-        await sound.stopAsync();
-        await sound.unloadAsync();
-        setSound(null);
-        if (playingId === id) {
-          setPlayingId(null);
-          return;
-        }
-      }
-
-      setPlayingId(id);
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-      });
-
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri },
-        { shouldPlay: true }
-      );
-
-      setSound(newSound);
-
-      newSound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.didJustFinish) {
-          setPlayingId(null);
-          setSound(null);
-        }
-      });
-    } catch (err) {
-      console.log('audio error:', err);
-      setPlayingId(null);
-    }
+  async function playTrack(id: string, uri: string, caption = '', artist = '') {
+    await play({ id, uri, caption, artist });
   }
 
-  return { playingId, play };
+  return {
+    playingId: isPlaying ? (currentTrack?.id ?? null) : null,
+    play: playTrack,
+  };
 }

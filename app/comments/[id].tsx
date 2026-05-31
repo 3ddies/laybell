@@ -36,6 +36,7 @@ export default function CommentsScreen() {
   const [sending, setSending] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
+  const [postOwnerId, setPostOwnerId] = useState<string | null>(null);
 
   useEffect(() => {
     setup();
@@ -51,6 +52,13 @@ export default function CommentsScreen() {
         .eq('id', user.id)
         .single();
       if (profile) setCurrentUserProfile(profile);
+
+      const { data: postData } = await supabase
+        .from('posts')
+        .select('user_id')
+        .eq('id', id)
+        .single();
+      if (postData) setPostOwnerId(postData.user_id);
     }
     await fetchComments();
     setLoading(false);
@@ -87,14 +95,16 @@ export default function CommentsScreen() {
       .single();
 
     if (!error && data) {
-      const newCommentWithProfile = {
-        ...data,
-        profiles: currentUserProfile,
-      };
-      setComments(prev => [...prev, newCommentWithProfile]);
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      setComments(prev => [...prev, { ...data, profiles: currentUserProfile }]);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      if (postOwnerId && postOwnerId !== currentUserId) {
+        await supabase.from('notifications').insert({
+          user_id: postOwnerId,
+          actor_id: currentUserId,
+          type: 'comment',
+          post_id: id,
+        }).throwOnError().catch(() => {});
+      }
     }
 
     setSending(false);

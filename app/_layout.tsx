@@ -5,6 +5,8 @@ import { View } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
+import { AudioProvider } from '../contexts/AudioContext';
+import MiniPlayer from '../components/MiniPlayer';
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
@@ -46,9 +48,12 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <AudioProvider>
       <StatusBar style="light" />
-      <Slot />
-    </>
+      <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <Slot />
+        <MiniPlayer />
+      </View>
+    </AudioProvider>
   );
 }
