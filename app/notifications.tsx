@@ -25,6 +25,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -68,6 +69,7 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchNotifications();
@@ -88,7 +90,6 @@ export default function NotificationsScreen() {
       .limit(50);
 
     if (error) console.error('notifications fetch error:', error.message);
-
     if (data) setNotifications(data as any);
 
     // Mark all as read
@@ -99,6 +100,7 @@ export default function NotificationsScreen() {
       .eq('read', false);
 
     setLoading(false);
+    setRefreshing(false);
   }
 
   function handlePress(notif: Notification) {
@@ -124,13 +126,22 @@ export default function NotificationsScreen() {
           <Text style={styles.backBtn}>‹ Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
-        <View style={{ width: 60 }} />
+        <TouchableOpacity onPress={() => { setRefreshing(true); fetchNotifications(); }}>
+          <Text style={styles.refreshBtn}>↻</Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
         data={notifications}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); fetchNotifications(); }}
+            tintColor={COLORS.primary}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>🔔</Text>
@@ -191,6 +202,7 @@ const styles = StyleSheet.create({
   },
   backBtn: { color: COLORS.primary, fontSize: 16, fontWeight: '600' },
   headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: 'bold' },
+  refreshBtn: { color: COLORS.primary, fontSize: 22, fontWeight: '400', paddingHorizontal: 4 },
   listContent: { padding: SPACING.md, gap: SPACING.xs },
   notifRow: {
     flexDirection: 'row',
