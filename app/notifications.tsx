@@ -37,6 +37,7 @@ type Notification = {
   id: string;
   type: 'like' | 'comment' | 'follow';
   post_id: string | null;
+  actor_id: string;
   read: boolean;
   created_at: string;
   actor: {
@@ -44,7 +45,7 @@ type Notification = {
     username: string;
     display_name: string;
     avatar_url: string | null;
-  };
+  } | null;
 };
 
 function notificationText(type: string) {
@@ -79,18 +80,30 @@ export default function NotificationsScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data, error } = await supabase
+    // Fetch notifications without join to avoid ambiguous FK issues
+    const { data: notifData, error } = await supabase
       .from('notifications')
-      .select(`
-        id, type, post_id, read, created_at,
-        actor:profiles!actor_id (id, username, display_name, avatar_url)
-      `)
+      .select('id, type, post_id, read, created_at, actor_id')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50);
 
     if (error) console.error('notifications fetch error:', error.message);
-    if (data) setNotifications(data as any);
+
+    if (notifData && notifData.length > 0) {
+      // Fetch actor profiles separately — avoids ambiguous FK join
+      const actorIds = [...new Set(notifData.map(n => n.actor_id))];
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .in('id', actorIds);
+
+      const profileMap = Object.fromEntries((profileData ?? []).map(p => [p.id, p]));
+      const merged = notifData.map(n => ({ ...n, actor: profileMap[n.actor_id] ?? null }));
+      setNotifications(merged as any);
+    } else {
+      setNotifications([]);
+    }
 
     // Mark all as read
     await supabase
@@ -106,8 +119,8 @@ export default function NotificationsScreen() {
   function handlePress(notif: Notification) {
     if (notif.post_id) {
       router.push(`/post/${notif.post_id}`);
-    } else {
-      router.push(`/profile/${notif.actor.id}`);
+    } else if (notif.actor_id) {
+      router.push(`/profile/${notif.actor_id}`);
     }
   }
 
