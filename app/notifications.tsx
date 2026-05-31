@@ -126,9 +126,7 @@ export default function NotificationsScreen() {
           <Text style={styles.backBtn}>‹ Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
-        <TouchableOpacity onPress={() => { setRefreshing(true); fetchNotifications(); }}>
-          <Text style={styles.refreshBtn}>↻</Text>
-        </TouchableOpacity>
+        <View style={{ width: 60 }} />
       </View>
 
       <FlatList
@@ -202,7 +200,6 @@ const styles = StyleSheet.create({
   },
   backBtn: { color: COLORS.primary, fontSize: 16, fontWeight: '600' },
   headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: 'bold' },
-  refreshBtn: { color: COLORS.primary, fontSize: 22, fontWeight: '400', paddingHorizontal: 4 },
   listContent: { padding: SPACING.md, gap: SPACING.xs },
   notifRow: {
     flexDirection: 'row',
