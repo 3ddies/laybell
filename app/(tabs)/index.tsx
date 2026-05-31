@@ -153,7 +153,7 @@ export default function HomeScreen() {
           actor_id: currentUserId,
           type: 'like',
           post_id: postId,
-        }).throwOnError().catch(() => {});
+        }).then(({ error }) => { if (error) console.error('notification insert:', error.message); });
       }
     }
   }

@@ -91,7 +91,7 @@ export default function PublicProfileScreen() {
         actor_id: currentUserId,
         type: 'follow',
         post_id: null,
-      }).throwOnError().catch(() => {});
+      }).then(({ error }) => { if (error) console.error('notification insert:', error.message); });
 
       setIsFollowing(true);
       setStats(prev => ({ ...prev, followers: prev.followers + 1 }));

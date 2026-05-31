@@ -132,7 +132,7 @@ export default function PostDetailScreen() {
           actor_id: currentUserId,
           type: 'like',
           post_id: id,
-        }).throwOnError().catch(() => {});
+        }).then(({ error }) => { if (error) console.error('notification insert:', error.message); });
       }
     }
   }
@@ -182,7 +182,7 @@ export default function PostDetailScreen() {
           actor_id: currentUserId,
           type: 'comment',
           post_id: id,
-        }).throwOnError().catch(() => {});
+        }).then(({ error }) => { if (error) console.error('notification insert:', error.message); });
       }
     }
     setSending(false);

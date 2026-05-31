@@ -50,7 +50,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       playsInSilentModeIOS: true,
+      staysActiveInBackground: true,
       shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
     });
 
     try {

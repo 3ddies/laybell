@@ -14,10 +14,23 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.laybell.app"
+      "bundleIdentifier": "com.laybell.app",
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"]
+      }
+    },
+    "android": {
+      "package": "com.laybell.app",
+      "permissions": ["android.permission.FOREGROUND_SERVICE"]
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-av",
+        {
+          "microphonePermission": false
+        }
+      ]
     ]
   }
 }

@@ -77,15 +77,17 @@ export default function NotificationsScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('notifications')
       .select(`
         id, type, post_id, read, created_at,
-        actor:actor_id (id, username, display_name, avatar_url)
+        actor:profiles!actor_id (id, username, display_name, avatar_url)
       `)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50);
+
+    if (error) console.error('notifications fetch error:', error.message);
 
     if (data) setNotifications(data as any);
 
