@@ -312,11 +312,13 @@ export default function HomeScreen() {
     </Text>
   </TouchableOpacity>
 
-  <TouchableOpacity style={styles.actionButton}>
-    <Text style={styles.actionIcon}>💬</Text>
-    <Text style={styles.actionCount}>{commentCount}</Text>
-  </TouchableOpacity>
-
+  <TouchableOpacity
+  style={styles.actionButton}
+  onPress={() => router.push(`/comments/${item.id}`)}
+>
+  <Text style={styles.actionIcon}>💬</Text>
+  <Text style={styles.actionCount}>{commentCount}</Text>
+</TouchableOpacity>
   {item.type === 'audio' && (
     <TouchableOpacity
       style={styles.actionButton}
