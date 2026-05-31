@@ -236,11 +236,18 @@ export default function HomeScreen() {
   style={styles.postHeader}
   onPress={() => router.push(`/profile/${item.user_id}`)}
 >
+  {item.profiles?.avatar_url ? (
+  <Image
+    source={{ uri: item.profiles.avatar_url }}
+    style={styles.avatarSmall}
+  />
+) : (
   <View style={styles.avatarSmall}>
     <Text style={styles.avatarSmallText}>
       {item.profiles?.display_name?.charAt(0).toUpperCase()}
     </Text>
   </View>
+)}
   <View style={styles.postHeaderInfo}>
     <Text style={styles.postDisplayName}>
       {item.profiles?.display_name}
