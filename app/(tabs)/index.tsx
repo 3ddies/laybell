@@ -1,6 +1,5 @@
 import { Video, ResizeMode } from 'expo-av';
 import { useRouter } from 'expo-router';
-import { Audio } from 'expo-av';
 import {
   View,
   Text,
@@ -14,6 +13,8 @@ import {
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { useAudioPlayer } from '../../hooks/useAudioPlayer';
+import { timeAgo } from '../../lib/timeAgo';
 
 type Post = {
   id: string;
@@ -37,8 +38,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
-  const [sound, setSound] = useState<any>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
+  const { playingId, play: handlePlayAudio } = useAudioPlayer();
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const router = useRouter();
   const [feedMode, setFeedMode] = useState<'all' | 'following'>('all');
@@ -90,23 +90,37 @@ export default function HomeScreen() {
     query = query.in('user_id', followingIds);
   }
 
-  const { data, error } = await query;
+  const { data } = await query;
 
-  if (data) setPosts(data.map(post => ({
-    ...post,
-    likes: [{ count: 0 }],
-    comments: [{ count: 0 }],
-  })) as any);
+  if (data) {
+    const postIds = data.map(p => p.id);
+
+    const [{ data: likeCounts }, { data: commentCounts }] = await Promise.all([
+      supabase.from('likes').select('post_id').in('post_id', postIds),
+      supabase.from('comments').select('post_id').in('post_id', postIds),
+    ]);
+
+    const likeMap: Record<string, number> = {};
+    likeCounts?.forEach(l => { likeMap[l.post_id] = (likeMap[l.post_id] || 0) + 1; });
+
+    const commentMap: Record<string, number> = {};
+    commentCounts?.forEach(c => { commentMap[c.post_id] = (commentMap[c.post_id] || 0) + 1; });
+
+    setPosts(data.map(post => ({
+      ...post,
+      likes: [{ count: likeMap[post.id] || 0 }],
+      comments: [{ count: commentMap[post.id] || 0 }],
+    })) as any);
+  }
 
   if (userId) {
-    const { data: likesData } = await supabase
-      .from('likes')
-      .select('post_id')
-      .eq('user_id', userId);
+    const [{ data: likesData }, { data: savesData }] = await Promise.all([
+      supabase.from('likes').select('post_id').eq('user_id', userId),
+      supabase.from('saves').select('post_id').eq('user_id', userId),
+    ]);
 
-    if (likesData) {
-      setLikedPosts(new Set(likesData.map(l => l.post_id)));
-    }
+    if (likesData) setLikedPosts(new Set(likesData.map(l => l.post_id)));
+    if (savesData) setSavedPosts(new Set(savesData.map(s => s.post_id)));
   }
 
   setLoading(false);
@@ -172,56 +186,6 @@ export default function HomeScreen() {
   }
 }
 
-  function timeAgo(dateString: string) {
-    const now = new Date();
-    const date = new Date(dateString);
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-    return `${Math.floor(seconds / 86400)}d`;
-  }
-
-  async function handlePlayAudio(postId: string, audioUrl: string) {
-  try {
-    // If something is already playing, stop it first
-    if (sound) {
-      await sound.stopAsync();
-      await sound.unloadAsync();
-      setSound(null);
-      if (playingId === postId) {
-        setPlayingId(null);
-        return;
-      }
-    }
-
-    setPlayingId(postId);
-
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-    });
-
-    const { sound: newSound } = await Audio.Sound.createAsync(
-      { uri: audioUrl },
-      { shouldPlay: true }
-    );
-
-    setSound(newSound);
-
-    newSound.setOnPlaybackStatusUpdate((status: any) => {
-      if (status.didJustFinish) {
-        setPlayingId(null);
-        setSound(null);
-      }
-    });
-
-  } catch (err) {
-    console.log('audio error:', err);
-    setPlayingId(null);
-  }
-}
 
   function renderPost({ item }: { item: Post }) {
     const isLiked = likedPosts.has(item.id);
@@ -276,6 +240,7 @@ export default function HomeScreen() {
   <TouchableOpacity
     style={styles.audioCard}
     onPress={() => handlePlayAudio(item.id, item.media_url)}
+
   >
     <Text style={styles.audioIcon}>🎵</Text>
     <Text style={styles.audioText}>Audio Track</Text>

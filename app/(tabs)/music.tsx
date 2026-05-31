@@ -11,8 +11,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { useState, useEffect } from 'react';
-import { Audio } from 'expo-av';
 import { supabase } from '../../lib/supabase';
+import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 
 type Playlist = {
@@ -46,8 +46,7 @@ export default function MusicScreen() {
   const [tracksLoading, setTracksLoading] = useState(false);
   const [showNewPlaylist, setShowNewPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
-  const [sound, setSound] = useState<any>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
+  const { playingId, play: handlePlayTrack } = useAudioPlayer();
   const [savedTracks, setSavedTracks] = useState<any[]>([]);
   const [activeView, setActiveView] = useState<'playlists' | 'saved'>('playlists');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -159,42 +158,6 @@ export default function MusicScreen() {
     );
   }
 
-  async function handlePlayTrack(trackId: string, audioUrl: string) {
-    try {
-      if (sound) {
-        await sound.stopAsync();
-        await sound.unloadAsync();
-        setSound(null);
-        if (playingId === trackId) {
-          setPlayingId(null);
-          return;
-        }
-      }
-
-      setPlayingId(trackId);
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-      });
-
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
-        { shouldPlay: true }
-      );
-
-      setSound(newSound);
-      newSound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.didJustFinish) {
-          setPlayingId(null);
-          setSound(null);
-        }
-      });
-    } catch (err) {
-      console.log('audio error:', err);
-      setPlayingId(null);
-    }
-  }
 
   if (loading) {
     return (

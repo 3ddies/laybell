@@ -36,7 +36,7 @@ export default function EditProfileScreen() {
 
     const { data } = await supabase
       .from('profiles')
-      .select('display_name, username, bio')
+      .select('display_name, username, bio, avatar_url')
       .eq('id', user.id)
       .single();
 

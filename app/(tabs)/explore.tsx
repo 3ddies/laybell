@@ -8,6 +8,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
@@ -39,6 +40,7 @@ const GENRES = [
 ];
 
 export default function ExploreScreen() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchType, setSearchType] = useState<'posts' | 'accounts'>('posts');
   const [selectedGenre, setSelectedGenre] = useState('All');
@@ -234,15 +236,22 @@ export default function ExploreScreen() {
               <Text style={styles.emptyText}>No accounts found</Text>
             }
             renderItem={({ item }) => (
-              <View style={styles.profileRow}>
-                <View style={[
-                  styles.profileAvatar,
-                  { borderColor: getBadgeColor(item.badge_tier) }
-                ]}>
-                  <Text style={styles.profileAvatarText}>
-                    {item.display_name?.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
+              <TouchableOpacity
+                style={styles.profileRow}
+                onPress={() => router.push(`/profile/${item.id}`)}
+              >
+                {item.avatar_url ? (
+                  <Image
+                    source={{ uri: item.avatar_url }}
+                    style={[styles.profileAvatar, { borderColor: getBadgeColor(item.badge_tier) }]}
+                  />
+                ) : (
+                  <View style={[styles.profileAvatar, { borderColor: getBadgeColor(item.badge_tier) }]}>
+                    <Text style={styles.profileAvatarText}>
+                      {item.display_name?.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
                 <View style={styles.profileInfo}>
                   <Text style={styles.profileDisplayName}>
                     {item.display_name}
@@ -251,7 +260,7 @@ export default function ExploreScreen() {
                     {'@'}{item.username}
                   </Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             )}
           />
         ) : (

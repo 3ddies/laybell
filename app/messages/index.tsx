@@ -5,10 +5,12 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { timeAgo } from '../../lib/timeAgo';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 
 type Conversation = {
@@ -93,16 +95,6 @@ export default function MessagesScreen() {
     }
   }
 
-  function timeAgo(dateString: string) {
-    const now = new Date();
-    const date = new Date(dateString);
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-    return `${Math.floor(seconds / 86400)}d`;
-  }
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -139,11 +131,15 @@ export default function MessagesScreen() {
             style={styles.conversationRow}
             onPress={() => router.push(`/messages/${item.other_user.id}`)}
           >
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {item.other_user.display_name?.charAt(0).toUpperCase()}
-              </Text>
-            </View>
+            {item.other_user.avatar_url ? (
+              <Image source={{ uri: item.other_user.avatar_url }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {item.other_user.display_name?.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
             <View style={styles.conversationInfo}>
               <View style={styles.conversationHeader}>
                 <Text style={styles.displayName}>

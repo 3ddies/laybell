@@ -12,6 +12,7 @@ import {
 import { useEffect, useState, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { timeAgo } from '../../lib/timeAgo';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 
 type Comment = {
@@ -104,16 +105,6 @@ export default function CommentsScreen() {
 
     await supabase.from('comments').delete().eq('id', commentId);
     setComments(prev => prev.filter(c => c.id !== commentId));
-  }
-
-  function timeAgo(dateString: string) {
-    const now = new Date();
-    const date = new Date(dateString);
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-    return `${Math.floor(seconds / 86400)}d`;
   }
 
   if (loading) {
