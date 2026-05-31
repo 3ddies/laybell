@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
 import {
   View,
@@ -38,6 +39,7 @@ export default function HomeScreen() {
   const [sound, setSound] = useState<any>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
+  const router = useRouter();
 
   useEffect(() => {
     setup();
@@ -201,26 +203,29 @@ export default function HomeScreen() {
       <View style={styles.postCard}>
 
         {/* Post Header */}
-        <View style={styles.postHeader}>
-          <View style={styles.avatarSmall}>
-            <Text style={styles.avatarSmallText}>
-              {item.profiles?.display_name?.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-          <View style={styles.postHeaderInfo}>
-            <Text style={styles.postDisplayName}>
-              {item.profiles?.display_name}
-            </Text>
-            <Text style={styles.postUsername}>
-              {'@'}{item.profiles?.username} · {timeAgo(item.created_at)}
-            </Text>
-          </View>
-          <View style={styles.postTypeBadge}>
-            <Text style={styles.postTypeText}>
-              {item.type === 'audio' ? '🎵' : item.type === 'video' ? '🎬' : '🖼️'}
-            </Text>
-          </View>
-        </View>
+<TouchableOpacity
+  style={styles.postHeader}
+  onPress={() => router.push(`/profile/${item.user_id}`)}
+>
+  <View style={styles.avatarSmall}>
+    <Text style={styles.avatarSmallText}>
+      {item.profiles?.display_name?.charAt(0).toUpperCase()}
+    </Text>
+  </View>
+  <View style={styles.postHeaderInfo}>
+    <Text style={styles.postDisplayName}>
+      {item.profiles?.display_name}
+    </Text>
+    <Text style={styles.postUsername}>
+      {'@'}{item.profiles?.username} · {timeAgo(item.created_at)}
+    </Text>
+  </View>
+  <View style={styles.postTypeBadge}>
+    <Text style={styles.postTypeText}>
+      {item.type === 'audio' ? '🎵' : item.type === 'video' ? '🎬' : '🖼️'}
+    </Text>
+  </View>
+</TouchableOpacity>
 
         {/* Media */}
         {item.type === 'image' && item.media_url && (
