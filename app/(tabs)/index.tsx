@@ -40,6 +40,12 @@ export default function HomeScreen() {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const router = useRouter();
+  const [feedMode, setFeedMode] = useState<'all' | 'following'>('all');
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+  if (initialized) fetchPosts(currentUserId || undefined);
+}, [feedMode]);
 
   useEffect(() => {
     setup();
@@ -49,19 +55,41 @@ export default function HomeScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) setCurrentUserId(user.id);
     await fetchPosts(user?.id);
+
+  setInitialized(true);
+
   }
 
   async function fetchPosts(userId?: string) {
-  const { data, error } = await supabase
-  .from('posts')
-  .select(`
-    *,
-    profiles!posts_user_id_fkey (username, display_name, avatar_url)
-  `)
-  .eq('is_public', true)
-  .order('created_at', { ascending: false })
-  .limit(50);
+  let query = supabase
+    .from('posts')
+    .select(`
+      *,
+      profiles!posts_user_id_fkey (username, display_name, avatar_url)
+    `)
+    .eq('is_public', true)
+    .order('created_at', { ascending: false })
+    .limit(50);
 
+  if (feedMode === 'following' && userId) {
+    const { data: followingData } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', userId);
+
+    const followingIds = followingData?.map(f => f.following_id) || [];
+
+    if (followingIds.length === 0) {
+      setPosts([]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    query = query.in('user_id', followingIds);
+  }
+
+  const { data, error } = await query;
 
   if (data) setPosts(data.map(post => ({
     ...post,
@@ -322,12 +350,30 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerLogo}>Laybell</Text>
-        <TouchableOpacity>
-          <Text style={styles.headerIcon}>✉️</Text>
-        </TouchableOpacity>
-      </View>
+<View style={styles.header}>
+  <Text style={styles.headerLogo}>Laybell</Text>
+  <View style={styles.headerRight}>
+    <TouchableOpacity
+      style={[styles.feedToggle, feedMode === 'all' && styles.feedToggleActive]}
+      onPress={() => setFeedMode('all')}
+    >
+      <Text style={[styles.feedToggleText, feedMode === 'all' && styles.feedToggleTextActive]}>
+        All
+      </Text>
+    </TouchableOpacity>
+    <TouchableOpacity
+      style={[styles.feedToggle, feedMode === 'following' && styles.feedToggleActive]}
+      onPress={() => setFeedMode('following')}
+    >
+      <Text style={[styles.feedToggleText, feedMode === 'following' && styles.feedToggleTextActive]}>
+        Following
+      </Text>
+    </TouchableOpacity>
+    <TouchableOpacity>
+      <Text style={styles.headerIcon}>✉️</Text>
+    </TouchableOpacity>
+  </View>
+</View>
 
       <FlatList
         data={posts}
@@ -514,4 +560,29 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 14,
   },
+  headerRight: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: SPACING.sm,
+},
+feedToggle: {
+  paddingVertical: 4,
+  paddingHorizontal: SPACING.sm,
+  borderRadius: RADIUS.full,
+  borderWidth: 1,
+  borderColor: COLORS.border,
+},
+feedToggleActive: {
+  backgroundColor: COLORS.primary,
+  borderColor: COLORS.primary,
+},
+feedToggleText: {
+  color: COLORS.textSecondary,
+  fontSize: 12,
+  fontWeight: '500',
+},
+feedToggleTextActive: {
+  color: COLORS.text,
+  fontWeight: '700',
+},
 });
