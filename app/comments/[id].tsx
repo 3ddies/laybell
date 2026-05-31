@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { timeAgo } from '../../lib/timeAgo';
+import { createNotification } from '../../lib/createNotification';
 
 type Comment = {
   id: string; body: string; created_at: string; user_id: string;
@@ -79,8 +80,7 @@ export default function CommentsScreen() {
       setComments(prev => [...prev, { ...data, profiles: currentUserProfile }]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       if (postOwnerId && postOwnerId !== currentUserId) {
-        supabase.from('notifications').insert({ user_id: postOwnerId, actor_id: currentUserId, type: 'comment', post_id: id })
-          .then(({ error }) => { if (error) console.error('notification insert:', error.message); });
+        createNotification({ userId: postOwnerId, actorId: currentUserId, type: 'comment', postId: id as string });
       }
     }
     setSending(false);

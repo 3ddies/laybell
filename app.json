@@ -27,8 +27,14 @@
       "expo-router",
       [
         "expo-av",
+        { "microphonePermission": false }
+      ],
+      [
+        "expo-notifications",
         {
-          "microphonePermission": false
+          "icon": "./assets/icon.png",
+          "color": "#F26522",
+          "sounds": []
         }
       ]
     ]

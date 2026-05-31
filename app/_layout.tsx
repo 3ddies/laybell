@@ -2,11 +2,27 @@ import { useEffect, useState } from 'react';
 import { Slot, useSegments, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
+import TrackPlayer from 'react-native-track-player';
 import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
 import { AudioProvider } from '../contexts/AudioContext';
 import MiniPlayer from '../components/MiniPlayer';
+import { useNotifications } from '../hooks/useNotifications';
+import { PlaybackService } from '../service';
+
+// Register TrackPlayer background service at module level
+TrackPlayer.registerPlaybackService(() => PlaybackService);
+
+function AppContent() {
+  useNotifications();
+  return (
+    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <Slot />
+      <MiniPlayer />
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
@@ -36,10 +52,8 @@ export default function RootLayout() {
     if (!session && !inAuthGroup) {
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
-      // New login — check if onboarded
       checkOnboarding();
     } else if (session && !inAuthGroup && !inOnboarding) {
-      // Already in app — silently verify onboarding in case they refreshed
       checkOnboarding(true);
     }
   }, [session, initialized, segments]);
@@ -49,10 +63,7 @@ export default function RootLayout() {
     if (!user) return;
 
     const { data: profile } = await supabase
-      .from('profiles')
-      .select('onboarded')
-      .eq('id', user.id)
-      .single();
+      .from('profiles').select('onboarded').eq('id', user.id).single();
 
     if (profile && profile.onboarded === false) {
       router.replace('/onboarding');
@@ -68,10 +79,7 @@ export default function RootLayout() {
   return (
     <AudioProvider>
       <StatusBar style="light" />
-      <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-        <Slot />
-        <MiniPlayer />
-      </View>
+      <AppContent />
     </AudioProvider>
   );
 }

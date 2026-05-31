@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { createNotification } from '../../lib/createNotification';
 
 type Profile = {
   id: string; username: string; display_name: string;
@@ -72,9 +73,7 @@ export default function PublicProfileScreen() {
       setStats(prev => ({ ...prev, followers: prev.followers - 1 }));
     } else {
       await supabase.from('follows').insert({ follower_id: currentUserId, following_id: id });
-      supabase.from('notifications').insert({
-        user_id: id, actor_id: currentUserId, type: 'follow', post_id: null,
-      }).then(({ error }) => { if (error) console.error('notification insert:', error.message); });
+      createNotification({ userId: id as string, actorId: currentUserId, type: 'follow' });
       setIsFollowing(true);
       setStats(prev => ({ ...prev, followers: prev.followers + 1 }));
     }

@@ -1,7 +1,13 @@
-import React, { createContext, useContext, useState, useRef } from 'react';
-import { Audio } from 'expo-av';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import TrackPlayer, {
+  Capability,
+  State,
+  usePlaybackState,
+  useProgress,
+  useActiveTrack,
+} from 'react-native-track-player';
 
-type Track = {
+export type Track = {
   id: string;
   uri: string;
   caption: string;
@@ -21,92 +27,92 @@ type AudioContextType = {
 
 const AudioContext = createContext<AudioContextType | null>(null);
 
+let playerReady = false;
+
+async function ensurePlayer() {
+  if (playerReady) return;
+  try {
+    await TrackPlayer.setupPlayer({ autoHandleInterruptions: true });
+    await TrackPlayer.updateOptions({
+      capabilities: [
+        Capability.Play,
+        Capability.Pause,
+        Capability.Stop,
+        Capability.SeekTo,
+      ],
+      compactCapabilities: [Capability.Play, Capability.Pause, Capability.Stop],
+      notificationCapabilities: [
+        Capability.Play,
+        Capability.Pause,
+        Capability.Stop,
+        Capability.SeekTo,
+      ],
+    });
+    playerReady = true;
+  } catch {
+    // Already set up — this is fine
+    playerReady = true;
+  }
+}
+
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(false);
-  const [positionMs, setPositionMs] = useState(0);
-  const [durationMs, setDurationMs] = useState(0);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const playbackState = usePlaybackState();
+  const { position, duration } = useProgress(250);
+  const activeTrack = useActiveTrack();
 
-  async function stop() {
-    if (soundRef.current) {
-      await soundRef.current.stopAsync();
-      await soundRef.current.unloadAsync();
-      soundRef.current = null;
-    }
-    setIsPlaying(false);
-    setIsBuffering(false);
-    setCurrentTrack(null);
-    setPositionMs(0);
-    setDurationMs(0);
-  }
+  useEffect(() => {
+    ensurePlayer();
+  }, []);
 
-  async function seekTo(ms: number) {
-    if (soundRef.current) {
-      await soundRef.current.setPositionAsync(ms);
-      setPositionMs(ms);
-    }
-  }
+  useEffect(() => {
+    if (!activeTrack) setCurrentTrack(null);
+  }, [activeTrack]);
+
+  const state = playbackState?.state;
+  const isPlaying = state === State.Playing;
+  const isBuffering = state === State.Buffering || state === State.Loading;
 
   async function play(track: Track) {
-    if (currentTrack?.id === track.id && isPlaying) {
-      await stop();
+    await ensurePlayer();
+
+    // Toggle pause/play if same track
+    if (activeTrack?.id === track.id) {
+      isPlaying ? await TrackPlayer.pause() : await TrackPlayer.play();
       return;
     }
 
-    if (soundRef.current) {
-      await soundRef.current.stopAsync();
-      await soundRef.current.unloadAsync();
-      soundRef.current = null;
-    }
-
-    setCurrentTrack(track);
-    setIsPlaying(true);
-    setIsBuffering(true);
-    setPositionMs(0);
-    setDurationMs(0);
-
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: true,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
+    await TrackPlayer.reset();
+    await TrackPlayer.add({
+      id: track.id,
+      url: track.uri,
+      title: track.caption || 'Audio Track',
+      artist: track.artist,
     });
+    await TrackPlayer.play();
+    setCurrentTrack(track);
+  }
 
-    try {
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: track.uri },
-        { shouldPlay: true }
-      );
-      soundRef.current = sound;
+  async function stop() {
+    await TrackPlayer.reset();
+    setCurrentTrack(null);
+  }
 
-      sound.setOnPlaybackStatusUpdate((status: any) => {
-        if (!status.isLoaded) return;
-        setPositionMs(status.positionMillis ?? 0);
-        setDurationMs(status.durationMillis ?? 0);
-        setIsBuffering(status.isBuffering ?? false);
-        if (!isBuffering && status.isPlaying) setIsBuffering(false);
-        if (status.didJustFinish) {
-          setIsPlaying(false);
-          setIsBuffering(false);
-          setCurrentTrack(null);
-          setPositionMs(0);
-          setDurationMs(0);
-          soundRef.current = null;
-        }
-      });
-    } catch (err) {
-      console.log('audio error:', err);
-      setIsPlaying(false);
-      setIsBuffering(false);
-      setCurrentTrack(null);
-    }
+  async function seekTo(ms: number) {
+    await TrackPlayer.seekTo(ms / 1000);
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, stop, seekTo }}>
+    <AudioContext.Provider value={{
+      currentTrack: activeTrack ? currentTrack : null,
+      isPlaying,
+      isBuffering,
+      positionMs: position * 1000,
+      durationMs: duration * 1000,
+      play,
+      stop,
+      seekTo,
+    }}>
       {children}
     </AudioContext.Provider>
   );

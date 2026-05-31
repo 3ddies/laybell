@@ -12,6 +12,8 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import { useAudio } from '../../contexts/AudioContext';
 import { timeAgo } from '../../lib/timeAgo';
+import { createNotification } from '../../lib/createNotification';
+import { Share } from 'react-native';
 
 type Post = {
   id: string; type: string; media_url: string; caption: string;
@@ -99,8 +101,7 @@ export default function PostDetailScreen() {
     } else {
       await supabase.from('likes').insert({ user_id: currentUserId, post_id: id });
       if (post.user_id !== currentUserId) {
-        supabase.from('notifications').insert({ user_id: post.user_id, actor_id: currentUserId, type: 'like', post_id: id })
-          .then(({ error }) => { if (error) console.error('notification insert:', error.message); });
+        createNotification({ userId: post.user_id, actorId: currentUserId, type: 'like', postId: id });
       }
     }
   }
@@ -126,8 +127,7 @@ export default function PostDetailScreen() {
       setCommentCount(prev => prev + 1);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       if (post.user_id !== currentUserId) {
-        supabase.from('notifications').insert({ user_id: post.user_id, actor_id: currentUserId, type: 'comment', post_id: id })
-          .then(({ error }) => { if (error) console.error('notification insert:', error.message); });
+        createNotification({ userId: post.user_id, actorId: currentUserId, type: 'comment', postId: id });
       }
     }
     setSending(false);
@@ -230,7 +230,16 @@ export default function PostDetailScreen() {
                   <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? COLORS.primary : COLORS.textSecondary} />
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={[styles.actionBtn, { marginLeft: 'auto' }]}>
+              <TouchableOpacity
+                style={[styles.actionBtn, { marginLeft: 'auto' }]}
+                onPress={async () => {
+                  const link = `laybell://post/${id}`;
+                  const text = post.caption
+                    ? `"${post.caption}" — @${post.profiles?.username} on Laybell`
+                    : `Check out @${post.profiles?.username} on Laybell`;
+                  try { await Share.share({ message: `${text}\n${link}`, url: link }); } catch {}
+                }}
+              >
                 <Ionicons name="share-social-outline" size={22} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>

@@ -1,14 +1,9 @@
 import { Video, ResizeMode } from 'expo-av';
 import { useRouter } from 'expo-router';
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  RefreshControl,
+  View, Text, StyleSheet, FlatList,
+  TouchableOpacity, Image, ActivityIndicator,
+  RefreshControl, Share,
 } from 'react-native';
 import { useEffect, useState, useCallback } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +12,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, SHADOWS, GRADIENTS } from '../../constants/theme';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
+import { createNotification } from '../../lib/createNotification';
 
 type Post = {
   id: string;
@@ -155,9 +151,7 @@ export default function HomeScreen() {
       await supabase.from('likes').insert({ user_id: currentUserId, post_id: postId });
       const post = posts.find(p => p.id === postId);
       if (post && post.user_id !== currentUserId) {
-        supabase.from('notifications').insert({
-          user_id: post.user_id, actor_id: currentUserId, type: 'like', post_id: postId,
-        }).then(({ error }) => { if (error) console.error('notification insert:', error.message); });
+        createNotification({ userId: post.user_id, actorId: currentUserId, type: 'like', postId });
       }
     }
   }
@@ -175,6 +169,16 @@ export default function HomeScreen() {
     } else {
       await supabase.from('saves').insert({ user_id: currentUserId, post_id: postId });
     }
+  }
+
+  async function handleShare(item: Post) {
+    const link = `laybell://post/${item.id}`;
+    const text = item.caption
+      ? `"${item.caption}" — @${item.profiles?.username} on Laybell`
+      : `Check out @${item.profiles?.username} on Laybell`;
+    try {
+      await Share.share({ message: `${text}\n${link}`, url: link });
+    } catch {}
   }
 
   const renderPost = useCallback(({ item }: { item: Post }) => {
@@ -290,7 +294,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRight]}>
+          <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRight]} onPress={() => handleShare(item)}>
             <Ionicons name="share-social-outline" size={20} color={COLORS.textSecondary} />
           </TouchableOpacity>
         </View>
