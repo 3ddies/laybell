@@ -1,3 +1,4 @@
+import { Video, ResizeMode } from 'expo-av';
 import { useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
 import {
@@ -282,15 +283,15 @@ export default function HomeScreen() {
   </TouchableOpacity>
 )}
 
-        {item.type === 'video' && (
-          <View style={styles.audioCard}>
-            <Text style={styles.audioIcon}>🎬</Text>
-            <Text style={styles.audioText}>Video</Text>
-            <TouchableOpacity style={styles.playButton}>
-              <Text style={styles.playButtonText}>▶ Play</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {item.type === 'video' && item.media_url && (
+  <Video
+    source={{ uri: item.media_url }}
+    style={styles.videoPlayer}
+    useNativeControls
+    resizeMode={ResizeMode.CONTAIN}
+    isLooping={false}
+  />
+)}
 
         {/* Caption */}
         {item.caption ? (
@@ -586,5 +587,10 @@ feedToggleText: {
 feedToggleTextActive: {
   color: COLORS.text,
   fontWeight: '700',
+},
+videoPlayer: {
+  width: '100%',
+  height: 300,
+  backgroundColor: COLORS.surface,
 },
 });
