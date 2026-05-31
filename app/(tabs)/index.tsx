@@ -37,6 +37,7 @@ export default function HomeScreen() {
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [sound, setSound] = useState<any>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setup();
@@ -112,6 +113,33 @@ export default function HomeScreen() {
         .insert({ user_id: currentUserId, post_id: postId });
     }
   }
+  async function handleSaveTrack(postId: string) {
+  if (!currentUserId) return;
+
+  const isSaved = savedPosts.has(postId);
+
+  // Optimistic update
+  setSavedPosts(prev => {
+    const next = new Set(prev);
+    isSaved ? next.delete(postId) : next.add(postId);
+    return next;
+  });
+
+  if (isSaved) {
+    await supabase
+      .from('saves')
+      .delete()
+      .eq('user_id', currentUserId)
+      .eq('post_id', postId);
+  } else {
+    await supabase
+      .from('saves')
+      .insert({
+        user_id: currentUserId,
+        post_id: postId,
+      });
+  }
+}
 
   function timeAgo(dateString: string) {
     const now = new Date();
@@ -237,30 +265,42 @@ export default function HomeScreen() {
         ) : null}
 
         {/* Actions */}
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleLike(item.id)}
-          >
-            <Text style={styles.actionIcon}>{isLiked ? '❤️' : '🤍'}</Text>
-            <Text style={[
-              styles.actionCount,
-              isLiked && { color: COLORS.error }
-            ]}>
-              {likeCount}
-            </Text>
-          </TouchableOpacity>
+<View style={styles.actions}>
+  <TouchableOpacity
+    style={styles.actionButton}
+    onPress={() => handleLike(item.id)}
+  >
+    <Text style={styles.actionIcon}>{isLiked ? '❤️' : '🤍'}</Text>
+    <Text style={[
+      styles.actionCount,
+      isLiked && { color: COLORS.error }
+    ]}>
+      {likeCount}
+    </Text>
+  </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton}>
-            <Text style={styles.actionIcon}>💬</Text>
-            <Text style={styles.actionCount}>{commentCount}</Text>
-          </TouchableOpacity>
+  <TouchableOpacity style={styles.actionButton}>
+    <Text style={styles.actionIcon}>💬</Text>
+    <Text style={styles.actionCount}>{commentCount}</Text>
+  </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton}>
-            <Text style={styles.actionIcon}>↗️</Text>
-            <Text style={styles.actionCount}>Share</Text>
-          </TouchableOpacity>
-        </View>
+  {item.type === 'audio' && (
+    <TouchableOpacity
+      style={styles.actionButton}
+      onPress={() => handleSaveTrack(item.id)}
+    >
+      <Text style={styles.actionIcon}>
+        {savedPosts.has(item.id) ? '🔖' : '🎵'}
+      </Text>
+      <Text style={styles.actionCount}>Save</Text>
+    </TouchableOpacity>
+  )}
+
+  <TouchableOpacity style={styles.actionButton}>
+    <Text style={styles.actionIcon}>↗️</Text>
+    <Text style={styles.actionCount}>Share</Text>
+  </TouchableOpacity>
+</View>
 
       </View>
     );
