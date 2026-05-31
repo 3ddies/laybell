@@ -9,9 +9,11 @@ import {
   Image,
   RefreshControl,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 
 type Profile = {
   id: string;
@@ -23,24 +25,28 @@ type Profile = {
   created_at: string;
 };
 
-type Stats = {
-  followers: number;
-  following: number;
-  posts: number;
-};
+type Stats = { followers: number; following: number; posts: number };
+
+function getBadgeGradient(tier: string): readonly [string, string] {
+  switch (tier) {
+    case 'gold': return GRADIENTS.gold;
+    case 'diamond': return [COLORS.diamond, '#67E8F9'];
+    case 'silver': return [COLORS.silver, '#CBD5E1'];
+    case 'bronze': return [COLORS.bronze, '#92400E'];
+    default: return ['#333333', '#222222'];
+  }
+}
 
 export default function ProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('main');
-  const [userPosts, setUserPosts] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState('posts');
+  const [userPosts, setUserPosts] = useState<any[]>([]);
   const router = useRouter();
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
+  useEffect(() => { fetchProfile(); }, []);
 
   async function fetchProfile() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -55,94 +61,69 @@ export default function ProfileScreen() {
     ]);
 
     if (profileRes.data) setProfile(profileRes.data);
-    setStats({
-      followers: followersRes.count || 0,
-      following: followingRes.count || 0,
-      posts: postsCountRes.count || 0,
-    });
+    setStats({ followers: followersRes.count || 0, following: followingRes.count || 0, posts: postsCountRes.count || 0 });
     if (postsRes.data) setUserPosts(postsRes.data);
     setLoading(false);
     setRefreshing(false);
   }
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-  }
-
-  function getBadgeColor() {
-    switch (profile?.badge_tier) {
-      case 'gold': return COLORS.gold;
-      case 'silver': return COLORS.silver;
-      case 'bronze': return COLORS.bronze;
-      case 'diamond': return '#A5F3FC';
-      default: return COLORS.border;
-    }
-  }
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator color={COLORS.primary} />
+        <ActivityIndicator color={COLORS.primary} size="large" />
       </View>
     );
   }
 
-  const tabs = ['Main', 'Posts', 'Music', 'Videos', 'Tagged'];
+  const badgeGradient = getBadgeGradient(profile?.badge_tier ?? '');
+  const tabs = ['Posts', 'Music', 'Videos'];
+  const filtered = userPosts.filter(p =>
+    activeTab === 'posts' ? true :
+    activeTab === 'music' ? p.type === 'audio' :
+    p.type === 'video'
+  );
 
   return (
     <ScrollView
       style={styles.container}
       showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => { setRefreshing(true); fetchProfile(); }}
-          tintColor={COLORS.primary}
-        />
+        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile(); }} tintColor={COLORS.primary} />
       }
     >
-
-      {/* Header Bar */}
+      {/* Header bar */}
       <View style={styles.headerBar}>
-        <Text style={styles.username}>{'@'}{profile?.username}</Text>
-        <TouchableOpacity onPress={handleLogout}>
-          <Text style={styles.logoutText}>Log out</Text>
+        <Text style={styles.usernameHeader}>@{profile?.username}</Text>
+        <TouchableOpacity onPress={() => supabase.auth.signOut()}>
+          <Ionicons name="log-out-outline" size={22} color={COLORS.textSecondary} />
         </TouchableOpacity>
       </View>
 
-      {/* Badge Banner */}
-      <View style={[styles.badgeBanner, { backgroundColor: getBadgeColor() + '22' }]}>
-        {profile?.avatar_url ? (
-          <Image
-            source={{ uri: profile.avatar_url }}
-            style={styles.avatarImage}
-          />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>
-              {profile?.display_name?.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-        )}
-
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.followers}</Text>
-            <Text style={styles.statLabel}>Followers</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.following}</Text>
-            <Text style={styles.statLabel}>Following</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.posts}</Text>
-            <Text style={styles.statLabel}>Posts</Text>
-          </View>
+      {/* Avatar + stats banner */}
+      <LinearGradient colors={['#1A1020', COLORS.background]} style={styles.banner}>
+        <View style={styles.avatarWrap}>
+          <LinearGradient colors={badgeGradient} style={styles.avatarRing}>
+            {profile?.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+            ) : (
+              <LinearGradient colors={GRADIENTS.primary} style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarText}>{profile?.display_name?.charAt(0).toUpperCase()}</Text>
+              </LinearGradient>
+            )}
+          </LinearGradient>
         </View>
-      </View>
 
-      {/* Name + Bio */}
+        <View style={styles.statsRow}>
+          {[['Posts', stats.posts], ['Followers', stats.followers], ['Following', stats.following]].map(([label, val]) => (
+            <View key={label as string} style={styles.statItem}>
+              <Text style={styles.statNumber}>{val}</Text>
+              <Text style={styles.statLabel}>{label}</Text>
+            </View>
+          ))}
+        </View>
+      </LinearGradient>
+
+      {/* Name + bio */}
       <View style={styles.infoSection}>
         <Text style={styles.displayName}>{profile?.display_name}</Text>
         {profile?.bio ? (
@@ -152,171 +133,101 @@ export default function ProfileScreen() {
         )}
       </View>
 
-      {/* Action Buttons */}
+      {/* Action buttons */}
       <View style={styles.actionButtons}>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => router.push('/edit-profile')}
-        >
+        <TouchableOpacity style={styles.editButton} onPress={() => router.push('/edit-profile')}>
           <Text style={styles.editButtonText}>Edit Profile</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.friendsButton}>
-          <Text style={styles.friendsButtonText}>Friends</Text>
+        <TouchableOpacity style={styles.secondaryButton}>
+          <Ionicons name="person-add-outline" size={18} color={COLORS.text} />
         </TouchableOpacity>
       </View>
 
       {/* Tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabsContainer}
-      >
-        {tabs.map((tab) => (
+      <View style={styles.tabsRow}>
+        {tabs.map(tab => (
           <TouchableOpacity
             key={tab}
             style={[styles.tab, activeTab === tab.toLowerCase() && styles.activeTab]}
             onPress={() => setActiveTab(tab.toLowerCase())}
           >
-            <Text style={[
-              styles.tabText,
-              activeTab === tab.toLowerCase() && styles.activeTabText,
-            ]}>
-              {tab}
-            </Text>
+            <Text style={[styles.tabText, activeTab === tab.toLowerCase() && styles.activeTabText]}>{tab}</Text>
           </TouchableOpacity>
         ))}
-      </ScrollView>
-
-      {/* Tab Content */}
-      <View style={styles.tabContent}>
-        {activeTab === 'main' || activeTab === 'posts' ? (
-          userPosts.length === 0 ? (
-            <Text style={styles.emptyText}>No posts yet</Text>
-          ) : (
-            <View style={styles.postsGrid}>
-              {userPosts.map((post) => (
-                <TouchableOpacity
-                  key={post.id}
-                  style={styles.gridItem}
-                  onPress={() => router.push(`/post/${post.id}`)}
-                >
-                  {post.type === 'image' ? (
-                    <Image
-                      source={{ uri: post.media_url }}
-                      style={styles.gridImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.gridPlaceholder}>
-                      <Text style={styles.gridPlaceholderIcon}>
-                        {post.type === 'audio' ? '🎵' : '🎬'}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )
-        ) : (
-          <Text style={styles.emptyText}>No {activeTab} yet</Text>
-        )}
       </View>
 
+      {/* Grid */}
+      {filtered.length === 0 ? (
+        <View style={styles.emptyGrid}>
+          <Ionicons name="images-outline" size={40} color={COLORS.textTertiary} />
+          <Text style={styles.emptyGridText}>No {activeTab} yet</Text>
+        </View>
+      ) : (
+        <View style={styles.postsGrid}>
+          {filtered.map(post => (
+            <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => router.push(`/post/${post.id}`)}>
+              {post.type === 'image' ? (
+                <Image source={{ uri: post.media_url }} style={styles.gridImage} resizeMode="cover" />
+              ) : (
+                <LinearGradient colors={['#1E1A2E', '#141020']} style={styles.gridPlaceholder}>
+                  <Ionicons
+                    name={post.type === 'audio' ? 'musical-notes' : 'videocam'}
+                    size={28}
+                    color={COLORS.primary}
+                  />
+                </LinearGradient>
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+
   headerBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.xxl,
-    paddingBottom: SPACING.md,
+    paddingTop: SPACING.xxl + SPACING.sm,
+    paddingBottom: SPACING.sm,
   },
-  username: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  logoutText: {
-    color: COLORS.textTertiary,
-    fontSize: 13,
-  },
-  badgeBanner: {
+  usernameHeader: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
+
+  banner: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     gap: SPACING.lg,
   },
+  avatarWrap: { alignItems: 'center', justifyContent: 'center' },
+  avatarRing: {
+    width: 88, height: 88, borderRadius: RADIUS.full,
+    padding: 3, alignItems: 'center', justifyContent: 'center',
+  },
+  avatarImage: { width: 82, height: 82, borderRadius: RADIUS.full },
   avatarPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 82, height: 82, borderRadius: RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
   },
-  avatarImage: {
-    width: 80,
-    height: 80,
-    borderRadius: RADIUS.full,
-  },
-  avatarText: {
-    color: COLORS.text,
-    fontSize: 32,
-    fontWeight: 'bold',
-  },
-  statsRow: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    color: COLORS.text,
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  statLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  infoSection: {
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.sm,
-    gap: SPACING.xs,
-  },
-  displayName: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  bio: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  bioEmpty: {
-    color: COLORS.textTertiary,
-    fontSize: 14,
-    fontStyle: 'italic',
-  },
+  avatarText: { color: COLORS.text, fontSize: 32, fontWeight: '700' },
+
+  statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
+  statItem: { alignItems: 'center', gap: 2 },
+  statNumber: { color: COLORS.text, fontSize: 22, fontWeight: '800' },
+  statLabel: { color: COLORS.textSecondary, fontSize: 12 },
+
+  infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: 4 },
+  displayName: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+  bio: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
+  bioEmpty: { color: COLORS.textTertiary, fontSize: 14, fontStyle: 'italic' },
+
   actionButtons: {
     flexDirection: 'row',
     paddingHorizontal: SPACING.md,
@@ -325,85 +236,44 @@ const styles = StyleSheet.create({
   },
   editButton: {
     flex: 1,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceElevated,
+    borderWidth: 1, borderColor: COLORS.border,
     borderRadius: RADIUS.md,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.sm + 2,
     alignItems: 'center',
   },
-  editButtonText: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  friendsButton: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+  editButtonText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  secondaryButton: {
+    backgroundColor: COLORS.surfaceElevated,
+    borderWidth: 1, borderColor: COLORS.border,
     borderRadius: RADIUS.md,
-    paddingVertical: SPACING.sm,
-    alignItems: 'center',
-  },
-  friendsButtonText: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  tabsContainer: {
     paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  tabsRow: {
+    flexDirection: 'row',
     marginTop: SPACING.md,
     borderBottomWidth: 0.5,
     borderBottomColor: COLORS.border,
   },
   tab: {
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    marginRight: SPACING.sm,
-  },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: COLORS.primary,
-  },
-  tabText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  activeTabText: {
-    color: COLORS.text,
-    fontWeight: '700',
-  },
-  tabContent: {
-    padding: SPACING.xl,
+    flex: 1, paddingVertical: SPACING.sm + 2,
     alignItems: 'center',
   },
-  emptyText: {
-    color: COLORS.textTertiary,
-    fontSize: 14,
-  },
-  postsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 2,
-  },
-  gridItem: {
-    width: '32%',
-    aspectRatio: 1,
-  },
-  gridImage: {
-    width: '100%',
-    height: '100%',
-  },
+  activeTab: { borderBottomWidth: 2, borderBottomColor: COLORS.primary },
+  tabText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
+  activeTabText: { color: COLORS.text, fontWeight: '700' },
+
+  postsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  gridItem: { width: '33.33%', aspectRatio: 1 },
+  gridImage: { width: '100%', height: '100%' },
   gridPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: COLORS.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: '100%', height: '100%',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 0.5, borderColor: COLORS.border,
   },
-  gridPlaceholderIcon: {
-    fontSize: 28,
-  },
+  emptyGrid: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm },
+  emptyGridText: { color: COLORS.textTertiary, fontSize: 14 },
 });

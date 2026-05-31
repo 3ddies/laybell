@@ -7,13 +7,13 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: COLORS.background },
         tabBarStyle: {
           backgroundColor: COLORS.surface,
           borderTopColor: COLORS.border,
           borderTopWidth: 0.5,
-          height: 60,
-          paddingBottom: 8,
+          height: 64,
+          paddingBottom: 10,
+          paddingTop: 8,
         },
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.textTertiary,
@@ -23,40 +23,40 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={26} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="explore"
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="search" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'search' : 'search-outline'} size={26} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="post"
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle" size={28} color={COLORS.primary} />
+          tabBarIcon: () => (
+            <Ionicons name="add-circle" size={42} color={COLORS.primary} />
           ),
         }}
       />
       <Tabs.Screen
         name="music"
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="musical-notes" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'musical-notes' : 'musical-notes-outline'} size={26} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'person' : 'person-outline'} size={26} color={color} />
           ),
         }}
       />
