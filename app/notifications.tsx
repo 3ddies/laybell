@@ -11,7 +11,7 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
 
 type Notification = {
-  id: string; type: 'like' | 'comment' | 'follow';
+  id: string; type: 'like' | 'comment' | 'follow' | 'message';
   post_id: string | null; actor_id: string; read: boolean; created_at: string;
   actor: { id: string; username: string; display_name: string; avatar_url: string | null } | null;
 };
@@ -21,6 +21,7 @@ function notificationText(type: string) {
     case 'like': return 'liked your post';
     case 'comment': return 'commented on your post';
     case 'follow': return 'started following you';
+    case 'message': return 'sent you a message';
     default: return 'interacted with you';
   }
 }
@@ -30,6 +31,7 @@ function notificationIcon(type: string): { name: any; color: string } {
     case 'like': return { name: 'heart', color: COLORS.like };
     case 'comment': return { name: 'chatbubble', color: COLORS.primary };
     case 'follow': return { name: 'person-add', color: COLORS.primaryLight };
+    case 'message': return { name: 'chatbubbles', color: '#60A5FA' };
     default: return { name: 'notifications', color: COLORS.primary };
   }
 }
@@ -71,7 +73,8 @@ export default function NotificationsScreen() {
   }
 
   function handlePress(notif: Notification) {
-    if (notif.post_id) router.push(`/post/${notif.post_id}`);
+    if (notif.type === 'message') router.push(`/messages/${notif.actor_id}`);
+    else if (notif.post_id) router.push(`/post/${notif.post_id}`);
     else if (notif.actor_id) router.push(`/profile/${notif.actor_id}`);
   }
 

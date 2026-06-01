@@ -7,6 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { createNotification } from '../../lib/createNotification';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 
@@ -68,6 +69,10 @@ export default function ChatScreen() {
     if (!error && data) {
       setMessages(prev => [...prev, data]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      // Notify recipient — only on first message of session to avoid spam
+      if (messages.filter(m => m.sender_id === currentUserId).length === 0) {
+        createNotification({ userId: String(id), actorId: currentUserId, type: 'message' });
+      }
     }
     setSending(false);
   }

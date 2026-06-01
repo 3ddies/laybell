@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 
 type Playlist = { id: string; name: string; is_public: boolean; created_at: string };
 type Track = {
@@ -25,6 +26,7 @@ export default function MusicScreen() {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const { playingId, play } = useAudioPlayer();
   const [savedTracks, setSavedTracks] = useState<any[]>([]);
+  const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'playlists' | 'saved'>('playlists');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -47,7 +49,7 @@ export default function MusicScreen() {
   async function fetchSavedTracks(userId: string) {
     const { data } = await supabase
       .from('saves')
-      .select('id, posts(id,media_url,caption,type,profiles!posts_user_id_fkey(username,display_name))')
+      .select('id, posts(id,media_url,caption,type,duration_seconds,profiles!posts_user_id_fkey(username,display_name))')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
     if (data) setSavedTracks(data.filter((s: any) => s.posts?.type === 'audio'));
@@ -206,8 +208,10 @@ export default function MusicScreen() {
               caption={item.posts?.caption}
               artist={item.posts?.profiles?.display_name}
               username={item.posts?.profiles?.username}
+              duration={item.posts?.duration_seconds}
               isPlaying={playingId === item.id}
               onPlay={() => play(item.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name)}
+              onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
             />
           )}
         />
@@ -237,13 +241,29 @@ export default function MusicScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Add to playlist modal */}
+      <AddToPlaylistModal
+        visible={!!playlistModalPostId}
+        postId={playlistModalPostId ?? ''}
+        onClose={() => setPlaylistModalPostId(null)}
+      />
     </View>
   );
 }
 
-function TrackRow({ caption, artist, username, isPlaying, onPlay }: {
-  caption: string; artist: string; username: string; isPlaying: boolean; onPlay: () => void;
+function formatDuration(seconds?: number | null) {
+  if (!seconds || seconds <= 0) return null;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function TrackRow({ caption, artist, username, duration, isPlaying, onPlay, onAddToPlaylist }: {
+  caption: string; artist: string; username: string; duration?: number | null;
+  isPlaying: boolean; onPlay: () => void; onAddToPlaylist?: () => void;
 }) {
+  const durationLabel = formatDuration(duration);
   return (
     <View style={trackStyles.row}>
       <TouchableOpacity style={[trackStyles.playBtn, isPlaying && trackStyles.playBtnActive]} onPress={onPlay}>
@@ -251,12 +271,17 @@ function TrackRow({ caption, artist, username, isPlaying, onPlay }: {
       </TouchableOpacity>
       <View style={trackStyles.info}>
         <Text style={trackStyles.caption} numberOfLines={1}>{caption || 'Audio Track'}</Text>
-        <Text style={trackStyles.artist}>@{username}</Text>
+        <Text style={trackStyles.artist}>@{username}{durationLabel ? ` · ${durationLabel}` : ''}</Text>
       </View>
       {isPlaying && (
         <View style={trackStyles.playingBadge}>
           <Text style={trackStyles.playingText}>Playing</Text>
         </View>
+      )}
+      {onAddToPlaylist && (
+        <TouchableOpacity style={trackStyles.addBtn} onPress={onAddToPlaylist}>
+          <Ionicons name="add-circle-outline" size={22} color={COLORS.primary} />
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -278,6 +303,7 @@ const trackStyles = StyleSheet.create({
   artist: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   playingBadge: { backgroundColor: COLORS.primary + '22', borderRadius: RADIUS.full, paddingHorizontal: SPACING.sm, paddingVertical: 3 },
   playingText: { color: COLORS.primary, fontSize: 11, fontWeight: '600' },
+  addBtn: { padding: SPACING.xs },
 });
 
 const styles = StyleSheet.create({

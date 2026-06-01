@@ -8,7 +8,7 @@ export async function createNotification({
 }: {
   userId: string;
   actorId: string;
-  type: 'like' | 'comment' | 'follow';
+  type: 'like' | 'comment' | 'follow' | 'message';
   postId?: string | null;
 }) {
   if (userId === actorId) return; // Never notify yourself

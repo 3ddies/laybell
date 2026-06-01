@@ -1,8 +1,9 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  TextInput, ScrollView, ActivityIndicator, Alert,
+  TextInput, ScrollView, ActivityIndicator, Alert, Switch,
 } from 'react-native';
 import { useState } from 'react';
+import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -25,12 +26,23 @@ export default function PostScreen() {
   const [file, setFile] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isPublic, setIsPublic] = useState(true);
+  const [audioDuration, setAudioDuration] = useState<number | null>(null);
 
   async function pickMedia() {
     setFile(null); setError('');
     if (postType === 'audio') {
       const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
-      if (!result.canceled && result.assets[0]) setFile(result.assets[0]);
+      if (!result.canceled && result.assets[0]) {
+        setFile(result.assets[0]);
+        try {
+          const { sound, status } = await Audio.Sound.createAsync({ uri: result.assets[0].uri });
+          if ((status as any).isLoaded && (status as any).durationMillis) {
+            setAudioDuration(Math.floor((status as any).durationMillis / 1000));
+          }
+          await sound.unloadAsync();
+        } catch {}
+      }
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -64,7 +76,8 @@ export default function PostScreen() {
 
       const { error: postError } = await supabase.from('posts').insert({
         user_id: user.id, type: postType, media_url: publicUrl,
-        caption: caption.trim(), is_public: true,
+        caption: caption.trim(), is_public: isPublic,
+        ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
       });
       if (postError) throw postError;
 
@@ -163,6 +176,28 @@ export default function PostScreen() {
         />
       </View>
 
+      {/* Visibility */}
+      <View style={styles.visibilityRow}>
+        <View style={styles.visibilityLeft}>
+          <Ionicons
+            name={isPublic ? 'globe-outline' : 'lock-closed-outline'}
+            size={20} color={COLORS.primary}
+          />
+          <View>
+            <Text style={styles.visibilityLabel}>{isPublic ? 'Public' : 'Followers only'}</Text>
+            <Text style={styles.visibilitySub}>
+              {isPublic ? 'Anyone on Laybell can see this' : 'Only your followers can see this'}
+            </Text>
+          </View>
+        </View>
+        <Switch
+          value={isPublic}
+          onValueChange={setIsPublic}
+          trackColor={{ false: COLORS.border, true: COLORS.primary + '88' }}
+          thumbColor={isPublic ? COLORS.primary : COLORS.textTertiary}
+        />
+      </View>
+
       {!!error && (
         <View style={styles.errorRow}>
           <Ionicons name="alert-circle-outline" size={16} color={COLORS.error} />
@@ -244,4 +279,13 @@ const styles = StyleSheet.create({
   },
   postBtnDisabled: { opacity: 0.6 },
   postBtnText: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+
+  visibilityRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.md, padding: SPACING.md,
+  },
+  visibilityLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
+  visibilityLabel: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
+  visibilitySub: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
 });

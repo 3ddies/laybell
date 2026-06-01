@@ -119,11 +119,15 @@ export default function PublicProfileScreen() {
         </View>
 
         <View style={styles.statsRow}>
-          {[['Posts', stats.posts], ['Followers', stats.followers], ['Following', stats.following]].map(([label, val]) => (
-            <View key={label as string} style={styles.statItem}>
+          {[
+            { label: 'Posts', val: stats.posts, onPress: undefined },
+            { label: 'Followers', val: stats.followers, onPress: () => router.push(`/followers/${id}`) },
+            { label: 'Following', val: stats.following, onPress: () => router.push(`/following/${id}`) },
+          ].map(({ label, val, onPress }) => (
+            <TouchableOpacity key={label} style={styles.statItem} onPress={onPress} disabled={!onPress}>
               <Text style={styles.statNumber}>{val}</Text>
               <Text style={styles.statLabel}>{label}</Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       </LinearGradient>
