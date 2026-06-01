@@ -20,6 +20,7 @@ type Post = {
   id: string; type: string; media_url: string; caption: string;
   created_at: string; user_id: string;
   aspect_ratio?: string | null;
+  stream_count?: number;
   profiles: { username: string; display_name: string; avatar_url: string | null };
 };
 type Comment = {
@@ -207,7 +208,9 @@ export default function PostDetailScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.audioTitle} numberOfLines={1}>{post.caption || 'Audio Track'}</Text>
-                    <Text style={styles.audioArtist}>@{post.profiles?.username}</Text>
+                    <Text style={styles.audioArtist}>
+                      @{post.profiles?.username} · {(post.stream_count || 0).toLocaleString()} {(post.stream_count === 1) ? 'play' : 'plays'}
+                    </Text>
                   </View>
                   <Ionicons name="musical-notes" size={28} color={COLORS.primary + '44'} />
                 </LinearGradient>

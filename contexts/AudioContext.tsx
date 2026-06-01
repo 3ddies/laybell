@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useRef } from 'react';
 import { Audio } from 'expo-av';
+import { supabase } from '../lib/supabase';
 
 export type Track = {
   id: string;
@@ -81,6 +82,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         { shouldPlay: true }
       );
       soundRef.current = sound;
+
+      // Count a stream (fire-and-forget; never block playback)
+      supabase.rpc('increment_stream_count', { p_post_id: track.id }).then(undefined, () => {});
 
       sound.setOnPlaybackStatusUpdate((status: any) => {
         if (!status.isLoaded) return;

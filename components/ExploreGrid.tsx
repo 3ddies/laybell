@@ -6,12 +6,20 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { aspectToNumber } from '../lib/aspectRatio';
+import { useAudio } from '../contexts/AudioContext';
 
 type GridPost = {
   id: string; type: string; media_url: string; caption: string;
   thumbnail_url?: string | null; aspect_ratio?: string | null;
+  stream_count?: number;
   profiles?: { username: string; display_name: string } | null;
 };
+
+function formatCount(n?: number): string {
+  if (!n) return '0';
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+  return String(n);
+}
 
 const GAP = 6;
 const H_PADDING = SPACING.md;
@@ -46,6 +54,7 @@ function mediaHeight(post: GridPost): number {
 
 export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
   const router = useRouter();
+  const { play, currentTrack, isPlaying } = useAudio();
 
   if (!posts || posts.length === 0) {
     return <View style={styles.empty}><Text style={styles.emptyText}>No posts in this genre yet</Text></View>;
@@ -85,21 +94,28 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
             <Ionicons name="flame" size={13} color={COLORS.primary} />
             <Text style={styles.musicHeaderText}>Trending Songs</Text>
           </View>
-          {cell.songs.map((s, i) => (
-            <TouchableOpacity
-              key={s.id}
-              style={[styles.songRow, { height: ROW_H }, i > 0 && styles.songRowBorder]}
-              onPress={() => router.push(`/post/${s.id}`)}
-            >
-              <LinearGradient colors={GRADIENTS.primarySoft} style={styles.songIcon}>
-                <Ionicons name="musical-notes" size={16} color={COLORS.primary} />
-              </LinearGradient>
-              <View style={styles.songInfo}>
-                <Text style={styles.songTitle} numberOfLines={1}>{s.caption || 'Audio Track'}</Text>
-                <Text style={styles.songArtist} numberOfLines={1}>@{s.profiles?.username}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+          {cell.songs.map((s, i) => {
+            const active = currentTrack?.id === s.id && isPlaying;
+            return (
+              <TouchableOpacity
+                key={s.id}
+                style={[styles.songRow, { height: ROW_H }, i > 0 && styles.songRowBorder]}
+                onPress={() => play({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? '' })}
+              >
+                <LinearGradient colors={active ? GRADIENTS.primary : GRADIENTS.primarySoft} style={styles.songIcon}>
+                  <Ionicons name={active ? 'pause' : 'play'} size={16} color={active ? COLORS.text : COLORS.primary} />
+                </LinearGradient>
+                <View style={styles.songInfo}>
+                  <Text style={styles.songTitle} numberOfLines={1}>{s.caption || 'Audio Track'}</Text>
+                  <View style={styles.songMeta}>
+                    <Text style={styles.songArtist} numberOfLines={1}>@{s.profiles?.username}</Text>
+                    <Ionicons name="play" size={9} color={COLORS.textTertiary} />
+                    <Text style={styles.songStreams}>{formatCount(s.stream_count)}</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       );
     }
@@ -171,7 +187,9 @@ const styles = StyleSheet.create({
   songIcon: { width: 32, height: 32, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
   songInfo: { flex: 1 },
   songTitle: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
-  songArtist: { color: COLORS.textSecondary, fontSize: 11, marginTop: 1 },
+  songMeta: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
+  songArtist: { color: COLORS.textSecondary, fontSize: 11 },
+  songStreams: { color: COLORS.textTertiary, fontSize: 10 },
 
   empty: { alignItems: 'center', paddingTop: SPACING.xxl },
   emptyText: { color: COLORS.textTertiary, fontSize: 14 },
