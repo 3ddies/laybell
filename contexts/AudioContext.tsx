@@ -53,6 +53,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
+  const playTokenRef = useRef(0); // guards against overlapping plays (rapid next/prev)
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueLength, setQueueLength] = useState(0);
 
@@ -61,6 +62,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { Audio.setAudioModeAsync(AUDIO_MODE).catch(() => {}); }, []);
 
   async function stop() {
+    playTokenRef.current++; // cancel any in-flight load
     if (soundRef.current) {
       await soundRef.current.stopAsync();
       await soundRef.current.unloadAsync();
@@ -131,10 +133,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (soundRef.current) {
-      await soundRef.current.stopAsync();
-      await soundRef.current.unloadAsync();
-      soundRef.current = null;
+    // Each play gets a token; if a newer play starts before this one finishes
+    // loading, the older one bails and unloads itself (prevents overlap).
+    const token = ++playTokenRef.current;
+
+    // Tear down the existing sound (grab+null first so concurrent calls don't double-unload).
+    const existing = soundRef.current;
+    soundRef.current = null;
+    if (existing) {
+      try { await existing.stopAsync(); await existing.unloadAsync(); } catch {}
     }
 
     setCurrentTrack(track);
@@ -175,6 +182,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         { uri: track.uri },
         { shouldPlay: true, progressUpdateIntervalMillis: 250 } // smoother scrubber updates
       );
+      // A newer play started while this was loading → discard this sound, don't overlap.
+      if (token !== playTokenRef.current) {
+        try { await sound.unloadAsync(); } catch {}
+        return;
+      }
       soundRef.current = sound;
       sound.playAsync().catch(() => {}); // ensure it starts even if the first load didn't auto-play
 
