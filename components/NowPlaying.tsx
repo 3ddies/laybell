@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, PanResponder } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, PanResponder, Easing } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,10 +31,13 @@ export default function NowPlaying() {
   useEffect(() => {
     if (expanded) {
       setRender(true);
-      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 2 }).start();
+      Animated.timing(translateY, {
+        toValue: 0, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      }).start();
     } else {
-      Animated.timing(translateY, { toValue: SCREEN_H, duration: 220, useNativeDriver: true })
-        .start(() => setRender(false));
+      Animated.timing(translateY, {
+        toValue: SCREEN_H, duration: 280, easing: Easing.in(Easing.cubic), useNativeDriver: true,
+      }).start(() => setRender(false));
     }
   }, [expanded]);
 
@@ -63,8 +66,8 @@ export default function NowPlaying() {
         // Close only on a fluent downward flick (still moving at release). If the
         // finger paused/held — even far down — vy is ~0, so it springs back. This
         // prevents accidental closes from slow or held drags.
-        if (g.vy > 0.7 && g.dy > 70) collapse();
-        else Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+        if (g.vy > 0.5 && g.dy > 70) collapse();
+        else Animated.timing(translateY, { toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
       },
       onPanResponderTerminate: () => Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start(),
     })
