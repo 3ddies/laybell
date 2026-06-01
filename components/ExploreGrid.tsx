@@ -50,24 +50,26 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
   const router = useRouter();
   const { play, currentTrack, isPlaying } = useAudio();
 
-  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+  // Videos that currently overlap the viewport (these play). Off-screen videos
+  // stay mounted but paused, so scrolling back resumes smoothly.
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
+  const mountedIds = useRef<Set<string>>(new Set()); // once visible, keep the <Video> mounted
   const scrollY = useRef(0);
   const viewportH = useRef(0);
   const videoPos = useRef<Record<string, { y: number; h: number }>>({});
 
-  // Pick the single video closest to the viewport center (only one plays at a time).
   const recomputeActive = () => {
-    const center = scrollY.current + viewportH.current / 2;
-    let best: string | null = null;
-    let bestDist = Infinity;
+    const top = scrollY.current;
+    const bottom = top + viewportH.current;
+    const next = new Set<string>();
     for (const id in videoPos.current) {
       const { y, h } = videoPos.current[id];
-      const visible = y < scrollY.current + viewportH.current && y + h > scrollY.current;
-      if (!visible) continue;
-      const dist = Math.abs(y + h / 2 - center);
-      if (dist < bestDist) { bestDist = dist; best = id; }
+      if (y < bottom && y + h > top) { next.add(id); mountedIds.current.add(id); }
     }
-    setActiveVideoId(prev => (prev === best ? prev : best));
+    setVisibleIds(prev => {
+      if (prev.size === next.size && [...next].every(id => prev.has(id))) return prev;
+      return next;
+    });
   };
 
   if (!posts || posts.length === 0) {
@@ -121,7 +123,8 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
   const renderMedia = (cell: Cell & { kind: 'media' }) => {
     const p = cell.post;
     if (p.type === 'video') {
-      const active = activeVideoId === p.id;
+      const mounted = mountedIds.current.has(p.id);
+      const playing = visibleIds.has(p.id);
       return (
         <TouchableOpacity
           key={cell.key}
@@ -130,12 +133,13 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
           onPress={() => router.push(`/post/${p.id}`)}
           onLayout={e => { videoPos.current[p.id] = { y: e.nativeEvent.layout.y, h: cell.height }; recomputeActive(); }}
         >
-          {active ? (
+          {mounted ? (
             <Video
               source={{ uri: p.media_url }}
               style={styles.mediaImage}
               resizeMode={ResizeMode.COVER}
-              isLooping isMuted shouldPlay
+              isLooping isMuted
+              shouldPlay={playing}
             />
           ) : p.thumbnail_url ? (
             <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
