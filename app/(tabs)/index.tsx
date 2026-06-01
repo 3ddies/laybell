@@ -14,6 +14,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
+import { aspectToNumber } from '../../lib/aspectRatio';
 
 type Post = {
   id: string;
@@ -30,6 +31,7 @@ type Post = {
   likes: { count: number }[];
   comments: { count: number }[];
   save_count?: number;
+  aspect_ratio?: string | null;
 };
 
 export default function HomeScreen() {
@@ -286,7 +288,11 @@ export default function HomeScreen() {
         {/* Media */}
         {item.type === 'image' && item.media_url && (
           <TouchableOpacity onPress={() => router.push(`/post/${item.id}`)}>
-            <Image source={{ uri: item.media_url }} style={styles.postImage} resizeMode="cover" />
+            <Image
+              source={{ uri: item.media_url }}
+              style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1) }]}
+              resizeMode="cover"
+            />
           </TouchableOpacity>
         )}
 
@@ -316,7 +322,7 @@ export default function HomeScreen() {
           <TouchableOpacity activeOpacity={1} onPress={() => router.push(`/post/${item.id}`)}>
             <Video
               source={{ uri: item.media_url }}
-              style={styles.postImage}
+              style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 16 / 9) }]}
               resizeMode={ResizeMode.COVER}
               isLooping
               isMuted
@@ -547,6 +553,10 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
+  postMedia: {
+    width: '100%',
+    backgroundColor: COLORS.surfaceLight,
+  },
   postImage: {
     width: '100%',
     height: 320,

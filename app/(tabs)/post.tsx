@@ -10,6 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { IMAGE_FORMATS, VIDEO_FORMATS, aspectToArray, defaultFormatFor } from '../../lib/aspectRatio';
 
 type PostType = 'image' | 'video' | 'audio';
 
@@ -28,6 +29,7 @@ export default function PostScreen() {
   const [error, setError] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [audioDuration, setAudioDuration] = useState<number | null>(null);
+  const [format, setFormat] = useState<string>('1:1');
 
   async function pickMedia() {
     setFile(null); setError('');
@@ -48,6 +50,7 @@ export default function PostScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: postType === 'video' ? ImagePicker.MediaTypeOptions.Videos : ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true, quality: 0.8,
+      aspect: aspectToArray(format),
     });
     if (!result.canceled && result.assets[0]) setFile(result.assets[0]);
   }
@@ -78,6 +81,7 @@ export default function PostScreen() {
         user_id: user.id, type: postType, media_url: publicUrl,
         caption: caption.trim(), is_public: isPublic,
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
+        ...(postType !== 'audio' ? { aspect_ratio: format } : {}),
       });
       if (postError) throw postError;
 
@@ -108,7 +112,7 @@ export default function PostScreen() {
             <TouchableOpacity
               key={type.value}
               style={[styles.typeBtn, active && styles.typeBtnActive]}
-              onPress={() => { setPostType(type.value); setFile(null); }}
+              onPress={() => { setPostType(type.value); setFile(null); setFormat(defaultFormatFor(type.value)); }}
             >
               {active ? (
                 <LinearGradient colors={GRADIENTS.primary} style={styles.typeIconWrap}>
@@ -148,6 +152,32 @@ export default function PostScreen() {
           </View>
         )}
       </TouchableOpacity>
+
+      {/* Format selector (image / video only) */}
+      {postType !== 'audio' && (
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Format</Text>
+          <View style={styles.formatRow}>
+            {(postType === 'video' ? VIDEO_FORMATS : IMAGE_FORMATS).map(f => {
+              const active = format === f;
+              return (
+                <TouchableOpacity
+                  key={f}
+                  style={[styles.formatBtn, active && styles.formatBtnActive]}
+                  onPress={() => setFormat(f)}
+                >
+                  <Ionicons
+                    name={f === '1:1' ? 'square-outline' : f === '16:9' ? 'tablet-landscape-outline' : 'tablet-portrait-outline'}
+                    size={18}
+                    color={active ? COLORS.primary : COLORS.textSecondary}
+                  />
+                  <Text style={[styles.formatLabel, active && styles.formatLabelActive]}>{f}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
       {/* Caption */}
       <View style={styles.inputGroup}>
@@ -254,6 +284,16 @@ const styles = StyleSheet.create({
   fileIconWrap: { width: 52, height: 52, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   fileName: { color: COLORS.text, fontSize: 14, fontWeight: '600', textAlign: 'center' },
   fileChange: { color: COLORS.textTertiary, fontSize: 12 },
+
+  formatRow: { flexDirection: 'row', gap: SPACING.sm },
+  formatBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.xs,
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2,
+  },
+  formatBtnActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '11' },
+  formatLabel: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600' },
+  formatLabelActive: { color: COLORS.primary },
 
   inputGroup: { gap: 6 },
   inputLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },

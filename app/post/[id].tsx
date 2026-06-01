@@ -13,11 +13,13 @@ import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/the
 import { useAudio } from '../../contexts/AudioContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
+import { aspectToNumber } from '../../lib/aspectRatio';
 import { Share } from 'react-native';
 
 type Post = {
   id: string; type: string; media_url: string; caption: string;
   created_at: string; user_id: string;
+  aspect_ratio?: string | null;
   profiles: { username: string; display_name: string; avatar_url: string | null };
 };
 type Comment = {
@@ -189,10 +191,10 @@ export default function PostDetailScreen() {
 
             {/* Media */}
             {post.type === 'image' && post.media_url && (
-              <Image source={{ uri: post.media_url }} style={styles.media} resizeMode="cover" />
+              <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined }]} resizeMode="cover" />
             )}
             {post.type === 'video' && post.media_url && (
-              <Video source={{ uri: post.media_url }} style={styles.media} useNativeControls resizeMode={ResizeMode.CONTAIN} isLooping shouldPlay={false} />
+              <Video source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 16 / 9), height: undefined }]} useNativeControls resizeMode={ResizeMode.CONTAIN} isLooping shouldPlay={false} />
             )}
             {post.type === 'audio' && (
               <TouchableOpacity
