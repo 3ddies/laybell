@@ -95,12 +95,15 @@ export default function NowPlayingScreen() {
         </View>
       </View>
 
-      {/* Controls — centered in the space between the scrubber and stats */}
+      {/* Controls — sit just below the scrubber */}
       <View style={styles.controls}>
         <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
           <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={32} color={COLORS.text} />
         </TouchableOpacity>
       </View>
+
+      {/* Spacer pushes the stats to the bottom */}
+      <View style={{ flex: 1 }} />
 
       {/* Stats */}
       <View style={styles.stats}>
@@ -143,7 +146,7 @@ const styles = StyleSheet.create({
   times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: SPACING.xs },
   timeText: { color: COLORS.textTertiary, fontSize: 12, fontVariant: ['tabular-nums'] },
 
-  controls: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', paddingTop: SPACING.xl },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: SPACING.xl },
   playBtn: {
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
