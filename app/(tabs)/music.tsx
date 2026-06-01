@@ -11,7 +11,7 @@ import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
-import { formatCount } from '../../lib/format';
+import TrackRow from '../../components/TrackRow';
 
 type Playlist = { id: string; name: string; is_public: boolean; created_at: string };
 type Track = {
@@ -340,89 +340,6 @@ export default function MusicScreen() {
   );
 }
 
-function formatDuration(seconds?: number | null) {
-  if (!seconds || seconds <= 0) return null;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function TrackRow({ caption, artist, username, duration, streams, cover, avatarUrl, isPlaying, onPlay, onAddToPlaylist, onAvatarPress }: {
-  caption: string; artist: string; username: string; duration?: number | null; streams?: number;
-  cover?: string | null; avatarUrl?: string | null;
-  isPlaying: boolean; onPlay: () => void; onAddToPlaylist?: () => void; onAvatarPress?: () => void;
-}) {
-  const durationLabel = formatDuration(duration);
-  return (
-    <View style={trackStyles.row}>
-      {/* Cover art (left) — tap to play */}
-      <TouchableOpacity style={trackStyles.coverWrap} onPress={onPlay}>
-        {cover ? (
-          <Image source={{ uri: cover }} style={trackStyles.cover} />
-        ) : (
-          <LinearGradient colors={GRADIENTS.primarySoft} style={trackStyles.cover}>
-            <Ionicons name="musical-notes" size={18} color={COLORS.primary} />
-          </LinearGradient>
-        )}
-        <View style={[trackStyles.coverOverlay, isPlaying && trackStyles.coverOverlayActive]}>
-          <Ionicons name={isPlaying ? 'stop' : 'play'} size={18} color={COLORS.text} />
-        </View>
-      </TouchableOpacity>
-
-      <View style={trackStyles.info}>
-        <Text style={trackStyles.caption} numberOfLines={1}>{caption || 'Audio Track'}</Text>
-        <View style={trackStyles.meta}>
-          <Text style={trackStyles.artist} numberOfLines={1}>@{username}</Text>
-          <Ionicons name="play" size={9} color={COLORS.textTertiary} />
-          <Text style={trackStyles.streams}>{formatCount(streams)}</Text>
-          {durationLabel && <Text style={trackStyles.artist}>· {durationLabel}</Text>}
-        </View>
-      </View>
-
-      {onAddToPlaylist && (
-        <TouchableOpacity style={trackStyles.addBtn} onPress={onAddToPlaylist}>
-          <Ionicons name="add-circle-outline" size={22} color={COLORS.primary} />
-        </TouchableOpacity>
-      )}
-
-      {/* Artist avatar (right) — tap to open profile */}
-      {onAvatarPress && (
-        <TouchableOpacity onPress={onAvatarPress}>
-          {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={trackStyles.avatar} />
-          ) : (
-            <LinearGradient colors={GRADIENTS.primary} style={trackStyles.avatar}>
-              <Text style={trackStyles.avatarText}>{(artist || username || '?').charAt(0).toUpperCase()}</Text>
-            </LinearGradient>
-          )}
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-}
-
-const trackStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
-    padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border, gap: SPACING.md,
-  },
-  coverWrap: { width: 48, height: 48, borderRadius: RADIUS.sm, overflow: 'hidden' },
-  cover: { width: 48, height: 48, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
-  coverOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  coverOverlayActive: { backgroundColor: 'rgba(224,64,28,0.55)' },
-  info: { flex: 1 },
-  caption: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  meta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  artist: { color: COLORS.textSecondary, fontSize: 12 },
-  streams: { color: COLORS.textTertiary, fontSize: 12 },
-  addBtn: { padding: SPACING.xs },
-  avatar: { width: 34, height: 34, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceElevated },
-  avatarText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
-});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },

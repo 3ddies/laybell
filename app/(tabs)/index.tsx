@@ -15,7 +15,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import { aspectToNumber } from '../../lib/aspectRatio';
-import { formatCount } from '../../lib/format';
+import TrackRow from '../../components/TrackRow';
 
 type Post = {
   id: string;
@@ -35,6 +35,7 @@ type Post = {
   aspect_ratio?: string | null;
   stream_count?: number;
   cover_url?: string | null;
+  duration_seconds?: number | null;
 };
 
 export default function HomeScreen() {
@@ -300,38 +301,20 @@ export default function HomeScreen() {
         )}
 
         {item.type === 'audio' && (
-          <TouchableOpacity
-            style={styles.audioCardWrap}
-            onPress={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name })}
-          >
-            <LinearGradient colors={audioActive ? ['#E8401C', '#C03010'] : ['#1C0E06', '#120A04']} style={styles.audioCard}>
-              <View style={styles.audioLeft}>
-                {item.cover_url ? (
-                  <View style={styles.audioCover}>
-                    <Image source={{ uri: item.cover_url }} style={styles.audioCoverImg} />
-                    <View style={[styles.audioCoverOverlay, audioActive && styles.audioIconRingActive]}>
-                      <Ionicons name={audioActive ? 'stop' : 'play'} size={20} color={COLORS.text} />
-                    </View>
-                  </View>
-                ) : (
-                  <View style={[styles.audioIconRing, audioActive && styles.audioIconRingActive]}>
-                    <Ionicons name={audioActive ? 'stop' : 'play'} size={22} color={COLORS.text} />
-                  </View>
-                )}
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.audioTitle} numberOfLines={1}>
-                    {item.caption || 'Audio Track'}
-                  </Text>
-                  <View style={styles.audioMeta}>
-                    <Text style={styles.audioArtist} numberOfLines={1}>@{item.profiles?.username}</Text>
-                    <Ionicons name="play" size={10} color={COLORS.textTertiary} />
-                    <Text style={styles.audioStreams}>{formatCount(item.stream_count)}</Text>
-                  </View>
-                </View>
-              </View>
-              <Ionicons name="musical-notes" size={32} color={COLORS.primary + '44'} />
-            </LinearGradient>
-          </TouchableOpacity>
+          <View style={styles.audioCardWrap}>
+            <TrackRow
+              caption={item.caption}
+              artist={item.profiles?.display_name}
+              username={item.profiles?.username}
+              streams={item.stream_count}
+              cover={item.cover_url}
+              avatarUrl={item.profiles?.avatar_url}
+              duration={item.duration_seconds}
+              isPlaying={audioActive}
+              onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name })}
+              onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
+            />
+          </View>
         )}
 
         {item.type === 'video' && item.media_url && (
