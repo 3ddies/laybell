@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { IMAGE_FORMATS, VIDEO_FORMATS, aspectToArray, defaultFormatFor } from '../../lib/aspectRatio';
+import { GENRES } from '../../lib/genres';
 
 type PostType = 'image' | 'video' | 'audio';
 
@@ -127,21 +128,16 @@ export default function PostScreen() {
         if (!coverErr) coverUrl = supabase.storage.from('posts').getPublicUrl(coverPath).data.publicUrl;
       }
 
-      const { data: newPost, error: postError } = await supabase.from('posts').insert({
+      const { error: postError } = await supabase.from('posts').insert({
         user_id: user.id, type: postType, media_url: publicUrl,
         caption: caption.trim(), is_public: isPublic,
+        ...(genre ? { genre } : {}),
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
         ...(postType !== 'audio' ? { aspect_ratio: format } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(coverUrl ? { cover_url: coverUrl } : {}),
-      }).select('id').single();
+      });
       if (postError) throw postError;
-
-      if (genre.trim() && newPost) {
-        const g = genre.trim().toLowerCase();
-        const { error: tagError } = await supabase.from('post_tags').insert({ post_id: newPost.id, tag: g, genre: g });
-        if (tagError) console.log('post_tags insert failed:', tagError.message);
-      }
 
       Alert.alert('Posted! 🎉', 'Your post is now live on Laybell');
       setFile(null); setCaption(''); setGenre(''); setThumbnailUri(null); setCoverUri(null);
@@ -267,15 +263,22 @@ export default function PostScreen() {
 
       {/* Genre */}
       <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Genre Tag</Text>
-        <TextInput
-          style={styles.textInput}
-          placeholder="rap, r&b, pop, jazz..."
-          placeholderTextColor={COLORS.textTertiary}
-          value={genre}
-          onChangeText={setGenre}
-          autoCapitalize="none"
-        />
+        <Text style={styles.inputLabel}>Genre</Text>
+        <View style={styles.genreWrap}>
+          {GENRES.map(g => {
+            const value = g.toLowerCase();
+            const active = genre === value;
+            return (
+              <TouchableOpacity
+                key={g}
+                style={[styles.genreChip, active && styles.genreChipActive]}
+                onPress={() => setGenre(active ? '' : value)}
+              >
+                <Text style={[styles.genreChipText, active && styles.genreChipTextActive]}>{g}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       {/* Visibility */}
@@ -358,6 +361,16 @@ const styles = StyleSheet.create({
   fileChange: { color: COLORS.textTertiary, fontSize: 12 },
 
   formatRow: { flexDirection: 'row', gap: SPACING.sm },
+
+  genreWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  genreChip: {
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full, backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  genreChipActive: { backgroundColor: COLORS.primary + '22', borderColor: COLORS.primary },
+  genreChipText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+  genreChipTextActive: { color: COLORS.primary },
 
   coverPicker: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,

@@ -11,6 +11,7 @@ import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/the
 import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
 import { useAudio } from '../../contexts/AudioContext';
+import { GENRE_FILTERS } from '../../lib/genres';
 
 type Post = {
   id: string; type: string; media_url: string;
@@ -28,7 +29,7 @@ type Profile = {
   avatar_url: string | null; badge_tier: string;
 };
 
-const GENRES = ['All','Rap','R&B','Pop','Rock','Jazz','Electronic','Gospel','Afrobeats','Lo-Fi','Soul'];
+const GENRES = [...GENRE_FILTERS];
 
 function getBadgeColor(tier: string) {
   switch (tier) {
@@ -78,16 +79,15 @@ export default function ExploreScreen() {
   async function fetchByGenre(genre: string, silent = false) {
     if (!silent) setLoading(true);
     setSelectedGenre(genre);
-    if (genre === 'All') { await fetchTrending(); return; }
+    if (genre === 'All') { await fetchTrending(); if (!silent) setLoading(false); return; }
     const { data } = await supabase
-      .from('post_tags')
-      .select('post_id, posts!inner(id,type,media_url,caption,created_at,user_id,is_public,thumbnail_url,aspect_ratio,stream_count,cover_url,profiles!posts_user_id_fkey(username,display_name))')
+      .from('posts')
+      .select('*, profiles!posts_user_id_fkey (username, display_name), likes(count), comments(count)')
+      .eq('is_public', true)
       .eq('genre', genre.toLowerCase())
-      .limit(20);
-    if (data) {
-      const formatted = data.map((item: any) => item.posts).filter((p: any) => p?.is_public);
-      setTrendingPosts(formatted);
-    }
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if (data) setTrendingPosts(data as any);
     if (!silent) setLoading(false);
   }
 
