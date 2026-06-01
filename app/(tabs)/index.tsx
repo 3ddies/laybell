@@ -88,7 +88,6 @@ export default function HomeScreen() {
         likes(count),
         comments(count)
       `)
-      .eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -99,7 +98,11 @@ export default function HomeScreen() {
       if (followingIds.length === 0) {
         setPosts([]); setLoading(false); setRefreshing(false); return;
       }
+      // Following feed: show both public and followers-only posts from people you follow
       query = query.in('user_id', followingIds);
+    } else {
+      // Discovery feed: public posts only
+      query = query.eq('is_public', true);
     }
 
     const [{ data }, { data: likesData }, { data: savesData }] = await Promise.all([

@@ -50,7 +50,7 @@ export default function PublicProfileScreen() {
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', id),
       supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', id),
-      supabase.from('posts').select('id, type, media_url, caption').eq('user_id', id).eq('is_public', true).order('created_at', { ascending: false }),
+      supabase.from('posts').select('id, type, media_url, caption, is_public').eq('user_id', id).order('created_at', { ascending: false }),
       currentUser
         ? supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', id).maybeSingle()
         : Promise.resolve({ data: null }),
@@ -58,8 +58,13 @@ export default function PublicProfileScreen() {
 
     if (profileRes.data) setProfile(profileRes.data);
     setStats({ followers: followersRes.count || 0, following: followingRes.count || 0, posts: postsCountRes.count || 0 });
-    if (postsRes.data) setPosts(postsRes.data);
-    setIsFollowing(!!followCheckRes.data);
+    const following = !!followCheckRes.data;
+    if (postsRes.data) {
+      // Followers-only posts are visible to the owner and to followers; everyone else sees public only
+      const canSeePrivate = following || currentUser?.id === id;
+      setPosts(postsRes.data.filter((p: any) => p.is_public || canSeePrivate));
+    }
+    setIsFollowing(following);
     setLoading(false);
   }
 
