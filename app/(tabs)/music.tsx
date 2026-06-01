@@ -263,6 +263,7 @@ export default function MusicScreen() {
               cover={item.posts?.cover_url}
               avatarUrl={item.posts?.profiles?.avatar_url}
               isPlaying={playingId === item.posts?.id}
+              hidePlayButton
               onPlay={() => play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url)}
               onCoverPress={() => { play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url); openNowPlaying(); }}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
@@ -297,6 +298,7 @@ export default function MusicScreen() {
               cover={item.posts?.cover_url}
               avatarUrl={item.posts?.profiles?.avatar_url}
               isPlaying={playingId === item.posts?.id}
+              hidePlayButton
               onPlay={() => playQueue(likedQueue(), index)}
               onCoverPress={() => { playQueue(likedQueue(), index); openNowPlaying(); }}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}

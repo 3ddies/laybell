@@ -13,10 +13,10 @@ function formatDuration(seconds?: number | null) {
 
 export default function TrackRow({
   caption, artist, username, duration, streams, cover, avatarUrl,
-  isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress,
+  isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, hidePlayButton,
 }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
-  cover?: string | null; avatarUrl?: string | null;
+  cover?: string | null; avatarUrl?: string | null; hidePlayButton?: boolean;
   isPlaying: boolean; onPlay: () => void; onCoverPress?: () => void; onAddToPlaylist?: () => void; onAvatarPress?: () => void;
 }) {
   const durationLabel = formatDuration(duration);
@@ -50,9 +50,11 @@ export default function TrackRow({
       </TouchableOpacity>
 
       {/* Play / pause */}
-      <TouchableOpacity style={styles.playToggle} onPress={onPlay}>
-        <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={COLORS.text} />
-      </TouchableOpacity>
+      {!hidePlayButton && (
+        <TouchableOpacity style={styles.playToggle} onPress={onPlay}>
+          <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={COLORS.text} />
+        </TouchableOpacity>
+      )}
 
       {onAddToPlaylist && (
         <TouchableOpacity style={styles.addBtn} onPress={onAddToPlaylist}>
