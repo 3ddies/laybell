@@ -80,6 +80,10 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
   const videos = posts.filter(p => p.type === 'video');
   const musicGroups = groupSongs(posts.filter(p => p.type === 'audio'));
 
+  // Only 1 in every 4 videos auto-plays; the rest stay as still thumbnails so the
+  // grid isn't overstimulating.
+  const playableSet = new Set(videos.filter((_, i) => i % 4 === 0).map(v => v.id));
+
   // Base (non-video) cells: interleave images and music stacks.
   const baseCells: Cell[] = [];
   let mi = 0;
@@ -122,6 +126,29 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
 
   const renderMedia = (cell: Cell & { kind: 'media' }) => {
     const p = cell.post;
+    if (p.type === 'video' && !playableSet.has(p.id)) {
+      // Still thumbnail — never plays.
+      return (
+        <TouchableOpacity
+          key={cell.key}
+          style={[styles.mediaCard, { height: cell.height }]}
+          activeOpacity={0.9}
+          onPress={() => router.push(`/post/${p.id}`)}
+        >
+          {p.thumbnail_url ? (
+            <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
+          ) : (
+            <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
+              <Ionicons name="videocam" size={28} color={COLORS.primary} />
+            </LinearGradient>
+          )}
+          <View style={styles.playBadge}><Ionicons name="play" size={12} color={COLORS.text} /></View>
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
+            <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      );
+    }
     if (p.type === 'video') {
       const mounted = mountedIds.current.has(p.id);
       const playing = visibleIds.has(p.id);
