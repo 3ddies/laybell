@@ -63,7 +63,7 @@ export default function NowPlaying() {
         // Close only on a fluent downward flick (still moving at release). If the
         // finger paused/held — even far down — vy is ~0, so it springs back. This
         // prevents accidental closes from slow or held drags.
-        if (g.vy > 1.1 && g.dy > 70) collapse();
+        if (g.vy > 0.7 && g.dy > 70) collapse();
         else Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
       },
       onPanResponderTerminate: () => Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start(),
