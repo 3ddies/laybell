@@ -102,9 +102,6 @@ export default function NowPlayingScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Spacer pushes the stats to the bottom */}
-      <View style={{ flex: 1 }} />
-
       {/* Stats */}
       <View style={styles.stats}>
         <View style={styles.statItem}>
@@ -146,7 +143,7 @@ const styles = StyleSheet.create({
   times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: SPACING.xs },
   timeText: { color: COLORS.textTertiary, fontSize: 12, fontVariant: ['tabular-nums'] },
 
-  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: SPACING.xl },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: SPACING.md },
   playBtn: {
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
@@ -155,7 +152,7 @@ const styles = StyleSheet.create({
 
   stats: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: SPACING.xl,
+    marginTop: 'auto', gap: SPACING.xl,
     backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.lg,
     paddingVertical: SPACING.md, borderWidth: 1, borderColor: COLORS.border,
   },
