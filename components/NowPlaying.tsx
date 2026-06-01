@@ -36,7 +36,7 @@ export default function NowPlaying() {
       }).start();
     } else {
       Animated.timing(translateY, {
-        toValue: SCREEN_H, duration: 280, easing: Easing.in(Easing.cubic), useNativeDriver: true,
+        toValue: SCREEN_H, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true,
       }).start(() => setRender(false));
     }
   }, [expanded]);
@@ -66,7 +66,7 @@ export default function NowPlaying() {
         // Close only on a fluent downward flick (still moving at release). If the
         // finger paused/held — even far down — vy is ~0, so it springs back. This
         // prevents accidental closes from slow or held drags.
-        if (g.vy > 0.5 && g.dy > 70) collapse();
+        if (g.vy > 0.3 && g.dy > 70) collapse();
         else Animated.timing(translateY, { toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
       },
       onPanResponderTerminate: () => Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start(),
