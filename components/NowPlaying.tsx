@@ -60,7 +60,7 @@ export default function NowPlaying() {
       onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderMove: (_, g) => { if (g.dy > 0) translateY.setValue(g.dy); },
       onPanResponderRelease: (_, g) => {
-        if (g.dy > 130 || g.vy > 0.8) collapse();
+        if (g.dy > SCREEN_H * 0.375) collapse(); // must drag ~3/8 of the screen to close
         else Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
       },
       onPanResponderTerminate: () => Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start(),
