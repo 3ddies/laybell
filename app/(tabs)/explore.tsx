@@ -231,6 +231,7 @@ export default function ExploreScreen() {
             data={profiles}
             keyExtractor={item => item.id}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={<Text style={styles.emptyText}>No accounts found</Text>}
             renderItem={({ item }) => (
@@ -256,6 +257,7 @@ export default function ExploreScreen() {
             data={posts}
             keyExtractor={item => item.id}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={<Text style={styles.emptyText}>No posts found</Text>}
             renderItem={({ item }) => item.type === 'audio' ? (

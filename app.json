@@ -25,6 +25,7 @@
     },
     "android": {
       "package": "com.laybell.app",
+      "softwareKeyboardLayoutMode": "pan",
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.MODIFY_AUDIO_SETTINGS"
