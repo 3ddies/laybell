@@ -43,7 +43,7 @@ function getBadgeColor(tier: string) {
 
 export default function ExploreScreen() {
   const router = useRouter();
-  const { play, currentTrack, isPlaying } = useAudio();
+  const { play, currentTrack, isPlaying, expand } = useAudio();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchType, setSearchType] = useState<'posts' | 'accounts'>('posts');
   const [selectedGenre, setSelectedGenre] = useState('All');
@@ -278,7 +278,7 @@ export default function ExploreScreen() {
                 avatarUrl={item.profiles?.avatar_url}
                 isPlaying={currentTrack?.id === item.id && isPlaying}
                 onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
-                onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); router.push('/now-playing'); }}
+                onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); expand(); }}
                 onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
               />
             ) : (

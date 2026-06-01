@@ -1,5 +1,4 @@
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
-import { useRouter, usePathname } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio } from '../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../constants/theme';
@@ -13,11 +12,9 @@ function formatMs(ms: number): string {
 }
 
 export default function MiniPlayer() {
-  const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, stop, seekTo } = useAudio();
-  const router = useRouter();
-  const pathname = usePathname();
+  const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, stop, seekTo, expanded, expand } = useAudio();
 
-  if (!currentTrack || pathname === '/now-playing') return null;
+  if (!currentTrack || expanded) return null;
 
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
 
@@ -33,7 +30,7 @@ export default function MiniPlayer() {
 
       <View style={styles.inner}>
         {/* Album cover — tap to open the full now-playing screen */}
-        <TouchableOpacity style={styles.coverWrap} onPress={() => router.push('/now-playing')}>
+        <TouchableOpacity style={styles.coverWrap} onPress={() => expand()}>
           {currentTrack.cover ? (
             <Image source={{ uri: currentTrack.cover }} style={styles.cover} />
           ) : (
@@ -44,7 +41,7 @@ export default function MiniPlayer() {
         </TouchableOpacity>
 
         {/* Tapping the bar (except the controls) expands the now-playing screen */}
-        <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => router.push('/now-playing')}>
+        <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => expand()}>
           <View style={styles.trackInfo}>
             <Text style={styles.caption} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
             <Text style={styles.artist} numberOfLines={1}>{currentTrack.artist}</Text>

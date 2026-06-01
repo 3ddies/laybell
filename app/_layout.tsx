@@ -7,6 +7,7 @@ import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
 import { AudioProvider } from '../contexts/AudioContext';
 import MiniPlayer from '../components/MiniPlayer';
+import NowPlaying from '../components/NowPlaying';
 import { useNotifications } from '../hooks/useNotifications';
 
 function AppContent() {
@@ -15,6 +16,7 @@ function AppContent() {
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
       <Slot />
       <MiniPlayer />
+      <NowPlaying />
     </View>
   );
 }

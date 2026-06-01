@@ -32,7 +32,7 @@ export default function MusicScreen() {
   const [showNewPlaylist, setShowNewPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const { playingId, play } = useAudioPlayer();
-  const { playQueue } = useAudio();
+  const { playQueue, expand } = useAudio();
   const [savedTracks, setSavedTracks] = useState<any[]>([]);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'playlists' | 'saved' | 'liked'>('playlists');
@@ -125,7 +125,7 @@ export default function MusicScreen() {
     id: t.posts?.id, uri: t.posts?.media_url, caption: t.posts?.caption,
     artist: t.posts?.profiles?.display_name ?? '', cover: t.posts?.cover_url,
   }));
-  const openNowPlaying = () => router.push('/now-playing');
+  const openNowPlaying = () => expand();
 
   if (loading) {
     return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;

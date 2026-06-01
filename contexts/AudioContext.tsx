@@ -30,6 +30,9 @@ type AudioContextType = {
   resume: () => Promise<void>;
   stop: () => Promise<void>;
   seekTo: (ms: number) => Promise<void>;
+  expanded: boolean;
+  expand: () => void;
+  collapse: () => void;
 };
 
 const AudioContext = createContext<AudioContextType | null>(null);
@@ -40,6 +43,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [isBuffering, setIsBuffering] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const expand = () => setExpanded(true);
+  const collapse = () => setExpanded(false);
   const soundRef = useRef<Audio.Sound | null>(null);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
@@ -54,6 +60,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       await soundRef.current.unloadAsync();
       soundRef.current = null;
     }
+    setExpanded(false);
     setIsPlaying(false);
     setIsBuffering(false);
     setCurrentTrack(null);
@@ -189,7 +196,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, pause, resume, stop, seekTo }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, pause, resume, stop, seekTo, expanded, expand, collapse }}>
       {children}
     </AudioContext.Provider>
   );
