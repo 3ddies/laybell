@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useAudio } from '../../contexts/AudioContext';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { createNotification } from '../../lib/createNotification';
@@ -29,6 +30,7 @@ function getBadgeGradient(tier: string): readonly [string, string] {
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { play } = useAudio();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [posts, setPosts] = useState<any[]>([]);
@@ -188,7 +190,13 @@ export default function PublicProfileScreen() {
       ) : (
         <View style={styles.postsGrid}>
           {filtered.map(post => (
-            <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => router.push(`/post/${post.id}`)}>
+            <TouchableOpacity
+              key={post.id}
+              style={styles.gridItem}
+              onPress={() => post.type === 'audio'
+                ? play({ id: post.id, uri: post.media_url, caption: post.caption, artist: profile?.display_name ?? '', cover: post.cover_url })
+                : router.push(`/post/${post.id}`)}
+            >
               {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
                 <>
                   <Image

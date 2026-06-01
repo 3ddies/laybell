@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { useAudio } from '../../contexts/AudioContext';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, ActivityIndicator, Image, RefreshControl,
@@ -43,6 +44,7 @@ export default function ProfileScreen() {
   const [likedPosts, setLikedPosts] = useState<any[]>([]);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const router = useRouter();
+  const { play } = useAudio();
 
   useEffect(() => { fetchProfile(); }, []);
 
@@ -189,7 +191,13 @@ export default function ProfileScreen() {
       ) : (
         <View style={styles.postsGrid}>
           {gridData.map((post: any) => (
-            <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => router.push(`/post/${post.id}`)}>
+            <TouchableOpacity
+              key={post.id}
+              style={styles.gridItem}
+              onPress={() => post.type === 'audio'
+                ? play({ id: post.id, uri: post.media_url, caption: post.caption, artist: profile?.display_name ?? '', cover: post.cover_url })
+                : router.push(`/post/${post.id}`)}
+            >
               {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
                 <>
                   <Image
