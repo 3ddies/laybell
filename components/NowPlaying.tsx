@@ -9,7 +9,7 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { formatCount } from '../lib/format';
 import Scrubber from './Scrubber';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 const ART = Math.min(SCREEN_W - SPACING.xl * 2, 340);
 
 function formatMs(ms: number): string {
@@ -18,17 +18,48 @@ function formatMs(ms: number): string {
   return `${m}:${String(s % 60).padStart(2, '0')}`;
 }
 
+// Progress + controls subscribe to the per-second playback state in isolation, so
+// the parent overlay (which owns the drag gesture + slide animation) doesn't
+// re-render every tick — keeping the swipe smooth.
+function Progress() {
+  const { positionMs, durationMs, seekTo } = useAudio();
+  const progress = durationMs > 0 ? positionMs / durationMs : 0;
+  return (
+    <View style={styles.progressBlock}>
+      <Scrubber
+        progress={progress}
+        onSeek={r => durationMs > 0 && seekTo(Math.floor(r * durationMs))}
+        height={24} trackHeight={5} thumbSize={16}
+      />
+      <View style={styles.times}>
+        <Text style={styles.timeText}>{formatMs(positionMs)}</Text>
+        <Text style={styles.timeText}>{durationMs > 0 ? formatMs(durationMs) : '--:--'}</Text>
+      </View>
+    </View>
+  );
+}
+
+function Controls() {
+  const { isPlaying, isBuffering, pause, resume } = useAudio();
+  return (
+    <View style={styles.controls}>
+      <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
+        <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={32} color={COLORS.text} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // Full-screen "now playing" overlay that slides up over the current screen, so
 // the page behind shows through when you swipe it down.
 export default function NowPlaying() {
-  const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, seekTo, expanded, collapse } = useAudio();
+  const { currentTrack, expanded, collapse } = useAudio();
   const router = useRouter();
   const [stats, setStats] = useState<{ streams: number; saves: number; username?: string; userId?: string } | null>(null);
   const [render, setRender] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
-  const closeVel = useRef(0); // px/s carried over from a flick, for a continuous close
+  const closeVel = useRef(0); // px/s carried over from a flick for a continuous close
 
-  // Mount + slide in / out as `expanded` toggles.
   useEffect(() => {
     if (expanded) {
       setRender(true);
@@ -36,13 +67,21 @@ export default function NowPlaying() {
         toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true,
       }).start();
     } else if (render) {
-      // Spring seeded with the flick velocity → one continuous motion, no hitch.
       Animated.spring(translateY, {
         toValue: SCREEN_H, velocity: closeVel.current, bounciness: 0, speed: 12, useNativeDriver: true,
       }).start(() => setRender(false));
       closeVel.current = 0;
     }
   }, [expanded]);
+
+  // Safety net: never leave the overlay mounted (covering the tab bar) once
+  // collapsed, even if an animation callback is dropped.
+  useEffect(() => {
+    if (!expanded && render) {
+      const t = setTimeout(() => setRender(false), 600);
+      return () => clearTimeout(t);
+    }
+  }, [expanded, render]);
 
   useEffect(() => {
     const id = currentTrack?.id;
@@ -66,10 +105,8 @@ export default function NowPlaying() {
       onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderMove: (_, g) => { if (g.dy > 0) translateY.setValue(g.dy); },
       onPanResponderRelease: (_, g) => {
-        // Close only on a fluent downward flick (still moving at release). A held or
-        // slow drag has ~0 velocity → springs back, preventing accidental closes.
         if (g.vy > 0.4 && g.dy > 70) {
-          closeVel.current = g.vy * 1000; // gesture vy is px/ms → px/s for the spring
+          closeVel.current = g.vy * 1000; // gesture vy is px/ms → px/s
           collapse();
         } else {
           Animated.spring(translateY, { toValue: 0, speed: 14, bounciness: 4, useNativeDriver: true }).start();
@@ -81,7 +118,6 @@ export default function NowPlaying() {
 
   if (!render || !currentTrack) return null;
 
-  const progress = durationMs > 0 ? positionMs / durationMs : 0;
   const goProfile = () => { if (stats?.userId) { collapse(); router.push(`/profile/${stats.userId}`); } };
 
   return (
@@ -118,23 +154,8 @@ export default function NowPlaying() {
           </View>
         </View>
 
-        <View style={styles.progressBlock}>
-          <Scrubber
-            progress={progress}
-            onSeek={r => durationMs > 0 && seekTo(Math.floor(r * durationMs))}
-            height={24} trackHeight={5} thumbSize={16}
-          />
-          <View style={styles.times}>
-            <Text style={styles.timeText}>{formatMs(positionMs)}</Text>
-            <Text style={styles.timeText}>{durationMs > 0 ? formatMs(durationMs) : '--:--'}</Text>
-          </View>
-        </View>
-
-        <View style={styles.controls}>
-          <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
-            <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={32} color={COLORS.text} />
-          </TouchableOpacity>
-        </View>
+        <Progress />
+        <Controls />
 
         <View style={styles.stats}>
           <View style={styles.statItem}>
@@ -155,7 +176,7 @@ export default function NowPlaying() {
 }
 
 const styles = StyleSheet.create({
-  layer: { zIndex: 200, elevation: 200 },
+  layer: { zIndex: 200 },
   container: { flex: 1, paddingHorizontal: SPACING.xl, paddingBottom: SPACING.xxl },
   handle: {
     width: 40, height: 5, borderRadius: 3,
