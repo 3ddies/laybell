@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, PanResponder, Dimensions } from 'react-native';
-import { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions } from 'react-native';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,9 +7,9 @@ import { useAudio } from '../contexts/AudioContext';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { formatCount } from '../lib/format';
+import Scrubber from '../components/Scrubber';
 
 const ART = Math.min(Dimensions.get('window').width - SPACING.xl * 2, 340);
-const THUMB = 16;
 
 function formatMs(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -20,32 +20,7 @@ function formatMs(ms: number): string {
 export default function NowPlayingScreen() {
   const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, stop, seekTo } = useAudio();
   const router = useRouter();
-  const [barWidth, setBarWidth] = useState(0);
-  const [dragRatio, setDragRatio] = useState<number | null>(null);
   const [stats, setStats] = useState<{ streams: number; saves: number; username?: string; userId?: string } | null>(null);
-
-  const barWidthRef = useRef(0);
-  const durationRef = useRef(0);
-  const seekRef = useRef(seekTo);
-  durationRef.current = durationMs;
-  seekRef.current = seekTo;
-
-  const clamp = (n: number) => Math.max(0, Math.min(1, n));
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: e => setDragRatio(clamp(e.nativeEvent.locationX / (barWidthRef.current || 1))),
-      onPanResponderMove: e => setDragRatio(clamp(e.nativeEvent.locationX / (barWidthRef.current || 1))),
-      onPanResponderRelease: e => {
-        const r = clamp(e.nativeEvent.locationX / (barWidthRef.current || 1));
-        if (durationRef.current) seekRef.current(Math.floor(r * durationRef.current));
-        setDragRatio(null);
-      },
-      onPanResponderTerminate: () => setDragRatio(null),
-    })
-  ).current;
 
   // Close if playback ends/stops.
   useEffect(() => { if (!currentTrack) router.back(); }, [currentTrack]);
@@ -71,7 +46,6 @@ export default function NowPlayingScreen() {
   if (!currentTrack) return null;
 
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
-  const shown = dragRatio != null ? dragRatio : progress;
 
   return (
     <LinearGradient colors={['#2A1206', '#150A04', COLORS.background]} style={styles.container}>
@@ -110,22 +84,13 @@ export default function NowPlayingScreen() {
 
       {/* Progress */}
       <View style={styles.progressBlock}>
-        <View
-          style={styles.progressArea}
-          onLayout={e => { const w = e.nativeEvent.layout.width; setBarWidth(w); barWidthRef.current = w; }}
-          {...panResponder.panHandlers}
-        >
-          <View style={styles.progressTrack}>
-            <LinearGradient
-              colors={GRADIENTS.primaryWarm}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={[styles.progressFill, { width: `${shown * 100}%` }]}
-            />
-          </View>
-          <View style={[styles.thumb, { left: Math.max(0, Math.min(barWidth - THUMB, shown * barWidth - THUMB / 2)) }]} />
-        </View>
+        <Scrubber
+          progress={progress}
+          onSeek={r => durationMs > 0 && seekTo(Math.floor(r * durationMs))}
+          height={24} trackHeight={5} thumbSize={16}
+        />
         <View style={styles.times}>
-          <Text style={styles.timeText}>{formatMs(durationMs > 0 ? shown * durationMs : positionMs)}</Text>
+          <Text style={styles.timeText}>{formatMs(positionMs)}</Text>
           <Text style={styles.timeText}>{durationMs > 0 ? formatMs(durationMs) : '--:--'}</Text>
         </View>
       </View>
@@ -179,14 +144,6 @@ const styles = StyleSheet.create({
   artist: { color: COLORS.textSecondary, fontSize: 15 },
 
   progressBlock: { marginTop: SPACING.xxl },
-  progressArea: { height: 20, justifyContent: 'center', width: '100%' },
-  progressTrack: { height: 5, borderRadius: 3, backgroundColor: COLORS.border, width: '100%', overflow: 'hidden' },
-  progressFill: { height: '100%' },
-  thumb: {
-    position: 'absolute', top: (20 - THUMB) / 2,
-    width: THUMB, height: THUMB, borderRadius: THUMB / 2,
-    backgroundColor: COLORS.text, borderWidth: 3, borderColor: COLORS.primary,
-  },
   times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: SPACING.xs },
   timeText: { color: COLORS.textTertiary, fontSize: 12, fontVariant: ['tabular-nums'] },
 

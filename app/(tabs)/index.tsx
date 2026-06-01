@@ -312,6 +312,7 @@ export default function HomeScreen() {
               duration={item.duration_seconds}
               isPlaying={audioActive}
               onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
+              onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); router.push('/now-playing'); }}
             />
           </View>
         )}

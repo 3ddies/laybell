@@ -13,17 +13,17 @@ function formatDuration(seconds?: number | null) {
 
 export default function TrackRow({
   caption, artist, username, duration, streams, cover, avatarUrl,
-  isPlaying, onPlay, onAddToPlaylist, onAvatarPress,
+  isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress,
 }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
   cover?: string | null; avatarUrl?: string | null;
-  isPlaying: boolean; onPlay: () => void; onAddToPlaylist?: () => void; onAvatarPress?: () => void;
+  isPlaying: boolean; onPlay: () => void; onCoverPress?: () => void; onAddToPlaylist?: () => void; onAvatarPress?: () => void;
 }) {
   const durationLabel = formatDuration(duration);
   return (
     <View style={styles.row}>
-      {/* Cover art (left) — tap to play */}
-      <TouchableOpacity style={styles.coverWrap} onPress={onPlay}>
+      {/* Cover art (left) — tap to expand to the now-playing screen */}
+      <TouchableOpacity style={styles.coverWrap} onPress={onCoverPress ?? onPlay}>
         {cover ? (
           <Image source={{ uri: cover }} style={styles.cover} />
         ) : (
@@ -31,12 +31,15 @@ export default function TrackRow({
             <Ionicons name="musical-notes" size={18} color={COLORS.primary} />
           </LinearGradient>
         )}
-        <View style={[styles.coverOverlay, isPlaying && styles.coverOverlayActive]}>
-          <Ionicons name={isPlaying ? 'stop' : 'play'} size={18} color={COLORS.text} />
-        </View>
+        {isPlaying && (
+          <View style={styles.coverOverlayActive}>
+            <Ionicons name="musical-notes" size={16} color={COLORS.text} />
+          </View>
+        )}
       </TouchableOpacity>
 
-      <View style={styles.info}>
+      {/* Track outline — tap to play/pause */}
+      <TouchableOpacity style={styles.info} activeOpacity={0.7} onPress={onPlay}>
         <Text style={styles.caption} numberOfLines={1}>{caption || 'Audio Track'}</Text>
         <View style={styles.meta}>
           <Text style={styles.artist} numberOfLines={1}>@{username}</Text>
@@ -44,7 +47,7 @@ export default function TrackRow({
           <Text style={styles.streams}>{formatCount(streams)}</Text>
           {durationLabel && <Text style={styles.artist}>· {durationLabel}</Text>}
         </View>
-      </View>
+      </TouchableOpacity>
 
       {onAddToPlaylist && (
         <TouchableOpacity style={styles.addBtn} onPress={onAddToPlaylist}>
@@ -76,11 +79,10 @@ const styles = StyleSheet.create({
   },
   coverWrap: { width: 48, height: 48, borderRadius: RADIUS.sm, overflow: 'hidden' },
   cover: { width: 48, height: 48, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
-  coverOverlay: {
+  coverOverlayActive: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(224,64,28,0.5)',
   },
-  coverOverlayActive: { backgroundColor: 'rgba(224,64,28,0.55)' },
   info: { flex: 1 },
   caption: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
