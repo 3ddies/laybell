@@ -26,18 +26,21 @@ export default function NowPlaying() {
   const [stats, setStats] = useState<{ streams: number; saves: number; username?: string; userId?: string } | null>(null);
   const [render, setRender] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
+  const closeVel = useRef(0); // px/s carried over from a flick, for a continuous close
 
   // Mount + slide in / out as `expanded` toggles.
   useEffect(() => {
     if (expanded) {
       setRender(true);
       Animated.timing(translateY, {
-        toValue: 0, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+        toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true,
       }).start();
-    } else {
-      Animated.timing(translateY, {
-        toValue: SCREEN_H, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+    } else if (render) {
+      // Spring seeded with the flick velocity → one continuous motion, no hitch.
+      Animated.spring(translateY, {
+        toValue: SCREEN_H, velocity: closeVel.current, bounciness: 0, speed: 12, useNativeDriver: true,
       }).start(() => setRender(false));
+      closeVel.current = 0;
     }
   }, [expanded]);
 
@@ -63,13 +66,16 @@ export default function NowPlaying() {
       onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderMove: (_, g) => { if (g.dy > 0) translateY.setValue(g.dy); },
       onPanResponderRelease: (_, g) => {
-        // Close only on a fluent downward flick (still moving at release). If the
-        // finger paused/held — even far down — vy is ~0, so it springs back. This
-        // prevents accidental closes from slow or held drags.
-        if (g.vy > 0.3 && g.dy > 70) collapse();
-        else Animated.timing(translateY, { toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+        // Close only on a fluent downward flick (still moving at release). A held or
+        // slow drag has ~0 velocity → springs back, preventing accidental closes.
+        if (g.vy > 0.4 && g.dy > 70) {
+          closeVel.current = g.vy * 1000; // gesture vy is px/ms → px/s for the spring
+          collapse();
+        } else {
+          Animated.spring(translateY, { toValue: 0, speed: 14, bounciness: 4, useNativeDriver: true }).start();
+        }
       },
-      onPanResponderTerminate: () => Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start(),
+      onPanResponderTerminate: () => Animated.spring(translateY, { toValue: 0, speed: 14, bounciness: 4, useNativeDriver: true }).start(),
     })
   ).current;
 
