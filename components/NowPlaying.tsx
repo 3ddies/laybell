@@ -254,22 +254,27 @@ export default function NowPlaying() {
 
                 {/* Like (tap) · Streams (display) · Saves (tap) */}
                 <View style={styles.statBar}>
-                  <TouchableOpacity style={styles.statSeg} onPress={handleLike}>
-                    <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color={isLiked ? COLORS.like : COLORS.textSecondary} />
-                    <Text style={styles.statNum}>{formatCount(likeCount)}</Text>
-                    <Text style={styles.statLbl}>likes</Text>
+                  <TouchableOpacity
+                    style={[styles.tapStat, isLiked && styles.tapStatActiveLike]}
+                    onPress={handleLike}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={26} color={isLiked ? COLORS.like : COLORS.text} />
+                    <Text style={styles.tapStatNum}>{formatCount(likeCount)}</Text>
                   </TouchableOpacity>
-                  <View style={styles.statSep} />
-                  <View style={styles.statSeg}>
-                    <Ionicons name="play" size={18} color={COLORS.primary} />
-                    <Text style={styles.statNum}>{formatCount(streams)}</Text>
-                    <Text style={styles.statLbl}>streams</Text>
+
+                  <View style={styles.centerStat}>
+                    <Text style={styles.centerStatNum}>{formatCount(streams)}</Text>
+                    <Text style={styles.centerStatLbl}>streams</Text>
                   </View>
-                  <View style={styles.statSep} />
-                  <TouchableOpacity style={styles.statSeg} onPress={handleSave}>
-                    <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={18} color={isSaved ? COLORS.primary : COLORS.textSecondary} />
-                    <Text style={styles.statNum}>{formatCount(saves)}</Text>
-                    <Text style={styles.statLbl}>saves</Text>
+
+                  <TouchableOpacity
+                    style={[styles.tapStat, isSaved && styles.tapStatActiveSave]}
+                    onPress={handleSave}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color={isSaved ? COLORS.primary : COLORS.text} />
+                    <Text style={styles.tapStatNum}>{formatCount(saves)}</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -349,15 +354,19 @@ const styles = StyleSheet.create({
   navBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   playBtn: { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
 
-  statBar: {
-    flexDirection: 'row', alignItems: 'center', marginTop: SPACING.lg,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: COLORS.border,
-    paddingVertical: SPACING.sm,
+  statBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: SPACING.lg },
+  tapStat: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm + 2,
+    borderRadius: RADIUS.full, backgroundColor: COLORS.surfaceElevated,
+    borderWidth: 1, borderColor: COLORS.border,
   },
-  statSeg: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: SPACING.xs },
-  statSep: { width: 1, height: 32, backgroundColor: COLORS.border },
-  statNum: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  statLbl: { color: COLORS.textSecondary, fontSize: 11 },
+  tapStatActiveLike: { borderColor: COLORS.like, backgroundColor: COLORS.like + '1A' },
+  tapStatActiveSave: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '1A' },
+  tapStatNum: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+  centerStat: { flex: 1, alignItems: 'center' },
+  centerStatNum: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  centerStatLbl: { color: COLORS.textSecondary, fontSize: 11, marginTop: 1 },
 
   divider: { height: 0.5, backgroundColor: COLORS.border, marginTop: SPACING.lg },
   commentsLabel: { color: COLORS.text, fontSize: 14, fontWeight: '700', marginTop: SPACING.md, marginBottom: SPACING.xs },
