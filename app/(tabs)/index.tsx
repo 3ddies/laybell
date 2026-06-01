@@ -13,6 +13,7 @@ import { COLORS, SPACING, RADIUS, SHADOWS, GRADIENTS } from '../../constants/the
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
+import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 
 type Post = {
   id: string;
@@ -40,6 +41,7 @@ export default function HomeScreen() {
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
   const router = useRouter();
   const [feedMode, setFeedMode] = useState<'all' | 'following'>('all');
   const [initialized, setInitialized] = useState(false);
@@ -318,6 +320,12 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
+          {item.type === 'audio' && (
+            <TouchableOpacity style={styles.actionBtn} onPress={() => setPlaylistModalPostId(item.id)}>
+              <Ionicons name="list-circle-outline" size={22} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRight]} onPress={() => handleShare(item)}>
             <Ionicons name="share-social-outline" size={20} color={COLORS.textSecondary} />
           </TouchableOpacity>
@@ -412,6 +420,12 @@ export default function HomeScreen() {
             )}
           </View>
         }
+      />
+
+      <AddToPlaylistModal
+        visible={!!playlistModalPostId}
+        postId={playlistModalPostId ?? ''}
+        onClose={() => setPlaylistModalPostId(null)}
       />
     </View>
   );

@@ -2,7 +2,8 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, Alert, TextInput, Modal,
 } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -31,6 +32,17 @@ export default function MusicScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => { setup(); }, []);
+
+  // Keep saved songs and playlists fresh when returning to this tab
+  // (e.g. after saving a track from the feed).
+  useFocusEffect(
+    useCallback(() => {
+      if (currentUserId) {
+        fetchSavedTracks(currentUserId);
+        fetchPlaylists(currentUserId);
+      }
+    }, [currentUserId])
+  );
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
