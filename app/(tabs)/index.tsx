@@ -15,6 +15,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import { aspectToNumber } from '../../lib/aspectRatio';
+import { formatCount } from '../../lib/format';
 
 type Post = {
   id: string;
@@ -32,6 +33,7 @@ type Post = {
   comments: { count: number }[];
   save_count?: number;
   aspect_ratio?: string | null;
+  stream_count?: number;
 };
 
 export default function HomeScreen() {
@@ -306,11 +308,15 @@ export default function HomeScreen() {
                 <View style={[styles.audioIconRing, audioActive && styles.audioIconRingActive]}>
                   <Ionicons name={audioActive ? 'stop' : 'play'} size={22} color={COLORS.text} />
                 </View>
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.audioTitle} numberOfLines={1}>
                     {item.caption || 'Audio Track'}
                   </Text>
-                  <Text style={styles.audioArtist}>@{item.profiles?.username}</Text>
+                  <View style={styles.audioMeta}>
+                    <Text style={styles.audioArtist} numberOfLines={1}>@{item.profiles?.username}</Text>
+                    <Ionicons name="play" size={10} color={COLORS.textTertiary} />
+                    <Text style={styles.audioStreams}>{formatCount(item.stream_count)}</Text>
+                  </View>
                 </View>
               </View>
               <Ionicons name="musical-notes" size={32} color={COLORS.primary + '44'} />
@@ -584,7 +590,9 @@ const styles = StyleSheet.create({
     ...SHADOWS.glow,
   },
   audioTitle: { color: COLORS.text, fontSize: 14, fontWeight: '600', maxWidth: 180 },
-  audioArtist: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  audioMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  audioArtist: { color: COLORS.textSecondary, fontSize: 12 },
+  audioStreams: { color: COLORS.textTertiary, fontSize: 12 },
 
   caption: {
     color: COLORS.text,

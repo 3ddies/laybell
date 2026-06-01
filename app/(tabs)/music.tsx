@@ -10,11 +10,12 @@ import { supabase } from '../../lib/supabase';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
+import { formatCount } from '../../lib/format';
 
 type Playlist = { id: string; name: string; is_public: boolean; created_at: string };
 type Track = {
   post_id: string; position: number;
-  posts: { id: string; media_url: string; caption: string; profiles: { username: string; display_name: string } };
+  posts: { id: string; media_url: string; caption: string; stream_count?: number; profiles: { username: string; display_name: string } };
 };
 
 export default function MusicScreen() {
@@ -61,7 +62,7 @@ export default function MusicScreen() {
   async function fetchSavedTracks(userId: string) {
     const { data } = await supabase
       .from('saves')
-      .select('id, posts(id,media_url,caption,type,duration_seconds,profiles!posts_user_id_fkey(username,display_name))')
+      .select('id, posts(id,media_url,caption,type,duration_seconds,stream_count,profiles!posts_user_id_fkey(username,display_name))')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
     if (data) setSavedTracks(data.filter((s: any) => s.posts?.type === 'audio'));
@@ -71,7 +72,7 @@ export default function MusicScreen() {
     setTracksLoading(true);
     const { data } = await supabase
       .from('playlist_tracks')
-      .select('post_id,position,posts(id,media_url,caption,profiles!posts_user_id_fkey(username,display_name))')
+      .select('post_id,position,posts(id,media_url,caption,stream_count,profiles!posts_user_id_fkey(username,display_name))')
       .eq('playlist_id', playlistId)
       .order('position', { ascending: true });
     if (data) setTracks(data as any);
@@ -191,6 +192,7 @@ export default function MusicScreen() {
                   caption={item.posts.caption}
                   artist={item.posts.profiles?.display_name}
                   username={item.posts.profiles?.username}
+                  streams={item.posts.stream_count}
                   isPlaying={playingId === item.post_id}
                   onPlay={() => play(item.post_id, item.posts.media_url, item.posts.caption, item.posts.profiles?.display_name)}
                 />
@@ -221,6 +223,7 @@ export default function MusicScreen() {
               artist={item.posts?.profiles?.display_name}
               username={item.posts?.profiles?.username}
               duration={item.posts?.duration_seconds}
+              streams={item.posts?.stream_count}
               isPlaying={playingId === item.id}
               onPlay={() => play(item.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name)}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
@@ -271,8 +274,8 @@ function formatDuration(seconds?: number | null) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function TrackRow({ caption, artist, username, duration, isPlaying, onPlay, onAddToPlaylist }: {
-  caption: string; artist: string; username: string; duration?: number | null;
+function TrackRow({ caption, artist, username, duration, streams, isPlaying, onPlay, onAddToPlaylist }: {
+  caption: string; artist: string; username: string; duration?: number | null; streams?: number;
   isPlaying: boolean; onPlay: () => void; onAddToPlaylist?: () => void;
 }) {
   const durationLabel = formatDuration(duration);
@@ -283,7 +286,12 @@ function TrackRow({ caption, artist, username, duration, isPlaying, onPlay, onAd
       </TouchableOpacity>
       <View style={trackStyles.info}>
         <Text style={trackStyles.caption} numberOfLines={1}>{caption || 'Audio Track'}</Text>
-        <Text style={trackStyles.artist}>@{username}{durationLabel ? ` · ${durationLabel}` : ''}</Text>
+        <View style={trackStyles.meta}>
+          <Text style={trackStyles.artist} numberOfLines={1}>@{username}</Text>
+          <Ionicons name="play" size={9} color={COLORS.textTertiary} />
+          <Text style={trackStyles.streams}>{formatCount(streams)}</Text>
+          {durationLabel && <Text style={trackStyles.artist}>· {durationLabel}</Text>}
+        </View>
       </View>
       {isPlaying && (
         <View style={trackStyles.playingBadge}>
@@ -312,7 +320,9 @@ const trackStyles = StyleSheet.create({
   playBtnActive: { backgroundColor: COLORS.error },
   info: { flex: 1 },
   caption: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  artist: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  artist: { color: COLORS.textSecondary, fontSize: 12 },
+  streams: { color: COLORS.textTertiary, fontSize: 12 },
   playingBadge: { backgroundColor: COLORS.primary + '22', borderRadius: RADIUS.full, paddingHorizontal: SPACING.sm, paddingVertical: 3 },
   playingText: { color: COLORS.primary, fontSize: 11, fontWeight: '600' },
   addBtn: { padding: SPACING.xs },
