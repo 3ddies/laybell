@@ -15,6 +15,7 @@ type Post = {
   profiles: { username: string; display_name: string };
   likes?: { count: number }[];
   comments?: { count: number }[];
+  thumbnail_url?: string | null;
 };
 type Profile = {
   id: string; username: string; display_name: string;
@@ -72,7 +73,7 @@ export default function ExploreScreen() {
     if (genre === 'All') { await fetchTrending(); return; }
     const { data } = await supabase
       .from('post_tags')
-      .select('post_id, posts!inner(id,type,media_url,caption,created_at,user_id,is_public,profiles!posts_user_id_fkey(username,display_name))')
+      .select('post_id, posts!inner(id,type,media_url,caption,created_at,user_id,is_public,thumbnail_url,profiles!posts_user_id_fkey(username,display_name))')
       .eq('genre', genre.toLowerCase())
       .limit(20);
     if (data) {
@@ -250,8 +251,8 @@ export default function ExploreScreen() {
             ListEmptyComponent={<Text style={styles.emptyText}>No posts found</Text>}
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.postRow} onPress={() => router.push(`/post/${item.id}`)}>
-                {item.type === 'image' ? (
-                  <Image source={{ uri: item.media_url }} style={styles.postThumb} />
+                {item.type === 'image' || (item.type === 'video' && item.thumbnail_url) ? (
+                  <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url as string) }} style={styles.postThumb} />
                 ) : (
                   <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.postThumb}>
                     <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={20} color={COLORS.primary} />
@@ -291,8 +292,8 @@ export default function ExploreScreen() {
           ListEmptyComponent={<Text style={styles.emptyText}>No posts in this genre yet</Text>}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.gridItem} onPress={() => router.push(`/post/${item.id}`)}>
-              {item.type === 'image' ? (
-                <Image source={{ uri: item.media_url }} style={styles.gridImage} resizeMode="cover" />
+              {item.type === 'image' || (item.type === 'video' && item.thumbnail_url) ? (
+                <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url as string) }} style={styles.gridImage} resizeMode="cover" />
               ) : (
                 <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridImage}>
                   <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={32} color={COLORS.primary} />

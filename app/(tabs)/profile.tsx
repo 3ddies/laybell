@@ -55,9 +55,9 @@ export default function ProfileScreen() {
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
       supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-      supabase.from('posts').select('id, type, media_url, caption').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
-      supabase.from('likes').select('posts(id, type, media_url, caption)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
-      supabase.from('saves').select('posts(id, type, media_url, caption)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('posts').select('id, type, media_url, caption, thumbnail_url').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
+      supabase.from('likes').select('posts(id, type, media_url, caption, thumbnail_url)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('saves').select('posts(id, type, media_url, caption, thumbnail_url)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
     ]);
 
     if (profileRes.data) setProfile(profileRes.data);
@@ -190,8 +190,19 @@ export default function ProfileScreen() {
         <View style={styles.postsGrid}>
           {gridData.map((post: any) => (
             <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => router.push(`/post/${post.id}`)}>
-              {post.type === 'image' ? (
-                <Image source={{ uri: post.media_url }} style={styles.gridImage} resizeMode="cover" />
+              {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) ? (
+                <>
+                  <Image
+                    source={{ uri: post.type === 'image' ? post.media_url : post.thumbnail_url }}
+                    style={styles.gridImage}
+                    resizeMode="cover"
+                  />
+                  {post.type === 'video' && (
+                    <View style={styles.gridPlayOverlay}>
+                      <Ionicons name="play" size={14} color={COLORS.text} />
+                    </View>
+                  )}
+                </>
               ) : (
                 <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
                   <Ionicons
@@ -283,6 +294,12 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 6, right: 6,
     width: 18, height: 18, borderRadius: 9,
     backgroundColor: COLORS.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  gridPlayOverlay: {
+    position: 'absolute', top: 6, left: 6,
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center', justifyContent: 'center',
   },
   emptyGrid: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm },

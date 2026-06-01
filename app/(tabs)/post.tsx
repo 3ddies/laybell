@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { useState } from 'react';
 import { Audio } from 'expo-av';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -30,9 +31,10 @@ export default function PostScreen() {
   const [isPublic, setIsPublic] = useState(true);
   const [audioDuration, setAudioDuration] = useState<number | null>(null);
   const [format, setFormat] = useState<string>('1:1');
+  const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
 
   async function pickMedia() {
-    setFile(null); setError('');
+    setFile(null); setError(''); setThumbnailUri(null);
     if (postType === 'audio') {
       const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
       if (!result.canceled && result.assets[0]) {
@@ -52,7 +54,16 @@ export default function PostScreen() {
       allowsEditing: true, quality: 0.8,
       aspect: aspectToArray(format),
     });
-    if (!result.canceled && result.assets[0]) setFile(result.assets[0]);
+    if (!result.canceled && result.assets[0]) {
+      setFile(result.assets[0]);
+      if (postType === 'video') {
+        // Grab a frame ~1s in to use as the grid thumbnail
+        try {
+          const { uri } = await VideoThumbnails.getThumbnailAsync(result.assets[0].uri, { time: 1000 });
+          setThumbnailUri(uri);
+        } catch {}
+      }
+    }
   }
 
   async function handlePost() {
@@ -77,11 +88,24 @@ export default function PostScreen() {
 
       const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(filePath);
 
+      // Upload the generated video thumbnail (if any)
+      let thumbnailUrl: string | null = null;
+      if (postType === 'video' && thumbnailUri) {
+        const thumbPath = `${user.id}/${Date.now()}_thumb.jpg`;
+        const thumbForm = new FormData();
+        thumbForm.append('file', { uri: thumbnailUri, name: `${Date.now()}_thumb.jpg`, type: 'image/jpeg' } as any);
+        const { error: thumbErr } = await supabase.storage.from('posts').upload(thumbPath, thumbForm, {
+          contentType: 'image/jpeg', upsert: false,
+        });
+        if (!thumbErr) thumbnailUrl = supabase.storage.from('posts').getPublicUrl(thumbPath).data.publicUrl;
+      }
+
       const { error: postError } = await supabase.from('posts').insert({
         user_id: user.id, type: postType, media_url: publicUrl,
         caption: caption.trim(), is_public: isPublic,
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
         ...(postType !== 'audio' ? { aspect_ratio: format } : {}),
+        ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
       });
       if (postError) throw postError;
 
@@ -93,7 +117,7 @@ export default function PostScreen() {
       }
 
       Alert.alert('Posted! 🎉', 'Your post is now live on Laybell');
-      setFile(null); setCaption(''); setGenre('');
+      setFile(null); setCaption(''); setGenre(''); setThumbnailUri(null);
     } catch (err: any) {
       setError(err.message || 'Something went wrong');
     }

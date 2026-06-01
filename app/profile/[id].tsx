@@ -50,7 +50,7 @@ export default function PublicProfileScreen() {
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', id),
       supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', id),
-      supabase.from('posts').select('id, type, media_url, caption, is_public').eq('user_id', id).order('created_at', { ascending: false }),
+      supabase.from('posts').select('id, type, media_url, caption, is_public, thumbnail_url').eq('user_id', id).order('created_at', { ascending: false }),
       currentUser
         ? supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', id).maybeSingle()
         : Promise.resolve({ data: null }),
@@ -189,8 +189,19 @@ export default function PublicProfileScreen() {
         <View style={styles.postsGrid}>
           {filtered.map(post => (
             <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => router.push(`/post/${post.id}`)}>
-              {post.type === 'image' ? (
-                <Image source={{ uri: post.media_url }} style={styles.gridImage} resizeMode="cover" />
+              {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) ? (
+                <>
+                  <Image
+                    source={{ uri: post.type === 'image' ? post.media_url : post.thumbnail_url }}
+                    style={styles.gridImage}
+                    resizeMode="cover"
+                  />
+                  {post.type === 'video' && (
+                    <View style={styles.gridPlayOverlay}>
+                      <Ionicons name="play" size={14} color={COLORS.text} />
+                    </View>
+                  )}
+                </>
               ) : (
                 <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
                   <Ionicons name={post.type === 'audio' ? 'musical-notes' : 'videocam'} size={28} color={COLORS.primary} />
@@ -254,6 +265,10 @@ const styles = StyleSheet.create({
   gridItem: { width: '33.33%', aspectRatio: 1 },
   gridImage: { width: '100%', height: '100%' },
   gridPlaceholder: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', borderWidth: 0.5, borderColor: COLORS.border },
+  gridPlayOverlay: {
+    position: 'absolute', top: 6, left: 6, width: 20, height: 20, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
+  },
   emptyGrid: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm },
   emptyGridText: { color: COLORS.textTertiary, fontSize: 14 },
 });

@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../constants/theme';
 
-type Post = { id: string; type: string; media_url: string; caption: string };
+type Post = { id: string; type: string; media_url: string; caption: string; thumbnail_url?: string | null };
 
 export default function PrivatePostsScreen() {
   const router = useRouter();
@@ -23,7 +23,7 @@ export default function PrivatePostsScreen() {
     if (!user) { setLoading(false); return; }
     const { data } = await supabase
       .from('posts')
-      .select('id, type, media_url, caption')
+      .select('id, type, media_url, caption, thumbnail_url')
       .eq('user_id', user.id)
       .eq('is_public', false)
       .order('created_at', { ascending: false });
@@ -54,8 +54,12 @@ export default function PrivatePostsScreen() {
           <View style={styles.postsGrid}>
             {posts.map((post) => (
               <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => router.push(`/post/${post.id}`)}>
-                {post.type === 'image' ? (
-                  <Image source={{ uri: post.media_url }} style={styles.gridImage} resizeMode="cover" />
+                {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) ? (
+                  <Image
+                    source={{ uri: post.type === 'image' ? post.media_url : (post.thumbnail_url as string) }}
+                    style={styles.gridImage}
+                    resizeMode="cover"
+                  />
                 ) : (
                   <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
                     <Ionicons
