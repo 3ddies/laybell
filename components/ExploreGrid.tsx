@@ -1,12 +1,15 @@
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions,
 } from 'react-native';
+import { useRef, useState } from 'react';
+import { Video, ResizeMode } from 'expo-av';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { aspectToNumber } from '../lib/aspectRatio';
 import { useAudio } from '../contexts/AudioContext';
+import { formatCount } from '../lib/format';
 
 type GridPost = {
   id: string; type: string; media_url: string; caption: string;
@@ -15,23 +18,17 @@ type GridPost = {
   profiles?: { username: string; display_name: string } | null;
 };
 
-function formatCount(n?: number): string {
-  if (!n) return '0';
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
-  return String(n);
-}
-
 const GAP = 6;
 const H_PADDING = SPACING.md;
 const COL_W = (Dimensions.get('window').width - H_PADDING * 2 - GAP) / 2;
 const ROW_H = COL_W / 3;            // a song row is 1/3 of a picture tile
 const MUSIC_HEADER_H = 30;
+const VIDEO_GAP = 3;                // min non-video cells between videos
 
 type Cell =
   | { kind: 'media'; key: string; post: GridPost; height: number }
   | { kind: 'music'; key: string; songs: GridPost[]; height: number };
 
-// Chunk trending songs into groups of 2-4, avoiding a leftover singleton.
 function groupSongs(songs: GridPost[]): GridPost[][] {
   const groups: GridPost[][] = [];
   let i = 0;
@@ -45,46 +42,129 @@ function groupSongs(songs: GridPost[]): GridPost[][] {
 }
 
 function mediaHeight(post: GridPost): number {
-  if (post.type === 'video') {
-    // Reflect the posted dimensions (w/h); cap at 4:5 to match the feed/post sizing.
-    return Math.min(COL_W / aspectToNumber(post.aspect_ratio, 16 / 9), COL_W * 1.25);
-  }
-  return COL_W; // pictures always render 1:1
+  if (post.type === 'video') return Math.min(COL_W / aspectToNumber(post.aspect_ratio, 16 / 9), COL_W * 1.25);
+  return COL_W; // pictures render 1:1
 }
 
 export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
   const router = useRouter();
   const { play, currentTrack, isPlaying } = useAudio();
 
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+  const scrollY = useRef(0);
+  const viewportH = useRef(0);
+  const videoPos = useRef<Record<string, { y: number; h: number }>>({});
+
+  // Pick the single video closest to the viewport center (only one plays at a time).
+  const recomputeActive = () => {
+    const center = scrollY.current + viewportH.current / 2;
+    let best: string | null = null;
+    let bestDist = Infinity;
+    for (const id in videoPos.current) {
+      const { y, h } = videoPos.current[id];
+      const visible = y < scrollY.current + viewportH.current && y + h > scrollY.current;
+      if (!visible) continue;
+      const dist = Math.abs(y + h / 2 - center);
+      if (dist < bestDist) { bestDist = dist; best = id; }
+    }
+    setActiveVideoId(prev => (prev === best ? prev : best));
+  };
+
   if (!posts || posts.length === 0) {
     return <View style={styles.empty}><Text style={styles.emptyText}>No posts in this genre yet</Text></View>;
   }
 
-  const media = posts.filter(p => p.type === 'image' || p.type === 'video');
+  const images = posts.filter(p => p.type === 'image');
+  const videos = posts.filter(p => p.type === 'video');
   const musicGroups = groupSongs(posts.filter(p => p.type === 'audio'));
 
-  // Interleave music stacks among the media tiles for a varied layout.
-  const cells: Cell[] = [];
+  // Base (non-video) cells: interleave images and music stacks.
+  const baseCells: Cell[] = [];
   let mi = 0;
-  const pushMusic = () => {
-    const g = musicGroups[mi];
-    cells.push({ kind: 'music', key: `music-${mi}`, songs: g, height: MUSIC_HEADER_H + g.length * ROW_H });
-    mi++;
-  };
-  media.forEach((m, idx) => {
-    cells.push({ kind: 'media', key: m.id, post: m, height: mediaHeight(m) });
-    if (idx % 2 === 1 && mi < musicGroups.length) pushMusic();
+  images.forEach((m, idx) => {
+    baseCells.push({ kind: 'media', key: m.id, post: m, height: mediaHeight(m) });
+    if (idx % 2 === 1 && mi < musicGroups.length) {
+      const g = musicGroups[mi];
+      baseCells.push({ kind: 'music', key: `music-${mi}`, songs: g, height: MUSIC_HEADER_H + g.length * ROW_H });
+      mi++;
+    }
   });
-  while (mi < musicGroups.length) pushMusic();
-
-  // Masonry: add each cell to the currently shorter column.
-  const colHeights = [0, 0];
-  const cols: Cell[][] = [[], []];
-  for (const cell of cells) {
-    const c = colHeights[0] <= colHeights[1] ? 0 : 1;
-    cols[c].push(cell);
-    colHeights[c] += cell.height + GAP;
+  while (mi < musicGroups.length) {
+    const g = musicGroups[mi];
+    baseCells.push({ kind: 'music', key: `music-${mi}`, songs: g, height: MUSIC_HEADER_H + g.length * ROW_H });
+    mi++;
   }
+
+  // Masonry the base cells; splice videos in on alternating sides, spaced apart.
+  const cols: Cell[][] = [[], []];
+  const colH = [0, 0];
+  let videoSide = 0;
+  let sinceVideo = VIDEO_GAP; // allow a video early
+  let vi = 0;
+  const placeVideo = () => {
+    const v = videos[vi++];
+    const h = mediaHeight(v);
+    cols[videoSide].push({ kind: 'media', key: v.id, post: v, height: h });
+    colH[videoSide] += h + GAP;
+    videoSide ^= 1;
+    sinceVideo = 0;
+  };
+  for (const cell of baseCells) {
+    const c = colH[0] <= colH[1] ? 0 : 1;
+    cols[c].push(cell);
+    colH[c] += cell.height + GAP;
+    sinceVideo++;
+    if (vi < videos.length && sinceVideo >= VIDEO_GAP) placeVideo();
+  }
+  while (vi < videos.length) placeVideo();
+
+  const renderMedia = (cell: Cell & { kind: 'media' }) => {
+    const p = cell.post;
+    if (p.type === 'video') {
+      const active = activeVideoId === p.id;
+      return (
+        <TouchableOpacity
+          key={cell.key}
+          style={[styles.mediaCard, { height: cell.height }]}
+          activeOpacity={0.9}
+          onPress={() => router.push(`/post/${p.id}`)}
+          onLayout={e => { videoPos.current[p.id] = { y: e.nativeEvent.layout.y, h: cell.height }; recomputeActive(); }}
+        >
+          {active ? (
+            <Video
+              source={{ uri: p.media_url }}
+              style={styles.mediaImage}
+              resizeMode={ResizeMode.COVER}
+              isLooping isMuted shouldPlay
+            />
+          ) : p.thumbnail_url ? (
+            <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
+          ) : (
+            <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
+              <Ionicons name="videocam" size={28} color={COLORS.primary} />
+            </LinearGradient>
+          )}
+          <View style={styles.playBadge}><Ionicons name="play" size={12} color={COLORS.text} /></View>
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
+            <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      );
+    }
+    return (
+      <TouchableOpacity
+        key={cell.key}
+        style={[styles.mediaCard, { height: cell.height }]}
+        activeOpacity={0.9}
+        onPress={() => router.push(`/post/${p.id}`)}
+      >
+        <Image source={{ uri: p.media_url }} style={styles.mediaImage} resizeMode="cover" />
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
+          <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    );
+  };
 
   const renderCell = (cell: Cell) => {
     if (cell.kind === 'music') {
@@ -128,34 +208,18 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
         </View>
       );
     }
-    const p = cell.post;
-    const img = p.type === 'image' ? p.media_url : p.thumbnail_url;
-    return (
-      <TouchableOpacity
-        key={cell.key}
-        style={[styles.mediaCard, { height: cell.height }]}
-        onPress={() => router.push(`/post/${p.id}`)}
-        activeOpacity={0.9}
-      >
-        {img ? (
-          <Image source={{ uri: img }} style={styles.mediaImage} resizeMode="cover" />
-        ) : (
-          <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
-            <Ionicons name="videocam" size={28} color={COLORS.primary} />
-          </LinearGradient>
-        )}
-        {p.type === 'video' && (
-          <View style={styles.playBadge}><Ionicons name="play" size={12} color={COLORS.text} /></View>
-        )}
-        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
-          <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-    );
+    return renderMedia(cell);
   };
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scroll}>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={styles.scroll}
+      scrollEventThrottle={16}
+      onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; recomputeActive(); }}
+      onLayout={e => { viewportH.current = e.nativeEvent.layout.height; recomputeActive(); }}
+    >
       <View style={styles.row}>
         {cols.map((col, ci) => (
           <View key={ci} style={styles.col}>{col.map(renderCell)}</View>
