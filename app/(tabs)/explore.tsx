@@ -151,6 +151,13 @@ export default function ExploreScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Explore</Text>
+        <TouchableOpacity
+          style={styles.refreshBtn}
+          onPress={() => fetchByGenre(selectedGenre)}
+          disabled={loading || searching}
+        >
+          <Ionicons name="refresh" size={22} color={(loading || searching) ? COLORS.textTertiary : COLORS.primary} />
+        </TouchableOpacity>
       </View>
 
       {/* Search */}
@@ -315,7 +322,15 @@ export default function ExploreScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  header: { paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
+  },
+  refreshBtn: {
+    width: 38, height: 38, borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
   headerTitle: { color: COLORS.text, fontSize: 28, fontWeight: '800' },
 
   searchRow: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
