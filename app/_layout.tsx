@@ -17,8 +17,9 @@ function AppContent() {
       <Stack
         screenOptions={{
           headerShown: false,
-          gestureEnabled: true,           // swipe from the left edge to go back
-          animation: 'slide_from_right',  // previous screen sits behind during the transition
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,  // swipe to go back from anywhere, not just the edge
+          animation: 'slide_from_right',   // previous screen sits behind during the transition
           contentStyle: { backgroundColor: COLORS.background },
         }}
       />
