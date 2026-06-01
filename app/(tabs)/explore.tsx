@@ -19,6 +19,7 @@ type Post = {
   thumbnail_url?: string | null;
   aspect_ratio?: string | null;
   stream_count?: number;
+  cover_url?: string | null;
 };
 type Profile = {
   id: string; username: string; display_name: string;
@@ -76,7 +77,7 @@ export default function ExploreScreen() {
     if (genre === 'All') { await fetchTrending(); return; }
     const { data } = await supabase
       .from('post_tags')
-      .select('post_id, posts!inner(id,type,media_url,caption,created_at,user_id,is_public,thumbnail_url,aspect_ratio,stream_count,profiles!posts_user_id_fkey(username,display_name))')
+      .select('post_id, posts!inner(id,type,media_url,caption,created_at,user_id,is_public,thumbnail_url,aspect_ratio,stream_count,cover_url,profiles!posts_user_id_fkey(username,display_name))')
       .eq('genre', genre.toLowerCase())
       .limit(20);
     if (data) {

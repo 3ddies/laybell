@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  TextInput, ScrollView, ActivityIndicator, Alert, Switch,
+  TextInput, ScrollView, ActivityIndicator, Alert, Switch, Image,
 } from 'react-native';
 import { useState } from 'react';
 import { Audio } from 'expo-av';
@@ -32,6 +32,15 @@ export default function PostScreen() {
   const [audioDuration, setAudioDuration] = useState<number | null>(null);
   const [format, setFormat] = useState<string>('1:1');
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
+  const [coverUri, setCoverUri] = useState<string | null>(null);
+
+  async function pickCover() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true, aspect: [1, 1], quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) setCoverUri(result.assets[0].uri);
+  }
 
   async function pickMedia() {
     setFile(null); setError(''); setThumbnailUri(null);
@@ -100,12 +109,25 @@ export default function PostScreen() {
         if (!thumbErr) thumbnailUrl = supabase.storage.from('posts').getPublicUrl(thumbPath).data.publicUrl;
       }
 
+      // Upload cover art for audio posts (if any)
+      let coverUrl: string | null = null;
+      if (postType === 'audio' && coverUri) {
+        const coverPath = `${user.id}/${Date.now()}_cover.jpg`;
+        const coverForm = new FormData();
+        coverForm.append('file', { uri: coverUri, name: `${Date.now()}_cover.jpg`, type: 'image/jpeg' } as any);
+        const { error: coverErr } = await supabase.storage.from('posts').upload(coverPath, coverForm, {
+          contentType: 'image/jpeg', upsert: false,
+        });
+        if (!coverErr) coverUrl = supabase.storage.from('posts').getPublicUrl(coverPath).data.publicUrl;
+      }
+
       const { error: postError } = await supabase.from('posts').insert({
         user_id: user.id, type: postType, media_url: publicUrl,
         caption: caption.trim(), is_public: isPublic,
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
         ...(postType !== 'audio' ? { aspect_ratio: format } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
+        ...(coverUrl ? { cover_url: coverUrl } : {}),
       });
       if (postError) throw postError;
 
@@ -117,7 +139,7 @@ export default function PostScreen() {
       }
 
       Alert.alert('Posted! 🎉', 'Your post is now live on Laybell');
-      setFile(null); setCaption(''); setGenre(''); setThumbnailUri(null);
+      setFile(null); setCaption(''); setGenre(''); setThumbnailUri(null); setCoverUri(null);
     } catch (err: any) {
       setError(err.message || 'Something went wrong');
     }
@@ -176,6 +198,27 @@ export default function PostScreen() {
           </View>
         )}
       </TouchableOpacity>
+
+      {/* Cover art (audio only) */}
+      {postType === 'audio' && (
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Cover Art</Text>
+          <TouchableOpacity style={styles.coverPicker} onPress={pickCover}>
+            {coverUri ? (
+              <Image source={{ uri: coverUri }} style={styles.coverPreview} />
+            ) : (
+              <View style={styles.coverPlaceholder}>
+                <Ionicons name="image-outline" size={24} color={COLORS.textTertiary} />
+              </View>
+            )}
+            <View style={styles.coverInfo}>
+              <Text style={styles.coverTitle}>{coverUri ? 'Cover selected' : 'Add cover art'}</Text>
+              <Text style={styles.coverSub}>{coverUri ? 'Tap to change' : 'Square image shown next to your track'}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Format selector (image / video only) */}
       {postType !== 'audio' && (
@@ -310,6 +353,20 @@ const styles = StyleSheet.create({
   fileChange: { color: COLORS.textTertiary, fontSize: 12 },
 
   formatRow: { flexDirection: 'row', gap: SPACING.sm },
+
+  coverPicker: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.md, padding: SPACING.sm,
+  },
+  coverPreview: { width: 52, height: 52, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceElevated },
+  coverPlaceholder: {
+    width: 52, height: 52, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceElevated,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  coverInfo: { flex: 1 },
+  coverTitle: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  coverSub: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   formatBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.xs,
     backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,

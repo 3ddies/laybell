@@ -1,9 +1,9 @@
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, Modal,
+  ActivityIndicator, Alert, TextInput, Modal, Image,
 } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -16,7 +16,11 @@ import { formatCount } from '../../lib/format';
 type Playlist = { id: string; name: string; is_public: boolean; created_at: string };
 type Track = {
   post_id: string; position: number;
-  posts: { id: string; media_url: string; caption: string; stream_count?: number; profiles: { username: string; display_name: string } };
+  posts: {
+    id: string; media_url: string; caption: string; user_id: string;
+    stream_count?: number; cover_url?: string | null;
+    profiles: { id: string; username: string; display_name: string; avatar_url: string | null };
+  };
 };
 
 export default function MusicScreen() {
@@ -31,8 +35,10 @@ export default function MusicScreen() {
   const { playQueue } = useAudio();
   const [savedTracks, setSavedTracks] = useState<any[]>([]);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'playlists' | 'saved'>('playlists');
+  const [activeView, setActiveView] = useState<'playlists' | 'saved' | 'liked'>('playlists');
+  const [likedTracks, setLikedTracks] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => { setup(); }, []);
 
@@ -42,6 +48,7 @@ export default function MusicScreen() {
     useCallback(() => {
       if (currentUserId) {
         fetchSavedTracks(currentUserId);
+        fetchLikedTracks(currentUserId);
         fetchPlaylists(currentUserId);
       }
     }, [currentUserId])
@@ -51,7 +58,7 @@ export default function MusicScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setCurrentUserId(user.id);
-      await Promise.all([fetchPlaylists(user.id), fetchSavedTracks(user.id)]);
+      await Promise.all([fetchPlaylists(user.id), fetchSavedTracks(user.id), fetchLikedTracks(user.id)]);
     }
     setLoading(false);
   }
@@ -64,17 +71,26 @@ export default function MusicScreen() {
   async function fetchSavedTracks(userId: string) {
     const { data } = await supabase
       .from('saves')
-      .select('id, posts(id,media_url,caption,type,duration_seconds,stream_count,profiles!posts_user_id_fkey(username,display_name))')
+      .select('id, posts(id,media_url,caption,type,duration_seconds,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
     if (data) setSavedTracks(data.filter((s: any) => s.posts?.type === 'audio'));
+  }
+
+  async function fetchLikedTracks(userId: string) {
+    const { data } = await supabase
+      .from('likes')
+      .select('post_id, posts(id,media_url,caption,type,duration_seconds,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (data) setLikedTracks(data.filter((l: any) => l.posts?.type === 'audio'));
   }
 
   async function fetchPlaylistTracks(playlistId: string) {
     setTracksLoading(true);
     const { data } = await supabase
       .from('playlist_tracks')
-      .select('post_id,position,posts(id,media_url,caption,stream_count,profiles!posts_user_id_fkey(username,display_name))')
+      .select('post_id,position,posts(id,media_url,caption,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
       .eq('playlist_id', playlistId)
       .order('position', { ascending: true });
     if (data) setTracks(data as any);
@@ -118,21 +134,25 @@ export default function MusicScreen() {
 
       {/* Toggle */}
       <View style={styles.toggleRow}>
-        {(['playlists', 'saved'] as const).map(view => (
-          <TouchableOpacity
-            key={view}
-            style={[styles.toggleBtn, activeView === view && styles.toggleBtnActive]}
-            onPress={() => { setActiveView(view); setSelectedPlaylist(null); }}
-          >
-            <Ionicons
-              name={view === 'playlists' ? (activeView === view ? 'list' : 'list-outline') : (activeView === view ? 'bookmark' : 'bookmark-outline')}
-              size={16} color={activeView === view ? COLORS.text : COLORS.textSecondary}
-            />
-            <Text style={[styles.toggleText, activeView === view && styles.toggleTextActive]}>
-              {view === 'playlists' ? 'Playlists' : 'Saved Songs'}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {(['playlists', 'saved', 'liked'] as const).map(view => {
+          const icons: Record<typeof view, [any, any]> = {
+            playlists: ['list', 'list-outline'],
+            saved: ['bookmark', 'bookmark-outline'],
+            liked: ['heart', 'heart-outline'],
+          };
+          const labels: Record<typeof view, string> = { playlists: 'Playlists', saved: 'Saved', liked: 'Liked' };
+          const on = activeView === view;
+          return (
+            <TouchableOpacity
+              key={view}
+              style={[styles.toggleBtn, on && styles.toggleBtnActive]}
+              onPress={() => { setActiveView(view); setSelectedPlaylist(null); }}
+            >
+              <Ionicons name={on ? icons[view][0] : icons[view][1]} size={16} color={on ? COLORS.text : COLORS.textSecondary} />
+              <Text style={[styles.toggleText, on && styles.toggleTextActive]}>{labels[view]}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Playlists list */}
@@ -195,6 +215,8 @@ export default function MusicScreen() {
                   artist={item.posts.profiles?.display_name}
                   username={item.posts.profiles?.username}
                   streams={item.posts.stream_count}
+                  cover={item.posts.cover_url}
+                  avatarUrl={item.posts.profiles?.avatar_url}
                   isPlaying={playingId === item.post_id}
                   onPlay={() => playQueue(
                     tracks.map(t => ({
@@ -203,6 +225,7 @@ export default function MusicScreen() {
                     })),
                     index,
                   )}
+                  onAvatarPress={() => router.push(`/profile/${item.posts.user_id}`)}
                 />
               )}
             />
@@ -232,9 +255,51 @@ export default function MusicScreen() {
               username={item.posts?.profiles?.username}
               duration={item.posts?.duration_seconds}
               streams={item.posts?.stream_count}
-              isPlaying={playingId === item.id}
-              onPlay={() => play(item.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name)}
+              cover={item.posts?.cover_url}
+              avatarUrl={item.posts?.profiles?.avatar_url}
+              isPlaying={playingId === item.posts?.id}
+              onPlay={() => play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name)}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
+              onAvatarPress={() => router.push(`/profile/${item.posts?.user_id}`)}
+            />
+          )}
+        />
+      )}
+
+      {/* Liked songs */}
+      {activeView === 'liked' && (
+        <FlatList
+          data={likedTracks}
+          keyExtractor={item => item.post_id}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
+                <Ionicons name="heart" size={32} color={COLORS.primary} />
+              </LinearGradient>
+              <Text style={styles.emptyTitle}>No liked songs yet</Text>
+              <Text style={styles.emptySubtitle}>Like audio posts from your feed</Text>
+            </View>
+          }
+          renderItem={({ item, index }) => (
+            <TrackRow
+              caption={item.posts?.caption}
+              artist={item.posts?.profiles?.display_name}
+              username={item.posts?.profiles?.username}
+              duration={item.posts?.duration_seconds}
+              streams={item.posts?.stream_count}
+              cover={item.posts?.cover_url}
+              avatarUrl={item.posts?.profiles?.avatar_url}
+              isPlaying={playingId === item.posts?.id}
+              onPlay={() => playQueue(
+                likedTracks.map((t: any) => ({
+                  id: t.posts?.id, uri: t.posts?.media_url,
+                  caption: t.posts?.caption, artist: t.posts?.profiles?.display_name ?? '',
+                })),
+                index,
+              )}
+              onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
+              onAvatarPress={() => router.push(`/profile/${item.posts?.user_id}`)}
             />
           )}
         />
@@ -282,16 +347,28 @@ function formatDuration(seconds?: number | null) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function TrackRow({ caption, artist, username, duration, streams, isPlaying, onPlay, onAddToPlaylist }: {
+function TrackRow({ caption, artist, username, duration, streams, cover, avatarUrl, isPlaying, onPlay, onAddToPlaylist, onAvatarPress }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
-  isPlaying: boolean; onPlay: () => void; onAddToPlaylist?: () => void;
+  cover?: string | null; avatarUrl?: string | null;
+  isPlaying: boolean; onPlay: () => void; onAddToPlaylist?: () => void; onAvatarPress?: () => void;
 }) {
   const durationLabel = formatDuration(duration);
   return (
     <View style={trackStyles.row}>
-      <TouchableOpacity style={[trackStyles.playBtn, isPlaying && trackStyles.playBtnActive]} onPress={onPlay}>
-        <Ionicons name={isPlaying ? 'stop' : 'play'} size={18} color={COLORS.text} />
+      {/* Cover art (left) — tap to play */}
+      <TouchableOpacity style={trackStyles.coverWrap} onPress={onPlay}>
+        {cover ? (
+          <Image source={{ uri: cover }} style={trackStyles.cover} />
+        ) : (
+          <LinearGradient colors={GRADIENTS.primarySoft} style={trackStyles.cover}>
+            <Ionicons name="musical-notes" size={18} color={COLORS.primary} />
+          </LinearGradient>
+        )}
+        <View style={[trackStyles.coverOverlay, isPlaying && trackStyles.coverOverlayActive]}>
+          <Ionicons name={isPlaying ? 'stop' : 'play'} size={18} color={COLORS.text} />
+        </View>
       </TouchableOpacity>
+
       <View style={trackStyles.info}>
         <Text style={trackStyles.caption} numberOfLines={1}>{caption || 'Audio Track'}</Text>
         <View style={trackStyles.meta}>
@@ -301,14 +378,23 @@ function TrackRow({ caption, artist, username, duration, streams, isPlaying, onP
           {durationLabel && <Text style={trackStyles.artist}>· {durationLabel}</Text>}
         </View>
       </View>
-      {isPlaying && (
-        <View style={trackStyles.playingBadge}>
-          <Text style={trackStyles.playingText}>Playing</Text>
-        </View>
-      )}
+
       {onAddToPlaylist && (
         <TouchableOpacity style={trackStyles.addBtn} onPress={onAddToPlaylist}>
           <Ionicons name="add-circle-outline" size={22} color={COLORS.primary} />
+        </TouchableOpacity>
+      )}
+
+      {/* Artist avatar (right) — tap to open profile */}
+      {onAvatarPress && (
+        <TouchableOpacity onPress={onAvatarPress}>
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={trackStyles.avatar} />
+          ) : (
+            <LinearGradient colors={GRADIENTS.primary} style={trackStyles.avatar}>
+              <Text style={trackStyles.avatarText}>{(artist || username || '?').charAt(0).toUpperCase()}</Text>
+            </LinearGradient>
+          )}
         </TouchableOpacity>
       )}
     </View>
@@ -321,19 +407,21 @@ const trackStyles = StyleSheet.create({
     backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
     padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border, gap: SPACING.md,
   },
-  playBtn: {
-    width: 40, height: 40, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+  coverWrap: { width: 48, height: 48, borderRadius: RADIUS.sm, overflow: 'hidden' },
+  cover: { width: 48, height: 48, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
+  coverOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)',
   },
-  playBtnActive: { backgroundColor: COLORS.error },
+  coverOverlayActive: { backgroundColor: 'rgba(224,64,28,0.55)' },
   info: { flex: 1 },
   caption: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   artist: { color: COLORS.textSecondary, fontSize: 12 },
   streams: { color: COLORS.textTertiary, fontSize: 12 },
-  playingBadge: { backgroundColor: COLORS.primary + '22', borderRadius: RADIUS.full, paddingHorizontal: SPACING.sm, paddingVertical: 3 },
-  playingText: { color: COLORS.primary, fontSize: 11, fontWeight: '600' },
   addBtn: { padding: SPACING.xs },
+  avatar: { width: 34, height: 34, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceElevated },
+  avatarText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
 });
 
 const styles = StyleSheet.create({

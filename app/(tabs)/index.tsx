@@ -34,6 +34,7 @@ type Post = {
   save_count?: number;
   aspect_ratio?: string | null;
   stream_count?: number;
+  cover_url?: string | null;
 };
 
 export default function HomeScreen() {
@@ -305,9 +306,18 @@ export default function HomeScreen() {
           >
             <LinearGradient colors={audioActive ? ['#E8401C', '#C03010'] : ['#1C0E06', '#120A04']} style={styles.audioCard}>
               <View style={styles.audioLeft}>
-                <View style={[styles.audioIconRing, audioActive && styles.audioIconRingActive]}>
-                  <Ionicons name={audioActive ? 'stop' : 'play'} size={22} color={COLORS.text} />
-                </View>
+                {item.cover_url ? (
+                  <View style={styles.audioCover}>
+                    <Image source={{ uri: item.cover_url }} style={styles.audioCoverImg} />
+                    <View style={[styles.audioCoverOverlay, audioActive && styles.audioIconRingActive]}>
+                      <Ionicons name={audioActive ? 'stop' : 'play'} size={20} color={COLORS.text} />
+                    </View>
+                  </View>
+                ) : (
+                  <View style={[styles.audioIconRing, audioActive && styles.audioIconRingActive]}>
+                    <Ionicons name={audioActive ? 'stop' : 'play'} size={22} color={COLORS.text} />
+                  </View>
+                )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.audioTitle} numberOfLines={1}>
                     {item.caption || 'Audio Track'}
@@ -583,6 +593,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary + '44',
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: COLORS.primary + '88',
+  },
+  audioCover: { width: 48, height: 48, borderRadius: RADIUS.sm, overflow: 'hidden' },
+  audioCoverImg: { width: 48, height: 48 },
+  audioCoverOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)',
   },
   audioIconRingActive: {
     backgroundColor: COLORS.primaryDark,

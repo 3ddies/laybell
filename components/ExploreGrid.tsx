@@ -10,7 +10,7 @@ import { useAudio } from '../contexts/AudioContext';
 
 type GridPost = {
   id: string; type: string; media_url: string; caption: string;
-  thumbnail_url?: string | null; aspect_ratio?: string | null;
+  thumbnail_url?: string | null; aspect_ratio?: string | null; cover_url?: string | null;
   stream_count?: number;
   profiles?: { username: string; display_name: string } | null;
 };
@@ -102,9 +102,18 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
                 style={[styles.songRow, { height: ROW_H }, i > 0 && styles.songRowBorder]}
                 onPress={() => play({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? '' })}
               >
-                <LinearGradient colors={active ? GRADIENTS.primary : GRADIENTS.primarySoft} style={styles.songIcon}>
-                  <Ionicons name={active ? 'pause' : 'play'} size={16} color={active ? COLORS.text : COLORS.primary} />
-                </LinearGradient>
+                {s.cover_url ? (
+                  <View style={styles.songIcon}>
+                    <Image source={{ uri: s.cover_url }} style={styles.songCoverImg} />
+                    <View style={styles.songCoverOverlay}>
+                      <Ionicons name={active ? 'pause' : 'play'} size={15} color={COLORS.text} />
+                    </View>
+                  </View>
+                ) : (
+                  <LinearGradient colors={active ? GRADIENTS.primary : GRADIENTS.primarySoft} style={styles.songIcon}>
+                    <Ionicons name={active ? 'pause' : 'play'} size={16} color={active ? COLORS.text : COLORS.primary} />
+                  </LinearGradient>
+                )}
                 <View style={styles.songInfo}>
                   <Text style={styles.songTitle} numberOfLines={1}>{s.caption || 'Audio Track'}</Text>
                   <View style={styles.songMeta}>
@@ -184,7 +193,12 @@ const styles = StyleSheet.create({
   musicHeaderText: { color: COLORS.primary, fontSize: 11, fontWeight: '700' },
   songRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.sm },
   songRowBorder: { borderTopWidth: 0.5, borderTopColor: COLORS.border },
-  songIcon: { width: 32, height: 32, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
+  songIcon: { width: 32, height: 32, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  songCoverImg: { width: 32, height: 32 },
+  songCoverOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)',
+  },
   songInfo: { flex: 1 },
   songTitle: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
   songMeta: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
