@@ -12,7 +12,7 @@ import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 
 type Playlist = { id: string; name: string; is_public: boolean; created_at: string };
 type Track = {
-  id: string; post_id: string; position: number;
+  post_id: string; position: number;
   posts: { id: string; media_url: string; caption: string; profiles: { username: string; display_name: string } };
 };
 
@@ -59,7 +59,7 @@ export default function MusicScreen() {
     setTracksLoading(true);
     const { data } = await supabase
       .from('playlist_tracks')
-      .select('id,post_id,position,posts(id,media_url,caption,profiles!posts_user_id_fkey(username,display_name))')
+      .select('post_id,position,posts(id,media_url,caption,profiles!posts_user_id_fkey(username,display_name))')
       .eq('playlist_id', playlistId)
       .order('position', { ascending: true });
     if (data) setTracks(data as any);
@@ -167,7 +167,7 @@ export default function MusicScreen() {
           ) : (
             <FlatList
               data={tracks}
-              keyExtractor={item => item.id}
+              keyExtractor={item => item.post_id}
               contentContainerStyle={styles.listContent}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
