@@ -2,7 +2,8 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   TextInput, ScrollView, ActivityIndicator, Alert, Switch, Image,
 } from 'react-native';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { Audio } from 'expo-av';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../../lib/supabase';
+import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { IMAGE_FORMATS, VIDEO_FORMATS, aspectToArray, defaultFormatFor } from '../../lib/aspectRatio';
 
@@ -33,6 +35,10 @@ export default function PostScreen() {
   const [format, setFormat] = useState<string>('1:1');
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
   const [coverUri, setCoverUri] = useState<string | null>(null);
+  const { stop } = useAudio();
+
+  // Stop any playing track when the create-post tab is opened.
+  useFocusEffect(useCallback(() => { stop(); }, []));
 
   async function pickCover() {
     const result = await ImagePicker.launchImageLibraryAsync({
