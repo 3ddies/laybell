@@ -16,18 +16,27 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.laybell.app",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio",
+          "audio"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.laybell.app",
-      "permissions": ["android.permission.FOREGROUND_SERVICE"]
+      "permissions": [
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "plugins": [
       "expo-router",
       [
         "expo-av",
-        { "microphonePermission": false }
+        {
+          "microphonePermission": false
+        }
       ],
       [
         "expo-notifications",
@@ -37,6 +46,12 @@
           "sounds": []
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "83e40be5-3467-49af-898b-1a4c07d3bed4"
+      }
+    }
   }
 }

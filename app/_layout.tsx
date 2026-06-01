@@ -2,17 +2,12 @@ import { useEffect, useState } from 'react';
 import { Slot, useSegments, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
-import TrackPlayer from 'react-native-track-player';
 import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
 import { AudioProvider } from '../contexts/AudioContext';
 import MiniPlayer from '../components/MiniPlayer';
 import { useNotifications } from '../hooks/useNotifications';
-import { PlaybackService } from '../service';
-
-// Register TrackPlayer background service at module level
-TrackPlayer.registerPlaybackService(() => PlaybackService);
 
 function AppContent() {
   useNotifications();
