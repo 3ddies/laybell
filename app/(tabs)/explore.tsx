@@ -9,11 +9,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import ExploreGrid from '../../components/ExploreGrid';
+import TrackRow from '../../components/TrackRow';
+import { useAudio } from '../../contexts/AudioContext';
 
 type Post = {
   id: string; type: string; media_url: string;
   caption: string; created_at: string; user_id: string;
-  profiles: { username: string; display_name: string };
+  profiles: { username: string; display_name: string; avatar_url?: string | null };
   likes?: { count: number }[];
   comments?: { count: number }[];
   thumbnail_url?: string | null;
@@ -40,6 +42,7 @@ function getBadgeColor(tier: string) {
 
 export default function ExploreScreen() {
   const router = useRouter();
+  const { play, currentTrack, isPlaying } = useAudio();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchType, setSearchType] = useState<'posts' | 'accounts'>('posts');
   const [selectedGenre, setSelectedGenre] = useState('All');
@@ -253,7 +256,20 @@ export default function ExploreScreen() {
             keyExtractor={item => item.id}
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={<Text style={styles.emptyText}>No posts found</Text>}
-            renderItem={({ item }) => (
+            renderItem={({ item }) => item.type === 'audio' ? (
+              <TrackRow
+                caption={item.caption}
+                artist={item.profiles?.display_name}
+                username={item.profiles?.username}
+                streams={item.stream_count}
+                cover={item.cover_url}
+                avatarUrl={item.profiles?.avatar_url}
+                isPlaying={currentTrack?.id === item.id && isPlaying}
+                onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
+                onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); router.push('/now-playing'); }}
+                onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
+              />
+            ) : (
               <TouchableOpacity style={styles.postRow} onPress={() => router.push(`/post/${item.id}`)}>
                 {item.type === 'image' || (item.type === 'video' && item.thumbnail_url) ? (
                   <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url as string) }} style={styles.postThumb} />
@@ -372,7 +388,7 @@ const styles = StyleSheet.create({
   postRow: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.surfaceLight,
-    borderRadius: RADIUS.md, gap: SPACING.md,
+    borderRadius: RADIUS.md, gap: SPACING.md, paddingRight: SPACING.md,
     borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
   },
   postThumb: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface },
