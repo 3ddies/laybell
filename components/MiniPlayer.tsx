@@ -30,18 +30,21 @@ export default function MiniPlayer() {
 
   const clamp = (n: number) => Math.max(0, Math.min(1, n));
 
+  const commitSeek = (locationX: number) => {
+    const r = clamp(locationX / (barWidthRef.current || 1));
+    if (durationRef.current) seekRef.current(Math.floor(r * durationRef.current));
+    setDragRatio(null);
+  };
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false, // keep the gesture; don't snap back
       onPanResponderGrant: e => setDragRatio(clamp(e.nativeEvent.locationX / (barWidthRef.current || 1))),
       onPanResponderMove: e => setDragRatio(clamp(e.nativeEvent.locationX / (barWidthRef.current || 1))),
-      onPanResponderRelease: e => {
-        const r = clamp(e.nativeEvent.locationX / (barWidthRef.current || 1));
-        if (durationRef.current) seekRef.current(Math.floor(r * durationRef.current));
-        setDragRatio(null);
-      },
-      onPanResponderTerminate: () => setDragRatio(null),
+      onPanResponderRelease: e => commitSeek(e.nativeEvent.locationX),
+      onPanResponderTerminate: e => commitSeek(e.nativeEvent.locationX),
     })
   ).current;
 
@@ -80,22 +83,23 @@ export default function MiniPlayer() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.trackInfo} onPress={() => router.push('/now-playing')}>
-          <Text style={styles.caption} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
-          <Text style={styles.artist} numberOfLines={1}>{currentTrack.artist}</Text>
-        </TouchableOpacity>
-
-        <View style={styles.controls}>
+        {/* Tapping anywhere else on the bar toggles play/pause */}
+        <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => (isPlaying ? pause() : resume())}>
+          <View style={styles.trackInfo}>
+            <Text style={styles.caption} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
+            <Text style={styles.artist} numberOfLines={1}>{currentTrack.artist}</Text>
+          </View>
           <Text style={styles.timeText}>
             {formatMs(positionMs)}{durationMs > 0 ? ` / ${formatMs(durationMs)}` : ''}
           </Text>
-          <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
+          <View style={styles.playBtn}>
             <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={15} color={COLORS.text} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.stopBtn} onPress={stop}>
-            <Ionicons name="close" size={15} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        </View>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.stopBtn} onPress={stop}>
+          <Ionicons name="close" size={15} color={COLORS.textSecondary} />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -122,10 +126,10 @@ const styles = StyleSheet.create({
   },
   coverWrap: { width: 38, height: 38, borderRadius: RADIUS.sm, overflow: 'hidden' },
   cover: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  body: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   trackInfo: { flex: 1 },
   caption: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
   artist: { color: COLORS.textSecondary, fontSize: 11, marginTop: 1 },
-  controls: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   timeText: { color: COLORS.textTertiary, fontSize: 11, fontVariant: ['tabular-nums'] },
   playBtn: {
     width: 32, height: 32, borderRadius: RADIUS.full,

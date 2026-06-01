@@ -65,8 +65,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   async function seekTo(ms: number) {
     if (soundRef.current) {
+      setPositionMs(ms); // reflect immediately so the scrubber doesn't snap back
       await soundRef.current.setPositionAsync(ms);
-      setPositionMs(ms);
     }
   }
 
@@ -130,7 +130,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     try {
       const { sound } = await Audio.Sound.createAsync(
         { uri: track.uri },
-        { shouldPlay: true }
+        { shouldPlay: true, progressUpdateIntervalMillis: 250 } // smoother scrubber updates
       );
       soundRef.current = sound;
 
