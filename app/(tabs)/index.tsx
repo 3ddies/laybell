@@ -3,7 +3,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image, ActivityIndicator,
-  RefreshControl, Share, Dimensions,
+  RefreshControl, Share, Dimensions, Alert,
 } from 'react-native';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -47,7 +47,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
-  const { play, currentTrack, isPlaying, expand } = useAudio();
+  const { play, currentTrack, isPlaying, expand, videoMuted, toggleVideoMuted } = useAudio();
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
@@ -243,6 +243,25 @@ export default function HomeScreen() {
     }
   }
 
+  function openPostOptions(postId: string) {
+    Alert.alert('Post options', undefined, [
+      {
+        text: 'Delete post',
+        style: 'destructive',
+        onPress: () => Alert.alert('Delete post?', 'This permanently deletes the post and can’t be undone.', [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete', style: 'destructive', onPress: async () => {
+              await supabase.from('posts').delete().eq('id', postId);
+              setPosts(prev => prev.filter(p => p.id !== postId));
+            },
+          },
+        ]),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
   async function handleShare(item: Post) {
     const link = `laybell://post/${item.id}`;
     const text = item.caption
@@ -283,13 +302,23 @@ export default function HomeScreen() {
               @{item.profiles?.username} · {timeAgo(item.created_at)}
             </Text>
           </View>
-          <View style={styles.typeIconWrap}>
-            <Ionicons
-              name={item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline'}
-              size={16}
-              color={COLORS.primary}
-            />
-          </View>
+          {item.user_id === currentUserId ? (
+            <TouchableOpacity style={styles.typeIconWrap} onPress={() => openPostOptions(item.id)}>
+              <Ionicons
+                name={item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline'}
+                size={16}
+                color={COLORS.primary}
+              />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.typeIconWrap}>
+              <Ionicons
+                name={item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline'}
+                size={16}
+                color={COLORS.primary}
+              />
+            </View>
+          )}
         </TouchableOpacity>
 
         {/* Media */}
@@ -321,16 +350,21 @@ export default function HomeScreen() {
         )}
 
         {item.type === 'video' && item.media_url && (
-          <TouchableOpacity activeOpacity={1} onPress={() => router.push(`/post/${item.id}`)}>
-            <Video
-              source={{ uri: item.media_url }}
-              style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H) }]}
-              resizeMode={ResizeMode.COVER}
-              isLooping
-              isMuted
-              shouldPlay={visibleVideoId === item.id}
-            />
-          </TouchableOpacity>
+          <View>
+            <TouchableOpacity activeOpacity={1} onPress={() => router.push(`/post/${item.id}`)}>
+              <Video
+                source={{ uri: item.media_url }}
+                style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H) }]}
+                resizeMode={ResizeMode.COVER}
+                isLooping
+                isMuted={videoMuted}
+                shouldPlay={visibleVideoId === item.id}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.videoAudioBtn} onPress={toggleVideoMuted}>
+              <Ionicons name={videoMuted ? 'volume-mute' : 'volume-high'} size={18} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Caption */}
@@ -378,7 +412,7 @@ export default function HomeScreen() {
         </View>
       </View>
     );
-  }, [likedPosts, savedPosts, currentTrack, isPlaying, posts, currentUserId, router, playlistCount, visibleVideoId]);
+  }, [likedPosts, savedPosts, currentTrack, isPlaying, posts, currentUserId, router, playlistCount, visibleVideoId, videoMuted]);
 
   if (loading) {
     return (
@@ -562,6 +596,11 @@ const styles = StyleSheet.create({
   postVideo: {
     width: '100%',
     backgroundColor: '#000',
+  },
+  videoAudioBtn: {
+    position: 'absolute', top: SPACING.sm, right: SPACING.sm,
+    width: 34, height: 34, borderRadius: RADIUS.full,
+    backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
   },
   postImage: {
     width: '100%',

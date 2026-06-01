@@ -37,6 +37,8 @@ type AudioContextType = {
   previous: () => void;
   queueIndex: number;
   queueLength: number;
+  videoMuted: boolean;
+  toggleVideoMuted: () => void;
 };
 
 const AudioContext = createContext<AudioContextType | null>(null);
@@ -50,6 +52,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [expanded, setExpanded] = useState(false);
   const expand = () => setExpanded(true);
   const collapse = () => setExpanded(false);
+  // Feed video audio. ON at app open; auto-muted once a song plays (no overlap).
+  const [videoMuted, setVideoMuted] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
@@ -87,6 +91,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (soundRef.current) {
       await soundRef.current.playAsync();
       setIsPlaying(true);
+    }
+  }
+
+  // Tap a video's audio button: turning video audio ON pauses the song so they
+  // don't overlap; turning it off just mutes the video.
+  function toggleVideoMuted() {
+    if (videoMuted) {
+      if (isPlaying) pause();
+      setVideoMuted(false);
+    } else {
+      setVideoMuted(true);
     }
   }
 
@@ -149,6 +164,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsBuffering(true);
     setPositionMs(0);
     setDurationMs(0);
+    setVideoMuted(true); // a song is playing → mute feed video to avoid overlap
 
     // --- Stream counting policy ---
     // First counted listen of a song triggers at 10%; every later listen must
@@ -241,7 +257,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted }}>
       {children}
     </AudioContext.Provider>
   );

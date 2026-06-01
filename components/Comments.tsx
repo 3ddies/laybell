@@ -148,12 +148,19 @@ export default function Comments({
           </>
         }
         ListEmptyComponent={<Text style={styles.empty}>No comments yet — be the first!</Text>}
-        renderItem={({ item }) => (
-          <View>
-            <Row item={item} />
-            {repliesOf(item.id).map(r => <Row key={r.id} item={r} isReply />)}
-          </View>
-        )}
+        renderItem={({ item }) => {
+          const replies = repliesOf(item.id);
+          return (
+            <View>
+              <Row item={item} />
+              {replies.length > 0 && (
+                <View style={styles.replyWire}>
+                  {replies.map(r => <Row key={r.id} item={r} isReply />)}
+                </View>
+              )}
+            </View>
+          );
+        }}
       />
 
       <View style={styles.inputWrap}>
@@ -188,7 +195,9 @@ const styles = StyleSheet.create({
   empty: { color: COLORS.textTertiary, fontSize: 13, paddingVertical: SPACING.md },
 
   row: { flexDirection: 'row', gap: SPACING.sm, paddingVertical: SPACING.sm },
-  replyRow: { marginLeft: SPACING.xl, paddingVertical: SPACING.xs },
+  // Wire connecting a comment to its replies, so threads are easy to trace.
+  replyWire: { marginLeft: 17, borderLeftWidth: 2, borderLeftColor: COLORS.primary + '55', paddingLeft: SPACING.md },
+  replyRow: { paddingVertical: SPACING.xs },
   avatar: { width: 34, height: 34, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   avatarSm: { width: 26, height: 26 },
   avatarText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
