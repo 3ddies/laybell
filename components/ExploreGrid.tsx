@@ -301,6 +301,9 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles }:
             </LinearGradient>
           )}
           <View style={styles.squareBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={11} color={COLORS.text} /></View>
+          <View style={styles.squareTitleBar}>
+            <Text style={styles.squareTitleText} numberOfLines={1}>{p.caption || 'Audio Track'}</Text>
+          </View>
         </TouchableOpacity>
       );
     }
@@ -360,6 +363,11 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 6, left: 6, width: 20, height: 20, borderRadius: 10,
     backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
   },
+  squareTitleBar: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 6, paddingVertical: 4,
+  },
+  squareTitleText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' },
 
   mediaCard: { width: COL_W, borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: COLORS.surfaceLight },
   mediaImage: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
