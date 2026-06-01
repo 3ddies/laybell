@@ -7,6 +7,7 @@ export type Track = {
   uri: string;
   caption: string;
   artist: string;
+  cover?: string | null;
 };
 
 type AudioContextType = {
@@ -17,6 +18,8 @@ type AudioContextType = {
   durationMs: number;
   play: (track: Track) => Promise<void>;
   playQueue: (tracks: Track[], startIndex?: number) => Promise<void>;
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
   stop: () => Promise<void>;
   seekTo: (ms: number) => Promise<void>;
 };
@@ -44,6 +47,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setCurrentTrack(null);
     setPositionMs(0);
     setDurationMs(0);
+  }
+
+  async function pause() {
+    if (soundRef.current) {
+      await soundRef.current.pauseAsync();
+      setIsPlaying(false);
+    }
+  }
+
+  async function resume() {
+    if (soundRef.current) {
+      await soundRef.current.playAsync();
+      setIsPlaying(true);
+    }
   }
 
   async function seekTo(ms: number) {
@@ -163,7 +180,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, stop, seekTo }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, pause, resume, stop, seekTo }}>
       {children}
     </AudioContext.Provider>
   );

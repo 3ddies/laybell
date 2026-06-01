@@ -201,7 +201,7 @@ export default function PostDetailScreen() {
             {post.type === 'audio' && (
               <TouchableOpacity
                 style={styles.audioWrap}
-                onPress={() => audioPlaying ? stop() : play({ id: post.id, uri: post.media_url, caption: post.caption, artist: post.profiles?.display_name })}
+                onPress={() => audioPlaying ? stop() : play({ id: post.id, uri: post.media_url, caption: post.caption, artist: post.profiles?.display_name, cover: post.cover_url })}
               >
                 <LinearGradient colors={audioPlaying ? ['#E8401C', '#C03010'] : ['#1C0E06', '#120A04']} style={styles.audioCard}>
                   {post.cover_url ? (

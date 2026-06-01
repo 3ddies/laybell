@@ -100,7 +100,7 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
               <TouchableOpacity
                 key={s.id}
                 style={[styles.songRow, { height: ROW_H }, i > 0 && styles.songRowBorder]}
-                onPress={() => play({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? '' })}
+                onPress={() => play({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? '', cover: s.cover_url })}
               >
                 {s.cover_url ? (
                   <View style={styles.songIcon}>

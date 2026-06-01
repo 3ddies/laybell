@@ -222,6 +222,7 @@ export default function MusicScreen() {
                     tracks.map(t => ({
                       id: t.post_id, uri: t.posts.media_url,
                       caption: t.posts.caption, artist: t.posts.profiles?.display_name ?? '',
+                      cover: t.posts.cover_url,
                     })),
                     index,
                   )}
@@ -258,7 +259,7 @@ export default function MusicScreen() {
               cover={item.posts?.cover_url}
               avatarUrl={item.posts?.profiles?.avatar_url}
               isPlaying={playingId === item.posts?.id}
-              onPlay={() => play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name)}
+              onPlay={() => play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url)}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
               onAvatarPress={() => router.push(`/profile/${item.posts?.user_id}`)}
             />
@@ -295,6 +296,7 @@ export default function MusicScreen() {
                 likedTracks.map((t: any) => ({
                   id: t.posts?.id, uri: t.posts?.media_url,
                   caption: t.posts?.caption, artist: t.posts?.profiles?.display_name ?? '',
+                  cover: t.posts?.cover_url,
                 })),
                 index,
               )}

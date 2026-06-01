@@ -1,9 +1,12 @@
-import { View, Text, TouchableOpacity, StyleSheet, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, PanResponder } from 'react-native';
 import { useRef, useState } from 'react';
+import { useRouter, usePathname } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio } from '../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
+
+const THUMB = 14;
 
 function formatMs(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -12,61 +15,85 @@ function formatMs(ms: number): string {
 }
 
 export default function MiniPlayer() {
-  const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, stop, seekTo } = useAudio();
+  const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, stop, seekTo } = useAudio();
+  const router = useRouter();
+  const pathname = usePathname();
   const [barWidth, setBarWidth] = useState(0);
+  const [dragRatio, setDragRatio] = useState<number | null>(null);
 
-  if (!currentTrack) return null;
+  // Refs so the once-created PanResponder always sees fresh values.
+  const barWidthRef = useRef(0);
+  const durationRef = useRef(0);
+  const seekRef = useRef(seekTo);
+  durationRef.current = durationMs;
+  seekRef.current = seekTo;
+
+  const clamp = (n: number) => Math.max(0, Math.min(1, n));
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: e => setDragRatio(clamp(e.nativeEvent.locationX / (barWidthRef.current || 1))),
+      onPanResponderMove: e => setDragRatio(clamp(e.nativeEvent.locationX / (barWidthRef.current || 1))),
+      onPanResponderRelease: e => {
+        const r = clamp(e.nativeEvent.locationX / (barWidthRef.current || 1));
+        if (durationRef.current) seekRef.current(Math.floor(r * durationRef.current));
+        setDragRatio(null);
+      },
+      onPanResponderTerminate: () => setDragRatio(null),
+    })
+  ).current;
+
+  if (!currentTrack || pathname === '/now-playing') return null;
 
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
-
-  function handleSeek(evt: any) {
-    if (!barWidth || !durationMs) return;
-    const x = evt.nativeEvent.locationX;
-    const ratio = Math.max(0, Math.min(1, x / barWidth));
-    seekTo(Math.floor(ratio * durationMs));
-  }
+  const shown = dragRatio != null ? dragRatio : progress;
 
   return (
     <View style={styles.container}>
-      {/* Seekable progress bar */}
-      <Pressable
-        style={styles.progressTrack}
-        onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
-        onPress={handleSeek}
+      {/* Scrubbable progress bar with draggable thumb */}
+      <View
+        style={styles.progressArea}
+        onLayout={e => { const w = e.nativeEvent.layout.width; setBarWidth(w); barWidthRef.current = w; }}
+        {...panResponder.panHandlers}
       >
-        <LinearGradient
-          colors={GRADIENTS.primaryWarm}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={[styles.progressFill, { width: `${progress * 100}%` }]}
-        />
-      </Pressable>
+        <View style={styles.progressTrack}>
+          <LinearGradient
+            colors={GRADIENTS.primaryWarm}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={[styles.progressFill, { width: `${shown * 100}%` }]}
+          />
+        </View>
+        <View style={[styles.thumb, { left: Math.max(0, Math.min(barWidth - THUMB, shown * barWidth - THUMB / 2)) }]} />
+      </View>
 
       <View style={styles.inner}>
-        <View style={styles.iconWrap}>
-          {isBuffering ? (
-            <Text style={styles.bufferingDot}>⟳</Text>
+        {/* Album cover — tap to open the full now-playing screen */}
+        <TouchableOpacity style={styles.coverWrap} onPress={() => router.push('/now-playing')}>
+          {currentTrack.cover ? (
+            <Image source={{ uri: currentTrack.cover }} style={styles.cover} />
           ) : (
-            <Text style={styles.icon}>🎵</Text>
+            <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
+              <Ionicons name="musical-notes" size={16} color={COLORS.primary} />
+            </LinearGradient>
           )}
-        </View>
+        </TouchableOpacity>
 
-        <View style={styles.trackInfo}>
-          <Text style={styles.caption} numberOfLines={1}>
-            {currentTrack.caption || 'Audio Track'}
-          </Text>
-          <Text style={styles.artist} numberOfLines={1}>
-            {currentTrack.artist}
-          </Text>
-        </View>
+        <TouchableOpacity style={styles.trackInfo} onPress={() => router.push('/now-playing')}>
+          <Text style={styles.caption} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
+          <Text style={styles.artist} numberOfLines={1}>{currentTrack.artist}</Text>
+        </TouchableOpacity>
 
         <View style={styles.controls}>
           <Text style={styles.timeText}>
-            {formatMs(positionMs)}
-            {durationMs > 0 ? ` / ${formatMs(durationMs)}` : ''}
+            {formatMs(positionMs)}{durationMs > 0 ? ` / ${formatMs(durationMs)}` : ''}
           </Text>
+          <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
+            <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={15} color={COLORS.text} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.stopBtn} onPress={stop}>
-            <Ionicons name="stop" size={14} color={COLORS.text} />
+            <Ionicons name="close" size={15} color={COLORS.textSecondary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -76,74 +103,36 @@ export default function MiniPlayer() {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    bottom: 60,
-    left: 0,
-    right: 0,
+    position: 'absolute', bottom: 60, left: 0, right: 0,
     backgroundColor: COLORS.surface,
-    borderTopWidth: 0.5,
-    borderTopColor: COLORS.primaryLight + '66',
+    borderTopWidth: 0.5, borderTopColor: COLORS.primaryLight + '66',
     zIndex: 100,
   },
-  progressTrack: {
-    height: 3,
-    backgroundColor: COLORS.border,
-    width: '100%',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: COLORS.primary,
-    borderRadius: 2,
+  progressArea: { height: 16, justifyContent: 'center', width: '100%' },
+  progressTrack: { height: 4, backgroundColor: COLORS.border, width: '100%' },
+  progressFill: { height: '100%', backgroundColor: COLORS.primary },
+  thumb: {
+    position: 'absolute', top: (16 - THUMB) / 2,
+    width: THUMB, height: THUMB, borderRadius: THUMB / 2,
+    backgroundColor: COLORS.primary, borderWidth: 2, borderColor: COLORS.text,
   },
   inner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    gap: SPACING.sm,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.sm,
   },
-  iconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.primary + '33',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  icon: { fontSize: 16 },
-  bufferingDot: {
-    fontSize: 18,
-    color: COLORS.primary,
-  },
-  trackInfo: {
-    flex: 1,
-  },
-  caption: {
-    color: COLORS.text,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  artist: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
-    marginTop: 1,
-  },
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
-  timeText: {
-    color: COLORS.textTertiary,
-    fontSize: 11,
-    fontVariant: ['tabular-nums'],
+  coverWrap: { width: 38, height: 38, borderRadius: RADIUS.sm, overflow: 'hidden' },
+  cover: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  trackInfo: { flex: 1 },
+  caption: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
+  artist: { color: COLORS.textSecondary, fontSize: 11, marginTop: 1 },
+  controls: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  timeText: { color: COLORS.textTertiary, fontSize: 11, fontVariant: ['tabular-nums'] },
+  playBtn: {
+    width: 32, height: 32, borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
   },
   stopBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 30, height: 30, borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surfaceElevated, alignItems: 'center', justifyContent: 'center',
   },
 });

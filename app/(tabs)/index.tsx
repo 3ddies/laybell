@@ -311,8 +311,7 @@ export default function HomeScreen() {
               avatarUrl={item.profiles?.avatar_url}
               duration={item.duration_seconds}
               isPlaying={audioActive}
-              onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name })}
-              onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
+              onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
             />
           </View>
         )}

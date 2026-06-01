@@ -3,8 +3,8 @@ import { useAudio } from '../contexts/AudioContext';
 export function useAudioPlayer() {
   const { currentTrack, isPlaying, play, stop } = useAudio();
 
-  async function playTrack(id: string, uri: string, caption = '', artist = '') {
-    await play({ id, uri, caption, artist });
+  async function playTrack(id: string, uri: string, caption = '', artist = '', cover: string | null = null) {
+    await play({ id, uri, caption, artist, cover });
   }
 
   return {
