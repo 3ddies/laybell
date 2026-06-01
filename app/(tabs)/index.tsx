@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 
 const SCREEN_W = Dimensions.get('window').width;
-const MAX_VIDEO_H = Dimensions.get('window').height * 0.6; // keep tall (9:16) videos from overflowing the feed
+const MAX_VIDEO_H = SCREEN_W * 1.25; // cap feed video at 4:5 so tall (9:16) clips aren't too long
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -325,7 +325,7 @@ export default function HomeScreen() {
             <Video
               source={{ uri: item.media_url }}
               style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H) }]}
-              resizeMode={ResizeMode.CONTAIN}
+              resizeMode={ResizeMode.COVER}
               isLooping
               isMuted
               shouldPlay={visibleVideoId === item.id}
