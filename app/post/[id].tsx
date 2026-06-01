@@ -21,6 +21,7 @@ type Post = {
   created_at: string; user_id: string;
   aspect_ratio?: string | null;
   stream_count?: number;
+  cover_url?: string | null;
   profiles: { username: string; display_name: string; avatar_url: string | null };
 };
 type Comment = {
@@ -203,9 +204,18 @@ export default function PostDetailScreen() {
                 onPress={() => audioPlaying ? stop() : play({ id: post.id, uri: post.media_url, caption: post.caption, artist: post.profiles?.display_name })}
               >
                 <LinearGradient colors={audioPlaying ? ['#E8401C', '#C03010'] : ['#1C0E06', '#120A04']} style={styles.audioCard}>
-                  <View style={[styles.audioRing, audioPlaying && styles.audioRingActive]}>
-                    <Ionicons name={audioPlaying ? 'stop' : 'play'} size={24} color={COLORS.text} />
-                  </View>
+                  {post.cover_url ? (
+                    <View style={styles.audioCover}>
+                      <Image source={{ uri: post.cover_url }} style={styles.audioCoverImg} />
+                      <View style={[styles.audioCoverOverlay, audioPlaying && styles.audioRingActive]}>
+                        <Ionicons name={audioPlaying ? 'stop' : 'play'} size={22} color={COLORS.text} />
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={[styles.audioRing, audioPlaying && styles.audioRingActive]}>
+                      <Ionicons name={audioPlaying ? 'stop' : 'play'} size={24} color={COLORS.text} />
+                    </View>
+                  )}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.audioTitle} numberOfLines={1}>{post.caption || 'Audio Track'}</Text>
                     <Text style={styles.audioArtist}>
@@ -320,6 +330,9 @@ const styles = StyleSheet.create({
   audioWrap: { marginHorizontal: SPACING.md, marginVertical: SPACING.sm, borderRadius: RADIUS.md, overflow: 'hidden' },
   audioCard: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, gap: SPACING.md, borderRadius: RADIUS.md },
   audioRing: { width: 48, height: 48, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + '44', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.primary + '88' },
+  audioCover: { width: 52, height: 52, borderRadius: RADIUS.sm, overflow: 'hidden' },
+  audioCoverImg: { width: 52, height: 52 },
+  audioCoverOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   audioRingActive: { backgroundColor: COLORS.primaryDark, borderColor: COLORS.primaryLight, ...SHADOWS.glow },
   audioTitle: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
   audioArtist: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
