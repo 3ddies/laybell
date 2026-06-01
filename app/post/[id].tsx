@@ -36,6 +36,7 @@ export default function PostDetailScreen() {
   const [commentCount, setCommentCount] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [saveCount, setSaveCount] = useState(0);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
@@ -78,7 +79,7 @@ export default function PostDetailScreen() {
       supabase.from('comments').select('*, profiles!comments_user_id_fkey(username, display_name)').eq('post_id', id).order('created_at', { ascending: true }),
     ]);
 
-    if (postRes.data) setPost(postRes.data as any);
+    if (postRes.data) { setPost(postRes.data as any); setSaveCount((postRes.data as any).save_count || 0); }
     if (likesRes.data) {
       setLikeCount(likesRes.data.length);
       if (user) setIsLiked(likesRes.data.some(l => l.user_id === user.id));
@@ -109,6 +110,7 @@ export default function PostDetailScreen() {
   async function handleSave() {
     if (!currentUserId) return;
     setIsSaved(prev => !prev);
+    setSaveCount(prev => isSaved ? Math.max(prev - 1, 0) : prev + 1);
     if (isSaved) {
       await supabase.from('saves').delete().eq('user_id', currentUserId).eq('post_id', id);
     } else {
@@ -225,11 +227,10 @@ export default function PostDetailScreen() {
                 <Ionicons name="chatbubble-outline" size={22} color={COLORS.textSecondary} />
                 {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
               </View>
-              {post.type === 'audio' && (
-                <TouchableOpacity style={styles.actionBtn} onPress={handleSave}>
-                  <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? COLORS.primary : COLORS.textSecondary} />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity style={styles.actionBtn} onPress={handleSave}>
+                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? COLORS.primary : COLORS.textSecondary} />
+                {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: COLORS.primary }]}>{saveCount}</Text>}
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionBtn, { marginLeft: 'auto' }]}
                 onPress={async () => {

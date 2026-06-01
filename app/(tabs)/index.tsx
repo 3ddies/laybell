@@ -29,6 +29,7 @@ type Post = {
   };
   likes: { count: number }[];
   comments: { count: number }[];
+  save_count?: number;
 };
 
 export default function HomeScreen() {
@@ -202,6 +203,11 @@ export default function HomeScreen() {
       isSaved ? next.delete(postId) : next.add(postId);
       return next;
     });
+    setPosts(prev => prev.map(p => {
+      if (p.id !== postId) return p;
+      const c = p.save_count || 0;
+      return { ...p, save_count: isSaved ? Math.max(c - 1, 0) : c + 1 };
+    }));
     if (isSaved) {
       await supabase.from('saves').delete().eq('user_id', currentUserId).eq('post_id', postId);
     } else {
@@ -234,6 +240,7 @@ export default function HomeScreen() {
     const isSaved = savedPosts.has(item.id);
     const likeCount = item.likes[0]?.count || 0;
     const commentCount = item.comments[0]?.count || 0;
+    const saveCount = item.save_count || 0;
     const audioActive = isPlaying && currentTrack?.id === item.id;
 
     return (
@@ -341,6 +348,9 @@ export default function HomeScreen() {
               size={20}
               color={isSaved ? COLORS.primary : COLORS.textSecondary}
             />
+            {saveCount > 0 && (
+              <Text style={[styles.actionCount, isSaved && { color: COLORS.primary }]}>{saveCount}</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRight]} onPress={() => handleShare(item)}>
