@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
+import ExploreGrid from '../../components/ExploreGrid';
 
 type Post = {
   id: string; type: string; media_url: string;
@@ -16,6 +17,7 @@ type Post = {
   likes?: { count: number }[];
   comments?: { count: number }[];
   thumbnail_url?: string | null;
+  aspect_ratio?: string | null;
 };
 type Profile = {
   id: string; username: string; display_name: string;
@@ -73,7 +75,7 @@ export default function ExploreScreen() {
     if (genre === 'All') { await fetchTrending(); return; }
     const { data } = await supabase
       .from('post_tags')
-      .select('post_id, posts!inner(id,type,media_url,caption,created_at,user_id,is_public,thumbnail_url,profiles!posts_user_id_fkey(username,display_name))')
+      .select('post_id, posts!inner(id,type,media_url,caption,created_at,user_id,is_public,thumbnail_url,aspect_ratio,profiles!posts_user_id_fkey(username,display_name))')
       .eq('genre', genre.toLowerCase())
       .limit(20);
     if (data) {
@@ -283,29 +285,7 @@ export default function ExploreScreen() {
           />
         )
       ) : (
-        <FlatList
-          key="grid"
-          data={trendingPosts}
-          keyExtractor={item => item.id}
-          numColumns={2}
-          contentContainerStyle={styles.gridContent}
-          ListEmptyComponent={<Text style={styles.emptyText}>No posts in this genre yet</Text>}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.gridItem} onPress={() => router.push(`/post/${item.id}`)}>
-              {item.type === 'image' || (item.type === 'video' && item.thumbnail_url) ? (
-                <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url as string) }} style={styles.gridImage} resizeMode="cover" />
-              ) : (
-                <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridImage}>
-                  <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={32} color={COLORS.primary} />
-                  <Text style={styles.gridCaption} numberOfLines={2}>{item.caption}</Text>
-                </LinearGradient>
-              )}
-              <View style={styles.gridOverlay}>
-                <Text style={styles.gridUsername} numberOfLines={1}>@{item.profiles?.username}</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-        />
+        <ExploreGrid posts={trendingPosts} />
       )}
     </View>
   );
