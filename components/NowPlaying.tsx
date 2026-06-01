@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, PanResponder, Easing,
-  FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -10,14 +10,12 @@ import { useAudio } from '../contexts/AudioContext';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { formatCount } from '../lib/format';
-import { timeAgo } from '../lib/timeAgo';
 import { createNotification } from '../lib/createNotification';
 import Scrubber from './Scrubber';
+import Comments from './Comments';
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 const ART = Math.min(SCREEN_W - SPACING.xl * 2, 300);
-
-type Comment = { id: string; body: string; created_at: string; user_id: string; profiles: any };
 
 function formatMs(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -73,11 +71,9 @@ export default function NowPlaying() {
   const [render, setRender] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
   const closeVel = useRef(0);
-  const listRef = useRef<FlatList>(null);
 
-  // Social state for the current track.
+  // Post like/save/stats state for the current track. (Comments handled by <Comments/>.)
   const [userId, setUserId] = useState<string | null>(null);
-  const [userProfile, setUserProfile] = useState<any>(null);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [ownerName, setOwnerName] = useState<string | undefined>();
   const [streams, setStreams] = useState(0);
@@ -85,9 +81,6 @@ export default function NowPlaying() {
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [isSaved, setIsSaved] = useState(false);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [newComment, setNewComment] = useState('');
-  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (expanded) {
@@ -116,14 +109,9 @@ export default function NowPlaying() {
       const { data: { user } } = await supabase.auth.getUser();
       if (cancelled) return;
       setUserId(user?.id ?? null);
-      if (user) {
-        supabase.from('profiles').select('username, display_name').eq('id', user.id).single()
-          .then(({ data }) => { if (!cancelled) setUserProfile(data); });
-      }
-      const [postRes, likesRes, commentsRes, saveRes] = await Promise.all([
+      const [postRes, likesRes, saveRes] = await Promise.all([
         supabase.from('posts').select('stream_count, save_count, user_id, profiles!posts_user_id_fkey(username, display_name)').eq('id', pid).single(),
         supabase.from('likes').select('user_id').eq('post_id', pid),
-        supabase.from('comments').select('*, profiles!comments_user_id_fkey(username, display_name)').eq('post_id', pid).order('created_at', { ascending: true }),
         user ? supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', pid).maybeSingle() : Promise.resolve({ data: null }),
       ]);
       if (cancelled) return;
@@ -138,7 +126,6 @@ export default function NowPlaying() {
         setLikeCount(likesRes.data.length);
         setIsLiked(!!user && likesRes.data.some((l: any) => l.user_id === user.id));
       }
-      if (commentsRes.data) setComments(commentsRes.data as any);
       setIsSaved(!!saveRes.data);
     })();
     return () => { cancelled = true; };
@@ -186,26 +173,6 @@ export default function NowPlaying() {
     }
   }
 
-  async function handleComment() {
-    if (!newComment.trim() || !userId || sending) return;
-    setSending(true);
-    const body = newComment.trim();
-    setNewComment('');
-    const { data, error } = await supabase.from('comments').insert({ user_id: userId, post_id: pid, body }).select().single();
-    if (!error && data) {
-      setComments(prev => [...prev, { ...(data as any), profiles: userProfile }]);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-      if (ownerId && ownerId !== userId) createNotification({ userId: ownerId, actorId: userId, type: 'comment', postId: pid });
-    }
-    setSending(false);
-  }
-
-  async function handleDeleteComment(commentId: string, commentUserId: string) {
-    if (commentUserId !== userId) return;
-    await supabase.from('comments').delete().eq('id', commentId);
-    setComments(prev => prev.filter(c => c.id !== commentId));
-  }
-
   return (
     <Animated.View style={[StyleSheet.absoluteFill, styles.layer, { transform: [{ translateY }] }]}>
       <LinearGradient colors={['#2A1206', '#150A04', COLORS.background]} style={styles.container}>
@@ -222,12 +189,9 @@ export default function NowPlaying() {
         </View>
 
         <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={8}>
-          <FlatList
-            ref={listRef}
-            data={comments}
-            keyExtractor={c => c.id}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.scroll}
+          <Comments
+            postId={pid}
+            ownerId={ownerId}
             ListHeaderComponent={
               <>
                 <View style={styles.artWrap}>
@@ -254,69 +218,22 @@ export default function NowPlaying() {
 
                 {/* Like (tap) · Streams (display) · Saves (tap) */}
                 <View style={styles.statBar}>
-                  <TouchableOpacity
-                    style={[styles.tapStat, isLiked && styles.tapStatActiveLike]}
-                    onPress={handleLike}
-                    activeOpacity={0.8}
-                  >
+                  <TouchableOpacity style={[styles.tapStat, isLiked && styles.tapStatActiveLike]} onPress={handleLike} activeOpacity={0.8}>
                     <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={26} color={isLiked ? COLORS.like : COLORS.text} />
                     <Text style={styles.tapStatNum}>{formatCount(likeCount)}</Text>
                   </TouchableOpacity>
-
                   <View style={styles.centerStat}>
                     <Text style={styles.centerStatNum}>{formatCount(streams)}</Text>
                     <Text style={styles.centerStatLbl}>streams</Text>
                   </View>
-
-                  <TouchableOpacity
-                    style={[styles.tapStat, isSaved && styles.tapStatActiveSave]}
-                    onPress={handleSave}
-                    activeOpacity={0.8}
-                  >
+                  <TouchableOpacity style={[styles.tapStat, isSaved && styles.tapStatActiveSave]} onPress={handleSave} activeOpacity={0.8}>
                     <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color={isSaved ? COLORS.primary : COLORS.text} />
                     <Text style={styles.tapStatNum}>{formatCount(saves)}</Text>
                   </TouchableOpacity>
                 </View>
-
-                <View style={styles.divider} />
-                <Text style={styles.commentsLabel}>Comments · {comments.length}</Text>
               </>
             }
-            ListEmptyComponent={<Text style={styles.emptyComments}>No comments yet — be the first!</Text>}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={styles.commentRow} onLongPress={() => handleDeleteComment(item.id, item.user_id)}>
-                <LinearGradient colors={GRADIENTS.primary} style={styles.commentAvatar}>
-                  <Text style={styles.commentAvatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
-                </LinearGradient>
-                <View style={styles.commentContent}>
-                  <View style={styles.commentHead}>
-                    <Text style={styles.commentName}>{item.profiles?.display_name}</Text>
-                    <Text style={styles.commentTime}>{timeAgo(item.created_at)}</Text>
-                  </View>
-                  <Text style={styles.commentBody}>{item.body}</Text>
-                </View>
-              </TouchableOpacity>
-            )}
           />
-
-          <View style={styles.inputBar}>
-            <TextInput
-              style={styles.input}
-              placeholder="Add a comment..."
-              placeholderTextColor={COLORS.textTertiary}
-              value={newComment}
-              onChangeText={setNewComment}
-              multiline
-              maxLength={300}
-            />
-            <TouchableOpacity
-              style={[styles.sendBtn, !newComment.trim() && styles.sendBtnDisabled]}
-              onPress={handleComment}
-              disabled={!newComment.trim() || sending}
-            >
-              {sending ? <ActivityIndicator color={COLORS.text} size="small" /> : <Ionicons name="arrow-up" size={18} color={COLORS.text} />}
-            </TouchableOpacity>
-          </View>
         </KeyboardAvoidingView>
       </LinearGradient>
     </Animated.View>

@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import { useAudio } from '../../contexts/AudioContext';
+import Comments from '../../components/Comments';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { aspectToNumber } from '../../lib/aspectRatio';
@@ -55,35 +56,13 @@ export default function PostDetailScreen() {
 
   useEffect(() => { setup(); }, [id]);
 
-  useEffect(() => {
-    const channel = supabase
-      .channel(`post-comments-${id}`)
-      .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'comments', filter: `post_id=eq.${id}` },
-        async (payload) => {
-          const incoming = payload.new as any;
-          if (incoming.user_id === currentUserId) return;
-          const { data: profile } = await supabase.from('profiles').select('username, display_name').eq('id', incoming.user_id).single();
-          setComments(prev => [...prev, { ...incoming, profiles: profile }]);
-          setCommentCount(prev => prev + 1);
-          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-        }
-      ).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [id, currentUserId]);
-
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      setCurrentUserId(user.id);
-      const { data: profile } = await supabase.from('profiles').select('username, display_name').eq('id', user.id).single();
-      if (profile) setCurrentUserProfile(profile);
-    }
+    if (user) setCurrentUserId(user.id);
 
-    const [postRes, likesRes, commentsRes] = await Promise.all([
+    const [postRes, likesRes] = await Promise.all([
       supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url)').eq('id', id).single(),
       supabase.from('likes').select('user_id').eq('post_id', id),
-      supabase.from('comments').select('*, profiles!comments_user_id_fkey(username, display_name)').eq('post_id', id).order('created_at', { ascending: true }),
     ]);
 
     if (postRes.data) { setPost(postRes.data as any); setSaveCount((postRes.data as any).save_count || 0); }
@@ -91,7 +70,6 @@ export default function PostDetailScreen() {
       setLikeCount(likesRes.data.length);
       if (user) setIsLiked(likesRes.data.some(l => l.user_id === user.id));
     }
-    if (commentsRes.data) { setComments(commentsRes.data as any); setCommentCount(commentsRes.data.length); }
 
     if (user) {
       const { data: saveData } = await supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', id).single();
@@ -166,11 +144,9 @@ export default function PostDetailScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <FlatList
-        ref={flatListRef}
-        data={comments}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContent}
+      <Comments
+        postId={id as string}
+        ownerId={post.user_id}
         ListHeaderComponent={
           <>
             {/* Author */}
@@ -241,10 +217,6 @@ export default function PostDetailScreen() {
                 <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={24} color={isLiked ? COLORS.like : COLORS.textSecondary} />
                 {likeCount > 0 && <Text style={[styles.actionCount, isLiked && { color: COLORS.primaryLight }]}>{likeCount}</Text>}
               </TouchableOpacity>
-              <View style={styles.actionBtn}>
-                <Ionicons name="chatbubble-outline" size={22} color={COLORS.textSecondary} />
-                {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
-              </View>
               <TouchableOpacity style={styles.actionBtn} onPress={handleSave}>
                 <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? COLORS.primary : COLORS.textSecondary} />
                 {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: COLORS.primary }]}>{saveCount}</Text>}
@@ -262,51 +234,9 @@ export default function PostDetailScreen() {
                 <Ionicons name="share-social-outline" size={22} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
-
-            <View style={styles.divider} />
-            <Text style={styles.commentsLabel}>Comments · {commentCount}</Text>
           </>
         }
-        ListEmptyComponent={
-          <Text style={styles.emptyComments}>No comments yet — be the first!</Text>
-        }
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.commentRow} onLongPress={() => handleDeleteComment(item.id, item.user_id)}>
-            <LinearGradient colors={GRADIENTS.primary} style={styles.commentAvatar}>
-              <Text style={styles.commentAvatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
-            </LinearGradient>
-            <View style={styles.commentContent}>
-              <View style={styles.commentHead}>
-                <Text style={styles.commentName}>{item.profiles?.display_name}</Text>
-                <Text style={styles.commentTime}>{timeAgo(item.created_at)}</Text>
-              </View>
-              <Text style={styles.commentBody}>{item.body}</Text>
-            </View>
-          </TouchableOpacity>
-        )}
       />
-
-      <View style={styles.inputBar}>
-        <LinearGradient colors={GRADIENTS.primary} style={styles.inputAvatar}>
-          <Text style={styles.inputAvatarText}>{currentUserProfile?.display_name?.charAt(0).toUpperCase()}</Text>
-        </LinearGradient>
-        <TextInput
-          style={styles.input}
-          placeholder="Add a comment..."
-          placeholderTextColor={COLORS.textTertiary}
-          value={newComment}
-          onChangeText={setNewComment}
-          multiline
-          maxLength={300}
-        />
-        <TouchableOpacity
-          style={[styles.sendBtn, !newComment.trim() && styles.sendBtnDisabled]}
-          onPress={handleComment}
-          disabled={!newComment.trim() || sending}
-        >
-          {sending ? <ActivityIndicator color={COLORS.text} size="small" /> : <Ionicons name="arrow-up" size={18} color={COLORS.text} />}
-        </TouchableOpacity>
-      </View>
     </KeyboardAvoidingView>
   );
 }
