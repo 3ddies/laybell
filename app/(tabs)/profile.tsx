@@ -55,9 +55,9 @@ export default function ProfileScreen() {
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
       supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-      supabase.from('posts').select('id, type, media_url, caption, thumbnail_url').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
-      supabase.from('likes').select('posts(id, type, media_url, caption, thumbnail_url)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
-      supabase.from('saves').select('posts(id, type, media_url, caption, thumbnail_url)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('posts').select('id, type, media_url, caption, thumbnail_url, cover_url').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
+      supabase.from('likes').select('posts(id, type, media_url, caption, thumbnail_url, cover_url)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('saves').select('posts(id, type, media_url, caption, thumbnail_url, cover_url)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
     ]);
 
     if (profileRes.data) setProfile(profileRes.data);
@@ -190,16 +190,21 @@ export default function ProfileScreen() {
         <View style={styles.postsGrid}>
           {gridData.map((post: any) => (
             <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => router.push(`/post/${post.id}`)}>
-              {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) ? (
+              {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
                 <>
                   <Image
-                    source={{ uri: post.type === 'image' ? post.media_url : post.thumbnail_url }}
+                    source={{ uri: post.type === 'image' ? post.media_url : post.type === 'video' ? post.thumbnail_url : post.cover_url }}
                     style={styles.gridImage}
                     resizeMode="cover"
                   />
                   {post.type === 'video' && (
                     <View style={styles.gridPlayOverlay}>
                       <Ionicons name="play" size={14} color={COLORS.text} />
+                    </View>
+                  )}
+                  {post.type === 'audio' && (
+                    <View style={styles.gridPlayOverlay}>
+                      <Ionicons name="musical-notes" size={13} color={COLORS.text} />
                     </View>
                   )}
                 </>

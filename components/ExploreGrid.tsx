@@ -46,8 +46,8 @@ function mediaHeight(post: GridPost): number {
   return COL_W; // pictures render 1:1
 }
 
-export default function ExploreGrid({ posts, refreshing, onRefresh }: {
-  posts: GridPost[]; refreshing?: boolean; onRefresh?: () => void;
+export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles }: {
+  posts: GridPost[]; refreshing?: boolean; onRefresh?: () => void; songTiles?: boolean;
 }) {
   const router = useRouter();
   const { play, currentTrack, isPlaying } = useAudio();
@@ -80,7 +80,12 @@ export default function ExploreGrid({ posts, refreshing, onRefresh }: {
 
   const images = posts.filter(p => p.type === 'image');
   const videos = posts.filter(p => p.type === 'video');
-  const musicGroups = groupSongs(posts.filter(p => p.type === 'audio'));
+  // In genre view, songs render as 1:1 cover tiles (alongside images); in "All"
+  // they stay grouped into Trending Songs stacks.
+  const tileMedia = songTiles
+    ? posts.filter(p => p.type === 'image' || p.type === 'audio')
+    : images;
+  const musicGroups = songTiles ? [] : groupSongs(posts.filter(p => p.type === 'audio'));
 
   // Only ~1 in every 4 videos auto-plays; the rest stay as still thumbnails so the
   // grid isn't overstimulating. Prefer vertical (portrait) clips for the play
@@ -94,10 +99,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh }: {
       .map(v => v.id),
   );
 
-  // Base (non-video) cells: interleave images and music stacks.
+  // Base (non-video) cells: interleave the 1:1 tiles and (in All view) music stacks.
   const baseCells: Cell[] = [];
   let mi = 0;
-  images.forEach((m, idx) => {
+  tileMedia.forEach((m, idx) => {
     baseCells.push({ kind: 'media', key: m.id, post: m, height: mediaHeight(m) });
     if (idx % 2 === 1 && mi < musicGroups.length) {
       const g = musicGroups[mi];
@@ -188,6 +193,30 @@ export default function ExploreGrid({ posts, refreshing, onRefresh }: {
           <View style={styles.playBadge}><Ionicons name="play" size={12} color={COLORS.text} /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      );
+    }
+    if (p.type === 'audio') {
+      // Song shown as a 1:1 cover tile (genre view) — tap to play.
+      const active = currentTrack?.id === p.id && isPlaying;
+      return (
+        <TouchableOpacity
+          key={cell.key}
+          style={[styles.mediaCard, { height: cell.height }]}
+          activeOpacity={0.9}
+          onPress={() => play({ id: p.id, uri: p.media_url, caption: p.caption, artist: p.profiles?.display_name ?? '', cover: p.cover_url })}
+        >
+          {p.cover_url ? (
+            <Image source={{ uri: p.cover_url }} style={styles.mediaImage} resizeMode="cover" />
+          ) : (
+            <LinearGradient colors={GRADIENTS.primarySoft} style={styles.mediaImage}>
+              <Ionicons name="musical-notes" size={28} color={COLORS.primary} />
+            </LinearGradient>
+          )}
+          <View style={styles.playBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={12} color={COLORS.text} /></View>
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
+            <Text style={styles.mediaUser} numberOfLines={1}>{p.caption || `@${p.profiles?.username}`}</Text>
           </LinearGradient>
         </TouchableOpacity>
       );

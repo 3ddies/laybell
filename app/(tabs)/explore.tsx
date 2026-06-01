@@ -315,7 +315,7 @@ export default function ExploreScreen() {
           />
         )
       ) : (
-        <ExploreGrid posts={trendingPosts} refreshing={refreshing} onRefresh={onRefresh} />
+        <ExploreGrid posts={trendingPosts} refreshing={refreshing} onRefresh={onRefresh} songTiles={selectedGenre !== 'All'} />
       )}
     </View>
   );
