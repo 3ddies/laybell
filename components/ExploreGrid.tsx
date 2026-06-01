@@ -21,6 +21,7 @@ type GridPost = {
 const GAP = 6;
 const H_PADDING = SPACING.md;
 const COL_W = (Dimensions.get('window').width - H_PADDING * 2 - GAP) / 2;
+const COL3_W = (Dimensions.get('window').width - H_PADDING * 2 - GAP * 2) / 3; // genre 3-up grid
 const ROW_H = COL_W / 3;            // a song row is 1/3 of a picture tile
 const MUSIC_HEADER_H = 30;
 const VIDEO_GAP = 3;                // min non-video cells between videos
@@ -281,6 +282,49 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles }:
     return renderMedia(cell);
   };
 
+  // Genre view: a uniform 3-up square grid.
+  const renderSquare = (p: GridPost) => {
+    if (p.type === 'audio') {
+      const active = currentTrack?.id === p.id && isPlaying;
+      return (
+        <TouchableOpacity
+          key={p.id}
+          style={styles.square}
+          activeOpacity={0.9}
+          onPress={() => play({ id: p.id, uri: p.media_url, caption: p.caption, artist: p.profiles?.display_name ?? '', cover: p.cover_url })}
+        >
+          {p.cover_url ? (
+            <Image source={{ uri: p.cover_url }} style={styles.mediaImage} resizeMode="cover" />
+          ) : (
+            <LinearGradient colors={GRADIENTS.primarySoft} style={styles.mediaImage}>
+              <Ionicons name="musical-notes" size={24} color={COLORS.primary} />
+            </LinearGradient>
+          )}
+          <View style={styles.squareBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={11} color={COLORS.text} /></View>
+        </TouchableOpacity>
+      );
+    }
+    if (p.type === 'video') {
+      return (
+        <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={() => router.push(`/post/${p.id}`)}>
+          {p.thumbnail_url ? (
+            <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
+          ) : (
+            <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
+              <Ionicons name="videocam" size={24} color={COLORS.primary} />
+            </LinearGradient>
+          )}
+          <View style={styles.squareBadge}><Ionicons name="play" size={11} color={COLORS.text} /></View>
+        </TouchableOpacity>
+      );
+    }
+    return (
+      <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={() => router.push(`/post/${p.id}`)}>
+        <Image source={{ uri: p.media_url }} style={styles.mediaImage} resizeMode="cover" />
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -293,11 +337,15 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles }:
         onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} /> : undefined
       }
     >
-      <View style={styles.row}>
-        {cols.map((col, ci) => (
-          <View key={ci} style={styles.col}>{col.map(renderCell)}</View>
-        ))}
-      </View>
+      {songTiles ? (
+        <View style={styles.grid3}>{posts.map(renderSquare)}</View>
+      ) : (
+        <View style={styles.row}>
+          {cols.map((col, ci) => (
+            <View key={ci} style={styles.col}>{col.map(renderCell)}</View>
+          ))}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -306,6 +354,12 @@ const styles = StyleSheet.create({
   scroll: { padding: H_PADDING, paddingBottom: SPACING.xxl },
   row: { flexDirection: 'row', gap: GAP },
   col: { width: COL_W, gap: GAP },
+  grid3: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
+  square: { width: COL3_W, height: COL3_W, borderRadius: RADIUS.sm, overflow: 'hidden', backgroundColor: COLORS.surfaceLight },
+  squareBadge: {
+    position: 'absolute', top: 6, left: 6, width: 20, height: 20, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
+  },
 
   mediaCard: { width: COL_W, borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: COLORS.surfaceLight },
   mediaImage: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
