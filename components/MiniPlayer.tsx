@@ -41,8 +41,8 @@ export default function MiniPlayer() {
           )}
         </TouchableOpacity>
 
-        {/* Tapping the rest of the bar toggles play/pause */}
-        <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => (isPlaying ? pause() : resume())}>
+        {/* Tapping the bar (except the controls) expands the now-playing screen */}
+        <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => router.push('/now-playing')}>
           <View style={styles.trackInfo}>
             <Text style={styles.caption} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
             <Text style={styles.artist} numberOfLines={1}>{currentTrack.artist}</Text>
@@ -50,9 +50,10 @@ export default function MiniPlayer() {
           <Text style={styles.timeText}>
             {formatMs(positionMs)}{durationMs > 0 ? ` / ${formatMs(durationMs)}` : ''}
           </Text>
-          <View style={styles.playBtn}>
-            <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={15} color={COLORS.text} />
-          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
+          <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={15} color={COLORS.text} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.stopBtn} onPress={stop}>
