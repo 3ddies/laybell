@@ -16,6 +16,7 @@ type AudioContextType = {
   positionMs: number;
   durationMs: number;
   play: (track: Track) => Promise<void>;
+  playQueue: (tracks: Track[], startIndex?: number) => Promise<void>;
   stop: () => Promise<void>;
   seekTo: (ms: number) => Promise<void>;
 };
@@ -29,6 +30,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [positionMs, setPositionMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
   const soundRef = useRef<Audio.Sound | null>(null);
+  const queueRef = useRef<Track[]>([]);
+  const queueIndexRef = useRef(0);
 
   async function stop() {
     if (soundRef.current) {
@@ -50,7 +53,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function play(track: Track) {
+  async function playQueue(tracks: Track[], startIndex = 0) {
+    if (!tracks.length) return;
+    queueRef.current = tracks;
+    queueIndexRef.current = startIndex;
+    await play(tracks[startIndex], true);
+  }
+
+  async function play(track: Track, fromQueue = false) {
+    if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; }
     if (currentTrack?.id === track.id && isPlaying) {
       await stop();
       return;
@@ -95,7 +106,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     } catch {}
     const recordStream = () => {
       streamCounted = true; // set guard before await so rapid updates don't double-fire
-      supabase.from('streams').insert({ post_id: track.id }).then(undefined, () => {});
+      // Server enforces no-self-streams and the 10-per-24h per-user cap.
+      supabase.rpc('record_stream', { p_post_id: track.id }).then(undefined, () => {});
     };
 
     try {
@@ -123,12 +135,23 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (status.didJustFinish) {
-          setIsPlaying(false);
-          setIsBuffering(false);
-          setCurrentTrack(null);
-          setPositionMs(0);
-          setDurationMs(0);
-          soundRef.current = null;
+          const q = queueRef.current;
+          const next = queueIndexRef.current + 1;
+          if (q.length && next < q.length) {
+            // Auto-advance to the next track in the queue
+            queueIndexRef.current = next;
+            soundRef.current = null;
+            play(q[next], true);
+          } else {
+            setIsPlaying(false);
+            setIsBuffering(false);
+            setCurrentTrack(null);
+            setPositionMs(0);
+            setDurationMs(0);
+            soundRef.current = null;
+            queueRef.current = [];
+            queueIndexRef.current = 0;
+          }
         }
       });
     } catch (err) {
@@ -140,7 +163,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, stop, seekTo }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, stop, seekTo }}>
       {children}
     </AudioContext.Provider>
   );

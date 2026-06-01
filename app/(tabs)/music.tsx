@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
+import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import { formatCount } from '../../lib/format';
@@ -27,6 +28,7 @@ export default function MusicScreen() {
   const [showNewPlaylist, setShowNewPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const { playingId, play } = useAudioPlayer();
+  const { playQueue } = useAudio();
   const [savedTracks, setSavedTracks] = useState<any[]>([]);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'playlists' | 'saved'>('playlists');
@@ -187,14 +189,20 @@ export default function MusicScreen() {
                   <Text style={styles.emptySubtitle}>No tracks yet — save audio posts from the feed</Text>
                 </View>
               }
-              renderItem={({ item }) => (
+              renderItem={({ item, index }) => (
                 <TrackRow
                   caption={item.posts.caption}
                   artist={item.posts.profiles?.display_name}
                   username={item.posts.profiles?.username}
                   streams={item.posts.stream_count}
                   isPlaying={playingId === item.post_id}
-                  onPlay={() => play(item.post_id, item.posts.media_url, item.posts.caption, item.posts.profiles?.display_name)}
+                  onPlay={() => playQueue(
+                    tracks.map(t => ({
+                      id: t.post_id, uri: t.posts.media_url,
+                      caption: t.posts.caption, artist: t.posts.profiles?.display_name ?? '',
+                    })),
+                    index,
+                  )}
                 />
               )}
             />
