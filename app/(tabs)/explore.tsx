@@ -13,6 +13,8 @@ type Post = {
   id: string; type: string; media_url: string;
   caption: string; created_at: string; user_id: string;
   profiles: { username: string; display_name: string };
+  likes?: { count: number }[];
+  comments?: { count: number }[];
 };
 type Profile = {
   id: string; username: string; display_name: string;

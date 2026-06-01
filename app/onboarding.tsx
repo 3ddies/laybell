@@ -186,7 +186,7 @@ export default function OnboardingScreen() {
                 onPress={() => toggleGenre(genre.id)}
               >
                 {active && (
-                  <LinearGradient colors={GRADIENTS.primaryWarm} style={StyleSheet.absoluteFillObject} borderRadius={RADIUS.lg} />
+                  <LinearGradient colors={GRADIENTS.primaryWarm} style={[StyleSheet.absoluteFillObject, { borderRadius: RADIUS.lg }]} />
                 )}
                 <Text style={styles.genreEmoji}>{genre.icon}</Text>
                 <Text style={[styles.genreLabel, active && styles.genreLabelActive]}>

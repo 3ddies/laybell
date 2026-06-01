@@ -1,10 +1,10 @@
 import { Tabs } from 'expo-router';
-import { TouchableOpacity, View, StyleSheet } from 'react-native';
+import { TouchableOpacity, View, StyleSheet, GestureResponderEvent } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, GRADIENTS, SHADOWS } from '../../constants/theme';
 
-function PostButton({ onPress }: { onPress?: () => void }) {
+function PostButton({ onPress }: { onPress?: (e: GestureResponderEvent) => void }) {
   return (
     <TouchableOpacity style={styles.postWrap} onPress={onPress} activeOpacity={0.85}>
       <LinearGradient colors={GRADIENTS.primary} style={styles.postBtn}>
@@ -75,6 +75,7 @@ export default function TabLayout() {
         name="post"
         options={{
           tabBarButton: ({ onPress }) => <PostButton onPress={onPress ?? undefined} />,
+          // PostButton's onPress matches RN's GestureResponderEvent handler
         }}
       />
       <Tabs.Screen
