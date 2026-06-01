@@ -83,6 +83,7 @@ export default function ExploreScreen() {
   async function handleSearch() {
     if (!searchQuery.trim()) return;
     setSearching(true);
+
     if (searchType === 'accounts') {
       const { data } = await supabase
         .from('profiles')
@@ -91,14 +92,45 @@ export default function ExploreScreen() {
         .limit(20);
       if (data) setProfiles(data);
     } else {
-      const { data } = await supabase
+      // Find profiles whose name matches — use their IDs to also pull their posts
+      const { data: matchedProfiles } = await supabase
+        .from('profiles')
+        .select('id')
+        .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
+        .limit(15);
+
+      const authorIds = (matchedProfiles ?? []).map((p: any) => p.id);
+
+      let query = supabase
         .from('posts')
-        .select('*, profiles!posts_user_id_fkey (username, display_name)')
-        .ilike('caption', `%${searchQuery}%`)
+        .select(`
+          *,
+          profiles!posts_user_id_fkey (username, display_name, avatar_url),
+          likes(count),
+          comments(count)
+        `)
         .eq('is_public', true)
-        .limit(20);
-      if (data) setPosts(data as any);
+        .limit(30);
+
+      if (authorIds.length > 0) {
+        // Match caption OR posts from matching authors
+        query = query.or(`caption.ilike.%${searchQuery}%,user_id.in.(${authorIds.join(',')})`);
+      } else {
+        query = query.ilike('caption', `%${searchQuery}%`);
+      }
+
+      const { data } = await query;
+
+      if (data) {
+        // Sort by engagement score
+        const sorted = [...data].sort((a: any, b: any) => {
+          const score = (p: any) => (p.likes?.[0]?.count || 0) * 3 + (p.comments?.[0]?.count || 0) * 5;
+          return score(b) - score(a);
+        });
+        setPosts(sorted as any);
+      }
     }
+
     setSearching(false);
   }
 
@@ -224,8 +256,24 @@ export default function ExploreScreen() {
                   </LinearGradient>
                 )}
                 <View style={styles.postInfo}>
-                  <Text style={styles.postCaption} numberOfLines={2}>{item.caption}</Text>
-                  <Text style={styles.postUser}>@{item.profiles?.username}</Text>
+                  <Text style={styles.postCaption} numberOfLines={2}>{item.caption || 'Audio Track'}</Text>
+                  <View style={styles.postMeta}>
+                    <Text style={styles.postUser}>@{item.profiles?.username}</Text>
+                    {((item.likes?.[0]?.count || 0) + (item.comments?.[0]?.count || 0)) > 0 && (
+                      <View style={styles.postStats}>
+                        <Ionicons name="heart" size={11} color={COLORS.like} />
+                        <Text style={styles.postStatText}>{item.likes?.[0]?.count || 0}</Text>
+                        <Ionicons name="chatbubble" size={11} color={COLORS.textTertiary} />
+                        <Text style={styles.postStatText}>{item.comments?.[0]?.count || 0}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.postTypeTag}>
+                  <Ionicons
+                    name={item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline'}
+                    size={14} color={COLORS.primary}
+                  />
                 </View>
               </TouchableOpacity>
             )}
@@ -343,9 +391,17 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
   },
   postThumb: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface },
-  postInfo: { flex: 1, paddingRight: SPACING.md },
+  postInfo: { flex: 1, paddingRight: SPACING.xs },
   postCaption: { color: COLORS.text, fontSize: 14, fontWeight: '500' },
-  postUser: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  postMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: SPACING.sm },
+  postUser: { color: COLORS.textSecondary, fontSize: 12 },
+  postStats: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  postStatText: { color: COLORS.textTertiary, fontSize: 11 },
+  postTypeTag: {
+    width: 28, height: 28, borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary + '18',
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
 
   gridContent: { padding: SPACING.xs, gap: SPACING.xs },
   gridItem: {
