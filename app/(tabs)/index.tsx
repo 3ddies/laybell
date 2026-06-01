@@ -310,15 +310,13 @@ export default function HomeScreen() {
             {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
           </TouchableOpacity>
 
-          {item.type === 'audio' && (
-            <TouchableOpacity style={styles.actionBtn} onPress={() => handleSaveTrack(item.id)}>
-              <Ionicons
-                name={isSaved ? 'bookmark' : 'bookmark-outline'}
-                size={20}
-                color={isSaved ? COLORS.primary : COLORS.textSecondary}
-              />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.actionBtn} onPress={() => handleSaveTrack(item.id)}>
+            <Ionicons
+              name={isSaved ? 'bookmark' : 'bookmark-outline'}
+              size={20}
+              color={isSaved ? COLORS.primary : COLORS.textSecondary}
+            />
+          </TouchableOpacity>
 
           {item.type === 'audio' && (
             <TouchableOpacity style={styles.actionBtn} onPress={() => setPlaylistModalPostId(item.id)}>

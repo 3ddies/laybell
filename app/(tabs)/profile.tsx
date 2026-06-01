@@ -182,7 +182,7 @@ export default function ProfileScreen() {
           />
           <Text style={styles.emptyGridText}>
             {activeTab === 'liked' ? 'No liked posts yet'
-              : activeTab === 'saved' ? 'No saved tracks yet'
+              : activeTab === 'saved' ? 'No saved posts yet'
               : `No ${activeTab} yet`}
           </Text>
         </View>
