@@ -60,7 +60,10 @@ export default function NowPlaying() {
       onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderMove: (_, g) => { if (g.dy > 0) translateY.setValue(g.dy); },
       onPanResponderRelease: (_, g) => {
-        if (g.dy > SCREEN_H * 0.375) collapse(); // must drag ~3/8 of the screen to close
+        // Close only on a fluent downward flick (still moving at release). If the
+        // finger paused/held — even far down — vy is ~0, so it springs back. This
+        // prevents accidental closes from slow or held drags.
+        if (g.vy > 1.1 && g.dy > 70) collapse();
         else Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
       },
       onPanResponderTerminate: () => Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start(),
