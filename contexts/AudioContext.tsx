@@ -107,20 +107,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     // --- Stream counting policy ---
     // First counted listen of a song triggers at 10%; every later listen must
     // reach 100%. Prevents stream spam while still crediting genuine replays.
+    // NOTE: determined in the background so playback never waits on the network
+    // (gating on auth/db here made the first tap glitch while the session was cold).
     let canCount = false;
     let requiresFull = false;
     let streamCounted = false;
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        canCount = true;
-        const { count } = await supabase
-          .from('streams')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id).eq('post_id', track.id);
-        requiresFull = (count || 0) > 0;
-      }
-    } catch {}
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          canCount = true;
+          const { count } = await supabase
+            .from('streams')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id).eq('post_id', track.id);
+          requiresFull = (count || 0) > 0;
+        }
+      } catch {}
+    })();
     const recordStream = () => {
       streamCounted = true; // set guard before await so rapid updates don't double-fire
       // Server enforces no-self-streams and the 10-per-24h per-user cap.
