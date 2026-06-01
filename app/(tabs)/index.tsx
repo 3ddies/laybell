@@ -1,5 +1,5 @@
 import { Video, ResizeMode } from 'expo-av';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image, ActivityIndicator,
@@ -39,6 +39,7 @@ export default function HomeScreen() {
   const { play, currentTrack, isPlaying } = useAudio();
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const router = useRouter();
   const [feedMode, setFeedMode] = useState<'all' | 'following'>('all');
   const [initialized, setInitialized] = useState(false);
@@ -55,9 +56,29 @@ export default function HomeScreen() {
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${currentUserId}` },
         () => { setUnreadCount(prev => prev + 1); }
       )
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${currentUserId}` },
+        () => { setUnreadMessages(prev => prev + 1); }
+      )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId]);
+
+  // Refresh the unread-message badge whenever the feed regains focus
+  // (messages get marked read on another screen).
+  const fetchUnreadMessages = useCallback(async (userId: string) => {
+    const { count } = await supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('receiver_id', userId).eq('read', false);
+    setUnreadMessages(count || 0);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (currentUserId) fetchUnreadMessages(currentUserId);
+    }, [currentUserId, fetchUnreadMessages])
+  );
 
   useEffect(() => {
     setup();
@@ -346,6 +367,11 @@ export default function HomeScreen() {
 
           <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/messages')}>
             <Ionicons name="chatbubbles-outline" size={24} color={COLORS.text} />
+            {unreadMessages > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>

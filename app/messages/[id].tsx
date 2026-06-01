@@ -35,6 +35,8 @@ export default function ChatScreen() {
           if (String(msg.sender_id) === String(id)) {
             setMessages(prev => [...prev, msg]);
             setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+            // Already viewing this conversation — mark it read immediately
+            supabase.from('messages').update({ read: true }).eq('id', msg.id);
           }
         }
       )
@@ -44,10 +46,17 @@ export default function ChatScreen() {
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) { setCurrentUserId(user.id); await fetchMessages(user.id); }
+    if (user) { setCurrentUserId(user.id); await fetchMessages(user.id); markAsRead(user.id); }
     const { data: profile } = await supabase.from('profiles').select('username, display_name').eq('id', id).single();
     if (profile) setOtherUser(profile);
     setLoading(false);
+  }
+
+  // Mark this sender's messages to me as read
+  async function markAsRead(userId: string) {
+    await supabase.from('messages')
+      .update({ read: true })
+      .eq('receiver_id', userId).eq('sender_id', id).eq('read', false);
   }
 
   async function fetchMessages(userId: string) {
