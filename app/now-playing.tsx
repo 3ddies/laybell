@@ -18,7 +18,7 @@ function formatMs(ms: number): string {
 }
 
 export default function NowPlayingScreen() {
-  const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, stop, seekTo } = useAudio();
+  const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, seekTo } = useAudio();
   const router = useRouter();
   const [stats, setStats] = useState<{ streams: number; saves: number; username?: string; userId?: string } | null>(null);
 
@@ -97,13 +97,9 @@ export default function NowPlayingScreen() {
 
       {/* Controls */}
       <View style={styles.controls}>
-        <TouchableOpacity style={styles.stopBtn} onPress={() => { stop(); router.back(); }}>
-          <Ionicons name="stop" size={22} color={COLORS.textSecondary} />
-        </TouchableOpacity>
         <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
           <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={32} color={COLORS.text} />
         </TouchableOpacity>
-        <View style={styles.stopBtn} />
       </View>
 
       {/* Stats */}

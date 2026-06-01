@@ -1,10 +1,13 @@
-import { View, StyleSheet, PanResponder } from 'react-native';
-import { useRef, useState } from 'react';
+import { View, StyleSheet, PanResponder, Animated } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, GRADIENTS } from '../constants/theme';
 
-// A draggable progress scrubber. Uses absolute pageX against the bar's measured
-// window position (not PanResponder locationX, which is unreliable across gestures).
+const clamp = (n: number) => Math.max(0, Math.min(1, n));
+
+// A draggable progress scrubber. Uses absolute pageX vs the bar's measured
+// window position, and an Animated value so playback glides smoothly between
+// status updates and dragging doesn't re-render the parent.
 export default function Scrubber({
   progress, onSeek, height = 20, trackHeight = 4, thumbSize = 14,
 }: {
@@ -13,13 +16,19 @@ export default function Scrubber({
   height?: number; trackHeight?: number; thumbSize?: number;
 }) {
   const [width, setWidth] = useState(0);
-  const [drag, setDrag] = useState<number | null>(null);
   const ref = useRef<View>(null);
   const layout = useRef({ x: 0, w: 0 });
+  const anim = useRef(new Animated.Value(0)).current;
+  const dragging = useRef(false);
   const onSeekRef = useRef(onSeek);
   onSeekRef.current = onSeek;
 
-  const clamp = (n: number) => Math.max(0, Math.min(1, n));
+  // Glide toward the playback position when not actively dragging.
+  useEffect(() => {
+    if (dragging.current) return;
+    Animated.timing(anim, { toValue: clamp(progress), duration: 240, useNativeDriver: false }).start();
+  }, [progress]);
+
   const measure = () => ref.current?.measureInWindow((x, _y, w) => { layout.current = { x, w }; setWidth(w); });
   const ratioFor = (pageX: number) => clamp((pageX - layout.current.x) / (layout.current.w || 1));
 
@@ -28,26 +37,29 @@ export default function Scrubber({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: e => setDrag(ratioFor(e.nativeEvent.pageX)),
-      onPanResponderMove: e => setDrag(ratioFor(e.nativeEvent.pageX)),
-      onPanResponderRelease: e => { onSeekRef.current(ratioFor(e.nativeEvent.pageX)); setDrag(null); },
-      onPanResponderTerminate: e => { onSeekRef.current(ratioFor(e.nativeEvent.pageX)); setDrag(null); },
+      onPanResponderGrant: e => { dragging.current = true; anim.stopAnimation(); anim.setValue(ratioFor(e.nativeEvent.pageX)); },
+      onPanResponderMove: e => anim.setValue(ratioFor(e.nativeEvent.pageX)),
+      onPanResponderRelease: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); dragging.current = false; onSeekRef.current(r); },
+      onPanResponderTerminate: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); dragging.current = false; onSeekRef.current(r); },
     })
   ).current;
 
-  const shown = drag != null ? drag : clamp(progress);
-  const thumbLeft = Math.max(0, Math.min(width - thumbSize, shown * width - thumbSize / 2));
+  const fillWidth = anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+  const thumbLeft = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.max(0, width - thumbSize)] });
 
   return (
     <View ref={ref} onLayout={measure} style={[styles.area, { height }]} {...pan.panHandlers}>
       <View style={[styles.track, { height: trackHeight, borderRadius: trackHeight / 2 }]}>
-        <LinearGradient
-          colors={GRADIENTS.primaryWarm}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-          style={{ width: `${shown * 100}%`, height: '100%' }}
-        />
+        <Animated.View style={{ width: fillWidth, height: '100%', overflow: 'hidden' }}>
+          {/* Fixed-width gradient revealed by the animated mask, so it doesn't stretch */}
+          <LinearGradient
+            colors={GRADIENTS.primaryWarm}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={{ width: width || 1, height: '100%' }}
+          />
+        </Animated.View>
       </View>
-      <View
+      <Animated.View
         style={[styles.thumb, {
           width: thumbSize, height: thumbSize, borderRadius: thumbSize / 2,
           top: (height - thumbSize) / 2, left: thumbLeft,

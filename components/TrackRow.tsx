@@ -49,6 +49,11 @@ export default function TrackRow({
         </View>
       </TouchableOpacity>
 
+      {/* Play / pause */}
+      <TouchableOpacity style={styles.playToggle} onPress={onPlay}>
+        <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={COLORS.text} />
+      </TouchableOpacity>
+
       {onAddToPlaylist && (
         <TouchableOpacity style={styles.addBtn} onPress={onAddToPlaylist}>
           <Ionicons name="add-circle-outline" size={22} color={COLORS.primary} />
@@ -88,6 +93,10 @@ const styles = StyleSheet.create({
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   artist: { color: COLORS.textSecondary, fontSize: 12 },
   streams: { color: COLORS.textTertiary, fontSize: 12 },
+  playToggle: {
+    width: 34, height: 34, borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+  },
   addBtn: { padding: SPACING.xs },
   avatar: { width: 34, height: 34, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceElevated },
   avatarText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
