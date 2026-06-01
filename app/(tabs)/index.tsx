@@ -5,7 +5,7 @@ import {
   TouchableOpacity, Image, ActivityIndicator,
   RefreshControl, Share,
 } from 'react-native';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -44,7 +44,16 @@ export default function HomeScreen() {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
   const [playlistCount, setPlaylistCount] = useState(0);
+  const [visibleVideoId, setVisibleVideoId] = useState<string | null>(null);
   const router = useRouter();
+
+  // Track which video is on-screen so it auto-plays while others pause.
+  // FlatList requires these references to be stable across renders.
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
+    const firstVideo = viewableItems.find(v => v.item?.type === 'video');
+    setVisibleVideoId(firstVideo ? firstVideo.item.id : null);
+  }).current;
   const [feedMode, setFeedMode] = useState<'all' | 'following'>('all');
   const [initialized, setInitialized] = useState(false);
 
@@ -304,14 +313,16 @@ export default function HomeScreen() {
         )}
 
         {item.type === 'video' && item.media_url && (
-          <Video
-            source={{ uri: item.media_url }}
-            style={styles.postImage}
-            useNativeControls
-            resizeMode={ResizeMode.CONTAIN}
-            isLooping
-            shouldPlay={false}
-          />
+          <TouchableOpacity activeOpacity={1} onPress={() => router.push(`/post/${item.id}`)}>
+            <Video
+              source={{ uri: item.media_url }}
+              style={styles.postImage}
+              resizeMode={ResizeMode.COVER}
+              isLooping
+              isMuted
+              shouldPlay={visibleVideoId === item.id}
+            />
+          </TouchableOpacity>
         )}
 
         {/* Caption */}
@@ -359,7 +370,7 @@ export default function HomeScreen() {
         </View>
       </View>
     );
-  }, [likedPosts, savedPosts, currentTrack, isPlaying, posts, currentUserId, router, playlistCount]);
+  }, [likedPosts, savedPosts, currentTrack, isPlaying, posts, currentUserId, router, playlistCount, visibleVideoId]);
 
   if (loading) {
     return (
@@ -421,6 +432,8 @@ export default function HomeScreen() {
         windowSize={5}
         maxToRenderPerBatch={5}
         initialNumToRender={5}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
