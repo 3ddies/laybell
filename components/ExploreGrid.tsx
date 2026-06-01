@@ -1,5 +1,5 @@
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions,
+  View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions, RefreshControl,
 } from 'react-native';
 import { useRef, useState } from 'react';
 import { Video, ResizeMode } from 'expo-av';
@@ -46,7 +46,9 @@ function mediaHeight(post: GridPost): number {
   return COL_W; // pictures render 1:1
 }
 
-export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
+export default function ExploreGrid({ posts, refreshing, onRefresh }: {
+  posts: GridPost[]; refreshing?: boolean; onRefresh?: () => void;
+}) {
   const router = useRouter();
   const { play, currentTrack, isPlaying } = useAudio();
 
@@ -258,6 +260,9 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
       scrollEventThrottle={16}
       onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; recomputeActive(); }}
       onLayout={e => { viewportH.current = e.nativeEvent.layout.height; recomputeActive(); }}
+      refreshControl={
+        onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} /> : undefined
+      }
     >
       <View style={styles.row}>
         {cols.map((col, ci) => (

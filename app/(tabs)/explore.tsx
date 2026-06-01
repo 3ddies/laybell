@@ -51,6 +51,7 @@ export default function ExploreScreen() {
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { fetchTrending(); }, []);
 
@@ -74,8 +75,8 @@ export default function ExploreScreen() {
     setLoading(false);
   }
 
-  async function fetchByGenre(genre: string) {
-    setLoading(true);
+  async function fetchByGenre(genre: string, silent = false) {
+    if (!silent) setLoading(true);
     setSelectedGenre(genre);
     if (genre === 'All') { await fetchTrending(); return; }
     const { data } = await supabase
@@ -87,7 +88,14 @@ export default function ExploreScreen() {
       const formatted = data.map((item: any) => item.posts).filter((p: any) => p?.is_public);
       setTrendingPosts(formatted);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
+  }
+
+  async function onRefresh() {
+    setRefreshing(true);
+    if (selectedGenre === 'All') await fetchTrending();
+    else await fetchByGenre(selectedGenre, true);
+    setRefreshing(false);
   }
 
   async function handleSearch() {
@@ -151,13 +159,6 @@ export default function ExploreScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Explore</Text>
-        <TouchableOpacity
-          style={styles.refreshBtn}
-          onPress={() => fetchByGenre(selectedGenre)}
-          disabled={loading || searching}
-        >
-          <Ionicons name="refresh" size={22} color={(loading || searching) ? COLORS.textTertiary : COLORS.primary} />
-        </TouchableOpacity>
       </View>
 
       {/* Search */}
@@ -314,7 +315,7 @@ export default function ExploreScreen() {
           />
         )
       ) : (
-        <ExploreGrid posts={trendingPosts} />
+        <ExploreGrid posts={trendingPosts} refreshing={refreshing} onRefresh={onRefresh} />
       )}
     </View>
   );
@@ -322,15 +323,7 @@ export default function ExploreScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
-  },
-  refreshBtn: {
-    width: 38, height: 38, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  header: { paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm },
   headerTitle: { color: COLORS.text, fontSize: 28, fontWeight: '800' },
 
   searchRow: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
