@@ -80,9 +80,17 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
   const videos = posts.filter(p => p.type === 'video');
   const musicGroups = groupSongs(posts.filter(p => p.type === 'audio'));
 
-  // Only 1 in every 4 videos auto-plays; the rest stay as still thumbnails so the
-  // grid isn't overstimulating.
-  const playableSet = new Set(videos.filter((_, i) => i % 4 === 0).map(v => v.id));
+  // Only ~1 in every 4 videos auto-plays; the rest stay as still thumbnails so the
+  // grid isn't overstimulating. Prefer vertical (portrait) clips for the play
+  // slots since they look better on the grid.
+  const playableCount = Math.ceil(videos.length / 4);
+  const isVertical = (p: GridPost) => aspectToNumber(p.aspect_ratio, 16 / 9) < 1; // w/h < 1 => portrait
+  const playableSet = new Set(
+    [...videos]
+      .sort((a, b) => Number(isVertical(b)) - Number(isVertical(a))) // verticals first
+      .slice(0, playableCount)
+      .map(v => v.id),
+  );
 
   // Base (non-video) cells: interleave images and music stacks.
   const baseCells: Cell[] = [];
