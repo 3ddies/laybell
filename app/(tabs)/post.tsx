@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
+import { usePagerSwiping } from '../../contexts/PagerContext';
 import { Audio } from 'expo-av';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -37,6 +38,7 @@ export default function PostScreen() {
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
   const [coverUri, setCoverUri] = useState<string | null>(null);
   const { stop } = useAudio();
+  const swiping = usePagerSwiping();
 
   // Stop any playing track when the create-post tab is opened.
   useFocusEffect(useCallback(() => { stop(); }, []));
@@ -258,6 +260,9 @@ export default function PostScreen() {
           onChangeText={setCaption}
           multiline
           maxLength={500}
+          // A horizontal swipe drags across this field; without this it grabs
+          // focus and pops the keyboard mid-swipe. Re-enabled once settled.
+          editable={!swiping}
         />
       </View>
 

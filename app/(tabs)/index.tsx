@@ -1,5 +1,7 @@
 import { Video, ResizeMode } from 'expo-av';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
+import { usePagerSwiping } from '../../contexts/PagerContext';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image, ActivityIndicator,
@@ -55,6 +57,12 @@ export default function HomeScreen() {
   const [playlistCount, setPlaylistCount] = useState(0);
   const [visibleVideoId, setVisibleVideoId] = useState<string | null>(null);
   const router = useRouter();
+
+  // Only autoplay feed videos when this tab is settled and focused — not while
+  // a swipe is dragging the feed off-screen (saves rendering, matches "land first").
+  const isFocused = useIsFocused();
+  const swiping = usePagerSwiping();
+  const canPlayVideo = isFocused && !swiping;
 
   // Track which video is on-screen so it auto-plays while others pause.
   // FlatList requires these references to be stable across renders.
@@ -358,7 +366,7 @@ export default function HomeScreen() {
                 resizeMode={ResizeMode.COVER}
                 isLooping
                 isMuted={videoMuted}
-                shouldPlay={visibleVideoId === item.id}
+                shouldPlay={canPlayVideo && visibleVideoId === item.id}
               />
             </TouchableOpacity>
             <TouchableOpacity style={styles.videoAudioBtn} onPress={toggleVideoMuted}>
@@ -412,7 +420,7 @@ export default function HomeScreen() {
         </View>
       </View>
     );
-  }, [likedPosts, savedPosts, currentTrack, isPlaying, posts, currentUserId, router, playlistCount, visibleVideoId, videoMuted]);
+  }, [likedPosts, savedPosts, currentTrack, isPlaying, posts, currentUserId, router, playlistCount, visibleVideoId, videoMuted, canPlayVideo]);
 
   if (loading) {
     return (
