@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
   times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: SPACING.xs },
   timeText: { color: COLORS.textTertiary, fontSize: 12, fontVariant: ['tabular-nums'] },
 
-  controls: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  controls: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', paddingTop: SPACING.xl },
   playBtn: {
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
