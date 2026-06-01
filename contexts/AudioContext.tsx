@@ -33,6 +33,10 @@ type AudioContextType = {
   expanded: boolean;
   expand: () => void;
   collapse: () => void;
+  next: () => void;
+  previous: () => void;
+  queueIndex: number;
+  queueLength: number;
 };
 
 const AudioContext = createContext<AudioContextType | null>(null);
@@ -49,6 +53,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
+  const [queueIndex, setQueueIndex] = useState(0);
+  const [queueLength, setQueueLength] = useState(0);
 
   // Configure the audio session once up front so the first tap plays immediately
   // (a cold session previously made the first createAsync fail to start).
@@ -93,11 +99,33 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (!tracks.length) return;
     queueRef.current = tracks;
     queueIndexRef.current = startIndex;
+    setQueueLength(tracks.length);
+    setQueueIndex(startIndex);
     await play(tracks[startIndex], true);
   }
 
+  function next() {
+    const q = queueRef.current;
+    const ni = queueIndexRef.current + 1;
+    if (q.length && ni < q.length) {
+      queueIndexRef.current = ni;
+      setQueueIndex(ni);
+      play(q[ni], true);
+    }
+  }
+
+  function previous() {
+    const q = queueRef.current;
+    const pi = queueIndexRef.current - 1;
+    if (q.length && pi >= 0) {
+      queueIndexRef.current = pi;
+      setQueueIndex(pi);
+      play(q[pi], true);
+    }
+  }
+
   async function play(track: Track, fromQueue = false) {
-    if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; }
+    if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; setQueueLength(0); setQueueIndex(0); }
     if (currentTrack?.id === track.id && isPlaying) {
       await stop();
       return;
@@ -173,6 +201,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           if (q.length && next < q.length) {
             // Auto-advance to the next track in the queue
             queueIndexRef.current = next;
+            setQueueIndex(next);
             soundRef.current = null;
             play(q[next], true);
           } else {
@@ -184,6 +213,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             soundRef.current = null;
             queueRef.current = [];
             queueIndexRef.current = 0;
+            setQueueLength(0);
+            setQueueIndex(0);
           }
         }
       });
@@ -196,7 +227,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, pause, resume, stop, seekTo, expanded, expand, collapse }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength }}>
       {children}
     </AudioContext.Provider>
   );

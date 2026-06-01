@@ -44,7 +44,7 @@ export default function ProfileScreen() {
   const [likedPosts, setLikedPosts] = useState<any[]>([]);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const router = useRouter();
-  const { play } = useAudio();
+  const { playQueue } = useAudio();
 
   useEffect(() => { fetchProfile(); }, []);
 
@@ -194,9 +194,18 @@ export default function ProfileScreen() {
             <TouchableOpacity
               key={post.id}
               style={styles.gridItem}
-              onPress={() => post.type === 'audio'
-                ? play({ id: post.id, uri: post.media_url, caption: post.caption, artist: profile?.display_name ?? '', cover: post.cover_url })
-                : router.push(`/post/${post.id}`)}
+              onPress={() => {
+                if (post.type === 'audio') {
+                  const songs = gridData.filter((s: any) => s.type === 'audio');
+                  const idx = songs.findIndex((s: any) => s.id === post.id);
+                  playQueue(
+                    songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: profile?.display_name ?? '', cover: s.cover_url })),
+                    Math.max(0, idx),
+                  );
+                } else {
+                  router.push(`/post/${post.id}`);
+                }
+              }}
             >
               {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
                 <>

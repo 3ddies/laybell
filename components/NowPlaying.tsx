@@ -44,12 +44,25 @@ function Progress() {
 }
 
 function Controls() {
-  const { isPlaying, isBuffering, pause, resume } = useAudio();
+  const { isPlaying, isBuffering, pause, resume, next, previous, queueIndex, queueLength } = useAudio();
+  const hasQueue = queueLength > 1;
+  const canPrev = queueIndex > 0;
+  const canNext = queueIndex < queueLength - 1;
   return (
     <View style={styles.controls}>
+      {hasQueue && (
+        <TouchableOpacity style={styles.navBtn} onPress={previous} disabled={!canPrev}>
+          <Ionicons name="play-skip-back" size={26} color={canPrev ? COLORS.text : COLORS.textTertiary} />
+        </TouchableOpacity>
+      )}
       <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
         <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={32} color={COLORS.text} />
       </TouchableOpacity>
+      {hasQueue && (
+        <TouchableOpacity style={styles.navBtn} onPress={next} disabled={!canNext}>
+          <Ionicons name="play-skip-forward" size={26} color={canNext ? COLORS.text : COLORS.textTertiary} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -71,6 +84,7 @@ export default function NowPlaying() {
   const [saves, setSaves] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
+  const [isSaved, setIsSaved] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [sending, setSending] = useState(false);
@@ -106,10 +120,11 @@ export default function NowPlaying() {
         supabase.from('profiles').select('username, display_name').eq('id', user.id).single()
           .then(({ data }) => { if (!cancelled) setUserProfile(data); });
       }
-      const [postRes, likesRes, commentsRes] = await Promise.all([
+      const [postRes, likesRes, commentsRes, saveRes] = await Promise.all([
         supabase.from('posts').select('stream_count, save_count, user_id, profiles!posts_user_id_fkey(username, display_name)').eq('id', pid).single(),
         supabase.from('likes').select('user_id').eq('post_id', pid),
         supabase.from('comments').select('*, profiles!comments_user_id_fkey(username, display_name)').eq('post_id', pid).order('created_at', { ascending: true }),
+        user ? supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', pid).maybeSingle() : Promise.resolve({ data: null }),
       ]);
       if (cancelled) return;
       if (postRes.data) {
@@ -124,6 +139,7 @@ export default function NowPlaying() {
         setIsLiked(!!user && likesRes.data.some((l: any) => l.user_id === user.id));
       }
       if (commentsRes.data) setComments(commentsRes.data as any);
+      setIsSaved(!!saveRes.data);
     })();
     return () => { cancelled = true; };
   }, [currentTrack?.id, expanded]);
@@ -155,6 +171,18 @@ export default function NowPlaying() {
     } else {
       await supabase.from('likes').insert({ user_id: userId, post_id: pid });
       if (ownerId && ownerId !== userId) createNotification({ userId: ownerId, actorId: userId, type: 'like', postId: pid });
+    }
+  }
+
+  async function handleSave() {
+    if (!userId) return;
+    const saved = isSaved;
+    setIsSaved(!saved);
+    setSaves(c => (saved ? Math.max(c - 1, 0) : c + 1));
+    if (saved) {
+      await supabase.from('saves').delete().eq('user_id', userId).eq('post_id', pid);
+    } else {
+      await supabase.from('saves').insert({ user_id: userId, post_id: pid });
     }
   }
 
@@ -224,24 +252,25 @@ export default function NowPlaying() {
                 <Progress />
                 <Controls />
 
-                {/* Actions: like + comment count + stats */}
-                <View style={styles.actions}>
-                  <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
-                    <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={24} color={isLiked ? COLORS.like : COLORS.textSecondary} />
-                    {likeCount > 0 && <Text style={[styles.actionCount, isLiked && { color: COLORS.like }]}>{likeCount}</Text>}
+                {/* Like (tap) · Streams (display) · Saves (tap) */}
+                <View style={styles.statBar}>
+                  <TouchableOpacity style={styles.statSeg} onPress={handleLike}>
+                    <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color={isLiked ? COLORS.like : COLORS.textSecondary} />
+                    <Text style={styles.statNum}>{formatCount(likeCount)}</Text>
+                    <Text style={styles.statLbl}>likes</Text>
                   </TouchableOpacity>
-                  <View style={styles.actionBtn}>
-                    <Ionicons name="chatbubble-outline" size={22} color={COLORS.textSecondary} />
-                    {comments.length > 0 && <Text style={styles.actionCount}>{comments.length}</Text>}
+                  <View style={styles.statSep} />
+                  <View style={styles.statSeg}>
+                    <Ionicons name="play" size={18} color={COLORS.primary} />
+                    <Text style={styles.statNum}>{formatCount(streams)}</Text>
+                    <Text style={styles.statLbl}>streams</Text>
                   </View>
-                  <View style={[styles.actionBtn, { marginLeft: 'auto' }]}>
-                    <Ionicons name="play" size={16} color={COLORS.primary} />
-                    <Text style={styles.statText}>{formatCount(streams)}</Text>
-                  </View>
-                  <View style={styles.actionBtn}>
-                    <Ionicons name="bookmark" size={16} color={COLORS.primary} />
-                    <Text style={styles.statText}>{formatCount(saves)}</Text>
-                  </View>
+                  <View style={styles.statSep} />
+                  <TouchableOpacity style={styles.statSeg} onPress={handleSave}>
+                    <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={18} color={isSaved ? COLORS.primary : COLORS.textSecondary} />
+                    <Text style={styles.statNum}>{formatCount(saves)}</Text>
+                    <Text style={styles.statLbl}>saves</Text>
+                  </TouchableOpacity>
                 </View>
 
                 <View style={styles.divider} />
@@ -316,13 +345,19 @@ const styles = StyleSheet.create({
   times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: SPACING.xs },
   timeText: { color: COLORS.textTertiary, fontSize: 12, fontVariant: ['tabular-nums'] },
 
-  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: SPACING.md },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.xl, marginTop: SPACING.md },
+  navBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   playBtn: { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
 
-  actions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.lg, marginTop: SPACING.lg },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  actionCount: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
-  statText: { color: COLORS.textSecondary, fontSize: 13 },
+  statBar: {
+    flexDirection: 'row', alignItems: 'center', marginTop: SPACING.lg,
+    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: COLORS.border,
+    paddingVertical: SPACING.sm,
+  },
+  statSeg: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: SPACING.xs },
+  statSep: { width: 1, height: 32, backgroundColor: COLORS.border },
+  statNum: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  statLbl: { color: COLORS.textSecondary, fontSize: 11 },
 
   divider: { height: 0.5, backgroundColor: COLORS.border, marginTop: SPACING.lg },
   commentsLabel: { color: COLORS.text, fontSize: 14, fontWeight: '700', marginTop: SPACING.md, marginBottom: SPACING.xs },

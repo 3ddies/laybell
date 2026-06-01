@@ -30,7 +30,7 @@ function getBadgeGradient(tier: string): readonly [string, string] {
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { play } = useAudio();
+  const { playQueue } = useAudio();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [posts, setPosts] = useState<any[]>([]);
@@ -193,9 +193,18 @@ export default function PublicProfileScreen() {
             <TouchableOpacity
               key={post.id}
               style={styles.gridItem}
-              onPress={() => post.type === 'audio'
-                ? play({ id: post.id, uri: post.media_url, caption: post.caption, artist: profile?.display_name ?? '', cover: post.cover_url })
-                : router.push(`/post/${post.id}`)}
+              onPress={() => {
+                if (post.type === 'audio') {
+                  const songs = filtered.filter((s: any) => s.type === 'audio');
+                  const idx = songs.findIndex((s: any) => s.id === post.id);
+                  playQueue(
+                    songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: profile?.display_name ?? '', cover: s.cover_url })),
+                    Math.max(0, idx),
+                  );
+                } else {
+                  router.push(`/post/${post.id}`);
+                }
+              }}
             >
               {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
                 <>
