@@ -127,21 +127,20 @@ export default function PostScreen() {
         if (!coverErr) coverUrl = supabase.storage.from('posts').getPublicUrl(coverPath).data.publicUrl;
       }
 
-      const { error: postError } = await supabase.from('posts').insert({
+      const { data: newPost, error: postError } = await supabase.from('posts').insert({
         user_id: user.id, type: postType, media_url: publicUrl,
         caption: caption.trim(), is_public: isPublic,
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
         ...(postType !== 'audio' ? { aspect_ratio: format } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(coverUrl ? { cover_url: coverUrl } : {}),
-      });
+      }).select('id').single();
       if (postError) throw postError;
 
-      if (genre.trim()) {
-        const { data: postData } = await supabase.from('posts').select('id').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1);
-        if (postData?.[0]) {
-          await supabase.from('post_tags').insert({ post_id: postData[0].id, tag: genre.trim().toLowerCase(), genre: genre.trim().toLowerCase() });
-        }
+      if (genre.trim() && newPost) {
+        const g = genre.trim().toLowerCase();
+        const { error: tagError } = await supabase.from('post_tags').insert({ post_id: newPost.id, tag: g, genre: g });
+        if (tagError) console.log('post_tags insert failed:', tagError.message);
       }
 
       Alert.alert('Posted! 🎉', 'Your post is now live on Laybell');
