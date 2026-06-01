@@ -68,7 +68,7 @@ export default function MiniPlayer() {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute', bottom: 92, left: SPACING.sm, right: SPACING.sm,
+    position: 'absolute', bottom: 78, left: SPACING.sm, right: SPACING.sm,
     backgroundColor: COLORS.surfaceElevated,
     borderRadius: RADIUS.lg, overflow: 'hidden',
     borderWidth: 0.5, borderColor: COLORS.primaryLight + '55',

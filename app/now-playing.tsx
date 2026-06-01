@@ -135,15 +135,15 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight,
   },
 
-  meta: { marginTop: SPACING.xxl, alignItems: 'center', gap: SPACING.xs },
+  meta: { marginTop: SPACING.xl, alignItems: 'center', gap: SPACING.xs },
   title: { color: COLORS.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
   artist: { color: COLORS.textSecondary, fontSize: 15 },
 
-  progressBlock: { marginTop: SPACING.xxl },
+  progressBlock: { marginTop: SPACING.xl },
   times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: SPACING.xs },
   timeText: { color: COLORS.textTertiary, fontSize: 12, fontVariant: ['tabular-nums'] },
 
-  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.xl, marginTop: SPACING.xxl },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: SPACING.xl, marginBottom: SPACING.xl },
   playBtn: {
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
