@@ -178,9 +178,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     };
 
     try {
+      // Load PAUSED — a superseded sound must never start, so we only call
+      // playAsync() on the one that survives the token check below.
       const { sound } = await Audio.Sound.createAsync(
         { uri: track.uri },
-        { shouldPlay: true, progressUpdateIntervalMillis: 250 } // smoother scrubber updates
+        { shouldPlay: false, progressUpdateIntervalMillis: 250 },
       );
       // A newer play started while this was loading → discard this sound, don't overlap.
       if (token !== playTokenRef.current) {
@@ -188,7 +190,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       soundRef.current = sound;
-      sound.playAsync().catch(() => {}); // ensure it starts even if the first load didn't auto-play
+      sound.playAsync().catch(() => {});
 
       sound.setOnPlaybackStatusUpdate((status: any) => {
         if (!status.isLoaded) return;
