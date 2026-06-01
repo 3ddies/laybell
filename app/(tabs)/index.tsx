@@ -3,8 +3,11 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image, ActivityIndicator,
-  RefreshControl, Share,
+  RefreshControl, Share, Dimensions,
 } from 'react-native';
+
+const SCREEN_W = Dimensions.get('window').width;
+const MAX_VIDEO_H = Dimensions.get('window').height * 0.6; // keep tall (9:16) videos from overflowing the feed
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -321,8 +324,8 @@ export default function HomeScreen() {
           <TouchableOpacity activeOpacity={1} onPress={() => router.push(`/post/${item.id}`)}>
             <Video
               source={{ uri: item.media_url }}
-              style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 16 / 9) }]}
-              resizeMode={ResizeMode.COVER}
+              style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H) }]}
+              resizeMode={ResizeMode.CONTAIN}
               isLooping
               isMuted
               shouldPlay={visibleVideoId === item.id}
@@ -555,6 +558,10 @@ const styles = StyleSheet.create({
   postMedia: {
     width: '100%',
     backgroundColor: COLORS.surfaceLight,
+  },
+  postVideo: {
+    width: '100%',
+    backgroundColor: '#000',
   },
   postImage: {
     width: '100%',

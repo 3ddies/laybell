@@ -196,7 +196,7 @@ export default function PostDetailScreen() {
               <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined }]} resizeMode="cover" />
             )}
             {post.type === 'video' && post.media_url && (
-              <Video source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 16 / 9), height: undefined }]} useNativeControls resizeMode={ResizeMode.CONTAIN} isLooping shouldPlay={false} />
+              <Video source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 16 / 9), height: undefined }]} useNativeControls resizeMode={ResizeMode.CONTAIN} isLooping shouldPlay />
             )}
             {post.type === 'audio' && (
               <TouchableOpacity
