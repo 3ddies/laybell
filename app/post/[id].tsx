@@ -2,7 +2,7 @@ import { Video, ResizeMode } from 'expo-av';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, TextInput, KeyboardAvoidingView,
-  Platform, ActivityIndicator, FlatList, Dimensions, Animated, PanResponder,
+  Platform, ActivityIndicator, FlatList, Dimensions,
 } from 'react-native';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -37,23 +37,6 @@ export default function PostDetailScreen() {
   const router = useRouter();
   const { currentTrack, isPlaying, play, stop } = useAudio();
   const flatListRef = useRef<any>(null);
-
-  // Flick left to exit the post.
-  const translateX = useRef(new Animated.Value(0)).current;
-  const pan = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => g.dx < -12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
-      onPanResponderMove: (_, g) => { if (g.dx < 0) translateX.setValue(g.dx); },
-      onPanResponderRelease: (_, g) => {
-        if (g.vx < -0.5 || g.dx < -SCREEN_W * 0.4) {
-          Animated.timing(translateX, { toValue: -SCREEN_W, duration: 200, useNativeDriver: true }).start(() => router.back());
-        } else {
-          Animated.spring(translateX, { toValue: 0, speed: 14, bounciness: 4, useNativeDriver: true }).start();
-        }
-      },
-      onPanResponderTerminate: () => Animated.spring(translateX, { toValue: 0, speed: 14, bounciness: 4, useNativeDriver: true }).start(),
-    })
-  ).current;
 
   const [post, setPost] = useState<Post | null>(null);
   const [likeCount, setLikeCount] = useState(0);
@@ -174,7 +157,6 @@ export default function PostDetailScreen() {
   }
 
   return (
-    <Animated.View style={[styles.container, { transform: [{ translateX }] }]} {...pan.panHandlers}>
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -326,7 +308,6 @@ export default function PostDetailScreen() {
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
-    </Animated.View>
   );
 }
 

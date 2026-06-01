@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Slot, useSegments, useRouter } from 'expo-router';
+import { Stack, useSegments, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { supabase } from '../lib/supabase';
@@ -14,7 +14,14 @@ function AppContent() {
   useNotifications();
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-      <Slot />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          gestureEnabled: true,           // swipe from the left edge to go back
+          animation: 'slide_from_right',  // previous screen sits behind during the transition
+          contentStyle: { backgroundColor: COLORS.background },
+        }}
+      />
       <MiniPlayer />
       <NowPlaying />
     </View>
