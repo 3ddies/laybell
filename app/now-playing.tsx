@@ -95,7 +95,7 @@ export default function NowPlayingScreen() {
         </View>
       </View>
 
-      {/* Controls */}
+      {/* Controls — centered in the space between the scrubber and stats */}
       <View style={styles.controls}>
         <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
           <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={32} color={COLORS.text} />
@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
   times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: SPACING.xs },
   timeText: { color: COLORS.textTertiary, fontSize: 12, fontVariant: ['tabular-nums'] },
 
-  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: SPACING.xl, marginBottom: SPACING.xl },
+  controls: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   playBtn: {
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
 
   stats: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    marginTop: 'auto', gap: SPACING.xl,
+    gap: SPACING.xl,
     backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.lg,
     paddingVertical: SPACING.md, borderWidth: 1, borderColor: COLORS.border,
   },
