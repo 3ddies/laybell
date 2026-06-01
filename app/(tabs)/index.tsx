@@ -42,6 +42,7 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
+  const [playlistCount, setPlaylistCount] = useState(0);
   const router = useRouter();
   const [feedMode, setFeedMode] = useState<'all' | 'following'>('all');
   const [initialized, setInitialized] = useState(false);
@@ -66,8 +67,8 @@ export default function HomeScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId]);
 
-  // Refresh the unread-message badge whenever the feed regains focus
-  // (messages get marked read on another screen).
+  // Refresh the unread-message badge and playlist count whenever the feed
+  // regains focus (these change on other screens).
   const fetchUnreadMessages = useCallback(async (userId: string) => {
     const { count } = await supabase
       .from('messages')
@@ -76,10 +77,21 @@ export default function HomeScreen() {
     setUnreadMessages(count || 0);
   }, []);
 
+  const fetchPlaylistCount = useCallback(async (userId: string) => {
+    const { count } = await supabase
+      .from('playlists')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    setPlaylistCount(count || 0);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      if (currentUserId) fetchUnreadMessages(currentUserId);
-    }, [currentUserId, fetchUnreadMessages])
+      if (currentUserId) {
+        fetchUnreadMessages(currentUserId);
+        fetchPlaylistCount(currentUserId);
+      }
+    }, [currentUserId, fetchUnreadMessages, fetchPlaylistCount])
   );
 
   useEffect(() => {
@@ -197,6 +209,16 @@ export default function HomeScreen() {
     }
   }
 
+  // Audio save: normal save toggle, but if the user has playlists and just
+  // saved the track, open the playlist sheet to optionally add it to one.
+  async function handleAudioSave(postId: string) {
+    const wasSaved = savedPosts.has(postId);
+    await handleSaveTrack(postId);
+    if (!wasSaved && playlistCount > 0) {
+      setPlaylistModalPostId(postId);
+    }
+  }
+
   async function handleShare(item: Post) {
     const link = `laybell://post/${item.id}`;
     const text = item.caption
@@ -310,7 +332,10 @@ export default function HomeScreen() {
             {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionBtn} onPress={() => handleSaveTrack(item.id)}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => item.type === 'audio' ? handleAudioSave(item.id) : handleSaveTrack(item.id)}
+          >
             <Ionicons
               name={isSaved ? 'bookmark' : 'bookmark-outline'}
               size={20}
@@ -318,19 +343,13 @@ export default function HomeScreen() {
             />
           </TouchableOpacity>
 
-          {item.type === 'audio' && (
-            <TouchableOpacity style={styles.actionBtn} onPress={() => setPlaylistModalPostId(item.id)}>
-              <Ionicons name="list-circle-outline" size={22} color={COLORS.textSecondary} />
-            </TouchableOpacity>
-          )}
-
           <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRight]} onPress={() => handleShare(item)}>
             <Ionicons name="share-social-outline" size={20} color={COLORS.textSecondary} />
           </TouchableOpacity>
         </View>
       </View>
     );
-  }, [likedPosts, savedPosts, currentTrack, isPlaying, posts, currentUserId, router]);
+  }, [likedPosts, savedPosts, currentTrack, isPlaying, posts, currentUserId, router, playlistCount]);
 
   if (loading) {
     return (
