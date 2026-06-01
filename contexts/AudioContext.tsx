@@ -76,6 +76,28 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       playThroughEarpieceAndroid: false,
     });
 
+    // --- Stream counting policy ---
+    // First counted listen of a song triggers at 10%; every later listen must
+    // reach 100%. Prevents stream spam while still crediting genuine replays.
+    let canCount = false;
+    let requiresFull = false;
+    let streamCounted = false;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        canCount = true;
+        const { count } = await supabase
+          .from('streams')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id).eq('post_id', track.id);
+        requiresFull = (count || 0) > 0;
+      }
+    } catch {}
+    const recordStream = () => {
+      streamCounted = true; // set guard before await so rapid updates don't double-fire
+      supabase.from('streams').insert({ post_id: track.id }).then(undefined, () => {});
+    };
+
     try {
       const { sound } = await Audio.Sound.createAsync(
         { uri: track.uri },
@@ -83,14 +105,23 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       );
       soundRef.current = sound;
 
-      // Count a stream (fire-and-forget; never block playback)
-      supabase.rpc('increment_stream_count', { p_post_id: track.id }).then(undefined, () => {});
-
       sound.setOnPlaybackStatusUpdate((status: any) => {
         if (!status.isLoaded) return;
         setPositionMs(status.positionMillis ?? 0);
         setDurationMs(status.durationMillis ?? 0);
         setIsBuffering(status.isBuffering ?? false);
+
+        // Count a stream once the listen threshold is crossed.
+        if (canCount && !streamCounted) {
+          const dur = status.durationMillis ?? 0;
+          const pos = status.positionMillis ?? 0;
+          if (requiresFull) {
+            if (status.didJustFinish) recordStream();
+          } else if (dur > 0 && pos / dur >= 0.1) {
+            recordStream();
+          }
+        }
+
         if (status.didJustFinish) {
           setIsPlaying(false);
           setIsBuffering(false);
