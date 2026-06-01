@@ -1,6 +1,14 @@
-import React, { createContext, useContext, useState, useRef } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { Audio } from 'expo-av';
 import { supabase } from '../lib/supabase';
+
+const AUDIO_MODE = {
+  allowsRecordingIOS: false,
+  playsInSilentModeIOS: true,
+  staysActiveInBackground: true,
+  shouldDuckAndroid: true,
+  playThroughEarpieceAndroid: false,
+};
 
 export type Track = {
   id: string;
@@ -35,6 +43,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
+
+  // Configure the audio session once up front so the first tap plays immediately
+  // (a cold session previously made the first createAsync fail to start).
+  useEffect(() => { Audio.setAudioModeAsync(AUDIO_MODE).catch(() => {}); }, []);
 
   async function stop() {
     if (soundRef.current) {
@@ -96,14 +108,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setPositionMs(0);
     setDurationMs(0);
 
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: true,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-    });
-
     // --- Stream counting policy ---
     // First counted listen of a song triggers at 10%; every later listen must
     // reach 100%. Prevents stream spam while still crediting genuine replays.
@@ -137,6 +141,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         { shouldPlay: true, progressUpdateIntervalMillis: 250 } // smoother scrubber updates
       );
       soundRef.current = sound;
+      sound.playAsync().catch(() => {}); // ensure it starts even if the first load didn't auto-play
 
       sound.setOnPlaybackStatusUpdate((status: any) => {
         if (!status.isLoaded) return;
