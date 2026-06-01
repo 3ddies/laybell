@@ -155,7 +155,7 @@ export default function ExploreGrid({ posts }: { posts: GridPost[] }) {
   };
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+    <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scroll}>
       <View style={styles.row}>
         {cols.map((col, ci) => (
           <View key={ci} style={styles.col}>{col.map(renderCell)}</View>
