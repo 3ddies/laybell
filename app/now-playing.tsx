@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions } from 'react-native';
-import { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, PanResponder } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { formatCount } from '../lib/format';
 import Scrubber from '../components/Scrubber';
 
 const ART = Math.min(Dimensions.get('window').width - SPACING.xl * 2, 340);
+const SCREEN_H = Dimensions.get('window').height;
 
 function formatMs(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -21,6 +22,22 @@ export default function NowPlayingScreen() {
   const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, seekTo } = useAudio();
   const router = useRouter();
   const [stats, setStats] = useState<{ streams: number; saves: number; username?: string; userId?: string } | null>(null);
+
+  // Swipe-down-to-dismiss (drag the top of the screen downward to close).
+  const translateY = useRef(new Animated.Value(0)).current;
+  const dismiss = () =>
+    Animated.timing(translateY, { toValue: SCREEN_H, duration: 220, useNativeDriver: true }).start(() => router.back());
+  const pan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: (_, g) => { if (g.dy > 0) translateY.setValue(g.dy); },
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 130 || g.vy > 0.8) dismiss();
+        else Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+      },
+      onPanResponderTerminate: () => Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start(),
+    })
+  ).current;
 
   // Close if playback ends/stops.
   useEffect(() => { if (!currentTrack) router.back(); }, [currentTrack]);
@@ -48,29 +65,34 @@ export default function NowPlayingScreen() {
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
 
   return (
+    <Animated.View style={[styles.flex, { transform: [{ translateY }] }]}>
     <LinearGradient colors={['#2A1206', '#150A04', COLORS.background]} style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-down" size={26} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Now Playing</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      {/* Top drag zone — swipe down here to close */}
+      <View {...pan.panHandlers}>
+        <View style={styles.handle} />
 
-      {/* Artwork */}
-      <View style={styles.artWrap}>
-        {currentTrack.cover ? (
-          <Image source={{ uri: currentTrack.cover }} style={styles.art} />
-        ) : (
-          <LinearGradient colors={GRADIENTS.primary} style={styles.art}>
-            <Ionicons name="musical-notes" size={72} color={COLORS.text} />
-          </LinearGradient>
-        )}
-      </View>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
+            <Ionicons name="chevron-down" size={26} color={COLORS.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Now Playing</Text>
+          <View style={{ width: 40 }} />
+        </View>
 
-      {/* Title + artist */}
-      <View style={styles.meta}>
+        {/* Artwork */}
+        <View style={styles.artWrap}>
+          {currentTrack.cover ? (
+            <Image source={{ uri: currentTrack.cover }} style={styles.art} />
+          ) : (
+            <LinearGradient colors={GRADIENTS.primary} style={styles.art}>
+              <Ionicons name="musical-notes" size={72} color={COLORS.text} />
+            </LinearGradient>
+          )}
+        </View>
+
+        {/* Title + artist */}
+        <View style={styles.meta}>
         <Text style={styles.title} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
         <TouchableOpacity
           disabled={!stats?.userId}
@@ -80,6 +102,7 @@ export default function NowPlayingScreen() {
             {currentTrack.artist || (stats?.username ? `@${stats.username}` : '')}
           </Text>
         </TouchableOpacity>
+        </View>
       </View>
 
       {/* Progress */}
@@ -117,14 +140,21 @@ export default function NowPlayingScreen() {
         </View>
       </View>
     </LinearGradient>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   container: { flex: 1, paddingHorizontal: SPACING.xl, paddingBottom: SPACING.xxl },
+  handle: {
+    width: 40, height: 5, borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignSelf: 'center', marginTop: SPACING.lg + SPACING.sm,
+  },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingTop: SPACING.xxl + SPACING.sm, marginBottom: SPACING.xl,
+    paddingTop: SPACING.md, marginBottom: SPACING.xl,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { color: COLORS.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.5 },
