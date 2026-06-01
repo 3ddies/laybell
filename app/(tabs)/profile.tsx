@@ -55,7 +55,7 @@ export default function ProfileScreen() {
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
       supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-      supabase.from('posts').select('id, type, media_url, caption, is_public').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('posts').select('id, type, media_url, caption').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
       supabase.from('likes').select('posts(id, type, media_url, caption)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
       supabase.from('saves').select('posts(id, type, media_url, caption)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
     ]);
@@ -207,12 +207,6 @@ export default function ProfileScreen() {
                     name={activeTab === 'liked' ? 'heart' : 'bookmark'}
                     size={10} color={COLORS.text}
                   />
-                </View>
-              )}
-              {/* Followers-only indicator on own posts */}
-              {activeTab !== 'liked' && activeTab !== 'saved' && post.is_public === false && (
-                <View style={styles.gridBadge}>
-                  <Ionicons name="lock-closed" size={10} color={COLORS.text} />
                 </View>
               )}
             </TouchableOpacity>

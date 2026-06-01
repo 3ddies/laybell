@@ -115,6 +115,12 @@ export default function SettingsScreen() {
     },
     {
       icon: 'lock-closed-outline',
+      label: 'Private Posts',
+      subtitle: 'Posts only your followers can see',
+      onPress: () => router.push('/private-posts'),
+    },
+    {
+      icon: 'lock-closed-outline',
       label: 'Change Password',
       onPress: () => Alert.alert('Change Password', 'A password reset email will be sent to your registered address.', [
         { text: 'Cancel', style: 'cancel' },
