@@ -2,7 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio } from '../contexts/AudioContext';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import Scrubber from './Scrubber';
 
@@ -23,11 +23,13 @@ export default function MiniPlayer() {
 
   return (
     <View style={styles.container}>
-      <Scrubber
-        progress={progress}
-        onSeek={r => durationMs > 0 && seekTo(Math.floor(r * durationMs))}
-        height={16} trackHeight={4} thumbSize={12}
-      />
+      <View style={styles.scrubWrap}>
+        <Scrubber
+          progress={progress}
+          onSeek={r => durationMs > 0 && seekTo(Math.floor(r * durationMs))}
+          height={16} trackHeight={4} thumbSize={12}
+        />
+      </View>
 
       <View style={styles.inner}>
         {/* Album cover — tap to open the full now-playing screen */}
@@ -66,14 +68,17 @@ export default function MiniPlayer() {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute', bottom: 60, left: 0, right: 0,
-    backgroundColor: COLORS.surface,
-    borderTopWidth: 0.5, borderTopColor: COLORS.primaryLight + '66',
+    position: 'absolute', bottom: 92, left: SPACING.sm, right: SPACING.sm,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: RADIUS.lg, overflow: 'hidden',
+    borderWidth: 0.5, borderColor: COLORS.primaryLight + '55',
+    ...SHADOWS.md,
     zIndex: 100,
   },
+  scrubWrap: { paddingHorizontal: SPACING.sm, paddingTop: SPACING.xs },
   inner: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.sm,
+    paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm, paddingTop: SPACING.xs, gap: SPACING.sm,
   },
   coverWrap: { width: 38, height: 38, borderRadius: RADIUS.sm, overflow: 'hidden' },
   cover: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
