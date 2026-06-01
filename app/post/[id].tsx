@@ -2,8 +2,11 @@ import { Video, ResizeMode } from 'expo-av';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, TextInput, KeyboardAvoidingView,
-  Platform, ActivityIndicator, FlatList,
+  Platform, ActivityIndicator, FlatList, Dimensions,
 } from 'react-native';
+
+const SCREEN_W = Dimensions.get('window').width;
+const MAX_VIDEO_H = SCREEN_W * 1.25; // match the feed's 4:5 cap
 import { useEffect, useState, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -196,7 +199,7 @@ export default function PostDetailScreen() {
               <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined }]} resizeMode="cover" />
             )}
             {post.type === 'video' && post.media_url && (
-              <Video source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 16 / 9), height: undefined }]} useNativeControls resizeMode={ResizeMode.CONTAIN} isLooping shouldPlay />
+              <Video source={{ uri: post.media_url }} style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]} useNativeControls resizeMode={ResizeMode.COVER} isLooping shouldPlay />
             )}
             {post.type === 'audio' && (
               <TouchableOpacity

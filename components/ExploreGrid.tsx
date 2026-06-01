@@ -46,8 +46,8 @@ function groupSongs(songs: GridPost[]): GridPost[][] {
 
 function mediaHeight(post: GridPost): number {
   if (post.type === 'video') {
-    // Reflect the posted dimensions (w/h); clamp ultra-tall so it doesn't dominate.
-    return Math.min(COL_W / aspectToNumber(post.aspect_ratio, 16 / 9), COL_W * 1.9);
+    // Reflect the posted dimensions (w/h); cap at 4:5 to match the feed/post sizing.
+    return Math.min(COL_W / aspectToNumber(post.aspect_ratio, 16 / 9), COL_W * 1.25);
   }
   return COL_W; // pictures always render 1:1
 }
