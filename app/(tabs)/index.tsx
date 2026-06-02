@@ -10,7 +10,7 @@ import {
 
 const SCREEN_W = Dimensions.get('window').width;
 const MAX_VIDEO_H = SCREEN_W * 1.25; // cap feed video at 4:5 so tall (9:16) clips aren't too long
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -43,6 +43,158 @@ type Post = {
   duration_seconds?: number | null;
 };
 
+type PostCardProps = {
+  item: Post;
+  isOwn: boolean;
+  isLiked: boolean;
+  isSaved: boolean;
+  audioActive: boolean;
+  videoMuted: boolean;
+  shouldPlayVideo: boolean;
+  onProfile: (item: Post) => void;
+  onOptions: (item: Post) => void;
+  onOpenPost: (item: Post) => void;
+  onPlayTrack: (item: Post) => void;
+  onExpandTrack: (item: Post) => void;
+  onToggleMuted: () => void;
+  onLike: (item: Post) => void;
+  onSave: (item: Post) => void;
+  onShare: (item: Post) => void;
+};
+
+// Memoized so that toggling a like/save on one post (which changes the feed's
+// liked/saved sets) only re-renders that card — not all ~50 rows. All callbacks
+// from HomeScreen are referentially stable, and `item` keeps its reference for
+// unchanged posts, so React.memo's shallow compare skips them.
+const PostCard = memo(function PostCard({
+  item, isOwn, isLiked, isSaved, audioActive, videoMuted, shouldPlayVideo,
+  onProfile, onOptions, onOpenPost, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare,
+}: PostCardProps) {
+  const likeCount = item.likes[0]?.count || 0;
+  const commentCount = item.comments[0]?.count || 0;
+  const saveCount = item.save_count || 0;
+  const typeIcon = item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline';
+
+  return (
+    <View style={styles.postCard}>
+      {/* Header */}
+      <TouchableOpacity style={styles.postHeader} onPress={() => onProfile(item)}>
+        {item.profiles?.avatar_url ? (
+          <Image source={{ uri: item.profiles.avatar_url }} style={styles.avatar} />
+        ) : (
+          <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {item.profiles?.display_name?.charAt(0).toUpperCase()}
+            </Text>
+          </LinearGradient>
+        )}
+        <View style={styles.postHeaderInfo}>
+          <Text style={styles.postDisplayName}>{item.profiles?.display_name}</Text>
+          <Text style={styles.postUsername}>
+            @{item.profiles?.username} · {timeAgo(item.created_at)}
+          </Text>
+        </View>
+        {isOwn ? (
+          <TouchableOpacity style={styles.typeIconWrap} onPress={() => onOptions(item)}>
+            <Ionicons name={typeIcon} size={16} color={COLORS.primary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.typeIconWrap}>
+            <Ionicons name={typeIcon} size={16} color={COLORS.primary} />
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* Media */}
+      {item.type === 'image' && item.media_url && (
+        <TouchableOpacity onPress={() => onOpenPost(item)}>
+          <Image
+            source={{ uri: item.media_url }}
+            style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1) }]}
+            resizeMode="cover"
+          />
+        </TouchableOpacity>
+      )}
+
+      {item.type === 'audio' && (
+        <View style={styles.audioCardWrap}>
+          <TrackRow
+            caption={item.caption}
+            artist={item.profiles?.display_name}
+            username={item.profiles?.username}
+            streams={item.stream_count}
+            cover={item.cover_url}
+            avatarUrl={item.profiles?.avatar_url}
+            duration={item.duration_seconds}
+            isPlaying={audioActive}
+            onPlay={() => onPlayTrack(item)}
+            onCoverPress={() => onExpandTrack(item)}
+          />
+        </View>
+      )}
+
+      {item.type === 'video' && item.media_url && (
+        <View>
+          <TouchableOpacity activeOpacity={1} onPress={() => onOpenPost(item)}>
+            <Video
+              source={{ uri: item.media_url }}
+              style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H) }]}
+              resizeMode={ResizeMode.COVER}
+              isLooping
+              isMuted={videoMuted}
+              shouldPlay={shouldPlayVideo}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.videoAudioBtn} onPress={onToggleMuted}>
+            <Ionicons name={videoMuted ? 'volume-mute' : 'volume-high'} size={18} color={COLORS.text} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Caption */}
+      {!!item.caption && item.type !== 'audio' && (
+        <TouchableOpacity onPress={() => onOpenPost(item)}>
+          <Text style={styles.caption} numberOfLines={3}>{item.caption}</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Actions */}
+      <View style={styles.actions}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onLike(item)}>
+          <Ionicons
+            name={isLiked ? 'heart' : 'heart-outline'}
+            size={22}
+            color={isLiked ? COLORS.like : COLORS.textSecondary}
+          />
+          {likeCount > 0 && (
+            <Text style={[styles.actionCount, isLiked && { color: COLORS.primaryLight }]}>{likeCount}</Text>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onOpenPost(item)}>
+          <Ionicons name="chatbubble-outline" size={20} color={COLORS.textSecondary} />
+          {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onSave(item)}>
+          <Ionicons
+            name={isSaved ? 'bookmark' : 'bookmark-outline'}
+            size={20}
+            color={isSaved ? COLORS.primary : COLORS.textSecondary}
+          />
+          {saveCount > 0 && (
+            <Text style={[styles.actionCount, isSaved && { color: COLORS.primary }]}>{saveCount}</Text>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRight]} onPress={() => onShare(item)}>
+          <Ionicons name="share-social-outline" size={20} color={COLORS.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+});
+
 export default function HomeScreen() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +215,12 @@ export default function HomeScreen() {
   const isFocused = useIsFocused();
   const swiping = usePagerSwiping();
   const canPlayVideo = isFocused && !swiping;
+
+  // Latest values for the stable card callbacks below. Updating a ref (instead of
+  // putting these in useCallback deps) lets the callbacks keep a constant identity
+  // — so memoized PostCards don't re-render — while still acting on current state.
+  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted });
+  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted };
 
   // Track which video is on-screen so it auto-plays while others pause.
   // FlatList requires these references to be stable across renders.
@@ -200,63 +358,78 @@ export default function HomeScreen() {
     setRefreshing(false);
   }
 
-  async function handleLike(postId: string) {
-    if (!currentUserId) return;
-    const isLiked = likedPosts.has(postId);
-
+  // Stable card callbacks — identity never changes (empty deps + the `live` ref),
+  // so memoized PostCards only re-render when their own props change.
+  const onLike = useCallback(async (item: Post) => {
+    const { currentUserId: uid, likedPosts: liked } = live.current;
+    if (!uid) return;
+    const isLiked = liked.has(item.id);
     setLikedPosts(prev => {
       const next = new Set(prev);
-      isLiked ? next.delete(postId) : next.add(postId);
+      isLiked ? next.delete(item.id) : next.add(item.id);
       return next;
     });
     setPosts(prev => prev.map(post => {
-      if (post.id !== postId) return post;
+      if (post.id !== item.id) return post;
       const c = post.likes[0]?.count || 0;
       return { ...post, likes: [{ count: isLiked ? c - 1 : c + 1 }] };
     }));
-
     if (isLiked) {
-      await supabase.from('likes').delete().eq('user_id', currentUserId).eq('post_id', postId);
+      await supabase.from('likes').delete().eq('user_id', uid).eq('post_id', item.id);
     } else {
-      await supabase.from('likes').insert({ user_id: currentUserId, post_id: postId });
-      const post = posts.find(p => p.id === postId);
-      if (post && post.user_id !== currentUserId) {
-        createNotification({ userId: post.user_id, actorId: currentUserId, type: 'like', postId });
+      await supabase.from('likes').insert({ user_id: uid, post_id: item.id });
+      if (item.user_id !== uid) {
+        createNotification({ userId: item.user_id, actorId: uid, type: 'like', postId: item.id });
       }
     }
-  }
+  }, []);
 
-  async function handleSaveTrack(postId: string) {
-    if (!currentUserId) return;
-    const isSaved = savedPosts.has(postId);
+  const onSave = useCallback(async (item: Post) => {
+    const { currentUserId: uid, savedPosts: saved, playlistCount: plCount } = live.current;
+    if (!uid) return;
+    const wasSaved = saved.has(item.id);
     setSavedPosts(prev => {
       const next = new Set(prev);
-      isSaved ? next.delete(postId) : next.add(postId);
+      wasSaved ? next.delete(item.id) : next.add(item.id);
       return next;
     });
     setPosts(prev => prev.map(p => {
-      if (p.id !== postId) return p;
+      if (p.id !== item.id) return p;
       const c = p.save_count || 0;
-      return { ...p, save_count: isSaved ? Math.max(c - 1, 0) : c + 1 };
+      return { ...p, save_count: wasSaved ? Math.max(c - 1, 0) : c + 1 };
     }));
-    if (isSaved) {
-      await supabase.from('saves').delete().eq('user_id', currentUserId).eq('post_id', postId);
+    if (wasSaved) {
+      await supabase.from('saves').delete().eq('user_id', uid).eq('post_id', item.id);
     } else {
-      await supabase.from('saves').insert({ user_id: currentUserId, post_id: postId });
+      await supabase.from('saves').insert({ user_id: uid, post_id: item.id });
+      // Audio: if the user has playlists, offer to add the just-saved track to one.
+      if (item.type === 'audio' && plCount > 0) setPlaylistModalPostId(item.id);
     }
-  }
+  }, []);
 
-  // Audio save: normal save toggle, but if the user has playlists and just
-  // saved the track, open the playlist sheet to optionally add it to one.
-  async function handleAudioSave(postId: string) {
-    const wasSaved = savedPosts.has(postId);
-    await handleSaveTrack(postId);
-    if (!wasSaved && playlistCount > 0) {
-      setPlaylistModalPostId(postId);
-    }
-  }
+  const onShare = useCallback(async (item: Post) => {
+    const link = `laybell://post/${item.id}`;
+    const text = item.caption
+      ? `"${item.caption}" — @${item.profiles?.username} on Laybell`
+      : `Check out @${item.profiles?.username} on Laybell`;
+    try {
+      await Share.share({ message: `${text}\n${link}`, url: link });
+    } catch {}
+  }, []);
 
-  function openPostOptions(postId: string) {
+  const onProfile = useCallback((item: Post) => live.current.router.push(`/profile/${item.user_id}`), []);
+  const onOpenPost = useCallback((item: Post) => live.current.router.push(`/post/${item.id}`), []);
+
+  const onPlayTrack = useCallback((item: Post) => {
+    live.current.play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url });
+  }, []);
+  const onExpandTrack = useCallback((item: Post) => {
+    live.current.play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url });
+    live.current.expand();
+  }, []);
+  const onToggleMuted = useCallback(() => live.current.toggleVideoMuted(), []);
+
+  const onOptions = useCallback((item: Post) => {
     Alert.alert('Post options', undefined, [
       {
         text: 'Delete post',
@@ -265,160 +438,37 @@ export default function HomeScreen() {
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Delete', style: 'destructive', onPress: async () => {
-              await supabase.from('posts').delete().eq('id', postId);
-              setPosts(prev => prev.filter(p => p.id !== postId));
+              await supabase.from('posts').delete().eq('id', item.id);
+              setPosts(prev => prev.filter(p => p.id !== item.id));
             },
           },
         ]),
       },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  }
+  }, []);
 
-  async function handleShare(item: Post) {
-    const link = `laybell://post/${item.id}`;
-    const text = item.caption
-      ? `"${item.caption}" — @${item.profiles?.username} on Laybell`
-      : `Check out @${item.profiles?.username} on Laybell`;
-    try {
-      await Share.share({ message: `${text}\n${link}`, url: link });
-    } catch {}
-  }
-
-  const renderPost = useCallback(({ item }: { item: Post }) => {
-    const isLiked = likedPosts.has(item.id);
-    const isSaved = savedPosts.has(item.id);
-    const likeCount = item.likes[0]?.count || 0;
-    const commentCount = item.comments[0]?.count || 0;
-    const saveCount = item.save_count || 0;
-    const audioActive = isPlaying && currentTrack?.id === item.id;
-    const typeIcon = item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline';
-
-    return (
-      <View style={styles.postCard}>
-        {/* Header */}
-        <TouchableOpacity
-          style={styles.postHeader}
-          onPress={() => router.push(`/profile/${item.user_id}`)}
-        >
-          {item.profiles?.avatar_url ? (
-            <Image source={{ uri: item.profiles.avatar_url }} style={styles.avatar} />
-          ) : (
-            <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {item.profiles?.display_name?.charAt(0).toUpperCase()}
-              </Text>
-            </LinearGradient>
-          )}
-          <View style={styles.postHeaderInfo}>
-            <Text style={styles.postDisplayName}>{item.profiles?.display_name}</Text>
-            <Text style={styles.postUsername}>
-              @{item.profiles?.username} · {timeAgo(item.created_at)}
-            </Text>
-          </View>
-          {item.user_id === currentUserId ? (
-            <TouchableOpacity style={styles.typeIconWrap} onPress={() => openPostOptions(item.id)}>
-              <Ionicons name={typeIcon} size={16} color={COLORS.primary} />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.typeIconWrap}>
-              <Ionicons name={typeIcon} size={16} color={COLORS.primary} />
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Media */}
-        {item.type === 'image' && item.media_url && (
-          <TouchableOpacity onPress={() => router.push(`/post/${item.id}`)}>
-            <Image
-              source={{ uri: item.media_url }}
-              style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1) }]}
-              resizeMode="cover"
-            />
-          </TouchableOpacity>
-        )}
-
-        {item.type === 'audio' && (
-          <View style={styles.audioCardWrap}>
-            <TrackRow
-              caption={item.caption}
-              artist={item.profiles?.display_name}
-              username={item.profiles?.username}
-              streams={item.stream_count}
-              cover={item.cover_url}
-              avatarUrl={item.profiles?.avatar_url}
-              duration={item.duration_seconds}
-              isPlaying={audioActive}
-              onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
-              onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); expand(); }}
-            />
-          </View>
-        )}
-
-        {item.type === 'video' && item.media_url && (
-          <View>
-            <TouchableOpacity activeOpacity={1} onPress={() => router.push(`/post/${item.id}`)}>
-              <Video
-                source={{ uri: item.media_url }}
-                style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H) }]}
-                resizeMode={ResizeMode.COVER}
-                isLooping
-                isMuted={videoMuted}
-                shouldPlay={canPlayVideo && visibleVideoId === item.id}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.videoAudioBtn} onPress={toggleVideoMuted}>
-              <Ionicons name={videoMuted ? 'volume-mute' : 'volume-high'} size={18} color={COLORS.text} />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Caption */}
-        {!!item.caption && item.type !== 'audio' && (
-          <TouchableOpacity onPress={() => router.push(`/post/${item.id}`)}>
-            <Text style={styles.caption} numberOfLines={3}>{item.caption}</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Actions */}
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item.id)}>
-            <Ionicons
-              name={isLiked ? 'heart' : 'heart-outline'}
-              size={22}
-              color={isLiked ? COLORS.like : COLORS.textSecondary}
-            />
-            {likeCount > 0 && (
-              <Text style={[styles.actionCount, isLiked && { color: COLORS.primaryLight }]}>{likeCount}</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtn} onPress={() => router.push(`/post/${item.id}`)}>
-            <Ionicons name="chatbubble-outline" size={20} color={COLORS.textSecondary} />
-            {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => item.type === 'audio' ? handleAudioSave(item.id) : handleSaveTrack(item.id)}
-          >
-            <Ionicons
-              name={isSaved ? 'bookmark' : 'bookmark-outline'}
-              size={20}
-              color={isSaved ? COLORS.primary : COLORS.textSecondary}
-            />
-            {saveCount > 0 && (
-              <Text style={[styles.actionCount, isSaved && { color: COLORS.primary }]}>{saveCount}</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRight]} onPress={() => handleShare(item)}>
-            <Ionicons name="share-social-outline" size={20} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }, [likedPosts, savedPosts, currentTrack, isPlaying, posts, currentUserId, router, playlistCount, visibleVideoId, videoMuted, canPlayVideo]);
+  const renderPost = useCallback(({ item }: { item: Post }) => (
+    <PostCard
+      item={item}
+      isOwn={item.user_id === currentUserId}
+      isLiked={likedPosts.has(item.id)}
+      isSaved={savedPosts.has(item.id)}
+      audioActive={isPlaying && currentTrack?.id === item.id}
+      videoMuted={videoMuted}
+      shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
+      onProfile={onProfile}
+      onOptions={onOptions}
+      onOpenPost={onOpenPost}
+      onPlayTrack={onPlayTrack}
+      onExpandTrack={onExpandTrack}
+      onToggleMuted={onToggleMuted}
+      onLike={onLike}
+      onSave={onSave}
+      onShare={onShare}
+    />
+  ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, canPlayVideo, visibleVideoId,
+      onProfile, onOptions, onOpenPost, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare]);
 
   if (loading) {
     return (
