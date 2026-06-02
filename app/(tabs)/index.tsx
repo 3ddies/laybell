@@ -174,18 +174,23 @@ export default function HomeScreen() {
     ]);
 
     if (data) {
-      const scored = [...data] as any[];
+      let scored: any[];
       if (feedMode === 'all') {
-        // Engagement-weighted sort: likes*3 + comments*5, decay over time
-        scored.sort((a, b) => {
-          const score = (p: any) => {
+        // Engagement-weighted sort: likes*3 + comments*5, decayed over time.
+        // Score each post once (decorate–sort–undecorate) instead of recomputing
+        // inside the comparator, which re-parsed every date O(n log n) times.
+        const now = Date.now();
+        scored = (data as any[])
+          .map((p) => {
             const likes = p.likes?.[0]?.count || 0;
             const comments = p.comments?.[0]?.count || 0;
-            const hoursOld = (Date.now() - new Date(p.created_at).getTime()) / 3_600_000;
-            return (likes * 3 + comments * 5) / Math.pow(hoursOld + 2, 1.2);
-          };
-          return score(b) - score(a);
-        });
+            const hoursOld = (now - new Date(p.created_at).getTime()) / 3_600_000;
+            return { p, score: (likes * 3 + comments * 5) / Math.pow(hoursOld + 2, 1.2) };
+          })
+          .sort((a, b) => b.score - a.score)
+          .map((x) => x.p);
+      } else {
+        scored = [...(data as any[])];
       }
       setPosts(scored);
     }
@@ -287,6 +292,7 @@ export default function HomeScreen() {
     const commentCount = item.comments[0]?.count || 0;
     const saveCount = item.save_count || 0;
     const audioActive = isPlaying && currentTrack?.id === item.id;
+    const typeIcon = item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline';
 
     return (
       <View style={styles.postCard}>
@@ -312,19 +318,11 @@ export default function HomeScreen() {
           </View>
           {item.user_id === currentUserId ? (
             <TouchableOpacity style={styles.typeIconWrap} onPress={() => openPostOptions(item.id)}>
-              <Ionicons
-                name={item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline'}
-                size={16}
-                color={COLORS.primary}
-              />
+              <Ionicons name={typeIcon} size={16} color={COLORS.primary} />
             </TouchableOpacity>
           ) : (
             <View style={styles.typeIconWrap}>
-              <Ionicons
-                name={item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline'}
-                size={16}
-                color={COLORS.primary}
-              />
+              <Ionicons name={typeIcon} size={16} color={COLORS.primary} />
             </View>
           )}
         </TouchableOpacity>

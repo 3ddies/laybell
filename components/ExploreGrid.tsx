@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions, RefreshControl,
 } from 'react-native';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Video, ResizeMode } from 'expo-av';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -75,70 +75,81 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles }:
     });
   };
 
-  if (!posts || posts.length === 0) {
-    return <View style={styles.empty}><Text style={styles.emptyText}>No posts in this genre yet</Text></View>;
-  }
+  // The masonry layout depends only on the posts and the songTiles mode, not on
+  // playback state — so memoize it. Without this the whole filter/sort/group/pack
+  // recomputed on every render, including each 250ms audio progress tick.
+  const { cols, playableSet } = useMemo(() => {
+    if (!posts || posts.length === 0) {
+      return { cols: [[], []] as Cell[][], playableSet: new Set<string>() };
+    }
 
-  const images = posts.filter(p => p.type === 'image');
-  const videos = posts.filter(p => p.type === 'video');
-  // In genre view, songs render as 1:1 cover tiles (alongside images); in "All"
-  // they stay grouped into Trending Songs stacks.
-  const tileMedia = songTiles
-    ? posts.filter(p => p.type === 'image' || p.type === 'audio')
-    : images;
-  const musicGroups = songTiles ? [] : groupSongs(posts.filter(p => p.type === 'audio'));
+    const images = posts.filter(p => p.type === 'image');
+    const videos = posts.filter(p => p.type === 'video');
+    // In genre view, songs render as 1:1 cover tiles (alongside images); in "All"
+    // they stay grouped into Trending Songs stacks.
+    const tileMedia = songTiles
+      ? posts.filter(p => p.type === 'image' || p.type === 'audio')
+      : images;
+    const musicGroups = songTiles ? [] : groupSongs(posts.filter(p => p.type === 'audio'));
 
-  // Only ~1 in every 4 videos auto-plays; the rest stay as still thumbnails so the
-  // grid isn't overstimulating. Prefer vertical (portrait) clips for the play
-  // slots since they look better on the grid.
-  const playableCount = Math.ceil(videos.length / 4);
-  const isVertical = (p: GridPost) => aspectToNumber(p.aspect_ratio, 16 / 9) < 1; // w/h < 1 => portrait
-  const playableSet = new Set(
-    [...videos]
-      .sort((a, b) => Number(isVertical(b)) - Number(isVertical(a))) // verticals first
-      .slice(0, playableCount)
-      .map(v => v.id),
-  );
+    // Only ~1 in every 4 videos auto-plays; the rest stay as still thumbnails so the
+    // grid isn't overstimulating. Prefer vertical (portrait) clips for the play
+    // slots since they look better on the grid.
+    const playableCount = Math.ceil(videos.length / 4);
+    const isVertical = (p: GridPost) => aspectToNumber(p.aspect_ratio, 16 / 9) < 1; // w/h < 1 => portrait
+    const playableSet = new Set(
+      [...videos]
+        .sort((a, b) => Number(isVertical(b)) - Number(isVertical(a))) // verticals first
+        .slice(0, playableCount)
+        .map(v => v.id),
+    );
 
-  // Base (non-video) cells: interleave the 1:1 tiles and (in All view) music stacks.
-  const baseCells: Cell[] = [];
-  let mi = 0;
-  tileMedia.forEach((m, idx) => {
-    baseCells.push({ kind: 'media', key: m.id, post: m, height: mediaHeight(m) });
-    if (idx % 2 === 1 && mi < musicGroups.length) {
+    // Base (non-video) cells: interleave the 1:1 tiles and (in All view) music stacks.
+    const baseCells: Cell[] = [];
+    let mi = 0;
+    tileMedia.forEach((m, idx) => {
+      baseCells.push({ kind: 'media', key: m.id, post: m, height: mediaHeight(m) });
+      if (idx % 2 === 1 && mi < musicGroups.length) {
+        const g = musicGroups[mi];
+        baseCells.push({ kind: 'music', key: `music-${mi}`, songs: g, height: MUSIC_HEADER_H + g.length * ROW_H });
+        mi++;
+      }
+    });
+    while (mi < musicGroups.length) {
       const g = musicGroups[mi];
       baseCells.push({ kind: 'music', key: `music-${mi}`, songs: g, height: MUSIC_HEADER_H + g.length * ROW_H });
       mi++;
     }
-  });
-  while (mi < musicGroups.length) {
-    const g = musicGroups[mi];
-    baseCells.push({ kind: 'music', key: `music-${mi}`, songs: g, height: MUSIC_HEADER_H + g.length * ROW_H });
-    mi++;
-  }
 
-  // Masonry the base cells; splice videos in on alternating sides, spaced apart.
-  const cols: Cell[][] = [[], []];
-  const colH = [0, 0];
-  let videoSide = 0;
-  let sinceVideo = VIDEO_GAP; // allow a video early
-  let vi = 0;
-  const placeVideo = () => {
-    const v = videos[vi++];
-    const h = mediaHeight(v);
-    cols[videoSide].push({ kind: 'media', key: v.id, post: v, height: h });
-    colH[videoSide] += h + GAP;
-    videoSide ^= 1;
-    sinceVideo = 0;
-  };
-  for (const cell of baseCells) {
-    const c = colH[0] <= colH[1] ? 0 : 1;
-    cols[c].push(cell);
-    colH[c] += cell.height + GAP;
-    sinceVideo++;
-    if (vi < videos.length && sinceVideo >= VIDEO_GAP) placeVideo();
+    // Masonry the base cells; splice videos in on alternating sides, spaced apart.
+    const cols: Cell[][] = [[], []];
+    const colH = [0, 0];
+    let videoSide = 0;
+    let sinceVideo = VIDEO_GAP; // allow a video early
+    let vi = 0;
+    const placeVideo = () => {
+      const v = videos[vi++];
+      const h = mediaHeight(v);
+      cols[videoSide].push({ kind: 'media', key: v.id, post: v, height: h });
+      colH[videoSide] += h + GAP;
+      videoSide ^= 1;
+      sinceVideo = 0;
+    };
+    for (const cell of baseCells) {
+      const c = colH[0] <= colH[1] ? 0 : 1;
+      cols[c].push(cell);
+      colH[c] += cell.height + GAP;
+      sinceVideo++;
+      if (vi < videos.length && sinceVideo >= VIDEO_GAP) placeVideo();
+    }
+    while (vi < videos.length) placeVideo();
+
+    return { cols, playableSet };
+  }, [posts, songTiles]);
+
+  if (!posts || posts.length === 0) {
+    return <View style={styles.empty}><Text style={styles.emptyText}>No posts in this genre yet</Text></View>;
   }
-  while (vi < videos.length) placeVideo();
 
   const renderMedia = (cell: Cell & { kind: 'media' }) => {
     const p = cell.post;
