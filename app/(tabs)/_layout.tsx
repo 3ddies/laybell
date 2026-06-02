@@ -97,9 +97,9 @@ export default function TabLayout() {
         <MaterialTopTabs.Screen name="explore" />
         <MaterialTopTabs.Screen name="post" />
         <MaterialTopTabs.Screen name="music" />
-        {/* Profile toggles the outer swipe itself via setOptions (enabled only on
-            its Posts sub-tab, so a right-swipe there goes to Music) — see profile.tsx. */}
-        <MaterialTopTabs.Screen name="profile" />
+        {/* Profile owns its horizontal swipes via its own inner pager (incl. a
+            "go to Music" dismiss page), so the outer swipe stays off here. */}
+        <MaterialTopTabs.Screen name="profile" options={{ swipeEnabled: false }} />
       </MaterialTopTabs>
     </PagerContext.Provider>
   );

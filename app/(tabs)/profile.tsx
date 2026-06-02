@@ -50,17 +50,11 @@ export default function ProfileScreen() {
   const navigation = useNavigation();
   const { playQueue } = useAudio();
 
-  // Each sub-tab is a page in a native pager, so swiping left/right slides the
-  // next tab's grid in under your finger — the same feel as the main bottom tabs.
+  // Sub-tabs are a single native pager: page 0 is a "go to Music" dismiss page and
+  // pages 1-5 are the sub-tabs (Posts…Saved). Swiping right off Posts lands on page 0
+  // and jumps to the Music main tab — one pager, no nesting or native gesture, so it
+  // can't glitch or freeze (same mechanism as other users' profiles).
   const pagerRef = useRef<PagerView>(null);
-
-  // On the Posts sub-tab, hand horizontal swipes to the OUTER tab pager (enable its
-  // swipe + disable this inner one below) so a right-swipe anywhere drags over to
-  // Music, finger-following. On the other sub-tabs the inner pager owns swipes and
-  // the outer one stays locked. (Posts → Music is a tap on the sub-tab bar.)
-  useEffect(() => {
-    navigation.setOptions({ swipeEnabled: activeTab === 'posts' });
-  }, [activeTab, navigation]);
 
   useEffect(() => { fetchProfile(); }, []);
 
@@ -243,7 +237,7 @@ export default function ProfileScreen() {
             <TouchableOpacity
               key={tab.key}
               style={[styles.tab, activeTab === tab.key && styles.activeTab]}
-              onPress={() => pagerRef.current?.setPage(i)}
+              onPress={() => pagerRef.current?.setPage(i + 1)}
             >
               <Ionicons
                 name={activeTab === tab.key ? tab.icon.replace('-outline', '') as any : tab.icon as any}
@@ -258,14 +252,28 @@ export default function ProfileScreen() {
         </View>
       </ScrollView>
 
-      {/* Swipeable sub-tab pages */}
+      {/* Pager — page 0 is the "go to Music" dismiss page (swipe right off Posts);
+          pages 1-5 are the sub-tabs. One pager, no nesting/native gesture, so it
+          can't glitch or freeze. */}
       <PagerView
         ref={pagerRef}
         style={styles.pager}
-        initialPage={0}
-        scrollEnabled={activeTab !== 'posts'}
-        onPageSelected={(e) => setActiveTab(TAB_KEYS[e.nativeEvent.position])}
+        initialPage={1}
+        onPageSelected={(e) => {
+          const pos = e.nativeEvent.position;
+          if (pos === 0) {
+            // Swiped right off Posts → the previous main tab. Reset to Posts off-screen
+            // so coming back to Profile doesn't land on the dismiss page.
+            (navigation as any).navigate('music');
+            pagerRef.current?.setPageWithoutAnimation(1);
+          } else {
+            setActiveTab(TAB_KEYS[pos - 1]);
+          }
+        }}
       >
+        <View key="dismiss" style={styles.dismissPage}>
+          <Ionicons name="arrow-back" size={28} color={COLORS.textTertiary} />
+        </View>
         {TABS.map(tab => (
           <View key={tab.key} style={styles.page}>
             <ScrollView
@@ -340,6 +348,7 @@ const styles = StyleSheet.create({
 
   pager: { flex: 1 },
   page: { flex: 1 },
+  dismissPage: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
   pageContent: { paddingBottom: SPACING.xxl + 80 },
 
   postsGrid: { flexDirection: 'row', flexWrap: 'wrap' },

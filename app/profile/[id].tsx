@@ -175,11 +175,9 @@ export default function PublicProfileScreen() {
 
   return (
     <View style={styles.container}>
-      {/* On the Posts tab, enable the native full-screen back-swipe so a right-swipe
-          anywhere drags the screen back under your finger (finger-following, like the
-          sub-tab pager). On Music/Videos it's off so the pager owns those swipes;
-          the left-edge swipe and back button still work everywhere. */}
-      <Stack.Screen options={{ fullScreenGestureEnabled: activeTab === 'posts' }} />
+      {/* No native back-swipe — the pager's leading dismiss page (below) + the back
+          button handle going back, so nothing competes with the sub-tab swipes. */}
+      <Stack.Screen options={{ gestureEnabled: false }} />
 
       {/* Back */}
       <View style={styles.topBar}>
@@ -253,21 +251,29 @@ export default function PublicProfileScreen() {
           <TouchableOpacity
             key={tab.key}
             style={[styles.tab, activeTab === tab.key && styles.activeTab]}
-            onPress={() => pagerRef.current?.setPage(i)}
+            onPress={() => pagerRef.current?.setPage(i + 1)}
           >
             <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>{tab.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Swipeable sub-tab pages */}
+      {/* Pager — page 0 is the back/dismiss page (swipe right off Posts to go back);
+          pages 1-3 are the sub-tabs. ONE pager, no nesting and no native gesture, so
+          there's nothing to fight: it can't glitch or freeze. */}
       <PagerView
         ref={pagerRef}
         style={styles.pager}
-        initialPage={0}
-        scrollEnabled={activeTab !== 'posts'}
-        onPageSelected={(e) => setActiveTab(TAB_KEYS[e.nativeEvent.position])}
+        initialPage={1}
+        onPageSelected={(e) => {
+          const pos = e.nativeEvent.position;
+          if (pos === 0) router.back();
+          else setActiveTab(TAB_KEYS[pos - 1]);
+        }}
       >
+        <View key="dismiss" style={styles.dismissPage}>
+          <Ionicons name="arrow-back" size={28} color={COLORS.textTertiary} />
+        </View>
         {TABS.map(tab => (
           <View key={tab.key} style={styles.page}>
             <ScrollView
@@ -288,6 +294,7 @@ export default function PublicProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  dismissPage: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
   loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
 
   topBar: {
