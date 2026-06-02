@@ -97,6 +97,8 @@ export default function TabLayout() {
         <MaterialTopTabs.Screen name="explore" />
         <MaterialTopTabs.Screen name="post" />
         <MaterialTopTabs.Screen name="music" />
+        {/* Profile toggles the outer swipe itself via setOptions (enabled only on
+            its Posts sub-tab, so a right-swipe there goes to Music) — see profile.tsx. */}
         <MaterialTopTabs.Screen name="profile" />
       </MaterialTopTabs>
     </PagerContext.Provider>
@@ -122,7 +124,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -22,
+    marginTop: -12,
   },
   postBtn: {
     width: 58,

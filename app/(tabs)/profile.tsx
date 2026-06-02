@@ -1,12 +1,14 @@
 import { useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 import { useAudio } from '../../contexts/AudioContext';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, ActivityIndicator, Image, RefreshControl,
 } from 'react-native';
+import PagerView from 'react-native-pager-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 
@@ -33,6 +35,7 @@ const TABS = [
   { key: 'liked', label: 'Liked', icon: 'heart-outline' },
   { key: 'saved', label: 'Saved', icon: 'bookmark-outline' },
 ];
+const TAB_KEYS = TABS.map(t => t.key);
 
 export default function ProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -44,7 +47,20 @@ export default function ProfileScreen() {
   const [likedPosts, setLikedPosts] = useState<any[]>([]);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const router = useRouter();
+  const navigation = useNavigation();
   const { playQueue } = useAudio();
+
+  // Each sub-tab is a page in a native pager, so swiping left/right slides the
+  // next tab's grid in under your finger — the same feel as the main bottom tabs.
+  const pagerRef = useRef<PagerView>(null);
+
+  // On the Posts sub-tab, hand horizontal swipes to the OUTER tab pager (enable its
+  // swipe + disable this inner one below) so a right-swipe anywhere drags over to
+  // Music, finger-following. On the other sub-tabs the inner pager owns swipes and
+  // the outer one stays locked. (Posts → Music is a tap on the sub-tab bar.)
+  useEffect(() => {
+    navigation.setOptions({ swipeEnabled: activeTab === 'posts' });
+  }, [activeTab, navigation]);
 
   useEffect(() => { fetchProfile(); }, []);
 
@@ -77,28 +93,96 @@ export default function ProfileScreen() {
 
   const badgeGradient = getBadgeGradient(profile?.badge_tier ?? '');
 
-  function getGridData() {
-    switch (activeTab) {
-      case 'posts': return userPosts;
+  function dataForTab(key: string) {
+    switch (key) {
       case 'music': return userPosts.filter(p => p.type === 'audio');
       case 'videos': return userPosts.filter(p => p.type === 'video');
       case 'liked': return likedPosts;
       case 'saved': return savedPosts;
-      default: return userPosts;
+      default: return userPosts; // posts
     }
   }
 
-  const gridData = getGridData();
+  function renderGrid(data: any[], tabKey: string) {
+    if (data.length === 0) {
+      return (
+        <View style={styles.emptyGrid}>
+          <Ionicons
+            name={tabKey === 'liked' ? 'heart-outline' : tabKey === 'saved' ? 'bookmark-outline' : 'images-outline'}
+            size={40}
+            color={COLORS.textTertiary}
+          />
+          <Text style={styles.emptyGridText}>
+            {tabKey === 'liked' ? 'No liked posts yet'
+              : tabKey === 'saved' ? 'No saved posts yet'
+              : `No ${tabKey} yet`}
+          </Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.postsGrid}>
+        {data.map((post: any) => (
+          <TouchableOpacity
+            key={post.id}
+            style={styles.gridItem}
+            onPress={() => {
+              if (post.type === 'audio') {
+                const songs = data.filter((s: any) => s.type === 'audio');
+                const idx = songs.findIndex((s: any) => s.id === post.id);
+                playQueue(
+                  songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: profile?.display_name ?? '', cover: s.cover_url })),
+                  Math.max(0, idx),
+                );
+              } else {
+                router.push(`/post/${post.id}`);
+              }
+            }}
+          >
+            {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
+              <>
+                <Image
+                  source={{ uri: post.type === 'image' ? post.media_url : post.type === 'video' ? post.thumbnail_url : post.cover_url }}
+                  style={styles.gridImage}
+                  resizeMode="cover"
+                />
+                {post.type === 'video' && (
+                  <View style={styles.gridPlayOverlay}>
+                    <Ionicons name="play" size={14} color={COLORS.text} />
+                  </View>
+                )}
+                {post.type === 'audio' && (
+                  <View style={styles.gridPlayOverlay}>
+                    <Ionicons name="musical-notes" size={13} color={COLORS.text} />
+                  </View>
+                )}
+              </>
+            ) : (
+              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
+                <Ionicons
+                  name={post.type === 'audio' ? 'musical-notes' : 'videocam'}
+                  size={28} color={COLORS.primary}
+                />
+              </LinearGradient>
+            )}
+            {/* Badge for liked/saved tabs */}
+            {(tabKey === 'liked' || tabKey === 'saved') && (
+              <View style={styles.gridBadge}>
+                <Ionicons
+                  name={tabKey === 'liked' ? 'heart' : 'bookmark'}
+                  size={10} color={COLORS.text}
+                />
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  }
 
   return (
-    <ScrollView
-      style={styles.container}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile(); }} tintColor={COLORS.primary} />
-      }
-    >
-      {/* Header */}
+    <View style={styles.container}>
+      {/* Header (fixed above the swipeable sub-tabs) */}
       <View style={styles.headerBar}>
         <Text style={styles.usernameHeader}>@{profile?.username}</Text>
         <TouchableOpacity onPress={() => router.push('/settings')} style={styles.settingsBtn}>
@@ -152,14 +236,14 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Tabs */}
+      {/* Tabs — tapping drives the pager; the pager drives the active highlight */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
         <View style={styles.tabsRow}>
-          {TABS.map(tab => (
+          {TABS.map((tab, i) => (
             <TouchableOpacity
               key={tab.key}
               style={[styles.tab, activeTab === tab.key && styles.activeTab]}
-              onPress={() => setActiveTab(tab.key)}
+              onPress={() => pagerRef.current?.setPage(i)}
             >
               <Ionicons
                 name={activeTab === tab.key ? tab.icon.replace('-outline', '') as any : tab.icon as any}
@@ -174,79 +258,29 @@ export default function ProfileScreen() {
         </View>
       </ScrollView>
 
-      {/* Grid */}
-      {gridData.length === 0 ? (
-        <View style={styles.emptyGrid}>
-          <Ionicons
-            name={activeTab === 'liked' ? 'heart-outline' : activeTab === 'saved' ? 'bookmark-outline' : 'images-outline'}
-            size={40}
-            color={COLORS.textTertiary}
-          />
-          <Text style={styles.emptyGridText}>
-            {activeTab === 'liked' ? 'No liked posts yet'
-              : activeTab === 'saved' ? 'No saved posts yet'
-              : `No ${activeTab} yet`}
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.postsGrid}>
-          {gridData.map((post: any) => (
-            <TouchableOpacity
-              key={post.id}
-              style={styles.gridItem}
-              onPress={() => {
-                if (post.type === 'audio') {
-                  const songs = gridData.filter((s: any) => s.type === 'audio');
-                  const idx = songs.findIndex((s: any) => s.id === post.id);
-                  playQueue(
-                    songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: profile?.display_name ?? '', cover: s.cover_url })),
-                    Math.max(0, idx),
-                  );
-                } else {
-                  router.push(`/post/${post.id}`);
-                }
-              }}
+      {/* Swipeable sub-tab pages */}
+      <PagerView
+        ref={pagerRef}
+        style={styles.pager}
+        initialPage={0}
+        scrollEnabled={activeTab !== 'posts'}
+        onPageSelected={(e) => setActiveTab(TAB_KEYS[e.nativeEvent.position])}
+      >
+        {TABS.map(tab => (
+          <View key={tab.key} style={styles.page}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.pageContent}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile(); }} tintColor={COLORS.primary} />
+              }
             >
-              {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
-                <>
-                  <Image
-                    source={{ uri: post.type === 'image' ? post.media_url : post.type === 'video' ? post.thumbnail_url : post.cover_url }}
-                    style={styles.gridImage}
-                    resizeMode="cover"
-                  />
-                  {post.type === 'video' && (
-                    <View style={styles.gridPlayOverlay}>
-                      <Ionicons name="play" size={14} color={COLORS.text} />
-                    </View>
-                  )}
-                  {post.type === 'audio' && (
-                    <View style={styles.gridPlayOverlay}>
-                      <Ionicons name="musical-notes" size={13} color={COLORS.text} />
-                    </View>
-                  )}
-                </>
-              ) : (
-                <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
-                  <Ionicons
-                    name={post.type === 'audio' ? 'musical-notes' : 'videocam'}
-                    size={28} color={COLORS.primary}
-                  />
-                </LinearGradient>
-              )}
-              {/* Badge for liked/saved tabs */}
-              {(activeTab === 'liked' || activeTab === 'saved') && (
-                <View style={styles.gridBadge}>
-                  <Ionicons
-                    name={activeTab === 'liked' ? 'heart' : 'bookmark'}
-                    size={10} color={COLORS.text}
-                  />
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </ScrollView>
+              {renderGrid(dataForTab(tab.key), tab.key)}
+            </ScrollView>
+          </View>
+        ))}
+      </PagerView>
+    </View>
   );
 }
 
@@ -294,7 +328,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm + 2, alignItems: 'center', justifyContent: 'center',
   },
 
-  tabsScroll: { marginTop: SPACING.md, borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
+  tabsScroll: { marginTop: SPACING.md, borderBottomWidth: 0.5, borderBottomColor: COLORS.border, flexGrow: 0 },
   tabsRow: { flexDirection: 'row', paddingHorizontal: SPACING.sm },
   tab: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -303,6 +337,10 @@ const styles = StyleSheet.create({
   activeTab: { borderBottomWidth: 2, borderBottomColor: COLORS.primary },
   tabText: { color: COLORS.textTertiary, fontSize: 12, fontWeight: '500' },
   activeTabText: { color: COLORS.primary, fontWeight: '700' },
+
+  pager: { flex: 1 },
+  page: { flex: 1 },
+  pageContent: { paddingBottom: SPACING.xxl + 80 },
 
   postsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   gridItem: { width: '33.33%', aspectRatio: 1, position: 'relative' },

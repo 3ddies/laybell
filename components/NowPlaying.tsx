@@ -192,6 +192,7 @@ export default function NowPlaying() {
           <Comments
             postId={pid}
             ownerId={ownerId}
+            contentPadding={SPACING.xl}
             ListHeaderComponent={
               <>
                 <View style={styles.artWrap}>
@@ -243,14 +244,14 @@ export default function NowPlaying() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   layer: { zIndex: 200 },
-  container: { flex: 1, paddingHorizontal: SPACING.xl },
+  container: { flex: 1 },
   handle: {
     width: 40, height: 5, borderRadius: 3,
     backgroundColor: 'rgba(255,255,255,0.3)', alignSelf: 'center', marginTop: SPACING.lg + SPACING.sm,
   },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingTop: SPACING.md, marginBottom: SPACING.sm,
+    paddingTop: SPACING.md, marginBottom: SPACING.sm, paddingHorizontal: SPACING.xl,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { color: COLORS.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.5 },

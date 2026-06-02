@@ -13,12 +13,16 @@ type Row = {
 };
 
 export default function Comments({
-  postId, ownerId, ListHeaderComponent, style,
+  postId, ownerId, ListHeaderComponent, style, contentPadding,
 }: {
   postId: string;
   ownerId?: string | null;
   ListHeaderComponent?: ReactElement;
   style?: any;
+  // Horizontal padding for the list content + input, applied without insetting the
+  // list frame — so the scroll indicator stays at the screen's right edge even when
+  // the caller would otherwise wrap this in a padded container.
+  contentPadding?: number;
 }) {
   const listRef = useRef<FlatList>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -139,7 +143,7 @@ export default function Comments({
         data={topLevel}
         keyExtractor={c => c.id}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, contentPadding != null && { paddingHorizontal: contentPadding }]}
         ListHeaderComponent={
           <>
             {ListHeaderComponent}
@@ -163,7 +167,7 @@ export default function Comments({
         }}
       />
 
-      <View style={styles.inputWrap}>
+      <View style={[styles.inputWrap, contentPadding != null && { marginHorizontal: contentPadding }]}>
         {replyTo && (
           <View style={styles.replyingBar}>
             <Text style={styles.replyingText}>Replying to @{replyTo.name}</Text>

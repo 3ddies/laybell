@@ -1,11 +1,12 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Image,
+  ScrollView, ActivityIndicator, Image, RefreshControl,
 } from 'react-native';
+import PagerView from 'react-native-pager-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState, useRef } from 'react';
+import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useAudio } from '../../contexts/AudioContext';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
@@ -27,6 +28,13 @@ function getBadgeGradient(tier: string): readonly [string, string] {
   }
 }
 
+const TABS = [
+  { key: 'posts', label: 'Posts' },
+  { key: 'music', label: 'Music' },
+  { key: 'videos', label: 'Videos' },
+];
+const TAB_KEYS = TABS.map(t => t.key);
+
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -35,10 +43,15 @@ export default function PublicProfileScreen() {
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('posts');
   const [followLoading, setFollowLoading] = useState(false);
+
+  // Sub-tabs are pages in a native pager — swiping slides the next grid in under
+  // your finger, matching the rest of the app.
+  const pagerRef = useRef<PagerView>(null);
 
   useEffect(() => { setup(); }, [id]);
 
@@ -68,6 +81,7 @@ export default function PublicProfileScreen() {
     }
     setIsFollowing(following);
     setLoading(false);
+    setRefreshing(false);
   }
 
   async function handleFollow() {
@@ -93,15 +107,80 @@ export default function PublicProfileScreen() {
 
   const isOwnProfile = currentUserId === id;
   const badgeGradient = getBadgeGradient(profile?.badge_tier ?? '');
-  const tabs = ['Posts', 'Music', 'Videos'];
-  const filtered = posts.filter(p =>
-    activeTab === 'posts' ? true :
-    activeTab === 'music' ? p.type === 'audio' :
-    p.type === 'video'
-  );
+
+  function dataForTab(key: string) {
+    switch (key) {
+      case 'music': return posts.filter((p: any) => p.type === 'audio');
+      case 'videos': return posts.filter((p: any) => p.type === 'video');
+      default: return posts; // posts
+    }
+  }
+
+  function renderGrid(data: any[], tabKey: string) {
+    if (data.length === 0) {
+      return (
+        <View style={styles.emptyGrid}>
+          <Ionicons name="images-outline" size={40} color={COLORS.textTertiary} />
+          <Text style={styles.emptyGridText}>No {tabKey} yet</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.postsGrid}>
+        {data.map((post: any) => (
+          <TouchableOpacity
+            key={post.id}
+            style={styles.gridItem}
+            onPress={() => {
+              if (post.type === 'audio') {
+                const songs = data.filter((s: any) => s.type === 'audio');
+                const idx = songs.findIndex((s: any) => s.id === post.id);
+                playQueue(
+                  songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: profile?.display_name ?? '', cover: s.cover_url })),
+                  Math.max(0, idx),
+                );
+              } else {
+                router.push(`/post/${post.id}`);
+              }
+            }}
+          >
+            {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
+              <>
+                <Image
+                  source={{ uri: post.type === 'image' ? post.media_url : post.type === 'video' ? post.thumbnail_url : post.cover_url }}
+                  style={styles.gridImage}
+                  resizeMode="cover"
+                />
+                {post.type === 'video' && (
+                  <View style={styles.gridPlayOverlay}>
+                    <Ionicons name="play" size={14} color={COLORS.text} />
+                  </View>
+                )}
+                {post.type === 'audio' && (
+                  <View style={styles.gridPlayOverlay}>
+                    <Ionicons name="musical-notes" size={13} color={COLORS.text} />
+                  </View>
+                )}
+              </>
+            ) : (
+              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
+                <Ionicons name={post.type === 'audio' ? 'musical-notes' : 'videocam'} size={28} color={COLORS.primary} />
+              </LinearGradient>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={styles.container}>
+      {/* On the Posts tab, enable the native full-screen back-swipe so a right-swipe
+          anywhere drags the screen back under your finger (finger-following, like the
+          sub-tab pager). On Music/Videos it's off so the pager owns those swipes;
+          the left-edge swipe and back button still work everywhere. */}
+      <Stack.Screen options={{ fullScreenGestureEnabled: activeTab === 'posts' }} />
+
       {/* Back */}
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -168,72 +247,42 @@ export default function PublicProfileScreen() {
         </View>
       )}
 
-      {/* Tabs */}
+      {/* Tabs — tapping drives the pager; the pager drives the active highlight */}
       <View style={styles.tabsRow}>
-        {tabs.map(tab => (
+        {TABS.map((tab, i) => (
           <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab.toLowerCase() && styles.activeTab]}
-            onPress={() => setActiveTab(tab.toLowerCase())}
+            key={tab.key}
+            style={[styles.tab, activeTab === tab.key && styles.activeTab]}
+            onPress={() => pagerRef.current?.setPage(i)}
           >
-            <Text style={[styles.tabText, activeTab === tab.toLowerCase() && styles.activeTabText]}>{tab}</Text>
+            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>{tab.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Grid */}
-      {filtered.length === 0 ? (
-        <View style={styles.emptyGrid}>
-          <Ionicons name="images-outline" size={40} color={COLORS.textTertiary} />
-          <Text style={styles.emptyGridText}>No {activeTab} yet</Text>
-        </View>
-      ) : (
-        <View style={styles.postsGrid}>
-          {filtered.map(post => (
-            <TouchableOpacity
-              key={post.id}
-              style={styles.gridItem}
-              onPress={() => {
-                if (post.type === 'audio') {
-                  const songs = filtered.filter((s: any) => s.type === 'audio');
-                  const idx = songs.findIndex((s: any) => s.id === post.id);
-                  playQueue(
-                    songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: profile?.display_name ?? '', cover: s.cover_url })),
-                    Math.max(0, idx),
-                  );
-                } else {
-                  router.push(`/post/${post.id}`);
-                }
-              }}
+      {/* Swipeable sub-tab pages */}
+      <PagerView
+        ref={pagerRef}
+        style={styles.pager}
+        initialPage={0}
+        scrollEnabled={activeTab !== 'posts'}
+        onPageSelected={(e) => setActiveTab(TAB_KEYS[e.nativeEvent.position])}
+      >
+        {TABS.map(tab => (
+          <View key={tab.key} style={styles.page}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.pageContent}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setup(); }} tintColor={COLORS.primary} />
+              }
             >
-              {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
-                <>
-                  <Image
-                    source={{ uri: post.type === 'image' ? post.media_url : post.type === 'video' ? post.thumbnail_url : post.cover_url }}
-                    style={styles.gridImage}
-                    resizeMode="cover"
-                  />
-                  {post.type === 'video' && (
-                    <View style={styles.gridPlayOverlay}>
-                      <Ionicons name="play" size={14} color={COLORS.text} />
-                    </View>
-                  )}
-                  {post.type === 'audio' && (
-                    <View style={styles.gridPlayOverlay}>
-                      <Ionicons name="musical-notes" size={13} color={COLORS.text} />
-                    </View>
-                  )}
-                </>
-              ) : (
-                <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
-                  <Ionicons name={post.type === 'audio' ? 'musical-notes' : 'videocam'} size={28} color={COLORS.primary} />
-                </LinearGradient>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </ScrollView>
+              {renderGrid(dataForTab(tab.key), tab.key)}
+            </ScrollView>
+          </View>
+        ))}
+      </PagerView>
+    </View>
   );
 }
 
@@ -282,6 +331,10 @@ const styles = StyleSheet.create({
   activeTab: { borderBottomWidth: 2, borderBottomColor: COLORS.primary },
   tabText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
   activeTabText: { color: COLORS.text, fontWeight: '700' },
+
+  pager: { flex: 1 },
+  page: { flex: 1 },
+  pageContent: { paddingBottom: SPACING.xxl + 60 },
 
   postsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   gridItem: { width: '33.33%', aspectRatio: 1 },

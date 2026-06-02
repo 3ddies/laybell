@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio } from '../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../constants/theme';
@@ -13,13 +14,18 @@ function formatMs(ms: number): string {
 
 export default function MiniPlayer() {
   const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, stop, seekTo, expanded, expand } = useAudio();
+  const insets = useSafeAreaInsets();
 
   if (!currentTrack || expanded) return null;
+
+  // Sit just above the tab bar (68 + bottom inset), clearing the ~4px the center
+  // "+" button now protrudes above it (its pop-up was reduced in the tab bar).
+  const bottomOffset = 68 + insets.bottom + 6;
 
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { bottom: bottomOffset }]}>
       <View style={styles.scrubWrap}>
         <Scrubber
           progress={progress}
@@ -65,7 +71,7 @@ export default function MiniPlayer() {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute', bottom: 78, left: SPACING.sm, right: SPACING.sm,
+    position: 'absolute', left: SPACING.sm, right: SPACING.sm,
     backgroundColor: COLORS.surfaceElevated,
     borderRadius: RADIUS.lg, overflow: 'hidden',
     borderWidth: 0.5, borderColor: COLORS.primaryLight + '55',
