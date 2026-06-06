@@ -1,3 +1,7 @@
+import {
+  buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
+  EMPTY_PROFILE, type UserAffinityProfile,
+} from '../../lib/feedScorer';
 import { Video, ResizeMode } from 'expo-av';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
@@ -41,6 +45,7 @@ type Post = {
   stream_count?: number;
   cover_url?: string | null;
   duration_seconds?: number | null;
+  genre?: string | null;
 };
 
 type PostCardProps = {
@@ -201,6 +206,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [seenPostIds, setSeenPostIds] = useState<Set<string>>(new Set());
+  const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
   const { play, currentTrack, isPlaying, expand, videoMuted, toggleVideoMuted } = useAudio();
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
@@ -233,7 +240,7 @@ export default function HomeScreen() {
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    if (initialized) fetchPosts(currentUserId || undefined);
+    if (initialized) fetchPosts(currentUserId || undefined, seenPostIds);
   }, [feedMode]);
 
   useEffect(() => {
@@ -288,8 +295,15 @@ export default function HomeScreen() {
     const userId = user?.id ?? null;
     if (userId) setCurrentUserId(userId);
 
+    const [seen, profile] = await Promise.all([
+      loadSeenPostIds(),
+      userId ? buildAffinityProfile(userId) : Promise.resolve(EMPTY_PROFILE),
+    ]);
+    setSeenPostIds(seen);
+    affinityProfile.current = profile;
+
     await Promise.all([
-      fetchPosts(userId ?? undefined),
+      fetchPosts(userId ?? undefined, seen),
       userId
         ? supabase.from('notifications').select('*', { count: 'exact', head: true })
             .eq('user_id', userId).eq('read', false)
@@ -299,7 +313,7 @@ export default function HomeScreen() {
     setInitialized(true);
   }
 
-  async function fetchPosts(userId?: string) {
+  async function fetchPosts(userId?: string, seen: Set<string> = seenPostIds) {
     let query = supabase
       .from('posts')
       .select(`
@@ -311,17 +325,22 @@ export default function HomeScreen() {
       .order('created_at', { ascending: false })
       .limit(50);
 
-    if (feedMode === 'following' && userId) {
-      const { data: followingData } = await supabase
-        .from('follows').select('following_id').eq('follower_id', userId);
-      const followingIds = followingData?.map(f => f.following_id) ?? [];
+    // Fetch the following list for both modes:
+    //   • following mode  – needed to filter posts
+    //   • discovery mode  – needed to apply the follow-boost multiplier
+    let followingData: any[] | null = null;
+    if (userId) {
+      const { data } = await supabase.from('follows').select('following_id').eq('follower_id', userId);
+      followingData = data;
+    }
+
+    if (feedMode === 'following') {
+      const followingIds = followingData?.map((f: any) => f.following_id) ?? [];
       if (followingIds.length === 0) {
         setPosts([]); setLoading(false); setRefreshing(false); return;
       }
-      // Following feed: show both public and followers-only posts from people you follow
       query = query.in('user_id', followingIds);
     } else {
-      // Discovery feed: public posts only
       query = query.eq('is_public', true);
     }
 
@@ -332,25 +351,25 @@ export default function HomeScreen() {
     ]);
 
     if (data) {
+      const followingSet = new Set<string>(
+        followingData?.map((f: any) => f.following_id) ?? []
+      );
+
       let scored: any[];
       if (feedMode === 'all') {
-        // Engagement-weighted sort: likes*3 + comments*5, decayed over time.
-        // Score each post once (decorate–sort–undecorate) instead of recomputing
-        // inside the comparator, which re-parsed every date O(n log n) times.
         const now = Date.now();
+        const profile = affinityProfile.current;
         scored = (data as any[])
-          .map((p) => {
-            const likes = p.likes?.[0]?.count || 0;
-            const comments = p.comments?.[0]?.count || 0;
-            const hoursOld = (now - new Date(p.created_at).getTime()) / 3_600_000;
-            return { p, score: (likes * 3 + comments * 5) / Math.pow(hoursOld + 2, 1.2) };
-          })
+          .map((p) => ({ p, score: scorePost(p, profile, followingSet, seen, now) }))
           .sort((a, b) => b.score - a.score)
           .map((x) => x.p);
       } else {
         scored = [...(data as any[])];
       }
+
       setPosts(scored);
+      // Persist post IDs shown to the user so they can be deprioritised next session.
+      recordSeenPostIds((data as any[]).map((p: any) => p.id));
     }
     if (likesData) setLikedPosts(new Set(likesData.map((l: any) => l.post_id)));
     if (savesData) setSavedPosts(new Set(savesData.map((s: any) => s.post_id)));
@@ -535,7 +554,7 @@ export default function HomeScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); fetchPosts(currentUserId || undefined); }}
+            onRefresh={() => { setRefreshing(true); fetchPosts(currentUserId || undefined, seenPostIds); }}
             tintColor={COLORS.primary}
           />
         }

@@ -2,7 +2,7 @@ import {
   View, Text, StyleSheet, TextInput,
   FlatList, TouchableOpacity, Image, ActivityIndicator,
 } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +11,11 @@ import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/the
 import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
 import { useAudio } from '../../contexts/AudioContext';
-import { GENRE_FILTERS } from '../../lib/genres';
+import { GENRE_FILTERS, CONTENT_TAGS } from '../../lib/genres';
+import {
+  buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
+  EMPTY_PROFILE, type UserAffinityProfile,
+} from '../../lib/feedScorer';
 
 type Post = {
   id: string; type: string; media_url: string;
@@ -22,14 +26,17 @@ type Post = {
   thumbnail_url?: string | null;
   aspect_ratio?: string | null;
   stream_count?: number;
+  save_count?: number;
   cover_url?: string | null;
+  genre?: string | null;
 };
 type Profile = {
   id: string; username: string; display_name: string;
   avatar_url: string | null; badge_tier: string;
 };
 
-const GENRES = [...GENRE_FILTERS];
+// Genre filters + content-type tags shown as a combined filter rail.
+const GENRES = [...GENRE_FILTERS, ...CONTENT_TAGS];
 
 function getBadgeColor(tier: string) {
   switch (tier) {
@@ -53,8 +60,12 @@ export default function ExploreScreen() {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [seenPostIds, setSeenPostIds] = useState<Set<string>>(new Set());
+  const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
+  const followingSetRef = useRef<Set<string>>(new Set());
 
-  useEffect(() => { fetchTrending(); }, []);
+  useEffect(() => { setup(); }, []);
 
   useEffect(() => {
     if (searchQuery.trim().length > 0) {
@@ -65,14 +76,49 @@ export default function ExploreScreen() {
     }
   }, [searchQuery, searchType]);
 
-  async function fetchTrending() {
+  async function setup() {
+    // Auth + seen-posts (AsyncStorage) in parallel — both fast
+    const [{ data: { user } }, seen] = await Promise.all([
+      supabase.auth.getUser(),
+      loadSeenPostIds(),
+    ]);
+    const userId = user?.id ?? null;
+    if (userId) setCurrentUserId(userId);
+    setSeenPostIds(seen);
+
+    // Affinity profile (AsyncStorage cache) + following list in parallel
+    if (userId) {
+      const [profile, followingResult] = await Promise.all([
+        buildAffinityProfile(userId),
+        supabase.from('follows').select('following_id').eq('follower_id', userId),
+      ]);
+      affinityProfile.current = profile;
+      followingSetRef.current = new Set(
+        (followingResult.data ?? []).map((f: any) => f.following_id),
+      );
+    }
+
+    await fetchTrending(seen);
+  }
+
+  // `overrideSeen` is passed from setup() before the seenPostIds state update applies.
+  async function fetchTrending(overrideSeen?: Set<string>) {
     const { data } = await supabase
       .from('posts')
-      .select('*, profiles!posts_user_id_fkey (username, display_name)')
+      .select('*, profiles!posts_user_id_fkey (username, display_name), likes(count), comments(count)')
       .eq('is_public', true)
       .order('created_at', { ascending: false })
-      .limit(20);
-    if (data) setTrendingPosts(data as any);
+      .limit(30);
+    if (data) {
+      const seen = overrideSeen ?? seenPostIds;
+      const now  = Date.now();
+      const sorted = [...data].sort((a: any, b: any) =>
+        scorePost(b, affinityProfile.current, followingSetRef.current, seen, now) -
+        scorePost(a, affinityProfile.current, followingSetRef.current, seen, now),
+      );
+      setTrendingPosts(sorted as any);
+      recordSeenPostIds(sorted.map((p: any) => p.id));
+    }
     setLoading(false);
   }
 
@@ -80,14 +126,33 @@ export default function ExploreScreen() {
     if (!silent) setLoading(true);
     setSelectedGenre(genre);
     if (genre === 'All') { await fetchTrending(); if (!silent) setLoading(false); return; }
-    const { data } = await supabase
+
+    let q = supabase
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (username, display_name), likes(count), comments(count)')
       .eq('is_public', true)
-      .eq('genre', genre.toLowerCase())
       .order('created_at', { ascending: false })
       .limit(30);
-    if (data) setTrendingPosts(data as any);
+
+    // Podcasts / Audiobooks filter by type; music genres filter by genre field.
+    if (genre === 'Podcasts') {
+      q = q.eq('type', 'podcast');
+    } else if (genre === 'Audiobooks') {
+      q = q.eq('type', 'audiobook');
+    } else {
+      q = q.eq('genre', genre.toLowerCase());
+    }
+
+    const { data } = await q;
+    if (data) {
+      const now = Date.now();
+      const sorted = [...data].sort((a: any, b: any) =>
+        scorePost(b, affinityProfile.current, followingSetRef.current, seenPostIds, now) -
+        scorePost(a, affinityProfile.current, followingSetRef.current, seenPostIds, now),
+      );
+      setTrendingPosts(sorted as any);
+      recordSeenPostIds(sorted.map((p: any) => p.id));
+    }
     if (!silent) setLoading(false);
   }
 
@@ -140,11 +205,13 @@ export default function ExploreScreen() {
       const { data } = await query;
 
       if (data) {
-        // Sort by engagement score
-        const sorted = [...data].sort((a: any, b: any) => {
-          const score = (p: any) => (p.likes?.[0]?.count || 0) * 3 + (p.comments?.[0]?.count || 0) * 5;
-          return score(b) - score(a);
-        });
+        // Sort by personalized engagement score; no seen-penalty in search
+        // (user is actively looking, so previously-seen results are still relevant).
+        const now = Date.now();
+        const sorted = [...data].sort((a: any, b: any) =>
+          scorePost(b, affinityProfile.current, followingSetRef.current, new Set(), now) -
+          scorePost(a, affinityProfile.current, followingSetRef.current, new Set(), now),
+        );
         setPosts(sorted as any);
       }
     }

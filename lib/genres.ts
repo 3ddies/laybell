@@ -4,3 +4,8 @@ export const GENRES = [
 ] as const;
 
 export const GENRE_FILTERS = ['All', ...GENRES] as const;
+
+// Non-music content types shown as filter tags in Explore and Music discover.
+// Matched against posts.type ('podcast' | 'audiobook') rather than posts.genre.
+export const CONTENT_TAGS = ['Podcasts', 'Audiobooks'] as const;
+export type ContentTag = typeof CONTENT_TAGS[number];

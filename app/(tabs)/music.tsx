@@ -1,8 +1,8 @@
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, Modal, Image,
+  View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
+  ActivityIndicator, Alert, TextInput, Modal, Image, Dimensions,
 } from 'react-native';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,19 @@ import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import TrackRow from '../../components/TrackRow';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GENRES, CONTENT_TAGS } from '../../lib/genres';
+import {
+  buildAffinityProfile, loadSeenPostIds, scorePost,
+  EMPTY_PROFILE, type UserAffinityProfile,
+} from '../../lib/feedScorer';
+
+const SCREEN_W           = Dimensions.get('window').width;
+const FOR_YOU_W          = Math.floor((SCREEN_W - SPACING.md * 2 - SPACING.md) / 2.3);
+const TODAYS_PICK_KEY    = 'todays_pick_v2';
+const TODAYS_PICK_TTL_MS = 18 * 60 * 60 * 1000; // 18 hours
+
+type ContentType = 'music' | 'podcast' | 'audiobook';
 
 type Playlist = { id: string; name: string; is_public: boolean; created_at: string };
 type Track = {
@@ -35,10 +48,24 @@ export default function MusicScreen() {
   const { playQueue, expand } = useAudio();
   const [savedTracks, setSavedTracks] = useState<any[]>([]);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'playlists' | 'saved' | 'liked'>('playlists');
+  const [activeView, setActiveView] = useState<'discover' | 'playlists' | 'saved' | 'liked'>('discover');
   const [likedTracks, setLikedTracks] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const router = useRouter();
+
+  // ─── Discover tab state ────────────────────────────────────────────────────
+  const [contentType, setContentType]           = useState<ContentType>('music');
+  const [discoverGenre, setDiscoverGenre]       = useState('All');
+  const [orderedGenreList, setOrderedGenreList] = useState<string[]>([...GENRES]);
+  const [trendingTracks, setTrendingTracks]     = useState<any[]>([]);
+  const [trendingLoading, setTrendingLoading]   = useState(false);
+  const [trendingExpanded, setTrendingExpanded] = useState(false);
+  const [forYouTracks, setForYouTracks]         = useState<any[]>([]);
+  const [todaysPick, setTodaysPick]             = useState<any | null>(null);
+  const [discoverLoading, setDiscoverLoading]   = useState(true);
+  const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
+  const followingSetRef = useRef<Set<string>>(new Set());
+  const seenRef         = useRef<Set<string>>(new Set());
 
   useEffect(() => { setup(); }, []);
 
@@ -59,6 +86,7 @@ export default function MusicScreen() {
     if (user) {
       setCurrentUserId(user.id);
       await Promise.all([fetchPlaylists(user.id), fetchSavedTracks(user.id), fetchLikedTracks(user.id)]);
+      fetchDiscoverData(user.id); // runs in background with its own loading state
     }
     setLoading(false);
   }
@@ -117,6 +145,198 @@ export default function MusicScreen() {
     ]);
   }
 
+  // ─── Discover helpers ─────────────────────────────────────────────────────
+
+  function topGenreDisplay(profile: UserAffinityProfile): string {
+    const entries = Object.entries(profile.genreScores);
+    if (!entries.length) return 'All';
+    const topLower = entries.reduce((a, b) => a[1] > b[1] ? a : b)[0];
+    return GENRES.find(g => g.toLowerCase() === topLower) ?? 'All';
+  }
+
+  // "Meme" gets a small affinity floor so funny content surfaces near the
+  // front of the genre rail for everyone (broad universal appeal), while still
+  // sitting *behind* any genre the user has genuinely engaged with. For a brand
+  // new user (all scores 0) this lands Meme right after "All"; for an engaged
+  // user it slots in just behind their real preferences, ahead of untouched genres.
+  const MEME_FLOOR = 0.001;
+
+  function sortGenresByAffinity(profile: UserAffinityProfile): string[] {
+    const keyFor = (g: string) => {
+      const score = profile.genreScores[g.toLowerCase()] ?? 0;
+      return g === 'Meme' ? Math.max(score, MEME_FLOOR) : score;
+    };
+    return [...GENRES].sort((a, b) => keyFor(b) - keyFor(a));
+  }
+
+  async function fetchDiscoverData(userId: string) {
+    setDiscoverLoading(true);
+    const [profile, followingResult, seen] = await Promise.all([
+      buildAffinityProfile(userId),
+      supabase.from('follows').select('following_id').eq('follower_id', userId),
+      loadSeenPostIds(),
+    ]);
+    affinityProfile.current = profile;
+    followingSetRef.current = new Set(
+      (followingResult.data ?? []).map((f: any) => f.following_id),
+    );
+    seenRef.current = seen;
+
+    setOrderedGenreList(sortGenresByAffinity(profile));
+
+    const initialGenre = topGenreDisplay(profile);
+    setDiscoverGenre(initialGenre);
+
+    await Promise.all([
+      fetchTrendingByGenre(initialGenre, 'music'),
+      fetchForYouTracks(),
+      fetchTodaysPick(userId),
+    ]);
+    setDiscoverLoading(false);
+  }
+
+  // Fetches 30 popular tracks for the selected content type / genre, then
+  // re-ranks client-side using scorePost so personalisation layered on top
+  // of raw popularity.
+  async function fetchTrendingByGenre(genre: string, ct: ContentType = contentType) {
+    let q = supabase
+      .from('posts')
+      .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
+      .eq('is_public', true)
+      .order('stream_count', { ascending: false })
+      .limit(30);
+
+    if (ct === 'podcast') {
+      q = q.eq('type', 'podcast');
+    } else if (ct === 'audiobook') {
+      q = q.eq('type', 'audiobook');
+    } else {
+      q = q.eq('type', 'audio');
+      if (genre !== 'All') q = q.eq('genre', genre.toLowerCase());
+    }
+
+    const { data } = await q;
+    if (data) {
+      const now = Date.now();
+      const scored = [...data]
+        .map(p => ({ p, score: scorePost(p, affinityProfile.current, followingSetRef.current, seenRef.current, now) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map(x => x.p);
+      setTrendingTracks(scored);
+    }
+  }
+
+  async function fetchForYouTracks() {
+    const { data } = await supabase
+      .from('posts')
+      .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
+      .eq('is_public', true)
+      .eq('type', 'audio')
+      .order('created_at', { ascending: false })
+      .limit(80);
+    if (data) {
+      const now = Date.now();
+      const sorted = [...data]
+        .map(p => ({ p, score: scorePost(p, affinityProfile.current, followingSetRef.current, seenRef.current, now) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10)
+        .map(x => x.p);
+      setForYouTracks(sorted);
+    }
+  }
+
+  // Today's Pick rotates every 18 hours. The pick is cached in AsyncStorage
+  // so the same track stays "pick of the day" across sessions within that
+  // window. When refreshing, unheard/uninteracted tracks are preferred so
+  // the feature actually surfaces new music.
+  async function fetchTodaysPick(userId: string) {
+    const cacheKey = `${TODAYS_PICK_KEY}_${userId}`;
+
+    // Return the cached pick if it is still within the 18-hour window.
+    try {
+      const raw = await AsyncStorage.getItem(cacheKey);
+      if (raw) {
+        const { postData, pickedAt } = JSON.parse(raw);
+        if (Date.now() - pickedAt < TODAYS_PICK_TTL_MS) {
+          setTodaysPick(postData);
+          return;
+        }
+      }
+    } catch {}
+
+    // Get the user's liked + saved + seen IDs to prefer unheard tracks.
+    const [{ data: likedIds }, { data: savedIds }] = await Promise.all([
+      supabase.from('likes').select('post_id').eq('user_id', userId).limit(200),
+      supabase.from('saves').select('post_id').eq('user_id', userId).limit(200),
+    ]);
+    const interacted = new Set<string>([
+      ...(likedIds  ?? []).map((r: any) => r.post_id as string),
+      ...(savedIds  ?? []).map((r: any) => r.post_id as string),
+      ...seenRef.current,
+    ]);
+
+    // Candidate pool: last 7 days, fallback to all-time top.
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: pool } = await supabase
+      .from('posts')
+      .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
+      .eq('is_public', true).eq('type', 'audio')
+      .gte('created_at', weekAgo)
+      .order('stream_count', { ascending: false })
+      .limit(30);
+
+    const candidates = (pool && pool.length > 0) ? pool : await (async () => {
+      const { data: fb } = await supabase
+        .from('posts')
+        .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
+        .eq('is_public', true).eq('type', 'audio')
+        .order('stream_count', { ascending: false })
+        .limit(30);
+      return fb ?? [];
+    })();
+
+    if (!candidates.length) return;
+
+    const now = Date.now();
+    const scored = [...candidates]
+      .map(p => ({ p, score: scorePost(p, affinityProfile.current, followingSetRef.current, seenRef.current, now) }))
+      .sort((a, b) => b.score - a.score);
+
+    // Prefer a track the user hasn't heard or interacted with.
+    const unheard = scored.filter(({ p }) => !interacted.has(p.id));
+    const best    = (unheard.length > 0 ? unheard : scored)[0].p;
+
+    setTodaysPick(best);
+    try {
+      await AsyncStorage.setItem(cacheKey, JSON.stringify({ postData: best, pickedAt: Date.now() }));
+    } catch {}
+  }
+
+  async function onGenreChange(genre: string) {
+    if (genre === discoverGenre) {
+      setTrendingExpanded(prev => !prev);
+      return;
+    }
+    setTrendingExpanded(false);
+    setDiscoverGenre(genre);
+    setTrendingLoading(true);
+    await fetchTrendingByGenre(genre, 'music');
+    setTrendingLoading(false);
+  }
+
+  async function onContentTypeChange(ct: ContentType) {
+    if (ct === contentType) return;
+    setContentType(ct);
+    setTrendingExpanded(false);
+    setTrendingLoading(true);
+    // Genre filter only applies to music; podcasts/audiobooks ignore it.
+    await fetchTrendingByGenre(ct === 'music' ? discoverGenre : 'All', ct);
+    setTrendingLoading(false);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+
   const playlistQueue = () => tracks.map(t => ({
     id: t.post_id, uri: t.posts.media_url, caption: t.posts.caption,
     artist: t.posts.profiles?.display_name ?? '', cover: t.posts.cover_url,
@@ -136,21 +356,26 @@ export default function MusicScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Music</Text>
-        <TouchableOpacity style={styles.newBtn} onPress={() => setShowNewPlaylist(true)}>
-          <Ionicons name="add" size={18} color={COLORS.text} />
-          <Text style={styles.newBtnText}>Playlist</Text>
-        </TouchableOpacity>
+        {activeView === 'playlists' && (
+          <TouchableOpacity style={styles.newBtn} onPress={() => setShowNewPlaylist(true)}>
+            <Ionicons name="add" size={18} color={COLORS.text} />
+            <Text style={styles.newBtnText}>Playlist</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Toggle */}
+      {/* Toggle — plain View so all 4 pills share equal flex width and nothing overflows */}
       <View style={styles.toggleRow}>
-        {(['playlists', 'saved', 'liked'] as const).map(view => {
-          const icons: Record<typeof view, [any, any]> = {
+        {(['discover', 'playlists', 'saved', 'liked'] as const).map(view => {
+          const icons: Record<typeof view, [string, string]> = {
+            discover: ['compass', 'compass-outline'],
             playlists: ['list', 'list-outline'],
             saved: ['bookmark', 'bookmark-outline'],
             liked: ['heart', 'heart-outline'],
           };
-          const labels: Record<typeof view, string> = { playlists: 'Playlists', saved: 'Saved', liked: 'Liked' };
+          const labels: Record<typeof view, string> = {
+            discover: 'Discover', playlists: 'Playlists', saved: 'Saved', liked: 'Liked',
+          };
           const on = activeView === view;
           return (
             <TouchableOpacity
@@ -158,12 +383,187 @@ export default function MusicScreen() {
               style={[styles.toggleBtn, on && styles.toggleBtnActive]}
               onPress={() => { setActiveView(view); setSelectedPlaylist(null); }}
             >
-              <Ionicons name={on ? icons[view][0] : icons[view][1]} size={16} color={on ? COLORS.text : COLORS.textSecondary} />
-              <Text style={[styles.toggleText, on && styles.toggleTextActive]}>{labels[view]}</Text>
+              <Ionicons name={(on ? icons[view][0] : icons[view][1]) as any} size={15} color={on ? COLORS.text : COLORS.textSecondary} />
+              <Text style={[styles.toggleText, on && styles.toggleTextActive]} numberOfLines={1}>{labels[view]}</Text>
             </TouchableOpacity>
           );
         })}
       </View>
+
+      {/* ─── Discover ──────────────────────────────────────────────────────── */}
+      {activeView === 'discover' && (
+        discoverLoading ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={COLORS.primary} size="large" />
+          </View>
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.discoverContent}>
+
+            {/* — Content type selector (Music / Podcasts / Audiobooks) — */}
+            <View style={styles.contentTypeRow}>
+              {([
+                { key: 'music',     label: 'Music',      icon: 'musical-notes' },
+                { key: 'podcast',   label: 'Podcasts',   icon: 'mic'           },
+                { key: 'audiobook', label: 'Audiobooks', icon: 'book'          },
+              ] as { key: ContentType; label: string; icon: string }[]).map(({ key, label, icon }) => {
+                const on = contentType === key;
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={[styles.contentTypePill, on && styles.contentTypePillActive]}
+                    onPress={() => onContentTypeChange(key)}
+                  >
+                    <Ionicons name={icon as any} size={14} color={on ? COLORS.text : COLORS.textSecondary} />
+                    <Text style={[styles.contentTypePillText, on && styles.contentTypePillTextActive]}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* — Section title — */}
+            <Text style={styles.discoverSectionTitle}>
+              {contentType === 'music'
+                ? 'Trending by genre'
+                : contentType === 'podcast'
+                ? 'Trending podcasts'
+                : 'Top audiobooks'}
+            </Text>
+
+            {/* — Genre pills (music only) — */}
+            {contentType === 'music' && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.genrePills}>
+              {(['All', ...orderedGenreList] as const).map(genre => {
+                const active = discoverGenre === genre;
+                const label  = genre === 'All' ? 'All genres' : genre;
+                return (
+                  <TouchableOpacity
+                    key={genre}
+                    style={[styles.genrePill, active && styles.genrePillActive]}
+                    onPress={() => onGenreChange(genre)}
+                  >
+                    {active ? (
+                      <LinearGradient colors={GRADIENTS.primary as any} style={styles.genrePillInner}>
+                        <Text style={[styles.genrePillText, styles.genrePillTextActive]}>{label}</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={styles.genrePillInner}>
+                        <Text style={styles.genrePillText}>{label}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            )}
+
+            {trendingLoading ? (
+              <ActivityIndicator color={COLORS.primary} style={{ marginVertical: SPACING.md }} />
+            ) : trendingTracks.length === 0 ? (
+              <Text style={[styles.discoverEmpty, { paddingHorizontal: SPACING.md }]}>
+                {contentType === 'music'
+                  ? 'No tracks in this genre yet'
+                  : `No ${contentType === 'podcast' ? 'podcasts' : 'audiobooks'} yet`}
+              </Text>
+            ) : (
+              <View style={styles.trendingList}>
+                {trendingTracks.slice(0, trendingExpanded ? 8 : 4).map(track => (
+                  <TrackRow
+                    key={track.id}
+                    caption={track.caption}
+                    artist={track.profiles?.display_name}
+                    username={track.profiles?.username}
+                    streams={track.stream_count}
+                    cover={track.cover_url}
+                    avatarUrl={track.profiles?.avatar_url}
+                    isPlaying={playingId === track.id}
+                    onPlay={() => play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url)}
+                    onCoverPress={() => { play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url); openNowPlaying(); }}
+                    onAvatarPress={() => router.push(`/profile/${track.user_id}`)}
+                  />
+                ))}
+                {trendingTracks.length > 4 && (
+                  <TouchableOpacity
+                    style={styles.showMoreBtn}
+                    onPress={() => setTrendingExpanded(prev => !prev)}
+                  >
+                    <Text style={styles.showMoreText}>
+                      {trendingExpanded
+                        ? 'Show less'
+                        : `Show ${trendingTracks.length - 4} more`}
+                    </Text>
+                    <Ionicons
+                      name={trendingExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={14}
+                      color={COLORS.primary}
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* — More of what you like (music only) — */}
+            {contentType === 'music' && forYouTracks.length > 0 && (
+              <>
+                <Text style={[styles.discoverSectionTitle, { marginTop: SPACING.xl }]}>More of what you like</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.forYouScroll}>
+                  {forYouTracks.map(track => (
+                    <TouchableOpacity
+                      key={track.id}
+                      style={styles.forYouCard}
+                      activeOpacity={0.8}
+                      onPress={() => { play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url); openNowPlaying(); }}
+                    >
+                      {track.cover_url ? (
+                        <Image source={{ uri: track.cover_url }} style={styles.forYouCover} />
+                      ) : (
+                        <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.forYouCover}>
+                          <Ionicons name="musical-notes" size={28} color={COLORS.primary} />
+                        </LinearGradient>
+                      )}
+                      <Text style={styles.forYouTitle} numberOfLines={2}>{track.caption}</Text>
+                      <Text style={styles.forYouArtist} numberOfLines={1}>
+                        {track.profiles?.display_name ?? track.profiles?.username}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* — Today's Pick — */}
+            {todaysPick && (
+              <View style={styles.todaysPickSection}>
+                <Text style={styles.todaysPickLabel}>TODAY'S PICK</Text>
+                <TouchableOpacity
+                  style={styles.todaysPickRow}
+                  activeOpacity={0.8}
+                  onPress={() => { play(todaysPick.id, todaysPick.media_url, todaysPick.caption, todaysPick.profiles?.display_name, todaysPick.cover_url); openNowPlaying(); }}
+                >
+                  {todaysPick.cover_url ? (
+                    <Image source={{ uri: todaysPick.cover_url }} style={styles.todaysCover} />
+                  ) : (
+                    <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.todaysCover}>
+                      <Ionicons name="musical-notes" size={20} color={COLORS.primary} />
+                    </LinearGradient>
+                  )}
+                  <View style={styles.todaysInfo}>
+                    <Text style={styles.todaysTitle} numberOfLines={1}>{todaysPick.caption}</Text>
+                    <Text style={styles.todaysArtist} numberOfLines={1}>
+                      {todaysPick.profiles?.display_name ?? todaysPick.profiles?.username}
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name={playingId === todaysPick.id ? 'pause-circle' : 'play-circle'}
+                    size={44}
+                    color={COLORS.primary}
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
+
+          </ScrollView>
+        )
+      )}
 
       {/* Playlists list */}
       {activeView === 'playlists' && !selectedPlaylist && (
@@ -360,14 +760,21 @@ const styles = StyleSheet.create({
   },
   newBtnText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
 
-  toggleRow: { flexDirection: 'row', paddingHorizontal: SPACING.md, gap: SPACING.sm, marginBottom: SPACING.md },
+  toggleRow: {
+    flexDirection: 'row',
+    paddingHorizontal: SPACING.sm,
+    gap: SPACING.xs,
+    marginBottom: SPACING.md,
+  },
   toggleBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
+    flex: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border,
   },
   toggleBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  toggleText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
+  toggleText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500' },
   toggleTextActive: { color: COLORS.text, fontWeight: '700' },
 
   listContent: { padding: SPACING.md, gap: SPACING.sm },
@@ -390,6 +797,84 @@ const styles = StyleSheet.create({
   emptyIcon: { width: 72, height: 72, borderRadius: RADIUS.xl, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
   emptySubtitle: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
+
+  // ─── Discover styles ──────────────────────────────────────────────────────
+  discoverContent: { paddingBottom: SPACING.xxl * 3 },
+
+  contentTypeRow: {
+    flexDirection: 'row',
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.xs,
+    gap: SPACING.sm,
+  },
+  contentTypePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingVertical: SPACING.xs + 1, paddingHorizontal: SPACING.sm + 2,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
+  },
+  contentTypePillActive: { backgroundColor: COLORS.surfaceLight, borderColor: COLORS.primary },
+  contentTypePillText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500' },
+  contentTypePillTextActive: { color: COLORS.text, fontWeight: '700' },
+
+  discoverSectionTitle: {
+    color: COLORS.text, fontSize: 20, fontWeight: '800',
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.sm,
+  },
+  discoverEmpty: { color: COLORS.textSecondary, fontSize: 14, paddingVertical: SPACING.md },
+
+  genrePills: { paddingHorizontal: SPACING.md, paddingVertical: 4, gap: SPACING.sm, paddingBottom: SPACING.sm },
+  genrePill: {
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  genrePillActive: { borderColor: COLORS.primary },
+  // One shared inner container — same padding for both active and inactive pills
+  // so their height is always identical regardless of which has the gradient.
+  genrePillInner: {
+    paddingVertical: 7, paddingHorizontal: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  genrePillText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
+  genrePillTextActive: { color: COLORS.text, fontWeight: '700' },
+
+  trendingList: { paddingHorizontal: SPACING.xs, gap: SPACING.xs },
+  showMoreBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: SPACING.sm, marginTop: SPACING.xs,
+  },
+  showMoreText: { color: COLORS.primary, fontSize: 13, fontWeight: '600' },
+
+  forYouScroll: { paddingHorizontal: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.sm },
+  forYouCard: { width: FOR_YOU_W, gap: SPACING.xs },
+  forYouCover: {
+    width: FOR_YOU_W, height: FOR_YOU_W, borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center',
+  },
+  forYouTitle: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
+  forYouArtist: { color: COLORS.textSecondary, fontSize: 12 },
+
+  todaysPickSection: {
+    marginHorizontal: SPACING.md, marginTop: SPACING.xl,
+    borderRadius: RADIUS.lg, backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
+  },
+  todaysPickLabel: {
+    color: COLORS.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 1.5,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.xs,
+  },
+  todaysPickRow: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: SPACING.md, gap: SPACING.md,
+  },
+  todaysCover: {
+    width: 52, height: 52, borderRadius: RADIUS.md,
+    backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center',
+  },
+  todaysInfo: { flex: 1 },
+  todaysTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  todaysArtist: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
+  // ──────────────────────────────────────────────────────────────────────────
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: COLORS.surfaceLight, borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl, padding: SPACING.lg, gap: SPACING.md },
