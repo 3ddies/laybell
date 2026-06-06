@@ -267,8 +267,15 @@ export default function PublicProfileScreen() {
         initialPage={1}
         onPageSelected={(e) => {
           const pos = e.nativeEvent.position;
-          if (pos === 0) router.back();
-          else setActiveTab(TAB_KEYS[pos - 1]);
+          if (pos === 0) {
+            // Swiped onto the dismiss page → go back. If there's no history to pop
+            // (e.g. cold-start deep link straight to this profile), snap back to
+            // Posts instead of stranding the user on the blank dismiss page.
+            if (router.canGoBack()) router.back();
+            else pagerRef.current?.setPageWithoutAnimation(1);
+          } else {
+            setActiveTab(TAB_KEYS[pos - 1]);
+          }
         }}
       >
         <View key="dismiss" style={styles.dismissPage}>
