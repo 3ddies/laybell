@@ -15,6 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.laybell.app",
+      "associatedDomains": ["applinks:laybell.app"],
       "infoPlist": {
         "UIBackgroundModes": [
           "audio",
@@ -29,6 +30,14 @@
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [{ "scheme": "https", "host": "laybell.app", "pathPrefix": "/post" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     "plugins": [

@@ -61,8 +61,14 @@ function rubber(drag: number, max = 32): number {
   return max * (1 - Math.exp(-drag / max));
 }
 
+// Shared links use the https universal-link form (not the laybell:// scheme) so
+// that messaging apps auto-linkify them — custom schemes show as dead text in
+// SMS/WhatsApp/etc. With the app's associated-domain config, tapping opens the
+// app directly; otherwise it falls back to the web.
+const WEB_BASE = 'https://laybell.app';
+
 function buildShareText(p: SharePayload) {
-  const link = `laybell://post/${p.postId}`;
+  const link = `${WEB_BASE}/post/${p.postId}`;
   const text = p.caption
     ? `"${p.caption}" — @${p.username ?? ''} on Laybell`
     : `Check out ${p.username ? `@${p.username}` : 'this'} on Laybell`;

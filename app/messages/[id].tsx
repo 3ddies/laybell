@@ -11,6 +11,14 @@ import { createNotification } from '../../lib/createNotification';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 
+// Map a Laybell link (https universal link or laybell:// scheme) to an in-app
+// route, or null if it's an external link. e.g. https://laybell.app/post/1 → /post/1
+function internalPathFromUrl(url: string): string | null {
+  if (url.startsWith('laybell://')) return '/' + url.slice('laybell://'.length);
+  const m = url.match(/^https?:\/\/(?:www\.)?laybell\.app(\/[^\s]*)/i);
+  return m ? m[1] : null;
+}
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -90,30 +98,32 @@ export default function ChatScreen() {
     return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  // Open a link found in a message. Laybell deep links route inside the app
-  // (laybell://post/123 → /post/123); anything else opens externally.
+  // Open a link found in a message. Laybell links route inside the app; anything
+  // else opens externally.
   function openLink(url: string) {
-    if (url.startsWith('laybell://')) router.push(url.replace('laybell://', '/') as any);
+    const path = internalPathFromUrl(url);
+    if (path) router.push(path as any);
     else Linking.openURL(url).catch(() => {});
   }
 
   // Render a message body with any URLs as tappable links. Laybell post links
-  // show as a friendly "View post" instead of the raw deep-link text.
+  // show as a friendly "View post" instead of the raw URL.
   function renderBody(body: string, isOwn: boolean) {
     const parts = body.split(/(laybell:\/\/\S+|https?:\/\/\S+)/g);
     return (
       <Text style={styles.bubbleText}>
         {parts.map((part, i) => {
           if (!part) return null;
-          const isLaybell = part.startsWith('laybell://');
-          if (isLaybell || /^https?:\/\//.test(part)) {
+          if (part.startsWith('laybell://') || /^https?:\/\//.test(part)) {
+            const path = internalPathFromUrl(part);
+            const label = path?.startsWith('/post/') ? 'View post' : part;
             return (
               <Text
                 key={i}
                 style={[styles.link, isOwn ? styles.linkOwn : styles.linkOther]}
                 onPress={() => openLink(part)}
               >
-                {isLaybell ? 'View post' : part}
+                {label}
               </Text>
             );
           }
