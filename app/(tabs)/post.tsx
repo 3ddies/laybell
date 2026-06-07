@@ -17,7 +17,6 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
 import { GENRES } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
-import { File } from 'expo-file-system';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
 import VideoTrimmer from '../../components/VideoTrimmer';
@@ -35,8 +34,7 @@ const VIDEO_MAX_SEC  = 90;       // 1.5 min
 const MUSIC_MAX_SEC  = 6 * 60;   // music tracks
 const SPOKEN_MAX_SEC = 35 * 60;  // podcasts / audiobooks
 
-// File-size caps — guard against huge uploads.
-const VIDEO_MAX_BYTES = 260 * 1024 * 1024; // 260 MB
+// Audio file-size cap (video is bounded by the 90s duration limit instead).
 const AUDIO_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 
 function fmtMins(sec: number) {
@@ -141,15 +139,9 @@ export default function PostScreen() {
   }
 
   async function onPickMedia(m: PickedMedia) {
-    // Longer videos are allowed now — the user trims a 90s window in the editor.
-    if (m.type === 'video') {
-      try {
-        const size = new File(m.uri).size ?? 0;
-        if (size > VIDEO_MAX_BYTES) {
-          Alert.alert('Video too large', 'Please choose a video under 260 MB.');
-          return;
-        }
-      } catch {}
+    if (m.type === 'video' && m.duration != null && m.duration > VIDEO_MAX_SEC) {
+      Alert.alert('Video too long', `Videos must be ${VIDEO_MAX_SEC} seconds or shorter.`);
+      return;
     }
     setMedia({ uri: m.uri, width: m.width, height: m.height, posterUri: m.posterUri });
     setThumbnailUri(null);
