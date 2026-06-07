@@ -57,6 +57,8 @@ export default function MusicScreen() {
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'discover' | 'playlists' | 'saved' | 'liked'>('discover');
   const [likedTracks, setLikedTracks] = useState<any[]>([]);
+  const [savedRefreshing, setSavedRefreshing] = useState(false);
+  const [likedRefreshing, setLikedRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const router = useRouter();
 
@@ -678,6 +680,18 @@ export default function MusicScreen() {
           data={savedTracks}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={savedRefreshing}
+              onRefresh={async () => {
+                if (!currentUserId) return;
+                setSavedRefreshing(true);
+                await fetchSavedTracks(currentUserId);
+                setSavedRefreshing(false);
+              }}
+              tintColor={COLORS.primary}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
@@ -719,6 +733,18 @@ export default function MusicScreen() {
           data={likedTracks}
           keyExtractor={item => item.post_id}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={likedRefreshing}
+              onRefresh={async () => {
+                if (!currentUserId) return;
+                setLikedRefreshing(true);
+                await fetchLikedTracks(currentUserId);
+                setLikedRefreshing(false);
+              }}
+              tintColor={COLORS.primary}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>

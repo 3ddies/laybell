@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
+import ElasticSwipeView from '../components/ElasticSwipeView';
 
 type Notification = {
   id: string; type: 'like' | 'comment' | 'follow' | 'message';
@@ -111,33 +112,35 @@ export default function NotificationsScreen() {
         renderItem={({ item }) => {
           const icon = notificationIcon(item.type);
           return (
-            <TouchableOpacity
-              style={[styles.notifRow, !item.read && styles.notifUnread]}
-              onPress={() => handlePress(item)}
-            >
-              <View style={styles.avatarWrap}>
-                {item.actor?.avatar_url ? (
-                  <Image source={{ uri: item.actor.avatar_url }} style={styles.avatar} />
-                ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
-                    <Text style={styles.avatarText}>{item.actor?.display_name?.charAt(0).toUpperCase()}</Text>
-                  </LinearGradient>
-                )}
-                <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
-                  <Ionicons name={icon.name} size={10} color={COLORS.text} />
+            <ElasticSwipeView>
+              <TouchableOpacity
+                style={[styles.notifRow, !item.read && styles.notifUnread]}
+                onPress={() => handlePress(item)}
+              >
+                <View style={styles.avatarWrap}>
+                  {item.actor?.avatar_url ? (
+                    <Image source={{ uri: item.actor.avatar_url }} style={styles.avatar} />
+                  ) : (
+                    <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+                      <Text style={styles.avatarText}>{item.actor?.display_name?.charAt(0).toUpperCase()}</Text>
+                    </LinearGradient>
+                  )}
+                  <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
+                    <Ionicons name={icon.name} size={10} color={COLORS.text} />
+                  </View>
                 </View>
-              </View>
 
-              <View style={styles.notifContent}>
-                <Text style={styles.notifText} numberOfLines={2}>
-                  <Text style={styles.notifName}>{item.actor?.display_name ?? 'Someone'}</Text>
-                  {' '}{notificationText(item.type)}
-                </Text>
-                <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
-              </View>
+                <View style={styles.notifContent}>
+                  <Text style={styles.notifText} numberOfLines={2}>
+                    <Text style={styles.notifName}>{item.actor?.display_name ?? 'Someone'}</Text>
+                    {' '}{notificationText(item.type)}
+                  </Text>
+                  <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
+                </View>
 
-              {!item.read && <View style={styles.unreadDot} />}
-            </TouchableOpacity>
+                {!item.read && <View style={styles.unreadDot} />}
+              </TouchableOpacity>
+            </ElasticSwipeView>
           );
         }}
       />
