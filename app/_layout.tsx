@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
 import { AudioProvider } from '../contexts/AudioContext';
+import { PostOptionsProvider } from '../contexts/PostOptionsContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import { useNotifications } from '../hooks/useNotifications';
@@ -13,8 +14,9 @@ import { useNotifications } from '../hooks/useNotifications';
 function AppContent() {
   useNotifications();
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-      <Stack
+    <PostOptionsProvider>
+      <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <Stack
         screenOptions={{
           headerShown: false,
           gestureEnabled: true,
@@ -23,9 +25,10 @@ function AppContent() {
           contentStyle: { backgroundColor: COLORS.background },
         }}
       />
-      <MiniPlayer />
-      <NowPlaying />
-    </View>
+        <MiniPlayer />
+        <NowPlaying />
+      </View>
+    </PostOptionsProvider>
   );
 }
 

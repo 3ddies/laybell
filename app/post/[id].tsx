@@ -17,7 +17,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import Comments from '../../components/Comments';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
-import { showPostOptions } from '../../lib/postActions';
+import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { Share } from 'react-native';
@@ -38,6 +38,7 @@ type Comment = {
 };
 
 export default function PostDetailScreen() {
+  const { show: showOptions } = usePostOptions();
   const { id, post: postParam } = useLocalSearchParams<{ id: string; post?: string }>();
   const router = useRouter();
   const { currentTrack, isPlaying, play, stop } = useAudio();
@@ -186,7 +187,7 @@ export default function PostDetailScreen() {
               </View>
               <TouchableOpacity
                 style={styles.typeTag}
-                onPress={() => showPostOptions({
+                onPress={() => showOptions({
                   postId: id as string,
                   isOwn: currentUserId === post.user_id,
                   onEdit: () => router.push(`/edit-post/${id}`),

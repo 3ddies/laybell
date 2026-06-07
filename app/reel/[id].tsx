@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { createNotification } from '../../lib/createNotification';
-import { showPostOptions } from '../../lib/postActions';
+import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { formatCount } from '../../lib/format';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import CommentsSheet from '../../components/CommentsSheet';
@@ -23,6 +23,7 @@ import {
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export default function ReelScreen() {
+  const { show: showOptions } = usePostOptions();
   const { id, post: postParam } = useLocalSearchParams<{ id: string; post?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -181,7 +182,7 @@ export default function ReelScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.railBtn}
-            onPress={() => showPostOptions({
+            onPress={() => showOptions({
               postId: item.id,
               isOwn: item.user_id === currentUserId,
               onEdit: () => router.push(`/edit-post/${item.id}`),

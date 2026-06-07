@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
-import { showPostOptions } from '../../lib/postActions';
+import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useAudio } from '../../contexts/AudioContext';
 import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
 import {
@@ -48,6 +48,7 @@ function getBadgeColor(tier: string) {
 }
 
 export default function ExploreScreen() {
+  const { show: showOptions } = usePostOptions();
   const router = useRouter();
   const { play, currentTrack, isPlaying, expand } = useAudio();
   const [searchQuery, setSearchQuery] = useState('');
@@ -358,7 +359,7 @@ export default function ExploreScreen() {
                 onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
                 onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); expand(); }}
                 onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
-                onOptions={() => showPostOptions({
+                onOptions={() => showOptions({
                   postId: item.id,
                   isOwn: item.user_id === currentUserId,
                   onEdit: () => router.push(`/edit-post/${item.id}`),
@@ -371,7 +372,7 @@ export default function ExploreScreen() {
                 onPress={() => router.push(item.type === 'video'
                   ? { pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item) } }
                   : { pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item) } })}
-                onLongPress={() => showPostOptions({
+                onLongPress={() => showOptions({
                   postId: item.id,
                   isOwn: item.user_id === currentUserId,
                   onEdit: () => router.push(`/edit-post/${item.id}`),
@@ -401,7 +402,7 @@ export default function ExploreScreen() {
                 </View>
                 <TouchableOpacity
                   style={styles.postTypeTag}
-                  onPress={() => showPostOptions({
+                  onPress={() => showOptions({
                     postId: item.id,
                     isOwn: item.user_id === currentUserId,
                     onEdit: () => router.push(`/edit-post/${item.id}`),

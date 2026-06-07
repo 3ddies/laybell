@@ -22,7 +22,7 @@ import { COLORS, SPACING, RADIUS, SHADOWS, GRADIENTS } from '../../constants/the
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
-import { showPostOptions } from '../../lib/postActions';
+import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { isAudioPost } from '../../lib/genres';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import CommentsSheet from '../../components/CommentsSheet';
@@ -203,6 +203,7 @@ const PostCard = memo(function PostCard({
 });
 
 export default function HomeScreen() {
+  const { show: showOptions } = usePostOptions();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -454,7 +455,7 @@ export default function HomeScreen() {
   const onToggleMuted = useCallback(() => live.current.toggleVideoMuted(), []);
 
   const onOptions = useCallback((item: Post) => {
-    showPostOptions({
+    showOptions({
       postId: item.id,
       isOwn: item.user_id === live.current.currentUserId,
       onEdit: () => live.current.router.push(`/edit-post/${item.id}`),

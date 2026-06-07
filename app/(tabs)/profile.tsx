@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { showPostOptions } from '../../lib/postActions';
+import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { isAudioPost } from '../../lib/genres';
 import VideoThumb from '../../components/VideoThumb';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
@@ -41,6 +41,7 @@ const TABS = [
 const TAB_KEYS = TABS.map(t => t.key);
 
 export default function ProfileScreen() {
+  const { show: showOptions } = usePostOptions();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [loading, setLoading] = useState(true);
@@ -126,7 +127,7 @@ export default function ProfileScreen() {
             // Own content (Posts / Music / Videos) — long-press for edit/delete.
             onLongPress={
               (tabKey === 'posts' || tabKey === 'music' || tabKey === 'videos')
-                ? () => showPostOptions({
+                ? () => showOptions({
                     postId: post.id,
                     isOwn: true,
                     onEdit: () => router.push(`/edit-post/${post.id}`),

@@ -12,7 +12,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import TrackRow from '../../components/TrackRow';
-import { showPostOptions } from '../../lib/postActions';
+import { usePostOptions } from '../../contexts/PostOptionsContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GENRES, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
 import {
@@ -43,6 +43,7 @@ type Track = {
 };
 
 export default function MusicScreen() {
+  const { show: showOptions } = usePostOptions();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -497,7 +498,7 @@ export default function MusicScreen() {
                     onPlay={() => play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url)}
                     onCoverPress={() => { play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url); openNowPlaying(); }}
                     onAvatarPress={() => router.push(`/profile/${track.user_id}`)}
-                    onOptions={() => showPostOptions({
+                    onOptions={() => showOptions({
                       postId: track.id,
                       isOwn: track.user_id === currentUserId,
                       onEdit: () => router.push(`/edit-post/${track.id}`),
@@ -658,7 +659,7 @@ export default function MusicScreen() {
                   onPlay={() => playQueue(playlistQueue(), index)}
                   onCoverPress={() => { playQueue(playlistQueue(), index); openNowPlaying(); }}
                   onAvatarPress={() => router.push(`/profile/${item.posts.user_id}`)}
-                  onOptions={() => showPostOptions({
+                  onOptions={() => showOptions({
                     postId: item.post_id,
                     isOwn: item.posts.user_id === currentUserId,
                     onEdit: () => router.push(`/edit-post/${item.post_id}`),
@@ -701,7 +702,7 @@ export default function MusicScreen() {
               onCoverPress={() => { play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url); openNowPlaying(); }}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
               onAvatarPress={() => router.push(`/profile/${item.posts?.user_id}`)}
-              onOptions={() => showPostOptions({
+              onOptions={() => showOptions({
                 postId: item.posts?.id,
                 isOwn: item.posts?.user_id === currentUserId,
                 onEdit: () => router.push(`/edit-post/${item.posts?.id}`),
@@ -742,7 +743,7 @@ export default function MusicScreen() {
               onCoverPress={() => { playQueue(likedQueue(), index); openNowPlaying(); }}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
               onAvatarPress={() => router.push(`/profile/${item.posts?.user_id}`)}
-              onOptions={() => showPostOptions({
+              onOptions={() => showOptions({
                 postId: item.posts?.id,
                 isOwn: item.posts?.user_id === currentUserId,
                 onEdit: () => router.push(`/edit-post/${item.posts?.id}`),

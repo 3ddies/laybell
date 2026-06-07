@@ -10,7 +10,7 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { aspectToNumber } from '../lib/aspectRatio';
 import { useAudio } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
-import { showPostOptions } from '../lib/postActions';
+import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isAudioPost } from '../lib/genres';
 
 type GridPost = {
@@ -55,13 +55,11 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
 }) {
   const router = useRouter();
   const { play, currentTrack, isPlaying } = useAudio();
+  const { show: showOptions } = usePostOptions();
 
-  // Long-press opens the post options menu (own → edit/delete, others → report).
-  // Image/video tiles also reach this via the post-detail "⋯" button; this covers
-  // the inline-play audio tiles/rows that never navigate there.
   const longPressFor = (p: GridPost) =>
     currentUserId
-      ? () => showPostOptions({
+      ? () => showOptions({
           postId: p.id,
           isOwn: p.user_id === currentUserId,
           onEdit: () => router.push(`/edit-post/${p.id}`),

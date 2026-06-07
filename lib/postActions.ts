@@ -1,11 +1,6 @@
 import { Alert } from 'react-native';
 import { supabase } from './supabase';
 
-// Shared post-management actions so the "⋯" options button behaves identically
-// everywhere a post appears (home, explore, music, profile, detail…):
-//   • your own post     → Edit / Delete
-//   • someone else's    → Report
-
 export async function deletePostById(postId: string): Promise<boolean> {
   const { error } = await supabase.from('posts').delete().eq('id', postId);
   return !error;
@@ -55,22 +50,3 @@ export function reportPost(postId: string) {
   ]);
 }
 
-// Unified options menu opened by the "⋯" button. Own posts get Edit/Delete;
-// others' posts go straight to the report confirm.
-export function showPostOptions(opts: {
-  postId: string;
-  isOwn: boolean;
-  onEdit?: () => void;
-  onDeleted?: () => void;
-}) {
-  const { postId, isOwn, onEdit, onDeleted } = opts;
-  if (!isOwn) {
-    reportPost(postId);
-    return;
-  }
-  Alert.alert('Post options', undefined, [
-    { text: 'Edit post', onPress: () => onEdit?.() },
-    { text: 'Delete post', style: 'destructive', onPress: () => confirmDeletePost(postId, onDeleted) },
-    { text: 'Cancel', style: 'cancel' },
-  ]);
-}
