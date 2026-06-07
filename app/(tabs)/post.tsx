@@ -28,6 +28,15 @@ const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
 const PREVIEW_MAX_H = Math.round(SCREEN_H * 0.46);
 
+// Duration limits (seconds).
+const VIDEO_MAX_SEC  = 90;       // 1.5 min
+const MUSIC_MAX_SEC  = 6 * 60;   // music tracks
+const SPOKEN_MAX_SEC = 35 * 60;  // podcasts / audiobooks
+
+function fmtMins(sec: number) {
+  return sec % 60 === 0 ? `${sec / 60} min` : `${Math.round(sec / 60)} min`;
+}
+
 const POST_TYPES: { label: string; value: PostType }[] = [
   { label: 'Image', value: 'image' },
   { label: 'Video', value: 'video' },
@@ -103,6 +112,10 @@ export default function PostScreen() {
   }
 
   async function onPickMedia(m: PickedMedia) {
+    if (m.type === 'video' && m.duration != null && m.duration > VIDEO_MAX_SEC) {
+      Alert.alert('Video too long', `Videos must be ${VIDEO_MAX_SEC} seconds or shorter.`);
+      return;
+    }
     setMedia({ uri: m.uri, width: m.width, height: m.height, posterUri: m.posterUri });
     setThumbnailUri(null);
     if (m.type === 'video') {
@@ -116,16 +129,24 @@ export default function PostScreen() {
 
   async function pickAudio() {
     const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
-    if (!result.canceled && result.assets[0]) {
-      setAudioFile(result.assets[0]);
-      try {
-        const { sound, status } = await Audio.Sound.createAsync({ uri: result.assets[0].uri });
-        if ((status as any).isLoaded && (status as any).durationMillis) {
-          setAudioDuration(Math.floor((status as any).durationMillis / 1000));
-        }
-        await sound.unloadAsync();
-      } catch {}
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+
+    let dur: number | null = null;
+    try {
+      const { sound, status } = await Audio.Sound.createAsync({ uri: asset.uri });
+      if ((status as any).isLoaded && (status as any).durationMillis) dur = Math.floor((status as any).durationMillis / 1000);
+      await sound.unloadAsync();
+    } catch {}
+
+    // Absolute ceiling (podcasts/audiobooks). The tighter 6-min music limit is
+    // enforced on Share, since the category is chosen on the next step.
+    if (dur != null && dur > SPOKEN_MAX_SEC) {
+      Alert.alert('Audio too long', `Audio must be ${fmtMins(SPOKEN_MAX_SEC)} or shorter.`);
+      return;
     }
+    setAudioFile(asset);
+    setAudioDuration(dur);
   }
 
   async function pickCover() {
@@ -155,6 +176,18 @@ export default function PostScreen() {
 
   async function handleShare() {
     if (!caption.trim()) { setError('Please add a caption'); return; }
+    if (postType === 'audio' && audioDuration != null) {
+      const limit = audioKind === 'audio' ? MUSIC_MAX_SEC : SPOKEN_MAX_SEC;
+      if (audioDuration > limit) {
+        Alert.alert(
+          'Track too long',
+          audioKind === 'audio'
+            ? `Music must be ${fmtMins(MUSIC_MAX_SEC)} or shorter. Choose Podcast or Audiobook for longer audio.`
+            : `${audioKind === 'podcast' ? 'Podcasts' : 'Audiobooks'} must be ${fmtMins(SPOKEN_MAX_SEC)} or shorter.`,
+        );
+        return;
+      }
+    }
     setLoading(true); setError('');
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -357,7 +390,7 @@ export default function PostScreen() {
               <Ionicons name={audioFile ? 'checkmark' : 'musical-notes'} size={30} color={COLORS.text} />
             </LinearGradient>
             <Text style={styles.audioPickTitle}>{audioFile ? (audioFile.name || 'Audio selected') : 'Select an audio file'}</Text>
-            <Text style={styles.audioPickSub}>{audioFile ? 'Tap to change' : 'MP3, WAV, M4A…'}</Text>
+            <Text style={styles.audioPickSub}>{audioFile ? 'Tap to change' : 'Music up to 6 min · Podcasts & Audiobooks up to 35 min'}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -405,6 +438,7 @@ export default function PostScreen() {
           <View style={styles.recentsRow}>
             <Text style={styles.recentsText}>Recents</Text>
             {postType === 'image' && <Text style={styles.recentsHint}>Drag / pinch to crop</Text>}
+            {postType === 'video' && <Text style={styles.recentsHint}>Up to 90s</Text>}
           </View>
           <View style={{ flex: 1 }}>
             <ErrorBoundary label="Couldn't open your photos">

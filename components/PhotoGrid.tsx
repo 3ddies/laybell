@@ -19,6 +19,7 @@ export type PickedMedia = {
   posterUri?: string;     // ph:// (video) shown as a still preview via expo-image
   width: number;
   height: number;
+  duration?: number;      // seconds (video)
   type: 'image' | 'video';
 };
 
@@ -88,7 +89,7 @@ export default function PhotoGrid({ mediaType, onPick, onScroll }: {
       const uri = info.localUri || asset.uri;
       // Video posters render reliably from the ph:// asset via expo-image.
       const posterUri = mediaType === 'video' ? asset.uri : uri;
-      onPick({ uri, posterUri, width: asset.width, height: asset.height, type: mediaType });
+      onPick({ uri, posterUri, width: asset.width, height: asset.height, duration: asset.duration, type: mediaType });
     } catch {
       // ignore — user can tap another
     } finally {
@@ -106,7 +107,15 @@ export default function PhotoGrid({ mediaType, onPick, onScroll }: {
     if (!result.canceled && result.assets[0]) {
       const a = result.assets[0];
       // Camera video has no ph:// poster — post.tsx falls back to a generated thumbnail.
-      onPick({ uri: a.uri, posterUri: mediaType === 'video' ? undefined : a.uri, width: a.width ?? 1, height: a.height ?? 1, type: mediaType });
+      // ImagePicker reports video duration in ms; convert to seconds.
+      onPick({
+        uri: a.uri,
+        posterUri: mediaType === 'video' ? undefined : a.uri,
+        width: a.width ?? 1,
+        height: a.height ?? 1,
+        duration: a.duration != null ? a.duration / 1000 : undefined,
+        type: mediaType,
+      });
     }
   }
 
