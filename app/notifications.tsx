@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
-import ElasticSwipeView from '../components/ElasticSwipeView';
+import ElasticPageView from '../components/ElasticPageView';
 
 type Notification = {
   id: string; type: 'like' | 'comment' | 'follow' | 'message';
@@ -84,7 +84,7 @@ export default function NotificationsScreen() {
   }
 
   return (
-    <ElasticSwipeView style={styles.container}>
+    <ElasticPageView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
@@ -142,7 +142,7 @@ export default function NotificationsScreen() {
           );
         }}
       />
-    </ElasticSwipeView>
+    </ElasticPageView>
   );
 }
 

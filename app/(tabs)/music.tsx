@@ -13,7 +13,7 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
-import ElasticSwipeView from '../../components/ElasticSwipeView';
+import ElasticPageView from '../../components/ElasticPageView';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GENRES, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
 import {
@@ -677,7 +677,7 @@ export default function MusicScreen() {
 
       {/* Saved songs */}
       {activeView === 'saved' && (
-        <ElasticSwipeView style={{ flex: 1 }}>
+        <ElasticPageView style={{ flex: 1 }}>
         <FlatList
           data={savedTracks}
           keyExtractor={item => item.id}
@@ -727,12 +727,12 @@ export default function MusicScreen() {
             />
           )}
         />
-        </ElasticSwipeView>
+        </ElasticPageView>
       )}
 
       {/* Liked songs */}
       {activeView === 'liked' && (
-        <ElasticSwipeView style={{ flex: 1 }}>
+        <ElasticPageView style={{ flex: 1 }}>
         <FlatList
           data={likedTracks}
           keyExtractor={item => item.post_id}
@@ -782,7 +782,7 @@ export default function MusicScreen() {
             />
           )}
         />
-        </ElasticSwipeView>
+        </ElasticPageView>
       )}
 
       {/* New playlist modal */}
