@@ -36,7 +36,7 @@ const MUSIC_MAX_SEC  = 6 * 60;   // music tracks
 const SPOKEN_MAX_SEC = 35 * 60;  // podcasts / audiobooks
 
 // File-size caps — guard against huge uploads.
-const VIDEO_MAX_BYTES = 200 * 1024 * 1024; // 200 MB
+const VIDEO_MAX_BYTES = 260 * 1024 * 1024; // 260 MB
 const AUDIO_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 
 function fmtMins(sec: number) {
@@ -146,7 +146,7 @@ export default function PostScreen() {
       try {
         const size = new File(m.uri).size ?? 0;
         if (size > VIDEO_MAX_BYTES) {
-          Alert.alert('Video too large', 'Please choose a video under 200 MB.');
+          Alert.alert('Video too large', 'Please choose a video under 260 MB.');
           return;
         }
       } catch {}

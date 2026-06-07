@@ -12,6 +12,7 @@ import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { createNotification } from '../../lib/createNotification';
 import { showPostOptions } from '../../lib/postActions';
 import { formatCount } from '../../lib/format';
+import { aspectToNumber } from '../../lib/aspectRatio';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import {
@@ -126,6 +127,9 @@ export default function ReelScreen() {
     const isSaved = saved.has(item.id);
     const likeCount = item.likes?.[0]?.count || 0;
     const commentCount = item.comments?.[0]?.count || 0;
+    // Landscape/square videos show in full (letterboxed) so nothing is cut;
+    // portrait videos fill the screen edge-to-edge.
+    const landscape = aspectToNumber(item.aspect_ratio, 16 / 9) >= 1;
 
     return (
       <View style={{ width: SCREEN_W, height: SCREEN_H }}>
@@ -134,7 +138,7 @@ export default function ReelScreen() {
             ref={(r) => { videoRefs.current[item.id] = r; }}
             source={{ uri: item.media_url }}
             style={StyleSheet.absoluteFill}
-            resizeMode={ResizeMode.COVER}
+            resizeMode={landscape ? ResizeMode.CONTAIN : ResizeMode.COVER}
             isLooping={item.trim_end == null}
             shouldPlay={visibleId === item.id && !paused}
             useNativeControls={false}
