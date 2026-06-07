@@ -3,7 +3,7 @@ import {
   ScrollView, ActivityIndicator, Alert, Switch, Image, Dimensions, Animated,
 } from 'react-native';
 import { useState, useCallback, useRef } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { usePagerSwiping } from '../../contexts/PagerContext';
 import { Audio } from 'expo-av';
 import * as VideoThumbnails from 'expo-video-thumbnails';
@@ -35,11 +35,17 @@ const VIDEO_MAX_SEC  = 90;       // 1.5 min
 const MUSIC_MAX_SEC  = 6 * 60;   // music tracks
 const SPOKEN_MAX_SEC = 35 * 60;  // podcasts / audiobooks
 
-// File-size cap — guards against short-but-huge (e.g. 4K) uploads.
-const MAX_BYTES = 100 * 1024 * 1024; // 100 MB
+// File-size caps — guard against huge uploads.
+const VIDEO_MAX_BYTES = 150 * 1024 * 1024; // 150 MB
+const AUDIO_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 
 function fmtMins(sec: number) {
   return sec % 60 === 0 ? `${sec / 60} min` : `${Math.round(sec / 60)} min`;
+}
+function fmtClock(sec: number) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 const POST_TYPES: { label: string; value: PostType }[] = [
@@ -68,6 +74,9 @@ export default function PostScreen() {
   const [audioDuration, setAudioDuration] = useState<number | null>(null);
   const [coverUri, setCoverUri] = useState<string | null>(null);
   const [audioKind, setAudioKind] = useState<'audio' | 'podcast' | 'audiobook'>('audio');
+  const [isRecording, setIsRecording] = useState(false);
+  const [recSecs, setRecSecs] = useState(0);
+  const recordingRef = useRef<Audio.Recording | null>(null);
 
   // details
   const [caption, setCaption] = useState('');
@@ -78,7 +87,13 @@ export default function PostScreen() {
 
   const { stop } = useAudio();
   const swiping = usePagerSwiping();
+  const router = useRouter();
   useFocusEffect(useCallback(() => { stop(); }, []));
+
+  function exitToExplore() {
+    resetAll();
+    router.navigate('/explore');
+  }
 
   // Cropper frame within the preview cap. Videos use their native aspect (clamped
   // to IG bounds) so they fill without being force-cropped; images use the chosen
@@ -101,6 +116,8 @@ export default function PostScreen() {
   const hasMedia = postType === 'audio' ? !!audioFile : !!media;
 
   function resetAll() {
+    if (recordingRef.current) { recordingRef.current.stopAndUnloadAsync().catch(() => {}); recordingRef.current = null; }
+    setIsRecording(false); setRecSecs(0);
     setMedia(null); setThumbnailUri(null); cropRef.current = null;
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
@@ -125,8 +142,8 @@ export default function PostScreen() {
     if (m.type === 'video') {
       try {
         const size = new File(m.uri).size ?? 0;
-        if (size > MAX_BYTES) {
-          Alert.alert('Video too large', 'Please choose a video under 100 MB.');
+        if (size > VIDEO_MAX_BYTES) {
+          Alert.alert('Video too large', 'Please choose a video under 150 MB.');
           return;
         }
       } catch {}
@@ -142,6 +159,49 @@ export default function PostScreen() {
         setThumbnailUri(uri);
       } catch {}
     }
+  }
+
+  async function startRecording() {
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Microphone needed', 'Enable microphone access in Settings to record audio.');
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const rec = new Audio.Recording();
+      await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      rec.setProgressUpdateInterval(500);
+      rec.setOnRecordingStatusUpdate((st) => {
+        if (st.isRecording) setRecSecs(Math.floor((st.durationMillis ?? 0) / 1000));
+      });
+      await rec.startAsync();
+      recordingRef.current = rec;
+      setRecSecs(0);
+      setIsRecording(true);
+    } catch (e: any) {
+      Alert.alert('Could not start recording', e?.message ?? 'Please try again.');
+    }
+  }
+
+  async function stopRecording() {
+    const rec = recordingRef.current;
+    if (!rec) return;
+    setIsRecording(false);
+    const dur = recSecs;
+    try {
+      await rec.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+    } catch {}
+    const uri = rec.getURI();
+    recordingRef.current = null;
+    if (!uri) return;
+    if (dur > SPOKEN_MAX_SEC) {
+      Alert.alert('Recording too long', `Audio must be ${fmtMins(SPOKEN_MAX_SEC)} or shorter.`);
+      return;
+    }
+    setAudioFile({ uri, name: uri.split('/').pop() || `recording-${Date.now()}.m4a`, mimeType: 'audio/m4a' });
+    setAudioDuration(dur || null);
   }
 
   async function pickAudio() {
@@ -162,7 +222,7 @@ export default function PostScreen() {
       Alert.alert('Audio too long', `Audio must be ${fmtMins(SPOKEN_MAX_SEC)} or shorter.`);
       return;
     }
-    if (asset.size != null && asset.size > MAX_BYTES) {
+    if (asset.size != null && asset.size > AUDIO_MAX_BYTES) {
       Alert.alert('Audio too large', 'Please choose an audio file under 100 MB.');
       return;
     }
@@ -428,7 +488,7 @@ export default function PostScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={resetAll}>
+        <TouchableOpacity style={styles.headerBtn} onPress={exitToExplore}>
           <Ionicons name="close" size={26} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>New post</Text>
@@ -438,15 +498,56 @@ export default function PostScreen() {
       </View>
 
       {postType === 'audio' ? (
-        // Audio: document picker (no camera roll)
         <View style={styles.audioPickArea}>
-          <TouchableOpacity style={styles.audioPickBtn} onPress={pickAudio}>
-            <LinearGradient colors={GRADIENTS.primary} style={styles.audioPickIcon}>
-              <Ionicons name={audioFile ? 'checkmark' : 'musical-notes'} size={30} color={COLORS.text} />
-            </LinearGradient>
-            <Text style={styles.audioPickTitle}>{audioFile ? (audioFile.name || 'Audio selected') : 'Select an audio file'}</Text>
-            <Text style={styles.audioPickSub}>{audioFile ? 'Tap to change' : 'Music up to 6 min · Podcasts & Audiobooks up to 35 min'}</Text>
-          </TouchableOpacity>
+          {isRecording ? (
+            <View style={styles.recordBox}>
+              <View style={styles.recDot} />
+              <Text style={styles.recTime}>{fmtClock(recSecs)}</Text>
+              <Text style={styles.audioPickSub}>Recording…</Text>
+              <TouchableOpacity style={styles.stopBtn} onPress={stopRecording}>
+                <Ionicons name="stop" size={24} color={COLORS.text} />
+                <Text style={styles.stopBtnText}>Stop</Text>
+              </TouchableOpacity>
+            </View>
+          ) : audioFile ? (
+            <View style={styles.audioSelected}>
+              <LinearGradient colors={GRADIENTS.primary} style={styles.audioPickIcon}>
+                <Ionicons name="checkmark" size={30} color={COLORS.text} />
+              </LinearGradient>
+              <Text style={styles.audioPickTitle} numberOfLines={1}>{audioFile.name || 'Audio selected'}</Text>
+              {audioDuration != null && <Text style={styles.audioPickSub}>{fmtClock(audioDuration)}</Text>}
+              <View style={styles.audioSelBtns}>
+                <TouchableOpacity style={styles.audioSelBtn} onPress={pickAudio}>
+                  <Ionicons name="cloud-upload-outline" size={16} color={COLORS.primary} />
+                  <Text style={styles.audioSelBtnText}>Replace</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.audioSelBtn} onPress={() => { setAudioFile(null); setAudioDuration(null); startRecording(); }}>
+                  <Ionicons name="mic" size={16} color={COLORS.primary} />
+                  <Text style={styles.audioSelBtnText}>Record new</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.audioChoices}>
+              <TouchableOpacity style={styles.audioChoice} onPress={startRecording}>
+                <LinearGradient colors={GRADIENTS.primary} style={styles.audioChoiceIcon}>
+                  <Ionicons name="mic" size={28} color={COLORS.text} />
+                </LinearGradient>
+                <Text style={styles.audioChoiceTitle}>Record</Text>
+                <Text style={styles.audioChoiceSub}>Talk into the mic</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.audioChoice} onPress={pickAudio}>
+                <View style={[styles.audioChoiceIcon, styles.audioChoiceIconAlt]}>
+                  <Ionicons name="cloud-upload-outline" size={28} color={COLORS.primary} />
+                </View>
+                <Text style={styles.audioChoiceTitle}>Upload</Text>
+                <Text style={styles.audioChoiceSub}>MP3 · WAV · M4A</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          <Text style={[styles.audioPickSub, { marginTop: SPACING.lg, textAlign: 'center' }]}>
+            Music up to 6 min · Podcasts & Audiobooks up to 35 min
+          </Text>
         </View>
       ) : (
         <>
@@ -569,7 +670,41 @@ const styles = StyleSheet.create({
   },
   audioPickIcon: { width: 64, height: 64, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   audioPickTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700', textAlign: 'center' },
-  audioPickSub: { color: COLORS.textTertiary, fontSize: 13 },
+  audioPickSub: { color: COLORS.textTertiary, fontSize: 13, textAlign: 'center' },
+
+  audioChoices: { flexDirection: 'row', gap: SPACING.md, width: '100%' },
+  audioChoice: {
+    flex: 1, alignItems: 'center', gap: SPACING.xs, paddingVertical: SPACING.xl,
+    borderWidth: 1.5, borderColor: COLORS.border, borderStyle: 'dashed', borderRadius: RADIUS.lg,
+  },
+  audioChoiceIcon: { width: 56, height: 56, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
+  audioChoiceIconAlt: { backgroundColor: COLORS.surfaceElevated },
+  audioChoiceTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  audioChoiceSub: { color: COLORS.textTertiary, fontSize: 12 },
+
+  recordBox: {
+    alignItems: 'center', gap: SPACING.sm, padding: SPACING.xl, width: '100%',
+    borderWidth: 1.5, borderColor: COLORS.error, borderRadius: RADIUS.lg, backgroundColor: COLORS.error + '11',
+  },
+  recDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: COLORS.error },
+  recTime: { color: COLORS.text, fontSize: 32, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  stopBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginTop: SPACING.sm,
+    backgroundColor: COLORS.error, borderRadius: RADIUS.full, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg,
+  },
+  stopBtnText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+
+  audioSelected: {
+    alignItems: 'center', gap: SPACING.sm, padding: SPACING.xl, width: '100%',
+    borderWidth: 1.5, borderColor: COLORS.border, borderRadius: RADIUS.lg,
+  },
+  audioSelBtns: { flexDirection: 'row', gap: SPACING.md, marginTop: SPACING.xs },
+  audioSelBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.primary,
+  },
+  audioSelBtnText: { color: COLORS.primary, fontSize: 13, fontWeight: '700' },
 
   // details
   detailsContent: { padding: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.xxl },

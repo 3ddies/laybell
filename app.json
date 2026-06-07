@@ -36,7 +36,7 @@
       [
         "expo-av",
         {
-          "microphonePermission": false
+          "microphonePermission": "Allow Laybell to record audio for your posts."
         }
       ],
       [
