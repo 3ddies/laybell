@@ -1,15 +1,28 @@
-// Post format options. Stored as a string on posts.aspect_ratio.
-export const IMAGE_FORMATS = ['1:1', '9:16'] as const;
-export const VIDEO_FORMATS = ['16:9', '9:16'] as const;
+// Post format options (Instagram-style). Stored as a string on posts.aspect_ratio.
+//   1:1 square · 4:5 portrait · 1.91:1 landscape
+export const IMAGE_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
+export const VIDEO_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
 
 // Numeric width/height ratio for React Native's `aspectRatio` style.
+// Accepts preset labels ("9:16"), any "W:H" string, or a plain numeric string
+// (e.g. "0.8") so media can be stored at its exact native aspect ratio.
 export function aspectToNumber(ratio?: string | null, fallback = 1): number {
-  switch (ratio) {
-    case '9:16': return 9 / 16;
-    case '16:9': return 16 / 9;
-    case '1:1': return 1;
-    default: return fallback;
+  if (!ratio) return fallback;
+  if (ratio === '9:16') return 9 / 16;
+  if (ratio === '16:9') return 16 / 9;
+  if (ratio === '1:1') return 1;
+  if (ratio.includes(':')) {
+    const [w, h] = ratio.split(':').map(Number);
+    return h > 0 ? w / h : fallback;
   }
+  const n = parseFloat(ratio);
+  return isFinite(n) && n > 0 ? n : fallback;
+}
+
+// Instagram-style feed bounds: portrait no taller than 4:5, landscape no wider
+// than 1.91:1. Keeps posts filling the width without becoming extreme.
+export function clampFeedAspect(ratio: number): number {
+  return Math.min(Math.max(ratio, 4 / 5), 1.91);
 }
 
 // [width, height] for ImagePicker's crop `aspect`.
@@ -19,6 +32,6 @@ export function aspectToArray(ratio: string): [number, number] {
 }
 
 export function defaultFormatFor(type: 'image' | 'video' | 'audio'): string {
-  if (type === 'video') return '16:9';
+  if (type === 'video') return '4:5';
   return '1:1';
 }

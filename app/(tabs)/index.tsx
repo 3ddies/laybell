@@ -115,7 +115,7 @@ const PostCard = memo(function PostCard({
           <Image
             source={{ uri: item.media_url }}
             style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
-            resizeMode="contain"
+            resizeMode="cover"
           />
         </TouchableOpacity>
       )}

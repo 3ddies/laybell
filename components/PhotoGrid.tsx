@@ -26,9 +26,10 @@ function formatDur(s: number) {
 // URI directly via expo-image (fast, shows poster frames for videos — no full
 // export). The chosen asset is resolved to a file:// path only on tap, for the
 // cropper / manipulator / upload (which can't read ph://).
-export default function PhotoGrid({ mediaType, onPick }: {
+export default function PhotoGrid({ mediaType, onPick, onScroll }: {
   mediaType: 'image' | 'video';
   onPick: (m: PickedMedia) => void;
+  onScroll?: (e: any) => void;
 }) {
   const [permission, requestPermission] = MediaLibrary.usePermissions();
   const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
@@ -121,6 +122,8 @@ export default function PhotoGrid({ mediaType, onPick }: {
       numColumns={NUM_COLS}
       columnWrapperStyle={{ gap: GAP }}
       contentContainerStyle={{ gap: GAP }}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       onEndReached={() => { if (hasNext && endCursor && !loadingRef.current) loadPage(endCursor); }}
       onEndReachedThreshold={0.6}
       ListFooterComponent={loading ? <ActivityIndicator color={COLORS.primary} style={{ margin: SPACING.md }} /> : null}

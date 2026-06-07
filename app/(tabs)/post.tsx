@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, ActivityIndicator, Alert, Switch, Image, Dimensions,
+  ScrollView, ActivityIndicator, Alert, Switch, Image, Dimensions, Animated,
 } from 'react-native';
 import { useState, useCallback, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
-import { IMAGE_FORMATS, VIDEO_FORMATS, aspectToNumber, defaultFormatFor } from '../../lib/aspectRatio';
+import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
 import { GENRES } from '../../lib/genres';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
@@ -41,8 +41,10 @@ export default function PostScreen() {
   // image/video selection
   const [media, setMedia] = useState<{ uri: string; width: number; height: number } | null>(null);
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
+  const [videoAspect, setVideoAspect] = useState(0.8); // native aspect for video display
   const cropperRef = useRef<MediaCropperHandle>(null);
   const cropRef = useRef<CropRect | null>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   // audio selection
   const [audioFile, setAudioFile] = useState<any>(null);
@@ -61,14 +63,24 @@ export default function PostScreen() {
   const swiping = usePagerSwiping();
   useFocusEffect(useCallback(() => { stop(); }, []));
 
-  // Cropper frame fit within the preview cap.
-  const previewAspect = aspectToNumber(format, 1);
+  // Cropper frame within the preview cap. Videos use their native aspect (clamped
+  // to IG bounds) so they fill without being force-cropped; images use the chosen
+  // format and are cropped to it interactively.
+  const previewAspect = postType === 'video' ? videoAspect : aspectToNumber(format, 1);
   let frameW = SCREEN_W;
   let frameH = SCREEN_W / previewAspect;
   if (frameH > PREVIEW_MAX_H) { frameH = PREVIEW_MAX_H; frameW = PREVIEW_MAX_H * previewAspect; }
 
+  // Collapsing preview — shrinks as the gallery scrolls down so more photos show.
+  const fullPreviewH = frameH + SPACING.xs * 2;
+  const collapsedPreviewH = 96;
+  const animatedPreviewH = scrollY.interpolate({
+    inputRange: [0, Math.max(1, fullPreviewH - collapsedPreviewH)],
+    outputRange: [fullPreviewH, collapsedPreviewH],
+    extrapolate: 'clamp',
+  });
+
   const showGenre = postType !== 'audio' || audioKind === 'audio';
-  const formats = postType === 'video' ? VIDEO_FORMATS : IMAGE_FORMATS;
   const hasMedia = postType === 'audio' ? !!audioFile : !!media;
 
   function resetAll() {
@@ -85,14 +97,15 @@ export default function PostScreen() {
   }
 
   function cycleFormat() {
-    const i = formats.indexOf(format as any);
-    setFormat(formats[(i + 1) % formats.length]);
+    const i = IMAGE_FORMATS.indexOf(format as any);
+    setFormat(IMAGE_FORMATS[(i + 1) % IMAGE_FORMATS.length]);
   }
 
   async function onPickMedia(m: PickedMedia) {
     setMedia({ uri: m.uri, width: m.width, height: m.height });
     setThumbnailUri(null);
     if (m.type === 'video') {
+      setVideoAspect(clampFeedAspect((m.width || 1) / (m.height || 1)));
       try {
         const { uri } = await VideoThumbnails.getThumbnailAsync(m.uri, { time: 1000 });
         setThumbnailUri(uri);
@@ -183,7 +196,8 @@ export default function PostScreen() {
         is_public: isPublic,
         ...(genre && showGenre ? { genre } : {}),
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
-        ...(postType !== 'audio' ? { aspect_ratio: format } : {}),
+        ...(postType === 'image' ? { aspect_ratio: format } : {}),
+        ...(postType === 'video' ? { aspect_ratio: String(videoAspect) } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(coverUrl ? { cover_url: coverUrl } : {}),
       });
@@ -347,12 +361,12 @@ export default function PostScreen() {
         </View>
       ) : (
         <>
-          {/* Cropper preview */}
-          <View style={styles.previewArea}>
+          {/* Collapsing cropper preview — shrinks as the gallery scrolls */}
+          <Animated.View style={[styles.previewArea, { height: animatedPreviewH }]}>
             {media ? (
               <ErrorBoundary label="Couldn't open this photo">
                 <MediaCropper
-                  key={`${media.uri}-${format}`}
+                  key={`${media.uri}-${previewAspect}`}
                   ref={cropperRef}
                   uri={media.uri}
                   mediaWidth={media.width}
@@ -368,12 +382,14 @@ export default function PostScreen() {
                 <Text style={styles.previewPlaceholderText}>Pick a {postType} below</Text>
               </View>
             )}
-            {/* Aspect toggle */}
-            <TouchableOpacity style={styles.aspectBtn} onPress={cycleFormat}>
-              <Ionicons name="resize-outline" size={16} color={COLORS.text} />
-              <Text style={styles.aspectBtnText}>{format}</Text>
-            </TouchableOpacity>
-          </View>
+            {/* Aspect toggle (images only — videos use their native ratio) */}
+            {postType === 'image' && (
+              <TouchableOpacity style={styles.aspectBtn} onPress={cycleFormat}>
+                <Ionicons name="resize-outline" size={16} color={COLORS.text} />
+                <Text style={styles.aspectBtnText}>{format}</Text>
+              </TouchableOpacity>
+            )}
+          </Animated.View>
 
           {/* Gallery */}
           <View style={styles.recentsRow}>
@@ -382,7 +398,11 @@ export default function PostScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <ErrorBoundary label="Couldn't open your photos">
-              <PhotoGrid mediaType={postType as 'image' | 'video'} onPick={onPickMedia} />
+              <PhotoGrid
+                mediaType={postType as 'image' | 'video'}
+                onPick={onPickMedia}
+                onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
+              />
             </ErrorBoundary>
           </View>
         </>
@@ -415,7 +435,7 @@ const styles = StyleSheet.create({
   headerAction: { width: 64, alignItems: 'flex-end', paddingVertical: 4, paddingRight: SPACING.xs },
   headerActionText: { color: COLORS.primary, fontSize: 16, fontWeight: '700' },
 
-  previewArea: { backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.xs },
+  previewArea: { backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.xs, overflow: 'hidden' },
   previewPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface, gap: SPACING.sm, alignSelf: 'center' },
   previewPlaceholderText: { color: COLORS.textTertiary, fontSize: 14 },
   aspectBtn: {
