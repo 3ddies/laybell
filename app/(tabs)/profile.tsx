@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { confirmDeletePost } from '../../lib/postActions';
+import { showPostOptions } from '../../lib/postActions';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 
 type Profile = {
@@ -121,12 +121,17 @@ export default function ProfileScreen() {
           <TouchableOpacity
             key={post.id}
             style={styles.gridItem}
-            // Own content (Posts / Music / Videos) — long-press to delete.
+            // Own content (Posts / Music / Videos) — long-press for edit/delete.
             onLongPress={
               (tabKey === 'posts' || tabKey === 'music' || tabKey === 'videos')
-                ? () => confirmDeletePost(post.id, () => {
-                    setUserPosts(prev => prev.filter(p => p.id !== post.id));
-                    setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
+                ? () => showPostOptions({
+                    postId: post.id,
+                    isOwn: true,
+                    onEdit: () => router.push(`/edit-post/${post.id}`),
+                    onDeleted: () => {
+                      setUserPosts(prev => prev.filter(p => p.id !== post.id));
+                      setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
+                    },
                   })
                 : undefined
             }

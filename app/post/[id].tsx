@@ -17,7 +17,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import Comments from '../../components/Comments';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
-import { showOwnPostOptions } from '../../lib/postActions';
+import { showPostOptions } from '../../lib/postActions';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { Share } from 'react-native';
 
@@ -142,16 +142,7 @@ export default function PostDetailScreen() {
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Post</Text>
-        {currentUserId === post.user_id ? (
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => showOwnPostOptions(id as string, () => router.back())}
-          >
-            <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 40 }} />
-        )}
+        <View style={{ width: 40 }} />
       </View>
 
       <Comments
@@ -173,12 +164,18 @@ export default function PostDetailScreen() {
                 <Text style={styles.displayName}>{post.profiles?.display_name}</Text>
                 <Text style={styles.username}>@{post.profiles?.username} · {timeAgo(post.created_at)}</Text>
               </View>
-              <View style={styles.typeTag}>
-                <Ionicons
-                  name={post.type === 'audio' ? 'musical-notes' : post.type === 'video' ? 'videocam' : 'image-outline'}
-                  size={14} color={COLORS.primary}
-                />
-              </View>
+              <TouchableOpacity
+                style={styles.typeTag}
+                onPress={() => showPostOptions({
+                  postId: id as string,
+                  isOwn: currentUserId === post.user_id,
+                  onEdit: () => router.push(`/edit-post/${id}`),
+                  onDeleted: () => router.back(),
+                })}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="ellipsis-horizontal" size={16} color={COLORS.textSecondary} />
+              </TouchableOpacity>
             </TouchableOpacity>
 
             {/* Media */}

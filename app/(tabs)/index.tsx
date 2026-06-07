@@ -22,7 +22,7 @@ import { COLORS, SPACING, RADIUS, SHADOWS, GRADIENTS } from '../../constants/the
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
-import { showOwnPostOptions } from '../../lib/postActions';
+import { showPostOptions } from '../../lib/postActions';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import TrackRow from '../../components/TrackRow';
@@ -79,7 +79,6 @@ const PostCard = memo(function PostCard({
   const likeCount = item.likes[0]?.count || 0;
   const commentCount = item.comments[0]?.count || 0;
   const saveCount = item.save_count || 0;
-  const typeIcon = item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline';
 
   return (
     <View style={styles.postCard}>
@@ -100,15 +99,13 @@ const PostCard = memo(function PostCard({
             @{item.profiles?.username} · {timeAgo(item.created_at)}
           </Text>
         </View>
-        {isOwn ? (
-          <TouchableOpacity style={styles.typeIconWrap} onPress={() => onOptions(item)}>
-            <Ionicons name={typeIcon} size={16} color={COLORS.primary} />
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.typeIconWrap}>
-            <Ionicons name={typeIcon} size={16} color={COLORS.primary} />
-          </View>
-        )}
+        <TouchableOpacity
+          style={styles.typeIconWrap}
+          onPress={() => onOptions(item)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="ellipsis-horizontal" size={18} color={COLORS.textSecondary} />
+        </TouchableOpacity>
       </TouchableOpacity>
 
       {/* Media */}
@@ -450,7 +447,12 @@ export default function HomeScreen() {
   const onToggleMuted = useCallback(() => live.current.toggleVideoMuted(), []);
 
   const onOptions = useCallback((item: Post) => {
-    showOwnPostOptions(item.id, () => setPosts(prev => prev.filter(p => p.id !== item.id)));
+    showPostOptions({
+      postId: item.id,
+      isOwn: item.user_id === live.current.currentUserId,
+      onEdit: () => live.current.router.push(`/edit-post/${item.id}`),
+      onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+    });
   }, []);
 
   const renderPost = useCallback(({ item }: { item: Post }) => (

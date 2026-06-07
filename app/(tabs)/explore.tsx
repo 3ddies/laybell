@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
-import { confirmDeletePost } from '../../lib/postActions';
+import { showPostOptions } from '../../lib/postActions';
 import { useAudio } from '../../contexts/AudioContext';
 import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS } from '../../lib/genres';
 import {
@@ -358,17 +358,23 @@ export default function ExploreScreen() {
                 onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
                 onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); expand(); }}
                 onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
-                onOptions={item.user_id === currentUserId
-                  ? () => confirmDeletePost(item.id, () => setPosts(prev => prev.filter(p => p.id !== item.id)))
-                  : undefined}
+                onOptions={() => showPostOptions({
+                  postId: item.id,
+                  isOwn: item.user_id === currentUserId,
+                  onEdit: () => router.push(`/edit-post/${item.id}`),
+                  onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+                })}
               />
             ) : (
               <TouchableOpacity
                 style={styles.postRow}
                 onPress={() => router.push(`/post/${item.id}`)}
-                onLongPress={item.user_id === currentUserId
-                  ? () => confirmDeletePost(item.id, () => setPosts(prev => prev.filter(p => p.id !== item.id)))
-                  : undefined}
+                onLongPress={() => showPostOptions({
+                  postId: item.id,
+                  isOwn: item.user_id === currentUserId,
+                  onEdit: () => router.push(`/edit-post/${item.id}`),
+                  onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+                })}
               >
                 {item.type === 'image' || (item.type === 'video' && item.thumbnail_url) ? (
                   <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url as string) }} style={styles.postThumb} />
@@ -391,12 +397,18 @@ export default function ExploreScreen() {
                     )}
                   </View>
                 </View>
-                <View style={styles.postTypeTag}>
-                  <Ionicons
-                    name={item.type === 'audio' ? 'musical-notes' : item.type === 'video' ? 'videocam' : 'image-outline'}
-                    size={14} color={COLORS.primary}
-                  />
-                </View>
+                <TouchableOpacity
+                  style={styles.postTypeTag}
+                  onPress={() => showPostOptions({
+                    postId: item.id,
+                    isOwn: item.user_id === currentUserId,
+                    onEdit: () => router.push(`/edit-post/${item.id}`),
+                    onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+                  })}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={16} color={COLORS.textSecondary} />
+                </TouchableOpacity>
               </TouchableOpacity>
             )}
           />

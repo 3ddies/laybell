@@ -12,7 +12,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import TrackRow from '../../components/TrackRow';
-import { confirmDeletePost } from '../../lib/postActions';
+import { showPostOptions } from '../../lib/postActions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GENRES, CONTENT_TAGS } from '../../lib/genres';
 import {
@@ -497,12 +497,15 @@ export default function MusicScreen() {
                     onPlay={() => play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url)}
                     onCoverPress={() => { play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url); openNowPlaying(); }}
                     onAvatarPress={() => router.push(`/profile/${track.user_id}`)}
-                    onOptions={track.user_id === currentUserId
-                      ? () => confirmDeletePost(track.id, () => {
-                          setTrendingTracks(prev => prev.filter(t => t.id !== track.id));
-                          setForYouTracks(prev => prev.filter(t => t.id !== track.id));
-                        })
-                      : undefined}
+                    onOptions={() => showPostOptions({
+                      postId: track.id,
+                      isOwn: track.user_id === currentUserId,
+                      onEdit: () => router.push(`/edit-post/${track.id}`),
+                      onDeleted: () => {
+                        setTrendingTracks(prev => prev.filter(t => t.id !== track.id));
+                        setForYouTracks(prev => prev.filter(t => t.id !== track.id));
+                      },
+                    })}
                   />
                 ))}
                 {trendingTracks.length > 4 && (
@@ -655,10 +658,12 @@ export default function MusicScreen() {
                   onPlay={() => playQueue(playlistQueue(), index)}
                   onCoverPress={() => { playQueue(playlistQueue(), index); openNowPlaying(); }}
                   onAvatarPress={() => router.push(`/profile/${item.posts.user_id}`)}
-                  onOptions={item.posts.user_id === currentUserId
-                    ? () => confirmDeletePost(item.post_id, () =>
-                        setTracks(prev => prev.filter(t => t.post_id !== item.post_id)))
-                    : undefined}
+                  onOptions={() => showPostOptions({
+                    postId: item.post_id,
+                    isOwn: item.posts.user_id === currentUserId,
+                    onEdit: () => router.push(`/edit-post/${item.post_id}`),
+                    onDeleted: () => setTracks(prev => prev.filter(t => t.post_id !== item.post_id)),
+                  })}
                 />
               )}
             />
@@ -696,10 +701,12 @@ export default function MusicScreen() {
               onCoverPress={() => { play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url); openNowPlaying(); }}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
               onAvatarPress={() => router.push(`/profile/${item.posts?.user_id}`)}
-              onOptions={item.posts?.user_id === currentUserId
-                ? () => confirmDeletePost(item.posts?.id, () =>
-                    setSavedTracks(prev => prev.filter((s: any) => s.posts?.id !== item.posts?.id)))
-                : undefined}
+              onOptions={() => showPostOptions({
+                postId: item.posts?.id,
+                isOwn: item.posts?.user_id === currentUserId,
+                onEdit: () => router.push(`/edit-post/${item.posts?.id}`),
+                onDeleted: () => setSavedTracks(prev => prev.filter((s: any) => s.posts?.id !== item.posts?.id)),
+              })}
             />
           )}
         />
@@ -735,10 +742,12 @@ export default function MusicScreen() {
               onCoverPress={() => { playQueue(likedQueue(), index); openNowPlaying(); }}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
               onAvatarPress={() => router.push(`/profile/${item.posts?.user_id}`)}
-              onOptions={item.posts?.user_id === currentUserId
-                ? () => confirmDeletePost(item.posts?.id, () =>
-                    setLikedTracks(prev => prev.filter((l: any) => l.posts?.id !== item.posts?.id)))
-                : undefined}
+              onOptions={() => showPostOptions({
+                postId: item.posts?.id,
+                isOwn: item.posts?.user_id === currentUserId,
+                onEdit: () => router.push(`/edit-post/${item.posts?.id}`),
+                onDeleted: () => setLikedTracks(prev => prev.filter((l: any) => l.posts?.id !== item.posts?.id)),
+              })}
             />
           )}
         />

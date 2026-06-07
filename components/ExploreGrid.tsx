@@ -10,7 +10,7 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { aspectToNumber } from '../lib/aspectRatio';
 import { useAudio } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
-import { confirmDeletePost } from '../lib/postActions';
+import { showPostOptions } from '../lib/postActions';
 
 type GridPost = {
   id: string; type: string; media_url: string; caption: string;
@@ -55,12 +55,17 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
   const router = useRouter();
   const { play, currentTrack, isPlaying } = useAudio();
 
-  // Long-press handler for the current user's own posts → confirm delete.
-  // (Image/video tiles open the post detail, which has its own delete button;
-  // this covers the inline-play audio tiles/rows that never navigate there.)
+  // Long-press opens the post options menu (own → edit/delete, others → report).
+  // Image/video tiles also reach this via the post-detail "⋯" button; this covers
+  // the inline-play audio tiles/rows that never navigate there.
   const longPressFor = (p: GridPost) =>
-    currentUserId && p.user_id === currentUserId
-      ? () => confirmDeletePost(p.id, () => onPostDeleted?.(p.id))
+    currentUserId
+      ? () => showPostOptions({
+          postId: p.id,
+          isOwn: p.user_id === currentUserId,
+          onEdit: () => router.push(`/edit-post/${p.id}`),
+          onDeleted: () => onPostDeleted?.(p.id),
+        })
       : undefined;
 
   // Videos that currently overlap the viewport (these play). Off-screen videos

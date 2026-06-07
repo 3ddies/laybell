@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, ActivityIndicator, Image,
+  TouchableOpacity, ActivityIndicator, Image, RefreshControl,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -18,8 +18,15 @@ export default function FollowingScreen() {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [following, setFollowing] = useState<Set<string>>(new Set());
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { setup(); }, [id]);
+
+  async function onRefresh() {
+    setRefreshing(true);
+    await setup();
+    setRefreshing(false);
+  }
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -73,6 +80,9 @@ export default function FollowingScreen() {
           data={users}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="people-outline" size={40} color={COLORS.textTertiary} />
@@ -122,7 +132,7 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: SPACING.sm },
   headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
-  list: { padding: SPACING.md, gap: SPACING.sm },
+  list: { padding: SPACING.md, gap: SPACING.sm, flexGrow: 1 },
   userRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
