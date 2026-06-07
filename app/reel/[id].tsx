@@ -33,6 +33,7 @@ export default function ReelScreen() {
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [visibleId, setVisibleId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
+  const videoRefs = useRef<Record<string, any>>({});
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
@@ -125,12 +126,19 @@ export default function ReelScreen() {
       <View style={{ width: SCREEN_W, height: SCREEN_H }}>
         <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => setPaused((p) => !p)}>
           <Video
+            ref={(r) => { videoRefs.current[item.id] = r; }}
             source={{ uri: item.media_url }}
             style={StyleSheet.absoluteFill}
             resizeMode={ResizeMode.COVER}
-            isLooping
+            isLooping={item.trim_end == null}
             shouldPlay={visibleId === item.id && !paused}
             useNativeControls={false}
+            onLoad={() => { if (item.trim_start != null) videoRefs.current[item.id]?.setPositionAsync(item.trim_start * 1000); }}
+            onPlaybackStatusUpdate={(st: any) => {
+              if (st.isLoaded && item.trim_end != null && st.positionMillis >= item.trim_end * 1000) {
+                videoRefs.current[item.id]?.setPositionAsync((item.trim_start ?? 0) * 1000);
+              }
+            }}
           />
         </TouchableOpacity>
 

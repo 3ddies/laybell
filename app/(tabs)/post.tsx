@@ -20,10 +20,11 @@ import { Image as ExpoImage } from 'expo-image';
 import { File } from 'expo-file-system';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
+import VideoTrimmer from '../../components/VideoTrimmer';
 import ErrorBoundary from '../../components/ErrorBoundary';
 
 type PostType = 'image' | 'video' | 'audio';
-type Step = 'pick' | 'details';
+type Step = 'pick' | 'edit' | 'details';
 
 const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
@@ -56,6 +57,8 @@ export default function PostScreen() {
   const [media, setMedia] = useState<{ uri: string; width: number; height: number; posterUri?: string } | null>(null);
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
   const [videoAspect, setVideoAspect] = useState(0.8); // native aspect for video display
+  const [videoDuration, setVideoDuration] = useState(0); // seconds (source)
+  const [trimStart, setTrimStart] = useState(0); // seconds — start of the chosen window
   const cropperRef = useRef<MediaCropperHandle>(null);
   const cropRef = useRef<CropRect | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -99,6 +102,7 @@ export default function PostScreen() {
 
   function resetAll() {
     setMedia(null); setThumbnailUri(null); cropRef.current = null;
+    setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setGenre(''); setError(''); setStep('pick');
   }
@@ -107,6 +111,7 @@ export default function PostScreen() {
     setPostType(t);
     setFormat(defaultFormatFor(t));
     setMedia(null); setThumbnailUri(null); cropRef.current = null;
+    setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null);
   }
 
@@ -116,10 +121,7 @@ export default function PostScreen() {
   }
 
   async function onPickMedia(m: PickedMedia) {
-    if (m.type === 'video' && m.duration != null && m.duration > VIDEO_MAX_SEC) {
-      Alert.alert('Video too long', `Videos must be ${VIDEO_MAX_SEC} seconds or shorter.`);
-      return;
-    }
+    // Longer videos are allowed now — the user trims a 90s window in the editor.
     if (m.type === 'video') {
       try {
         const size = new File(m.uri).size ?? 0;
@@ -133,6 +135,8 @@ export default function PostScreen() {
     setThumbnailUri(null);
     if (m.type === 'video') {
       setVideoAspect(clampFeedAspect((m.width || 1) / (m.height || 1)));
+      setVideoDuration(m.duration ?? 0);
+      setTrimStart(0);
       try {
         const { uri } = await VideoThumbnails.getThumbnailAsync(m.uri, { time: 1000 });
         setThumbnailUri(uri);
@@ -179,6 +183,8 @@ export default function PostScreen() {
     if (!hasMedia) { setError(`Select ${postType === 'audio' ? 'an audio file' : `a ${postType}`} first`); return; }
     setError('');
     if (postType === 'image') cropRef.current = cropperRef.current?.getCrop() ?? null;
+    // Long videos go through the trim editor to pick a 90s window.
+    if (postType === 'video' && videoDuration > VIDEO_MAX_SEC) { setStep('edit'); return; }
     setStep('details');
   }
 
@@ -239,6 +245,9 @@ export default function PostScreen() {
         if (thumbnailUri) thumbnailUrl = await uploadToStorage(user.id, thumbnailUri, 'jpg', 'image/jpeg');
       }
 
+      const trimmed = postType === 'video' && videoDuration > VIDEO_MAX_SEC;
+      const videoDurSec = trimmed ? VIDEO_MAX_SEC : Math.round(videoDuration);
+
       const { error: postError } = await supabase.from('posts').insert({
         user_id: user.id,
         type: postType === 'audio' ? audioKind : postType,
@@ -247,8 +256,10 @@ export default function PostScreen() {
         is_public: isPublic,
         ...(genre && showGenre ? { genre } : {}),
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
+        ...(postType === 'video' && videoDurSec > 0 ? { duration_seconds: videoDurSec } : {}),
         ...(postType === 'image' ? { aspect_ratio: format } : {}),
         ...(postType === 'video' ? { aspect_ratio: String(videoAspect) } : {}),
+        ...(trimmed ? { trim_start: trimStart, trim_end: trimStart + VIDEO_MAX_SEC } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(coverUrl ? { cover_url: coverUrl } : {}),
       });
@@ -260,6 +271,33 @@ export default function PostScreen() {
       setError(err.message || 'Something went wrong');
     }
     setLoading(false);
+  }
+
+  // ─── Trim step (long videos) ───────────────────────────────────────────────
+  if (step === 'edit' && media && postType === 'video') {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.headerBtn} onPress={() => setStep('pick')}>
+            <Ionicons name="chevron-back" size={26} color={COLORS.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Trim</Text>
+          <TouchableOpacity style={styles.headerAction} onPress={() => setStep('details')}>
+            <Ionicons name="arrow-forward" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.trimBody}>
+          <VideoTrimmer
+            uri={media.uri}
+            duration={videoDuration}
+            windowSec={VIDEO_MAX_SEC}
+            frameW={frameW}
+            frameH={frameH}
+            onChange={setTrimStart}
+          />
+        </View>
+      </View>
+    );
   }
 
   // ─── Details step ──────────────────────────────────────────────────────────
@@ -455,7 +493,7 @@ export default function PostScreen() {
           <View style={styles.recentsRow}>
             <Text style={styles.recentsText}>Recents</Text>
             {postType === 'image' && <Text style={styles.recentsHint}>Drag / pinch to crop</Text>}
-            {postType === 'video' && <Text style={styles.recentsHint}>Up to 90s</Text>}
+            {postType === 'video' && <Text style={styles.recentsHint}>Longer clips → trim to 90s</Text>}
           </View>
           <View style={{ flex: 1 }}>
             <ErrorBoundary label="Couldn't open your photos">
@@ -486,6 +524,7 @@ export default function PostScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  trimBody: { flex: 1, justifyContent: 'center', padding: SPACING.md },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

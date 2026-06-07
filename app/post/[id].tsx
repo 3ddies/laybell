@@ -28,6 +28,8 @@ type Post = {
   aspect_ratio?: string | null;
   stream_count?: number;
   cover_url?: string | null;
+  trim_start?: number | null;
+  trim_end?: number | null;
   profiles: { username: string; display_name: string; avatar_url: string | null };
 };
 type Comment = {
@@ -40,6 +42,7 @@ export default function PostDetailScreen() {
   const router = useRouter();
   const { currentTrack, isPlaying, play, stop } = useAudio();
   const flatListRef = useRef<any>(null);
+  const videoRef = useRef<any>(null);
 
   const [post, setPost] = useState<Post | null>(null);
   const [likeCount, setLikeCount] = useState(0);
@@ -184,7 +187,21 @@ export default function PostDetailScreen() {
               <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined, backgroundColor: '#000' }]} resizeMode="cover" />
             )}
             {post.type === 'video' && post.media_url && (
-              <Video source={{ uri: post.media_url }} style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]} useNativeControls resizeMode={ResizeMode.COVER} isLooping shouldPlay />
+              <Video
+                ref={videoRef}
+                source={{ uri: post.media_url }}
+                style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
+                useNativeControls
+                resizeMode={ResizeMode.COVER}
+                isLooping={post.trim_end == null}
+                shouldPlay
+                onLoad={() => { if (post.trim_start != null) videoRef.current?.setPositionAsync(post.trim_start * 1000); }}
+                onPlaybackStatusUpdate={(st: any) => {
+                  if (st.isLoaded && post.trim_end != null && st.positionMillis >= post.trim_end * 1000) {
+                    videoRef.current?.setPositionAsync((post.trim_start ?? 0) * 1000);
+                  }
+                }}
+              />
             )}
             {isAudioPost(post.type) && (
               <TouchableOpacity
