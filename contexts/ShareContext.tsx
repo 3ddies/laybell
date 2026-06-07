@@ -250,10 +250,12 @@ function ShareSheet({ visible, payload, onClose }: {
     const uid = profile?.id ?? (await supabase.auth.getUser()).data.user?.id;
     if (!uid || !payload || selected.size === 0) return;
     setSending(true);
-    const { message } = buildShareText(payload);
+    // Send just the post link as the body — the chat renders it as a rich
+    // preview card (thumbnail + author + caption), Instagram-style.
+    const { link } = buildShareText(payload);
     const ids = Array.from(selected);
     await Promise.all(ids.map(async (rid) => {
-      const { error } = await supabase.from('messages').insert({ sender_id: uid, receiver_id: rid, body: message });
+      const { error } = await supabase.from('messages').insert({ sender_id: uid, receiver_id: rid, body: link });
       if (!error) createNotification({ userId: rid, actorId: uid, type: 'message' });
     }));
     setSending(false);

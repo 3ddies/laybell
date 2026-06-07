@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { timeAgo } from '../../lib/timeAgo';
+import { sharedPostId } from '../../lib/postLinks';
 
 type Conversation = {
   id: string;
@@ -119,7 +120,14 @@ export default function MessagesScreen() {
                 <Text style={styles.displayName}>{item.other_user.display_name}</Text>
                 <Text style={styles.timeText}>{timeAgo(item.last_message_time)}</Text>
               </View>
-              <Text style={styles.lastMessage} numberOfLines={1}>{item.last_message}</Text>
+              {sharedPostId(item.last_message) ? (
+                <View style={styles.sharedPreview}>
+                  <Ionicons name="albums-outline" size={12} color={COLORS.textSecondary} />
+                  <Text style={styles.lastMessage} numberOfLines={1}>Shared a post</Text>
+                </View>
+              ) : (
+                <Text style={styles.lastMessage} numberOfLines={1}>{item.last_message}</Text>
+              )}
             </View>
             <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
           </TouchableOpacity>
@@ -159,6 +167,7 @@ const styles = StyleSheet.create({
   displayName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   timeText: { color: COLORS.textTertiary, fontSize: 12 },
   lastMessage: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
+  sharedPreview: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
 
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.md },
   emptyIcon: { width: 80, height: 80, borderRadius: RADIUS.xl, alignItems: 'center', justifyContent: 'center' },

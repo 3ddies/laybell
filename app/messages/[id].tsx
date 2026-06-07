@@ -8,16 +8,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { createNotification } from '../../lib/createNotification';
+import { sharedPostId, internalPathFromUrl } from '../../lib/postLinks';
+import SharedPostCard from '../../components/SharedPostCard';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
-
-// Map a Laybell link (https universal link or laybell:// scheme) to an in-app
-// route, or null if it's an external link. e.g. https://laybell.app/post/1 → /post/1
-function internalPathFromUrl(url: string): string | null {
-  if (url.startsWith('laybell://')) return '/' + url.slice('laybell://'.length);
-  const m = url.match(/^https?:\/\/(?:www\.)?laybell\.app(\/[^\s]*)/i);
-  return m ? m[1] : null;
-}
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -162,6 +156,16 @@ export default function ChatScreen() {
         }
         renderItem={({ item }) => {
           const isOwn = item.sender_id === currentUserId;
+          const postId = sharedPostId(item.body);
+          // A shared post renders as a standalone preview card (no chat bubble).
+          if (postId) {
+            return (
+              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
+                <SharedPostCard postId={postId} />
+                <Text style={styles.cardTime}>{formatTime(item.created_at)}</Text>
+              </View>
+            );
+          }
           return (
             <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
               <View style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther]}>
@@ -228,6 +232,7 @@ const styles = StyleSheet.create({
   linkOther: { color: COLORS.primaryLight },
   bubbleTime: { fontSize: 10, color: 'rgba(255,255,255,0.6)', marginTop: 3, alignSelf: 'flex-end' },
   bubbleTimeOther: { color: COLORS.textTertiary },
+  cardTime: { fontSize: 10, color: COLORS.textTertiary, marginTop: 3 },
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
   emptyText: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center' },
