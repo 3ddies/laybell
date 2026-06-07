@@ -10,6 +10,13 @@ import { COLORS, SPACING, RADIUS } from '../constants/theme';
 
 const SCREEN_H = Dimensions.get('window').height;
 
+// Rubber-band resistance: sheet can stretch a little past its ceiling, then
+// snaps back. Displacement approaches `max` asymptotically so it always feels
+// like there's more resistance the further you pull.
+function rubber(excess: number, max = 38): number {
+  return max * (1 - Math.exp(-excess / max));
+}
+
 // Instagram-style slide-up comments with two heights — default (~78%) and full.
 // Drag the grab bar UP to expand, DOWN to collapse, further DOWN to dismiss.
 // Transparent so a playing reel stays visible behind it; the comment list scrolls
@@ -72,7 +79,9 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
       const DEF = defRef.current, FULL = fullRef.current;
       const target = startH.current - g.dy; // up → taller, down → shorter
       if (target >= DEF) {
-        height.setValue(Math.min(target, FULL));
+        // Allow elastic stretch above the full-height ceiling
+        const clamped = target > FULL ? FULL + rubber(target - FULL) : target;
+        height.setValue(clamped);
         translateY.setValue(0);
         backdrop.setValue(1);
       } else {
@@ -89,9 +98,11 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
         const down = DEF - target;
         if (down > DEF * 0.25 || g.vy > 1.2) dismiss();
         else snapTo('default');
+      } else if (target > FULL) {
+        // Was in the elastic zone above full — always snap back to full
+        snapTo('full');
       } else {
-        const h = Math.min(target, FULL);
-        if (h > (DEF + FULL) / 2 || g.vy < -1.2) snapTo('full');
+        if (target > (DEF + FULL) / 2 || g.vy < -1.2) snapTo('full');
         else snapTo('default');
       }
     },

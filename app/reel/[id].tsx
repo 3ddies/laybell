@@ -14,6 +14,7 @@ import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { formatCount } from '../../lib/format';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import CommentsSheet from '../../components/CommentsSheet';
+import ElasticSwipeView from '../../components/ElasticSwipeView';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import {
@@ -135,7 +136,7 @@ export default function ReelScreen() {
     const landscape = aspectToNumber(item.aspect_ratio, 16 / 9) >= 1;
 
     return (
-      <View style={{ width: SCREEN_W, height: SCREEN_H }}>
+      <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }}>
         <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => setPaused((p) => !p)}>
           <Video
             ref={(r) => { videoRefs.current[item.id] = r; }}
@@ -209,7 +210,7 @@ export default function ReelScreen() {
           </TouchableOpacity>
           {!!item.caption && <Text style={styles.caption} numberOfLines={2}>{item.caption}</Text>}
         </View>
-      </View>
+      </ElasticSwipeView>
     );
   }
 

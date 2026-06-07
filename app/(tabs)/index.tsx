@@ -26,6 +26,7 @@ import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { isAudioPost } from '../../lib/genres';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import CommentsSheet from '../../components/CommentsSheet';
+import ElasticSwipeView from '../../components/ElasticSwipeView';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import TrackRow from '../../components/TrackRow';
 
@@ -464,26 +465,28 @@ export default function HomeScreen() {
   }, []);
 
   const renderPost = useCallback(({ item }: { item: Post }) => (
-    <PostCard
-      item={item}
-      isOwn={item.user_id === currentUserId}
-      isLiked={likedPosts.has(item.id)}
-      isSaved={savedPosts.has(item.id)}
-      audioActive={isPlaying && currentTrack?.id === item.id}
-      videoMuted={videoMuted}
-      shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
-      onProfile={onProfile}
-      onOptions={onOptions}
-      onOpenPost={onOpenPost}
-      onOpenReel={onOpenReel}
-      onComments={onComments}
-      onPlayTrack={onPlayTrack}
-      onExpandTrack={onExpandTrack}
-      onToggleMuted={onToggleMuted}
-      onLike={onLike}
-      onSave={onSave}
-      onShare={onShare}
-    />
+    <ElasticSwipeView>
+      <PostCard
+        item={item}
+        isOwn={item.user_id === currentUserId}
+        isLiked={likedPosts.has(item.id)}
+        isSaved={savedPosts.has(item.id)}
+        audioActive={isPlaying && currentTrack?.id === item.id}
+        videoMuted={videoMuted}
+        shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
+        onProfile={onProfile}
+        onOptions={onOptions}
+        onOpenPost={onOpenPost}
+        onOpenReel={onOpenReel}
+        onComments={onComments}
+        onPlayTrack={onPlayTrack}
+        onExpandTrack={onExpandTrack}
+        onToggleMuted={onToggleMuted}
+        onLike={onLike}
+        onSave={onSave}
+        onShare={onShare}
+      />
+    </ElasticSwipeView>
   ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, canPlayVideo, visibleVideoId,
       onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare]);
 

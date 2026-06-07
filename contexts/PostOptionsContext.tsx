@@ -39,6 +39,10 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
 
 const DISMISS_DIST = 300;
 
+function rubber(drag: number, max = 32): number {
+  return max * (1 - Math.exp(-drag / max));
+}
+
 function PostOptionsSheet({ visible, opts, onClose }: {
   visible: boolean;
   opts: PostOptionsArgs | null;
@@ -72,9 +76,15 @@ function PostOptionsSheet({ visible, opts, onClose }: {
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 3,
     onPanResponderMove: (_e, g) => {
-      const dy = Math.max(0, g.dy);
-      translateY.setValue(dy);
-      backdrop.setValue(Math.max(0, 1 - dy / DISMISS_DIST));
+      if (g.dy < 0) {
+        // Upward drag — sheet can't expand, give elastic resistance
+        translateY.setValue(-rubber(Math.abs(g.dy)));
+        backdrop.setValue(1);
+      } else {
+        const dy = g.dy;
+        translateY.setValue(dy);
+        backdrop.setValue(Math.max(0, 1 - dy / DISMISS_DIST));
+      }
     },
     onPanResponderRelease: (_e, g) => {
       if (g.dy > 60 || g.vy > 1.2) {
@@ -83,8 +93,9 @@ function PostOptionsSheet({ visible, opts, onClose }: {
           Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
         ]).start(() => closeRef.current());
       } else {
+        // Snap back (includes upward elastic release)
         Animated.parallel([
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 2, speed: 14 }),
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 5, speed: 16 }),
           Animated.timing(backdrop, { toValue: 1, duration: 150, useNativeDriver: true }),
         ]).start();
       }
