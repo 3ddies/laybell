@@ -22,7 +22,12 @@ function AppContent() {
           animation: 'slide_from_right',   // previous screen sits behind during the transition
           contentStyle: { backgroundColor: COLORS.background },
         }}
-      />
+      >
+        {/* Opening a post fades in while its content scales up (ScaleInView) —
+            an Instagram-style "zoom open". */}
+        <Stack.Screen name="post/[id]" options={{ animation: 'fade' }} />
+        <Stack.Screen name="reel/[id]" options={{ animation: 'fade' }} />
+      </Stack>
       <MiniPlayer />
       <NowPlaying />
     </View>

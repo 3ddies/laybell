@@ -17,6 +17,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, EMPTY_PROFILE,
 } from '../../lib/feedScorer';
+import ScaleInView from '../../components/ScaleInView';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -202,7 +203,7 @@ export default function ReelScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <ScaleInView style={styles.container}>
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={COLORS.primary} size="large" /></View>
       ) : posts.length === 0 ? (
@@ -230,7 +231,7 @@ export default function ReelScreen() {
       <TouchableOpacity style={[styles.back, { top: insets.top + 8 }]} onPress={() => router.back()}>
         <Ionicons name="chevron-back" size={28} color="#fff" />
       </TouchableOpacity>
-    </View>
+    </ScaleInView>
   );
 }
 

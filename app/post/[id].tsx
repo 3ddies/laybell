@@ -19,6 +19,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { showPostOptions } from '../../lib/postActions';
 import { isAudioPost } from '../../lib/genres';
+import ScaleInView from '../../components/ScaleInView';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { Share } from 'react-native';
 
@@ -141,6 +142,7 @@ export default function PostDetailScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScaleInView>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
@@ -263,6 +265,7 @@ export default function PostDetailScreen() {
           </>
         }
       />
+      </ScaleInView>
     </KeyboardAvoidingView>
   );
 }
