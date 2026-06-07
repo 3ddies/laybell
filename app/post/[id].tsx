@@ -28,6 +28,7 @@ type Post = {
   aspect_ratio?: string | null;
   stream_count?: number;
   cover_url?: string | null;
+  thumbnail_url?: string | null;
   trim_start?: number | null;
   trim_end?: number | null;
   profiles: { username: string; display_name: string; avatar_url: string | null };
@@ -271,7 +272,9 @@ export default function PostDetailScreen() {
                   postId: id as string,
                   caption: post.caption,
                   username: post.profiles?.username,
-                  cover: post.cover_url ?? (post.type === 'image' ? post.media_url : null),
+                  type: post.type,
+                  mediaUrl: post.media_url,
+                  cover: post.cover_url ?? post.thumbnail_url ?? (post.type === 'image' ? post.media_url : null),
                 })}
               >
                 <Ionicons name="share-social-outline" size={22} color={COLORS.textSecondary} />

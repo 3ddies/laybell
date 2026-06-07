@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput,
-  TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
+  TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
 } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -90,6 +90,39 @@ export default function ChatScreen() {
     return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
+  // Open a link found in a message. Laybell deep links route inside the app
+  // (laybell://post/123 → /post/123); anything else opens externally.
+  function openLink(url: string) {
+    if (url.startsWith('laybell://')) router.push(url.replace('laybell://', '/') as any);
+    else Linking.openURL(url).catch(() => {});
+  }
+
+  // Render a message body with any URLs as tappable links. Laybell post links
+  // show as a friendly "View post" instead of the raw deep-link text.
+  function renderBody(body: string, isOwn: boolean) {
+    const parts = body.split(/(laybell:\/\/\S+|https?:\/\/\S+)/g);
+    return (
+      <Text style={styles.bubbleText}>
+        {parts.map((part, i) => {
+          if (!part) return null;
+          const isLaybell = part.startsWith('laybell://');
+          if (isLaybell || /^https?:\/\//.test(part)) {
+            return (
+              <Text
+                key={i}
+                style={[styles.link, isOwn ? styles.linkOwn : styles.linkOther]}
+                onPress={() => openLink(part)}
+              >
+                {isLaybell ? 'View post' : part}
+              </Text>
+            );
+          }
+          return part;
+        })}
+      </Text>
+    );
+  }
+
   if (loading) {
     return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
   }
@@ -122,7 +155,7 @@ export default function ChatScreen() {
           return (
             <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
               <View style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther]}>
-                <Text style={styles.bubbleText}>{item.body}</Text>
+                {renderBody(item.body, isOwn)}
                 <Text style={[styles.bubbleTime, !isOwn && styles.bubbleTimeOther]}>{formatTime(item.created_at)}</Text>
               </View>
             </View>
@@ -180,6 +213,9 @@ const styles = StyleSheet.create({
   bubbleOwn: { backgroundColor: COLORS.primary, borderBottomRightRadius: 4 },
   bubbleOther: { backgroundColor: COLORS.surfaceElevated, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border },
   bubbleText: { color: COLORS.text, fontSize: 15, lineHeight: 21 },
+  link: { textDecorationLine: 'underline', fontWeight: '700' },
+  linkOwn: { color: '#fff' },
+  linkOther: { color: COLORS.primaryLight },
   bubbleTime: { fontSize: 10, color: 'rgba(255,255,255,0.6)', marginTop: 3, alignSelf: 'flex-end' },
   bubbleTimeOther: { color: COLORS.textTertiary },
 

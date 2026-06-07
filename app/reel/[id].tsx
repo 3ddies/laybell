@@ -129,6 +129,8 @@ export default function ReelScreen() {
       postId: item.id,
       caption: item.caption,
       username: item.profiles?.username,
+      type: item.type ?? 'video',
+      mediaUrl: item.media_url,
       cover: item.thumbnail_url ?? item.cover_url ?? null,
     });
   }

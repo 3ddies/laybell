@@ -49,6 +49,7 @@ type Post = {
   aspect_ratio?: string | null;
   stream_count?: number;
   cover_url?: string | null;
+  thumbnail_url?: string | null;
   duration_seconds?: number | null;
   genre?: string | null;
 };
@@ -438,7 +439,9 @@ export default function HomeScreen() {
       postId: item.id,
       caption: item.caption,
       username: item.profiles?.username,
-      cover: item.cover_url ?? (item.type === 'image' ? item.media_url : null),
+      type: item.type,
+      mediaUrl: item.media_url,
+      cover: item.cover_url ?? item.thumbnail_url ?? (item.type === 'image' ? item.media_url : null),
     });
   }, []);
 

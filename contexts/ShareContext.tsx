@@ -11,6 +11,7 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 import { useProfile } from './ProfileContext';
 import { createNotification } from '../lib/createNotification';
+import VideoThumb from '../components/VideoThumb';
 
 // Global share sheet. Any component calls useShare().share(payload) and a bar
 // slides up from the bottom with options to (a) send the content to people
@@ -22,6 +23,8 @@ export type SharePayload = {
   caption?: string | null;
   username?: string | null;   // author handle, for the share text + preview
   cover?: string | null;      // best available image (cover/thumbnail/avatar) for the preview
+  type?: string | null;       // post type — videos generate a thumbnail frame when no cover
+  mediaUrl?: string | null;   // the video URL, used to generate a frame when cover is missing
 };
 
 type Person = { id: string; username: string | null; display_name: string | null; avatar_url: string | null };
@@ -92,6 +95,14 @@ const EXTERNAL_APPS: ExternalApp[] = [
     urls: ({ message }) => [`whatsapp://send?text=${enc(message)}`, `https://wa.me/?text=${enc(message)}`],
   },
   {
+    key: 'facebook', label: 'Facebook', icon: 'logo-facebook', color: '#1877F2',
+    urls: ({ link }) => [`https://www.facebook.com/sharer/sharer.php?u=${enc(link)}`],
+  },
+  {
+    key: 'email', label: 'Email', icon: 'mail', color: '#EA4335',
+    urls: ({ message, title }) => [`mailto:?subject=${enc(title)}&body=${enc(message)}`],
+  },
+  {
     key: 'telegram', label: 'Telegram', icon: 'paper-plane', color: '#229ED9',
     urls: ({ message, link }) => [`tg://msg_url?url=${enc(link)}&text=${enc(message)}`, `https://t.me/share/url?url=${enc(link)}&text=${enc(message)}`],
   },
@@ -100,16 +111,8 @@ const EXTERNAL_APPS: ExternalApp[] = [
     urls: ({ message }) => [`twitter://post?message=${enc(message)}`, `https://twitter.com/intent/tweet?text=${enc(message)}`],
   },
   {
-    key: 'facebook', label: 'Facebook', icon: 'logo-facebook', color: '#1877F2',
-    urls: ({ link }) => [`https://www.facebook.com/sharer/sharer.php?u=${enc(link)}`],
-  },
-  {
     key: 'reddit', label: 'Reddit', icon: 'logo-reddit', color: '#FF4500',
     urls: ({ link, title }) => [`https://www.reddit.com/submit?url=${enc(link)}&title=${enc(title)}`],
-  },
-  {
-    key: 'email', label: 'Email', icon: 'mail', color: '#EA4335',
-    urls: ({ message, title }) => [`mailto:?subject=${enc(title)}&body=${enc(message)}`],
   },
   {
     key: 'more', label: 'More', icon: 'ellipsis-horizontal', color: COLORS.surfaceElevated, native: true,
@@ -284,7 +287,9 @@ function ShareSheet({ visible, payload, onClose }: {
           {/* Content preview */}
           {payload && (
             <View style={styles.preview}>
-              {payload.cover ? (
+              {payload.type === 'video' && payload.mediaUrl ? (
+                <VideoThumb thumbnailUrl={payload.cover} mediaUrl={payload.mediaUrl} style={styles.previewThumb} />
+              ) : payload.cover ? (
                 <Image source={{ uri: payload.cover }} style={styles.previewThumb} />
               ) : (
                 <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.previewThumb}>
