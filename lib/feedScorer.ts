@@ -156,8 +156,11 @@ export async function buildAffinityProfile(
 // All multipliers are applied on top of the time-decayed engagement score so
 // personalization nudges rank without overriding genuine virality.
 //
-//   engagement   = likes×3 + comments×5 + saves×4 + streams×1 + BASE(2)
+//   engagement   = likes×3 + comments×5 + saves×4 + reposts×6 + streams×1 + BASE(2)
 //   decayed      = engagement / (hoursOld + 2)^1.2
+//
+// Reposts carry the most weight per action — putting a post on your own profile
+// is the strongest public endorsement a user can give.
 //   creatorBoost = 1 + creatorScore × 1.5   → [1.0, 2.5×]
 //   typeBoost    = 1 + typeScore × 0.5       → [1.0, 1.5×]
 //   genreBoost   = 1 + genreScore × 0.3      → [1.0, 1.3×]
@@ -178,6 +181,7 @@ export interface ScoredPost {
   likes?:       { count: number }[];
   comments?:    { count: number }[];
   save_count?:  number;
+  repost_count?: number;
   stream_count?: number;
   [key: string]: any;
 }
@@ -192,10 +196,11 @@ export function scorePost(
   const likes    = post.likes?.[0]?.count    || 0;
   const comments = post.comments?.[0]?.count || 0;
   const saves    = post.save_count            || 0;
+  const reposts  = post.repost_count          || 0;
   const streams  = post.stream_count          || 0;
   const hoursOld = (now - new Date(post.created_at).getTime()) / 3_600_000;
 
-  const engagement = likes * 3 + comments * 5 + saves * 4 + streams + BASE;
+  const engagement = likes * 3 + comments * 5 + saves * 4 + reposts * 6 + streams + BASE;
   const decayed    = engagement / Math.pow(hoursOld + 2, 1.2);
 
   const creatorBoost = 1.0 + (profile.creatorScores[post.user_id]  ?? 0) * 1.5;

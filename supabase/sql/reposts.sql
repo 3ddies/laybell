@@ -33,3 +33,34 @@ with check (auth.uid() = user_id);
 create policy "Users can delete own reposts"
 on public.reposts for delete
 using (auth.uid() = user_id);
+
+-- Denormalized public repost count on posts — a popularity signal folded into
+-- the feed relevancy score (lib/feedScorer.ts). Kept in sync by a SECURITY
+-- DEFINER trigger so it updates regardless of who reposted. Feeds select '*',
+-- so no client query change is needed.
+alter table public.posts
+  add column if not exists repost_count integer not null default 0;
+
+update public.posts p
+set repost_count = (select count(*) from public.reposts r where r.post_id = p.id);
+
+create or replace function public.sync_post_repost_count()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if (tg_op = 'INSERT') then
+    update public.posts set repost_count = repost_count + 1 where id = new.post_id;
+  elsif (tg_op = 'DELETE') then
+    update public.posts set repost_count = greatest(repost_count - 1, 0) where id = old.post_id;
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists trg_sync_post_repost_count on public.reposts;
+create trigger trg_sync_post_repost_count
+after insert or delete on public.reposts
+for each row execute function public.sync_post_repost_count();
