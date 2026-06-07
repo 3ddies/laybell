@@ -14,6 +14,7 @@ import { showPostOptions } from '../../lib/postActions';
 import { formatCount } from '../../lib/format';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import CommentsSheet from '../../components/CommentsSheet';
+import ReelProgressBar, { type ReelProgressHandle } from '../../components/ReelProgressBar';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import {
@@ -42,11 +43,26 @@ export default function ReelScreen() {
   const [paused, setPaused] = useState(false);
   const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string } | null>(null);
   const videoRefs = useRef<Record<string, any>>({});
+  const progressRef = useRef<ReelProgressHandle>(null);
+  const durationRef = useRef(0);              // ms — visible video's duration
+  const visibleIdRef = useRef<string | null>(seed?.id ?? null);
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
-    if (viewableItems[0]?.item) { setVisibleId(viewableItems[0].item.id); setPaused(false); }
+    const v = viewableItems[0]?.item;
+    if (v) {
+      setVisibleId(v.id);
+      visibleIdRef.current = v.id;
+      setPaused(false);
+      durationRef.current = 0;
+      progressRef.current?.set(0);
+    }
   }).current;
+
+  function handleSeek(ratio: number) {
+    const v = videoRefs.current[visibleIdRef.current ?? ''];
+    if (v && durationRef.current > 0) v.setPositionAsync(ratio * durationRef.current);
+  }
 
   useEffect(() => { stop(); setup(); }, [id]);
 
@@ -144,10 +160,17 @@ export default function ReelScreen() {
             isLooping={item.trim_end == null}
             shouldPlay={visibleId === item.id && !paused}
             useNativeControls={false}
+            progressUpdateIntervalMillis={250}
             onLoad={() => { if (item.trim_start != null) videoRefs.current[item.id]?.setPositionAsync(item.trim_start * 1000); }}
             onPlaybackStatusUpdate={(st: any) => {
-              if (st.isLoaded && item.trim_end != null && st.positionMillis >= item.trim_end * 1000) {
+              if (!st.isLoaded) return;
+              if (item.trim_end != null && st.positionMillis >= item.trim_end * 1000) {
                 videoRefs.current[item.id]?.setPositionAsync((item.trim_start ?? 0) * 1000);
+              }
+              // Feed the scrubber for the on-screen video.
+              if (item.id === visibleIdRef.current && st.durationMillis) {
+                durationRef.current = st.durationMillis;
+                progressRef.current?.set(st.positionMillis / st.durationMillis);
               }
             }}
           />
@@ -164,7 +187,7 @@ export default function ReelScreen() {
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.bottomFade} pointerEvents="none" />
 
         {/* Right action rail */}
-        <View style={[styles.rail, { bottom: insets.bottom + 90 }]}>
+        <View style={[styles.rail, { bottom: insets.bottom + 108 }]}>
           <TouchableOpacity style={styles.railBtn} onPress={() => toggleLike(item)}>
             <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={32} color={isLiked ? COLORS.like : '#fff'} />
             {likeCount > 0 && <Text style={styles.railText}>{formatCount(likeCount)}</Text>}
@@ -193,7 +216,7 @@ export default function ReelScreen() {
         </View>
 
         {/* Author + caption */}
-        <View style={[styles.meta, { bottom: insets.bottom + 24 }]}>
+        <View style={[styles.meta, { bottom: insets.bottom + 44 }]}>
           <TouchableOpacity style={styles.author} onPress={() => router.push(`/profile/${item.user_id}`)}>
             {item.profiles?.avatar_url ? (
               <Image source={{ uri: item.profiles.avatar_url }} style={styles.avatar} />
@@ -242,6 +265,13 @@ export default function ReelScreen() {
         <Ionicons name="chevron-back" size={28} color="#fff" />
       </TouchableOpacity>
 
+      {/* Scrubber — rewind/scrub the on-screen video (above the profile info) */}
+      {posts.length > 0 && (
+        <View style={[styles.progressWrap, { bottom: insets.bottom + 10 }]} pointerEvents="box-none">
+          <ReelProgressBar ref={progressRef} onSeek={handleSeek} />
+        </View>
+      )}
+
       <CommentsSheet
         visible={!!commentsFor}
         postId={commentsFor?.id ?? ''}
@@ -258,6 +288,7 @@ const styles = StyleSheet.create({
   empty: { color: COLORS.textSecondary, fontSize: 15 },
 
   back: { position: 'absolute', left: SPACING.sm, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  progressWrap: { position: 'absolute', left: SPACING.md, right: SPACING.md },
 
   pausedWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   bottomFade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 220 },
