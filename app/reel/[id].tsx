@@ -13,6 +13,7 @@ import { createNotification } from '../../lib/createNotification';
 import { showPostOptions } from '../../lib/postActions';
 import { formatCount } from '../../lib/format';
 import { aspectToNumber } from '../../lib/aspectRatio';
+import CommentsSheet from '../../components/CommentsSheet';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import {
@@ -39,6 +40,7 @@ export default function ReelScreen() {
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [visibleId, setVisibleId] = useState<string | null>(seed?.id ?? null);
   const [paused, setPaused] = useState(false);
+  const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string } | null>(null);
   const videoRefs = useRef<Record<string, any>>({});
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
@@ -167,7 +169,7 @@ export default function ReelScreen() {
             <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={32} color={isLiked ? COLORS.like : '#fff'} />
             {likeCount > 0 && <Text style={styles.railText}>{formatCount(likeCount)}</Text>}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.railBtn} onPress={() => router.push(`/post/${item.id}`)}>
+          <TouchableOpacity style={styles.railBtn} onPress={() => setCommentsFor({ id: item.id, ownerId: item.user_id })}>
             <Ionicons name="chatbubble-outline" size={30} color="#fff" />
             {commentCount > 0 && <Text style={styles.railText}>{formatCount(commentCount)}</Text>}
           </TouchableOpacity>
@@ -239,6 +241,13 @@ export default function ReelScreen() {
       <TouchableOpacity style={[styles.back, { top: insets.top + 8 }]} onPress={() => router.back()}>
         <Ionicons name="chevron-back" size={28} color="#fff" />
       </TouchableOpacity>
+
+      <CommentsSheet
+        visible={!!commentsFor}
+        postId={commentsFor?.id ?? ''}
+        ownerId={commentsFor?.ownerId}
+        onClose={() => setCommentsFor(null)}
+      />
     </View>
   );
 }

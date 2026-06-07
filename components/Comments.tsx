@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl, Image } from 'react-native';
 import { useCallback, useEffect, useRef, useState, ReactElement } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,12 +41,12 @@ export default function Comments({
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     setUserId(user?.id ?? null);
-    if (user) supabase.from('profiles').select('username, display_name').eq('id', user.id).single()
+    if (user) supabase.from('profiles').select('username, display_name, avatar_url').eq('id', user.id).single()
       .then(({ data }) => setUserProfile(data));
 
     const { data: comments } = await supabase
       .from('comments')
-      .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name)')
+      .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name, avatar_url)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
     if (!comments) return;
@@ -83,10 +83,17 @@ export default function Comments({
   async function toggleLike(commentId: string) {
     if (!userId) return;
     const liked = likedByMe.has(commentId);
+    // Optimistic toggle.
     setLikedByMe(prev => { const n = new Set(prev); liked ? n.delete(commentId) : n.add(commentId); return n; });
     setLikes(prev => ({ ...prev, [commentId]: Math.max(0, (prev[commentId] || 0) + (liked ? -1 : 1)) }));
-    if (liked) await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', userId);
-    else await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: userId });
+    const { error } = liked
+      ? await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', userId)
+      : await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: userId });
+    if (error) {
+      // Revert on failure (e.g. the comment_likes migration hasn't been applied).
+      setLikedByMe(prev => { const n = new Set(prev); liked ? n.add(commentId) : n.delete(commentId); return n; });
+      setLikes(prev => ({ ...prev, [commentId]: Math.max(0, (prev[commentId] || 0) + (liked ? 1 : -1)) }));
+    }
   }
 
   async function submit() {
@@ -114,9 +121,13 @@ export default function Comments({
 
   const Row = ({ item, isReply }: { item: Row; isReply?: boolean }) => (
     <View style={[styles.row, isReply && styles.replyRow]}>
-      <LinearGradient colors={GRADIENTS.primary} style={[styles.avatar, isReply && styles.avatarSm]}>
-        <Text style={styles.avatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
-      </LinearGradient>
+      {item.profiles?.avatar_url ? (
+        <Image source={{ uri: item.profiles.avatar_url }} style={[styles.avatar, isReply && styles.avatarSm]} />
+      ) : (
+        <LinearGradient colors={GRADIENTS.primary} style={[styles.avatar, isReply && styles.avatarSm]}>
+          <Text style={styles.avatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
+        </LinearGradient>
+      )}
       <View style={styles.body}>
         <TouchableOpacity activeOpacity={1} onLongPress={() => remove(item.id, item.user_id)}>
           <View style={styles.head}>
