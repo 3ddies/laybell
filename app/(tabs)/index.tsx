@@ -61,6 +61,7 @@ type PostCardProps = {
   onProfile: (item: Post) => void;
   onOptions: (item: Post) => void;
   onOpenPost: (item: Post) => void;
+  onOpenReel: (item: Post) => void;
   onPlayTrack: (item: Post) => void;
   onExpandTrack: (item: Post) => void;
   onToggleMuted: () => void;
@@ -75,7 +76,7 @@ type PostCardProps = {
 // unchanged posts, so React.memo's shallow compare skips them.
 const PostCard = memo(function PostCard({
   item, isOwn, isLiked, isSaved, audioActive, videoMuted, shouldPlayVideo,
-  onProfile, onOptions, onOpenPost, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare,
+  onProfile, onOptions, onOpenPost, onOpenReel, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare,
 }: PostCardProps) {
   const likeCount = item.likes[0]?.count || 0;
   const commentCount = item.comments[0]?.count || 0;
@@ -139,7 +140,7 @@ const PostCard = memo(function PostCard({
 
       {item.type === 'video' && item.media_url && (
         <View>
-          <TouchableOpacity activeOpacity={1} onPress={() => onOpenPost(item)}>
+          <TouchableOpacity activeOpacity={1} onPress={() => onOpenReel(item)}>
             <Video
               source={{ uri: item.media_url }}
               style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
@@ -437,6 +438,7 @@ export default function HomeScreen() {
 
   const onProfile = useCallback((item: Post) => live.current.router.push(`/profile/${item.user_id}`), []);
   const onOpenPost = useCallback((item: Post) => live.current.router.push(`/post/${item.id}`), []);
+  const onOpenReel = useCallback((item: Post) => live.current.router.push(`/reel/${item.id}`), []);
 
   const onPlayTrack = useCallback((item: Post) => {
     live.current.play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url });
@@ -468,6 +470,7 @@ export default function HomeScreen() {
       onProfile={onProfile}
       onOptions={onOptions}
       onOpenPost={onOpenPost}
+      onOpenReel={onOpenReel}
       onPlayTrack={onPlayTrack}
       onExpandTrack={onExpandTrack}
       onToggleMuted={onToggleMuted}
@@ -476,7 +479,7 @@ export default function HomeScreen() {
       onShare={onShare}
     />
   ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, canPlayVideo, visibleVideoId,
-      onProfile, onOptions, onOpenPost, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare]);
+      onProfile, onOptions, onOpenPost, onOpenReel, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare]);
 
   if (loading) {
     return (

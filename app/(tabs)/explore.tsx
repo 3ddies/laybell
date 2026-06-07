@@ -368,7 +368,7 @@ export default function ExploreScreen() {
             ) : (
               <TouchableOpacity
                 style={styles.postRow}
-                onPress={() => router.push(`/post/${item.id}`)}
+                onPress={() => router.push(item.type === 'video' ? `/reel/${item.id}` : `/post/${item.id}`)}
                 onLongPress={() => showPostOptions({
                   postId: item.id,
                   isOwn: item.user_id === currentUserId,

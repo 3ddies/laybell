@@ -17,6 +17,7 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
 import { GENRES } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
+import { File } from 'expo-file-system';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
 import ErrorBoundary from '../../components/ErrorBoundary';
@@ -32,6 +33,9 @@ const PREVIEW_MAX_H = Math.round(SCREEN_H * 0.46);
 const VIDEO_MAX_SEC  = 90;       // 1.5 min
 const MUSIC_MAX_SEC  = 6 * 60;   // music tracks
 const SPOKEN_MAX_SEC = 35 * 60;  // podcasts / audiobooks
+
+// File-size cap — guards against short-but-huge (e.g. 4K) uploads.
+const MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 
 function fmtMins(sec: number) {
   return sec % 60 === 0 ? `${sec / 60} min` : `${Math.round(sec / 60)} min`;
@@ -116,6 +120,15 @@ export default function PostScreen() {
       Alert.alert('Video too long', `Videos must be ${VIDEO_MAX_SEC} seconds or shorter.`);
       return;
     }
+    if (m.type === 'video') {
+      try {
+        const size = new File(m.uri).size ?? 0;
+        if (size > MAX_BYTES) {
+          Alert.alert('Video too large', 'Please choose a video under 100 MB.');
+          return;
+        }
+      } catch {}
+    }
     setMedia({ uri: m.uri, width: m.width, height: m.height, posterUri: m.posterUri });
     setThumbnailUri(null);
     if (m.type === 'video') {
@@ -143,6 +156,10 @@ export default function PostScreen() {
     // enforced on Share, since the category is chosen on the next step.
     if (dur != null && dur > SPOKEN_MAX_SEC) {
       Alert.alert('Audio too long', `Audio must be ${fmtMins(SPOKEN_MAX_SEC)} or shorter.`);
+      return;
+    }
+    if (asset.size != null && asset.size > MAX_BYTES) {
+      Alert.alert('Audio too large', 'Please choose an audio file under 100 MB.');
       return;
     }
     setAudioFile(asset);

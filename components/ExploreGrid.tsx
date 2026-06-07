@@ -69,6 +69,9 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
         })
       : undefined;
 
+  // Videos open the full-screen reel feed; other media opens the post detail.
+  const openMedia = (p: GridPost) => router.push(p.type === 'video' ? `/reel/${p.id}` : `/post/${p.id}`);
+
   // Videos that currently overlap the viewport (these play). Off-screen videos
   // stay mounted but paused, so scrolling back resumes smoothly.
   const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
@@ -176,7 +179,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
           key={cell.key}
           style={[styles.mediaCard, { height: cell.height }]}
           activeOpacity={0.9}
-          onPress={() => router.push(`/post/${p.id}`)}
+          onPress={() => openMedia(p)}
         >
           {p.thumbnail_url ? (
             <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
@@ -200,7 +203,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
           key={cell.key}
           style={[styles.mediaCard, { height: cell.height }]}
           activeOpacity={0.9}
-          onPress={() => router.push(`/post/${p.id}`)}
+          onPress={() => openMedia(p)}
           onLayout={e => { videoPos.current[p.id] = { y: e.nativeEvent.layout.y, h: cell.height }; recomputeActive(); }}
         >
           {mounted ? (
@@ -255,7 +258,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
         key={cell.key}
         style={[styles.mediaCard, { height: cell.height }]}
         activeOpacity={0.9}
-        onPress={() => router.push(`/post/${p.id}`)}
+        onPress={() => openMedia(p)}
       >
         <Image source={{ uri: p.media_url }} style={styles.mediaImage} resizeMode="cover" />
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
@@ -339,7 +342,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
     }
     if (p.type === 'video') {
       return (
-        <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={() => router.push(`/post/${p.id}`)}>
+        <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={() => openMedia(p)}>
           {p.thumbnail_url ? (
             <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
           ) : (
@@ -352,7 +355,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
       );
     }
     return (
-      <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={() => router.push(`/post/${p.id}`)}>
+      <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={() => openMedia(p)}>
         <Image source={{ uri: p.media_url }} style={styles.mediaImage} resizeMode="cover" />
       </TouchableOpacity>
     );

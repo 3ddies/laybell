@@ -145,7 +145,7 @@ export default function ProfileScreen() {
                   Math.max(0, idx),
                 );
               } else {
-                router.push(`/post/${post.id}`);
+                router.push(post.type === 'video' ? `/reel/${post.id}` : `/post/${post.id}`);
               }
             }}
           >
