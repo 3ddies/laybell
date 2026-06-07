@@ -10,6 +10,7 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useAudio } from '../../contexts/AudioContext';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import VideoThumb from '../../components/VideoThumb';
 import { createNotification } from '../../lib/createNotification';
 
 type Profile = {
@@ -144,23 +145,21 @@ export default function PublicProfileScreen() {
               }
             }}
           >
-            {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
+            {post.type === 'video' ? (
               <>
-                <Image
-                  source={{ uri: post.type === 'image' ? post.media_url : post.type === 'video' ? post.thumbnail_url : post.cover_url }}
-                  style={styles.gridImage}
-                  resizeMode="cover"
-                />
-                {post.type === 'video' && (
-                  <View style={styles.gridPlayOverlay}>
-                    <Ionicons name="play" size={14} color={COLORS.text} />
-                  </View>
-                )}
-                {post.type === 'audio' && (
-                  <View style={styles.gridPlayOverlay}>
-                    <Ionicons name="musical-notes" size={13} color={COLORS.text} />
-                  </View>
-                )}
+                <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.gridImage} />
+                <View style={styles.gridPlayOverlay}>
+                  <Ionicons name="play" size={14} color={COLORS.text} />
+                </View>
+              </>
+            ) : post.type === 'image' ? (
+              <Image source={{ uri: post.media_url }} style={styles.gridImage} resizeMode="cover" />
+            ) : post.type === 'audio' && post.cover_url ? (
+              <>
+                <Image source={{ uri: post.cover_url }} style={styles.gridImage} resizeMode="cover" />
+                <View style={styles.gridPlayOverlay}>
+                  <Ionicons name="musical-notes" size={13} color={COLORS.text} />
+                </View>
               </>
             ) : (
               <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>

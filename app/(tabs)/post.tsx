@@ -36,7 +36,7 @@ const MUSIC_MAX_SEC  = 6 * 60;   // music tracks
 const SPOKEN_MAX_SEC = 35 * 60;  // podcasts / audiobooks
 
 // File-size caps — guard against huge uploads.
-const VIDEO_MAX_BYTES = 150 * 1024 * 1024; // 150 MB
+const VIDEO_MAX_BYTES = 200 * 1024 * 1024; // 200 MB
 const AUDIO_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 
 function fmtMins(sec: number) {
@@ -77,6 +77,8 @@ export default function PostScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [recSecs, setRecSecs] = useState(0);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const previewSoundRef = useRef<Audio.Sound | null>(null);
 
   // details
   const [caption, setCaption] = useState('');
@@ -117,6 +119,7 @@ export default function PostScreen() {
 
   function resetAll() {
     if (recordingRef.current) { recordingRef.current.stopAndUnloadAsync().catch(() => {}); recordingRef.current = null; }
+    unloadPreview();
     setIsRecording(false); setRecSecs(0);
     setMedia(null); setThumbnailUri(null); cropRef.current = null;
     setVideoDuration(0); setTrimStart(0);
@@ -143,7 +146,7 @@ export default function PostScreen() {
       try {
         const size = new File(m.uri).size ?? 0;
         if (size > VIDEO_MAX_BYTES) {
-          Alert.alert('Video too large', 'Please choose a video under 150 MB.');
+          Alert.alert('Video too large', 'Please choose a video under 200 MB.');
           return;
         }
       } catch {}
@@ -162,6 +165,7 @@ export default function PostScreen() {
   }
 
   async function startRecording() {
+    await unloadPreview();
     try {
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
@@ -204,7 +208,35 @@ export default function PostScreen() {
     setAudioDuration(dur || null);
   }
 
+  async function unloadPreview() {
+    if (previewSoundRef.current) { await previewSoundRef.current.unloadAsync().catch(() => {}); previewSoundRef.current = null; }
+    setIsPreviewPlaying(false);
+  }
+
+  // Let the user hear the recorded/selected audio before posting.
+  async function togglePreview() {
+    if (!audioFile) return;
+    try {
+      if (previewSoundRef.current) {
+        const st: any = await previewSoundRef.current.getStatusAsync();
+        if (st.isLoaded && st.isPlaying) { await previewSoundRef.current.pauseAsync(); setIsPreviewPlaying(false); }
+        else { await previewSoundRef.current.playAsync(); setIsPreviewPlaying(true); }
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      const { sound } = await Audio.Sound.createAsync({ uri: audioFile.uri }, { shouldPlay: true });
+      previewSoundRef.current = sound;
+      setIsPreviewPlaying(true);
+      sound.setOnPlaybackStatusUpdate((s: any) => {
+        if (s.isLoaded && s.didJustFinish) { setIsPreviewPlaying(false); sound.setPositionAsync(0); }
+      });
+    } catch (e: any) {
+      Alert.alert('Playback failed', e?.message ?? 'Could not play this audio.');
+    }
+  }
+
   async function pickAudio() {
+    await unloadPreview();
     const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
@@ -349,6 +381,7 @@ export default function PostScreen() {
         <View style={styles.trimBody}>
           <VideoTrimmer
             uri={media.uri}
+            posterUri={media.posterUri}
             duration={videoDuration}
             windowSec={VIDEO_MAX_SEC}
             frameW={frameW}
@@ -511,11 +544,15 @@ export default function PostScreen() {
             </View>
           ) : audioFile ? (
             <View style={styles.audioSelected}>
-              <LinearGradient colors={GRADIENTS.primary} style={styles.audioPickIcon}>
-                <Ionicons name="checkmark" size={30} color={COLORS.text} />
-              </LinearGradient>
+              <TouchableOpacity onPress={togglePreview} activeOpacity={0.8}>
+                <LinearGradient colors={GRADIENTS.primary} style={styles.audioPickIcon}>
+                  <Ionicons name={isPreviewPlaying ? 'pause' : 'play'} size={30} color={COLORS.text} />
+                </LinearGradient>
+              </TouchableOpacity>
               <Text style={styles.audioPickTitle} numberOfLines={1}>{audioFile.name || 'Audio selected'}</Text>
-              {audioDuration != null && <Text style={styles.audioPickSub}>{fmtClock(audioDuration)}</Text>}
+              <Text style={styles.audioPickSub}>
+                {audioDuration != null ? `${fmtClock(audioDuration)} · ` : ''}{isPreviewPlaying ? 'Playing…' : 'Tap ▶ to preview'}
+              </Text>
               <View style={styles.audioSelBtns}>
                 <TouchableOpacity style={styles.audioSelBtn} onPress={pickAudio}>
                   <Ionicons name="cloud-upload-outline" size={16} color={COLORS.primary} />
