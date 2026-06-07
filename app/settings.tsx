@@ -107,6 +107,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/edit-profile'),
     },
     {
+      icon: 'repeat-outline',
+      label: 'Reposts',
+      subtitle: 'See who reposted your posts',
+      onPress: () => router.push('/reposts'),
+    },
+    {
       icon: 'lock-closed-outline',
       label: 'Private Posts',
       subtitle: 'Posts only your followers can see',
