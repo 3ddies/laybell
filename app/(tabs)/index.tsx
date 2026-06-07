@@ -143,7 +143,7 @@ const PostCard = memo(function PostCard({
             <Video
               source={{ uri: item.media_url }}
               style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
-              resizeMode={ResizeMode.CONTAIN}
+              resizeMode={ResizeMode.COVER}
               isLooping
               isMuted={videoMuted}
               shouldPlay={shouldPlayVideo}

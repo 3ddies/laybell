@@ -112,7 +112,7 @@ const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper
         <Video
           source={{ uri }}
           style={{ width: frameW, height: frameH }}
-          resizeMode={ResizeMode.CONTAIN}
+          resizeMode={ResizeMode.COVER}
           isLooping
           shouldPlay
           isMuted

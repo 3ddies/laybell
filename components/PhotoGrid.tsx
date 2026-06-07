@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Dimensions, ActivityIndicator,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, ActivityIndicator,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,13 +12,9 @@ const NUM_COLS = 4;
 const GAP = 2;
 const SCREEN_W = Dimensions.get('window').width;
 const CELL = (SCREEN_W - GAP * (NUM_COLS - 1)) / NUM_COLS;
-const PAGE = 18;
+const PAGE = 60;
 
 export type PickedMedia = { uri: string; width: number; height: number; type: 'image' | 'video' };
-
-// A gallery item already resolved to a usable file:// URI (never ph://, which
-// RN's image pipeline can't load).
-type GalleryItem = { id: string; uri: string; width: number; height: number; duration: number };
 
 function formatDur(s: number) {
   const m = Math.floor(s / 60);
@@ -25,31 +22,23 @@ function formatDur(s: number) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-// Device camera-roll grid (like Instagram's picker). Each asset is resolved to a
-// local file:// URI before display, so iOS `ph://` URIs never reach <Image>.
+// Device camera-roll grid (Instagram-style). Thumbnails render the asset's ph://
+// URI directly via expo-image (fast, shows poster frames for videos — no full
+// export). The chosen asset is resolved to a file:// path only on tap, for the
+// cropper / manipulator / upload (which can't read ph://).
 export default function PhotoGrid({ mediaType, onPick }: {
   mediaType: 'image' | 'video';
   onPick: (m: PickedMedia) => void;
 }) {
   const [permission, requestPermission] = MediaLibrary.usePermissions();
-  const [items, setItems] = useState<GalleryItem[]>([]);
+  const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
   const [endCursor, setEndCursor] = useState<string | undefined>(undefined);
   const [hasNext, setHasNext] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
   const loadingRef = useRef(false);
 
   const mlType = mediaType === 'video' ? MediaLibrary.MediaType.video : MediaLibrary.MediaType.photo;
-
-  const resolveAsset = useCallback(async (a: MediaLibrary.Asset): Promise<GalleryItem | null> => {
-    try {
-      const info = await MediaLibrary.getAssetInfoAsync(a);
-      const uri = info.localUri || a.uri;
-      if (!uri || uri.startsWith('ph://')) return null; // unusable for <Image>/manipulate
-      return { id: a.id, uri, width: a.width, height: a.height, duration: a.duration };
-    } catch {
-      return null;
-    }
-  }, []);
 
   const loadPage = useCallback(async (after?: string) => {
     if (loadingRef.current) return;
@@ -62,8 +51,7 @@ export default function PhotoGrid({ mediaType, onPick }: {
         first: PAGE,
         after,
       });
-      const resolved = (await Promise.all(page.assets.map(resolveAsset))).filter(Boolean) as GalleryItem[];
-      setItems(prev => (after ? [...prev, ...resolved] : resolved));
+      setAssets(prev => (after ? [...prev, ...page.assets] : page.assets));
       setEndCursor(page.endCursor);
       setHasNext(page.hasNextPage);
     } catch {
@@ -71,7 +59,7 @@ export default function PhotoGrid({ mediaType, onPick }: {
     }
     loadingRef.current = false;
     setLoading(false);
-  }, [mlType, resolveAsset]);
+  }, [mlType]);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,11 +67,25 @@ export default function PhotoGrid({ mediaType, onPick }: {
       let p = permission;
       if (!p || !p.granted) p = await requestPermission();
       if (cancelled || !p?.granted) return;
-      setItems([]); setEndCursor(undefined); setHasNext(true);
+      setAssets([]); setEndCursor(undefined); setHasNext(true);
       loadPage(undefined);
     })();
     return () => { cancelled = true; };
   }, [mediaType]);
+
+  async function selectAsset(asset: MediaLibrary.Asset) {
+    if (resolvingId) return;
+    setResolvingId(asset.id);
+    try {
+      const info = await MediaLibrary.getAssetInfoAsync(asset);
+      const uri = info.localUri || asset.uri;
+      onPick({ uri, width: asset.width, height: asset.height, type: mediaType });
+    } catch {
+      // ignore — user can tap another
+    } finally {
+      setResolvingId(null);
+    }
+  }
 
   async function openCamera() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -110,7 +112,7 @@ export default function PhotoGrid({ mediaType, onPick }: {
     );
   }
 
-  const data: any[] = [{ id: '__camera__' }, ...items];
+  const data: any[] = [{ id: '__camera__' }, ...assets];
 
   return (
     <FlatList
@@ -131,14 +133,19 @@ export default function PhotoGrid({ mediaType, onPick }: {
           );
         }
         return (
-          <TouchableOpacity
-            style={styles.cell}
-            activeOpacity={0.85}
-            onPress={() => onPick({ uri: item.uri, width: item.width, height: item.height, type: mediaType })}
-          >
-            <Image source={{ uri: item.uri }} style={styles.thumb} />
+          <TouchableOpacity style={styles.cell} activeOpacity={0.85} onPress={() => selectAsset(item)}>
+            <ExpoImage
+              source={{ uri: item.uri }}
+              style={styles.thumb}
+              contentFit="cover"
+              recyclingKey={item.id}
+              transition={120}
+            />
             {mediaType === 'video' && item.duration > 0 && (
               <Text style={styles.dur}>{formatDur(item.duration)}</Text>
+            )}
+            {resolvingId === item.id && (
+              <View style={styles.resolving}><ActivityIndicator color={COLORS.text} /></View>
             )}
           </TouchableOpacity>
         );
@@ -154,6 +161,10 @@ const styles = StyleSheet.create({
   dur: {
     position: 'absolute', bottom: 4, right: 4, color: '#fff', fontSize: 11, fontWeight: '700',
     textShadowColor: '#000', textShadowRadius: 3,
+  },
+  resolving: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)',
   },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.lg, gap: SPACING.md },
   permText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },

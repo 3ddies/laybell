@@ -95,7 +95,9 @@ export default function TabLayout() {
       >
         <MaterialTopTabs.Screen name="index" />
         <MaterialTopTabs.Screen name="explore" />
-        <MaterialTopTabs.Screen name="post" />
+        {/* Create screen: swipe off so dragging/pinching the cropper never
+            swipes to an adjacent tab. */}
+        <MaterialTopTabs.Screen name="post" options={{ swipeEnabled: false }} />
         <MaterialTopTabs.Screen name="music" />
         {/* Profile owns its horizontal swipes via its own inner pager (incl. a
             "go to Music" dismiss page), so the outer swipe stays off here. */}
