@@ -140,6 +140,8 @@ export default function ReelScreen() {
     const isSaved = saved.has(item.id);
     const likeCount = item.likes?.[0]?.count || 0;
     const commentCount = item.comments?.[0]?.count || 0;
+    const saveCount = item.save_count || 0;
+    const shareCount = item.share_count || 0;
     // Landscape/square videos show in full (letterboxed) so nothing is cut;
     // portrait videos fill the screen edge-to-edge.
     const landscape = aspectToNumber(item.aspect_ratio, 16 / 9) >= 1;
@@ -186,9 +188,11 @@ export default function ReelScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.railBtn} onPress={() => toggleSave(item)}>
             <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={28} color={isSaved ? COLORS.primary : '#fff'} />
+            {saveCount > 0 && <Text style={styles.railText}>{formatCount(saveCount)}</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.railBtn} onPress={() => share(item)}>
             <Ionicons name="share-social-outline" size={28} color="#fff" />
+            {shareCount > 0 && <Text style={styles.railText}>{formatCount(shareCount)}</Text>}
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.railBtn}

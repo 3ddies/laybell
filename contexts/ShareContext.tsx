@@ -258,9 +258,17 @@ function ShareSheet({ visible, payload, onClose }: {
       const { error } = await supabase.from('messages').insert({ sender_id: uid, receiver_id: rid, body: link });
       if (!error) createNotification({ userId: rid, actorId: uid, type: 'message' });
     }));
+    bumpShare();
     setSending(false);
     setSent(true);
     setTimeout(() => dismiss(), 750);
+  }
+
+  // Bump the post's public share counter (no-op if not migrated). supabase
+  // builders are lazy, so .then() is needed to actually fire the request.
+  function bumpShare() {
+    const id = payload?.postId;
+    if (id) supabase.rpc('increment_share_count', { p_post_id: id }).then(() => {}, () => {});
   }
 
   function nativeShare(message: string, link: string) {
@@ -272,6 +280,7 @@ function ShareSheet({ visible, payload, onClose }: {
   async function openApp(app: ExternalApp) {
     if (!payload) return;
     const { message, link, title } = buildShareText(payload);
+    bumpShare();
     if (app.native || !app.urls) { nativeShare(message, link); return; }
     // Try the app scheme, then the web fallback, then the OS sheet.
     for (const url of app.urls({ message, link, title })) {
