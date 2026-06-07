@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
-import ElasticPageView from '../components/ElasticPageView';
+import ElasticSwipeView from '../components/ElasticSwipeView';
 
 type Notification = {
   id: string; type: 'like' | 'comment' | 'follow' | 'message';
@@ -84,7 +84,7 @@ export default function NotificationsScreen() {
   }
 
   return (
-    <ElasticPageView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
@@ -96,6 +96,7 @@ export default function NotificationsScreen() {
       <FlatList
         data={notifications}
         keyExtractor={item => item.id}
+        style={styles.list}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications(); }} tintColor={COLORS.primary} />
@@ -112,37 +113,39 @@ export default function NotificationsScreen() {
         renderItem={({ item }) => {
           const icon = notificationIcon(item.type);
           return (
-            <TouchableOpacity
-              style={[styles.notifRow, !item.read && styles.notifUnread]}
-              onPress={() => handlePress(item)}
-            >
-              <View style={styles.avatarWrap}>
-                {item.actor?.avatar_url ? (
-                  <Image source={{ uri: item.actor.avatar_url }} style={styles.avatar} />
-                ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
-                    <Text style={styles.avatarText}>{item.actor?.display_name?.charAt(0).toUpperCase()}</Text>
-                  </LinearGradient>
-                )}
-                <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
-                  <Ionicons name={icon.name} size={10} color={COLORS.text} />
+            <ElasticSwipeView>
+              <TouchableOpacity
+                style={[styles.notifRow, !item.read && styles.notifUnread]}
+                onPress={() => handlePress(item)}
+              >
+                <View style={styles.avatarWrap}>
+                  {item.actor?.avatar_url ? (
+                    <Image source={{ uri: item.actor.avatar_url }} style={styles.avatar} />
+                  ) : (
+                    <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+                      <Text style={styles.avatarText}>{item.actor?.display_name?.charAt(0).toUpperCase()}</Text>
+                    </LinearGradient>
+                  )}
+                  <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
+                    <Ionicons name={icon.name} size={10} color={COLORS.text} />
+                  </View>
                 </View>
-              </View>
 
-              <View style={styles.notifContent}>
-                <Text style={styles.notifText} numberOfLines={2}>
-                  <Text style={styles.notifName}>{item.actor?.display_name ?? 'Someone'}</Text>
-                  {' '}{notificationText(item.type)}
-                </Text>
-                <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
-              </View>
+                <View style={styles.notifContent}>
+                  <Text style={styles.notifText} numberOfLines={2}>
+                    <Text style={styles.notifName}>{item.actor?.display_name ?? 'Someone'}</Text>
+                    {' '}{notificationText(item.type)}
+                  </Text>
+                  <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
+                </View>
 
-              {!item.read && <View style={styles.unreadDot} />}
-            </TouchableOpacity>
+                {!item.read && <View style={styles.unreadDot} />}
+              </TouchableOpacity>
+            </ElasticSwipeView>
           );
         }}
       />
-    </ElasticPageView>
+    </View>
   );
 }
 
@@ -156,7 +159,10 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: SPACING.sm },
   headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
-  listContent: { padding: SPACING.md, gap: SPACING.xs },
+  list: { flex: 1 },
+  // flexGrow so the scrollable content fills the screen even with few/no items —
+  // makes pull-to-refresh work when dragging anywhere, not just over a row.
+  listContent: { flexGrow: 1, padding: SPACING.md, gap: SPACING.xs },
   notifRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.md, paddingHorizontal: SPACING.sm, borderRadius: RADIUS.md, gap: SPACING.md },
   notifUnread: { backgroundColor: COLORS.primary + '0D' },
   avatarWrap: { position: 'relative', width: 50, height: 50 },

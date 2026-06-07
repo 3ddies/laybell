@@ -13,7 +13,6 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
-import ElasticPageView from '../../components/ElasticPageView';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GENRES, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
 import {
@@ -677,10 +676,10 @@ export default function MusicScreen() {
 
       {/* Saved songs */}
       {activeView === 'saved' && (
-        <ElasticPageView style={{ flex: 1 }}>
         <FlatList
           data={savedTracks}
           keyExtractor={item => item.id}
+          style={styles.list}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl
@@ -727,15 +726,14 @@ export default function MusicScreen() {
             />
           )}
         />
-        </ElasticPageView>
       )}
 
       {/* Liked songs */}
       {activeView === 'liked' && (
-        <ElasticPageView style={{ flex: 1 }}>
         <FlatList
           data={likedTracks}
           keyExtractor={item => item.post_id}
+          style={styles.list}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl
@@ -782,7 +780,6 @@ export default function MusicScreen() {
             />
           )}
         />
-        </ElasticPageView>
       )}
 
       {/* New playlist modal */}
@@ -854,7 +851,10 @@ const styles = StyleSheet.create({
   toggleText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500' },
   toggleTextActive: { color: COLORS.text, fontWeight: '700' },
 
-  listContent: { padding: SPACING.md, gap: SPACING.sm },
+  list: { flex: 1 },
+  // flexGrow so short/empty lists still fill the screen — lets pull-to-refresh
+  // register when swiping anywhere, not only over a track row.
+  listContent: { flexGrow: 1, padding: SPACING.md, gap: SPACING.sm },
 
   playlistRow: {
     flexDirection: 'row', alignItems: 'center',
