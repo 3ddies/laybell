@@ -16,6 +16,7 @@ import { formatCount } from '../../lib/format';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
+import FollowButton from '../../components/FollowButton';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import {
@@ -209,18 +210,21 @@ export default function ReelScreen() {
 
         {/* Author + caption */}
         <View style={[styles.meta, { bottom: insets.bottom + 24 }]}>
-          <TouchableOpacity style={styles.author} onPress={() => router.push(`/profile/${item.user_id}`)}>
-            {item.profiles?.avatar_url ? (
-              <Image source={{ uri: item.profiles.avatar_url }} style={styles.avatar} />
-            ) : (
-              <LinearGradient colors={['#E8401C', '#F26522']} style={styles.avatar}>
-                <Text style={styles.avatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
-              </LinearGradient>
-            )}
-            <Text style={styles.authorName}>@{item.profiles?.username}</Text>
-            <Text style={styles.dot}>·</Text>
-            <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
-          </TouchableOpacity>
+          <View style={styles.authorRow}>
+            <TouchableOpacity style={styles.author} onPress={() => router.push(`/profile/${item.user_id}`)}>
+              {item.profiles?.avatar_url ? (
+                <Image source={{ uri: item.profiles.avatar_url }} style={styles.avatar} />
+              ) : (
+                <LinearGradient colors={['#E8401C', '#F26522']} style={styles.avatar}>
+                  <Text style={styles.avatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
+                </LinearGradient>
+              )}
+              <Text style={styles.authorName} numberOfLines={1}>@{item.profiles?.username}</Text>
+              <Text style={styles.dot}>·</Text>
+              <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
+            </TouchableOpacity>
+            <FollowButton userId={item.user_id} />
+          </View>
           {!!item.caption && <Text style={styles.caption} numberOfLines={2}>{item.caption}</Text>}
         </View>
       </ElasticSwipeView>
@@ -282,10 +286,11 @@ const styles = StyleSheet.create({
   railText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
   meta: { position: 'absolute', left: SPACING.md, right: 80, gap: SPACING.xs },
-  author: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
+  authorRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  author: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
   avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  authorName: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  authorName: { flexShrink: 1, color: '#fff', fontSize: 15, fontWeight: '700' },
   dot: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
   time: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
   caption: { color: '#fff', fontSize: 14, lineHeight: 19 },

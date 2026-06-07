@@ -19,6 +19,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useShare } from '../../contexts/ShareContext';
+import FollowButton from '../../components/FollowButton';
 import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
 
@@ -187,6 +188,7 @@ export default function PostDetailScreen() {
                 <Text style={styles.displayName}>{post.profiles?.display_name}</Text>
                 <Text style={styles.username}>@{post.profiles?.username} · {timeAgo(post.created_at)}</Text>
               </View>
+              <FollowButton userId={post.user_id} />
               <TouchableOpacity
                 style={styles.typeTag}
                 onPress={() => showOptions({
