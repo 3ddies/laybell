@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, ReactElement } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { useProfile } from '../contexts/ProfileContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
 import { createNotification } from '../lib/createNotification';
@@ -28,6 +29,7 @@ export default function Comments({
   onRefresh?: () => void | Promise<void>;
 }) {
   const listRef = useRef<FlatList>(null);
+  const { profile: myProfile } = useProfile();
   const [userId, setUserId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [rows, setRows] = useState<Row[]>([]);
@@ -106,7 +108,7 @@ export default function Comments({
     const { data, error } = await supabase
       .from('comments').insert({ user_id: userId, post_id: postId, body, parent_id }).select().single();
     if (!error && data) {
-      setRows(prev => [...prev, { ...(data as any), profiles: userProfile }]);
+      setRows(prev => [...prev, { ...(data as any), profiles: myProfile ?? userProfile }]);
       if (!parent_id) setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
       if (ownerId && ownerId !== userId) createNotification({ userId: ownerId, actorId: userId, type: 'comment', postId });
     }

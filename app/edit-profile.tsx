@@ -8,10 +8,12 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { useProfile } from '../contexts/ProfileContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const { update } = useProfile();
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -50,7 +52,10 @@ export default function EditProfileScreen() {
 
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
     const { error: updateError } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', userId);
-    if (!updateError) setAvatarUrl(publicUrl);
+    if (!updateError) {
+      setAvatarUrl(publicUrl);
+      update({ avatar_url: publicUrl }); // propagate to every screen showing the avatar
+    }
     setUploadingPhoto(false);
   }
 
@@ -58,11 +63,13 @@ export default function EditProfileScreen() {
     if (!displayName.trim() || !username.trim()) { Alert.alert('Error', 'Display name and username are required'); return; }
     if (!/^[a-zA-Z0-9_]+$/.test(username)) { Alert.alert('Error', 'Username can only contain letters, numbers, and underscores'); return; }
     setSaving(true);
-    const { error } = await supabase.from('profiles').update({ display_name: displayName.trim(), username: username.trim().toLowerCase(), bio: bio.trim() }).eq('id', userId);
+    const trimmed = { display_name: displayName.trim(), username: username.trim().toLowerCase(), bio: bio.trim() };
+    const { error } = await supabase.from('profiles').update(trimmed).eq('id', userId);
     if (error) {
       Alert.alert('Error', error.message.includes('unique') ? 'Username is already taken' : error.message);
       setSaving(false); return;
     }
+    update(trimmed); // keep the global profile in sync
     Alert.alert('Saved!', 'Your profile has been updated', [{ text: 'OK', onPress: () => router.back() }]);
     setSaving(false);
   }

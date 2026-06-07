@@ -7,6 +7,7 @@ import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
 import { AudioProvider } from '../contexts/AudioContext';
 import { PostOptionsProvider } from '../contexts/PostOptionsContext';
+import { ProfileProvider } from '../contexts/ProfileContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import { useNotifications } from '../hooks/useNotifications';
@@ -86,8 +87,10 @@ export default function RootLayout() {
 
   return (
     <AudioProvider>
-      <StatusBar style="light" />
-      <AppContent />
+      <ProfileProvider>
+        <StatusBar style="light" />
+        <AppContent />
+      </ProfileProvider>
     </AudioProvider>
   );
 }

@@ -1,12 +1,13 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Switch, Alert,
+  ScrollView, Switch, Alert, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useProfile } from '../contexts/ProfileContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 
 const APP_VERSION = '1.0.0';
@@ -75,16 +76,8 @@ function Section({ title, items }: { title: string; items: SectionItem[] }) {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const [profile, setProfile] = useState<any>(null);
+  const { profile } = useProfile();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      supabase.from('profiles').select('display_name, username, avatar_url').eq('id', user.id).single()
-        .then(({ data }) => { if (data) setProfile(data); });
-    });
-  }, []);
 
   async function handleLogout() {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
@@ -208,11 +201,15 @@ export default function SettingsScreen() {
         {/* Profile card */}
         {profile && (
           <TouchableOpacity style={styles.profileCard} onPress={() => router.push('/edit-profile')}>
-            <LinearGradient colors={GRADIENTS.primary} style={styles.profileAvatar}>
-              <Text style={styles.profileAvatarText}>
-                {profile.display_name?.charAt(0).toUpperCase()}
-              </Text>
-            </LinearGradient>
+            {profile.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={styles.profileAvatar} />
+            ) : (
+              <LinearGradient colors={GRADIENTS.primary} style={styles.profileAvatar}>
+                <Text style={styles.profileAvatarText}>
+                  {profile.display_name?.charAt(0).toUpperCase()}
+                </Text>
+              </LinearGradient>
+            )}
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>{profile.display_name}</Text>
               <Text style={styles.profileUsername}>@{profile.username}</Text>

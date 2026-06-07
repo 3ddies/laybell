@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
+import { useProfile } from '../../contexts/ProfileContext';
 import { isAudioPost } from '../../lib/genres';
 import VideoThumb from '../../components/VideoThumb';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
@@ -42,6 +43,7 @@ const TAB_KEYS = TABS.map(t => t.key);
 
 export default function ProfileScreen() {
   const { show: showOptions } = usePostOptions();
+  const { profile: liveProfile } = useProfile();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [loading, setLoading] = useState(true);
@@ -90,6 +92,9 @@ export default function ProfileScreen() {
   }
 
   const badgeGradient = getBadgeGradient(profile?.badge_tier ?? '');
+  // The current user's avatar comes from the global ProfileContext so it stays in
+  // sync after an edit; fall back to this screen's own fetch on first paint.
+  const avatarUrl = liveProfile?.avatar_url ?? profile?.avatar_url;
 
   function dataForTab(key: string) {
     switch (key) {
@@ -204,8 +209,8 @@ export default function ProfileScreen() {
       <LinearGradient colors={['#1C0A04', COLORS.background]} style={styles.banner}>
         <View style={styles.avatarWrap}>
           <LinearGradient colors={badgeGradient} style={styles.avatarRing}>
-            {profile?.avatar_url ? (
-              <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
             ) : (
               <LinearGradient colors={GRADIENTS.primary} style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarText}>{profile?.display_name?.charAt(0).toUpperCase()}</Text>
