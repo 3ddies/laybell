@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from '../contexts/AudioContext';
+import { usePostOptions } from '../contexts/PostOptionsContext';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { formatCount } from '../lib/format';
@@ -67,6 +68,7 @@ function Controls() {
 
 export default function NowPlaying() {
   const { currentTrack, expanded, collapse } = useAudio();
+  const { show: showOptions } = usePostOptions();
   const router = useRouter();
   const [render, setRender] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
@@ -184,7 +186,17 @@ export default function NowPlaying() {
               <Ionicons name="chevron-down" size={26} color={COLORS.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Now Playing</Text>
-            <View style={{ width: 40 }} />
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={() => showOptions({
+                postId: pid,
+                isOwn: ownerId === userId,
+                onEdit: () => { collapse(); router.push(`/edit-post/${pid}`); },
+                onDeleted: () => collapse(),
+              })}
+            >
+              <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.text} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -193,6 +205,7 @@ export default function NowPlaying() {
             postId={pid}
             ownerId={ownerId}
             contentPadding={SPACING.xl}
+            onNavigate={collapse}
             ListHeaderComponent={
               <>
                 <View style={styles.artWrap}>

@@ -3,6 +3,7 @@ import { Fragment, useCallback, useEffect, useRef, useState, ReactElement } from
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
@@ -15,7 +16,7 @@ type Row = {
 };
 
 export default function Comments({
-  postId, ownerId, ListHeaderComponent, style, contentPadding, onRefresh,
+  postId, ownerId, ListHeaderComponent, style, contentPadding, onRefresh, onNavigate,
 }: {
   postId: string;
   ownerId?: string | null;
@@ -28,9 +29,20 @@ export default function Comments({
   // When provided, enables pull-to-refresh: pulling reloads comments AND calls
   // this handler (so the host screen can refresh its own header data too).
   onRefresh?: () => void | Promise<void>;
+  // Called right before navigating away (tapping a commenter's avatar/name), so a
+  // host overlay/sheet can close itself first to reveal the pushed profile screen.
+  onNavigate?: () => void;
 }) {
   const listRef = useRef<FlatList>(null);
+  const router = useRouter();
   const { profile: myProfile } = useProfile();
+
+  // Open a commenter's profile. Closes the host sheet/overlay first (if any).
+  function goToProfile(uid?: string) {
+    if (!uid) return;
+    onNavigate?.();
+    router.push(`/profile/${uid}` as any);
+  }
   const [userId, setUserId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [rows, setRows] = useState<Row[]>([]);
@@ -129,23 +141,27 @@ export default function Comments({
   function renderRow(item: Row, isReply?: boolean) {
     return (
     <View style={[styles.row, isReply && styles.replyRow]}>
-      {item.profiles?.avatar_url ? (
-        <Image
-          source={{ uri: item.profiles.avatar_url }}
-          style={[styles.avatar, isReply && styles.avatarSm]}
-          contentFit="cover"
-          transition={0}
-          cachePolicy="memory-disk"
-        />
-      ) : (
-        <LinearGradient colors={GRADIENTS.primary} style={[styles.avatar, isReply && styles.avatarSm]}>
-          <Text style={styles.avatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
-        </LinearGradient>
-      )}
+      <TouchableOpacity onPress={() => goToProfile(item.user_id)} activeOpacity={0.7}>
+        {item.profiles?.avatar_url ? (
+          <Image
+            source={{ uri: item.profiles.avatar_url }}
+            style={[styles.avatar, isReply && styles.avatarSm]}
+            contentFit="cover"
+            transition={0}
+            cachePolicy="memory-disk"
+          />
+        ) : (
+          <LinearGradient colors={GRADIENTS.primary} style={[styles.avatar, isReply && styles.avatarSm]}>
+            <Text style={styles.avatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
+          </LinearGradient>
+        )}
+      </TouchableOpacity>
       <View style={styles.body}>
         <TouchableOpacity activeOpacity={1} onLongPress={() => remove(item.id, item.user_id)}>
           <View style={styles.head}>
-            <Text style={styles.name}>{item.profiles?.display_name}</Text>
+            <TouchableOpacity onPress={() => goToProfile(item.user_id)}>
+              <Text style={styles.name}>{item.profiles?.display_name}</Text>
+            </TouchableOpacity>
             <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
           </View>
           <Text style={styles.text}>{item.body}</Text>

@@ -144,7 +144,7 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
           </TouchableOpacity>
           <View style={styles.divider} />
           <View style={styles.body}>
-            {postId ? <Comments postId={postId} ownerId={ownerId} contentPadding={SPACING.md} /> : null}
+            {postId ? <Comments postId={postId} ownerId={ownerId} contentPadding={SPACING.md} onNavigate={dismiss} /> : null}
           </View>
         </Animated.View>
       </View>
