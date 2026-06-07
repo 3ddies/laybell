@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Dimensions, ActivityIndicator,
 } from 'react-native';
@@ -32,16 +32,19 @@ export default function PhotoGrid({ mediaType, onPick }: {
   const [hasNext, setHasNext] = useState(true);
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);
+  const loadingRef = useRef(false);
 
   const mlType = mediaType === 'video' ? MediaLibrary.MediaType.video : MediaLibrary.MediaType.photo;
 
   const loadPage = useCallback(async (after?: string) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const page = await MediaLibrary.getAssetsAsync({
         mediaType: [mlType],
         sortBy: [[MediaLibrary.SortBy.creationTime, false]],
-        first: 60,
+        first: 30,
         after,
       });
       setAssets(prev => (after ? [...prev, ...page.assets] : page.assets));
@@ -50,6 +53,7 @@ export default function PhotoGrid({ mediaType, onPick }: {
     } catch {
       // ignore — empty state will show
     }
+    loadingRef.current = false;
     setLoading(false);
   }, [mlType]);
 

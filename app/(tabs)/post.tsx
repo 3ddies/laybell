@@ -18,6 +18,7 @@ import { IMAGE_FORMATS, VIDEO_FORMATS, aspectToNumber, defaultFormatFor } from '
 import { GENRES } from '../../lib/genres';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
+import ErrorBoundary from '../../components/ErrorBoundary';
 
 type PostType = 'image' | 'video' | 'audio';
 type Step = 'pick' | 'details';
@@ -349,16 +350,18 @@ export default function PostScreen() {
           {/* Cropper preview */}
           <View style={styles.previewArea}>
             {media ? (
-              <MediaCropper
-                key={`${media.uri}-${format}`}
-                ref={cropperRef}
-                uri={media.uri}
-                mediaWidth={media.width}
-                mediaHeight={media.height}
-                frameW={frameW}
-                frameH={frameH}
-                type={postType as 'image' | 'video'}
-              />
+              <ErrorBoundary label="Couldn't open this photo">
+                <MediaCropper
+                  key={`${media.uri}-${format}`}
+                  ref={cropperRef}
+                  uri={media.uri}
+                  mediaWidth={media.width}
+                  mediaHeight={media.height}
+                  frameW={frameW}
+                  frameH={frameH}
+                  type={postType as 'image' | 'video'}
+                />
+              </ErrorBoundary>
             ) : (
               <View style={[styles.previewPlaceholder, { width: frameW, height: frameH }]}>
                 <Ionicons name={postType === 'video' ? 'videocam-outline' : 'image-outline'} size={40} color={COLORS.textTertiary} />
@@ -378,7 +381,9 @@ export default function PostScreen() {
             {postType === 'image' && <Text style={styles.recentsHint}>Drag / pinch to crop</Text>}
           </View>
           <View style={{ flex: 1 }}>
-            <PhotoGrid mediaType={postType as 'image' | 'video'} onPick={onPickMedia} />
+            <ErrorBoundary label="Couldn't open your photos">
+              <PhotoGrid mediaType={postType as 'image' | 'video'} onPick={onPickMedia} />
+            </ErrorBoundary>
           </View>
         </>
       )}
