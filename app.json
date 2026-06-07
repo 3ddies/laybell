@@ -40,6 +40,14 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Laybell to access your photos so you can choose one to post.",
+          "savePhotosPermission": false,
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
