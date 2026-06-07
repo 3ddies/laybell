@@ -7,12 +7,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../constants/theme';
 import { confirmDeletePost, reportPost } from '../lib/postActions';
+import { useProfile } from './ProfileContext';
+import { isReposted, addRepost, removeRepost } from '../lib/reposts';
 
 export type PostOptionsArgs = {
   postId: string;
   isOwn: boolean;
   onEdit?: () => void;
   onDeleted?: () => void;
+  onRepostChanged?: (reposted: boolean) => void;
 };
 
 type ContextValue = { show: (opts: PostOptionsArgs) => void };
@@ -49,10 +52,12 @@ function PostOptionsSheet({ visible, opts, onClose }: {
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { profile } = useProfile();
   const translateY = useRef(new Animated.Value(DISMISS_DIST)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
   const closeRef = useRef(onClose); closeRef.current = onClose;
   const optsRef = useRef(opts); optsRef.current = opts;
+  const [reposted, setReposted] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -62,6 +67,11 @@ function PostOptionsSheet({ visible, opts, onClose }: {
         Animated.timing(translateY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
         Animated.timing(backdrop, { toValue: 1, duration: 220, useNativeDriver: true }),
       ]).start();
+      // Resolve repost state for the (others') post so the label is correct.
+      setReposted(false);
+      if (opts && !opts.isOwn && profile?.id) {
+        isReposted(opts.postId, profile.id).then(setReposted);
+      }
     }
   }, [visible]);
 
@@ -70,6 +80,19 @@ function PostOptionsSheet({ visible, opts, onClose }: {
       Animated.timing(translateY, { toValue: DISMISS_DIST, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
       Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
     ]).start(() => closeRef.current());
+  }
+
+  function toggleRepost() {
+    const o = optsRef.current;
+    const uid = profile?.id;
+    if (!o || !uid) { dismiss(); return; }
+    const next = !reposted;
+    setReposted(next); // optimistic
+    (next ? addRepost(o.postId, uid) : removeRepost(o.postId, uid)).then((ok) => {
+      if (ok) o.onRepostChanged?.(next);
+      else setReposted(!next); // revert if the write failed (e.g. table not migrated)
+    });
+    dismiss();
   }
 
   const pan = useRef(PanResponder.create({
@@ -122,7 +145,15 @@ function PostOptionsSheet({ visible, opts, onClose }: {
     },
   ];
 
+  const repostOption = {
+    label: reposted ? 'Remove from reposts' : 'Repost',
+    icon: (reposted ? 'repeat' : 'repeat-outline') as any,
+    destructive: false,
+    onPress: toggleRepost,
+  };
+
   const otherOptions = [
+    repostOption,
     {
       label: 'Report post',
       icon: 'flag-outline' as const,

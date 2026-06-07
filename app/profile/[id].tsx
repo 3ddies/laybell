@@ -33,6 +33,7 @@ const TABS = [
   { key: 'posts', label: 'Posts' },
   { key: 'music', label: 'Music' },
   { key: 'videos', label: 'Videos' },
+  { key: 'reposts', label: 'Reposts' },
 ];
 const TAB_KEYS = TABS.map(t => t.key);
 
@@ -43,6 +44,7 @@ export default function PublicProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [posts, setPosts] = useState<any[]>([]);
+  const [reposts, setReposts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -61,7 +63,7 @@ export default function PublicProfileScreen() {
     const currentUser = user ?? null;
     if (currentUser) setCurrentUserId(currentUser.id);
 
-    const [profileRes, followersRes, followingRes, postsCountRes, postsRes, followCheckRes] = await Promise.all([
+    const [profileRes, followersRes, followingRes, postsCountRes, postsRes, followCheckRes, repostsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', id).single(),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', id),
@@ -70,6 +72,7 @@ export default function PublicProfileScreen() {
       currentUser
         ? supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', id).maybeSingle()
         : Promise.resolve({ data: null }),
+      supabase.from('reposts').select('created_at, posts(id, type, media_url, caption, is_public, thumbnail_url, cover_url, profiles!posts_user_id_fkey(display_name))').eq('user_id', id).order('created_at', { ascending: false }).limit(100),
     ]);
 
     if (profileRes.data) setProfile(profileRes.data);
@@ -80,6 +83,9 @@ export default function PublicProfileScreen() {
       const canSeePrivate = following || currentUser?.id === id;
       setPosts(postsRes.data.filter((p: any) => p.is_public || canSeePrivate));
     }
+    // Reposts are public — only surface the reposted posts that are themselves
+    // public (so a private post can't leak through someone else's repost).
+    setReposts((repostsRes.data ?? []).map((r: any) => r.posts).filter((p: any) => p && p.is_public));
     setIsFollowing(following);
     setLoading(false);
     setRefreshing(false);
@@ -113,6 +119,7 @@ export default function PublicProfileScreen() {
     switch (key) {
       case 'music': return posts.filter((p: any) => p.type === 'audio');
       case 'videos': return posts.filter((p: any) => p.type === 'video');
+      case 'reposts': return reposts;
       default: return posts; // posts
     }
   }
@@ -137,7 +144,7 @@ export default function PublicProfileScreen() {
                 const songs = data.filter((s: any) => s.type === 'audio');
                 const idx = songs.findIndex((s: any) => s.id === post.id);
                 playQueue(
-                  songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: profile?.display_name ?? '', cover: s.cover_url })),
+                  songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? profile?.display_name ?? '', cover: s.cover_url })),
                   Math.max(0, idx),
                 );
               } else {

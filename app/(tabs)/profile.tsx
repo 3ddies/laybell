@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { useAudio } from '../../contexts/AudioContext';
 import {
@@ -8,7 +8,7 @@ import {
 import PagerView from 'react-native-pager-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useProfile } from '../../contexts/ProfileContext';
@@ -36,6 +36,7 @@ const TABS = [
   { key: 'posts', label: 'Posts', icon: 'grid-outline' },
   { key: 'music', label: 'Music', icon: 'musical-notes-outline' },
   { key: 'videos', label: 'Videos', icon: 'videocam-outline' },
+  { key: 'reposts', label: 'Reposts', icon: 'repeat-outline' },
   { key: 'liked', label: 'Liked', icon: 'heart-outline' },
   { key: 'saved', label: 'Saved', icon: 'bookmark-outline' },
 ];
@@ -52,6 +53,7 @@ export default function ProfileScreen() {
   const [userPosts, setUserPosts] = useState<any[]>([]);
   const [likedPosts, setLikedPosts] = useState<any[]>([]);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
+  const [repostedPosts, setRepostedPosts] = useState<any[]>([]);
   const router = useRouter();
   const navigation = useNavigation();
   const { playQueue } = useAudio();
@@ -62,13 +64,14 @@ export default function ProfileScreen() {
   // can't glitch or freeze (same mechanism as other users' profiles).
   const pagerRef = useRef<PagerView>(null);
 
-  useEffect(() => { fetchProfile(); }, []);
+  // Refetch on focus so a post reposted elsewhere shows up in the Reposts tab.
+  useFocusEffect(useCallback(() => { fetchProfile(); }, []));
 
   async function fetchProfile() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const [profileRes, followersRes, followingRes, postsCountRes, postsRes, likedRes, savedRes] = await Promise.all([
+    const [profileRes, followersRes, followingRes, postsCountRes, postsRes, likedRes, savedRes, repostsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
@@ -76,6 +79,7 @@ export default function ProfileScreen() {
       supabase.from('posts').select('id, type, media_url, caption, thumbnail_url, cover_url').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
       supabase.from('likes').select('posts(id, type, media_url, caption, thumbnail_url, cover_url)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
       supabase.from('saves').select('posts(id, type, media_url, caption, thumbnail_url, cover_url)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('reposts').select('posts(id, type, media_url, caption, thumbnail_url, cover_url, profiles!posts_user_id_fkey(display_name))').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100),
     ]);
 
     if (profileRes.data) setProfile(profileRes.data);
@@ -83,6 +87,8 @@ export default function ProfileScreen() {
     if (postsRes.data) setUserPosts(postsRes.data);
     if (likedRes.data) setLikedPosts(likedRes.data.map((l: any) => l.posts).filter(Boolean));
     if (savedRes.data) setSavedPosts(savedRes.data.map((s: any) => s.posts).filter(Boolean));
+    // `reposts` may not be migrated yet — degrade to an empty tab if so.
+    setRepostedPosts((repostsRes.data ?? []).map((r: any) => r.posts).filter(Boolean));
     setLoading(false);
     setRefreshing(false);
   }
@@ -100,6 +106,7 @@ export default function ProfileScreen() {
     switch (key) {
       case 'music': return userPosts.filter(p => p.type === 'audio');
       case 'videos': return userPosts.filter(p => p.type === 'video');
+      case 'reposts': return repostedPosts;
       case 'liked': return likedPosts;
       case 'saved': return savedPosts;
       default: return userPosts; // posts
@@ -111,13 +118,14 @@ export default function ProfileScreen() {
       return (
         <View style={styles.emptyGrid}>
           <Ionicons
-            name={tabKey === 'liked' ? 'heart-outline' : tabKey === 'saved' ? 'bookmark-outline' : 'images-outline'}
+            name={tabKey === 'liked' ? 'heart-outline' : tabKey === 'saved' ? 'bookmark-outline' : tabKey === 'reposts' ? 'repeat-outline' : 'images-outline'}
             size={40}
             color={COLORS.textTertiary}
           />
           <Text style={styles.emptyGridText}>
             {tabKey === 'liked' ? 'No liked posts yet'
               : tabKey === 'saved' ? 'No saved posts yet'
+              : tabKey === 'reposts' ? 'No reposts yet'
               : `No ${tabKey} yet`}
           </Text>
         </View>
@@ -130,6 +138,7 @@ export default function ProfileScreen() {
             key={post.id}
             style={styles.gridItem}
             // Own content (Posts / Music / Videos) — long-press for edit/delete.
+            // Reposts — long-press to remove the repost (via the options sheet).
             onLongPress={
               (tabKey === 'posts' || tabKey === 'music' || tabKey === 'videos')
                 ? () => showOptions({
@@ -141,6 +150,14 @@ export default function ProfileScreen() {
                       setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
                     },
                   })
+                : tabKey === 'reposts'
+                ? () => showOptions({
+                    postId: post.id,
+                    isOwn: false,
+                    onRepostChanged: (reposted) => {
+                      if (!reposted) setRepostedPosts(prev => prev.filter(p => p.id !== post.id));
+                    },
+                  })
                 : undefined
             }
             onPress={() => {
@@ -148,7 +165,7 @@ export default function ProfileScreen() {
                 const songs = data.filter((s: any) => isAudioPost(s.type));
                 const idx = songs.findIndex((s: any) => s.id === post.id);
                 playQueue(
-                  songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: profile?.display_name ?? '', cover: s.cover_url })),
+                  songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? profile?.display_name ?? '', cover: s.cover_url })),
                   Math.max(0, idx),
                 );
               } else {
