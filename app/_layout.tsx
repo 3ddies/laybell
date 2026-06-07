@@ -9,6 +9,7 @@ import { AudioProvider } from '../contexts/AudioContext';
 import { PostOptionsProvider } from '../contexts/PostOptionsContext';
 import { ProfileProvider } from '../contexts/ProfileContext';
 import { ShareProvider } from '../contexts/ShareContext';
+import { FollowProvider } from '../contexts/FollowContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import { useNotifications } from '../hooks/useNotifications';
@@ -89,10 +90,12 @@ export default function RootLayout() {
   return (
     <AudioProvider>
       <ProfileProvider>
-        <ShareProvider>
-          <StatusBar style="light" />
-          <AppContent />
-        </ShareProvider>
+        <FollowProvider>
+          <ShareProvider>
+            <StatusBar style="light" />
+            <AppContent />
+          </ShareProvider>
+        </FollowProvider>
       </ProfileProvider>
     </AudioProvider>
   );

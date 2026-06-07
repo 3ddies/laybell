@@ -28,6 +28,7 @@ import { isAudioPost } from '../../lib/genres';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
+import FollowButton from '../../components/FollowButton';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import TrackRow from '../../components/TrackRow';
 
@@ -106,6 +107,7 @@ const PostCard = memo(function PostCard({
             @{item.profiles?.username} · {timeAgo(item.created_at)}
           </Text>
         </View>
+        <FollowButton userId={item.user_id} />
         <TouchableOpacity
           style={styles.typeIconWrap}
           onPress={() => onOptions(item)}

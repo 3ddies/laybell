@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
+import FollowButton from '../../components/FollowButton';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useAudio } from '../../contexts/AudioContext';
 import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
@@ -334,7 +335,7 @@ export default function ExploreScreen() {
                   <Text style={styles.accountName}>{item.display_name}</Text>
                   <Text style={styles.accountUsername}>@{item.username}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
+                <FollowButton userId={item.id} />
               </TouchableOpacity>
             )}
           />
@@ -400,6 +401,7 @@ export default function ExploreScreen() {
                     )}
                   </View>
                 </View>
+                <FollowButton userId={item.user_id} />
                 <TouchableOpacity
                   style={styles.postTypeTag}
                   onPress={() => showOptions({
