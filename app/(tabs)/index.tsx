@@ -25,6 +25,7 @@ import { createNotification } from '../../lib/createNotification';
 import { showPostOptions } from '../../lib/postActions';
 import { isAudioPost } from '../../lib/genres';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
+import CommentsSheet from '../../components/CommentsSheet';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import TrackRow from '../../components/TrackRow';
 
@@ -62,6 +63,7 @@ type PostCardProps = {
   onOptions: (item: Post) => void;
   onOpenPost: (item: Post) => void;
   onOpenReel: (item: Post) => void;
+  onComments: (item: Post) => void;
   onPlayTrack: (item: Post) => void;
   onExpandTrack: (item: Post) => void;
   onToggleMuted: () => void;
@@ -76,7 +78,7 @@ type PostCardProps = {
 // unchanged posts, so React.memo's shallow compare skips them.
 const PostCard = memo(function PostCard({
   item, isOwn, isLiked, isSaved, audioActive, videoMuted, shouldPlayVideo,
-  onProfile, onOptions, onOpenPost, onOpenReel, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare,
+  onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare,
 }: PostCardProps) {
   const likeCount = item.likes[0]?.count || 0;
   const commentCount = item.comments[0]?.count || 0;
@@ -176,7 +178,7 @@ const PostCard = memo(function PostCard({
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onOpenPost(item)}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onComments(item)}>
           <Ionicons name="chatbubble-outline" size={20} color={COLORS.textSecondary} />
           {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
         </TouchableOpacity>
@@ -213,6 +215,7 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
+  const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string } | null>(null);
   const [playlistCount, setPlaylistCount] = useState(0);
   const [visibleVideoId, setVisibleVideoId] = useState<string | null>(null);
   const router = useRouter();
@@ -439,6 +442,7 @@ export default function HomeScreen() {
   const onProfile = useCallback((item: Post) => live.current.router.push(`/profile/${item.user_id}`), []);
   const onOpenPost = useCallback((item: Post) => live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item) } }), []);
   const onOpenReel = useCallback((item: Post) => live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item) } }), []);
+  const onComments = useCallback((item: Post) => setCommentsFor({ id: item.id, ownerId: item.user_id }), []);
 
   const onPlayTrack = useCallback((item: Post) => {
     live.current.play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url });
@@ -471,6 +475,7 @@ export default function HomeScreen() {
       onOptions={onOptions}
       onOpenPost={onOpenPost}
       onOpenReel={onOpenReel}
+      onComments={onComments}
       onPlayTrack={onPlayTrack}
       onExpandTrack={onExpandTrack}
       onToggleMuted={onToggleMuted}
@@ -479,7 +484,7 @@ export default function HomeScreen() {
       onShare={onShare}
     />
   ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, canPlayVideo, visibleVideoId,
-      onProfile, onOptions, onOpenPost, onOpenReel, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare]);
+      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare]);
 
   if (loading) {
     return (
@@ -583,6 +588,13 @@ export default function HomeScreen() {
         visible={!!playlistModalPostId}
         postId={playlistModalPostId ?? ''}
         onClose={() => setPlaylistModalPostId(null)}
+      />
+
+      <CommentsSheet
+        visible={!!commentsFor}
+        postId={commentsFor?.id ?? ''}
+        ownerId={commentsFor?.ownerId}
+        onClose={() => setCommentsFor(null)}
       />
     </View>
   );
