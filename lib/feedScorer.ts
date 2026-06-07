@@ -58,6 +58,22 @@ export const EMPTY_PROFILE: UserAffinityProfile = {
   creatorScores: {}, typeScores: {}, genreScores: {}, builtAt: 0,
 };
 
+// "Meme" gets a small affinity floor so funny content surfaces near the front of
+// the genre rail for everyone (broad universal appeal), while still sitting
+// *behind* any genre the user has genuinely engaged with. For a brand-new user
+// (all scores 0) this lands Meme right after "All"; for an engaged user it slots
+// in just behind their real preferences, ahead of untouched genres. Shared by
+// the Music Discover and Explore genre bars so they order identically.
+export const MEME_FLOOR = 0.001;
+
+export function sortGenresByAffinity(genres: string[], profile: UserAffinityProfile): string[] {
+  const keyFor = (g: string) => {
+    const score = profile.genreScores[g.toLowerCase()] ?? 0;
+    return g.toLowerCase() === 'meme' ? Math.max(score, MEME_FLOOR) : score;
+  };
+  return [...genres].sort((a, b) => keyFor(b) - keyFor(a));
+}
+
 function normalize(raw: Record<string, number>): Record<string, number> {
   const max = Math.max(...Object.values(raw), 1);
   const out: Record<string, number> = {};

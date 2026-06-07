@@ -12,10 +12,10 @@ import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
 import { confirmDeletePost } from '../../lib/postActions';
 import { useAudio } from '../../contexts/AudioContext';
-import { GENRE_FILTERS, CONTENT_TAGS } from '../../lib/genres';
+import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS } from '../../lib/genres';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
-  EMPTY_PROFILE, type UserAffinityProfile,
+  sortGenresByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
 } from '../../lib/feedScorer';
 
 type Post = {
@@ -36,8 +36,6 @@ type Profile = {
   avatar_url: string | null; badge_tier: string;
 };
 
-// Genre filters + content-type tags shown as a combined filter rail.
-const GENRES = [...GENRE_FILTERS, ...CONTENT_TAGS];
 
 function getBadgeColor(tier: string) {
   switch (tier) {
@@ -63,6 +61,9 @@ export default function ExploreScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [seenPostIds, setSeenPostIds] = useState<Set<string>>(new Set());
+  // Genre rail ordered by user affinity (Meme floored near the front), with the
+  // content-type tags pinned to the end — mirrors the Music Discover bar.
+  const [orderedGenres, setOrderedGenres] = useState<string[]>([...GENRE_FILTERS, ...CONTENT_TAGS]);
   const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
   const followingSetRef = useRef<Set<string>>(new Set());
 
@@ -98,6 +99,10 @@ export default function ExploreScreen() {
         (followingResult.data ?? []).map((f: any) => f.following_id),
       );
     }
+
+    // Reorder the genre rail by affinity (Meme floored near the front), keeping
+    // "All" first and the Podcasts/Audiobooks tags pinned at the end.
+    setOrderedGenres(['All', ...sortGenresByAffinity([...MUSIC_GENRES], affinityProfile.current), ...CONTENT_TAGS]);
 
     await fetchTrending(seen);
   }
@@ -275,7 +280,7 @@ export default function ExploreScreen() {
       {!isSearching && (
         <FlatList
           horizontal
-          data={GENRES}
+          data={orderedGenres}
           keyExtractor={item => item}
           showsHorizontalScrollIndicator={false}
           style={styles.genreFlatList}

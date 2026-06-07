@@ -17,7 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GENRES, CONTENT_TAGS } from '../../lib/genres';
 import {
   buildAffinityProfile, loadSeenPostIds, scorePost,
-  EMPTY_PROFILE, type UserAffinityProfile,
+  sortGenresByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
 } from '../../lib/feedScorer';
 
 const SCREEN_W           = Dimensions.get('window').width;
@@ -60,7 +60,6 @@ export default function MusicScreen() {
   const router = useRouter();
 
   // ─── Discover tab state ────────────────────────────────────────────────────
-  const [contentType, setContentType]           = useState<ContentType>('music');
   const [discoverGenre, setDiscoverGenre]       = useState('All');
   const [orderedGenreList, setOrderedGenreList] = useState<string[]>([...GENRES]);
   const [trendingTracks, setTrendingTracks]     = useState<any[]>([]);
@@ -162,21 +161,6 @@ export default function MusicScreen() {
     return GENRES.find(g => g.toLowerCase() === topLower) ?? 'All';
   }
 
-  // "Meme" gets a small affinity floor so funny content surfaces near the
-  // front of the genre rail for everyone (broad universal appeal), while still
-  // sitting *behind* any genre the user has genuinely engaged with. For a brand
-  // new user (all scores 0) this lands Meme right after "All"; for an engaged
-  // user it slots in just behind their real preferences, ahead of untouched genres.
-  const MEME_FLOOR = 0.001;
-
-  function sortGenresByAffinity(profile: UserAffinityProfile): string[] {
-    const keyFor = (g: string) => {
-      const score = profile.genreScores[g.toLowerCase()] ?? 0;
-      return g === 'Meme' ? Math.max(score, MEME_FLOOR) : score;
-    };
-    return [...GENRES].sort((a, b) => keyFor(b) - keyFor(a));
-  }
-
   async function fetchDiscoverData(userId: string) {
     setDiscoverLoading(true);
     const [profile, followingResult, seen] = await Promise.all([
@@ -208,13 +192,13 @@ export default function MusicScreen() {
       discoverRefreshedAt.current = Date.now();
     }
 
-    setOrderedGenreList(sortGenresByAffinity(profile));
+    setOrderedGenreList(sortGenresByAffinity([...GENRES], profile));
 
     const initialGenre = topGenreDisplay(profile);
     setDiscoverGenre(initialGenre);
 
     await Promise.all([
-      fetchTrendingByGenre(initialGenre, 'music'),
+      fetchTrendingByGenre(initialGenre),
       fetchForYouTracks(),
       fetchTodaysPick(userId),
     ]);
@@ -234,7 +218,7 @@ export default function MusicScreen() {
       // tastes are reflected, then refetch every Discover section.
       const profile = await buildAffinityProfile(currentUserId, true);
       affinityProfile.current = profile;
-      setOrderedGenreList(sortGenresByAffinity(profile));
+      setOrderedGenreList(sortGenresByAffinity([...GENRES], profile));
       await Promise.all([
         fetchTrendingByGenre(discoverGenre),
         fetchForYouTracks(),
@@ -244,10 +228,12 @@ export default function MusicScreen() {
     setDiscoverRefreshing(false);
   }
 
-  // Fetches 30 popular tracks for the selected content type / genre, then
-  // re-ranks client-side using scorePost so personalisation layered on top
-  // of raw popularity.
-  async function fetchTrendingByGenre(genre: string, ct: ContentType = contentType) {
+  // Fetches 30 popular tracks for the selected pill — which may be a music genre,
+  // "All", or a content-type tag (Podcasts / Audiobooks) — then re-ranks
+  // client-side using scorePost so personalisation layers on top of popularity.
+  async function fetchTrendingByGenre(genre: string) {
+    const ct: ContentType =
+      genre === 'Podcasts' ? 'podcast' : genre === 'Audiobooks' ? 'audiobook' : 'music';
     let q = supabase
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
@@ -370,17 +356,7 @@ export default function MusicScreen() {
     setTrendingExpanded(false);
     setDiscoverGenre(genre);
     setTrendingLoading(true);
-    await fetchTrendingByGenre(genre, 'music');
-    setTrendingLoading(false);
-  }
-
-  async function onContentTypeChange(ct: ContentType) {
-    if (ct === contentType) return;
-    setContentType(ct);
-    setTrendingExpanded(false);
-    setTrendingLoading(true);
-    // Genre filter only applies to music; podcasts/audiobooks ignore it.
-    await fetchTrendingByGenre(ct === 'music' ? discoverGenre : 'All', ct);
+    await fetchTrendingByGenre(genre);
     setTrendingLoading(false);
   }
 
@@ -399,6 +375,10 @@ export default function MusicScreen() {
   if (loading) {
     return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
   }
+
+  // Podcasts / Audiobooks pills show their own trending list and hide the
+  // music-only "More of what you like" / "Today's Pick" sections.
+  const isContentTag = (CONTENT_TAGS as readonly string[]).includes(discoverGenre);
 
   return (
     <View style={styles.container}>
@@ -458,40 +438,18 @@ export default function MusicScreen() {
             }
           >
 
-            {/* — Content type selector (Music / Podcasts / Audiobooks) — */}
-            <View style={styles.contentTypeRow}>
-              {([
-                { key: 'music',     label: 'Music',      icon: 'musical-notes' },
-                { key: 'podcast',   label: 'Podcasts',   icon: 'mic'           },
-                { key: 'audiobook', label: 'Audiobooks', icon: 'book'          },
-              ] as { key: ContentType; label: string; icon: string }[]).map(({ key, label, icon }) => {
-                const on = contentType === key;
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    style={[styles.contentTypePill, on && styles.contentTypePillActive]}
-                    onPress={() => onContentTypeChange(key)}
-                  >
-                    <Ionicons name={icon as any} size={14} color={on ? COLORS.text : COLORS.textSecondary} />
-                    <Text style={[styles.contentTypePillText, on && styles.contentTypePillTextActive]}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
             {/* — Section title — */}
             <Text style={styles.discoverSectionTitle}>
-              {contentType === 'music'
-                ? 'Trending by genre'
-                : contentType === 'podcast'
+              {discoverGenre === 'Podcasts'
                 ? 'Trending podcasts'
-                : 'Top audiobooks'}
+                : discoverGenre === 'Audiobooks'
+                ? 'Top audiobooks'
+                : 'Trending by genre'}
             </Text>
 
-            {/* — Genre pills (music only) — */}
-            {contentType === 'music' && (
+            {/* — Genre + content-type pills (All · genres · Podcasts · Audiobooks) — */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.genrePills}>
-              {(['All', ...orderedGenreList] as const).map(genre => {
+              {(['All', ...orderedGenreList, ...CONTENT_TAGS]).map(genre => {
                 const active = discoverGenre === genre;
                 const label  = genre === 'All' ? 'All genres' : genre;
                 return (
@@ -513,15 +471,16 @@ export default function MusicScreen() {
                 );
               })}
             </ScrollView>
-            )}
 
             {trendingLoading ? (
               <ActivityIndicator color={COLORS.primary} style={{ marginVertical: SPACING.md }} />
             ) : trendingTracks.length === 0 ? (
               <Text style={[styles.discoverEmpty, { paddingHorizontal: SPACING.md }]}>
-                {contentType === 'music'
-                  ? 'No tracks in this genre yet'
-                  : `No ${contentType === 'podcast' ? 'podcasts' : 'audiobooks'} yet`}
+                {discoverGenre === 'Podcasts'
+                  ? 'No podcasts yet'
+                  : discoverGenre === 'Audiobooks'
+                  ? 'No audiobooks yet'
+                  : 'No tracks in this genre yet'}
               </Text>
             ) : (
               <View style={styles.trendingList}>
@@ -567,7 +526,7 @@ export default function MusicScreen() {
             )}
 
             {/* — More of what you like (music only) — */}
-            {contentType === 'music' && forYouTracks.length > 0 && (
+            {!isContentTag && forYouTracks.length > 0 && (
               <>
                 <Text style={[styles.discoverSectionTitle, { marginTop: SPACING.xl }]}>More of what you like</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.forYouScroll}>
@@ -595,8 +554,8 @@ export default function MusicScreen() {
               </>
             )}
 
-            {/* — Today's Pick — */}
-            {todaysPick && (
+            {/* — Today's Pick (music only) — */}
+            {!isContentTag && todaysPick && (
               <View style={styles.todaysPickSection}>
                 <Text style={styles.todaysPickLabel}>TODAY'S PICK</Text>
                 <TouchableOpacity
@@ -877,22 +836,6 @@ const styles = StyleSheet.create({
 
   // ─── Discover styles ──────────────────────────────────────────────────────
   discoverContent: { paddingBottom: SPACING.xxl * 3 },
-
-  contentTypeRow: {
-    flexDirection: 'row',
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.sm,
-    paddingBottom: SPACING.xs,
-    gap: SPACING.sm,
-  },
-  contentTypePill: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingVertical: SPACING.xs + 1, paddingHorizontal: SPACING.sm + 2,
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
-  },
-  contentTypePillActive: { backgroundColor: COLORS.surfaceLight, borderColor: COLORS.primary },
-  contentTypePillText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500' },
-  contentTypePillTextActive: { color: COLORS.text, fontWeight: '700' },
 
   discoverSectionTitle: {
     color: COLORS.text, fontSize: 20, fontWeight: '800',
