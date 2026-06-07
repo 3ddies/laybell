@@ -14,7 +14,7 @@ import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import TrackRow from '../../components/TrackRow';
 import { showPostOptions } from '../../lib/postActions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GENRES, CONTENT_TAGS } from '../../lib/genres';
+import { GENRES, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
 import {
   buildAffinityProfile, loadSeenPostIds, scorePost,
   sortGenresByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
@@ -109,7 +109,7 @@ export default function MusicScreen() {
       .select('id, posts(id,media_url,caption,type,duration_seconds,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
-    if (data) setSavedTracks(data.filter((s: any) => s.posts?.type === 'audio'));
+    if (data) setSavedTracks(data.filter((s: any) => isAudioPost(s.posts?.type)));
   }
 
   async function fetchLikedTracks(userId: string) {
@@ -118,7 +118,7 @@ export default function MusicScreen() {
       .select('post_id, posts(id,media_url,caption,type,duration_seconds,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
-    if (data) setLikedTracks(data.filter((l: any) => l.posts?.type === 'audio'));
+    if (data) setLikedTracks(data.filter((l: any) => isAudioPost(l.posts?.type)));
   }
 
   async function fetchPlaylistTracks(playlistId: string) {

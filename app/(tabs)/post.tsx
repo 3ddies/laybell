@@ -1,11 +1,11 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  TextInput, ScrollView, ActivityIndicator, Alert, Switch, Image,
+  TextInput, ScrollView, ActivityIndicator, Alert, Switch, Image, Dimensions,
 } from 'react-native';
 import { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { usePagerSwiping } from '../../contexts/PagerContext';
-import { Audio } from 'expo-av';
+import { Audio, Video, ResizeMode } from 'expo-av';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,10 +14,13 @@ import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../../lib/supabase';
 import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
-import { IMAGE_FORMATS, VIDEO_FORMATS, aspectToArray, defaultFormatFor } from '../../lib/aspectRatio';
+import { IMAGE_FORMATS, VIDEO_FORMATS, aspectToArray, aspectToNumber, defaultFormatFor } from '../../lib/aspectRatio';
 import { GENRES } from '../../lib/genres';
 
 type PostType = 'image' | 'video' | 'audio';
+
+const SCREEN_W = Dimensions.get('window').width;
+const PREVIEW_MAX_H = 380; // cap tall (9:16) previews so the form stays usable
 
 const POST_TYPES: { label: string; value: PostType; icon: any }[] = [
   { label: 'Image', value: 'image', icon: 'image-outline' },
@@ -37,6 +40,9 @@ export default function PostScreen() {
   const [format, setFormat] = useState<string>('1:1');
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
   const [coverUri, setCoverUri] = useState<string | null>(null);
+  // Audio sub-category. 'audio' = music (stored as type 'audio'); the others are
+  // stored as their own post type so they surface under the Podcasts/Audiobooks tabs.
+  const [audioKind, setAudioKind] = useState<'audio' | 'podcast' | 'audiobook'>('audio');
   const { stop } = useAudio();
   const swiping = usePagerSwiping();
 
@@ -131,7 +137,7 @@ export default function PostScreen() {
       }
 
       const { error: postError } = await supabase.from('posts').insert({
-        user_id: user.id, type: postType, media_url: publicUrl,
+        user_id: user.id, type: postType === 'audio' ? audioKind : postType, media_url: publicUrl,
         caption: caption.trim(), is_public: isPublic,
         ...(genre ? { genre } : {}),
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
@@ -142,16 +148,39 @@ export default function PostScreen() {
       if (postError) throw postError;
 
       Alert.alert('Posted! 🎉', 'Your post is now live on Laybell');
-      setFile(null); setCaption(''); setGenre(''); setThumbnailUri(null); setCoverUri(null);
+      setFile(null); setCaption(''); setGenre(''); setThumbnailUri(null); setCoverUri(null); setAudioKind('audio');
     } catch (err: any) {
       setError(err.message || 'Something went wrong');
     }
     setLoading(false);
   }
 
+  // Live preview dimensions for the selected format — shows the user the exact
+  // frame their post will occupy (and reveals letterboxing if the crop doesn't
+  // match, so they can re-crop before posting).
+  const previewAspect = aspectToNumber(format, 1);
+  const previewMaxW = SCREEN_W - SPACING.md * 2;
+  const previewH = Math.min(previewMaxW / previewAspect, PREVIEW_MAX_H);
+  const previewW = previewH * previewAspect;
+
+  // Music genres apply to music + image/video, but not to podcasts/audiobooks.
+  const showGenre = postType !== 'audio' || audioKind === 'audio';
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>New Post</Text>
+      {/* Header — Instagram-style: title left, Share action top-right */}
+      <View style={styles.headerBar}>
+        <Text style={styles.title}>New post</Text>
+        <TouchableOpacity
+          style={[styles.shareBtn, loading && styles.postBtnDisabled]}
+          onPress={handlePost}
+          disabled={loading}
+        >
+          {loading
+            ? <ActivityIndicator color={COLORS.text} size="small" />
+            : <Text style={styles.shareBtnText}>Share</Text>}
+        </TouchableOpacity>
+      </View>
 
       {/* Type selector */}
       <View style={styles.typeRow}>
@@ -161,7 +190,7 @@ export default function PostScreen() {
             <TouchableOpacity
               key={type.value}
               style={[styles.typeBtn, active && styles.typeBtnActive]}
-              onPress={() => { setPostType(type.value); setFile(null); setFormat(defaultFormatFor(type.value)); }}
+              onPress={() => { setPostType(type.value); setFile(null); setFormat(defaultFormatFor(type.value)); setAudioKind('audio'); }}
             >
               {active ? (
                 <LinearGradient colors={GRADIENTS.primary} style={styles.typeIconWrap}>
@@ -178,9 +207,20 @@ export default function PostScreen() {
         })}
       </View>
 
-      {/* File picker */}
-      <TouchableOpacity style={styles.filePicker} onPress={pickMedia}>
-        {file ? (
+      {/* Media picker + live preview */}
+      {!file ? (
+        <TouchableOpacity style={styles.filePicker} onPress={pickMedia}>
+          <View style={styles.filePlaceholder}>
+            <Ionicons
+              name={postType === 'image' ? 'image-outline' : postType === 'audio' ? 'musical-notes-outline' : 'videocam-outline'}
+              size={40}
+              color={COLORS.textTertiary}
+            />
+            <Text style={styles.filePlaceholderText}>Tap to select {postType}</Text>
+          </View>
+        </TouchableOpacity>
+      ) : postType === 'audio' ? (
+        <TouchableOpacity style={styles.filePicker} onPress={pickMedia}>
           <View style={styles.fileSelected}>
             <LinearGradient colors={GRADIENTS.primary} style={styles.fileIconWrap}>
               <Ionicons name="checkmark" size={28} color={COLORS.text} />
@@ -190,17 +230,77 @@ export default function PostScreen() {
             </Text>
             <Text style={styles.fileChange}>Tap to change</Text>
           </View>
-        ) : (
-          <View style={styles.filePlaceholder}>
-            <Ionicons
-              name={postType === 'image' ? 'image-outline' : postType === 'audio' ? 'musical-notes-outline' : 'videocam-outline'}
-              size={40}
-              color={COLORS.textTertiary}
-            />
-            <Text style={styles.filePlaceholderText}>Tap to select {postType}</Text>
+        </TouchableOpacity>
+      ) : (
+        // Image / video preview at the exact selected dimensions.
+        <View style={styles.previewWrap}>
+          <View style={[styles.previewBox, { width: previewW, height: previewH }]}>
+            {postType === 'video' ? (
+              <Video
+                source={{ uri: file.uri }}
+                style={styles.previewMedia}
+                resizeMode={ResizeMode.CONTAIN}
+                useNativeControls
+                isLooping
+              />
+            ) : (
+              <Image source={{ uri: file.uri }} style={styles.previewMedia} resizeMode="contain" />
+            )}
+            <View style={styles.previewBadge}>
+              <Text style={styles.previewBadgeText}>{format}</Text>
+            </View>
           </View>
-        )}
-      </TouchableOpacity>
+          <TouchableOpacity style={styles.adjustBtn} onPress={pickMedia}>
+            <Ionicons name="crop-outline" size={16} color={COLORS.primary} />
+            <Text style={styles.adjustBtnText}>Adjust / re-crop</Text>
+          </TouchableOpacity>
+          <Text style={styles.previewHint}>
+            This is exactly how your {postType} will appear at {format}. Pick a different
+            format below, or re-crop to fill the frame.
+          </Text>
+        </View>
+      )}
+
+      {/* Caption — Instagram-style, directly under the media */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Caption</Text>
+        <TextInput
+          style={styles.textArea}
+          placeholder="Write a caption..."
+          placeholderTextColor={COLORS.textTertiary}
+          value={caption}
+          onChangeText={setCaption}
+          multiline
+          maxLength={500}
+          editable={!swiping}
+        />
+      </View>
+
+      {/* Audio category (Music / Podcast / Audiobook) */}
+      {postType === 'audio' && (
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Category</Text>
+          <View style={styles.formatRow}>
+            {([
+              { val: 'audio',     label: 'Music',     icon: 'musical-notes' },
+              { val: 'podcast',   label: 'Podcast',   icon: 'mic'           },
+              { val: 'audiobook', label: 'Audiobook', icon: 'book'          },
+            ] as const).map(({ val, label, icon }) => {
+              const active = audioKind === val;
+              return (
+                <TouchableOpacity
+                  key={val}
+                  style={[styles.formatBtn, active && styles.formatBtnActive]}
+                  onPress={() => setAudioKind(val)}
+                >
+                  <Ionicons name={icon as any} size={16} color={active ? COLORS.primary : COLORS.textSecondary} />
+                  <Text style={[styles.formatLabel, active && styles.formatLabelActive]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
       {/* Cover art (audio only) */}
       {postType === 'audio' && (
@@ -216,7 +316,7 @@ export default function PostScreen() {
             )}
             <View style={styles.coverInfo}>
               <Text style={styles.coverTitle}>{coverUri ? 'Cover selected' : 'Add cover art'}</Text>
-              <Text style={styles.coverSub}>{coverUri ? 'Tap to change' : 'Square image shown next to your track'}</Text>
+              <Text style={styles.coverSub}>{coverUri ? 'Tap to change or re-crop' : 'Square image shown next to your track'}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
           </TouchableOpacity>
@@ -249,42 +349,27 @@ export default function PostScreen() {
         </View>
       )}
 
-      {/* Caption */}
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Caption</Text>
-        <TextInput
-          style={styles.textArea}
-          placeholder="What's this about?"
-          placeholderTextColor={COLORS.textTertiary}
-          value={caption}
-          onChangeText={setCaption}
-          multiline
-          maxLength={500}
-          // A horizontal swipe drags across this field; without this it grabs
-          // focus and pops the keyboard mid-swipe. Re-enabled once settled.
-          editable={!swiping}
-        />
-      </View>
-
-      {/* Genre */}
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Genre</Text>
-        <View style={styles.genreWrap}>
-          {GENRES.map(g => {
-            const value = g.toLowerCase();
-            const active = genre === value;
-            return (
-              <TouchableOpacity
-                key={g}
-                style={[styles.genreChip, active && styles.genreChipActive]}
-                onPress={() => setGenre(active ? '' : value)}
-              >
-                <Text style={[styles.genreChipText, active && styles.genreChipTextActive]}>{g}</Text>
-              </TouchableOpacity>
-            );
-          })}
+      {/* Genre (music genres — hidden for podcasts/audiobooks) */}
+      {showGenre && (
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Genre</Text>
+          <View style={styles.genreWrap}>
+            {GENRES.map(g => {
+              const value = g.toLowerCase();
+              const active = genre === value;
+              return (
+                <TouchableOpacity
+                  key={g}
+                  style={[styles.genreChip, active && styles.genreChipActive]}
+                  onPress={() => setGenre(active ? '' : value)}
+                >
+                  <Text style={[styles.genreChipText, active && styles.genreChipTextActive]}>{g}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Visibility */}
       <View style={styles.visibilityRow}>
@@ -314,21 +399,6 @@ export default function PostScreen() {
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
-
-      <TouchableOpacity
-        style={[styles.postBtn, loading && styles.postBtnDisabled]}
-        onPress={handlePost}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color={COLORS.text} />
-        ) : (
-          <>
-            <Ionicons name="cloud-upload-outline" size={20} color={COLORS.text} />
-            <Text style={styles.postBtnText}>Post to Laybell</Text>
-          </>
-        )}
-      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -337,7 +407,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   inner: { padding: SPACING.md, paddingTop: SPACING.xxl + SPACING.lg, gap: SPACING.md },
 
-  title: { color: COLORS.text, fontSize: 28, fontWeight: '800', marginBottom: SPACING.xs },
+  headerBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: SPACING.xs,
+  },
+  title: { color: COLORS.text, fontSize: 28, fontWeight: '800' },
+  shareBtn: {
+    backgroundColor: COLORS.primary, borderRadius: RADIUS.full,
+    paddingVertical: SPACING.xs + 3, paddingHorizontal: SPACING.lg,
+    minWidth: 84, alignItems: 'center', justifyContent: 'center',
+  },
+  shareBtnText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
 
   typeRow: { flexDirection: 'row', gap: SPACING.sm },
   typeBtn: {
@@ -365,6 +445,26 @@ const styles = StyleSheet.create({
   fileName: { color: COLORS.text, fontSize: 14, fontWeight: '600', textAlign: 'center' },
   fileChange: { color: COLORS.textTertiary, fontSize: 12 },
 
+  previewWrap: { alignItems: 'center', gap: SPACING.sm },
+  previewBox: {
+    borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: '#000',
+    borderWidth: 1, borderColor: COLORS.border, alignSelf: 'center',
+  },
+  previewMedia: { width: '100%', height: '100%' },
+  previewBadge: {
+    position: 'absolute', top: 8, right: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.sm, paddingVertical: 2,
+  },
+  previewBadgeText: { color: COLORS.text, fontSize: 11, fontWeight: '700' },
+  adjustBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.primary,
+  },
+  adjustBtnText: { color: COLORS.primary, fontSize: 13, fontWeight: '700' },
+  previewHint: { color: COLORS.textTertiary, fontSize: 12, textAlign: 'center', paddingHorizontal: SPACING.md },
+
   formatRow: { flexDirection: 'row', gap: SPACING.sm },
 
   genreWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
@@ -382,9 +482,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: RADIUS.md, padding: SPACING.sm,
   },
-  coverPreview: { width: 52, height: 52, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceElevated },
+  coverPreview: { width: 72, height: 72, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceElevated },
   coverPlaceholder: {
-    width: 52, height: 52, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceElevated,
+    width: 72, height: 72, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceElevated,
     alignItems: 'center', justifyContent: 'center',
   },
   coverInfo: { flex: 1 },

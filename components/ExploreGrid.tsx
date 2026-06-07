@@ -11,6 +11,7 @@ import { aspectToNumber } from '../lib/aspectRatio';
 import { useAudio } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
 import { showPostOptions } from '../lib/postActions';
+import { isAudioPost } from '../lib/genres';
 
 type GridPost = {
   id: string; type: string; media_url: string; caption: string;
@@ -103,9 +104,9 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
     // In genre view, songs render as 1:1 cover tiles (alongside images); in "All"
     // they stay grouped into Trending Songs stacks.
     const tileMedia = songTiles
-      ? posts.filter(p => p.type === 'image' || p.type === 'audio')
+      ? posts.filter(p => p.type === 'image' || isAudioPost(p.type))
       : images;
-    const musicGroups = songTiles ? [] : groupSongs(posts.filter(p => p.type === 'audio'));
+    const musicGroups = songTiles ? [] : groupSongs(posts.filter(p => isAudioPost(p.type)));
 
     // Only ~1 in every 4 videos auto-plays; the rest stay as still thumbnails so the
     // grid isn't overstimulating. Prefer vertical (portrait) clips for the play
@@ -224,7 +225,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
         </TouchableOpacity>
       );
     }
-    if (p.type === 'audio') {
+    if (isAudioPost(p.type)) {
       // Song shown as a 1:1 cover tile (genre view) — tap to play.
       const active = currentTrack?.id === p.id && isPlaying;
       return (
@@ -312,7 +313,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
 
   // Genre view: a uniform 3-up square grid.
   const renderSquare = (p: GridPost) => {
-    if (p.type === 'audio') {
+    if (isAudioPost(p.type)) {
       const active = currentTrack?.id === p.id && isPlaying;
       return (
         <TouchableOpacity

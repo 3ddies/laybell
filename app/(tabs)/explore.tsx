@@ -12,7 +12,7 @@ import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
 import { showPostOptions } from '../../lib/postActions';
 import { useAudio } from '../../contexts/AudioContext';
-import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS } from '../../lib/genres';
+import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
   sortGenresByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
@@ -346,7 +346,7 @@ export default function ExploreScreen() {
             keyboardDismissMode="on-drag"
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={<Text style={styles.emptyText}>No posts found</Text>}
-            renderItem={({ item }) => item.type === 'audio' ? (
+            renderItem={({ item }) => isAudioPost(item.type) ? (
               <TrackRow
                 caption={item.caption}
                 artist={item.profiles?.display_name}

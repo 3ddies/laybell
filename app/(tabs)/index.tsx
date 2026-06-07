@@ -23,6 +23,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
 import { showPostOptions } from '../../lib/postActions';
+import { isAudioPost } from '../../lib/genres';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import TrackRow from '../../components/TrackRow';
@@ -113,13 +114,13 @@ const PostCard = memo(function PostCard({
         <TouchableOpacity onPress={() => onOpenPost(item)}>
           <Image
             source={{ uri: item.media_url }}
-            style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1) }]}
-            resizeMode="cover"
+            style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
+            resizeMode="contain"
           />
         </TouchableOpacity>
       )}
 
-      {item.type === 'audio' && (
+      {isAudioPost(item.type) && (
         <View style={styles.audioCardWrap}>
           <TrackRow
             caption={item.caption}
@@ -141,8 +142,8 @@ const PostCard = memo(function PostCard({
           <TouchableOpacity activeOpacity={1} onPress={() => onOpenPost(item)}>
             <Video
               source={{ uri: item.media_url }}
-              style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H) }]}
-              resizeMode={ResizeMode.COVER}
+              style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
+              resizeMode={ResizeMode.CONTAIN}
               isLooping
               isMuted={videoMuted}
               shouldPlay={shouldPlayVideo}
@@ -155,7 +156,7 @@ const PostCard = memo(function PostCard({
       )}
 
       {/* Caption */}
-      {!!item.caption && item.type !== 'audio' && (
+      {!!item.caption && !isAudioPost(item.type) && (
         <TouchableOpacity onPress={() => onOpenPost(item)}>
           <Text style={styles.caption} numberOfLines={3}>{item.caption}</Text>
         </TouchableOpacity>
@@ -353,17 +354,17 @@ export default function HomeScreen() {
         followingData?.map((f: any) => f.following_id) ?? []
       );
 
-      let scored: any[];
-      if (feedMode === 'all') {
-        const now = Date.now();
-        const profile = affinityProfile.current;
-        scored = (data as any[])
-          .map((p) => ({ p, score: scorePost(p, profile, followingSet, seen, now) }))
-          .sort((a, b) => b.score - a.score)
-          .map((x) => x.p);
-      } else {
-        scored = [...(data as any[])];
-      }
+      // Both feeds use the same recency × engagement × personalization ranking
+      // (see scorePost). They differ only in the query above: "all" pulls public
+      // posts, "following" is pre-filtered to people you follow — so the same
+      // algorithm now surfaces the freshest, most relevant followed posts on top
+      // instead of a flat chronological list.
+      const now = Date.now();
+      const profile = affinityProfile.current;
+      const scored = (data as any[])
+        .map((p) => ({ p, score: scorePost(p, profile, followingSet, seen, now) }))
+        .sort((a, b) => b.score - a.score)
+        .map((x) => x.p);
 
       setPosts(scored);
       // Persist post IDs shown to the user so they can be deprioritised next session.

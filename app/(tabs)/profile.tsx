@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { showPostOptions } from '../../lib/postActions';
+import { isAudioPost } from '../../lib/genres';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 
 type Profile = {
@@ -136,8 +137,8 @@ export default function ProfileScreen() {
                 : undefined
             }
             onPress={() => {
-              if (post.type === 'audio') {
-                const songs = data.filter((s: any) => s.type === 'audio');
+              if (isAudioPost(post.type)) {
+                const songs = data.filter((s: any) => isAudioPost(s.type));
                 const idx = songs.findIndex((s: any) => s.id === post.id);
                 playQueue(
                   songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: profile?.display_name ?? '', cover: s.cover_url })),
@@ -148,7 +149,7 @@ export default function ProfileScreen() {
               }
             }}
           >
-            {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (post.type === 'audio' && post.cover_url) ? (
+            {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) || (isAudioPost(post.type) && post.cover_url) ? (
               <>
                 <Image
                   source={{ uri: post.type === 'image' ? post.media_url : post.type === 'video' ? post.thumbnail_url : post.cover_url }}
@@ -160,7 +161,7 @@ export default function ProfileScreen() {
                     <Ionicons name="play" size={14} color={COLORS.text} />
                   </View>
                 )}
-                {post.type === 'audio' && (
+                {isAudioPost(post.type) && (
                   <View style={styles.gridPlayOverlay}>
                     <Ionicons name="musical-notes" size={13} color={COLORS.text} />
                   </View>
@@ -169,7 +170,7 @@ export default function ProfileScreen() {
             ) : (
               <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
                 <Ionicons
-                  name={post.type === 'audio' ? 'musical-notes' : 'videocam'}
+                  name={isAudioPost(post.type) ? 'musical-notes' : 'videocam'}
                   size={28} color={COLORS.primary}
                 />
               </LinearGradient>

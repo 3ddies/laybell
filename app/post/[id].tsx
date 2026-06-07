@@ -18,6 +18,7 @@ import Comments from '../../components/Comments';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { showPostOptions } from '../../lib/postActions';
+import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { Share } from 'react-native';
 
@@ -180,12 +181,12 @@ export default function PostDetailScreen() {
 
             {/* Media */}
             {post.type === 'image' && post.media_url && (
-              <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined }]} resizeMode="cover" />
+              <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined, backgroundColor: '#000' }]} resizeMode="contain" />
             )}
             {post.type === 'video' && post.media_url && (
-              <Video source={{ uri: post.media_url }} style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]} useNativeControls resizeMode={ResizeMode.COVER} isLooping shouldPlay />
+              <Video source={{ uri: post.media_url }} style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]} useNativeControls resizeMode={ResizeMode.CONTAIN} isLooping shouldPlay />
             )}
-            {post.type === 'audio' && (
+            {isAudioPost(post.type) && (
               <TouchableOpacity
                 style={styles.audioWrap}
                 onPress={() => audioPlaying ? stop() : play({ id: post.id, uri: post.media_url, caption: post.caption, artist: post.profiles?.display_name, cover: post.cover_url })}
@@ -215,7 +216,7 @@ export default function PostDetailScreen() {
             )}
 
             {/* Caption */}
-            {!!post.caption && post.type !== 'audio' && (
+            {!!post.caption && !isAudioPost(post.type) && (
               <Text style={styles.caption}>{post.caption}</Text>
             )}
 
