@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Modal, View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform,
+  Modal, View, Text, StyleSheet, TouchableOpacity, Keyboard, Platform,
   Pressable, Dimensions, Animated, PanResponder, Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,9 +42,13 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
   const defRef = useRef(DEFAULT_H); defRef.current = DEFAULT_H;
   const closeRef = useRef(onClose); closeRef.current = onClose;
 
+  // Height of the on-screen keyboard, used to lift the sheet's input above it.
+  const [kbHeight, setKbHeight] = useState(0);
+
   useEffect(() => {
     if (visible) {
       detent.current = 'default';
+      setKbHeight(0);
       height.setValue(defRef.current);
       translateY.setValue(defRef.current);
       backdrop.setValue(0);
@@ -54,6 +58,21 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
       ]).start();
     }
   }, [visible]);
+
+  // Keep the comment bar above the keyboard. A KeyboardAvoidingView is unreliable
+  // inside a Modal (and a no-op on Android here), so handle it manually: reserve
+  // the keyboard's height at the sheet bottom and expand to full so the list
+  // still has room. snapTo is hoisted, so it's safe to reference here.
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      setKbHeight(e.endCoordinates?.height ?? 0);
+      snapTo('full');
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   function dismiss() {
     Animated.parallel([
@@ -114,7 +133,7 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
         <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
         </Animated.View>
-        <Animated.View style={[styles.sheet, { height, paddingBottom: insets.bottom, transform: [{ translateY }] }]}>
+        <Animated.View style={[styles.sheet, { height, paddingBottom: kbHeight > 0 ? kbHeight : insets.bottom, transform: [{ translateY }] }]}>
           {/* Drag grip — handle + title. Claims the gesture on touch. */}
           <View style={styles.grab} {...pan.panHandlers}>
             <View style={styles.handle} />
@@ -124,9 +143,9 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
             <Ionicons name="close" size={22} color={COLORS.textSecondary} />
           </TouchableOpacity>
           <View style={styles.divider} />
-          <KeyboardAvoidingView style={styles.body} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.body}>
             {postId ? <Comments postId={postId} ownerId={ownerId} contentPadding={SPACING.md} /> : null}
-          </KeyboardAvoidingView>
+          </View>
         </Animated.View>
       </View>
     </Modal>
