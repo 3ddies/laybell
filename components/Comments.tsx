@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl, Image } from 'react-native';
-import { useCallback, useEffect, useRef, useState, ReactElement } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import { Fragment, useCallback, useEffect, useRef, useState, ReactElement } from 'react';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -121,10 +122,21 @@ export default function Comments({
     setRows(prev => prev.filter(r => r.id !== id && r.parent_id !== id));
   }
 
-  const Row = ({ item, isReply }: { item: Row; isReply?: boolean }) => (
+  // Plain render function (NOT a component) so that on the frequent re-renders
+  // caused by audio playback, the avatar <Image> reconciles by position instead
+  // of remounting — which is what made avatars flash/pulsate. expo-image also
+  // caches the bitmap (memory+disk) and uses no fade, so it never flickers.
+  function renderRow(item: Row, isReply?: boolean) {
+    return (
     <View style={[styles.row, isReply && styles.replyRow]}>
       {item.profiles?.avatar_url ? (
-        <Image source={{ uri: item.profiles.avatar_url }} style={[styles.avatar, isReply && styles.avatarSm]} />
+        <Image
+          source={{ uri: item.profiles.avatar_url }}
+          style={[styles.avatar, isReply && styles.avatarSm]}
+          contentFit="cover"
+          transition={0}
+          cachePolicy="memory-disk"
+        />
       ) : (
         <LinearGradient colors={GRADIENTS.primary} style={[styles.avatar, isReply && styles.avatarSm]}>
           <Text style={styles.avatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
@@ -156,7 +168,8 @@ export default function Comments({
         </View>
       </View>
     </View>
-  );
+    );
+  }
 
   return (
     <View style={[styles.flex, style]}>
@@ -183,10 +196,10 @@ export default function Comments({
           const replies = repliesOf(item.id);
           return (
             <View>
-              <Row item={item} />
+              {renderRow(item)}
               {replies.length > 0 && (
                 <View style={styles.replyWire}>
-                  {replies.map(r => <Row key={r.id} item={r} isReply />)}
+                  {replies.map(r => <Fragment key={r.id}>{renderRow(r, true)}</Fragment>)}
                 </View>
               )}
             </View>
