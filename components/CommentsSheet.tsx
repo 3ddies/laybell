@@ -10,12 +10,10 @@ import { COLORS, SPACING, RADIUS } from '../constants/theme';
 
 const SCREEN_H = Dimensions.get('window').height;
 
-// Instagram-style slide-up comments with two heights:
-//   • default  ~78% of the screen
-//   • expanded ~full screen
-// Drag the grab bar / header UP to expand, DOWN to collapse, and further DOWN to
-// dismiss. Transparent so a playing reel stays visible behind it. The comment
-// list scrolls on its own — only the top bar is the drag grip.
+// Instagram-style slide-up comments with two heights — default (~78%) and full.
+// Drag the grab bar UP to expand, DOWN to collapse, further DOWN to dismiss.
+// Transparent so a playing reel stays visible behind it; the comment list scrolls
+// on its own (only the top bar is the drag grip).
 export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
   visible: boolean;
   postId: string;
@@ -27,16 +25,21 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
   const DEFAULT_H = Math.min(Math.round(SCREEN_H * 0.78), FULL_H);
 
   const height = useRef(new Animated.Value(DEFAULT_H)).current;
-  const translateY = useRef(new Animated.Value(DEFAULT_H)).current; // off-screen until opened
+  const translateY = useRef(new Animated.Value(DEFAULT_H)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
   const detent = useRef<'default' | 'full'>('default');
   const startH = useRef(DEFAULT_H);
 
+  // Live geometry for the (once-created) pan handlers.
+  const fullRef = useRef(FULL_H); fullRef.current = FULL_H;
+  const defRef = useRef(DEFAULT_H); defRef.current = DEFAULT_H;
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+
   useEffect(() => {
     if (visible) {
       detent.current = 'default';
-      height.setValue(DEFAULT_H);
-      translateY.setValue(DEFAULT_H);
+      height.setValue(defRef.current);
+      translateY.setValue(defRef.current);
       backdrop.setValue(0);
       Animated.parallel([
         Animated.timing(translateY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
@@ -45,48 +48,50 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
     }
   }, [visible]);
 
-  const dismiss = () => {
+  function dismiss() {
     Animated.parallel([
-      Animated.timing(translateY, { toValue: FULL_H, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: false }),
+      Animated.timing(translateY, { toValue: fullRef.current, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: false }),
       Animated.timing(backdrop, { toValue: 0, duration: 220, useNativeDriver: false }),
-    ]).start(() => onClose());
-  };
+    ]).start(() => closeRef.current());
+  }
 
-  const snapTo = (target: 'default' | 'full') => {
+  function snapTo(target: 'default' | 'full') {
     detent.current = target;
     Animated.parallel([
-      Animated.spring(height, { toValue: target === 'full' ? FULL_H : DEFAULT_H, useNativeDriver: false, bounciness: 2, speed: 14 }),
+      Animated.spring(height, { toValue: target === 'full' ? fullRef.current : defRef.current, useNativeDriver: false, bounciness: 2, speed: 14 }),
       Animated.spring(translateY, { toValue: 0, useNativeDriver: false, bounciness: 2, speed: 14 }),
       Animated.timing(backdrop, { toValue: 1, duration: 150, useNativeDriver: false }),
     ]).start();
-  };
+  }
 
   const pan = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 4 && Math.abs(g.dy) > Math.abs(g.dx),
-    onPanResponderGrant: () => { startH.current = detent.current === 'full' ? FULL_H : DEFAULT_H; },
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => { startH.current = detent.current === 'full' ? fullRef.current : defRef.current; },
     onPanResponderMove: (_e, g) => {
-      const target = startH.current - g.dy; // drag up → taller, down → shorter
-      if (target >= DEFAULT_H) {
-        height.setValue(Math.min(target, FULL_H));
+      const DEF = defRef.current, FULL = fullRef.current;
+      const target = startH.current - g.dy; // up → taller, down → shorter
+      if (target >= DEF) {
+        height.setValue(Math.min(target, FULL));
         translateY.setValue(0);
         backdrop.setValue(1);
       } else {
-        // Below the default height: keep the sheet at default size and slide it down.
-        height.setValue(DEFAULT_H);
-        const down = DEFAULT_H - target;
+        height.setValue(DEF);
+        const down = DEF - target;
         translateY.setValue(down);
-        backdrop.setValue(Math.max(0, 1 - down / DEFAULT_H));
+        backdrop.setValue(Math.max(0, 1 - down / DEF));
       }
     },
     onPanResponderRelease: (_e, g) => {
+      const DEF = defRef.current, FULL = fullRef.current;
       const target = startH.current - g.dy;
-      if (target < DEFAULT_H) {
-        const down = DEFAULT_H - target;
-        if (down > DEFAULT_H * 0.25 || g.vy > 1.2) dismiss();
+      if (target < DEF) {
+        const down = DEF - target;
+        if (down > DEF * 0.25 || g.vy > 1.2) dismiss();
         else snapTo('default');
       } else {
-        const h = Math.min(target, FULL_H);
-        if (h > (DEFAULT_H + FULL_H) / 2 || g.vy < -1.2) snapTo('full');
+        const h = Math.min(target, FULL);
+        if (h > (DEF + FULL) / 2 || g.vy < -1.2) snapTo('full');
         else snapTo('default');
       }
     },
@@ -99,15 +104,15 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
           <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
         </Animated.View>
         <Animated.View style={[styles.sheet, { height, paddingBottom: insets.bottom, transform: [{ translateY }] }]}>
+          {/* Drag grip — handle + title. Claims the gesture on touch. */}
           <View style={styles.grab} {...pan.panHandlers}>
             <View style={styles.handle} />
-            <View style={styles.headerRow}>
-              <Text style={styles.title}>Comments</Text>
-              <TouchableOpacity onPress={dismiss} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="close" size={22} color={COLORS.textSecondary} />
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.title}>Comments</Text>
           </View>
+          <TouchableOpacity style={styles.closeBtn} onPress={dismiss} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+          <View style={styles.divider} />
           <KeyboardAvoidingView style={styles.body} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             {postId ? <Comments postId={postId} ownerId={ownerId} contentPadding={SPACING.md} /> : null}
           </KeyboardAvoidingView>
@@ -125,13 +130,10 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl,
     overflow: 'hidden',
   },
-  body: { flex: 1 },
-  grab: { paddingTop: SPACING.sm },
-  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.border },
-  headerRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
-  },
+  grab: { paddingTop: SPACING.sm, paddingBottom: SPACING.sm, alignItems: 'center', gap: SPACING.sm },
+  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: COLORS.border },
   title: { color: COLORS.text, fontSize: 16, fontWeight: '800' },
+  closeBtn: { position: 'absolute', top: SPACING.sm, right: SPACING.md, padding: 4 },
+  divider: { height: 0.5, backgroundColor: COLORS.border },
+  body: { flex: 1 },
 });
