@@ -11,8 +11,13 @@ const NUM_COLS = 4;
 const GAP = 2;
 const SCREEN_W = Dimensions.get('window').width;
 const CELL = (SCREEN_W - GAP * (NUM_COLS - 1)) / NUM_COLS;
+const PAGE = 18;
 
 export type PickedMedia = { uri: string; width: number; height: number; type: 'image' | 'video' };
+
+// A gallery item already resolved to a usable file:// URI (never ph://, which
+// RN's image pipeline can't load).
+type GalleryItem = { id: string; uri: string; width: number; height: number; duration: number };
 
 function formatDur(s: number) {
   const m = Math.floor(s / 60);
@@ -20,21 +25,31 @@ function formatDur(s: number) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-// Device camera-roll grid (like Instagram's picker). Tapping a thumbnail resolves
-// its localUri and hands it back via onPick; a leading tile opens the camera.
+// Device camera-roll grid (like Instagram's picker). Each asset is resolved to a
+// local file:// URI before display, so iOS `ph://` URIs never reach <Image>.
 export default function PhotoGrid({ mediaType, onPick }: {
   mediaType: 'image' | 'video';
   onPick: (m: PickedMedia) => void;
 }) {
   const [permission, requestPermission] = MediaLibrary.usePermissions();
-  const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
+  const [items, setItems] = useState<GalleryItem[]>([]);
   const [endCursor, setEndCursor] = useState<string | undefined>(undefined);
   const [hasNext, setHasNext] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [resolving, setResolving] = useState(false);
   const loadingRef = useRef(false);
 
   const mlType = mediaType === 'video' ? MediaLibrary.MediaType.video : MediaLibrary.MediaType.photo;
+
+  const resolveAsset = useCallback(async (a: MediaLibrary.Asset): Promise<GalleryItem | null> => {
+    try {
+      const info = await MediaLibrary.getAssetInfoAsync(a);
+      const uri = info.localUri || a.uri;
+      if (!uri || uri.startsWith('ph://')) return null; // unusable for <Image>/manipulate
+      return { id: a.id, uri, width: a.width, height: a.height, duration: a.duration };
+    } catch {
+      return null;
+    }
+  }, []);
 
   const loadPage = useCallback(async (after?: string) => {
     if (loadingRef.current) return;
@@ -44,10 +59,11 @@ export default function PhotoGrid({ mediaType, onPick }: {
       const page = await MediaLibrary.getAssetsAsync({
         mediaType: [mlType],
         sortBy: [[MediaLibrary.SortBy.creationTime, false]],
-        first: 30,
+        first: PAGE,
         after,
       });
-      setAssets(prev => (after ? [...prev, ...page.assets] : page.assets));
+      const resolved = (await Promise.all(page.assets.map(resolveAsset))).filter(Boolean) as GalleryItem[];
+      setItems(prev => (after ? [...prev, ...resolved] : resolved));
       setEndCursor(page.endCursor);
       setHasNext(page.hasNextPage);
     } catch {
@@ -55,7 +71,7 @@ export default function PhotoGrid({ mediaType, onPick }: {
     }
     loadingRef.current = false;
     setLoading(false);
-  }, [mlType]);
+  }, [mlType, resolveAsset]);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,22 +79,11 @@ export default function PhotoGrid({ mediaType, onPick }: {
       let p = permission;
       if (!p || !p.granted) p = await requestPermission();
       if (cancelled || !p?.granted) return;
-      setAssets([]); setEndCursor(undefined); setHasNext(true);
+      setItems([]); setEndCursor(undefined); setHasNext(true);
       loadPage(undefined);
     })();
     return () => { cancelled = true; };
   }, [mediaType]);
-
-  async function selectAsset(asset: MediaLibrary.Asset) {
-    if (resolving) return;
-    setResolving(true);
-    try {
-      const info = await MediaLibrary.getAssetInfoAsync(asset);
-      onPick({ uri: info.localUri || asset.uri, width: asset.width, height: asset.height, type: mediaType });
-    } finally {
-      setResolving(false);
-    }
-  }
 
   async function openCamera() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -105,7 +110,7 @@ export default function PhotoGrid({ mediaType, onPick }: {
     );
   }
 
-  const data: any[] = [{ id: '__camera__' }, ...assets];
+  const data: any[] = [{ id: '__camera__' }, ...items];
 
   return (
     <FlatList
@@ -114,7 +119,7 @@ export default function PhotoGrid({ mediaType, onPick }: {
       numColumns={NUM_COLS}
       columnWrapperStyle={{ gap: GAP }}
       contentContainerStyle={{ gap: GAP }}
-      onEndReached={() => { if (hasNext && endCursor && !loading) loadPage(endCursor); }}
+      onEndReached={() => { if (hasNext && endCursor && !loadingRef.current) loadPage(endCursor); }}
       onEndReachedThreshold={0.6}
       ListFooterComponent={loading ? <ActivityIndicator color={COLORS.primary} style={{ margin: SPACING.md }} /> : null}
       renderItem={({ item }) => {
@@ -126,7 +131,11 @@ export default function PhotoGrid({ mediaType, onPick }: {
           );
         }
         return (
-          <TouchableOpacity style={styles.cell} activeOpacity={0.85} onPress={() => selectAsset(item)}>
+          <TouchableOpacity
+            style={styles.cell}
+            activeOpacity={0.85}
+            onPress={() => onPick({ uri: item.uri, width: item.width, height: item.height, type: mediaType })}
+          >
             <Image source={{ uri: item.uri }} style={styles.thumb} />
             {mediaType === 'video' && item.duration > 0 && (
               <Text style={styles.dur}>{formatDur(item.duration)}</Text>
