@@ -2,7 +2,7 @@ import { Video, ResizeMode } from 'expo-av';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, Share, ActivityIndicator,
 } from 'react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,22 +17,26 @@ import { useAudio } from '../../contexts/AudioContext';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, EMPTY_PROFILE,
 } from '../../lib/feedScorer';
-import ScaleInView from '../../components/ScaleInView';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export default function ReelScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, post: postParam } = useLocalSearchParams<{ id: string; post?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { stop } = useAudio();
 
-  const [posts, setPosts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from the tapped video so it plays instantly (no loading spinner).
+  const seed = useMemo(() => {
+    try { return postParam ? JSON.parse(postParam) : null; } catch { return null; }
+  }, [postParam]);
+
+  const [posts, setPosts] = useState<any[]>(seed ? [seed] : []);
+  const [loading, setLoading] = useState(!seed);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [liked, setLiked] = useState<Set<string>>(new Set());
   const [saved, setSaved] = useState<Set<string>>(new Set());
-  const [visibleId, setVisibleId] = useState<string | null>(null);
+  const [visibleId, setVisibleId] = useState<string | null>(seed?.id ?? null);
   const [paused, setPaused] = useState(false);
   const videoRefs = useRef<Record<string, any>>({});
 
@@ -203,12 +207,8 @@ export default function ReelScreen() {
   }
 
   return (
-    <ScaleInView style={styles.container}>
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator color={COLORS.primary} size="large" /></View>
-      ) : posts.length === 0 ? (
-        <View style={styles.center}><Text style={styles.empty}>No videos to show</Text></View>
-      ) : (
+    <View style={styles.container}>
+      {posts.length > 0 ? (
         <FlatList
           data={posts}
           keyExtractor={(p) => p.id}
@@ -225,13 +225,17 @@ export default function ReelScreen() {
           maxToRenderPerBatch={2}
           initialNumToRender={1}
         />
+      ) : loading ? (
+        <View style={styles.center} />
+      ) : (
+        <View style={styles.center}><Text style={styles.empty}>No videos to show</Text></View>
       )}
 
       {/* Back button */}
       <TouchableOpacity style={[styles.back, { top: insets.top + 8 }]} onPress={() => router.back()}>
         <Ionicons name="chevron-back" size={28} color="#fff" />
       </TouchableOpacity>
-    </ScaleInView>
+    </View>
   );
 }
 

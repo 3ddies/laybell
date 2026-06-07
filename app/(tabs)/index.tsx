@@ -437,8 +437,8 @@ export default function HomeScreen() {
   }, []);
 
   const onProfile = useCallback((item: Post) => live.current.router.push(`/profile/${item.user_id}`), []);
-  const onOpenPost = useCallback((item: Post) => live.current.router.push(`/post/${item.id}`), []);
-  const onOpenReel = useCallback((item: Post) => live.current.router.push(`/reel/${item.id}`), []);
+  const onOpenPost = useCallback((item: Post) => live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item) } }), []);
+  const onOpenReel = useCallback((item: Post) => live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item) } }), []);
 
   const onPlayTrack = useCallback((item: Post) => {
     live.current.play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url });

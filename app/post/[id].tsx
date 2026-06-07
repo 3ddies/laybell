@@ -7,7 +7,7 @@ import {
 
 const SCREEN_W = Dimensions.get('window').width;
 const MAX_VIDEO_H = SCREEN_W * 1.25; // match the feed's 4:5 cap
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,7 +19,6 @@ import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { showPostOptions } from '../../lib/postActions';
 import { isAudioPost } from '../../lib/genres';
-import ScaleInView from '../../components/ScaleInView';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { Share } from 'react-native';
 
@@ -39,18 +38,24 @@ type Comment = {
 };
 
 export default function PostDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, post: postParam } = useLocalSearchParams<{ id: string; post?: string }>();
   const router = useRouter();
   const { currentTrack, isPlaying, play, stop } = useAudio();
   const flatListRef = useRef<any>(null);
   const videoRef = useRef<any>(null);
 
-  const [post, setPost] = useState<Post | null>(null);
-  const [likeCount, setLikeCount] = useState(0);
-  const [commentCount, setCommentCount] = useState(0);
+  // Seed from the post passed in on tap so the screen renders instantly (no
+  // loading spinner) — the fetch below just refreshes counts/details.
+  const seeded = useMemo(() => {
+    try { return postParam ? (JSON.parse(postParam) as any) : null; } catch { return null; }
+  }, [postParam]);
+  const [post, setPost] = useState<Post | null>(seeded);
+  const [notFound, setNotFound] = useState(false);
+  const [likeCount, setLikeCount] = useState<number>(seeded?.likes?.[0]?.count ?? 0);
+  const [commentCount, setCommentCount] = useState<number>(seeded?.comments?.[0]?.count ?? 0);
   const [isLiked, setIsLiked] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
-  const [saveCount, setSaveCount] = useState(0);
+  const [saveCount, setSaveCount] = useState<number>(seeded?.save_count ?? 0);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
@@ -72,6 +77,7 @@ export default function PostDetailScreen() {
     ]);
 
     if (postRes.data) { setPost(postRes.data as any); setSaveCount((postRes.data as any).save_count || 0); }
+    else if (!postParam) { setNotFound(true); }
     if (likesRes.data) {
       setLikeCount(likesRes.data.length);
       if (user) setIsLiked(likesRes.data.some(l => l.user_id === user.id));
@@ -133,16 +139,23 @@ export default function PostDetailScreen() {
     setCommentCount(prev => prev - 1);
   }
 
-  if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
-  }
-  if (!post) {
-    return <View style={styles.loadingContainer}><Text style={{ color: COLORS.textSecondary }}>Post not found</Text></View>;
+  if (notFound && !post) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Post</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.loadingContainer}><Text style={{ color: COLORS.textSecondary }}>Post not found</Text></View>
+      </View>
+    );
   }
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScaleInView>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
@@ -150,6 +163,7 @@ export default function PostDetailScreen() {
         <Text style={styles.headerTitle}>Post</Text>
         <View style={{ width: 40 }} />
       </View>
+      {post ? (
 
       <Comments
         postId={id as string}
@@ -265,7 +279,7 @@ export default function PostDetailScreen() {
           </>
         }
       />
-      </ScaleInView>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
