@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity, Pressable,
   Animated, PanResponder, Easing, ScrollView, Image, Share, ActivityIndicator,
+  Linking, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -62,8 +63,58 @@ function buildShareText(p: SharePayload) {
   const text = p.caption
     ? `"${p.caption}" — @${p.username ?? ''} on Laybell`
     : `Check out ${p.username ? `@${p.username}` : 'this'} on Laybell`;
-  return { link, message: `${text}\n${link}` };
+  const title = p.caption || (p.username ? `@${p.username} on Laybell` : 'Laybell');
+  return { link, title, message: `${text}\n${link}` };
 }
+
+const enc = encodeURIComponent;
+type ShareCtx = { message: string; link: string; title: string };
+
+// Scrollable row of external targets (TikTok-style). Each opens the app via its
+// URL scheme, falling back to a web URL, then to the OS sheet. "More" goes
+// straight to the native sheet (which also covers Copy Link, Instagram, etc.).
+type ExternalApp = {
+  key: string;
+  label: string;
+  icon: any;
+  color: string;
+  urls?: (c: ShareCtx) => string[];
+  native?: boolean;
+};
+
+const EXTERNAL_APPS: ExternalApp[] = [
+  {
+    key: 'sms', label: 'Messages', icon: 'chatbubble-ellipses', color: '#34C759',
+    urls: ({ message }) => [Platform.OS === 'ios' ? `sms:&body=${enc(message)}` : `sms:?body=${enc(message)}`],
+  },
+  {
+    key: 'whatsapp', label: 'WhatsApp', icon: 'logo-whatsapp', color: '#25D366',
+    urls: ({ message }) => [`whatsapp://send?text=${enc(message)}`, `https://wa.me/?text=${enc(message)}`],
+  },
+  {
+    key: 'telegram', label: 'Telegram', icon: 'paper-plane', color: '#229ED9',
+    urls: ({ message, link }) => [`tg://msg_url?url=${enc(link)}&text=${enc(message)}`, `https://t.me/share/url?url=${enc(link)}&text=${enc(message)}`],
+  },
+  {
+    key: 'x', label: 'X', icon: 'logo-twitter', color: '#1DA1F2',
+    urls: ({ message }) => [`twitter://post?message=${enc(message)}`, `https://twitter.com/intent/tweet?text=${enc(message)}`],
+  },
+  {
+    key: 'facebook', label: 'Facebook', icon: 'logo-facebook', color: '#1877F2',
+    urls: ({ link }) => [`https://www.facebook.com/sharer/sharer.php?u=${enc(link)}`],
+  },
+  {
+    key: 'reddit', label: 'Reddit', icon: 'logo-reddit', color: '#FF4500',
+    urls: ({ link, title }) => [`https://www.reddit.com/submit?url=${enc(link)}&title=${enc(title)}`],
+  },
+  {
+    key: 'email', label: 'Email', icon: 'mail', color: '#EA4335',
+    urls: ({ message, title }) => [`mailto:?subject=${enc(title)}&body=${enc(message)}`],
+  },
+  {
+    key: 'more', label: 'More', icon: 'ellipsis-horizontal', color: COLORS.surfaceElevated, native: true,
+  },
+];
 
 function ShareSheet({ visible, payload, onClose }: {
   visible: boolean;
@@ -201,12 +252,21 @@ function ShareSheet({ visible, payload, onClose }: {
     setTimeout(() => dismiss(), 750);
   }
 
-  function shareExternal() {
-    if (!payload) return;
-    const { message, link } = buildShareText(payload);
+  function nativeShare(message: string, link: string) {
     dismiss();
     // Open the OS sheet after ours has closed, so the two modals don't fight.
     setTimeout(() => { Share.share({ message, url: link }).catch(() => {}); }, 280);
+  }
+
+  async function openApp(app: ExternalApp) {
+    if (!payload) return;
+    const { message, link, title } = buildShareText(payload);
+    if (app.native || !app.urls) { nativeShare(message, link); return; }
+    // Try the app scheme, then the web fallback, then the OS sheet.
+    for (const url of app.urls({ message, link, title })) {
+      try { await Linking.openURL(url); dismiss(); return; } catch {}
+    }
+    nativeShare(message, link);
   }
 
   return (
@@ -293,14 +353,17 @@ function ShareSheet({ visible, payload, onClose }: {
 
           <View style={styles.divider} />
 
-          {/* Outside the app */}
-          <TouchableOpacity style={styles.externalRow} onPress={shareExternal} activeOpacity={0.7}>
-            <View style={styles.iconWrap}>
-              <Ionicons name="share-social-outline" size={20} color={COLORS.text} />
-            </View>
-            <Text style={styles.externalLabel}>Share to other apps…</Text>
-            <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
-          </TouchableOpacity>
+          {/* Outside the app — scrollable row of app circles (TikTok-style) */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.peopleRow}>
+            {EXTERNAL_APPS.map((app) => (
+              <TouchableOpacity key={app.key} style={styles.person} onPress={() => openApp(app)} activeOpacity={0.8}>
+                <View style={[styles.appCircle, { backgroundColor: app.color }]}>
+                  <Ionicons name={app.icon} size={26} color={app.key === 'more' ? COLORS.text : '#fff'} />
+                </View>
+                <Text style={styles.personName} numberOfLines={1}>{app.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </Animated.View>
       </View>
     </Modal>
@@ -364,13 +427,8 @@ const styles = StyleSheet.create({
   sendBtnBusy: { opacity: 0.85 },
   sendBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
-  externalRow: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.md + SPACING.xs,
+  appCircle: {
+    width: 56, height: 56, borderRadius: RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
   },
-  iconWrap: {
-    width: 36, height: 36, borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center',
-  },
-  externalLabel: { flex: 1, color: COLORS.text, fontSize: 16, fontWeight: '500' },
 });
