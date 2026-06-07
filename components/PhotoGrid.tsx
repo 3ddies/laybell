@@ -14,7 +14,13 @@ const SCREEN_W = Dimensions.get('window').width;
 const CELL = (SCREEN_W - GAP * (NUM_COLS - 1)) / NUM_COLS;
 const PAGE = 60;
 
-export type PickedMedia = { uri: string; width: number; height: number; type: 'image' | 'video' };
+export type PickedMedia = {
+  uri: string;            // file:// — for cropping/upload
+  posterUri?: string;     // ph:// (video) shown as a still preview via expo-image
+  width: number;
+  height: number;
+  type: 'image' | 'video';
+};
 
 function formatDur(s: number) {
   const m = Math.floor(s / 60);
@@ -80,7 +86,9 @@ export default function PhotoGrid({ mediaType, onPick, onScroll }: {
     try {
       const info = await MediaLibrary.getAssetInfoAsync(asset);
       const uri = info.localUri || asset.uri;
-      onPick({ uri, width: asset.width, height: asset.height, type: mediaType });
+      // Video posters render reliably from the ph:// asset via expo-image.
+      const posterUri = mediaType === 'video' ? asset.uri : uri;
+      onPick({ uri, posterUri, width: asset.width, height: asset.height, type: mediaType });
     } catch {
       // ignore — user can tap another
     } finally {
@@ -97,7 +105,8 @@ export default function PhotoGrid({ mediaType, onPick, onScroll }: {
     });
     if (!result.canceled && result.assets[0]) {
       const a = result.assets[0];
-      onPick({ uri: a.uri, width: a.width ?? 1, height: a.height ?? 1, type: mediaType });
+      // Camera video has no ph:// poster — post.tsx falls back to a generated thumbnail.
+      onPick({ uri: a.uri, posterUri: mediaType === 'video' ? undefined : a.uri, width: a.width ?? 1, height: a.height ?? 1, type: mediaType });
     }
   }
 

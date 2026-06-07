@@ -1,6 +1,6 @@
 // Post format options (Instagram-style). Stored as a string on posts.aspect_ratio.
-//   1:1 square · 4:5 portrait · 1.91:1 landscape
-export const IMAGE_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
+//   1:1 square · 4:5 portrait  (1.91:1 landscape dropped for photos — too narrow)
+export const IMAGE_FORMATS = ['1:1', '4:5'] as const;
 export const VIDEO_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
 
 // Numeric width/height ratio for React Native's `aspectRatio` style.

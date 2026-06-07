@@ -16,6 +16,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
 import { GENRES } from '../../lib/genres';
+import { Image as ExpoImage } from 'expo-image';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
 import ErrorBoundary from '../../components/ErrorBoundary';
@@ -39,7 +40,7 @@ export default function PostScreen() {
   const [format, setFormat] = useState<string>('1:1');
 
   // image/video selection
-  const [media, setMedia] = useState<{ uri: string; width: number; height: number } | null>(null);
+  const [media, setMedia] = useState<{ uri: string; width: number; height: number; posterUri?: string } | null>(null);
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
   const [videoAspect, setVideoAspect] = useState(0.8); // native aspect for video display
   const cropperRef = useRef<MediaCropperHandle>(null);
@@ -102,7 +103,7 @@ export default function PostScreen() {
   }
 
   async function onPickMedia(m: PickedMedia) {
-    setMedia({ uri: m.uri, width: m.width, height: m.height });
+    setMedia({ uri: m.uri, width: m.width, height: m.height, posterUri: m.posterUri });
     setThumbnailUri(null);
     if (m.type === 'video') {
       setVideoAspect(clampFeedAspect((m.width || 1) / (m.height || 1)));
@@ -364,18 +365,27 @@ export default function PostScreen() {
           {/* Collapsing cropper preview — shrinks as the gallery scrolls */}
           <Animated.View style={[styles.previewArea, { height: animatedPreviewH }]}>
             {media ? (
-              <ErrorBoundary label="Couldn't open this photo">
-                <MediaCropper
-                  key={`${media.uri}-${previewAspect}`}
-                  ref={cropperRef}
-                  uri={media.uri}
-                  mediaWidth={media.width}
-                  mediaHeight={media.height}
-                  frameW={frameW}
-                  frameH={frameH}
-                  type={postType as 'image' | 'video'}
+              postType === 'video' ? (
+                // Static poster preview (cover) — reliable vs. live playback.
+                <ExpoImage
+                  source={{ uri: media.posterUri || thumbnailUri || media.uri }}
+                  style={{ width: frameW, height: frameH }}
+                  contentFit="cover"
                 />
-              </ErrorBoundary>
+              ) : (
+                <ErrorBoundary label="Couldn't open this photo">
+                  <MediaCropper
+                    key={`${media.uri}-${previewAspect}`}
+                    ref={cropperRef}
+                    uri={media.uri}
+                    mediaWidth={media.width}
+                    mediaHeight={media.height}
+                    frameW={frameW}
+                    frameH={frameH}
+                    type="image"
+                  />
+                </ErrorBoundary>
+              )
             ) : (
               <View style={[styles.previewPlaceholder, { width: frameW, height: frameH }]}>
                 <Ionicons name={postType === 'video' ? 'videocam-outline' : 'image-outline'} size={40} color={COLORS.textTertiary} />
