@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator } from 'react-native';
-import { useEffect, useRef, useState, ReactElement } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import { useCallback, useEffect, useRef, useState, ReactElement } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -13,7 +13,7 @@ type Row = {
 };
 
 export default function Comments({
-  postId, ownerId, ListHeaderComponent, style, contentPadding,
+  postId, ownerId, ListHeaderComponent, style, contentPadding, onRefresh,
 }: {
   postId: string;
   ownerId?: string | null;
@@ -23,6 +23,9 @@ export default function Comments({
   // list frame — so the scroll indicator stays at the screen's right edge even when
   // the caller would otherwise wrap this in a padded container.
   contentPadding?: number;
+  // When provided, enables pull-to-refresh: pulling reloads comments AND calls
+  // this handler (so the host screen can refresh its own header data too).
+  onRefresh?: () => void | Promise<void>;
 }) {
   const listRef = useRef<FlatList>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -33,40 +36,46 @@ export default function Comments({
   const [replyTo, setReplyTo] = useState<{ id: string; name: string } | null>(null);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (cancelled) return;
-      setUserId(user?.id ?? null);
-      if (user) supabase.from('profiles').select('username, display_name').eq('id', user.id).single()
-        .then(({ data }) => { if (!cancelled) setUserProfile(data); });
+  const load = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setUserId(user?.id ?? null);
+    if (user) supabase.from('profiles').select('username, display_name').eq('id', user.id).single()
+      .then(({ data }) => setUserProfile(data));
 
-      const { data: comments } = await supabase
-        .from('comments')
-        .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name)')
-        .eq('post_id', postId)
-        .order('created_at', { ascending: true });
-      if (cancelled || !comments) return;
-      setRows(comments as any);
+    const { data: comments } = await supabase
+      .from('comments')
+      .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name)')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+    if (!comments) return;
+    setRows(comments as any);
 
-      const ids = comments.map((c: any) => c.id);
-      if (ids.length) {
-        const { data: cl } = await supabase.from('comment_likes').select('comment_id, user_id').in('comment_id', ids);
-        if (cancelled) return;
-        const counts: Record<string, number> = {};
-        const mine = new Set<string>();
-        (cl ?? []).forEach((l: any) => {
-          counts[l.comment_id] = (counts[l.comment_id] || 0) + 1;
-          if (user && l.user_id === user.id) mine.add(l.comment_id);
-        });
-        setLikes(counts);
-        setLikedByMe(mine);
-      }
-    })();
-    return () => { cancelled = true; };
+    const ids = comments.map((c: any) => c.id);
+    if (ids.length) {
+      const { data: cl } = await supabase.from('comment_likes').select('comment_id, user_id').in('comment_id', ids);
+      const counts: Record<string, number> = {};
+      const mine = new Set<string>();
+      (cl ?? []).forEach((l: any) => {
+        counts[l.comment_id] = (counts[l.comment_id] || 0) + 1;
+        if (user && l.user_id === user.id) mine.add(l.comment_id);
+      });
+      setLikes(counts);
+      setLikedByMe(mine);
+    } else {
+      setLikes({});
+      setLikedByMe(new Set());
+    }
   }, [postId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([load(), onRefresh?.()]);
+    setRefreshing(false);
+  }, [load, onRefresh]);
 
   const topLevel = rows.filter(r => !r.parent_id);
   const repliesOf = (id: string) => rows.filter(r => r.parent_id === id);
@@ -144,6 +153,11 @@ export default function Comments({
         keyExtractor={c => c.id}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.list, contentPadding != null && { paddingHorizontal: contentPadding }]}
+        refreshControl={
+          onRefresh
+            ? <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={COLORS.primary} />
+            : undefined
+        }
         ListHeaderComponent={
           <>
             {ListHeaderComponent}

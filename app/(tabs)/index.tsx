@@ -22,6 +22,7 @@ import { COLORS, SPACING, RADIUS, SHADOWS, GRADIENTS } from '../../constants/the
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
+import { showOwnPostOptions } from '../../lib/postActions';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import TrackRow from '../../components/TrackRow';
@@ -449,22 +450,7 @@ export default function HomeScreen() {
   const onToggleMuted = useCallback(() => live.current.toggleVideoMuted(), []);
 
   const onOptions = useCallback((item: Post) => {
-    Alert.alert('Post options', undefined, [
-      {
-        text: 'Delete post',
-        style: 'destructive',
-        onPress: () => Alert.alert('Delete post?', 'This permanently deletes the post and can’t be undone.', [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete', style: 'destructive', onPress: async () => {
-              await supabase.from('posts').delete().eq('id', item.id);
-              setPosts(prev => prev.filter(p => p.id !== item.id));
-            },
-          },
-        ]),
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    showOwnPostOptions(item.id, () => setPosts(prev => prev.filter(p => p.id !== item.id)));
   }, []);
 
   const renderPost = useCallback(({ item }: { item: Post }) => (
@@ -554,7 +540,15 @@ export default function HomeScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); fetchPosts(currentUserId || undefined, seenPostIds); }}
+            // Reload the seen-set from storage first so posts shown in prior
+            // loads get the seen-penalty and genuinely new/unseen recent posts
+            // rise to the top on every pull-to-refresh.
+            onRefresh={async () => {
+              setRefreshing(true);
+              const seen = await loadSeenPostIds();
+              setSeenPostIds(seen);
+              await fetchPosts(currentUserId || undefined, seen);
+            }}
             tintColor={COLORS.primary}
           />
         }

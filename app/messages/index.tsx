@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, ActivityIndicator, Image,
+  TouchableOpacity, ActivityIndicator, Image, RefreshControl,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -21,9 +21,17 @@ export default function MessagesScreen() {
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => { setup(); }, []);
+
+  async function onRefresh() {
+    if (!currentUserId) return;
+    setRefreshing(true);
+    await fetchConversations(currentUserId);
+    setRefreshing(false);
+  }
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -82,6 +90,9 @@ export default function MessagesScreen() {
         data={conversations}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
@@ -132,7 +143,9 @@ const styles = StyleSheet.create({
   backBtn: { padding: SPACING.sm },
   headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
 
-  listContent: { padding: SPACING.md, gap: SPACING.sm },
+  // flexGrow lets the list fill the viewport so pull-to-refresh can be started
+  // anywhere on the screen — even when there are few or no conversations.
+  listContent: { padding: SPACING.md, gap: SPACING.sm, flexGrow: 1 },
 
   conversationRow: {
     flexDirection: 'row', alignItems: 'center',

@@ -17,6 +17,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import Comments from '../../components/Comments';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
+import { showOwnPostOptions } from '../../lib/postActions';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { Share } from 'react-native';
 
@@ -141,12 +142,22 @@ export default function PostDetailScreen() {
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Post</Text>
-        <View style={{ width: 40 }} />
+        {currentUserId === post.user_id ? (
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => showOwnPostOptions(id as string, () => router.back())}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
       </View>
 
       <Comments
         postId={id as string}
         ownerId={post.user_id}
+        onRefresh={setup}
         ListHeaderComponent={
           <>
             {/* Author */}

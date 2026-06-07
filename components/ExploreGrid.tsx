@@ -10,11 +10,12 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { aspectToNumber } from '../lib/aspectRatio';
 import { useAudio } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
+import { confirmDeletePost } from '../lib/postActions';
 
 type GridPost = {
   id: string; type: string; media_url: string; caption: string;
   thumbnail_url?: string | null; aspect_ratio?: string | null; cover_url?: string | null;
-  stream_count?: number;
+  stream_count?: number; user_id?: string;
   profiles?: { username: string; display_name: string } | null;
 };
 
@@ -47,11 +48,20 @@ function mediaHeight(post: GridPost): number {
   return COL_W; // pictures render 1:1
 }
 
-export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles }: {
+export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, currentUserId, onPostDeleted }: {
   posts: GridPost[]; refreshing?: boolean; onRefresh?: () => void; songTiles?: boolean;
+  currentUserId?: string | null; onPostDeleted?: (id: string) => void;
 }) {
   const router = useRouter();
   const { play, currentTrack, isPlaying } = useAudio();
+
+  // Long-press handler for the current user's own posts → confirm delete.
+  // (Image/video tiles open the post detail, which has its own delete button;
+  // this covers the inline-play audio tiles/rows that never navigate there.)
+  const longPressFor = (p: GridPost) =>
+    currentUserId && p.user_id === currentUserId
+      ? () => confirmDeletePost(p.id, () => onPostDeleted?.(p.id))
+      : undefined;
 
   // Videos that currently overlap the viewport (these play). Off-screen videos
   // stay mounted but paused, so scrolling back resumes smoothly.
@@ -218,6 +228,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles }:
           style={[styles.mediaCard, { height: cell.height }]}
           activeOpacity={0.9}
           onPress={() => play({ id: p.id, uri: p.media_url, caption: p.caption, artist: p.profiles?.display_name ?? '', cover: p.cover_url })}
+          onLongPress={longPressFor(p)}
         >
           {p.cover_url ? (
             <Image source={{ uri: p.cover_url }} style={styles.mediaImage} resizeMode="cover" />
@@ -263,6 +274,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles }:
                 key={s.id}
                 style={[styles.songRow, { height: ROW_H }, i > 0 && styles.songRowBorder]}
                 onPress={() => play({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? '', cover: s.cover_url })}
+                onLongPress={longPressFor(s)}
               >
                 {s.cover_url ? (
                   <View style={styles.songIcon}>
@@ -303,6 +315,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles }:
           style={styles.square}
           activeOpacity={0.9}
           onPress={() => play({ id: p.id, uri: p.media_url, caption: p.caption, artist: p.profiles?.display_name ?? '', cover: p.cover_url })}
+          onLongPress={longPressFor(p)}
         >
           {p.cover_url ? (
             <Image source={{ uri: p.cover_url }} style={styles.mediaImage} resizeMode="cover" />

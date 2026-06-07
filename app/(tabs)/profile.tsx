@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { confirmDeletePost } from '../../lib/postActions';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 
 type Profile = {
@@ -120,6 +121,15 @@ export default function ProfileScreen() {
           <TouchableOpacity
             key={post.id}
             style={styles.gridItem}
+            // Own content (Posts / Music / Videos) — long-press to delete.
+            onLongPress={
+              (tabKey === 'posts' || tabKey === 'music' || tabKey === 'videos')
+                ? () => confirmDeletePost(post.id, () => {
+                    setUserPosts(prev => prev.filter(p => p.id !== post.id));
+                    setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
+                  })
+                : undefined
+            }
             onPress={() => {
               if (post.type === 'audio') {
                 const songs = data.filter((s: any) => s.type === 'audio');

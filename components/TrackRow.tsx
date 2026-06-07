@@ -13,11 +13,14 @@ function formatDuration(seconds?: number | null) {
 
 export default function TrackRow({
   caption, artist, username, duration, streams, cover, avatarUrl,
-  isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, hidePlayButton,
+  isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, onOptions, hidePlayButton,
 }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
   cover?: string | null; avatarUrl?: string | null; hidePlayButton?: boolean;
   isPlaying: boolean; onPlay: () => void; onCoverPress?: () => void; onAddToPlaylist?: () => void; onAvatarPress?: () => void;
+  // When provided (i.e. the track belongs to the current user), long-pressing the
+  // row triggers it — used app-wide for "delete my post".
+  onOptions?: () => void;
 }) {
   const durationLabel = formatDuration(duration);
   return (
@@ -38,8 +41,8 @@ export default function TrackRow({
         )}
       </TouchableOpacity>
 
-      {/* Track outline — tap to play/pause */}
-      <TouchableOpacity style={styles.info} activeOpacity={0.7} onPress={onPlay}>
+      {/* Track outline — tap to play/pause, long-press for options (own tracks) */}
+      <TouchableOpacity style={styles.info} activeOpacity={0.7} onPress={onPlay} onLongPress={onOptions}>
         <Text style={styles.caption} numberOfLines={1}>{caption || 'Audio Track'}</Text>
         <View style={styles.meta}>
           <Text style={styles.artist} numberOfLines={1}>@{username}</Text>

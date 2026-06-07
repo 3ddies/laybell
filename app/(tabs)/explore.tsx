@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
+import { confirmDeletePost } from '../../lib/postActions';
 import { useAudio } from '../../contexts/AudioContext';
 import { GENRE_FILTERS, CONTENT_TAGS } from '../../lib/genres';
 import {
@@ -122,10 +123,10 @@ export default function ExploreScreen() {
     setLoading(false);
   }
 
-  async function fetchByGenre(genre: string, silent = false) {
+  async function fetchByGenre(genre: string, silent = false, overrideSeen?: Set<string>) {
     if (!silent) setLoading(true);
     setSelectedGenre(genre);
-    if (genre === 'All') { await fetchTrending(); if (!silent) setLoading(false); return; }
+    if (genre === 'All') { await fetchTrending(overrideSeen); if (!silent) setLoading(false); return; }
 
     let q = supabase
       .from('posts')
@@ -145,10 +146,11 @@ export default function ExploreScreen() {
 
     const { data } = await q;
     if (data) {
-      const now = Date.now();
+      const seen = overrideSeen ?? seenPostIds;
+      const now  = Date.now();
       const sorted = [...data].sort((a: any, b: any) =>
-        scorePost(b, affinityProfile.current, followingSetRef.current, seenPostIds, now) -
-        scorePost(a, affinityProfile.current, followingSetRef.current, seenPostIds, now),
+        scorePost(b, affinityProfile.current, followingSetRef.current, seen, now) -
+        scorePost(a, affinityProfile.current, followingSetRef.current, seen, now),
       );
       setTrendingPosts(sorted as any);
       recordSeenPostIds(sorted.map((p: any) => p.id));
@@ -158,8 +160,12 @@ export default function ExploreScreen() {
 
   async function onRefresh() {
     setRefreshing(true);
-    if (selectedGenre === 'All') await fetchTrending();
-    else await fetchByGenre(selectedGenre, true);
+    // Reload the seen-set so already-shown posts are deprioritised and fresh
+    // content surfaces toward the top on every pull-to-refresh.
+    const seen = await loadSeenPostIds();
+    setSeenPostIds(seen);
+    if (selectedGenre === 'All') await fetchTrending(seen);
+    else await fetchByGenre(selectedGenre, true, seen);
     setRefreshing(false);
   }
 
@@ -347,9 +353,18 @@ export default function ExploreScreen() {
                 onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
                 onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); expand(); }}
                 onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
+                onOptions={item.user_id === currentUserId
+                  ? () => confirmDeletePost(item.id, () => setPosts(prev => prev.filter(p => p.id !== item.id)))
+                  : undefined}
               />
             ) : (
-              <TouchableOpacity style={styles.postRow} onPress={() => router.push(`/post/${item.id}`)}>
+              <TouchableOpacity
+                style={styles.postRow}
+                onPress={() => router.push(`/post/${item.id}`)}
+                onLongPress={item.user_id === currentUserId
+                  ? () => confirmDeletePost(item.id, () => setPosts(prev => prev.filter(p => p.id !== item.id)))
+                  : undefined}
+              >
                 {item.type === 'image' || (item.type === 'video' && item.thumbnail_url) ? (
                   <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url as string) }} style={styles.postThumb} />
                 ) : (
@@ -382,7 +397,17 @@ export default function ExploreScreen() {
           />
         )
       ) : (
-        <ExploreGrid posts={trendingPosts} refreshing={refreshing} onRefresh={onRefresh} songTiles={selectedGenre !== 'All'} />
+        <ExploreGrid
+          posts={trendingPosts}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          songTiles={selectedGenre !== 'All'}
+          currentUserId={currentUserId}
+          onPostDeleted={(id) => {
+            setTrendingPosts(prev => prev.filter(p => p.id !== id));
+            setPosts(prev => prev.filter(p => p.id !== id));
+          }}
+        />
       )}
     </View>
   );

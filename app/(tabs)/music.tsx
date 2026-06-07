@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, Modal, Image, Dimensions,
+  ActivityIndicator, Alert, TextInput, Modal, Image, Dimensions, RefreshControl,
 } from 'react-native';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -12,6 +12,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import TrackRow from '../../components/TrackRow';
+import { confirmDeletePost } from '../../lib/postActions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GENRES, CONTENT_TAGS } from '../../lib/genres';
 import {
@@ -23,6 +24,11 @@ const SCREEN_W           = Dimensions.get('window').width;
 const FOR_YOU_W          = Math.floor((SCREEN_W - SPACING.md * 2 - SPACING.md) / 2.3);
 const TODAYS_PICK_KEY    = 'todays_pick_v2';
 const TODAYS_PICK_TTL_MS = 18 * 60 * 60 * 1000; // 18 hours
+// Discover content refreshes on a 4-day cadence. A manual pull-to-refresh only
+// triggers an actual refetch once this window has elapsed; within it, pulling
+// is a no-op (the curated content intentionally stays put).
+const DISCOVER_TS_KEY    = 'discover_refreshed_at';
+const DISCOVER_TTL_MS    = 4 * 24 * 60 * 60 * 1000; // 4 days
 
 type ContentType = 'music' | 'podcast' | 'audiobook';
 
@@ -63,9 +69,11 @@ export default function MusicScreen() {
   const [forYouTracks, setForYouTracks]         = useState<any[]>([]);
   const [todaysPick, setTodaysPick]             = useState<any | null>(null);
   const [discoverLoading, setDiscoverLoading]   = useState(true);
+  const [discoverRefreshing, setDiscoverRefreshing] = useState(false);
   const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
   const followingSetRef = useRef<Set<string>>(new Set());
   const seenRef         = useRef<Set<string>>(new Set());
+  const discoverRefreshedAt = useRef(0); // epoch ms of the last 4-day refresh cycle
 
   useEffect(() => { setup(); }, []);
 
@@ -182,6 +190,24 @@ export default function MusicScreen() {
     );
     seenRef.current = seen;
 
+    // Establish / advance the 4-day discover refresh timestamp. First-ever load
+    // (or a load ≥4 days after the last) counts as a fresh cycle and resets the
+    // clock; within the window we keep the stored time so the manual-pull gate
+    // measures against the real last-refresh.
+    try {
+      const tsRaw    = await AsyncStorage.getItem(`${DISCOVER_TS_KEY}_${userId}`);
+      const storedTs = tsRaw ? parseInt(tsRaw, 10) : 0;
+      const now      = Date.now();
+      if (!storedTs || now - storedTs >= DISCOVER_TTL_MS) {
+        discoverRefreshedAt.current = now;
+        await AsyncStorage.setItem(`${DISCOVER_TS_KEY}_${userId}`, String(now));
+      } else {
+        discoverRefreshedAt.current = storedTs;
+      }
+    } catch {
+      discoverRefreshedAt.current = Date.now();
+    }
+
     setOrderedGenreList(sortGenresByAffinity(profile));
 
     const initialGenre = topGenreDisplay(profile);
@@ -193,6 +219,29 @@ export default function MusicScreen() {
       fetchTodaysPick(userId),
     ]);
     setDiscoverLoading(false);
+  }
+
+  // Manual pull-to-refresh for Discover. Performs an actual refetch ONLY once the
+  // 4-day window has elapsed since the last refresh; within the window it is a
+  // deliberate no-op so the curated content stays put (per product spec).
+  async function onDiscoverRefresh() {
+    setDiscoverRefreshing(true);
+    const now = Date.now();
+    if (currentUserId && now - discoverRefreshedAt.current >= DISCOVER_TTL_MS) {
+      discoverRefreshedAt.current = now;
+      try { await AsyncStorage.setItem(`${DISCOVER_TS_KEY}_${currentUserId}`, String(now)); } catch {}
+      // Rebuild the affinity profile (force-bypass cache) so newly developed
+      // tastes are reflected, then refetch every Discover section.
+      const profile = await buildAffinityProfile(currentUserId, true);
+      affinityProfile.current = profile;
+      setOrderedGenreList(sortGenresByAffinity(profile));
+      await Promise.all([
+        fetchTrendingByGenre(discoverGenre),
+        fetchForYouTracks(),
+        fetchTodaysPick(currentUserId),
+      ]);
+    }
+    setDiscoverRefreshing(false);
   }
 
   // Fetches 30 popular tracks for the selected content type / genre, then
@@ -397,7 +446,17 @@ export default function MusicScreen() {
             <ActivityIndicator color={COLORS.primary} size="large" />
           </View>
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.discoverContent}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.discoverContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={discoverRefreshing}
+                onRefresh={onDiscoverRefresh}
+                tintColor={COLORS.primary}
+              />
+            }
+          >
 
             {/* — Content type selector (Music / Podcasts / Audiobooks) — */}
             <View style={styles.contentTypeRow}>
@@ -479,6 +538,12 @@ export default function MusicScreen() {
                     onPlay={() => play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url)}
                     onCoverPress={() => { play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url); openNowPlaying(); }}
                     onAvatarPress={() => router.push(`/profile/${track.user_id}`)}
+                    onOptions={track.user_id === currentUserId
+                      ? () => confirmDeletePost(track.id, () => {
+                          setTrendingTracks(prev => prev.filter(t => t.id !== track.id));
+                          setForYouTracks(prev => prev.filter(t => t.id !== track.id));
+                        })
+                      : undefined}
                   />
                 ))}
                 {trendingTracks.length > 4 && (
@@ -631,6 +696,10 @@ export default function MusicScreen() {
                   onPlay={() => playQueue(playlistQueue(), index)}
                   onCoverPress={() => { playQueue(playlistQueue(), index); openNowPlaying(); }}
                   onAvatarPress={() => router.push(`/profile/${item.posts.user_id}`)}
+                  onOptions={item.posts.user_id === currentUserId
+                    ? () => confirmDeletePost(item.post_id, () =>
+                        setTracks(prev => prev.filter(t => t.post_id !== item.post_id)))
+                    : undefined}
                 />
               )}
             />
@@ -668,6 +737,10 @@ export default function MusicScreen() {
               onCoverPress={() => { play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url); openNowPlaying(); }}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
               onAvatarPress={() => router.push(`/profile/${item.posts?.user_id}`)}
+              onOptions={item.posts?.user_id === currentUserId
+                ? () => confirmDeletePost(item.posts?.id, () =>
+                    setSavedTracks(prev => prev.filter((s: any) => s.posts?.id !== item.posts?.id)))
+                : undefined}
             />
           )}
         />
@@ -703,6 +776,10 @@ export default function MusicScreen() {
               onCoverPress={() => { playQueue(likedQueue(), index); openNowPlaying(); }}
               onAddToPlaylist={() => setPlaylistModalPostId(item.posts?.id)}
               onAvatarPress={() => router.push(`/profile/${item.posts?.user_id}`)}
+              onOptions={item.posts?.user_id === currentUserId
+                ? () => confirmDeletePost(item.posts?.id, () =>
+                    setLikedTracks(prev => prev.filter((l: any) => l.posts?.id !== item.posts?.id)))
+                : undefined}
             />
           )}
         />
