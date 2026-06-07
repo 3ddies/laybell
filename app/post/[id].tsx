@@ -30,6 +30,7 @@ type Post = {
   stream_count?: number;
   cover_url?: string | null;
   thumbnail_url?: string | null;
+  share_count?: number;
   trim_start?: number | null;
   trim_end?: number | null;
   profiles: { username: string; display_name: string; avatar_url: string | null };
@@ -269,7 +270,7 @@ export default function PostDetailScreen() {
                 {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: COLORS.primary }]}>{saveCount}</Text>}
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.actionBtn, { marginLeft: 'auto' }]}
+                style={styles.actionBtn}
                 onPress={() => openShare({
                   postId: id as string,
                   caption: post.caption,
@@ -280,6 +281,7 @@ export default function PostDetailScreen() {
                 })}
               >
                 <Ionicons name="share-social-outline" size={22} color={COLORS.textSecondary} />
+                {(post.share_count || 0) > 0 && <Text style={styles.actionCount}>{post.share_count}</Text>}
               </TouchableOpacity>
             </View>
           </>
