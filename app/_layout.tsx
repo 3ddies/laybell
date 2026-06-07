@@ -8,6 +8,7 @@ import { COLORS } from '../constants/theme';
 import { AudioProvider } from '../contexts/AudioContext';
 import { PostOptionsProvider } from '../contexts/PostOptionsContext';
 import { ProfileProvider } from '../contexts/ProfileContext';
+import { ShareProvider } from '../contexts/ShareContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import { useNotifications } from '../hooks/useNotifications';
@@ -88,8 +89,10 @@ export default function RootLayout() {
   return (
     <AudioProvider>
       <ProfileProvider>
-        <StatusBar style="light" />
-        <AppContent />
+        <ShareProvider>
+          <StatusBar style="light" />
+          <AppContent />
+        </ShareProvider>
       </ProfileProvider>
     </AudioProvider>
   );

@@ -1,6 +1,6 @@
 import { Video, ResizeMode } from 'expo-av';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, Share, ActivityIndicator,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator,
 } from 'react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
+import { useShare } from '../../contexts/ShareContext';
 import { formatCount } from '../../lib/format';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import CommentsSheet from '../../components/CommentsSheet';
@@ -25,6 +26,7 @@ const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export default function ReelScreen() {
   const { show: showOptions } = usePostOptions();
+  const { share: openShare } = useShare();
   const { id, post: postParam } = useLocalSearchParams<{ id: string; post?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -122,8 +124,13 @@ export default function ReelScreen() {
     else await supabase.from('saves').insert({ user_id: currentUserId, post_id: item.id });
   }
 
-  async function share(item: any) {
-    try { await Share.share({ message: `Check out @${item.profiles?.username} on Laybell`, url: `laybell://post/${item.id}` }); } catch {}
+  function share(item: any) {
+    openShare({
+      postId: item.id,
+      caption: item.caption,
+      username: item.profiles?.username,
+      cover: item.thumbnail_url ?? item.cover_url ?? null,
+    });
   }
 
   function renderItem({ item }: { item: any }) {

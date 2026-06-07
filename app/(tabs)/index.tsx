@@ -9,7 +9,7 @@ import { usePagerSwiping } from '../../contexts/PagerContext';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image, ActivityIndicator,
-  RefreshControl, Share, Dimensions, Alert,
+  RefreshControl, Dimensions, Alert,
 } from 'react-native';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -23,6 +23,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
+import { useShare } from '../../contexts/ShareContext';
 import { isAudioPost } from '../../lib/genres';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import CommentsSheet from '../../components/CommentsSheet';
@@ -205,6 +206,7 @@ const PostCard = memo(function PostCard({
 
 export default function HomeScreen() {
   const { show: showOptions } = usePostOptions();
+  const { share: openShare } = useShare();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -231,8 +233,8 @@ export default function HomeScreen() {
   // Latest values for the stable card callbacks below. Updating a ref (instead of
   // putting these in useCallback deps) lets the callbacks keep a constant identity
   // — so memoized PostCards don't re-render — while still acting on current state.
-  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted });
-  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted };
+  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, openShare });
+  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, openShare };
 
   // Track which video is on-screen so it auto-plays while others pause.
   // FlatList requires these references to be stable across renders.
@@ -431,14 +433,13 @@ export default function HomeScreen() {
     }
   }, []);
 
-  const onShare = useCallback(async (item: Post) => {
-    const link = `laybell://post/${item.id}`;
-    const text = item.caption
-      ? `"${item.caption}" — @${item.profiles?.username} on Laybell`
-      : `Check out @${item.profiles?.username} on Laybell`;
-    try {
-      await Share.share({ message: `${text}\n${link}`, url: link });
-    } catch {}
+  const onShare = useCallback((item: Post) => {
+    live.current.openShare({
+      postId: item.id,
+      caption: item.caption,
+      username: item.profiles?.username,
+      cover: item.cover_url ?? (item.type === 'image' ? item.media_url : null),
+    });
   }, []);
 
   const onProfile = useCallback((item: Post) => live.current.router.push(`/profile/${item.user_id}`), []);

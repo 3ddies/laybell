@@ -18,9 +18,9 @@ import Comments from '../../components/Comments';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
+import { useShare } from '../../contexts/ShareContext';
 import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
-import { Share } from 'react-native';
 
 type Post = {
   id: string; type: string; media_url: string; caption: string;
@@ -39,6 +39,7 @@ type Comment = {
 
 export default function PostDetailScreen() {
   const { show: showOptions } = usePostOptions();
+  const { share: openShare } = useShare();
   const { id, post: postParam } = useLocalSearchParams<{ id: string; post?: string }>();
   const router = useRouter();
   const { currentTrack, isPlaying, play, stop } = useAudio();
@@ -266,13 +267,12 @@ export default function PostDetailScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionBtn, { marginLeft: 'auto' }]}
-                onPress={async () => {
-                  const link = `laybell://post/${id}`;
-                  const text = post.caption
-                    ? `"${post.caption}" — @${post.profiles?.username} on Laybell`
-                    : `Check out @${post.profiles?.username} on Laybell`;
-                  try { await Share.share({ message: `${text}\n${link}`, url: link }); } catch {}
-                }}
+                onPress={() => openShare({
+                  postId: id as string,
+                  caption: post.caption,
+                  username: post.profiles?.username,
+                  cover: post.cover_url ?? (post.type === 'image' ? post.media_url : null),
+                })}
               >
                 <Ionicons name="share-social-outline" size={22} color={COLORS.textSecondary} />
               </TouchableOpacity>
