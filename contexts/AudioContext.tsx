@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { Audio } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+
+// Per-post listen progress persists for a rolling 24h window (matches the
+// server's per-user/post stream cap) so force-quitting can't reset it.
+const STREAM_PROGRESS_KEY = 'stream_progress_v1';
+const STREAM_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const AUDIO_MODE = {
   allowsRecordingIOS: false,
@@ -12,22 +18,18 @@ const AUDIO_MODE = {
 
 // Streams are credited by CUMULATIVE listen time, scaled by the track's duration
 // so short audio can't rack up streams unfairly vs. long audio. Returns how many
-// listen-seconds are needed to credit the 1st and the 2nd stream:
+// listen-seconds are needed to credit the 1st and the 2nd stream.
 //
-//   ≤10s : 1st = 80% of duration,  2nd = 30s combined
-//   ≤30s : 1st = 70% of duration,  2nd = 60s combined
-//   ≤60s : 1st = 60% of duration,  2nd = 80% of duration combined
-//   >60s : 1st = 15s,              2nd = 70% of duration combined
-//
-// A first stream always needs at least 5s of listening (global floor); paired
-// with the 5s minimum upload length, this keeps every track on fair footing.
+// The curve is CONTINUOUS and MONOTONIC (never decreasing in duration), so there
+// are no tier cliffs to game by padding a track's length just over a boundary:
+//   1st stream : 80% of the track, capped at 15s, with a 5s global floor.
+//   2nd stream : 70% of the track, but at least 30s combined — so short audio
+//                needs genuine replays for a 2nd stream, not one quick listen.
+// (Paired with the 5s minimum upload length, every track is on fair footing.)
 function streamThresholds(durationSec: number): { t1: number; t2: number } {
-  let t1: number, t2: number;
-  if (durationSec <= 10)      { t1 = 0.8 * durationSec; t2 = 30; }
-  else if (durationSec <= 30) { t1 = 0.7 * durationSec; t2 = 60; }
-  else if (durationSec <= 60) { t1 = 0.6 * durationSec; t2 = 0.8 * durationSec; }
-  else                        { t1 = 15;                t2 = 0.7 * durationSec; }
-  return { t1: Math.max(5, t1), t2 };
+  const t1 = Math.min(Math.max(0.8 * durationSec, 5), 15);
+  const t2 = Math.max(30, 0.7 * durationSec);
+  return { t1, t2 };
 }
 
 export type Track = {
@@ -80,17 +82,62 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const playTokenRef = useRef(0); // guards against overlapping plays (rapid next/prev)
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueLength, setQueueLength] = useState(0);
-  // Per-post stream accounting for this app session (keyed by post id):
+  // Per-post stream accounting, persisted for a rolling 24h window (keyed by post id):
   //   listenMs        – cumulative genuine forward listen time (across replays)
   //   streamsAwarded  – streams already credited via listening (0, 1, or 2)
+  //   windowStart     – epoch ms the current 24h window began for this post
   const listenMsRef = useRef<Record<string, number>>({});
   const streamsAwardedRef = useRef<Record<string, number>>({});
+  const windowStartRef = useRef<Record<string, number>>({});
+  const uidRef = useRef<string | null>(null);
 
   // Configure the audio session once up front so the first tap plays immediately
   // (a cold session previously made the first createAsync fail to start).
   useEffect(() => { Audio.setAudioModeAsync(AUDIO_MODE).catch(() => {}); }, []);
 
+  // Restore persisted per-post listen progress (within its 24h window) so a
+  // force-quit can't reset cumulative listen time and re-earn streams.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        uidRef.current = user?.id ?? null;
+        if (!user) return;
+        const raw = await AsyncStorage.getItem(`${STREAM_PROGRESS_KEY}_${user.id}`);
+        if (!raw) return;
+        const map = JSON.parse(raw) as Record<string, { ms: number; awarded: number; ts: number }>;
+        const now = Date.now();
+        for (const [pid, e] of Object.entries(map)) {
+          if (e && now - e.ts < STREAM_WINDOW_MS) {
+            listenMsRef.current[pid] = e.ms;
+            streamsAwardedRef.current[pid] = e.awarded;
+            windowStartRef.current[pid] = e.ts;
+          }
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Persist the (non-expired) per-post progress. Called on credit/pause/stop/end,
+  // not every tick, to limit writes.
+  function saveProgress() {
+    const uid = uidRef.current;
+    if (!uid) return;
+    try {
+      const now = Date.now();
+      const out: Record<string, { ms: number; awarded: number; ts: number }> = {};
+      for (const pid of Object.keys(listenMsRef.current)) {
+        const ts = windowStartRef.current[pid] ?? now;
+        if (now - ts < STREAM_WINDOW_MS) {
+          out[pid] = { ms: listenMsRef.current[pid] || 0, awarded: streamsAwardedRef.current[pid] || 0, ts };
+        }
+      }
+      AsyncStorage.setItem(`${STREAM_PROGRESS_KEY}_${uid}`, JSON.stringify(out)).catch(() => {});
+    } catch {}
+  }
+
   async function stop() {
+    saveProgress();
     playTokenRef.current++; // cancel any in-flight load
     if (soundRef.current) {
       await soundRef.current.stopAsync();
@@ -109,6 +156,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (soundRef.current) {
       await soundRef.current.pauseAsync();
       setIsPlaying(false);
+      saveProgress();
     }
   }
 
@@ -200,7 +248,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     // canCount is resolved in the background so playback never waits on the network.
     let canCount = false;
     (async () => {
-      try { canCount = !!(await supabase.auth.getUser()).data.user; } catch {}
+      try {
+        const u = (await supabase.auth.getUser()).data.user;
+        canCount = !!u;
+        if (u) uidRef.current = u.id;
+      } catch {}
     })();
     const recordStream = () => {
       supabase.rpc('record_stream', { p_post_id: track.id }).then(undefined, () => {});
@@ -237,6 +289,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           const delta = pos - lastPosMs;
           if (delta > 0 && delta < 1500) {
             const id = track.id;
+            // Reset a post's accounting once its 24h window elapses so a genuine
+            // listener can earn again the next day (mirrors the server cap window).
+            const ws = windowStartRef.current[id];
+            if (ws == null || Date.now() - ws >= STREAM_WINDOW_MS) {
+              windowStartRef.current[id] = Date.now();
+              listenMsRef.current[id] = 0;
+              streamsAwardedRef.current[id] = 0;
+            }
             const listened = (listenMsRef.current[id] || 0) + delta;
             listenMsRef.current[id] = listened;
             const awarded = streamsAwardedRef.current[id] || 0;
@@ -244,15 +304,18 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             if (awarded === 0 && listened >= t1 * 1000) {
               streamsAwardedRef.current[id] = 1;
               recordStream();
+              saveProgress();
             } else if (awarded === 1 && listened >= t2 * 1000) {
               streamsAwardedRef.current[id] = 2;
               recordStream();
+              saveProgress();
             }
           }
         }
         lastPosMs = pos;
 
         if (status.didJustFinish) {
+          saveProgress();
           const q = queueRef.current;
           const next = queueIndexRef.current + 1;
           if (q.length && next < q.length) {

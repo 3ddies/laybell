@@ -35,6 +35,11 @@ begin
   if auth.uid() is null then return; end if;
   if not exists (select 1 from public.posts where id = p_post_id) then return; end if;
 
+  -- Drop this user's expired rows for the post (keeps the table small + count fast).
+  delete from public.share_events
+  where user_id = auth.uid() and post_id = p_post_id
+    and created_at < now() - interval '12 hours';
+
   -- Max 4 counted shares per user per post per rolling 12h (anti-bot/spam).
   select count(*) into v_recent
   from public.share_events
