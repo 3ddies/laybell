@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TextInput,
-  FlatList, TouchableOpacity, Image, ActivityIndicator,
+  FlatList, TouchableOpacity, Image, ActivityIndicator, Keyboard,
 } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
@@ -48,12 +48,33 @@ function getBadgeColor(tier: string) {
   }
 }
 
+// How closely a result resembles the query (higher = closer): exact > starts-with
+// > contains > matched-only-via-author. Drives the Relevancy ranking, broken by
+// the post's algorithm score (scorePost) within the same tier.
+function postMatchTier(item: any, q: string): number {
+  const fields = [item.caption, item.profiles?.username, item.profiles?.display_name]
+    .map((s: any) => (s || '').toLowerCase());
+  if (fields.some((f: string) => f === q)) return 4;
+  if (fields.some((f: string) => f.startsWith(q))) return 3;
+  if (fields.some((f: string) => f.includes(q))) return 2;
+  return 1; // pulled in via author match but no direct text hit
+}
+
+function profileMatchTier(p: any, q: string): number {
+  const fields = [(p.username || '').toLowerCase(), (p.display_name || '').toLowerCase()];
+  if (fields.some((f) => f === q)) return 3;
+  if (fields.some((f) => f.startsWith(q))) return 2;
+  return 1;
+}
+
 export default function ExploreScreen() {
   const { show: showOptions } = usePostOptions();
   const router = useRouter();
   const { play, currentTrack, isPlaying, expand } = useAudio();
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState<'posts' | 'accounts'>('posts');
+  // Search results are sorted/filtered into tabs. One query fetches everything;
+  // the tabs filter client-side (no re-query when switching tabs).
+  const [searchTab, setSearchTab] = useState<'relevancy' | 'music' | 'videos'>('relevancy');
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [posts, setPosts] = useState<Post[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -76,9 +97,9 @@ export default function ExploreScreen() {
       const t = setTimeout(() => handleSearch(), 500);
       return () => clearTimeout(t);
     } else {
-      setProfiles([]); setPosts([]);
+      setProfiles([]); setPosts([]); setSearchTab('relevancy');
     }
-  }, [searchQuery, searchType]);
+  }, [searchQuery]);
 
   async function setup() {
     // Auth + seen-posts (AsyncStorage) in parallel — both fast
@@ -180,53 +201,48 @@ export default function ExploreScreen() {
     if (!searchQuery.trim()) return;
     setSearching(true);
 
-    if (searchType === 'accounts') {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url, badge_tier')
-        .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
-        .limit(20);
-      if (data) setProfiles(data);
+    const q = searchQuery.toLowerCase().trim();
+
+    // Matching accounts — surfaced atop the Relevancy tab and used to also pull
+    // their posts. Ordered by how closely the name matches.
+    const { data: profData } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url, badge_tier')
+      .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
+      .limit(20);
+    const matched = profData ?? [];
+    setProfiles([...matched].sort((a: any, b: any) => profileMatchTier(b, q) - profileMatchTier(a, q)));
+
+    const authorIds = matched.map((p: any) => p.id);
+    let query = supabase
+      .from('posts')
+      .select(`
+        *,
+        profiles!posts_user_id_fkey (username, display_name, avatar_url),
+        likes(count),
+        comments(count)
+      `)
+      .eq('is_public', true)
+      .limit(40);
+
+    if (authorIds.length > 0) {
+      query = query.or(`caption.ilike.%${searchQuery}%,user_id.in.(${authorIds.join(',')})`);
     } else {
-      // Find profiles whose name matches — use their IDs to also pull their posts
-      const { data: matchedProfiles } = await supabase
-        .from('profiles')
-        .select('id')
-        .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
-        .limit(15);
+      query = query.ilike('caption', `%${searchQuery}%`);
+    }
 
-      const authorIds = (matchedProfiles ?? []).map((p: any) => p.id);
-
-      let query = supabase
-        .from('posts')
-        .select(`
-          *,
-          profiles!posts_user_id_fkey (username, display_name, avatar_url),
-          likes(count),
-          comments(count)
-        `)
-        .eq('is_public', true)
-        .limit(30);
-
-      if (authorIds.length > 0) {
-        // Match caption OR posts from matching authors
-        query = query.or(`caption.ilike.%${searchQuery}%,user_id.in.(${authorIds.join(',')})`);
-      } else {
-        query = query.ilike('caption', `%${searchQuery}%`);
-      }
-
-      const { data } = await query;
-
-      if (data) {
-        // Sort by personalized engagement score; no seen-penalty in search
-        // (user is actively looking, so previously-seen results are still relevant).
-        const now = Date.now();
-        const sorted = [...data].sort((a: any, b: any) =>
-          scorePost(b, affinityProfile.current, followingSetRef.current, new Set(), now) -
-          scorePost(a, affinityProfile.current, followingSetRef.current, new Set(), now),
-        );
-        setPosts(sorted as any);
-      }
+    const { data } = await query;
+    if (data) {
+      // Relevancy = closeness of match first, then the post's algorithm score
+      // (scorePost). No seen-penalty — the user is actively searching.
+      const now = Date.now();
+      const ranked = [...data].sort((a: any, b: any) => {
+        const ta = postMatchTier(a, q), tb = postMatchTier(b, q);
+        if (tb !== ta) return tb - ta;
+        return scorePost(b, affinityProfile.current, followingSetRef.current, new Set(), now) -
+               scorePost(a, affinityProfile.current, followingSetRef.current, new Set(), now);
+      });
+      setPosts(ranked as any);
     }
 
     setSearching(false);
@@ -254,24 +270,28 @@ export default function ExploreScreen() {
             autoCapitalize="none"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
+            <TouchableOpacity
+              onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.searchClear}
+            >
+              <Ionicons name="close-circle" size={20} color={COLORS.textTertiary} />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* Search type toggle */}
+      {/* Search tabs: Relevancy · Music · Videos */}
       {isSearching && (
         <View style={styles.toggleRow}>
-          {(['posts', 'accounts'] as const).map(type => (
+          {(['relevancy', 'music', 'videos'] as const).map(tab => (
             <TouchableOpacity
-              key={type}
-              style={[styles.toggleBtn, searchType === type && styles.toggleBtnActive]}
-              onPress={() => setSearchType(type)}
+              key={tab}
+              style={[styles.toggleBtn, searchTab === tab && styles.toggleBtnActive]}
+              onPress={() => setSearchTab(tab)}
             >
-              <Text style={[styles.toggleText, searchType === type && styles.toggleTextActive]}>
-                {type.charAt(0).toUpperCase() + type.slice(1)}
+              <Text style={[styles.toggleText, searchTab === tab && styles.toggleTextActive]}>
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </Text>
             </TouchableOpacity>
           ))}
@@ -313,111 +333,106 @@ export default function ExploreScreen() {
           <ActivityIndicator color={COLORS.primary} />
         </View>
       ) : isSearching ? (
-        searchType === 'accounts' ? (
-          <FlatList
-            key="accounts"
-            data={profiles}
-            keyExtractor={item => item.id}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            contentContainerStyle={styles.listContent}
-            ListEmptyComponent={<Text style={styles.emptyText}>No accounts found</Text>}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={styles.accountRow} onPress={() => router.push(`/profile/${item.id}`)}>
-                {item.avatar_url ? (
-                  <Image source={{ uri: item.avatar_url }} style={[styles.accountAvatar, { borderColor: getBadgeColor(item.badge_tier) }]} />
-                ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={[styles.accountAvatar, { borderColor: getBadgeColor(item.badge_tier) }]}>
-                    <Text style={styles.accountAvatarText}>{item.display_name?.charAt(0).toUpperCase()}</Text>
-                  </LinearGradient>
-                )}
-                <View style={styles.accountInfo}>
-                  <Text style={styles.accountName}>{item.display_name}</Text>
-                  <Text style={styles.accountUsername}>@{item.username}</Text>
-                </View>
-                <FollowButton userId={item.id} />
-              </TouchableOpacity>
-            )}
-          />
-        ) : (
-          <FlatList
-            key="posts"
-            data={posts}
-            keyExtractor={item => item.id}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            contentContainerStyle={styles.listContent}
-            ListEmptyComponent={<Text style={styles.emptyText}>No posts found</Text>}
-            renderItem={({ item }) => isAudioPost(item.type) ? (
-              <TrackRow
-                caption={item.caption}
-                artist={item.profiles?.display_name}
-                username={item.profiles?.username}
-                streams={item.stream_count}
-                cover={item.cover_url}
-                avatarUrl={item.profiles?.avatar_url}
-                isPlaying={currentTrack?.id === item.id && isPlaying}
-                onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
-                onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); expand(); }}
-                onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
-                onOptions={() => showOptions({
-                  postId: item.id,
-                  isOwn: item.user_id === currentUserId,
-                  onEdit: () => router.push(`/edit-post/${item.id}`),
-                  onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
-                })}
-              />
-            ) : (
-              <TouchableOpacity
-                style={styles.postRow}
-                onPress={() => router.push(item.type === 'video'
-                  ? { pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item) } }
-                  : { pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item) } })}
-                onLongPress={() => showOptions({
-                  postId: item.id,
-                  isOwn: item.user_id === currentUserId,
-                  onEdit: () => router.push(`/edit-post/${item.id}`),
-                  onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
-                })}
-              >
-                {item.type === 'image' || (item.type === 'video' && item.thumbnail_url) ? (
-                  <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url as string) }} style={styles.postThumb} />
-                ) : (
-                  <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.postThumb}>
-                    <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={20} color={COLORS.primary} />
-                  </LinearGradient>
-                )}
-                <View style={styles.postInfo}>
-                  <Text style={styles.postCaption} numberOfLines={2}>{item.caption || 'Audio Track'}</Text>
-                  <View style={styles.postMeta}>
-                    <Text style={styles.postUser}>@{item.profiles?.username}</Text>
-                    {((item.likes?.[0]?.count || 0) + (item.comments?.[0]?.count || 0)) > 0 && (
-                      <View style={styles.postStats}>
-                        <Ionicons name="heart" size={11} color={COLORS.like} />
-                        <Text style={styles.postStatText}>{item.likes?.[0]?.count || 0}</Text>
-                        <Ionicons name="chatbubble" size={11} color={COLORS.textTertiary} />
-                        <Text style={styles.postStatText}>{item.comments?.[0]?.count || 0}</Text>
-                      </View>
+        <FlatList
+          key={searchTab}
+          data={searchTab === 'music'
+            ? posts.filter(p => isAudioPost(p.type))
+            : searchTab === 'videos'
+            ? posts.filter(p => p.type === 'video')
+            : posts}
+          keyExtractor={item => item.id}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={
+            searchTab === 'relevancy' && profiles.length > 0 ? (
+              <View style={styles.accountsHeader}>
+                {profiles.slice(0, 6).map((acc: any) => (
+                  <TouchableOpacity key={acc.id} style={styles.accountRow} onPress={() => router.push(`/profile/${acc.id}`)}>
+                    {acc.avatar_url ? (
+                      <Image source={{ uri: acc.avatar_url }} style={[styles.accountAvatar, { borderColor: getBadgeColor(acc.badge_tier) }]} />
+                    ) : (
+                      <LinearGradient colors={GRADIENTS.primary} style={[styles.accountAvatar, { borderColor: getBadgeColor(acc.badge_tier) }]}>
+                        <Text style={styles.accountAvatarText}>{acc.display_name?.charAt(0).toUpperCase()}</Text>
+                      </LinearGradient>
                     )}
-                  </View>
+                    <View style={styles.accountInfo}>
+                      <Text style={styles.accountName}>{acc.display_name}</Text>
+                      <Text style={styles.accountUsername}>@{acc.username}</Text>
+                    </View>
+                    <FollowButton userId={acc.id} />
+                  </TouchableOpacity>
+                ))}
+                <View style={styles.accountsDivider} />
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>
+              {searchTab === 'music' ? 'No music found' : searchTab === 'videos' ? 'No videos found' : 'No results found'}
+            </Text>
+          }
+          renderItem={({ item }) => isAudioPost(item.type) ? (
+            <TrackRow
+              caption={item.caption}
+              artist={item.profiles?.display_name}
+              username={item.profiles?.username}
+              streams={item.stream_count}
+              cover={item.cover_url}
+              avatarUrl={item.profiles?.avatar_url}
+              isPlaying={currentTrack?.id === item.id && isPlaying}
+              onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
+              onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); expand(); }}
+              onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
+              onOptions={() => showOptions({
+                postId: item.id,
+                isOwn: item.user_id === currentUserId,
+                onEdit: () => router.push(`/edit-post/${item.id}`),
+                onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+              })}
+            />
+          ) : (
+            <TouchableOpacity
+              style={styles.postRow}
+              onPress={() => router.push(item.type === 'video'
+                ? { pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item) } }
+                : { pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item) } })}
+              onLongPress={() => showOptions({
+                postId: item.id,
+                isOwn: item.user_id === currentUserId,
+                onEdit: () => router.push(`/edit-post/${item.id}`),
+                onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+              })}
+            >
+              {item.type === 'image' || (item.type === 'video' && item.thumbnail_url) ? (
+                <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url as string) }} style={styles.postThumb} />
+              ) : (
+                <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.postThumb}>
+                  <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={20} color={COLORS.primary} />
+                </LinearGradient>
+              )}
+              <View style={styles.postInfo}>
+                <Text style={styles.postCaption} numberOfLines={2}>{item.caption || 'Audio Track'}</Text>
+                <View style={styles.postMeta}>
+                  <Text style={styles.postUser}>@{item.profiles?.username}</Text>
+                  {((item.likes?.[0]?.count || 0) + (item.comments?.[0]?.count || 0)) > 0 && (
+                    <View style={styles.postStats}>
+                      <Ionicons name="heart" size={11} color={COLORS.like} />
+                      <Text style={styles.postStatText}>{item.likes?.[0]?.count || 0}</Text>
+                      <Ionicons name="chatbubble" size={11} color={COLORS.textTertiary} />
+                      <Text style={styles.postStatText}>{item.comments?.[0]?.count || 0}</Text>
+                    </View>
+                  )}
                 </View>
-                <FollowButton userId={item.user_id} />
-                <TouchableOpacity
-                  style={styles.postTypeTag}
-                  onPress={() => showOptions({
-                    postId: item.id,
-                    isOwn: item.user_id === currentUserId,
-                    onEdit: () => router.push(`/edit-post/${item.id}`),
-                    onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
-                  })}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons name="ellipsis-horizontal" size={16} color={COLORS.textSecondary} />
-                </TouchableOpacity>
-              </TouchableOpacity>
-            )}
-          />
-        )
+              </View>
+              <FollowButton userId={item.user_id} />
+              {/* Type indicator (replaces the options button — discovery, not management) */}
+              <View style={styles.postTypeTag}>
+                <Ionicons name={item.type === 'video' ? 'play' : 'image'} size={14} color={COLORS.textSecondary} />
+              </View>
+            </TouchableOpacity>
+          )}
+        />
       ) : (
         <ExploreGrid
           posts={trendingPosts}
@@ -450,6 +465,9 @@ const styles = StyleSheet.create({
   },
   searchIcon: { marginRight: -4 },
   searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15 },
+  searchClear: { padding: 2, marginLeft: 2 },
+  accountsHeader: {},
+  accountsDivider: { height: 0.5, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
 
   toggleRow: { flexDirection: 'row', paddingHorizontal: SPACING.md, gap: SPACING.sm, marginBottom: SPACING.sm },
   toggleBtn: {
