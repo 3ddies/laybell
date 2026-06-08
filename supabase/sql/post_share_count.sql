@@ -31,9 +31,15 @@ set search_path = public
 as $$
 declare
   v_recent int;
+  v_created timestamptz;
 begin
   if auth.uid() is null then return; end if;
   if not exists (select 1 from public.posts where id = p_post_id) then return; end if;
+
+  -- Anti-fraud: shares from very new accounts don't count (blunts mass alts).
+  -- Tune the interval below; set to '0 hours' to disable.
+  select created_at into v_created from auth.users where id = auth.uid();
+  if v_created is null or now() - v_created < interval '24 hours' then return; end if;
 
   -- Drop this user's expired rows for the post (keeps the table small + count fast).
   delete from public.share_events

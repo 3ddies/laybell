@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useRef, useEffect } from 'r
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { getDeviceId } from '../lib/deviceId';
 
 // Per-post listen progress persists for a rolling 24h window (matches the
 // server's per-user/post stream cap) so force-quitting can't reset it.
@@ -90,10 +91,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const streamsAwardedRef = useRef<Record<string, number>>({});
   const windowStartRef = useRef<Record<string, number>>({});
   const uidRef = useRef<string | null>(null);
+  const deviceIdRef = useRef<string | null>(null); // per-install id for the device cap
 
   // Configure the audio session once up front so the first tap plays immediately
   // (a cold session previously made the first createAsync fail to start).
   useEffect(() => { Audio.setAudioModeAsync(AUDIO_MODE).catch(() => {}); }, []);
+
+  // Resolve the device id once so it's ready to attach to stream records.
+  useEffect(() => { getDeviceId().then((id) => { deviceIdRef.current = id; }).catch(() => {}); }, []);
 
   // Restore persisted per-post listen progress (within its 24h window) so a
   // force-quit can't reset cumulative listen time and re-earn streams.
@@ -255,7 +260,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     })();
     const recordStream = () => {
-      supabase.rpc('record_stream', { p_post_id: track.id }).then(undefined, () => {});
+      supabase.rpc('record_stream', { p_post_id: track.id, p_device_id: deviceIdRef.current }).then(undefined, () => {});
     };
     let lastPosMs = 0; // previous reported position, for forward-delta accumulation
 
