@@ -438,6 +438,23 @@ export default function MusicScreen() {
   // Only the very top search result is highlighted (consistent with explore).
   const searchTopId = searchResults.length ? searchResults[0].id : null;
 
+  // Relevant artists for the "More of what you like" rail — distinct creators
+  // pulled from the user's affinity-scored pools (for-you first, then trending),
+  // skipping the current user and de-duping by profile id.
+  const relevantArtists = (() => {
+    const seen = new Set<string>();
+    const out: { id: string; display_name?: string; username?: string; avatar_url: string | null }[] = [];
+    for (const t of [...forYouTracks, ...trendingTracks]) {
+      const p = t.profiles;
+      const id = p?.id ?? t.user_id;
+      if (!id || id === currentUserId || seen.has(id)) continue;
+      seen.add(id);
+      out.push({ id, display_name: p?.display_name, username: p?.username, avatar_url: p?.avatar_url ?? null });
+      if (out.length >= 12) break;
+    }
+    return out;
+  })();
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -557,14 +574,8 @@ export default function MusicScreen() {
             }
           >
 
-            {/* — Section title — */}
-            <Text style={styles.discoverSectionTitle}>
-              {discoverGenre === 'Podcasts'
-                ? 'Trending podcasts'
-                : discoverGenre === 'Audiobooks'
-                ? 'Top audiobooks'
-                : 'Trending by genre'}
-            </Text>
+            {/* — Genres label (the major genre tabs live directly below) — */}
+            <Text style={styles.discoverSectionTitleLg}>Genres</Text>
 
             {/* — Genre + content-type pills (All · genres · Podcasts · Audiobooks) — */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.genrePills}>
@@ -590,6 +601,15 @@ export default function MusicScreen() {
                 );
               })}
             </ScrollView>
+
+            {/* — Trending: top songs for the selected genre — */}
+            <Text style={styles.discoverSectionTitle}>
+              {discoverGenre === 'Podcasts'
+                ? 'Trending podcasts'
+                : discoverGenre === 'Audiobooks'
+                ? 'Top audiobooks'
+                : 'Trending'}
+            </Text>
 
             {trendingLoading ? (
               <ActivityIndicator color={COLORS.primary} style={{ marginVertical: SPACING.md }} />
@@ -650,7 +670,35 @@ export default function MusicScreen() {
             {/* — More of what you like (music only) — */}
             {!isContentTag && forYouTracks.length > 0 && (
               <>
-                <Text style={[styles.discoverSectionTitle, { marginTop: SPACING.xl }]}>More of what you like</Text>
+                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>More of what you like</Text>
+
+                {/* Relevant artists — tap a circle to open that profile */}
+                {relevantArtists.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.artistScroll}>
+                    {relevantArtists.map(artist => (
+                      <TouchableOpacity
+                        key={artist.id}
+                        style={styles.artistCircleItem}
+                        activeOpacity={0.8}
+                        onPress={() => router.push(`/profile/${artist.id}`)}
+                      >
+                        {artist.avatar_url ? (
+                          <Image source={{ uri: artist.avatar_url }} style={styles.artistAvatar} />
+                        ) : (
+                          <LinearGradient colors={GRADIENTS.primary as any} style={styles.artistAvatar}>
+                            <Text style={styles.artistAvatarText}>
+                              {(artist.display_name ?? artist.username ?? '?').charAt(0).toUpperCase()}
+                            </Text>
+                          </LinearGradient>
+                        )}
+                        <Text style={styles.artistName} numberOfLines={1}>
+                          {artist.display_name ?? artist.username}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.forYouScroll}>
                   {forYouTracks.map(track => (
                     <TouchableOpacity
@@ -678,33 +726,35 @@ export default function MusicScreen() {
 
             {/* — Today's Pick (music only) — */}
             {!isContentTag && todaysPick && (
-              <View style={styles.todaysPickSection}>
-                <Text style={styles.todaysPickLabel}>TODAY'S PICK</Text>
-                <TouchableOpacity
-                  style={styles.todaysPickRow}
-                  activeOpacity={0.8}
-                  onPress={() => { play(todaysPick.id, todaysPick.media_url, todaysPick.caption, todaysPick.profiles?.display_name, todaysPick.cover_url); openNowPlaying(); }}
-                >
-                  {todaysPick.cover_url ? (
-                    <Image source={{ uri: todaysPick.cover_url }} style={styles.todaysCover} />
-                  ) : (
-                    <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.todaysCover}>
-                      <Ionicons name="musical-notes" size={20} color={COLORS.primary} />
-                    </LinearGradient>
-                  )}
-                  <View style={styles.todaysInfo}>
-                    <Text style={styles.todaysTitle} numberOfLines={1}>{todaysPick.caption}</Text>
-                    <Text style={styles.todaysArtist} numberOfLines={1}>
-                      {todaysPick.profiles?.display_name ?? todaysPick.profiles?.username}
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name={playingId === todaysPick.id ? 'pause-circle' : 'play-circle'}
-                    size={44}
-                    color={COLORS.primary}
-                  />
-                </TouchableOpacity>
-              </View>
+              <>
+                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>Today's Pick</Text>
+                <View style={styles.todaysPickSection}>
+                  <TouchableOpacity
+                    style={styles.todaysPickRow}
+                    activeOpacity={0.8}
+                    onPress={() => { play(todaysPick.id, todaysPick.media_url, todaysPick.caption, todaysPick.profiles?.display_name, todaysPick.cover_url); openNowPlaying(); }}
+                  >
+                    {todaysPick.cover_url ? (
+                      <Image source={{ uri: todaysPick.cover_url }} style={styles.todaysCover} />
+                    ) : (
+                      <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.todaysCover}>
+                        <Ionicons name="musical-notes" size={20} color={COLORS.primary} />
+                      </LinearGradient>
+                    )}
+                    <View style={styles.todaysInfo}>
+                      <Text style={styles.todaysTitle} numberOfLines={1}>{todaysPick.caption}</Text>
+                      <Text style={styles.todaysArtist} numberOfLines={1}>
+                        {todaysPick.profiles?.display_name ?? todaysPick.profiles?.username}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={playingId === todaysPick.id ? 'pause-circle' : 'play-circle'}
+                      size={44}
+                      color={COLORS.primary}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
 
           </ScrollView>
@@ -1017,21 +1067,27 @@ const styles = StyleSheet.create({
     color: COLORS.text, fontSize: 20, fontWeight: '800',
     paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.sm,
   },
+  // Larger primary section header (Genres, More of what you like) — one tier
+  // above the secondary "Trending" sub-heading.
+  discoverSectionTitleLg: {
+    color: COLORS.text, fontSize: 26, fontWeight: '800',
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.sm,
+  },
   discoverEmpty: { color: COLORS.textSecondary, fontSize: 14, paddingVertical: SPACING.md },
 
   genrePills: { paddingHorizontal: SPACING.md, paddingVertical: 4, gap: SPACING.sm, paddingBottom: SPACING.sm },
   genrePill: {
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border,
     overflow: 'hidden',
   },
   genrePillActive: { borderColor: COLORS.primary },
   // One shared inner container — same padding for both active and inactive pills
   // so their height is always identical regardless of which has the gradient.
   genrePillInner: {
-    paddingVertical: 7, paddingHorizontal: 14,
+    paddingVertical: 11, paddingHorizontal: 18,
     alignItems: 'center', justifyContent: 'center',
   },
-  genrePillText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
+  genrePillText: { color: COLORS.textSecondary, fontSize: 15, fontWeight: '600' },
   genrePillTextActive: { color: COLORS.text, fontWeight: '700' },
 
   trendingList: { paddingHorizontal: SPACING.xs, gap: SPACING.xs },
@@ -1050,14 +1106,20 @@ const styles = StyleSheet.create({
   forYouTitle: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
   forYouArtist: { color: COLORS.textSecondary, fontSize: 12 },
 
+  artistScroll: { paddingHorizontal: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.md },
+  artistCircleItem: { width: 68, alignItems: 'center', gap: 6 },
+  artistAvatar: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  artistAvatarText: { color: COLORS.text, fontSize: 24, fontWeight: '800' },
+  artistName: { color: COLORS.textSecondary, fontSize: 12, textAlign: 'center', width: 68 },
+
   todaysPickSection: {
-    marginHorizontal: SPACING.md, marginTop: SPACING.xl,
+    marginHorizontal: SPACING.md,
     borderRadius: RADIUS.lg, backgroundColor: COLORS.surfaceLight,
     borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
-  },
-  todaysPickLabel: {
-    color: COLORS.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 1.5,
-    paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.xs,
   },
   todaysPickRow: {
     flexDirection: 'row', alignItems: 'center',
