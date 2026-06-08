@@ -251,11 +251,12 @@ export default function ExploreScreen() {
 
   const isSearching = searchQuery.trim().length > 0;
 
-  // Highlighting is reserved for the best matches at the top of the Relevancy tab,
-  // so it reads as a signal (not noise). `relevancyTopTier` is the strongest match
-  // tier present; only items at that tier (with a real text hit) get highlighted.
+  // Highlight ONLY the single result at the very top of the Relevancy tab — the
+  // first matching account if any, otherwise the top-ranked post. Everything else
+  // renders plain so the highlight reads as a signal, not noise.
   const q = searchQuery.trim().toLowerCase();
-  const relevancyTopTier = q && posts.length ? Math.max(...posts.map(p => postMatchTier(p, q))) : 0;
+  const relevancyTopPostId = (searchTab === 'relevancy' && q && profiles.length === 0 && posts.length > 0)
+    ? posts[0].id : null;
 
   // One account row — reused by the Relevancy header (highlighted) and the
   // dedicated Accounts tab (plain).
@@ -394,7 +395,7 @@ export default function ExploreScreen() {
           ListHeaderComponent={
             searchTab === 'relevancy' && profiles.length > 0 ? (
               <View style={styles.accountsHeader}>
-                {profiles.slice(0, 6).map((acc: any) => renderAccount(acc, true))}
+                {profiles.slice(0, 6).map((acc: any, i: number) => renderAccount(acc, i === 0))}
                 <View style={styles.accountsDivider} />
               </View>
             ) : null
@@ -408,9 +409,8 @@ export default function ExploreScreen() {
             </Text>
           }
           renderItem={({ item }) => {
-            const tier = q ? postMatchTier(item, q) : 0;
-            // Highlight only the strongest matches at the top of the Relevancy tab.
-            const hq = (searchTab === 'relevancy' && tier >= 2 && tier === relevancyTopTier) ? searchQuery : undefined;
+            // Only the very top relevancy result gets highlighted.
+            const hq = item.id === relevancyTopPostId ? searchQuery : undefined;
             return isAudioPost(item.type) ? (
             <TrackRow
               caption={item.caption}
