@@ -503,9 +503,14 @@ const styles = StyleSheet.create({
   accountsHeader: {},
   accountsDivider: { height: 0.5, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
 
-  toggleScroll: { flexGrow: 0, marginBottom: SPACING.sm },
-  toggleRow: { flexDirection: 'row', paddingHorizontal: SPACING.md, gap: SPACING.sm, alignItems: 'center' },
+  // Horizontal tab scroller — flexShrink:0 (on the scroller AND each pill) keeps the
+  // pills at their content width so they scroll instead of compressing. No explicit
+  // flexDirection on the content container: the horizontal ScrollView handles the
+  // row layout (forcing flexDirection:'row' here squeezes the children to fit).
+  toggleScroll: { flexGrow: 0, flexShrink: 0, marginBottom: SPACING.sm },
+  toggleRow: { paddingHorizontal: SPACING.md, gap: SPACING.sm, alignItems: 'center' },
   toggleBtn: {
+    flexShrink: 0,
     paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
   },
