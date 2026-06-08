@@ -11,6 +11,7 @@ import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/the
 import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
 import FollowButton from '../../components/FollowButton';
+import HighlightText from '../../components/HighlightText';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useAudio } from '../../contexts/AudioContext';
 import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
@@ -261,8 +262,8 @@ export default function ExploreScreen() {
         </LinearGradient>
       )}
       <View style={styles.accountInfo}>
-        <Text style={styles.accountName}>{acc.display_name}</Text>
-        <Text style={styles.accountUsername}>@{acc.username}</Text>
+        <HighlightText text={acc.display_name} query={searchQuery} style={styles.accountName} highlightStyle={styles.searchHl} numberOfLines={1} />
+        <HighlightText text={`@${acc.username}`} query={searchQuery} style={styles.accountUsername} highlightStyle={styles.searchHl} numberOfLines={1} />
       </View>
       <FollowButton userId={acc.id} />
     </TouchableOpacity>
@@ -407,6 +408,7 @@ export default function ExploreScreen() {
               streams={item.stream_count}
               cover={item.cover_url}
               avatarUrl={item.profiles?.avatar_url}
+              highlightQuery={searchQuery}
               isPlaying={currentTrack?.id === item.id && isPlaying}
               onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
               onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); expand(); }}
@@ -439,9 +441,9 @@ export default function ExploreScreen() {
                 </LinearGradient>
               )}
               <View style={styles.postInfo}>
-                <Text style={styles.postCaption} numberOfLines={2}>{item.caption || 'Audio Track'}</Text>
+                <HighlightText text={item.caption || 'Audio Track'} query={searchQuery} style={styles.postCaption} highlightStyle={styles.searchHl} numberOfLines={2} />
                 <View style={styles.postMeta}>
-                  <Text style={styles.postUser}>@{item.profiles?.username}</Text>
+                  <HighlightText text={`@${item.profiles?.username}`} query={searchQuery} style={styles.postUser} highlightStyle={styles.searchHl} numberOfLines={1} />
                   {((item.likes?.[0]?.count || 0) + (item.comments?.[0]?.count || 0)) > 0 && (
                     <View style={styles.postStats}>
                       <Ionicons name="heart" size={11} color={COLORS.like} />
@@ -500,6 +502,7 @@ const styles = StyleSheet.create({
   searchIcon: { marginRight: -4 },
   searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15 },
   searchClear: { padding: 2, marginLeft: 2 },
+  searchHl: { color: COLORS.primary, fontWeight: '800' },
   accountsHeader: {},
   accountsDivider: { height: 0.5, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
 

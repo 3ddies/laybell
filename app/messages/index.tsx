@@ -18,13 +18,20 @@ type Conversation = {
   last_message: string;
   last_message_time: string;
   unread: number;
-  bodies: string[]; // every message body in this convo (for keyword search)
+  bodies: string[];          // every plain message body in this convo (for keyword search)
+  sharedCaptions: string[];  // captions of posts shared in this convo (for keyword search)
 };
 
 // First non-shared-post message in the convo that contains the query, or null.
 function matchingMessage(c: Conversation, q: string): string | null {
   if (!q) return null;
   return c.bodies.find(b => !sharedPostId(b) && b.toLowerCase().includes(q)) ?? null;
+}
+
+// First shared-post caption in the convo that contains the query, or null.
+function matchingCaption(c: Conversation, q: string): string | null {
+  if (!q) return null;
+  return c.sharedCaptions.find(cap => cap.toLowerCase().includes(q)) ?? null;
 }
 
 export default function MessagesScreen() {
@@ -87,6 +94,23 @@ export default function MessagesScreen() {
 
     if (partnerIds.length === 0) { setConversations([]); return; }
 
+    // Resolve captions of any posts shared in these chats so search can match them.
+    const allSharedIds = new Set<string>();
+    const sharedIdsByPartner: Record<string, string[]> = {};
+    for (const pid of partnerIds) {
+      const ids: string[] = [];
+      for (const b of bodiesByPartner[pid] || []) {
+        const sid = sharedPostId(b);
+        if (sid) { ids.push(sid); allSharedIds.add(sid); }
+      }
+      sharedIdsByPartner[pid] = ids;
+    }
+    let captionById: Record<string, string> = {};
+    if (allSharedIds.size > 0) {
+      const { data: sharedPosts } = await supabase.from('posts').select('id, caption').in('id', [...allSharedIds]);
+      captionById = Object.fromEntries((sharedPosts ?? []).map((p: any) => [p.id, p.caption || '']));
+    }
+
     const { data: profiles } = await supabase
       .from('profiles').select('id, username, display_name, avatar_url').in('id', partnerIds);
     if (!profiles) return;
@@ -103,6 +127,7 @@ export default function MessagesScreen() {
           last_message_time: latestMessages[pid]?.created_at || '',
           unread: unreadCounts[pid] || 0,
           bodies: bodiesByPartner[pid] || [],
+          sharedCaptions: (sharedIdsByPartner[pid] || []).map(id => captionById[id]).filter((c): c is string => !!c),
         };
       })
       .filter(Boolean) as Conversation[];
@@ -119,7 +144,8 @@ export default function MessagesScreen() {
     return conversations.filter(c =>
       (c.other_user.display_name || '').toLowerCase().includes(q) ||
       (c.other_user.username || '').toLowerCase().includes(q) ||
-      c.bodies.some(b => !sharedPostId(b) && b.toLowerCase().includes(q))
+      c.bodies.some(b => !sharedPostId(b) && b.toLowerCase().includes(q)) ||
+      c.sharedCaptions.some(cap => cap.toLowerCase().includes(q))
     );
   }, [conversations, q]);
 
@@ -192,10 +218,17 @@ export default function MessagesScreen() {
         }
         renderItem={({ item }) => {
           const unread = item.unread > 0;
-          // When searching, prefer a matching message as the preview so the hit is visible.
+          // When searching, surface whatever matched so the hit is visible:
+          // a message body, then a shared-post caption, then (if only the handle
+          // matched) the @username — otherwise fall back to the latest message.
           const matchMsg = matchingMessage(item, q);
+          const matchCaption = !matchMsg ? matchingCaption(item, q) : null;
+          const nameMatches = !!q && (item.other_user.display_name || '').toLowerCase().includes(q);
+          const userMatches = !!q && (item.other_user.username || '').toLowerCase().includes(q);
+          const usernamePreview = !matchMsg && !matchCaption && userMatches && !nameMatches
+            ? `@${item.other_user.username}` : null;
+          const showShared = !matchMsg && !matchCaption && !usernamePreview && sharedPostId(item.last_message);
           const preview = matchMsg ?? item.last_message;
-          const showShared = !matchMsg && sharedPostId(item.last_message);
           return (
           <TouchableOpacity
             style={[styles.conversationRow, unread && styles.conversationRowUnread]}
@@ -219,7 +252,26 @@ export default function MessagesScreen() {
                 />
                 <Text style={[styles.timeText, unread && styles.timeUnread]}>{timeAgo(item.last_message_time)}</Text>
               </View>
-              {showShared ? (
+              {matchCaption ? (
+                <View style={styles.sharedPreview}>
+                  <Ionicons name="albums-outline" size={12} color={unread ? COLORS.text : COLORS.textSecondary} />
+                  <HighlightText
+                    text={matchCaption}
+                    query={searchQuery}
+                    style={[styles.lastMessage, unread && styles.lastMessageUnread]}
+                    highlightStyle={styles.highlight}
+                    numberOfLines={1}
+                  />
+                </View>
+              ) : usernamePreview ? (
+                <HighlightText
+                  text={usernamePreview}
+                  query={searchQuery}
+                  style={[styles.lastMessage, unread && styles.lastMessageUnread]}
+                  highlightStyle={styles.highlight}
+                  numberOfLines={1}
+                />
+              ) : showShared ? (
                 <View style={styles.sharedPreview}>
                   <Ionicons name="albums-outline" size={12} color={unread ? COLORS.text : COLORS.textSecondary} />
                   <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>Shared a post</Text>

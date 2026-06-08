@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { formatCount } from '../lib/format';
+import HighlightText from './HighlightText';
 
 function formatDuration(seconds?: number | null) {
   if (!seconds || seconds <= 0) return null;
@@ -13,7 +14,7 @@ function formatDuration(seconds?: number | null) {
 
 export default function TrackRow({
   caption, artist, username, duration, streams, cover, avatarUrl,
-  isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, onOptions, hidePlayButton,
+  isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, onOptions, hidePlayButton, highlightQuery,
 }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
   cover?: string | null; avatarUrl?: string | null; hidePlayButton?: boolean;
@@ -21,6 +22,8 @@ export default function TrackRow({
   // When provided (i.e. the track belongs to the current user), long-pressing the
   // row triggers it — used app-wide for "delete my post".
   onOptions?: () => void;
+  // When set (search results), matches in the caption + handle are highlighted.
+  highlightQuery?: string;
 }) {
   const durationLabel = formatDuration(duration);
   return (
@@ -43,9 +46,9 @@ export default function TrackRow({
 
       {/* Track outline — tap to play/pause, long-press for options (own tracks) */}
       <TouchableOpacity style={styles.info} activeOpacity={0.7} onPress={onPlay} onLongPress={onOptions}>
-        <Text style={styles.caption} numberOfLines={1}>{caption || 'Audio Track'}</Text>
+        <HighlightText text={caption || 'Audio Track'} query={highlightQuery} style={styles.caption} highlightStyle={styles.hl} numberOfLines={1} />
         <View style={styles.meta}>
-          <Text style={styles.artist} numberOfLines={1}>@{username}</Text>
+          <HighlightText text={`@${username}`} query={highlightQuery} style={styles.artist} highlightStyle={styles.hl} numberOfLines={1} />
           <Ionicons name="play" size={9} color={COLORS.textTertiary} />
           <Text style={styles.streams}>{formatCount(streams)}</Text>
           {durationLabel && <Text style={styles.artist}>· {durationLabel}</Text>}
@@ -95,6 +98,7 @@ const styles = StyleSheet.create({
   },
   info: { flex: 1 },
   caption: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  hl: { color: COLORS.primary, fontWeight: '800' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   artist: { color: COLORS.textSecondary, fontSize: 12 },
   streams: { color: COLORS.textTertiary, fontSize: 12 },
