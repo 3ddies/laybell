@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TextInput,
-  FlatList, TouchableOpacity, Image, ActivityIndicator, Keyboard,
+  FlatList, TouchableOpacity, Image, ActivityIndicator, Keyboard, ScrollView,
 } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
@@ -74,7 +74,7 @@ export default function ExploreScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   // Search results are sorted/filtered into tabs. One query fetches everything;
   // the tabs filter client-side (no re-query when switching tabs).
-  const [searchTab, setSearchTab] = useState<'relevancy' | 'music' | 'videos'>('relevancy');
+  const [searchTab, setSearchTab] = useState<'relevancy' | 'posts' | 'music' | 'videos' | 'accounts'>('relevancy');
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [posts, setPosts] = useState<Post[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -250,6 +250,24 @@ export default function ExploreScreen() {
 
   const isSearching = searchQuery.trim().length > 0;
 
+  // One account row — reused by the Relevancy header and the dedicated Accounts tab.
+  const renderAccount = (acc: any) => (
+    <TouchableOpacity key={acc.id} style={styles.accountRow} onPress={() => router.push(`/profile/${acc.id}`)}>
+      {acc.avatar_url ? (
+        <Image source={{ uri: acc.avatar_url }} style={[styles.accountAvatar, { borderColor: getBadgeColor(acc.badge_tier) }]} />
+      ) : (
+        <LinearGradient colors={GRADIENTS.primary} style={[styles.accountAvatar, { borderColor: getBadgeColor(acc.badge_tier) }]}>
+          <Text style={styles.accountAvatarText}>{acc.display_name?.charAt(0).toUpperCase()}</Text>
+        </LinearGradient>
+      )}
+      <View style={styles.accountInfo}>
+        <Text style={styles.accountName}>{acc.display_name}</Text>
+        <Text style={styles.accountUsername}>@{acc.username}</Text>
+      </View>
+      <FollowButton userId={acc.id} />
+    </TouchableOpacity>
+  );
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -268,6 +286,8 @@ export default function ExploreScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity
@@ -281,10 +301,15 @@ export default function ExploreScreen() {
         </View>
       </View>
 
-      {/* Search tabs: Relevancy · Music · Videos */}
+      {/* Search tabs: Relevancy · Posts · Music · Videos · Accounts */}
       {isSearching && (
-        <View style={styles.toggleRow}>
-          {(['relevancy', 'music', 'videos'] as const).map(tab => (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.toggleScroll}
+          contentContainerStyle={styles.toggleRow}
+        >
+          {(['relevancy', 'posts', 'music', 'videos', 'accounts'] as const).map(tab => (
             <TouchableOpacity
               key={tab}
               style={[styles.toggleBtn, searchTab === tab && styles.toggleBtnActive]}
@@ -295,7 +320,7 @@ export default function ExploreScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       )}
 
       {/* Genre pills */}
@@ -333,9 +358,23 @@ export default function ExploreScreen() {
           <ActivityIndicator color={COLORS.primary} />
         </View>
       ) : isSearching ? (
+        searchTab === 'accounts' ? (
+          <FlatList
+            key="accounts"
+            data={profiles}
+            keyExtractor={item => item.id}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={<Text style={styles.emptyText}>No accounts found</Text>}
+            renderItem={({ item }) => renderAccount(item)}
+          />
+        ) : (
         <FlatList
           key={searchTab}
-          data={searchTab === 'music'
+          data={searchTab === 'posts'
+            ? posts.filter(p => p.type === 'image')
+            : searchTab === 'music'
             ? posts.filter(p => isAudioPost(p.type))
             : searchTab === 'videos'
             ? posts.filter(p => p.type === 'video')
@@ -347,29 +386,17 @@ export default function ExploreScreen() {
           ListHeaderComponent={
             searchTab === 'relevancy' && profiles.length > 0 ? (
               <View style={styles.accountsHeader}>
-                {profiles.slice(0, 6).map((acc: any) => (
-                  <TouchableOpacity key={acc.id} style={styles.accountRow} onPress={() => router.push(`/profile/${acc.id}`)}>
-                    {acc.avatar_url ? (
-                      <Image source={{ uri: acc.avatar_url }} style={[styles.accountAvatar, { borderColor: getBadgeColor(acc.badge_tier) }]} />
-                    ) : (
-                      <LinearGradient colors={GRADIENTS.primary} style={[styles.accountAvatar, { borderColor: getBadgeColor(acc.badge_tier) }]}>
-                        <Text style={styles.accountAvatarText}>{acc.display_name?.charAt(0).toUpperCase()}</Text>
-                      </LinearGradient>
-                    )}
-                    <View style={styles.accountInfo}>
-                      <Text style={styles.accountName}>{acc.display_name}</Text>
-                      <Text style={styles.accountUsername}>@{acc.username}</Text>
-                    </View>
-                    <FollowButton userId={acc.id} />
-                  </TouchableOpacity>
-                ))}
+                {profiles.slice(0, 6).map(renderAccount)}
                 <View style={styles.accountsDivider} />
               </View>
             ) : null
           }
           ListEmptyComponent={
             <Text style={styles.emptyText}>
-              {searchTab === 'music' ? 'No music found' : searchTab === 'videos' ? 'No videos found' : 'No results found'}
+              {searchTab === 'posts' ? 'No image posts found'
+                : searchTab === 'music' ? 'No music found'
+                : searchTab === 'videos' ? 'No videos found'
+                : 'No results found'}
             </Text>
           }
           renderItem={({ item }) => isAudioPost(item.type) ? (
@@ -426,13 +453,20 @@ export default function ExploreScreen() {
                 </View>
               </View>
               <FollowButton userId={item.user_id} />
-              {/* Type indicator (replaces the options button — discovery, not management) */}
-              <View style={styles.postTypeTag}>
-                <Ionicons name={item.type === 'video' ? 'play' : 'image'} size={14} color={COLORS.textSecondary} />
-              </View>
+              {/* Author's profile picture — tap to open their profile */}
+              <TouchableOpacity onPress={() => router.push(`/profile/${item.user_id}`)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                {item.profiles?.avatar_url ? (
+                  <Image source={{ uri: item.profiles.avatar_url }} style={styles.postAuthorAvatar} />
+                ) : (
+                  <LinearGradient colors={GRADIENTS.primary} style={styles.postAuthorAvatar}>
+                    <Text style={styles.postAuthorInitial}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
+                  </LinearGradient>
+                )}
+              </TouchableOpacity>
             </TouchableOpacity>
           )}
         />
+        )
       ) : (
         <ExploreGrid
           posts={trendingPosts}
@@ -469,7 +503,8 @@ const styles = StyleSheet.create({
   accountsHeader: {},
   accountsDivider: { height: 0.5, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
 
-  toggleRow: { flexDirection: 'row', paddingHorizontal: SPACING.md, gap: SPACING.sm, marginBottom: SPACING.sm },
+  toggleScroll: { flexGrow: 0, marginBottom: SPACING.sm },
+  toggleRow: { flexDirection: 'row', paddingHorizontal: SPACING.md, gap: SPACING.sm, alignItems: 'center' },
   toggleBtn: {
     paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
@@ -542,6 +577,11 @@ const styles = StyleSheet.create({
   postUser: { color: COLORS.textSecondary, fontSize: 12 },
   postStats: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   postStatText: { color: COLORS.textTertiary, fontSize: 11 },
+  postAuthorAvatar: {
+    width: 30, height: 30, borderRadius: 15, flexShrink: 0,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight,
+  },
+  postAuthorInitial: { color: '#fff', fontSize: 12, fontWeight: '700' },
   postTypeTag: {
     width: 28, height: 28, borderRadius: RADIUS.full,
     backgroundColor: COLORS.primary + '18',
