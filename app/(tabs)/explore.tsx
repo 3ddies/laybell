@@ -12,6 +12,7 @@ import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
 import FollowButton from '../../components/FollowButton';
 import HighlightText from '../../components/HighlightText';
+import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useAudio } from '../../contexts/AudioContext';
 import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
@@ -49,25 +50,6 @@ function getBadgeColor(tier: string) {
   }
 }
 
-// How closely a result resembles the query (higher = closer): exact > starts-with
-// > contains > matched-only-via-author. Drives the Relevancy ranking, broken by
-// the post's algorithm score (scorePost) within the same tier.
-function postMatchTier(item: any, q: string): number {
-  const fields = [item.caption, item.profiles?.username, item.profiles?.display_name]
-    .map((s: any) => (s || '').toLowerCase());
-  if (fields.some((f: string) => f === q)) return 4;
-  if (fields.some((f: string) => f.startsWith(q))) return 3;
-  if (fields.some((f: string) => f.includes(q))) return 2;
-  return 1; // pulled in via author match but no direct text hit
-}
-
-function profileMatchTier(p: any, q: string): number {
-  const fields = [(p.username || '').toLowerCase(), (p.display_name || '').toLowerCase()];
-  if (fields.some((f) => f === q)) return 3;
-  if (fields.some((f) => f.startsWith(q))) return 2;
-  return 1;
-}
-
 export default function ExploreScreen() {
   const { show: showOptions } = usePostOptions();
   const router = useRouter();
@@ -76,6 +58,7 @@ export default function ExploreScreen() {
   // Search results are sorted/filtered into tabs. One query fetches everything;
   // the tabs filter client-side (no re-query when switching tabs).
   const [searchTab, setSearchTab] = useState<'relevancy' | 'posts' | 'music' | 'videos' | 'accounts'>('relevancy');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [posts, setPosts] = useState<Post[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -294,11 +277,13 @@ export default function ExploreScreen() {
             placeholderTextColor={COLORS.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             autoCapitalize="none"
             autoCorrect={false}
             spellCheck={false}
           />
-          {searchQuery.length > 0 && (
+          {(searchQuery.length > 0 || searchFocused) && (
             <TouchableOpacity
               onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}

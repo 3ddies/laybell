@@ -41,6 +41,7 @@ export default function MessagesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
 
   useEffect(() => { setup(); }, []);
 
@@ -173,11 +174,13 @@ export default function MessagesScreen() {
             placeholderTextColor={COLORS.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             autoCapitalize="none"
             autoCorrect={false}
             spellCheck={false}
           />
-          {searchQuery.length > 0 && (
+          {(searchQuery.length > 0 || searchFocused) && (
             <TouchableOpacity
               onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}

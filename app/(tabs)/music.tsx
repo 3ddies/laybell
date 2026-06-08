@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, Modal, Image, Dimensions, RefreshControl,
+  ActivityIndicator, Alert, TextInput, Modal, Image, Dimensions, RefreshControl, Keyboard,
 } from 'react-native';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -15,6 +15,7 @@ import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GENRES, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
+import { postMatchTier } from '../../lib/searchRank';
 import {
   buildAffinityProfile, loadSeenPostIds, scorePost,
   sortGenresByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
@@ -62,6 +63,12 @@ export default function MusicScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const router = useRouter();
 
+  // ─── Search state ──────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+
   // ─── Discover tab state ────────────────────────────────────────────────────
   const [discoverGenre, setDiscoverGenre]       = useState('All');
   const [orderedGenreList, setOrderedGenreList] = useState<string[]>([...GENRES]);
@@ -78,6 +85,51 @@ export default function MusicScreen() {
   const discoverRefreshedAt = useRef(0); // epoch ms of the last 4-day refresh cycle
 
   useEffect(() => { setup(); }, []);
+
+  // Debounced song search — matches song names (captions), usernames and display
+  // names, ranked by relevancy like the explore page.
+  useEffect(() => {
+    if (searchQuery.trim().length === 0) { setSearchResults([]); setSearching(false); return; }
+    setSearching(true); // show immediately so "No songs found" doesn't flash during the debounce
+    const t = setTimeout(() => runSearch(), 400);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  async function runSearch() {
+    const term = searchQuery.trim();
+    if (!term) return;
+    setSearching(true);
+    const ql = term.toLowerCase();
+
+    // Profiles whose name/handle matches — used to also pull in their songs.
+    const { data: matchedProfiles } = await supabase
+      .from('profiles').select('id').or(`username.ilike.%${term}%,display_name.ilike.%${term}%`).limit(15);
+    const authorIds = (matchedProfiles ?? []).map((p: any) => p.id);
+
+    let query = supabase
+      .from('posts')
+      .select('*, profiles!posts_user_id_fkey (username, display_name, avatar_url)')
+      .eq('is_public', true)
+      .in('type', ['audio', 'podcast', 'audiobook'])
+      .limit(40);
+    query = authorIds.length > 0
+      ? query.or(`caption.ilike.%${term}%,user_id.in.(${authorIds.join(',')})`)
+      : query.ilike('caption', `%${term}%`);
+
+    const { data } = await query;
+    if (data) {
+      // Relevancy: closeness of match first, then the song's algorithm score.
+      const now = Date.now();
+      const ranked = [...data].sort((a: any, b: any) => {
+        const ta = postMatchTier(a, ql), tb = postMatchTier(b, ql);
+        if (tb !== ta) return tb - ta;
+        return scorePost(b, affinityProfile.current, followingSetRef.current, new Set(), now) -
+               scorePost(a, affinityProfile.current, followingSetRef.current, new Set(), now);
+      });
+      setSearchResults(ranked);
+    }
+    setSearching(false);
+  }
 
   // Keep saved songs and playlists fresh when returning to this tab
   // (e.g. after saving a track from the feed).
@@ -382,6 +434,9 @@ export default function MusicScreen() {
   // Podcasts / Audiobooks pills show their own trending list and hide the
   // music-only "More of what you like" / "Today's Pick" sections.
   const isContentTag = (CONTENT_TAGS as readonly string[]).includes(discoverGenre);
+  const isSearching = searchQuery.trim().length > 0;
+  // Only the very top search result is highlighted (consistent with explore).
+  const searchTopId = searchResults.length ? searchResults[0].id : null;
 
   return (
     <View style={styles.container}>
@@ -395,6 +450,67 @@ export default function MusicScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Search bar — find songs by name, username, or display name */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchBar}>
+          <Ionicons name="search-outline" size={18} color={COLORS.textTertiary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search songs, artists..."
+            placeholderTextColor={COLORS.textTertiary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+          />
+          {(searchQuery.length > 0 || searchFocused) && (
+            <TouchableOpacity
+              onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.searchClear}
+            >
+              <Ionicons name="close-circle" size={20} color={COLORS.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {isSearching ? (
+        <FlatList
+          data={searchResults}
+          keyExtractor={item => item.id}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={styles.searchListContent}
+          ListEmptyComponent={searching ? null : <Text style={styles.searchEmpty}>No songs found</Text>}
+          renderItem={({ item }) => (
+            <TrackRow
+              caption={item.caption}
+              artist={item.profiles?.display_name}
+              username={item.profiles?.username}
+              streams={item.stream_count}
+              cover={item.cover_url}
+              avatarUrl={item.profiles?.avatar_url}
+              highlightQuery={item.id === searchTopId ? searchQuery : undefined}
+              isPlaying={playingId === item.id}
+              onPlay={() => play(item.id, item.media_url, item.caption, item.profiles?.display_name, item.cover_url)}
+              onCoverPress={() => { play(item.id, item.media_url, item.caption, item.profiles?.display_name, item.cover_url); openNowPlaying(); }}
+              onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
+              onOptions={() => showOptions({
+                postId: item.id,
+                isOwn: item.user_id === currentUserId,
+                onEdit: () => router.push(`/edit-post/${item.id}`),
+                onDeleted: () => setSearchResults(prev => prev.filter(p => p.id !== item.id)),
+              })}
+            />
+          )}
+        />
+      ) : (
+      <>
 
       {/* Toggle — plain View so all 4 pills share equal flex width and nothing overflows */}
       <View style={styles.toggleRow}>
@@ -781,6 +897,8 @@ export default function MusicScreen() {
           )}
         />
       )}
+      </>
+      )}
 
       {/* New playlist modal */}
       <Modal visible={showNewPlaylist} transparent animationType="slide" onRequestClose={() => setShowNewPlaylist(false)}>
@@ -827,6 +945,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
   },
   headerTitle: { color: COLORS.text, fontSize: 28, fontWeight: '800' },
+
+  searchRow: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.full, paddingHorizontal: SPACING.md,
+  },
+  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15 },
+  searchClear: { padding: 2 },
+  searchListContent: { padding: SPACING.md, gap: SPACING.sm },
+  searchEmpty: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center', paddingVertical: SPACING.xl },
   newBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: COLORS.primary, borderRadius: RADIUS.full,
