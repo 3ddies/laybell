@@ -1,8 +1,8 @@
 import {
-  View, Text, StyleSheet, FlatList,
-  TouchableOpacity, ActivityIndicator, Image, RefreshControl,
+  View, Text, StyleSheet, FlatList, TextInput,
+  TouchableOpacity, ActivityIndicator, Image, RefreshControl, Keyboard,
 } from 'react-native';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { timeAgo } from '../../lib/timeAgo';
 import { sharedPostId } from '../../lib/postLinks';
+import HighlightText from '../../components/HighlightText';
 
 type Conversation = {
   id: string;
@@ -17,7 +18,14 @@ type Conversation = {
   last_message: string;
   last_message_time: string;
   unread: number;
+  bodies: string[]; // every message body in this convo (for keyword search)
 };
+
+// First non-shared-post message in the convo that contains the query, or null.
+function matchingMessage(c: Conversation, q: string): string | null {
+  if (!q) return null;
+  return c.bodies.find(b => !sharedPostId(b) && b.toLowerCase().includes(q)) ?? null;
+}
 
 export default function MessagesScreen() {
   const router = useRouter();
@@ -25,6 +33,7 @@ export default function MessagesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => { setup(); }, []);
 
@@ -62,10 +71,13 @@ export default function MessagesScreen() {
     const partnerIds: string[] = [];
     const latestMessages: Record<string, any> = {};
     const unreadCounts: Record<string, number> = {};
+    const bodiesByPartner: Record<string, string[]> = {};
     data.forEach(msg => {
       const partnerId = msg.sender_id === userId ? msg.receiver_id : msg.sender_id;
       if (!partnerId) return;
       if (!latestMessages[partnerId]) { partnerIds.push(partnerId); latestMessages[partnerId] = msg; }
+      if (!bodiesByPartner[partnerId]) bodiesByPartner[partnerId] = [];
+      if (msg.body) bodiesByPartner[partnerId].push(msg.body);
       // Count messages they sent me that I haven't read yet (read === false,
       // matching the unread-badge query elsewhere, so legacy null rows aren't counted).
       if (msg.receiver_id === userId && msg.read === false) {
@@ -90,6 +102,7 @@ export default function MessagesScreen() {
           last_message: latestMessages[pid]?.body || '',
           last_message_time: latestMessages[pid]?.created_at || '',
           unread: unreadCounts[pid] || 0,
+          bodies: bodiesByPartner[pid] || [],
         };
       })
       .filter(Boolean) as Conversation[];
@@ -98,6 +111,17 @@ export default function MessagesScreen() {
     convos.sort((a, b) => new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime());
     setConversations(convos);
   }
+
+  // Match conversations by partner name OR any message text in the thread.
+  const q = searchQuery.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!q) return conversations;
+    return conversations.filter(c =>
+      (c.other_user.display_name || '').toLowerCase().includes(q) ||
+      (c.other_user.username || '').toLowerCase().includes(q) ||
+      c.bodies.some(b => !sharedPostId(b) && b.toLowerCase().includes(q))
+    );
+  }, [conversations, q]);
 
   if (loading) {
     return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
@@ -113,24 +137,65 @@ export default function MessagesScreen() {
         <View style={{ width: 40 }} />
       </View>
 
+      {/* Search chats by username or message text */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchBar}>
+          <Ionicons name="search-outline" size={18} color={COLORS.textTertiary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search names or messages..."
+            placeholderTextColor={COLORS.textTertiary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.searchClear}
+            >
+              <Ionicons name="close-circle" size={20} color={COLORS.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       <FlatList
-        data={conversations}
+        data={filtered}
+        keyboardShouldPersistTaps="handled"
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
-              <Ionicons name="chatbubbles-outline" size={36} color={COLORS.primary} />
-            </LinearGradient>
-            <Text style={styles.emptyTitle}>No messages yet</Text>
-            <Text style={styles.emptySubtitle}>Visit someone's profile and tap Message to start a conversation</Text>
-          </View>
+          q ? (
+            <View style={styles.emptyContainer}>
+              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
+                <Ionicons name="search-outline" size={32} color={COLORS.primary} />
+              </LinearGradient>
+              <Text style={styles.emptyTitle}>No chats found</Text>
+              <Text style={styles.emptySubtitle}>No names or messages match "{searchQuery.trim()}"</Text>
+            </View>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
+                <Ionicons name="chatbubbles-outline" size={36} color={COLORS.primary} />
+              </LinearGradient>
+              <Text style={styles.emptyTitle}>No messages yet</Text>
+              <Text style={styles.emptySubtitle}>Visit someone's profile and tap Message to start a conversation</Text>
+            </View>
+          )
         }
         renderItem={({ item }) => {
           const unread = item.unread > 0;
+          // When searching, prefer a matching message as the preview so the hit is visible.
+          const matchMsg = matchingMessage(item, q);
+          const preview = matchMsg ?? item.last_message;
+          const showShared = !matchMsg && sharedPostId(item.last_message);
           return (
           <TouchableOpacity
             style={[styles.conversationRow, unread && styles.conversationRowUnread]}
@@ -145,16 +210,28 @@ export default function MessagesScreen() {
             )}
             <View style={styles.convInfo}>
               <View style={styles.convHeader}>
-                <Text style={[styles.displayName, unread && styles.displayNameUnread]} numberOfLines={1}>{item.other_user.display_name}</Text>
+                <HighlightText
+                  text={item.other_user.display_name}
+                  query={searchQuery}
+                  style={[styles.displayName, unread && styles.displayNameUnread]}
+                  highlightStyle={styles.highlight}
+                  numberOfLines={1}
+                />
                 <Text style={[styles.timeText, unread && styles.timeUnread]}>{timeAgo(item.last_message_time)}</Text>
               </View>
-              {sharedPostId(item.last_message) ? (
+              {showShared ? (
                 <View style={styles.sharedPreview}>
                   <Ionicons name="albums-outline" size={12} color={unread ? COLORS.text : COLORS.textSecondary} />
                   <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>Shared a post</Text>
                 </View>
               ) : (
-                <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>{item.last_message}</Text>
+                <HighlightText
+                  text={preview}
+                  query={searchQuery}
+                  style={[styles.lastMessage, unread && styles.lastMessageUnread]}
+                  highlightStyle={styles.highlight}
+                  numberOfLines={1}
+                />
               )}
             </View>
             {unread ? (
@@ -185,6 +262,17 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: SPACING.sm },
   headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+
+  searchRow: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.md,
+  },
+  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15 },
+  searchClear: { padding: 2 },
+  // Search match highlight (in usernames and message previews).
+  highlight: { color: COLORS.primary, fontWeight: '800' },
 
   // flexGrow lets the list fill the viewport so pull-to-refresh can be started
   // anywhere on the screen — even when there are few or no conversations.
