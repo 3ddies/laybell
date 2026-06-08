@@ -33,6 +33,7 @@ const PREVIEW_MAX_H = Math.round(SCREEN_H * 0.46);
 const VIDEO_MAX_SEC  = 90;       // 1.5 min
 const MUSIC_MAX_SEC  = 6 * 60;   // music tracks
 const SPOKEN_MAX_SEC = 35 * 60;  // podcasts / audiobooks
+const AUDIO_MIN_SEC  = 5;        // global minimum length for any audio
 
 // Audio file-size cap (video is bounded by the 90s duration limit instead).
 const AUDIO_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -284,6 +285,10 @@ export default function PostScreen() {
   async function handleShare() {
     if (!caption.trim()) { setError('Please add a caption'); return; }
     if (postType === 'audio' && audioDuration != null) {
+      if (audioDuration < AUDIO_MIN_SEC) {
+        Alert.alert('Audio too short', `Audio must be at least ${AUDIO_MIN_SEC} seconds long.`);
+        return;
+      }
       const limit = audioKind === 'audio' ? MUSIC_MAX_SEC : SPOKEN_MAX_SEC;
       if (audioDuration > limit) {
         Alert.alert(

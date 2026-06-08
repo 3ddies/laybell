@@ -10,6 +10,26 @@ const AUDIO_MODE = {
   playThroughEarpieceAndroid: false,
 };
 
+// Streams are credited by CUMULATIVE listen time, scaled by the track's duration
+// so short audio can't rack up streams unfairly vs. long audio. Returns how many
+// listen-seconds are needed to credit the 1st and the 2nd stream:
+//
+//   ≤10s : 1st = 80% of duration,  2nd = 30s combined
+//   ≤30s : 1st = 70% of duration,  2nd = 60s combined
+//   ≤60s : 1st = 60% of duration,  2nd = 80% of duration combined
+//   >60s : 1st = 15s,              2nd = 70% of duration combined
+//
+// A first stream always needs at least 5s of listening (global floor); paired
+// with the 5s minimum upload length, this keeps every track on fair footing.
+function streamThresholds(durationSec: number): { t1: number; t2: number } {
+  let t1: number, t2: number;
+  if (durationSec <= 10)      { t1 = 0.8 * durationSec; t2 = 30; }
+  else if (durationSec <= 30) { t1 = 0.7 * durationSec; t2 = 60; }
+  else if (durationSec <= 60) { t1 = 0.6 * durationSec; t2 = 0.8 * durationSec; }
+  else                        { t1 = 15;                t2 = 0.7 * durationSec; }
+  return { t1: Math.max(5, t1), t2 };
+}
+
 export type Track = {
   id: string;
   uri: string;
@@ -60,6 +80,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const playTokenRef = useRef(0); // guards against overlapping plays (rapid next/prev)
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueLength, setQueueLength] = useState(0);
+  // Per-post stream accounting for this app session (keyed by post id):
+  //   listenMs        – cumulative genuine forward listen time (across replays)
+  //   streamsAwarded  – streams already credited via listening (0, 1, or 2)
+  const listenMsRef = useRef<Record<string, number>>({});
+  const streamsAwardedRef = useRef<Record<string, number>>({});
 
   // Configure the audio session once up front so the first tap plays immediately
   // (a cold session previously made the first createAsync fail to start).
@@ -167,31 +192,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setVideoMuted(true); // a song is playing → mute feed video to avoid overlap
 
     // --- Stream counting policy ---
-    // First counted listen of a song triggers at 10%; every later listen must
-    // reach 100%. Prevents stream spam while still crediting genuine replays.
-    // NOTE: determined in the background so playback never waits on the network
-    // (gating on auth/db here made the first tap glitch while the session was cold).
+    // Credit streams by cumulative listen time, scaled by duration (see
+    // streamThresholds): the 1st stream at the tier's 1st threshold, the 2nd once
+    // combined listening reaches the 2nd threshold. Genuine forward listen time is
+    // accumulated per post across replays this session. The server (record_stream)
+    // still enforces no self-streams and the 10-per-24h per-user cap.
+    // canCount is resolved in the background so playback never waits on the network.
     let canCount = false;
-    let requiresFull = false;
-    let streamCounted = false;
     (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          canCount = true;
-          const { count } = await supabase
-            .from('streams')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id).eq('post_id', track.id);
-          requiresFull = (count || 0) > 0;
-        }
-      } catch {}
+      try { canCount = !!(await supabase.auth.getUser()).data.user; } catch {}
     })();
     const recordStream = () => {
-      streamCounted = true; // set guard before await so rapid updates don't double-fire
-      // Server enforces no-self-streams and the 10-per-24h per-user cap.
       supabase.rpc('record_stream', { p_post_id: track.id }).then(undefined, () => {});
     };
+    let lastPosMs = 0; // previous reported position, for forward-delta accumulation
 
     try {
       // Load PAUSED — a superseded sound must never start, so we only call
@@ -210,20 +224,33 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
       sound.setOnPlaybackStatusUpdate((status: any) => {
         if (!status.isLoaded) return;
-        setPositionMs(status.positionMillis ?? 0);
-        setDurationMs(status.durationMillis ?? 0);
+        const pos = status.positionMillis ?? 0;
+        const dur = status.durationMillis ?? 0;
+        setPositionMs(pos);
+        setDurationMs(dur);
         setIsBuffering(status.isBuffering ?? false);
 
-        // Count a stream once the listen threshold is crossed.
-        if (canCount && !streamCounted) {
-          const dur = status.durationMillis ?? 0;
-          const pos = status.positionMillis ?? 0;
-          if (requiresFull) {
-            if (status.didJustFinish) recordStream();
-          } else if (dur > 0 && pos / dur >= 0.1) {
-            recordStream();
+        // Accumulate genuine forward listen time (ignore seeks, rewinds and the
+        // jump on finish), then credit the 1st/2nd stream as cumulative listening
+        // crosses this track's duration-scaled thresholds.
+        if (canCount && dur > 0) {
+          const delta = pos - lastPosMs;
+          if (delta > 0 && delta < 1500) {
+            const id = track.id;
+            const listened = (listenMsRef.current[id] || 0) + delta;
+            listenMsRef.current[id] = listened;
+            const awarded = streamsAwardedRef.current[id] || 0;
+            const { t1, t2 } = streamThresholds(dur / 1000);
+            if (awarded === 0 && listened >= t1 * 1000) {
+              streamsAwardedRef.current[id] = 1;
+              recordStream();
+            } else if (awarded === 1 && listened >= t2 * 1000) {
+              streamsAwardedRef.current[id] = 2;
+              recordStream();
+            }
           }
         }
+        lastPosMs = pos;
 
         if (status.didJustFinish) {
           const q = queueRef.current;
