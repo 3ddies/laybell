@@ -17,6 +17,7 @@ import { aspectToNumber } from '../../lib/aspectRatio';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
 import FollowButton from '../../components/FollowButton';
+import { trackVideoProgress } from '../../lib/viewTracker';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import {
@@ -160,7 +161,9 @@ export default function ReelScreen() {
             useNativeControls={false}
             onLoad={() => { if (item.trim_start != null) videoRefs.current[item.id]?.setPositionAsync(item.trim_start * 1000); }}
             onPlaybackStatusUpdate={(st: any) => {
-              if (st.isLoaded && item.trim_end != null && st.positionMillis >= item.trim_end * 1000) {
+              if (!st.isLoaded) return;
+              trackVideoProgress(item.id, st.positionMillis ?? 0, st.durationMillis ?? 0);
+              if (item.trim_end != null && st.positionMillis >= item.trim_end * 1000) {
                 videoRefs.current[item.id]?.setPositionAsync((item.trim_start ?? 0) * 1000);
               }
             }}

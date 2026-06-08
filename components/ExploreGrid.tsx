@@ -12,11 +12,12 @@ import { useAudio } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isAudioPost } from '../lib/genres';
+import ThumbStat from './ThumbStat';
 
 type GridPost = {
   id: string; type: string; media_url: string; caption: string;
   thumbnail_url?: string | null; aspect_ratio?: string | null; cover_url?: string | null;
-  stream_count?: number; user_id?: string;
+  stream_count?: number; view_count?: number; user_id?: string;
   profiles?: { username: string; display_name: string } | null;
 };
 
@@ -190,6 +191,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
           </LinearGradient>
+          <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
         </TouchableOpacity>
       );
     }
@@ -223,6 +225,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
           </LinearGradient>
+          <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
         </TouchableOpacity>
       );
     }

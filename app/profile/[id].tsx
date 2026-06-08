@@ -11,6 +11,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import VideoThumb from '../../components/VideoThumb';
+import ThumbStat from '../../components/ThumbStat';
 import { createNotification } from '../../lib/createNotification';
 
 type Profile = {
@@ -68,7 +69,7 @@ export default function PublicProfileScreen() {
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', id),
       supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', id),
-      supabase.from('posts').select('id, type, media_url, caption, is_public, thumbnail_url, cover_url').eq('user_id', id).order('created_at', { ascending: false }),
+      supabase.from('posts').select('*').eq('user_id', id).order('created_at', { ascending: false }),
       currentUser
         ? supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', id).maybeSingle()
         : Promise.resolve({ data: null }),
@@ -173,6 +174,7 @@ export default function PublicProfileScreen() {
                 <Ionicons name={post.type === 'audio' ? 'musical-notes' : 'videocam'} size={28} color={COLORS.primary} />
               </LinearGradient>
             )}
+            <ThumbStat type={post.type} viewCount={post.view_count} streamCount={post.stream_count} />
           </TouchableOpacity>
         ))}
       </View>

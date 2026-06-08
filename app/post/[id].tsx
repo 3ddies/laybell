@@ -20,6 +20,7 @@ import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useShare } from '../../contexts/ShareContext';
 import FollowButton from '../../components/FollowButton';
+import { trackVideoProgress } from '../../lib/viewTracker';
 import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
 
@@ -219,7 +220,9 @@ export default function PostDetailScreen() {
                 shouldPlay
                 onLoad={() => { if (post.trim_start != null) videoRef.current?.setPositionAsync(post.trim_start * 1000); }}
                 onPlaybackStatusUpdate={(st: any) => {
-                  if (st.isLoaded && post.trim_end != null && st.positionMillis >= post.trim_end * 1000) {
+                  if (!st.isLoaded) return;
+                  trackVideoProgress(id as string, st.positionMillis ?? 0, st.durationMillis ?? 0);
+                  if (post.trim_end != null && st.positionMillis >= post.trim_end * 1000) {
                     videoRef.current?.setPositionAsync((post.trim_start ?? 0) * 1000);
                   }
                 }}

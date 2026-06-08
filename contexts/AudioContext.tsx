@@ -3,6 +3,7 @@ import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDeviceId } from '../lib/deviceId';
+import { playThresholds } from '../lib/playThresholds';
 
 // Per-post listen progress persists for a rolling 24h window (matches the
 // server's per-user/post stream cap) so force-quitting can't reset it.
@@ -16,25 +17,6 @@ const AUDIO_MODE = {
   shouldDuckAndroid: true,
   playThroughEarpieceAndroid: false,
 };
-
-// Streams are credited by CUMULATIVE listen time, scaled by the track's duration
-// so short audio can't rack up streams unfairly vs. long audio. Returns the
-// listen-seconds needed for the 1st, 2nd and 3rd stream.
-//
-// The curve is CONTINUOUS and MONOTONIC (never decreasing in duration), so there
-// are no tier cliffs to game by padding a track's length just over a boundary:
-//   1st stream : 80% of the track, capped at 15s, with a 5s global floor.
-//   2nd stream : 70% of the track, but at least 30s combined — so short audio
-//                needs genuine replays for a 2nd stream, not one quick listen.
-//   3rd stream : one more step of the same size. The server only credits a 3rd
-//                for accounts older than 24h; new accounts stay capped at 2.
-// (Paired with the 5s minimum upload length, every track is on fair footing.)
-function streamThresholds(durationSec: number): { t1: number; t2: number; t3: number } {
-  const t1 = Math.min(Math.max(0.8 * durationSec, 5), 15);
-  const t2 = Math.max(30, 0.7 * durationSec);
-  const t3 = 2 * t2 - t1; // continue the cadence: another (t2 - t1) of listening
-  return { t1, t2, t3 };
-}
 
 export type Track = {
   id: string;
@@ -308,7 +290,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             const listened = (listenMsRef.current[id] || 0) + delta;
             listenMsRef.current[id] = listened;
             const awarded = streamsAwardedRef.current[id] || 0;
-            const { t1, t2, t3 } = streamThresholds(dur / 1000);
+            const { t1, t2, t3 } = playThresholds(dur / 1000);
             if (awarded === 0 && listened >= t1 * 1000) {
               streamsAwardedRef.current[id] = 1;
               recordStream();

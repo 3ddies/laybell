@@ -14,6 +14,7 @@ import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { isAudioPost } from '../../lib/genres';
 import VideoThumb from '../../components/VideoThumb';
+import ThumbStat from '../../components/ThumbStat';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 
 type Profile = {
@@ -76,10 +77,10 @@ export default function ProfileScreen() {
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
       supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-      supabase.from('posts').select('id, type, media_url, caption, thumbnail_url, cover_url').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
-      supabase.from('likes').select('posts(id, type, media_url, caption, thumbnail_url, cover_url)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
-      supabase.from('saves').select('posts(id, type, media_url, caption, thumbnail_url, cover_url)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
-      supabase.from('reposts').select('posts(id, type, media_url, caption, thumbnail_url, cover_url, profiles!posts_user_id_fkey(display_name))').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('posts').select('*').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
+      supabase.from('likes').select('posts(*)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('saves').select('posts(*)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('reposts').select('posts(*, profiles!posts_user_id_fkey(display_name))').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100),
     ]);
 
     if (profileRes.data) setProfile(profileRes.data);
@@ -206,6 +207,8 @@ export default function ProfileScreen() {
                 />
               </View>
             )}
+            {/* View count (video) / listen count (audio) */}
+            <ThumbStat type={post.type} viewCount={post.view_count} streamCount={post.stream_count} />
           </TouchableOpacity>
         ))}
       </View>
