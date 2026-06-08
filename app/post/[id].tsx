@@ -2,7 +2,7 @@ import { Video, ResizeMode } from 'expo-av';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, TextInput, KeyboardAvoidingView,
-  Platform, ActivityIndicator, FlatList, Dimensions,
+  Platform, ActivityIndicator, FlatList, Dimensions, Animated,
 } from 'react-native';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
+import StoryAvatar from '../../components/StoryAvatar';
 import { useAudio } from '../../contexts/AudioContext';
 import Comments from '../../components/Comments';
 import { timeAgo } from '../../lib/timeAgo';
@@ -23,6 +24,7 @@ import FollowButton from '../../components/FollowButton';
 import { trackVideoProgress } from '../../lib/viewTracker';
 import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
+import { useExpandTransition } from '../../hooks/useExpandTransition';
 
 type Post = {
   id: string; type: string; media_url: string; caption: string;
@@ -49,6 +51,7 @@ export default function PostDetailScreen() {
   const { currentTrack, isPlaying, play, stop } = useAudio();
   const flatListRef = useRef<any>(null);
   const videoRef = useRef<any>(null);
+  const { dismiss, backdropOpacity, contentStyle } = useExpandTransition();
 
   // Seed from the post passed in on tap so the screen renders instantly (no
   // loading spinner) — the fetch below just refreshes counts/details.
@@ -161,9 +164,13 @@ export default function PostDetailScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <View style={styles.root}>
+      {/* Darkening backdrop — fades as the post grows out of / shrinks into the thumb. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]} />
+      <Animated.View style={[StyleSheet.absoluteFill, contentStyle]}>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={dismiss}>
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Post</Text>
@@ -179,13 +186,12 @@ export default function PostDetailScreen() {
           <>
             {/* Author */}
             <TouchableOpacity style={styles.postHeader} onPress={() => router.push(`/profile/${post.user_id}`)}>
-              {post.profiles?.avatar_url ? (
-                <Image source={{ uri: post.profiles.avatar_url }} style={styles.avatar} />
-              ) : (
-                <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
-                  <Text style={styles.avatarText}>{post.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
-                </LinearGradient>
-              )}
+              <StoryAvatar
+                userId={post.user_id}
+                avatarUrl={post.profiles?.avatar_url}
+                name={post.profiles?.display_name}
+                size={40}
+              />
               <View style={styles.postHeaderInfo}>
                 <Text style={styles.displayName}>{post.profiles?.display_name}</Text>
                 <Text style={styles.username}>@{post.profiles?.username} · {timeAgo(post.created_at)}</Text>
@@ -215,6 +221,9 @@ export default function PostDetailScreen() {
                 source={{ uri: post.media_url }}
                 style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
                 useNativeControls
+                usePoster={!!(post.thumbnail_url ?? post.cover_url)}
+                posterSource={(post.thumbnail_url ?? post.cover_url) ? { uri: (post.thumbnail_url ?? post.cover_url) as string } : undefined}
+                posterStyle={{ resizeMode: 'cover' }}
                 resizeMode={ResizeMode.COVER}
                 isLooping={post.trim_end == null}
                 shouldPlay
@@ -291,11 +300,14 @@ export default function PostDetailScreen() {
         }
       />
       ) : null}
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   container: { flex: 1, backgroundColor: COLORS.background },
   loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
   header: {

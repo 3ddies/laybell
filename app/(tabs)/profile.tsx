@@ -12,6 +12,8 @@ import { useCallback, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useProfile } from '../../contexts/ProfileContext';
+import { useStories } from '../../contexts/StoriesContext';
+import StoryAvatar from '../../components/StoryAvatar';
 import { isAudioPost } from '../../lib/genres';
 import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
@@ -46,6 +48,7 @@ const TAB_KEYS = TABS.map(t => t.key);
 export default function ProfileScreen() {
   const { show: showOptions } = usePostOptions();
   const { profile: liveProfile } = useProfile();
+  const { openCamera } = useStories();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [loading, setLoading] = useState(true);
@@ -64,6 +67,8 @@ export default function ProfileScreen() {
   // and jumps to the Music main tab — one pager, no nesting or native gesture, so it
   // can't glitch or freeze (same mechanism as other users' profiles).
   const pagerRef = useRef<PagerView>(null);
+  // Per-thumbnail nodes so opening a post/reel can expand out of the tapped cell.
+  const gridRefs = useRef<Record<string, any>>({});
 
   // Refetch on focus so a post reposted elsewhere shows up in the Reposts tab.
   useFocusEffect(useCallback(() => { fetchProfile(); }, []));
@@ -137,6 +142,7 @@ export default function ProfileScreen() {
         {data.map((post: any) => (
           <TouchableOpacity
             key={post.id}
+            ref={(n) => { if (n) gridRefs.current[post.id] = n; }}
             style={styles.gridItem}
             // Own content (Posts / Music / Videos) — long-press for edit/delete.
             // Reposts — long-press to remove the repost (via the options sheet).
@@ -170,7 +176,15 @@ export default function ProfileScreen() {
                   Math.max(0, idx),
                 );
               } else {
-                router.push(post.type === 'video' ? `/reel/${post.id}` : `/post/${post.id}`);
+                const node = gridRefs.current[post.id];
+                const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
+                const seed = JSON.stringify(post);
+                if (node?.measureInWindow) {
+                  node.measureInWindow((x: number, y: number, width: number, height: number) =>
+                    router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
+                } else {
+                  router.push({ pathname, params: { id: post.id, post: seed } });
+                }
               }
             }}
           >
@@ -228,15 +242,16 @@ export default function ProfileScreen() {
       {/* Banner */}
       <LinearGradient colors={['#1C0A04', COLORS.background]} style={styles.banner}>
         <View style={styles.avatarWrap}>
-          <LinearGradient colors={badgeGradient} style={styles.avatarRing}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
-            ) : (
-              <LinearGradient colors={GRADIENTS.primary} style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarText}>{profile?.display_name?.charAt(0).toUpperCase()}</Text>
-              </LinearGradient>
-            )}
-          </LinearGradient>
+          <StoryAvatar
+            userId={profile?.id}
+            avatarUrl={avatarUrl}
+            name={profile?.display_name}
+            size={88}
+            ringColorsWhenNoStory={badgeGradient}
+            onPressProfile={openCamera}
+            showAdd
+            onPressAdd={openCamera}
+          />
         </View>
         <View style={styles.statsRow}>
           {[

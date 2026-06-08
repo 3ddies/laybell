@@ -10,6 +10,7 @@ import { PostOptionsProvider } from '../contexts/PostOptionsContext';
 import { ProfileProvider } from '../contexts/ProfileContext';
 import { ShareProvider } from '../contexts/ShareContext';
 import { FollowProvider } from '../contexts/FollowContext';
+import { StoriesProvider } from '../contexts/StoriesContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import { useNotifications } from '../hooks/useNotifications';
@@ -27,7 +28,40 @@ function AppContent() {
           animation: 'slide_from_right',   // previous screen sits behind during the transition
           contentStyle: { backgroundColor: COLORS.background },
         }}
-      />
+      >
+        {/* The story viewer expands out of the tapped ring (Instagram shared-element
+            style): transparent modal so the feed stays visible behind the growing
+            post, no native animation/gesture — the in-screen rect animation drives it. */}
+        <Stack.Screen
+          name="story/[userId]"
+          options={{
+            presentation: 'transparentModal',
+            animation: 'none',
+            gestureEnabled: false,
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
+        />
+        {/* Posts & reels expand out of the tapped thumbnail too (when opened with a
+            `src` rect); transparent modal so the grid/feed shows behind. */}
+        <Stack.Screen
+          name="post/[id]"
+          options={{
+            presentation: 'transparentModal',
+            animation: 'none',
+            gestureEnabled: false,
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
+        />
+        <Stack.Screen
+          name="reel/[id]"
+          options={{
+            presentation: 'transparentModal',
+            animation: 'none',
+            gestureEnabled: false,
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
+        />
+      </Stack>
         <MiniPlayer />
         <NowPlaying />
       </View>
@@ -93,7 +127,9 @@ export default function RootLayout() {
         <FollowProvider>
           <ShareProvider>
             <StatusBar style="light" />
-            <AppContent />
+            <StoriesProvider>
+              <AppContent />
+            </StoriesProvider>
           </ShareProvider>
         </FollowProvider>
       </ProfileProvider>

@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
+import StoryAvatar from './StoryAvatar';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
 import { createNotification } from '../lib/createNotification';
@@ -141,21 +142,14 @@ export default function Comments({
   function renderRow(item: Row, isReply?: boolean) {
     return (
     <View style={[styles.row, isReply && styles.replyRow]}>
-      <TouchableOpacity onPress={() => goToProfile(item.user_id)} activeOpacity={0.7}>
-        {item.profiles?.avatar_url ? (
-          <Image
-            source={{ uri: item.profiles.avatar_url }}
-            style={[styles.avatar, isReply && styles.avatarSm]}
-            contentFit="cover"
-            transition={0}
-            cachePolicy="memory-disk"
-          />
-        ) : (
-          <LinearGradient colors={GRADIENTS.primary} style={[styles.avatar, isReply && styles.avatarSm]}>
-            <Text style={styles.avatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
-          </LinearGradient>
-        )}
-      </TouchableOpacity>
+      <StoryAvatar
+        userId={item.user_id}
+        avatarUrl={item.profiles?.avatar_url}
+        name={item.profiles?.display_name}
+        size={isReply ? 26 : 34}
+        onPressProfile={() => goToProfile(item.user_id)}
+        onBeforeOpenStory={onNavigate}
+      />
       <View style={styles.body}>
         <TouchableOpacity activeOpacity={1} onLongPress={() => remove(item.id, item.user_id)}>
           <View style={styles.head}>

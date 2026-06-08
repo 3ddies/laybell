@@ -2,12 +2,14 @@ import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, ActivityIndicator, Image, RefreshControl,
 } from 'react-native';
-import { useEffect, useState } from 'react';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import StoryAvatar from '../../components/StoryAvatar';
+import { useStories } from '../../contexts/StoriesContext';
 
 type User = { id: string; username: string; display_name: string; avatar_url: string | null };
 
@@ -21,6 +23,10 @@ export default function FollowersScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { setup(); }, [id]);
+
+  // Keep story rings on these avatars fresh when the screen is shown.
+  const { refresh: refreshStories } = useStories();
+  useFocusEffect(useCallback(() => { refreshStories(); }, [refreshStories]));
 
   async function onRefresh() {
     setRefreshing(true);
@@ -92,13 +98,12 @@ export default function FollowersScreen() {
           renderItem={({ item }) => (
             <View style={styles.userRow}>
               <TouchableOpacity style={styles.userLeft} onPress={() => router.push(`/profile/${item.id}`)}>
-                {item.avatar_url ? (
-                  <Image source={{ uri: item.avatar_url }} style={styles.avatar} />
-                ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
-                    <Text style={styles.avatarText}>{item.display_name?.charAt(0).toUpperCase()}</Text>
-                  </LinearGradient>
-                )}
+                <StoryAvatar
+                  userId={item.id}
+                  avatarUrl={item.avatar_url}
+                  name={item.display_name}
+                  size={46}
+                />
                 <View>
                   <Text style={styles.displayName}>{item.display_name}</Text>
                   <Text style={styles.username}>@{item.username}</Text>

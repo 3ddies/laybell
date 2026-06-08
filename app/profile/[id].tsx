@@ -12,6 +12,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
+import StoryAvatar from '../../components/StoryAvatar';
 import { createNotification } from '../../lib/createNotification';
 
 type Profile = {
@@ -56,6 +57,8 @@ export default function PublicProfileScreen() {
   // Sub-tabs are pages in a native pager — swiping slides the next grid in under
   // your finger, matching the rest of the app.
   const pagerRef = useRef<PagerView>(null);
+  // Per-thumbnail nodes so opening a post/reel can expand out of the tapped cell.
+  const gridRefs = useRef<Record<string, any>>({});
 
   useEffect(() => { setup(); }, [id]);
 
@@ -139,6 +142,7 @@ export default function PublicProfileScreen() {
         {data.map((post: any) => (
           <TouchableOpacity
             key={post.id}
+            ref={(n) => { if (n) gridRefs.current[post.id] = n; }}
             style={styles.gridItem}
             onPress={() => {
               if (post.type === 'audio') {
@@ -149,7 +153,15 @@ export default function PublicProfileScreen() {
                   Math.max(0, idx),
                 );
               } else {
-                router.push(post.type === 'video' ? `/reel/${post.id}` : `/post/${post.id}`);
+                const node = gridRefs.current[post.id];
+                const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
+                const seed = JSON.stringify(post);
+                if (node?.measureInWindow) {
+                  node.measureInWindow((x: number, y: number, width: number, height: number) =>
+                    router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
+                } else {
+                  router.push({ pathname, params: { id: post.id, post: seed } });
+                }
               }
             }}
           >
@@ -199,15 +211,13 @@ export default function PublicProfileScreen() {
       {/* Banner */}
       <LinearGradient colors={['#1C0A04', COLORS.background]} style={styles.banner}>
         <View style={styles.avatarWrap}>
-          <LinearGradient colors={badgeGradient} style={styles.avatarRing}>
-            {profile?.avatar_url ? (
-              <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
-            ) : (
-              <LinearGradient colors={GRADIENTS.primary} style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarText}>{profile?.display_name?.charAt(0).toUpperCase()}</Text>
-              </LinearGradient>
-            )}
-          </LinearGradient>
+          <StoryAvatar
+            userId={profile?.id ?? id}
+            avatarUrl={profile?.avatar_url}
+            name={profile?.display_name}
+            size={88}
+            ringColorsWhenNoStory={badgeGradient}
+          />
         </View>
 
         <View style={styles.statsRow}>

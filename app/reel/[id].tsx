@@ -1,6 +1,6 @@
 import { Video, ResizeMode } from 'expo-av';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator, Animated,
 } from 'react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -17,9 +17,11 @@ import { aspectToNumber } from '../../lib/aspectRatio';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
 import FollowButton from '../../components/FollowButton';
+import StoryAvatar from '../../components/StoryAvatar';
 import { trackVideoProgress } from '../../lib/viewTracker';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
+import { useExpandTransition } from '../../hooks/useExpandTransition';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, EMPTY_PROFILE,
 } from '../../lib/feedScorer';
@@ -33,6 +35,7 @@ export default function ReelScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { stop } = useAudio();
+  const { dismiss, backdropOpacity, contentStyle } = useExpandTransition();
 
   // Seed from the tapped video so it plays instantly (no loading spinner).
   const seed = useMemo(() => {
@@ -147,6 +150,9 @@ export default function ReelScreen() {
     // Landscape/square videos show in full (letterboxed) so nothing is cut;
     // portrait videos fill the screen edge-to-edge.
     const landscape = aspectToNumber(item.aspect_ratio, 16 / 9) >= 1;
+    // Cached thumbnail shown while the video buffers — keeps the expand from
+    // revealing a black screen before the first frame is ready.
+    const poster = item.thumbnail_url ?? item.cover_url ?? null;
 
     return (
       <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }}>
@@ -159,6 +165,9 @@ export default function ReelScreen() {
             isLooping={item.trim_end == null}
             shouldPlay={visibleId === item.id && !paused}
             useNativeControls={false}
+            usePoster={!!poster}
+            posterSource={poster ? { uri: poster } : undefined}
+            posterStyle={{ resizeMode: landscape ? 'contain' : 'cover' }}
             onLoad={() => { if (item.trim_start != null) videoRefs.current[item.id]?.setPositionAsync(item.trim_start * 1000); }}
             onPlaybackStatusUpdate={(st: any) => {
               if (!st.isLoaded) return;
@@ -215,13 +224,13 @@ export default function ReelScreen() {
         <View style={[styles.meta, { bottom: insets.bottom + 24 }]}>
           <View style={styles.authorRow}>
             <TouchableOpacity style={styles.author} onPress={() => router.push(`/profile/${item.user_id}`)}>
-              {item.profiles?.avatar_url ? (
-                <Image source={{ uri: item.profiles.avatar_url }} style={styles.avatar} />
-              ) : (
-                <LinearGradient colors={['#E8401C', '#F26522']} style={styles.avatar}>
-                  <Text style={styles.avatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
-                </LinearGradient>
-              )}
+              <StoryAvatar
+                userId={item.user_id}
+                avatarUrl={item.profiles?.avatar_url}
+                name={item.profiles?.display_name}
+                size={32}
+                onPressProfile={() => router.push(`/profile/${item.user_id}`)}
+              />
               <Text style={styles.authorName} numberOfLines={1}>@{item.profiles?.username}</Text>
               <Text style={styles.dot}>·</Text>
               <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
@@ -235,47 +244,54 @@ export default function ReelScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      {posts.length > 0 ? (
-        <FlatList
-          data={posts}
-          keyExtractor={(p) => p.id}
-          pagingEnabled
-          showsVerticalScrollIndicator={false}
-          snapToInterval={SCREEN_H}
-          snapToAlignment="start"
-          decelerationRate="fast"
-          getItemLayout={(_, i) => ({ length: SCREEN_H, offset: SCREEN_H * i, index: i })}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
-          renderItem={renderItem}
-          windowSize={3}
-          maxToRenderPerBatch={2}
-          initialNumToRender={1}
-        />
-      ) : loading ? (
-        <View style={styles.center} />
-      ) : (
-        <View style={styles.center}><Text style={styles.empty}>No videos to show</Text></View>
-      )}
+    <View style={styles.root}>
+      {/* Darkening backdrop — fades as the reel grows out of / shrinks into the thumb. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]} />
+      <Animated.View style={[StyleSheet.absoluteFill, contentStyle]}>
+        <View style={styles.container}>
+          {posts.length > 0 ? (
+            <FlatList
+              data={posts}
+              keyExtractor={(p) => p.id}
+              pagingEnabled
+              showsVerticalScrollIndicator={false}
+              snapToInterval={SCREEN_H}
+              snapToAlignment="start"
+              decelerationRate="fast"
+              getItemLayout={(_, i) => ({ length: SCREEN_H, offset: SCREEN_H * i, index: i })}
+              onViewableItemsChanged={onViewableItemsChanged}
+              viewabilityConfig={viewabilityConfig}
+              renderItem={renderItem}
+              windowSize={3}
+              maxToRenderPerBatch={2}
+              initialNumToRender={1}
+            />
+          ) : loading ? (
+            <View style={styles.center} />
+          ) : (
+            <View style={styles.center}><Text style={styles.empty}>No videos to show</Text></View>
+          )}
 
-      {/* Back button */}
-      <TouchableOpacity style={[styles.back, { top: insets.top + 8 }]} onPress={() => router.back()}>
-        <Ionicons name="chevron-back" size={28} color="#fff" />
-      </TouchableOpacity>
+          {/* Back button */}
+          <TouchableOpacity style={[styles.back, { top: insets.top + 8 }]} onPress={dismiss}>
+            <Ionicons name="chevron-back" size={28} color="#fff" />
+          </TouchableOpacity>
 
-      <CommentsSheet
-        visible={!!commentsFor}
-        postId={commentsFor?.id ?? ''}
-        ownerId={commentsFor?.ownerId}
-        onClose={() => setCommentsFor(null)}
-      />
+          <CommentsSheet
+            visible={!!commentsFor}
+            postId={commentsFor?.id ?? ''}
+            ownerId={commentsFor?.ownerId}
+            onClose={() => setCommentsFor(null)}
+          />
+        </View>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  root: { flex: 1 },
+  container: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { color: COLORS.textSecondary, fontSize: 15 },
 

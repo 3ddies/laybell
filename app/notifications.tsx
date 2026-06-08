@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
 import ElasticSwipeView from '../components/ElasticSwipeView';
+import StoryAvatar from '../components/StoryAvatar';
 
 type Notification = {
   id: string; type: 'like' | 'comment' | 'follow' | 'message';
@@ -119,13 +120,12 @@ export default function NotificationsScreen() {
                 onPress={() => handlePress(item)}
               >
                 <View style={styles.avatarWrap}>
-                  {item.actor?.avatar_url ? (
-                    <Image source={{ uri: item.actor.avatar_url }} style={styles.avatar} />
-                  ) : (
-                    <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
-                      <Text style={styles.avatarText}>{item.actor?.display_name?.charAt(0).toUpperCase()}</Text>
-                    </LinearGradient>
-                  )}
+                  <StoryAvatar
+                    userId={item.actor?.id}
+                    avatarUrl={item.actor?.avatar_url}
+                    name={item.actor?.display_name}
+                    size={50}
+                  />
                   <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
                     <Ionicons name={icon.name} size={10} color={COLORS.text} />
                   </View>

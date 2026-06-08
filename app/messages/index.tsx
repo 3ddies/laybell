@@ -11,6 +11,8 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { timeAgo } from '../../lib/timeAgo';
 import { sharedPostId } from '../../lib/postLinks';
 import HighlightText from '../../components/HighlightText';
+import StoryAvatar from '../../components/StoryAvatar';
+import { useStories } from '../../contexts/StoriesContext';
 
 type Conversation = {
   id: string;
@@ -42,6 +44,7 @@ export default function MessagesScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const { refresh: refreshStories } = useStories();
 
   useEffect(() => { setup(); }, []);
 
@@ -50,7 +53,8 @@ export default function MessagesScreen() {
   useFocusEffect(
     useCallback(() => {
       if (currentUserId) fetchConversations(currentUserId);
-    }, [currentUserId])
+      refreshStories(); // keep story rings on conversation avatars fresh
+    }, [currentUserId, refreshStories])
   );
 
   async function onRefresh() {
@@ -237,13 +241,12 @@ export default function MessagesScreen() {
             style={[styles.conversationRow, unread && styles.conversationRowUnread]}
             onPress={() => router.push(`/messages/${item.other_user.id}`)}
           >
-            {item.other_user.avatar_url ? (
-              <Image source={{ uri: item.other_user.avatar_url }} style={styles.avatar} />
-            ) : (
-              <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
-                <Text style={styles.avatarText}>{item.other_user.display_name?.charAt(0).toUpperCase()}</Text>
-              </LinearGradient>
-            )}
+            <StoryAvatar
+              userId={item.other_user.id}
+              avatarUrl={item.other_user.avatar_url}
+              name={item.other_user.display_name}
+              size={50}
+            />
             <View style={styles.convInfo}>
               <View style={styles.convHeader}>
                 <HighlightText

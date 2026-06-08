@@ -31,6 +31,10 @@ import ElasticSwipeView from '../../components/ElasticSwipeView';
 import FollowButton from '../../components/FollowButton';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import TrackRow from '../../components/TrackRow';
+import StoriesTray from '../../components/StoriesTray';
+import StoryAvatar from '../../components/StoryAvatar';
+import { useStories } from '../../contexts/StoriesContext';
+import type { SourceRect } from '../../lib/stories';
 
 type Post = {
   id: string;
@@ -65,8 +69,8 @@ type PostCardProps = {
   shouldPlayVideo: boolean;
   onProfile: (item: Post) => void;
   onOptions: (item: Post) => void;
-  onOpenPost: (item: Post) => void;
-  onOpenReel: (item: Post) => void;
+  onOpenPost: (item: Post, src?: SourceRect) => void;
+  onOpenReel: (item: Post, src?: SourceRect) => void;
   onComments: (item: Post) => void;
   onPlayTrack: (item: Post) => void;
   onExpandTrack: (item: Post) => void;
@@ -87,20 +91,20 @@ const PostCard = memo(function PostCard({
   const likeCount = item.likes[0]?.count || 0;
   const commentCount = item.comments[0]?.count || 0;
   const saveCount = item.save_count || 0;
+  const imgRef = useRef<any>(null);
+  const vidRef = useRef<any>(null);
 
   return (
     <View style={styles.postCard}>
       {/* Header */}
       <TouchableOpacity style={styles.postHeader} onPress={() => onProfile(item)}>
-        {item.profiles?.avatar_url ? (
-          <Image source={{ uri: item.profiles.avatar_url }} style={styles.avatar} />
-        ) : (
-          <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {item.profiles?.display_name?.charAt(0).toUpperCase()}
-            </Text>
-          </LinearGradient>
-        )}
+        <StoryAvatar
+          userId={item.user_id}
+          avatarUrl={item.profiles?.avatar_url}
+          name={item.profiles?.display_name}
+          size={38}
+          onPressProfile={() => onProfile(item)}
+        />
         <View style={styles.postHeaderInfo}>
           <Text style={styles.postDisplayName}>{item.profiles?.display_name}</Text>
           <Text style={styles.postUsername}>
@@ -119,7 +123,10 @@ const PostCard = memo(function PostCard({
 
       {/* Media */}
       {item.type === 'image' && item.media_url && (
-        <TouchableOpacity onPress={() => onOpenPost(item)}>
+        <TouchableOpacity
+          ref={imgRef}
+          onPress={() => imgRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }))}
+        >
           <Image
             source={{ uri: item.media_url }}
             style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
@@ -147,7 +154,11 @@ const PostCard = memo(function PostCard({
 
       {item.type === 'video' && item.media_url && (
         <View>
-          <TouchableOpacity activeOpacity={1} onPress={() => onOpenReel(item)}>
+          <TouchableOpacity
+            ref={vidRef}
+            activeOpacity={1}
+            onPress={() => vidRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenReel(item, { x, y, width: w, height: h }))}
+          >
             <Video
               source={{ uri: item.media_url }}
               style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
@@ -225,6 +236,7 @@ export default function HomeScreen() {
   const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string } | null>(null);
   const [playlistCount, setPlaylistCount] = useState(0);
   const [visibleVideoId, setVisibleVideoId] = useState<string | null>(null);
+  const { refresh: refreshStories } = useStories();
   const router = useRouter();
 
   // Only autoplay feed videos when this tab is settled and focused — not while
@@ -448,8 +460,8 @@ export default function HomeScreen() {
   }, []);
 
   const onProfile = useCallback((item: Post) => live.current.router.push(`/profile/${item.user_id}`), []);
-  const onOpenPost = useCallback((item: Post) => live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item) } }), []);
-  const onOpenReel = useCallback((item: Post) => live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item) } }), []);
+  const onOpenPost = useCallback((item: Post, src?: SourceRect) => live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }), []);
+  const onOpenReel = useCallback((item: Post, src?: SourceRect) => live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }), []);
   const onComments = useCallback((item: Post) => setCommentsFor({ id: item.id, ownerId: item.user_id }), []);
 
   const onPlayTrack = useCallback((item: Post) => {
@@ -550,6 +562,7 @@ export default function HomeScreen() {
         data={posts}
         keyExtractor={(item) => item.id}
         renderItem={renderPost}
+        ListHeaderComponent={<StoriesTray />}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.feedContent}
         removeClippedSubviews
@@ -566,6 +579,7 @@ export default function HomeScreen() {
             // rise to the top on every pull-to-refresh.
             onRefresh={async () => {
               setRefreshing(true);
+              refreshStories();
               const seen = await loadSeenPostIds();
               setSeenPostIds(seen);
               await fetchPosts(currentUserId || undefined, seen);

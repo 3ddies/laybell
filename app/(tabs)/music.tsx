@@ -15,7 +15,9 @@ import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GENRES, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
-import { postMatchTier } from '../../lib/searchRank';
+import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
+import StoryAvatar from '../../components/StoryAvatar';
+import FollowButton from '../../components/FollowButton';
 import {
   buildAffinityProfile, loadSeenPostIds, scorePost,
   sortGenresByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
@@ -67,6 +69,7 @@ export default function MusicScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchProfiles, setSearchProfiles] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
 
   // ─── Discover tab state ────────────────────────────────────────────────────
@@ -89,7 +92,7 @@ export default function MusicScreen() {
   // Debounced song search — matches song names (captions), usernames and display
   // names, ranked by relevancy like the explore page.
   useEffect(() => {
-    if (searchQuery.trim().length === 0) { setSearchResults([]); setSearching(false); return; }
+    if (searchQuery.trim().length === 0) { setSearchResults([]); setSearchProfiles([]); setSearching(false); return; }
     setSearching(true); // show immediately so "No songs found" doesn't flash during the debounce
     const t = setTimeout(() => runSearch(), 400);
     return () => clearTimeout(t);
@@ -101,10 +104,20 @@ export default function MusicScreen() {
     setSearching(true);
     const ql = term.toLowerCase();
 
-    // Profiles whose name/handle matches — used to also pull in their songs.
+    // Profiles whose name/handle matches — used to pull in their songs AND, when
+    // the match is strong (name starts with / equals the query), surfaced as
+    // tappable profile results above the songs.
     const { data: matchedProfiles } = await supabase
-      .from('profiles').select('id').or(`username.ilike.%${term}%,display_name.ilike.%${term}%`).limit(15);
+      .from('profiles')
+      .select('id, username, display_name, avatar_url, badge_tier')
+      .or(`username.ilike.%${term}%,display_name.ilike.%${term}%`).limit(15);
     const authorIds = (matchedProfiles ?? []).map((p: any) => p.id);
+    setSearchProfiles(
+      (matchedProfiles ?? [])
+        .filter((p: any) => p.id !== currentUserId && profileMatchTier(p, ql) >= 2)
+        .sort((a: any, b: any) => profileMatchTier(b, ql) - profileMatchTier(a, ql))
+        .slice(0, 4),
+    );
 
     let query = supabase
       .from('posts')
@@ -503,7 +516,28 @@ export default function MusicScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           contentContainerStyle={styles.searchListContent}
-          ListEmptyComponent={searching ? null : <Text style={styles.searchEmpty}>No songs found</Text>}
+          ListHeaderComponent={
+            searchProfiles.length > 0 ? (
+              <View style={styles.searchProfiles}>
+                {searchProfiles.map((p: any) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={styles.profileRow}
+                    activeOpacity={0.8}
+                    onPress={() => router.push(`/profile/${p.id}`)}
+                  >
+                    <StoryAvatar userId={p.id} avatarUrl={p.avatar_url} name={p.display_name || p.username} size={46} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.profileRowName} numberOfLines={1}>{p.display_name || p.username}</Text>
+                      <Text style={styles.profileRowHandle} numberOfLines={1}>@{p.username}</Text>
+                    </View>
+                    <FollowButton userId={p.id} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={searching || searchProfiles.length > 0 ? null : <Text style={styles.searchEmpty}>No results found</Text>}
           renderItem={({ item }) => (
             <TrackRow
               caption={item.caption}
@@ -682,15 +716,13 @@ export default function MusicScreen() {
                         activeOpacity={0.8}
                         onPress={() => router.push(`/profile/${artist.id}`)}
                       >
-                        {artist.avatar_url ? (
-                          <Image source={{ uri: artist.avatar_url }} style={styles.artistAvatar} />
-                        ) : (
-                          <LinearGradient colors={GRADIENTS.primary as any} style={styles.artistAvatar}>
-                            <Text style={styles.artistAvatarText}>
-                              {(artist.display_name ?? artist.username ?? '?').charAt(0).toUpperCase()}
-                            </Text>
-                          </LinearGradient>
-                        )}
+                        <StoryAvatar
+                          userId={artist.id}
+                          avatarUrl={artist.avatar_url}
+                          name={artist.display_name ?? artist.username}
+                          size={64}
+                          onPressProfile={() => router.push(`/profile/${artist.id}`)}
+                        />
                         <Text style={styles.artistName} numberOfLines={1}>
                           {artist.display_name ?? artist.username}
                         </Text>
@@ -1115,6 +1147,10 @@ const styles = StyleSheet.create({
   },
   artistAvatarText: { color: COLORS.text, fontSize: 24, fontWeight: '800' },
   artistName: { color: COLORS.textSecondary, fontSize: 12, textAlign: 'center', width: 68 },
+  searchProfiles: { paddingBottom: SPACING.sm, marginBottom: SPACING.xs, borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingVertical: SPACING.xs },
+  profileRowName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  profileRowHandle: { color: COLORS.textTertiary, fontSize: 13, marginTop: 1 },
 
   todaysPickSection: {
     marginHorizontal: SPACING.md,

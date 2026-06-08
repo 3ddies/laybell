@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { withLayoutContext } from 'expo-router';
-import { TouchableOpacity, View, StyleSheet, Keyboard } from 'react-native';
+import { TouchableOpacity, View, StyleSheet, Keyboard, Animated, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,12 @@ import {
 import type { ParamListBase, TabNavigationState } from '@react-navigation/native';
 import { COLORS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import { PagerContext } from '../../contexts/PagerContext';
+
+// Land on Home, not the story camera, even though the camera is declared first
+// (so it sits to the LEFT of Home in the pager — swipe right from Home to reach it).
+export const unstable_settings = { initialRouteName: 'index' };
+
+const SCREEN_W = Dimensions.get('window').width;
 
 // Wrap the Material Top Tabs navigator so Expo Router drives it with file-based
 // routes. Material Top Tabs is backed by the native react-native-pager-view, so
@@ -34,12 +40,24 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
   profile: ['person', 'person-outline'],
 };
 
-function TabBar({ state, navigation }: MaterialTopTabBarProps) {
+function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   const insets = useSafeAreaInsets();
 
+  // The bar is an absolute overlay so the pager fills the FULL screen — that's
+  // what makes the story camera edge-to-edge with no reserved (gray) slot. While
+  // dragging Home(1)→camera(0) it slides off to the right, glued to Home, so the
+  // camera never shows it. Other tabs (position >= 1) keep it at rest. Other tabs'
+  // content clears it via the navigator's sceneContainerStyle paddingBottom.
+  const translateX = position.interpolate({
+    inputRange: [0, 1],
+    outputRange: [SCREEN_W, 0],
+    extrapolate: 'clamp',
+  });
+
   return (
-    <View style={[styles.bar, { height: 68 + insets.bottom, paddingBottom: insets.bottom }]}>
+    <Animated.View style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, transform: [{ translateX }] }]}>
       {state.routes.map((route, index) => {
+        if (route.name === 'story-camera') return null;
         const focused = state.index === index;
 
         const onPress = () => {
@@ -74,25 +92,34 @@ function TabBar({ state, navigation }: MaterialTopTabBarProps) {
           </TouchableOpacity>
         );
       })}
-    </View>
+    </Animated.View>
   );
 }
 
 export default function TabLayout() {
   const [swiping, setSwiping] = useState(false);
+  const insets = useSafeAreaInsets();
 
   return (
     <PagerContext.Provider value={swiping}>
       <MaterialTopTabs
+        initialRouteName="index"
         tabBarPosition="bottom"
         tabBar={(props) => <TabBar {...props} />}
-        screenOptions={{ swipeEnabled: true }}
+        // Bar is an overlay (pager is full-screen), so inset each tab's content by
+        // the bar height via sceneStyle. The camera screen uses an absolute-fill
+        // root, which ignores this padding and stays edge-to-edge.
+        screenOptions={{ swipeEnabled: true, sceneStyle: { paddingBottom: 68 + insets.bottom } }}
         screenListeners={{
           // Pause mid-swipe work (video autoplay, caption focus) until the page settles.
           swipeStart: () => { setSwiping(true); Keyboard.dismiss(); },
           swipeEnd: () => setSwiping(false),
         }}
       >
+        {/* Live camera, page 0 (LEFT of Home) — swipe right off Home reveals it.
+            CameraView stays mounted (active only when focused) so swiping never
+            mounts/unmounts it (that froze the app before). */}
+        <MaterialTopTabs.Screen name="story-camera" />
         <MaterialTopTabs.Screen name="index" />
         <MaterialTopTabs.Screen name="explore" />
         {/* Create screen: swipe off so dragging/pinching the cropper never
@@ -117,6 +144,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
     elevation: 0,
   },
+  barOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   tabItem: {
     flex: 1,
     alignItems: 'center',

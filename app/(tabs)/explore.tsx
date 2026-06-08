@@ -12,6 +12,7 @@ import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
 import FollowButton from '../../components/FollowButton';
 import HighlightText from '../../components/HighlightText';
+import StoryAvatar from '../../components/StoryAvatar';
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useAudio } from '../../contexts/AudioContext';
@@ -55,6 +56,7 @@ export default function ExploreScreen() {
   const router = useRouter();
   const { play, currentTrack, isPlaying, expand } = useAudio();
   const [searchQuery, setSearchQuery] = useState('');
+  const searchRefs = useRef<Record<string, any>>({}); // per-row nodes for expand-from-row open
   // Search results are sorted/filtered into tabs. One query fetches everything;
   // the tabs filter client-side (no re-query when switching tabs).
   const [searchTab, setSearchTab] = useState<'relevancy' | 'posts' | 'music' | 'videos' | 'accounts'>('relevancy');
@@ -245,13 +247,13 @@ export default function ExploreScreen() {
   // dedicated Accounts tab (plain).
   const renderAccount = (acc: any, highlight = false) => (
     <TouchableOpacity key={acc.id} style={styles.accountRow} onPress={() => router.push(`/profile/${acc.id}`)}>
-      {acc.avatar_url ? (
-        <Image source={{ uri: acc.avatar_url }} style={[styles.accountAvatar, { borderColor: getBadgeColor(acc.badge_tier) }]} />
-      ) : (
-        <LinearGradient colors={GRADIENTS.primary} style={[styles.accountAvatar, { borderColor: getBadgeColor(acc.badge_tier) }]}>
-          <Text style={styles.accountAvatarText}>{acc.display_name?.charAt(0).toUpperCase()}</Text>
-        </LinearGradient>
-      )}
+      <StoryAvatar
+        userId={acc.id}
+        avatarUrl={acc.avatar_url}
+        name={acc.display_name}
+        size={48}
+        ringColorsWhenNoStory={[getBadgeColor(acc.badge_tier), getBadgeColor(acc.badge_tier)] as const}
+      />
       <View style={styles.accountInfo}>
         <HighlightText text={acc.display_name} query={highlight ? searchQuery : undefined} style={styles.accountName} highlightStyle={styles.searchHl} numberOfLines={1} />
         <HighlightText text={`@${acc.username}`} query={highlight ? searchQuery : undefined} style={styles.accountUsername} highlightStyle={styles.searchHl} numberOfLines={1} />
@@ -418,10 +420,19 @@ export default function ExploreScreen() {
             />
           ) : (
             <TouchableOpacity
+              ref={(n) => { if (n) searchRefs.current[item.id] = n; }}
               style={styles.postRow}
-              onPress={() => router.push(item.type === 'video'
-                ? { pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item) } }
-                : { pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item) } })}
+              onPress={() => {
+                const node = searchRefs.current[item.id];
+                const pathname = item.type === 'video' ? '/reel/[id]' : '/post/[id]';
+                const seed = JSON.stringify(item);
+                if (node?.measureInWindow) {
+                  node.measureInWindow((x: number, y: number, width: number, height: number) =>
+                    router.push({ pathname, params: { id: item.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
+                } else {
+                  router.push({ pathname, params: { id: item.id, post: seed } });
+                }
+              }}
               onLongPress={() => showOptions({
                 postId: item.id,
                 isOwn: item.user_id === currentUserId,

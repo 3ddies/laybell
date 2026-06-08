@@ -57,6 +57,14 @@
         }
       ],
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Laybell to use your camera to capture stories and posts.",
+          "microphonePermission": "Allow Laybell to use your microphone for video stories.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
