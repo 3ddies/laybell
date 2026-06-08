@@ -454,7 +454,7 @@ export default function MusicScreen() {
       {/* Search bar — find songs by name, username, or display name */}
       <View style={styles.searchRow}>
         <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={20} color={COLORS.textTertiary} />
+          <Ionicons name="search-outline" size={18} color={COLORS.textTertiary} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search songs, artists..."
@@ -948,11 +948,15 @@ const styles = StyleSheet.create({
 
   searchRow: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
   searchBar: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.full, paddingHorizontal: SPACING.md,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.surfaceLight,
+    borderRadius: RADIUS.full,
+    borderWidth: 1, borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md, gap: SPACING.sm,
   },
-  searchInput: { flex: 1, paddingVertical: SPACING.md, color: COLORS.text, fontSize: 16 },
-  searchClear: { padding: 2 },
+  searchIcon: { marginRight: -4 },
+  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15 },
+  searchClear: { padding: 2, marginLeft: 2 },
   searchListContent: { padding: SPACING.md, gap: SPACING.sm },
   searchEmpty: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center', paddingVertical: SPACING.xl },
   newBtn: {
