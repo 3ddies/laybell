@@ -970,7 +970,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: SPACING.sm,
     gap: SPACING.xs,
-    marginBottom: SPACING.md,
+    // Centered between the search bar (8px below it) and the section title
+    // (16px above its text): 8 + marginTop(16) = marginBottom(8) + 16 = 24 each side.
+    marginTop: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   toggleBtn: {
     flex: 1,
