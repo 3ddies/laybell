@@ -251,8 +251,15 @@ export default function ExploreScreen() {
 
   const isSearching = searchQuery.trim().length > 0;
 
-  // One account row — reused by the Relevancy header and the dedicated Accounts tab.
-  const renderAccount = (acc: any) => (
+  // Highlighting is reserved for the best matches at the top of the Relevancy tab,
+  // so it reads as a signal (not noise). `relevancyTopTier` is the strongest match
+  // tier present; only items at that tier (with a real text hit) get highlighted.
+  const q = searchQuery.trim().toLowerCase();
+  const relevancyTopTier = q && posts.length ? Math.max(...posts.map(p => postMatchTier(p, q))) : 0;
+
+  // One account row — reused by the Relevancy header (highlighted) and the
+  // dedicated Accounts tab (plain).
+  const renderAccount = (acc: any, highlight = false) => (
     <TouchableOpacity key={acc.id} style={styles.accountRow} onPress={() => router.push(`/profile/${acc.id}`)}>
       {acc.avatar_url ? (
         <Image source={{ uri: acc.avatar_url }} style={[styles.accountAvatar, { borderColor: getBadgeColor(acc.badge_tier) }]} />
@@ -262,8 +269,8 @@ export default function ExploreScreen() {
         </LinearGradient>
       )}
       <View style={styles.accountInfo}>
-        <HighlightText text={acc.display_name} query={searchQuery} style={styles.accountName} highlightStyle={styles.searchHl} numberOfLines={1} />
-        <HighlightText text={`@${acc.username}`} query={searchQuery} style={styles.accountUsername} highlightStyle={styles.searchHl} numberOfLines={1} />
+        <HighlightText text={acc.display_name} query={highlight ? searchQuery : undefined} style={styles.accountName} highlightStyle={styles.searchHl} numberOfLines={1} />
+        <HighlightText text={`@${acc.username}`} query={highlight ? searchQuery : undefined} style={styles.accountUsername} highlightStyle={styles.searchHl} numberOfLines={1} />
       </View>
       <FollowButton userId={acc.id} />
     </TouchableOpacity>
@@ -368,7 +375,7 @@ export default function ExploreScreen() {
             keyboardDismissMode="on-drag"
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={<Text style={styles.emptyText}>No accounts found</Text>}
-            renderItem={({ item }) => renderAccount(item)}
+            renderItem={({ item }) => renderAccount(item, false)}
           />
         ) : (
         <FlatList
@@ -387,7 +394,7 @@ export default function ExploreScreen() {
           ListHeaderComponent={
             searchTab === 'relevancy' && profiles.length > 0 ? (
               <View style={styles.accountsHeader}>
-                {profiles.slice(0, 6).map(renderAccount)}
+                {profiles.slice(0, 6).map((acc: any) => renderAccount(acc, true))}
                 <View style={styles.accountsDivider} />
               </View>
             ) : null
@@ -400,7 +407,11 @@ export default function ExploreScreen() {
                 : 'No results found'}
             </Text>
           }
-          renderItem={({ item }) => isAudioPost(item.type) ? (
+          renderItem={({ item }) => {
+            const tier = q ? postMatchTier(item, q) : 0;
+            // Highlight only the strongest matches at the top of the Relevancy tab.
+            const hq = (searchTab === 'relevancy' && tier >= 2 && tier === relevancyTopTier) ? searchQuery : undefined;
+            return isAudioPost(item.type) ? (
             <TrackRow
               caption={item.caption}
               artist={item.profiles?.display_name}
@@ -408,7 +419,7 @@ export default function ExploreScreen() {
               streams={item.stream_count}
               cover={item.cover_url}
               avatarUrl={item.profiles?.avatar_url}
-              highlightQuery={searchQuery}
+              highlightQuery={hq}
               isPlaying={currentTrack?.id === item.id && isPlaying}
               onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
               onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); expand(); }}
@@ -441,9 +452,9 @@ export default function ExploreScreen() {
                 </LinearGradient>
               )}
               <View style={styles.postInfo}>
-                <HighlightText text={item.caption || 'Audio Track'} query={searchQuery} style={styles.postCaption} highlightStyle={styles.searchHl} numberOfLines={2} />
+                <HighlightText text={item.caption || 'Audio Track'} query={hq} style={styles.postCaption} highlightStyle={styles.searchHl} numberOfLines={2} />
                 <View style={styles.postMeta}>
-                  <HighlightText text={`@${item.profiles?.username}`} query={searchQuery} style={styles.postUser} highlightStyle={styles.searchHl} numberOfLines={1} />
+                  <HighlightText text={`@${item.profiles?.username}`} query={hq} style={styles.postUser} highlightStyle={styles.searchHl} numberOfLines={1} />
                   {((item.likes?.[0]?.count || 0) + (item.comments?.[0]?.count || 0)) > 0 && (
                     <View style={styles.postStats}>
                       <Ionicons name="heart" size={11} color={COLORS.like} />
@@ -466,7 +477,8 @@ export default function ExploreScreen() {
                 )}
               </TouchableOpacity>
             </TouchableOpacity>
-          )}
+          );
+        }}
         />
         )
       ) : (
