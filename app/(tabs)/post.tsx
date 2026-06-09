@@ -20,12 +20,22 @@ import { GENRES } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
+import { MAX_SLIDES, type Slide } from '../../lib/slideshow';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import VideoTrimmer from '../../components/VideoTrimmer';
 import ErrorBoundary from '../../components/ErrorBoundary';
 
-type PostType = 'image' | 'video' | 'audio';
+type PostType = 'image' | 'video' | 'audio' | 'slideshow';
 type Step = 'pick' | 'edit' | 'details';
+
+// One picked item in a slideshow (before upload).
+type PickedSlide = {
+  uri: string;
+  type: 'image' | 'video';
+  width: number;
+  height: number;
+  thumbnailUri?: string | null; // poster for video slides
+};
 
 const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
@@ -51,6 +61,7 @@ function fmtClock(sec: number) {
 
 const POST_TYPES: { label: string; value: PostType }[] = [
   { label: 'Image', value: 'image' },
+  { label: 'Slides', value: 'slideshow' },
   { label: 'Video', value: 'video' },
   { label: 'Audio', value: 'audio' },
 ];
@@ -59,6 +70,9 @@ export default function PostScreen() {
   const [step, setStep] = useState<Step>('pick');
   const [postType, setPostType] = useState<PostType>('image');
   const [format, setFormat] = useState<string>('1:1');
+
+  // slideshow selection (up to MAX_SLIDES images/videos, shared aspect ratio = `format`)
+  const [slides, setSlides] = useState<PickedSlide[]>([]);
 
   // image/video selection
   const [media, setMedia] = useState<{ uri: string; width: number; height: number; posterUri?: string } | null>(null);
@@ -118,13 +132,13 @@ export default function PostScreen() {
   });
 
   const showGenre = postType !== 'audio' || audioKind === 'audio';
-  const hasMedia = postType === 'audio' ? !!audioFile : !!media;
+  const hasMedia = postType === 'audio' ? !!audioFile : postType === 'slideshow' ? slides.length > 0 : !!media;
 
   function resetAll() {
     if (recordingRef.current) { recordingRef.current.stopAndUnloadAsync().catch(() => {}); recordingRef.current = null; }
     unloadPreview();
     setIsRecording(false); setRecSecs(0);
-    setMedia(null); setThumbnailUri(null); cropRef.current = null;
+    setMedia(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setGenre(''); setSong(null); setError(''); setStep('pick');
@@ -132,8 +146,8 @@ export default function PostScreen() {
 
   function switchType(t: PostType) {
     setPostType(t);
-    setFormat(defaultFormatFor(t));
-    setMedia(null); setThumbnailUri(null); cropRef.current = null;
+    setFormat(t === 'slideshow' ? '1:1' : defaultFormatFor(t as any));
+    setMedia(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null);
     setSong(null);
@@ -160,6 +174,49 @@ export default function PostScreen() {
         setThumbnailUri(uri);
       } catch {}
     }
+  }
+
+  // ── Slideshow: multi-pick / reorder / remove ──────────────────────────────
+  async function pickSlides() {
+    const remaining = MAX_SLIDES - slides.length;
+    if (remaining <= 0) { Alert.alert('Limit reached', `A slideshow can have up to ${MAX_SLIDES} items.`); return; }
+    const ImagePicker = await import('expo-image-picker');
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images', 'videos'] as any,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+      quality: 0.9,
+    });
+    if (result.canceled) return;
+    const picked: PickedSlide[] = [];
+    for (const a of result.assets) {
+      const isVid = a.type === 'video';
+      if (isVid) {
+        // expo-image-picker duration is ms on some platforms, s on others; >1000 ⇒ ms.
+        const durSec = a.duration != null ? (a.duration > 1000 ? a.duration / 1000 : a.duration) : null;
+        if (durSec != null && durSec > VIDEO_MAX_SEC) {
+          Alert.alert('Video skipped', `Slideshow videos must be ${VIDEO_MAX_SEC}s or shorter.`);
+          continue;
+        }
+      }
+      let thumb: string | null = null;
+      if (isVid) {
+        try { const { uri } = await VideoThumbnails.getThumbnailAsync(a.uri, { time: 1000 }); thumb = uri; } catch {}
+      }
+      picked.push({ uri: a.uri, type: isVid ? 'video' : 'image', width: a.width ?? 1, height: a.height ?? 1, thumbnailUri: thumb });
+    }
+    if (picked.length) setSlides(prev => [...prev, ...picked].slice(0, MAX_SLIDES));
+  }
+
+  function removeSlide(i: number) { setSlides(prev => prev.filter((_, idx) => idx !== i)); }
+  function moveSlide(i: number, dir: -1 | 1) {
+    setSlides(prev => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
   }
 
   async function startRecording() {
@@ -270,7 +327,12 @@ export default function PostScreen() {
   }
 
   function goNext() {
-    if (!hasMedia) { setError(`Select ${postType === 'audio' ? 'an audio file' : `a ${postType}`} first`); return; }
+    if (!hasMedia) {
+      setError(postType === 'audio' ? 'Select an audio file first'
+        : postType === 'slideshow' ? 'Add at least one photo or video'
+        : `Select a ${postType} first`);
+      return;
+    }
     setError('');
     if (postType === 'image') cropRef.current = cropperRef.current?.getCrop() ?? null;
     // Long videos go through the trim editor to pick a 90s window.
@@ -313,8 +375,33 @@ export default function PostScreen() {
       let mediaUrl: string;
       let thumbnailUrl: string | null = null;
       let coverUrl: string | null = null;
+      let slidesPayload: Slide[] | null = null;
 
-      if (postType === 'audio') {
+      if (postType === 'slideshow') {
+        // Upload every slide, then mirror slide 1 onto media_url/thumbnail_url so
+        // existing thumbnail surfaces show the cover.
+        const built: Slide[] = [];
+        for (const s of slides) {
+          let url: string;
+          if (s.type === 'image') {
+            let outUri = s.uri;
+            try {
+              const out = await manipulateAsync(s.uri, [{ resize: { width: 1440 } }], { compress: 0.9, format: SaveFormat.JPEG });
+              outUri = out.uri;
+            } catch {}
+            url = await uploadToStorage(user.id, outUri, 'jpg', 'image/jpeg');
+          } else {
+            const ext = s.uri.split('.').pop() || 'mp4';
+            url = await uploadToStorage(user.id, s.uri, ext, 'video/mp4');
+          }
+          let thumb: string | null = s.type === 'image' ? url : null;
+          if (s.type === 'video' && s.thumbnailUri) thumb = await uploadToStorage(user.id, s.thumbnailUri, 'jpg', 'image/jpeg');
+          built.push({ type: s.type, url, thumbnail_url: thumb, aspect_ratio: format });
+        }
+        slidesPayload = built;
+        mediaUrl = built[0].url;
+        thumbnailUrl = built[0].thumbnail_url ?? null;
+      } else if (postType === 'audio') {
         const a = audioFile;
         const ext = a.name ? a.name.split('.').pop() : (a.uri.split('.').pop() || 'mp3');
         mediaUrl = await uploadToStorage(user.id, a.uri, ext, a.mimeType || 'audio/mpeg');
@@ -355,6 +442,7 @@ export default function PostScreen() {
         ...(postType === 'video' && videoDurSec > 0 ? { duration_seconds: videoDurSec } : {}),
         ...(postType === 'image' ? { aspect_ratio: format } : {}),
         ...(postType === 'video' ? { aspect_ratio: String(videoAspect) } : {}),
+        ...(postType === 'slideshow' ? { aspect_ratio: format, slides: slidesPayload } : {}),
         ...(trimmed ? { trim_start: trimStart, trim_end: trimStart + VIDEO_MAX_SEC } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(coverUrl ? { cover_url: coverUrl } : {}),
@@ -403,7 +491,9 @@ export default function PostScreen() {
 
   // ─── Details step ──────────────────────────────────────────────────────────
   if (step === 'details') {
-    const thumbUri = postType === 'audio' ? coverUri : (postType === 'video' ? thumbnailUri : media?.uri);
+    const thumbUri = postType === 'audio' ? coverUri
+      : postType === 'slideshow' ? (slides[0] ? (slides[0].type === 'video' ? slides[0].thumbnailUri : slides[0].uri) : null)
+      : (postType === 'video' ? thumbnailUri : media?.uri);
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -622,6 +712,63 @@ export default function PostScreen() {
             Music up to 6 min · Podcasts & Audiobooks up to 35 min
           </Text>
         </View>
+      ) : postType === 'slideshow' ? (
+        <ScrollView contentContainerStyle={styles.slideshowPick} keyboardShouldPersistTaps="handled">
+          {/* Cover preview (slide 1) */}
+          <View style={[styles.previewArea, { height: fullPreviewH }]}>
+            {slides[0] ? (
+              <Image
+                source={{ uri: slides[0].type === 'video' ? (slides[0].thumbnailUri || slides[0].uri) : slides[0].uri }}
+                style={{ width: frameW, height: frameH }}
+                resizeMode="cover"
+              />
+            ) : (
+              <TouchableOpacity style={[styles.previewPlaceholder, { width: frameW, height: frameH }]} onPress={pickSlides}>
+                <Ionicons name="images-outline" size={40} color={COLORS.textTertiary} />
+                <Text style={styles.previewPlaceholderText}>Add up to {MAX_SLIDES} photos & videos</Text>
+              </TouchableOpacity>
+            )}
+            {slides.length > 0 && (
+              <TouchableOpacity style={styles.aspectBtn} onPress={cycleFormat}>
+                <Ionicons name="resize-outline" size={16} color={COLORS.text} />
+                <Text style={styles.aspectBtnText}>{format}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.recentsRow}>
+            <Text style={styles.recentsText}>{slides.length}/{MAX_SLIDES} selected</Text>
+            {slides.length > 1 && <Text style={styles.recentsHint}>◀ ▶ to reorder</Text>}
+          </View>
+
+          {/* Selected slides — reorder / remove */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slideStrip}>
+            {slides.map((s, i) => (
+              <View key={`${s.uri}-${i}`} style={styles.slideThumbWrap}>
+                <Image source={{ uri: s.type === 'video' ? (s.thumbnailUri || s.uri) : s.uri }} style={styles.slideThumb} />
+                <View style={styles.slideIndexBadge}><Text style={styles.slideIndexText}>{i + 1}</Text></View>
+                {s.type === 'video' && <Ionicons name="videocam" size={13} color="#fff" style={styles.slideVidIcon} />}
+                <TouchableOpacity style={styles.slideRemove} onPress={() => removeSlide(i)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <Ionicons name="close-circle" size={20} color="#fff" />
+                </TouchableOpacity>
+                <View style={styles.slideMoveRow}>
+                  <TouchableOpacity onPress={() => moveSlide(i, -1)} disabled={i === 0} style={styles.slideMoveBtn}>
+                    <Ionicons name="chevron-back" size={14} color={i === 0 ? COLORS.textTertiary : COLORS.text} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => moveSlide(i, 1)} disabled={i === slides.length - 1} style={styles.slideMoveBtn}>
+                    <Ionicons name="chevron-forward" size={14} color={i === slides.length - 1 ? COLORS.textTertiary : COLORS.text} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+            {slides.length < MAX_SLIDES && (
+              <TouchableOpacity style={styles.slideAdd} onPress={pickSlides}>
+                <Ionicons name="add" size={28} color={COLORS.primary} />
+                <Text style={styles.slideAddText}>Add</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </ScrollView>
       ) : (
         <>
           {/* Collapsing cropper preview — shrinks as the gallery scrolls */}
@@ -726,6 +873,26 @@ const styles = StyleSheet.create({
   },
   recentsText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   recentsHint: { color: COLORS.textTertiary, fontSize: 12 },
+
+  // slideshow picker
+  slideshowPick: { paddingBottom: SPACING.xl },
+  slideStrip: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm, paddingHorizontal: SPACING.md, paddingBottom: SPACING.md },
+  slideThumbWrap: { width: 84, gap: 4 },
+  slideThumb: { width: 84, height: 84, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceLight },
+  slideIndexBadge: {
+    position: 'absolute', top: 4, left: 4, minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+  },
+  slideIndexText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  slideVidIcon: { position: 'absolute', left: 6, top: 62, textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
+  slideRemove: { position: 'absolute', top: 1, right: 1 },
+  slideMoveRow: { flexDirection: 'row', gap: 4 },
+  slideMoveBtn: { flex: 1, alignItems: 'center', paddingVertical: 3, backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.xs },
+  slideAdd: {
+    width: 84, height: 84, borderRadius: RADIUS.sm, borderWidth: 1.5, borderColor: COLORS.border,
+    borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 2,
+  },
+  slideAddText: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
 
   typeStrip: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: SPACING.xl,

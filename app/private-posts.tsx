@@ -55,9 +55,9 @@ export default function PrivatePostsScreen() {
           <View style={styles.postsGrid}>
             {posts.map((post) => (
               <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => router.push(`/post/${post.id}`)}>
-                {post.type === 'image' || (post.type === 'video' && post.thumbnail_url) ? (
+                {post.type === 'image' || post.type === 'slideshow' || (post.type === 'video' && post.thumbnail_url) ? (
                   <Image
-                    source={{ uri: post.type === 'image' ? post.media_url : (post.thumbnail_url as string) }}
+                    source={{ uri: post.type === 'image' ? post.media_url : (post.thumbnail_url || post.media_url) }}
                     style={styles.gridImage}
                     resizeMode="cover"
                   />

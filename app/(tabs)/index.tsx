@@ -37,6 +37,8 @@ import TrackRow from '../../components/TrackRow';
 import StoriesTray from '../../components/StoriesTray';
 import StoryAvatar from '../../components/StoryAvatar';
 import SongAttribution from '../../components/SongAttribution';
+import SlideshowCarousel from '../../components/SlideshowCarousel';
+import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 import type { SourceRect } from '../../lib/stories';
@@ -79,7 +81,7 @@ type PostCardProps = {
   shouldPlayVideo: boolean;
   onProfile: (item: Post) => void;
   onOptions: (item: Post) => void;
-  onOpenPost: (item: Post, src?: SourceRect) => void;
+  onOpenPost: (item: Post, src?: SourceRect, index?: number) => void;
   onOpenReel: (item: Post, src?: SourceRect) => void;
   onComments: (item: Post) => void;
   onPlayTrack: (item: Post) => void;
@@ -104,6 +106,7 @@ const PostCard = memo(function PostCard({
   const saveCount = item.save_count || 0;
   const imgRef = useRef<any>(null);
   const vidRef = useRef<any>(null);
+  const slideRef = useRef<any>(null);
 
   return (
     <View style={styles.postCard}>
@@ -155,6 +158,21 @@ const PostCard = memo(function PostCard({
             <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
           )}
         </TouchableOpacity>
+      )}
+
+      {isSlideshow(item.type) && (
+        <View ref={slideRef}>
+          <SlideshowCarousel
+            slides={parseSlides(item)}
+            width={SCREEN_W}
+            aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
+            variant="feed"
+            onOpen={(idx) => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }, idx))}
+          />
+          {!!item.song_id && (
+            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
+          )}
+        </View>
       )}
 
       {isAudioPost(item.type) && (
@@ -509,7 +527,7 @@ export default function HomeScreen() {
   }, []);
 
   const onProfile = useCallback((item: Post) => live.current.router.push(`/profile/${item.user_id}`), []);
-  const onOpenPost = useCallback((item: Post, src?: SourceRect) => live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }), []);
+  const onOpenPost = useCallback((item: Post, src?: SourceRect, index?: number) => live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}), ...(index != null ? { index: String(index) } : {}) } }), []);
   const onOpenReel = useCallback((item: Post, src?: SourceRect) => live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }), []);
   const onComments = useCallback((item: Post) => setCommentsFor({ id: item.id, ownerId: item.user_id }), []);
 

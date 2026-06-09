@@ -162,7 +162,9 @@ export default function ArchiveScreen() {
               {tab === 'posts'
                 ? posts.map(post => (
                     <TouchableOpacity key={post.id} style={styles.cell} onPress={() => onPostPress(post)} activeOpacity={0.85}>
-                      {post.type === 'video' ? (
+                      {post.type === 'slideshow' ? (
+                        <Image source={{ uri: post.thumbnail_url || post.media_url }} style={styles.cellMedia} resizeMode="cover" />
+                      ) : post.type === 'video' ? (
                         <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.cellMedia} />
                       ) : post.type === 'image' ? (
                         <Image source={{ uri: post.media_url }} style={styles.cellMedia} resizeMode="cover" />
@@ -175,7 +177,7 @@ export default function ArchiveScreen() {
                       )}
                       <View style={styles.typeBadge}>
                         <Ionicons
-                          name={post.type === 'video' ? 'videocam' : isAudioPost(post.type) ? 'musical-notes' : 'image'}
+                          name={post.type === 'slideshow' ? 'copy' : post.type === 'video' ? 'videocam' : isAudioPost(post.type) ? 'musical-notes' : 'image'}
                           size={11} color={COLORS.text}
                         />
                       </View>

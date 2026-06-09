@@ -30,6 +30,8 @@ import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { useExpandTransition } from '../../hooks/useExpandTransition';
 import SongAttribution from '../../components/SongAttribution';
+import SlideshowCarousel from '../../components/SlideshowCarousel';
+import { parseSlides, isSlideshow } from '../../lib/slideshow';
 
 type Post = {
   id: string; type: string; media_url: string; caption: string;
@@ -45,6 +47,7 @@ type Post = {
   song_title?: string | null;
   song_artist?: string | null;
   song_artist_id?: string | null;
+  slides?: any;
   profiles: { username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 };
 type Comment = {
@@ -55,7 +58,8 @@ type Comment = {
 export default function PostDetailScreen() {
   const { show: showOptions } = usePostOptions();
   const { share: openShare } = useShare();
-  const { id, post: postParam } = useLocalSearchParams<{ id: string; post?: string }>();
+  const { id, post: postParam, index: indexParam } = useLocalSearchParams<{ id: string; post?: string; index?: string }>();
+  const initialSlide = indexParam ? (parseInt(indexParam, 10) || 0) : 0;
   const router = useRouter();
   const { currentTrack, isPlaying, play, stop } = useAudio();
   const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
@@ -245,6 +249,27 @@ export default function PostDetailScreen() {
             {post.type === 'image' && post.media_url && (
               <View>
                 <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined, backgroundColor: '#000' }]} resizeMode="cover" />
+                {!!post.song_id && (
+                  <TouchableOpacity style={styles.songMuteBtn} onPress={toggleSongMuted}>
+                    <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+                  </TouchableOpacity>
+                )}
+                {!!post.song_id && (
+                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={dismiss} />
+                )}
+              </View>
+            )}
+            {isSlideshow(post.type) && (
+              <View>
+                <SlideshowCarousel
+                  slides={parseSlides(post)}
+                  width={SCREEN_W}
+                  aspectRatio={aspectToNumber(post.aspect_ratio, 1)}
+                  variant="full"
+                  active={isFocused}
+                  muted={!!post.song_id}
+                  initialIndex={initialSlide}
+                />
                 {!!post.song_id && (
                   <TouchableOpacity style={styles.songMuteBtn} onPress={toggleSongMuted}>
                     <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />

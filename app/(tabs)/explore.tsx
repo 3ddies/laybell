@@ -372,7 +372,7 @@ export default function ExploreScreen() {
         <FlatList
           key={searchTab}
           data={searchTab === 'posts'
-            ? posts.filter(p => p.type === 'image')
+            ? posts.filter(p => p.type === 'image' || p.type === 'slideshow')
             : searchTab === 'music'
             ? posts.filter(p => isAudioPost(p.type))
             : searchTab === 'videos'
@@ -455,8 +455,8 @@ export default function ExploreScreen() {
                 onBlocked: () => setPosts(prev => prev.filter(p => p.user_id !== item.user_id)),
               })}
             >
-              {item.type === 'image' || (item.type === 'video' && item.thumbnail_url) ? (
-                <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url as string) }} style={styles.postThumb} />
+              {item.type === 'image' || item.type === 'slideshow' || (item.type === 'video' && item.thumbnail_url) ? (
+                <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url || item.media_url) }} style={styles.postThumb} />
               ) : (
                 <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.postThumb}>
                   <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={20} color={COLORS.primary} />

@@ -164,7 +164,14 @@ export default function PublicProfileScreen() {
               }
             }}
           >
-            {post.type === 'video' ? (
+            {post.type === 'slideshow' ? (
+              <>
+                <Image source={{ uri: post.thumbnail_url || post.media_url }} style={styles.gridImage} resizeMode="cover" />
+                <View style={styles.gridPlayOverlay}>
+                  <Ionicons name="copy" size={13} color={COLORS.text} />
+                </View>
+              </>
+            ) : post.type === 'video' ? (
               <>
                 <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.gridImage} />
                 <View style={styles.gridPlayOverlay}>

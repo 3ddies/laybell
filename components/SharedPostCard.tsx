@@ -74,9 +74,9 @@ export default function SharedPostCard({ postId }: { postId: string }) {
         ) : (
           <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaInner} />
         )}
-        {playable && (
+        {(playable || post.type === 'slideshow') && (
           <View style={styles.playBadge}>
-            <Ionicons name={isAudioPost(post.type) ? 'musical-notes' : 'play'} size={16} color="#fff" />
+            <Ionicons name={post.type === 'slideshow' ? 'copy' : isAudioPost(post.type) ? 'musical-notes' : 'play'} size={16} color="#fff" />
           </View>
         )}
       </View>
