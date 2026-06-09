@@ -91,6 +91,8 @@ type PostCardProps = {
   onLike: (item: Post) => void;
   onSave: (item: Post) => void;
   onShare: (item: Post) => void;
+  // A slideshow video slide turned its audio on/off → pause/resume its song.
+  onSlideAudioActive: (item: Post, active: boolean) => void;
 };
 
 // Memoized so that toggling a like/save on one post (which changes the feed's
@@ -99,7 +101,7 @@ type PostCardProps = {
 // unchanged posts, so React.memo's shallow compare skips them.
 const PostCard = memo(function PostCard({
   item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted, shouldPlayVideo,
-  onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare,
+  onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive,
 }: PostCardProps) {
   const likeCount = item.likes[0]?.count || 0;
   const commentCount = item.comments[0]?.count || 0;
@@ -167,11 +169,7 @@ const PostCard = memo(function PostCard({
             width={SCREEN_W}
             aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
             active={shouldPlayVideo}
-            hasSong={!!item.song_id}
-            videoMuted={videoMuted}
-            onToggleVideoMute={onToggleMuted}
-            songMuted={songMuted}
-            onToggleSong={onToggleSongMute}
+            onVideoAudioActiveChange={(a) => onSlideAudioActive(item, a)}
             onOpen={(idx) => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }, idx))}
           />
           {!!item.song_id && (
@@ -285,6 +283,9 @@ export default function HomeScreen() {
   const [playlistCount, setPlaylistCount] = useState(0);
   const [visibleVideoId, setVisibleVideoId] = useState<string | null>(null);
   const [visibleMusicId, setVisibleMusicId] = useState<string | null>(null);
+  // Slideshow posts whose current video slide has its audio on — their attached
+  // song pauses so it doesn't overlap the video. (Separate from the global mute.)
+  const [slideAudioActiveIds, setSlideAudioActiveIds] = useState<Set<string>>(new Set());
   const { refresh: refreshStories } = useStories();
   const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
   const router = useRouter();
@@ -371,14 +372,15 @@ export default function HomeScreen() {
   }, []);
 
   // Auto-play the attached song of the most-visible music post while the feed is
-  // focused; stop when it scrolls away or you leave the tab.
+  // focused; stop when it scrolls away or you leave the tab. A slideshow whose
+  // current video slide has its audio on pauses its song so they don't overlap.
   const visibleMusicItem = posts.find((p) => p.id === visibleMusicId);
   useEffect(() => {
-    if (isFocused && visibleMusicId && visibleMusicItem?.song_id) playSong(visibleMusicId, visibleMusicItem.song_id);
+    if (isFocused && visibleMusicId && visibleMusicItem?.song_id && !slideAudioActiveIds.has(visibleMusicId)) playSong(visibleMusicId, visibleMusicItem.song_id);
     else if (visibleMusicId) stopSong(visibleMusicId);
     return () => { if (visibleMusicId) stopSong(visibleMusicId); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleMusicId, visibleMusicItem?.song_id, isFocused]);
+  }, [visibleMusicId, visibleMusicItem?.song_id, isFocused, slideAudioActiveIds]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -540,6 +542,16 @@ export default function HomeScreen() {
   const onOpenPost = useCallback((item: Post, src?: SourceRect, index?: number) => live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}), ...(index != null ? { index: String(index) } : {}) } }), []);
   const onOpenReel = useCallback((item: Post, src?: SourceRect) => live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }), []);
   const onComments = useCallback((item: Post) => setCommentsFor({ id: item.id, ownerId: item.user_id }), []);
+  // Track which slideshows have their video audio on (idempotent — returns the same
+  // set when nothing changes so it never triggers an extra render).
+  const onSlideAudioActive = useCallback((item: Post, on: boolean) => {
+    setSlideAudioActiveIds(prev => {
+      if (on === prev.has(item.id)) return prev;
+      const n = new Set(prev);
+      if (on) n.add(item.id); else n.delete(item.id);
+      return n;
+    });
+  }, []);
 
   const onPlayTrack = useCallback((item: Post) => {
     live.current.play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url });
@@ -588,10 +600,11 @@ export default function HomeScreen() {
         onLike={onLike}
         onSave={onSave}
         onShare={onShare}
+        onSlideAudioActive={onSlideAudioActive}
       />
     </ElasticSwipeView>
   ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, songMuted, canPlayVideo, visibleVideoId,
-      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare]);
+      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive]);
 
   if (loading) {
     return (

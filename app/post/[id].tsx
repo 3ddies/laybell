@@ -61,7 +61,7 @@ export default function PostDetailScreen() {
   const { id, post: postParam, index: indexParam } = useLocalSearchParams<{ id: string; post?: string; index?: string }>();
   const initialSlide = indexParam ? (parseInt(indexParam, 10) || 0) : 0;
   const router = useRouter();
-  const { currentTrack, isPlaying, play, stop, videoMuted, toggleVideoMuted } = useAudio();
+  const { currentTrack, isPlaying, play, stop } = useAudio();
   const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
   const isFocused = useIsFocused();
   const flatListRef = useRef<any>(null);
@@ -86,6 +86,8 @@ export default function PostDetailScreen() {
   const [sending, setSending] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
+  // A slideshow video slide has its audio on → pause the post's attached song.
+  const [slideAudioActive, setSlideAudioActive] = useState(false);
 
   const audioPlaying = currentTrack?.id === id && isPlaying;
 
@@ -94,11 +96,11 @@ export default function PostDetailScreen() {
   // Auto-play the song attached to this image/video post (ambient); stop on
   // blur/close. The media's own audio (video) is muted while a song is set.
   useEffect(() => {
-    if (isFocused && post?.id && post?.song_id) playSong(post.id, post.song_id);
+    if (isFocused && post?.id && post?.song_id && !slideAudioActive) playSong(post.id, post.song_id);
     else if (post?.id) stopSong(post.id);
     return () => { if (post?.id) stopSong(post.id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [post?.id, post?.song_id, isFocused]);
+  }, [post?.id, post?.song_id, isFocused, slideAudioActive]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -266,11 +268,7 @@ export default function PostDetailScreen() {
                   width={SCREEN_W}
                   aspectRatio={aspectToNumber(post.aspect_ratio, 1)}
                   active={isFocused}
-                  hasSong={!!post.song_id}
-                  videoMuted={videoMuted}
-                  onToggleVideoMute={toggleVideoMuted}
-                  songMuted={songMuted}
-                  onToggleSong={toggleSongMuted}
+                  onVideoAudioActiveChange={setSlideAudioActive}
                   initialIndex={initialSlide}
                 />
                 {!!post.song_id && (

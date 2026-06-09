@@ -1,22 +1,25 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, ScrollView, Image, TouchableOpacity, StyleSheet, Text,
   type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, RADIUS } from '../constants/theme';
+import { RADIUS } from '../constants/theme';
 import { useTabSwipeControl } from '../contexts/PagerContext';
 import { type Slide } from '../lib/slideshow';
 
 // Swipeable carousel for slideshow posts. A horizontal paging ScrollView (NOT a
 // nested PagerView — those have a freeze history here). Page counter + dots.
 //
-// - The current video slide autoplays + loops while `active` (the feed item is
-//   visible, or the full viewer is focused); other slides show their poster.
-// - Audio button (top-left) appears when the current slide is a video OR the post
-//   has an attached song. It toggles the SONG if one is attached (videos stay
-//   muted under it), otherwise the videos' own audio — mirroring single posts.
+// - The current video slide autoplays + loops while `active` (feed item visible /
+//   full viewer focused); other slides show their poster.
+// - Audio button (top-left) shows ONLY on video slides — it toggles that video's
+//   OWN original audio. Image slides have no audio so they get no button. This
+//   state is LOCAL to the carousel, separate from the feed's global mute buttons.
+// - When a video's audio is turned on it reports up via onVideoAudioActiveChange
+//   so the host can pause an attached song (and resume it when the video is muted
+//   or you swipe to a non-video slide), so the two never overlap.
 // - While you swipe between slides it disables the tab navigator's swipe so the
 //   gesture doesn't change tabs (no-op outside the tabs).
 
@@ -25,13 +28,11 @@ type Props = {
   width: number;
   aspectRatio: number; // container width / height
   active?: boolean; // gate video autoplay (feed item visible / viewer focused)
-  hasSong?: boolean; // post has an attached song → videos muted, button toggles the song
-  videoMuted?: boolean; // global video-audio mute (used when no song)
-  onToggleVideoMute?: () => void;
-  songMuted?: boolean;
-  onToggleSong?: () => void;
   initialIndex?: number;
   onOpen?: (index: number) => void; // tap a slide → open the full viewer there (feed)
+  // Reports whether the CURRENT slide is a video with its audio turned on, so the
+  // host can pause/resume an attached song. Fires on slide change + toggle + unmount.
+  onVideoAudioActiveChange?: (active: boolean) => void;
 };
 
 function SlideVideo({
@@ -52,26 +53,32 @@ function SlideVideo({
 }
 
 export default function SlideshowCarousel({
-  slides, width, aspectRatio, active = true, hasSong = false,
-  videoMuted = false, onToggleVideoMute, songMuted = false, onToggleSong, initialIndex = 0, onOpen,
+  slides, width, aspectRatio, active = true, initialIndex = 0, onOpen, onVideoAudioActiveChange,
 }: Props) {
   const height = Math.round(width / (aspectRatio || 1));
   const [index, setIndex] = useState(initialIndex);
+  const [videoAudioOn, setVideoAudioOn] = useState(false); // local: current video's own audio (default muted)
   const scrollRef = useRef<ScrollView>(null);
   const didInit = useRef(false);
   const setTabSwipe = useTabSwipeControl();
+  const cbRef = useRef(onVideoAudioActiveChange);
+  cbRef.current = onVideoAudioActiveChange;
+
+  const current = Math.min(Math.max(index, 0), Math.max(0, slides.length - 1));
+  const currentIsVideo = slides[current]?.type === 'video';
+  const videoAudioActive = currentIsVideo && videoAudioOn;
+
+  // Swiping to a non-video slide drops the unmute (so the song resumes there).
+  useEffect(() => { if (!currentIsVideo && videoAudioOn) setVideoAudioOn(false); }, [currentIsVideo, videoAudioOn]);
+  // Report (current video + its audio on) so the host can pause/resume the song.
+  useEffect(() => { cbRef.current?.(videoAudioActive); }, [videoAudioActive]);
+  useEffect(() => () => { cbRef.current?.(false); }, []);
 
   function onMomentumEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const i = Math.round(e.nativeEvent.contentOffset.x / width);
     if (i !== index) setIndex(i);
     setTabSwipe(true);
   }
-
-  const current = Math.min(Math.max(index, 0), slides.length - 1);
-  const currentIsVideo = slides[current]?.type === 'video';
-  const showAudio = hasSong || currentIsVideo;
-  const audioMuted = hasSong ? songMuted : videoMuted;
-  const onAudio = hasSong ? onToggleSong : onToggleVideoMute;
 
   return (
     <View style={{ width, height }}>
@@ -107,7 +114,7 @@ export default function SlideshowCarousel({
                   width={width}
                   height={height}
                   play={!!active && i === current}
-                  muted={hasSong ? true : videoMuted}
+                  muted={!videoAudioOn}
                 />
               ) : (
                 <Image source={{ uri: s.url }} style={{ width, height }} resizeMode="cover" />
@@ -124,9 +131,14 @@ export default function SlideshowCarousel({
         })}
       </ScrollView>
 
-      {showAudio && onAudio && (
-        <TouchableOpacity style={styles.audioBtn} onPress={onAudio} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name={audioMuted ? 'volume-mute' : 'volume-high'} size={16} color="#fff" />
+      {/* Audio button — video slides only (image slides have no original audio). */}
+      {currentIsVideo && (
+        <TouchableOpacity
+          style={styles.audioBtn}
+          onPress={() => setVideoAudioOn((v) => !v)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name={videoAudioOn ? 'volume-high' : 'volume-mute'} size={16} color="#fff" />
         </TouchableOpacity>
       )}
 
