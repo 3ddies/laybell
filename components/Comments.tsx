@@ -5,8 +5,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { bumpBadge } from '../lib/badges';
 import { useProfile } from '../contexts/ProfileContext';
 import StoryAvatar from './StoryAvatar';
+import BadgeEmblem from './BadgeEmblem';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
 import { createNotification } from '../lib/createNotification';
@@ -57,12 +59,12 @@ export default function Comments({
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     setUserId(user?.id ?? null);
-    if (user) supabase.from('profiles').select('username, display_name, avatar_url').eq('id', user.id).single()
+    if (user) supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show').eq('id', user.id).single()
       .then(({ data }) => setUserProfile(data));
 
     const { data: comments } = await supabase
       .from('comments')
-      .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name, avatar_url)')
+      .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
     if (!comments) return;
@@ -122,6 +124,7 @@ export default function Comments({
     const { data, error } = await supabase
       .from('comments').insert({ user_id: userId, post_id: postId, body, parent_id }).select().single();
     if (!error && data) {
+      bumpBadge('comments');
       setRows(prev => [...prev, { ...(data as any), profiles: myProfile ?? userProfile }]);
       if (!parent_id) setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
       if (ownerId && ownerId !== userId) createNotification({ userId: ownerId, actorId: userId, type: 'comment', postId });
@@ -156,6 +159,7 @@ export default function Comments({
             <TouchableOpacity onPress={() => goToProfile(item.user_id)}>
               <Text style={styles.name}>{item.profiles?.display_name}</Text>
             </TouchableOpacity>
+            <BadgeEmblem profile={item.profiles} size={12} />
             <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
           </View>
           <Text style={styles.text}>{item.body}</Text>

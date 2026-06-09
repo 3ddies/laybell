@@ -7,6 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { bumpBadge } from '../../lib/badges';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
@@ -77,6 +78,7 @@ export default function CommentsScreen() {
     setNewComment('');
     const { data, error } = await supabase.from('comments').insert({ user_id: currentUserId, post_id: id, body }).select().single();
     if (!error && data) {
+      bumpBadge('comments');
       setComments(prev => [...prev, { ...data, profiles: currentUserProfile }]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       if (postOwnerId && postOwnerId !== currentUserId) {

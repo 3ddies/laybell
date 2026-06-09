@@ -11,11 +11,12 @@ import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
 import StoryAvatar from '../components/StoryAvatar';
+import BadgeEmblem from '../components/BadgeEmblem';
 
 type Notification = {
   id: string; type: 'like' | 'comment' | 'follow' | 'message';
   post_id: string | null; actor_id: string; read: boolean; created_at: string;
-  actor: { id: string; username: string; display_name: string; avatar_url: string | null } | null;
+  actor: { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null } | null;
 };
 
 function notificationText(type: string) {
@@ -65,7 +66,7 @@ export default function NotificationsScreen() {
     if (notifData && notifData.length > 0) {
       const actorIds = [...new Set(notifData.map(n => n.actor_id))];
       const { data: profileData } = await supabase
-        .from('profiles').select('id, username, display_name, avatar_url').in('id', actorIds);
+        .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show').in('id', actorIds);
       const profileMap = Object.fromEntries((profileData ?? []).map(p => [p.id, p]));
       setNotifications(notifData.map(n => ({ ...n, actor: profileMap[n.actor_id] ?? null })) as any);
     } else {
@@ -145,6 +146,7 @@ export default function NotificationsScreen() {
                   <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
                     <Ionicons name={icon.name} size={10} color={COLORS.text} />
                   </View>
+                  <BadgeEmblem profile={item.actor} size={17} style={styles.notifEmblem} />
                 </View>
 
                 <View style={styles.notifContent}>
@@ -189,6 +191,7 @@ const styles = StyleSheet.create({
   avatar: { width: 50, height: 50, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
   iconBadge: { position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.background },
+  notifEmblem: { position: 'absolute', top: -2, right: -2, borderWidth: 1.5, borderColor: COLORS.background },
   notifContent: { flex: 1 },
   notifText: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
   notifName: { color: COLORS.text, fontWeight: '700' },

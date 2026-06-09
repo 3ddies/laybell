@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDeviceId } from '../lib/deviceId';
 import { playThresholds } from '../lib/playThresholds';
+import { bumpBadge } from '../lib/badges';
 
 // Per-post listen progress persists for a rolling 24h window (matches the
 // server's per-user/post stream cap) so force-quitting can't reset it.
@@ -77,6 +78,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const windowStartRef = useRef<Record<string, number>>({});
   const uidRef = useRef<string | null>(null);
   const deviceIdRef = useRef<string | null>(null); // per-install id for the device cap
+  // Genuine forward listen ms accrued toward the daily "music streaming" badge —
+  // a SEPARATE accumulator from the per-post stream credit (listenMsRef), so it
+  // sums across posts and isn't tied to any 24h per-post window. Flushed as whole
+  // seconds via record_badge_activity (keeping the sub-second remainder → no drift).
+  const badgeMsRef = useRef(0);
 
   // Configure the audio session once up front so the first tap plays immediately
   // (a cold session previously made the first createAsync fail to start).
@@ -108,6 +114,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  // Flush whole accrued listen-seconds to the badge counter (keeps the sub-second
+  // remainder so repeated flushes never drift or double-count). Called periodically
+  // while playing and on pause/stop/finish so trailing seconds aren't lost.
+  function flushBadgeMs() {
+    const secs = Math.floor(badgeMsRef.current / 1000);
+    if (secs <= 0) return;
+    badgeMsRef.current -= secs * 1000;
+    if (uidRef.current) bumpBadge('music_seconds', secs);
+  }
+
   // Persist the (non-expired) per-post progress. Called on credit/pause/stop/end,
   // not every tick, to limit writes.
   function saveProgress() {
@@ -128,6 +144,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   async function stop() {
     saveProgress();
+    flushBadgeMs();
     playTokenRef.current++; // cancel any in-flight load
     if (soundRef.current) {
       await soundRef.current.stopAsync();
@@ -147,6 +164,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       await soundRef.current.pauseAsync();
       setIsPlaying(false);
       saveProgress();
+      flushBadgeMs();
     }
   }
 
@@ -278,6 +296,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         if (canCount && dur > 0) {
           const delta = pos - lastPosMs;
           if (delta > 0 && delta < 1500) {
+            // Daily music badge: accrue this genuine forward delta (across all
+            // posts, independent of the per-post stream window) and flush in chunks.
+            badgeMsRef.current += delta;
+            if (badgeMsRef.current >= 15000) flushBadgeMs();
             const id = track.id;
             // Reset a post's accounting once its 24h window elapses so a genuine
             // listener can earn again the next day (mirrors the server cap window).
@@ -311,6 +333,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
         if (status.didJustFinish) {
           saveProgress();
+          flushBadgeMs();
           const q = queueRef.current;
           const next = queueIndexRef.current + 1;
           if (q.length && next < q.length) {

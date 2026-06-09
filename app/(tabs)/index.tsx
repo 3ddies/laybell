@@ -18,6 +18,7 @@ import { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { bumpBadge } from '../../lib/badges';
 import { COLORS, SPACING, RADIUS, SHADOWS, GRADIENTS } from '../../constants/theme';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
@@ -30,6 +31,7 @@ import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
 import FollowButton from '../../components/FollowButton';
+import BadgeEmblem from '../../components/BadgeEmblem';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import TrackRow from '../../components/TrackRow';
 import StoriesTray from '../../components/StoriesTray';
@@ -115,7 +117,10 @@ const PostCard = memo(function PostCard({
           onPressProfile={() => onProfile(item)}
         />
         <View style={styles.postHeaderInfo}>
-          <Text style={styles.postDisplayName}>{item.profiles?.display_name}</Text>
+          <View style={styles.postNameRow}>
+            <Text style={styles.postDisplayName}>{item.profiles?.display_name}</Text>
+            <BadgeEmblem profile={item.profiles} size={13} />
+          </View>
           <Text style={styles.postUsername}>
             @{item.profiles?.username} · {timeAgo(item.created_at)}
           </Text>
@@ -375,7 +380,7 @@ export default function HomeScreen() {
       .from('posts')
       .select(`
         *,
-        profiles!posts_user_id_fkey (username, display_name, avatar_url),
+        profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show),
         likes(count),
         comments(count)
       `)
@@ -462,6 +467,7 @@ export default function HomeScreen() {
       await supabase.from('likes').delete().eq('user_id', uid).eq('post_id', item.id);
     } else {
       await supabase.from('likes').insert({ user_id: uid, post_id: item.id });
+      bumpBadge('likes');
       if (item.user_id !== uid) {
         createNotification({ userId: item.user_id, actorId: uid, type: 'like', postId: item.id });
       }
@@ -743,6 +749,7 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   postHeaderInfo: { flex: 1 },
+  postNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   postDisplayName: { color: COLORS.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.1 },
   postUsername: { color: COLORS.textTertiary, fontSize: 12, marginTop: 1 },
   typeIconWrap: {

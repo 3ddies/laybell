@@ -9,9 +9,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import StoryAvatar from '../../components/StoryAvatar';
+import BadgeEmblem from '../../components/BadgeEmblem';
 import { useStories } from '../../contexts/StoriesContext';
 
-type User = { id: string; username: string; display_name: string; avatar_url: string | null };
+type User = { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 
 export default function FollowersScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -40,7 +41,7 @@ export default function FollowersScreen() {
 
     const [followersRes, followingRes] = await Promise.all([
       supabase.from('follows')
-        .select('follower_id, profiles!follows_follower_id_fkey(id, username, display_name, avatar_url)')
+        .select('follower_id, profiles!follows_follower_id_fkey(id, username, display_name, avatar_url, badge_tier, badge_show)')
         .eq('following_id', id),
       user ? supabase.from('follows').select('following_id').eq('follower_id', user.id) : Promise.resolve({ data: [] }),
     ]);
@@ -105,7 +106,10 @@ export default function FollowersScreen() {
                   size={46}
                 />
                 <View>
-                  <Text style={styles.displayName}>{item.display_name}</Text>
+                  <View style={styles.nameRow}>
+                    <Text style={styles.displayName}>{item.display_name}</Text>
+                    <BadgeEmblem profile={item} size={13} />
+                  </View>
                   <Text style={styles.username}>@{item.username}</Text>
                 </View>
               </TouchableOpacity>
@@ -146,6 +150,7 @@ const styles = StyleSheet.create({
   userLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
   avatar: { width: 46, height: 46, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   displayName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   username: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
   followBtn: { backgroundColor: COLORS.primary, borderRadius: RADIUS.full, paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md },

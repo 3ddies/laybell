@@ -19,6 +19,7 @@ import {
 } from '../../lib/stories';
 import { reportUser } from '../../lib/postActions';
 import SongAttribution from '../../components/SongAttribution';
+import BadgeEmblem from '../../components/BadgeEmblem';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 
@@ -463,6 +464,7 @@ export default function StoryViewerScreen() {
                   </LinearGradient>
                 )}
                 <Text style={styles.authorName} numberOfLines={1}>{group.user.username || group.user.display_name}</Text>
+                <BadgeEmblem profile={group.user} size={13} />
                 <Text style={styles.time}>{timeAgo(story.created_at)}</Text>
               </TouchableOpacity>
 

@@ -14,26 +14,18 @@ import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
+import BadgeEmblem from '../../components/BadgeEmblem';
+import { resolveRingColors, resolveBannerColors, rawTier } from '../../lib/badges';
 import { isAudioPost } from '../../lib/genres';
 import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 
 type Profile = {
   id: string; username: string; display_name: string;
   bio: string | null; avatar_url: string | null; badge_tier: string; created_at: string;
 };
 type Stats = { followers: number; following: number; posts: number };
-
-function getBadgeGradient(tier: string): readonly [string, string] {
-  switch (tier) {
-    case 'gold': return GRADIENTS.gold;
-    case 'diamond': return [COLORS.diamond, '#67E8F9'];
-    case 'silver': return [COLORS.silver, '#CBD5E1'];
-    case 'bronze': return [COLORS.bronze, '#92400E'];
-    default: return ['#333333', '#222222'];
-  }
-}
 
 const TABS = [
   { key: 'posts', label: 'Posts', icon: 'grid-outline' },
@@ -105,9 +97,12 @@ export default function ProfileScreen() {
     return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
   }
 
-  const badgeGradient = getBadgeGradient(profile?.badge_tier ?? '');
-  // The current user's avatar comes from the global ProfileContext so it stays in
-  // sync after an edit; fall back to this screen's own fetch on first paint.
+  // Prefer the global ProfileContext copy (live tier + avatar, kept in sync after
+  // edits / badge changes); fall back to this screen's own fetch on first paint.
+  const badgeProfile = liveProfile ?? profile;
+  const myTier = rawTier(badgeProfile);
+  const ringColors = resolveRingColors(badgeProfile, myTier);
+  const bannerColors = resolveBannerColors(badgeProfile, myTier);
   const avatarUrl = liveProfile?.avatar_url ?? profile?.avatar_url;
 
   function dataForTab(key: string) {
@@ -246,15 +241,15 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Banner */}
-      <LinearGradient colors={['#1C0A04', COLORS.background]} style={styles.banner}>
+      {/* Banner — tinted by the user's chosen profile theme (gated by tier) */}
+      <LinearGradient colors={bannerColors} style={styles.banner}>
         <View style={styles.avatarWrap}>
           <StoryAvatar
             userId={profile?.id}
             avatarUrl={avatarUrl}
             name={profile?.display_name}
             size={88}
-            ringColorsWhenNoStory={badgeGradient}
+            ringColorsWhenNoStory={ringColors}
             onPressProfile={openCamera}
             showAdd
             onPressAdd={openCamera}
@@ -276,7 +271,10 @@ export default function ProfileScreen() {
 
       {/* Name + bio */}
       <View style={styles.infoSection}>
-        <Text style={styles.displayName}>{profile?.display_name}</Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.displayName}>{profile?.display_name}</Text>
+          <BadgeEmblem profile={badgeProfile} size={17} />
+        </View>
         {profile?.bio
           ? <Text style={styles.bio}>{profile.bio}</Text>
           : <Text style={styles.bioEmpty}>No bio yet</Text>
@@ -382,6 +380,7 @@ const styles = StyleSheet.create({
   statLabel: { color: COLORS.textSecondary, fontSize: 12 },
 
   infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: 4 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   displayName: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
   bio: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
   bioEmpty: { color: COLORS.textTertiary, fontSize: 14, fontStyle: 'italic' },

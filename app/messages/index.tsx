@@ -14,11 +14,12 @@ import { sharedPostId } from '../../lib/postLinks';
 import { fetchBlockedIds } from '../../lib/blocks';
 import HighlightText from '../../components/HighlightText';
 import StoryAvatar from '../../components/StoryAvatar';
+import BadgeEmblem from '../../components/BadgeEmblem';
 import { useStories } from '../../contexts/StoriesContext';
 
 type Conversation = {
   id: string;
-  other_user: { id: string; username: string; display_name: string; avatar_url: string | null };
+  other_user: { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
   last_message: string;
   last_message_time: string;
   unread: number;
@@ -126,7 +127,7 @@ export default function MessagesScreen() {
     }
 
     const { data: profiles } = await supabase
-      .from('profiles').select('id, username, display_name, avatar_url').in('id', partnerIds);
+      .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show').in('id', partnerIds);
     if (!profiles) return;
 
     const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]));
@@ -273,13 +274,16 @@ export default function MessagesScreen() {
             />
             <View style={styles.convInfo}>
               <View style={styles.convHeader}>
-                <HighlightText
-                  text={item.other_user.display_name}
-                  query={searchQuery}
-                  style={[styles.displayName, unread && styles.displayNameUnread]}
-                  highlightStyle={styles.highlight}
-                  numberOfLines={1}
-                />
+                <View style={styles.convNameRow}>
+                  <HighlightText
+                    text={item.other_user.display_name}
+                    query={searchQuery}
+                    style={[styles.displayName, unread && styles.displayNameUnread]}
+                    highlightStyle={styles.highlight}
+                    numberOfLines={1}
+                  />
+                  <BadgeEmblem profile={item.other_user} size={13} />
+                </View>
                 <Text style={[styles.timeText, unread && styles.timeUnread]}>{timeAgo(item.last_message_time)}</Text>
               </View>
               {matchCaption ? (
@@ -377,7 +381,8 @@ const styles = StyleSheet.create({
   avatarText: { color: COLORS.text, fontSize: 20, fontWeight: '700' },
   convInfo: { flex: 1 },
   convHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: SPACING.sm },
-  displayName: { flex: 1, color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  convNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  displayName: { flexShrink: 1, color: COLORS.text, fontSize: 15, fontWeight: '700' },
   displayNameUnread: { fontWeight: '800' },
   timeText: { color: COLORS.textTertiary, fontSize: 12 },
   timeUnread: { color: COLORS.primary, fontWeight: '700' },

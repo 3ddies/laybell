@@ -13,6 +13,8 @@ import TrackRow from '../../components/TrackRow';
 import FollowButton from '../../components/FollowButton';
 import HighlightText from '../../components/HighlightText';
 import StoryAvatar from '../../components/StoryAvatar';
+import BadgeEmblem from '../../components/BadgeEmblem';
+import { badgeRingColors, rawTier } from '../../lib/badges';
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { fetchBlockedIds } from '../../lib/blocks';
@@ -38,19 +40,8 @@ type Post = {
 };
 type Profile = {
   id: string; username: string; display_name: string;
-  avatar_url: string | null; badge_tier: string;
+  avatar_url: string | null; badge_tier: string | null; badge_show?: boolean | null;
 };
-
-
-function getBadgeColor(tier: string) {
-  switch (tier) {
-    case 'gold': return COLORS.gold;
-    case 'silver': return COLORS.silver;
-    case 'bronze': return COLORS.bronze;
-    case 'diamond': return COLORS.diamond;
-    default: return COLORS.border;
-  }
-}
 
 export default function ExploreScreen() {
   const { show: showOptions } = usePostOptions();
@@ -129,7 +120,7 @@ export default function ExploreScreen() {
   async function fetchTrending(overrideSeen?: Set<string>) {
     const { data } = await supabase
       .from('posts')
-      .select('*, profiles!posts_user_id_fkey (username, display_name), likes(count), comments(count)')
+      .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show), likes(count), comments(count)')
       .eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(30);
@@ -153,7 +144,7 @@ export default function ExploreScreen() {
 
     let q = supabase
       .from('posts')
-      .select('*, profiles!posts_user_id_fkey (username, display_name), likes(count), comments(count)')
+      .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show), likes(count), comments(count)')
       .eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(30);
@@ -202,7 +193,7 @@ export default function ExploreScreen() {
     // their posts. Ordered by how closely the name matches.
     const { data: profData } = await supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url, badge_tier')
+      .select('id, username, display_name, avatar_url, badge_tier, badge_show')
       .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
       .limit(20);
     const matched = profData ?? [];
@@ -213,7 +204,7 @@ export default function ExploreScreen() {
       .from('posts')
       .select(`
         *,
-        profiles!posts_user_id_fkey (username, display_name, avatar_url),
+        profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show),
         likes(count),
         comments(count)
       `)
@@ -261,10 +252,13 @@ export default function ExploreScreen() {
         avatarUrl={acc.avatar_url}
         name={acc.display_name}
         size={48}
-        ringColorsWhenNoStory={[getBadgeColor(acc.badge_tier), getBadgeColor(acc.badge_tier)] as const}
+        ringColorsWhenNoStory={badgeRingColors(rawTier(acc))}
       />
       <View style={styles.accountInfo}>
-        <HighlightText text={acc.display_name} query={highlight ? searchQuery : undefined} style={styles.accountName} highlightStyle={styles.searchHl} numberOfLines={1} />
+        <View style={styles.accountNameRow}>
+          <HighlightText text={acc.display_name} query={highlight ? searchQuery : undefined} style={[styles.accountName, styles.flexShrink]} highlightStyle={styles.searchHl} numberOfLines={1} />
+          <BadgeEmblem profile={acc} size={13} />
+        </View>
         <HighlightText text={`@${acc.username}`} query={highlight ? searchQuery : undefined} style={styles.accountUsername} highlightStyle={styles.searchHl} numberOfLines={1} />
       </View>
       <FollowButton userId={acc.id} />
@@ -415,6 +409,7 @@ export default function ExploreScreen() {
               streams={item.stream_count}
               cover={item.cover_url}
               avatarUrl={item.profiles?.avatar_url}
+              badgeProfile={item.profiles}
               highlightQuery={hq}
               isPlaying={currentTrack?.id === item.id && isPlaying}
               onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
@@ -470,6 +465,7 @@ export default function ExploreScreen() {
                 <HighlightText text={item.caption || 'Audio Track'} query={hq} style={styles.postCaption} highlightStyle={styles.searchHl} numberOfLines={2} />
                 <View style={styles.postMeta}>
                   <HighlightText text={`@${item.profiles?.username}`} query={hq} style={styles.postUser} highlightStyle={styles.searchHl} numberOfLines={1} />
+                  <BadgeEmblem profile={item.profiles} size={11} />
                   {((item.likes?.[0]?.count || 0) + (item.comments?.[0]?.count || 0)) > 0 && (
                     <View style={styles.postStats}>
                       <Ionicons name="heart" size={11} color={COLORS.like} />
@@ -596,6 +592,8 @@ const styles = StyleSheet.create({
   },
   accountAvatarText: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
   accountInfo: { flex: 1 },
+  accountNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  flexShrink: { flexShrink: 1 },
   accountName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   accountUsername: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
 

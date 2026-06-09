@@ -141,6 +141,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/analytics'),
     },
     {
+      icon: 'ribbon-outline',
+      label: 'Badges',
+      subtitle: 'Your emblem, rewards & progress',
+      onPress: () => router.push('/badges'),
+    },
+    {
       icon: 'repeat-outline',
       label: 'Reposts',
       subtitle: 'See who reposted your posts',

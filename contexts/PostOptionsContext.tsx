@@ -11,6 +11,7 @@ import { confirmDeletePost, reportPost, reportUser, confirmArchivePost } from '.
 import { confirmBlockUser, isBlocked, unblockUser } from '../lib/blocks';
 import { isAudioPost } from '../lib/genres';
 import { supabase } from '../lib/supabase';
+import { bumpBadge } from '../lib/badges';
 import { createNotification } from '../lib/createNotification';
 import { useProfile } from './ProfileContext';
 import { isReposted, addRepost, removeRepost } from '../lib/reposts';
@@ -169,6 +170,7 @@ function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
     setLiked(next); // optimistic
     if (next) {
       await supabase.from('likes').insert({ user_id: uid, post_id: o.postId });
+      bumpBadge('likes');
       if (o.authorId && o.authorId !== uid) {
         createNotification({ userId: o.authorId, actorId: uid, type: 'like', postId: o.postId });
       }

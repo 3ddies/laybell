@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from './VideoThumb';
+import BadgeEmblem from './BadgeEmblem';
 
 type SharedPost = {
   id: string;
@@ -16,7 +17,7 @@ type SharedPost = {
   caption: string | null;
   cover_url: string | null;
   thumbnail_url: string | null;
-  profiles?: { username: string; display_name: string; avatar_url: string | null } | null;
+  profiles?: { username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null } | null;
 };
 
 // Module-level cache keyed by post id. The chat re-renders constantly while
@@ -37,7 +38,7 @@ export default function SharedPostCard({ postId }: { postId: string }) {
     (async () => {
       const { data } = await supabase
         .from('posts')
-        .select('id, type, media_url, caption, cover_url, thumbnail_url, profiles!posts_user_id_fkey(username, display_name, avatar_url)')
+        .select('id, type, media_url, caption, cover_url, thumbnail_url, profiles!posts_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show)')
         .eq('id', postId)
         .single();
       const value = (data as any) ?? null;
@@ -87,6 +88,7 @@ export default function SharedPostCard({ postId }: { postId: string }) {
             <LinearGradient colors={GRADIENTS.primary} style={styles.authorAvatar} />
           )}
           <Text style={styles.authorName} numberOfLines={1}>@{post.profiles?.username ?? 'laybell'}</Text>
+          <BadgeEmblem profile={post.profiles} size={12} />
         </View>
         {!!post.caption && <Text style={styles.caption} numberOfLines={2}>{post.caption}</Text>}
         <Text style={styles.cta}>View post</Text>
@@ -119,7 +121,7 @@ const styles = StyleSheet.create({
   body: { padding: SPACING.sm, gap: 4 },
   authorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   authorAvatar: { width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.surfaceLight },
-  authorName: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '700' },
+  authorName: { flexShrink: 1, color: COLORS.text, fontSize: 12, fontWeight: '700' },
   caption: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 18 },
   cta: { color: COLORS.primary, fontSize: 12, fontWeight: '700', marginTop: 2 },
 });

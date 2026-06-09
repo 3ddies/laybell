@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { bumpBadge } from '../../lib/badges';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
@@ -18,6 +19,7 @@ import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
 import FollowButton from '../../components/FollowButton';
 import StoryAvatar from '../../components/StoryAvatar';
+import BadgeEmblem from '../../components/BadgeEmblem';
 import { trackVideoProgress } from '../../lib/viewTracker';
 import { timeAgo } from '../../lib/timeAgo';
 import SongAttribution from '../../components/SongAttribution';
@@ -86,7 +88,7 @@ export default function ReelScreen() {
     ]);
     const followingSet = new Set<string>((followingRes.data ?? []).map((f: any) => f.following_id));
 
-    const SELECT = '*, profiles!posts_user_id_fkey (username, display_name, avatar_url), likes(count), comments(count)';
+    const SELECT = '*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show), likes(count), comments(count)';
     const { data } = await supabase
       .from('posts').select(SELECT)
       .eq('is_public', true).eq('type', 'video')
@@ -132,6 +134,7 @@ export default function ReelScreen() {
       await supabase.from('likes').delete().eq('user_id', currentUserId).eq('post_id', item.id);
     } else {
       await supabase.from('likes').insert({ user_id: currentUserId, post_id: item.id });
+      bumpBadge('likes');
       if (item.user_id !== currentUserId) createNotification({ userId: item.user_id, actorId: currentUserId, type: 'like', postId: item.id });
     }
   }
@@ -253,6 +256,7 @@ export default function ReelScreen() {
                 onPressProfile={() => router.push(`/profile/${item.user_id}`)}
               />
               <Text style={styles.authorName} numberOfLines={1}>@{item.profiles?.username}</Text>
+              <BadgeEmblem profile={item.profiles} size={12} />
               <Text style={styles.dot}>·</Text>
               <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
             </TouchableOpacity>

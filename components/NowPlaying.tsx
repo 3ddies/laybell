@@ -9,6 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from '../contexts/AudioContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { supabase } from '../lib/supabase';
+import { bumpBadge } from '../lib/badges';
+import BadgeEmblem from './BadgeEmblem';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { formatCount } from '../lib/format';
 import { createNotification } from '../lib/createNotification';
@@ -78,6 +80,7 @@ export default function NowPlaying() {
   const [userId, setUserId] = useState<string | null>(null);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [ownerName, setOwnerName] = useState<string | undefined>();
+  const [ownerBadge, setOwnerBadge] = useState<{ badge_tier?: string | null; badge_show?: boolean | null } | null>(null);
   const [streams, setStreams] = useState(0);
   const [saves, setSaves] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
@@ -112,7 +115,7 @@ export default function NowPlaying() {
       if (cancelled) return;
       setUserId(user?.id ?? null);
       const [postRes, likesRes, saveRes] = await Promise.all([
-        supabase.from('posts').select('stream_count, save_count, user_id, profiles!posts_user_id_fkey(username, display_name)').eq('id', pid).single(),
+        supabase.from('posts').select('stream_count, save_count, user_id, profiles!posts_user_id_fkey(username, display_name, badge_tier, badge_show)').eq('id', pid).single(),
         supabase.from('likes').select('user_id').eq('post_id', pid),
         user ? supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', pid).maybeSingle() : Promise.resolve({ data: null }),
       ]);
@@ -123,6 +126,7 @@ export default function NowPlaying() {
         setSaves(d.save_count || 0);
         setOwnerId(d.user_id);
         setOwnerName(d.profiles?.username);
+        setOwnerBadge(d.profiles ?? null);
       }
       if (likesRes.data) {
         setLikeCount(likesRes.data.length);
@@ -159,6 +163,7 @@ export default function NowPlaying() {
       await supabase.from('likes').delete().eq('user_id', userId).eq('post_id', pid);
     } else {
       await supabase.from('likes').insert({ user_id: userId, post_id: pid });
+      bumpBadge('likes');
       if (ownerId && ownerId !== userId) createNotification({ userId: ownerId, actorId: userId, type: 'like', postId: pid });
     }
   }
@@ -229,9 +234,12 @@ export default function NowPlaying() {
                 <View style={styles.meta}>
                   <Text style={styles.title} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
                   <TouchableOpacity disabled={!ownerId} onPress={goProfile}>
-                    <Text style={styles.artist} numberOfLines={1}>
-                      {currentTrack.artist || (ownerName ? `@${ownerName}` : '')}
-                    </Text>
+                    <View style={styles.artistRow}>
+                      <Text style={styles.artist} numberOfLines={1}>
+                        {currentTrack.artist || (ownerName ? `@${ownerName}` : '')}
+                      </Text>
+                      <BadgeEmblem profile={ownerBadge} size={13} />
+                    </View>
                   </TouchableOpacity>
                 </View>
 
@@ -283,6 +291,7 @@ const styles = StyleSheet.create({
 
   meta: { marginTop: SPACING.lg, alignItems: 'center', gap: SPACING.xs },
   title: { color: COLORS.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  artistRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   artist: { color: COLORS.textSecondary, fontSize: 15 },
 
   progressBlock: { marginTop: SPACING.lg },

@@ -9,6 +9,8 @@ export type StoryProfile = {
   username: string;
   display_name: string;
   avatar_url: string | null;
+  badge_tier?: string | null;
+  badge_show?: boolean | null;
 };
 
 export type Story = {
@@ -112,7 +114,7 @@ async function loadGroups(
   const [{ data: profiles }, { data: views }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url')
+      .select('id, username, display_name, avatar_url, badge_tier, badge_show')
       .in('id', distinctAuthors),
     supabase
       .from('story_views')

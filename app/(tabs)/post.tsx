@@ -12,6 +12,7 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { bumpBadge } from '../../lib/badges';
 import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
@@ -362,6 +363,7 @@ export default function PostScreen() {
           : {}),
       });
       if (postError) throw postError;
+      if (isPublic) bumpBadge('posts_created'); // recomputes the Posts badge from the live grid
 
       Alert.alert('Posted! 🎉', 'Your post is now live on Laybell');
       resetAll();

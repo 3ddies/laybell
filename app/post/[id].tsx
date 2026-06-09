@@ -12,8 +12,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { bumpBadge } from '../../lib/badges';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import StoryAvatar from '../../components/StoryAvatar';
+import BadgeEmblem from '../../components/BadgeEmblem';
 import { useAudio } from '../../contexts/AudioContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 import { useIsFocused } from '@react-navigation/native';
@@ -43,7 +45,7 @@ type Post = {
   song_title?: string | null;
   song_artist?: string | null;
   song_artist_id?: string | null;
-  profiles: { username: string; display_name: string; avatar_url: string | null };
+  profiles: { username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 };
 type Comment = {
   id: string; body: string; created_at: string; user_id: string;
@@ -99,7 +101,7 @@ export default function PostDetailScreen() {
     if (user) setCurrentUserId(user.id);
 
     const [postRes, likesRes] = await Promise.all([
-      supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url)').eq('id', id).single(),
+      supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show)').eq('id', id).single(),
       supabase.from('likes').select('user_id').eq('post_id', id),
     ]);
 
@@ -125,6 +127,7 @@ export default function PostDetailScreen() {
       await supabase.from('likes').delete().eq('user_id', currentUserId).eq('post_id', id);
     } else {
       await supabase.from('likes').insert({ user_id: currentUserId, post_id: id });
+      bumpBadge('likes');
       if (post.user_id !== currentUserId) {
         createNotification({ userId: post.user_id, actorId: currentUserId, type: 'like', postId: id });
       }
@@ -151,6 +154,7 @@ export default function PostDetailScreen() {
     if (!error && data) {
       setComments(prev => [...prev, { ...data, profiles: currentUserProfile }]);
       setCommentCount(prev => prev + 1);
+      bumpBadge('comments');
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       if (post.user_id !== currentUserId) {
         createNotification({ userId: post.user_id, actorId: currentUserId, type: 'comment', postId: id });
@@ -211,7 +215,10 @@ export default function PostDetailScreen() {
                 size={40}
               />
               <View style={styles.postHeaderInfo}>
-                <Text style={styles.displayName}>{post.profiles?.display_name}</Text>
+                <View style={styles.postNameRow}>
+                  <Text style={styles.displayName}>{post.profiles?.display_name}</Text>
+                  <BadgeEmblem profile={post.profiles} size={14} />
+                </View>
                 <Text style={styles.username}>@{post.profiles?.username} · {timeAgo(post.created_at)}</Text>
               </View>
               <FollowButton userId={post.user_id} />
@@ -366,6 +373,7 @@ const styles = StyleSheet.create({
   avatar: { width: 40, height: 40, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
   postHeaderInfo: { flex: 1 },
+  postNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   displayName: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   username: { color: COLORS.textTertiary, fontSize: 12, marginTop: 1 },
   typeTag: { width: 28, height: 28, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center' },

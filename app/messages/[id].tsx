@@ -10,6 +10,7 @@ import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { createNotification } from '../../lib/createNotification';
 import { sharedPostId, internalPathFromUrl } from '../../lib/postLinks';
 import SharedPostCard from '../../components/SharedPostCard';
+import BadgeEmblem from '../../components/BadgeEmblem';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 
@@ -49,7 +50,7 @@ export default function ChatScreen() {
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) { setCurrentUserId(user.id); await fetchMessages(user.id); markAsRead(user.id); }
-    const { data: profile } = await supabase.from('profiles').select('username, display_name').eq('id', id).single();
+    const { data: profile } = await supabase.from('profiles').select('username, display_name, badge_tier, badge_show').eq('id', id).single();
     if (profile) setOtherUser(profile);
     setLoading(false);
   }
@@ -138,7 +139,10 @@ export default function ChatScreen() {
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerName}>{otherUser?.display_name}</Text>
+          <View style={styles.headerNameRow}>
+            <Text style={styles.headerName}>{otherUser?.display_name}</Text>
+            <BadgeEmblem profile={otherUser} size={14} />
+          </View>
           <Text style={styles.headerUsername}>@{otherUser?.username}</Text>
         </View>
       </View>
@@ -215,6 +219,7 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: SPACING.sm },
   headerInfo: { flex: 1 },
+  headerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   headerName: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
   headerUsername: { color: COLORS.textSecondary, fontSize: 13 },
 

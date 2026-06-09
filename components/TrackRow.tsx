@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { formatCount } from '../lib/format';
 import HighlightText from './HighlightText';
+import BadgeEmblem from './BadgeEmblem';
+import { type ProfileBadgeFields } from '../lib/badges';
 
 function formatDuration(seconds?: number | null) {
   if (!seconds || seconds <= 0) return null;
@@ -13,11 +15,13 @@ function formatDuration(seconds?: number | null) {
 }
 
 export default function TrackRow({
-  caption, artist, username, duration, streams, cover, avatarUrl,
+  caption, artist, username, duration, streams, cover, avatarUrl, badgeProfile,
   isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, onOptions, hidePlayButton, highlightQuery,
 }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
   cover?: string | null; avatarUrl?: string | null; hidePlayButton?: boolean;
+  // The track owner's badge fields, so their emblem shows next to the handle.
+  badgeProfile?: ProfileBadgeFields | null;
   isPlaying: boolean; onPlay: () => void; onCoverPress?: () => void; onAddToPlaylist?: () => void; onAvatarPress?: () => void;
   // When provided (i.e. the track belongs to the current user), long-pressing the
   // row triggers it — used app-wide for "delete my post".
@@ -49,6 +53,7 @@ export default function TrackRow({
         <HighlightText text={caption || 'Audio Track'} query={highlightQuery} style={styles.caption} highlightStyle={styles.hl} numberOfLines={1} />
         <View style={styles.meta}>
           <HighlightText text={`@${username}`} query={highlightQuery} style={styles.artist} highlightStyle={styles.hl} numberOfLines={1} />
+          <BadgeEmblem profile={badgeProfile} size={11} />
           <Ionicons name="play" size={9} color={COLORS.textTertiary} />
           <Text style={styles.streams}>{formatCount(streams)}</Text>
           {durationLabel && <Text style={styles.artist}>· {durationLabel}</Text>}

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { touchLogin, evaluateBadges, onBadgeTierChange, type Tier } from '../lib/badges';
 
 // Single source of truth for the CURRENT user's own profile (avatar, name, …).
 // Before this existed, every screen fetched `profiles` independently, so changing
@@ -15,6 +16,9 @@ export type CurrentProfile = {
   bio?: string | null;
   avatar_url?: string | null;
   badge_tier?: string | null;
+  badge_show?: boolean | null;
+  profile_theme?: string | null;
+  story_ring_style?: string | null;
   [key: string]: any;
 };
 
@@ -46,6 +50,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     setProfile((data as CurrentProfile) ?? null);
     setLoading(false);
+    // Badges: mark today's login and recompute the emblem. Fire-and-forget so it
+    // never blocks profile load; no-ops if the badges SQL isn't applied yet.
+    touchLogin().then(() => evaluateBadges({ silent: true })).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -55,7 +62,12 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       if (session?.user) refresh();
       else { setProfile(null); setLoading(false); }
     });
-    return () => subscription.unsubscribe();
+    // Keep the in-memory emblem in sync the instant the evaluator changes our tier
+    // (e.g. right after earning a badge), so it updates everywhere without a refetch.
+    const unsubscribeTier = onBadgeTierChange((tier: Tier | null) => {
+      setProfile(prev => (prev ? { ...prev, badge_tier: tier } : prev));
+    });
+    return () => { subscription.unsubscribe(); unsubscribeTier(); };
   }, [refresh]);
 
   // Optimistic local patch — callers use this right after writing to the DB so
