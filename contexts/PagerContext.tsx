@@ -10,3 +10,13 @@ export const PagerContext = createContext<boolean>(false);
 export function usePagerSwiping() {
   return useContext(PagerContext);
 }
+
+// Lets a deep child temporarily turn the tab navigator's swipe off/on — e.g. a
+// horizontal slideshow carousel disables it while you swipe between slides so the
+// gesture doesn't bubble up and change tabs. Default is a no-op (outside the tabs,
+// e.g. the full-screen post viewer, there's no tab swiper to control).
+export const TabSwipeContext = createContext<(enabled: boolean) => void>(() => {});
+
+export function useTabSwipeControl() {
+  return useContext(TabSwipeContext);
+}

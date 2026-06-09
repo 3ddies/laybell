@@ -61,7 +61,7 @@ export default function PostDetailScreen() {
   const { id, post: postParam, index: indexParam } = useLocalSearchParams<{ id: string; post?: string; index?: string }>();
   const initialSlide = indexParam ? (parseInt(indexParam, 10) || 0) : 0;
   const router = useRouter();
-  const { currentTrack, isPlaying, play, stop } = useAudio();
+  const { currentTrack, isPlaying, play, stop, videoMuted, toggleVideoMuted } = useAudio();
   const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
   const isFocused = useIsFocused();
   const flatListRef = useRef<any>(null);
@@ -265,16 +265,14 @@ export default function PostDetailScreen() {
                   slides={parseSlides(post)}
                   width={SCREEN_W}
                   aspectRatio={aspectToNumber(post.aspect_ratio, 1)}
-                  variant="full"
                   active={isFocused}
-                  muted={!!post.song_id}
+                  hasSong={!!post.song_id}
+                  videoMuted={videoMuted}
+                  onToggleVideoMute={toggleVideoMuted}
+                  songMuted={songMuted}
+                  onToggleSong={toggleSongMuted}
                   initialIndex={initialSlide}
                 />
-                {!!post.song_id && (
-                  <TouchableOpacity style={styles.songMuteBtn} onPress={toggleSongMuted}>
-                    <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
-                  </TouchableOpacity>
-                )}
                 {!!post.song_id && (
                   <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={dismiss} />
                 )}

@@ -6,24 +6,32 @@ import {
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, RADIUS } from '../constants/theme';
-import { slideCover, type Slide } from '../lib/slideshow';
+import { useTabSwipeControl } from '../contexts/PagerContext';
+import { type Slide } from '../lib/slideshow';
 
 // Swipeable carousel for slideshow posts. A horizontal paging ScrollView (NOT a
 // nested PagerView — those have a freeze history here). Page counter + dots.
-//   variant 'feed' — image slides inline; video slides show a poster + play badge.
-//                    Any tap calls onOpen(index) to open the full-screen viewer.
-//   variant 'full' — images shown; the currently-visible video slide autoplays
-//                    (gated by `active` so it only plays on the focused screen).
+//
+// - The current video slide autoplays + loops while `active` (the feed item is
+//   visible, or the full viewer is focused); other slides show their poster.
+// - Audio button (top-left) appears when the current slide is a video OR the post
+//   has an attached song. It toggles the SONG if one is attached (videos stay
+//   muted under it), otherwise the videos' own audio — mirroring single posts.
+// - While you swipe between slides it disables the tab navigator's swipe so the
+//   gesture doesn't change tabs (no-op outside the tabs).
 
 type Props = {
   slides: Slide[];
   width: number;
   aspectRatio: number; // container width / height
-  variant: 'feed' | 'full';
-  active?: boolean; // full: gate video autoplay to the focused screen
-  muted?: boolean;
+  active?: boolean; // gate video autoplay (feed item visible / viewer focused)
+  hasSong?: boolean; // post has an attached song → videos muted, button toggles the song
+  videoMuted?: boolean; // global video-audio mute (used when no song)
+  onToggleVideoMute?: () => void;
+  songMuted?: boolean;
+  onToggleSong?: () => void;
   initialIndex?: number;
-  onOpen?: (index: number) => void; // feed: tap a slide → open the full viewer there
+  onOpen?: (index: number) => void; // tap a slide → open the full viewer there (feed)
 };
 
 function SlideVideo({
@@ -44,17 +52,26 @@ function SlideVideo({
 }
 
 export default function SlideshowCarousel({
-  slides, width, aspectRatio, variant, active = true, muted = false, initialIndex = 0, onOpen,
+  slides, width, aspectRatio, active = true, hasSong = false,
+  videoMuted = false, onToggleVideoMute, songMuted = false, onToggleSong, initialIndex = 0, onOpen,
 }: Props) {
   const height = Math.round(width / (aspectRatio || 1));
   const [index, setIndex] = useState(initialIndex);
   const scrollRef = useRef<ScrollView>(null);
   const didInit = useRef(false);
+  const setTabSwipe = useTabSwipeControl();
 
   function onMomentumEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const i = Math.round(e.nativeEvent.contentOffset.x / width);
     if (i !== index) setIndex(i);
+    setTabSwipe(true);
   }
+
+  const current = Math.min(Math.max(index, 0), slides.length - 1);
+  const currentIsVideo = slides[current]?.type === 'video';
+  const showAudio = hasSong || currentIsVideo;
+  const audioMuted = hasSong ? songMuted : videoMuted;
+  const onAudio = hasSong ? onToggleSong : onToggleVideoMute;
 
   return (
     <View style={{ width, height }}>
@@ -65,6 +82,12 @@ export default function SlideshowCarousel({
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onMomentumEnd}
         contentOffset={{ x: initialIndex * width, y: 0 }}
+        // Hold the tab swipe off while a slide swipe is in progress (re-enabled on end).
+        onTouchStart={() => setTabSwipe(false)}
+        onScrollBeginDrag={() => setTabSwipe(false)}
+        onTouchEnd={() => setTabSwipe(true)}
+        onTouchCancel={() => setTabSwipe(true)}
+        onScrollEndDrag={() => setTabSwipe(true)}
         // Android ignores contentOffset before layout — jump once we have a frame.
         onLayout={() => {
           if (!didInit.current && initialIndex > 0) {
@@ -75,39 +98,22 @@ export default function SlideshowCarousel({
       >
         {slides.map((s, i) => {
           const isVideo = s.type === 'video';
-
-          if (variant === 'full' && isVideo) {
-            return (
-              <View key={i} style={{ width, height, backgroundColor: '#000' }}>
+          const body = (
+            <View style={{ width, height, backgroundColor: '#000' }}>
+              {isVideo ? (
                 <SlideVideo
                   uri={s.url}
                   poster={s.thumbnail_url}
                   width={width}
                   height={height}
-                  play={active && i === index}
-                  muted={muted}
+                  play={!!active && i === current}
+                  muted={hasSong ? true : videoMuted}
                 />
-              </View>
-            );
-          }
-
-          const body = (
-            <View style={{ width, height, backgroundColor: '#000' }}>
-              <Image
-                source={{ uri: isVideo ? slideCover(s) : s.url }}
-                style={{ width, height }}
-                resizeMode={isVideo ? 'contain' : 'cover'}
-              />
-              {isVideo && (
-                <View style={styles.playBadge} pointerEvents="none">
-                  <View style={styles.playCircle}>
-                    <Ionicons name="play" size={22} color="#fff" />
-                  </View>
-                </View>
+              ) : (
+                <Image source={{ uri: s.url }} style={{ width, height }} resizeMode="cover" />
               )}
             </View>
           );
-
           return onOpen ? (
             <TouchableOpacity key={i} activeOpacity={0.95} onPress={() => onOpen(i)}>
               {body}
@@ -118,14 +124,20 @@ export default function SlideshowCarousel({
         })}
       </ScrollView>
 
+      {showAudio && onAudio && (
+        <TouchableOpacity style={styles.audioBtn} onPress={onAudio} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons name={audioMuted ? 'volume-mute' : 'volume-high'} size={16} color="#fff" />
+        </TouchableOpacity>
+      )}
+
       {slides.length > 1 && (
         <>
           <View style={styles.counter} pointerEvents="none">
-            <Text style={styles.counterText}>{Math.min(index, slides.length - 1) + 1}/{slides.length}</Text>
+            <Text style={styles.counterText}>{current + 1}/{slides.length}</Text>
           </View>
           <View style={styles.dots} pointerEvents="none">
             {slides.map((_, i) => (
-              <View key={i} style={[styles.dot, i === index && styles.dotActive]} />
+              <View key={i} style={[styles.dot, i === current && styles.dotActive]} />
             ))}
           </View>
         </>
@@ -141,14 +153,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9, paddingVertical: 3,
   },
   counterText: { color: '#fff', fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  playBadge: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  playCircle: {
-    width: 54, height: 54, borderRadius: 27,
-    backgroundColor: 'rgba(0,0,0,0.45)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.8)',
-    alignItems: 'center', justifyContent: 'center', paddingLeft: 3,
+  audioBtn: {
+    position: 'absolute', top: 8, left: 8,
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
   },
   dots: {
     position: 'absolute', bottom: 8, left: 0, right: 0,

@@ -13,7 +13,7 @@ import {
 } from '@react-navigation/material-top-tabs';
 import type { ParamListBase, TabNavigationState } from '@react-navigation/native';
 import { COLORS, GRADIENTS, SHADOWS } from '../../constants/theme';
-import { PagerContext } from '../../contexts/PagerContext';
+import { PagerContext, TabSwipeContext } from '../../contexts/PagerContext';
 
 // Land on Home, not the story camera, even though the camera is declared first
 // (so it sits to the LEFT of Home in the pager — swipe right from Home to reach it).
@@ -120,10 +120,14 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
 
 export default function TabLayout() {
   const [swiping, setSwiping] = useState(false);
+  // Slideshow carousels flip this off while you swipe between slides so the swipe
+  // doesn't bubble up and change tabs (re-enabled when the gesture ends).
+  const [swipeEnabled, setSwipeEnabled] = useState(true);
   const insets = useSafeAreaInsets();
 
   return (
     <PagerContext.Provider value={swiping}>
+     <TabSwipeContext.Provider value={setSwipeEnabled}>
       <MaterialTopTabs
         initialRouteName="index"
         tabBarPosition="bottom"
@@ -131,7 +135,7 @@ export default function TabLayout() {
         // Bar is an overlay (pager is full-screen), so inset each tab's content by
         // the bar height via sceneStyle. The camera screen uses an absolute-fill
         // root, which ignores this padding and stays edge-to-edge.
-        screenOptions={{ swipeEnabled: true, sceneStyle: { paddingBottom: 68 + insets.bottom } }}
+        screenOptions={{ swipeEnabled, sceneStyle: { paddingBottom: 68 + insets.bottom } }}
         screenListeners={{
           // Pause mid-swipe work (video autoplay, caption focus) until the page settles.
           swipeStart: () => { setSwiping(true); Keyboard.dismiss(); },
@@ -152,6 +156,7 @@ export default function TabLayout() {
             "go to Music" dismiss page), so the outer swipe stays off here. */}
         <MaterialTopTabs.Screen name="profile" options={{ swipeEnabled: false }} />
       </MaterialTopTabs>
+     </TabSwipeContext.Provider>
     </PagerContext.Provider>
   );
 }

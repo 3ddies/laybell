@@ -166,7 +166,12 @@ const PostCard = memo(function PostCard({
             slides={parseSlides(item)}
             width={SCREEN_W}
             aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
-            variant="feed"
+            active={shouldPlayVideo}
+            hasSong={!!item.song_id}
+            videoMuted={videoMuted}
+            onToggleVideoMute={onToggleMuted}
+            songMuted={songMuted}
+            onToggleSong={onToggleSongMute}
             onOpen={(idx) => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }, idx))}
           />
           {!!item.song_id && (
@@ -300,7 +305,12 @@ export default function HomeScreen() {
   // FlatList requires these references to be stable across renders.
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
-    const firstVideo = viewableItems.find(v => v.item?.type === 'video');
+    // A video post, or a slideshow that contains at least one video slide, becomes
+    // the "playing" item so its current video slide can autoplay.
+    const firstVideo = viewableItems.find(v =>
+      v.item?.type === 'video' ||
+      (isSlideshow(v.item?.type) && Array.isArray(v.item?.slides) && v.item.slides.some((s: any) => s?.type === 'video'))
+    );
     setVisibleVideoId(firstVideo ? firstVideo.item.id : null);
     // The most-visible post that carries an attached song — its track plays ambiently.
     const firstMusic = viewableItems.find(v => v.item?.song_id);
