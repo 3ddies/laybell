@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState, useRef } from 'react';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useAudio } from '../../contexts/AudioContext';
+import { useAudioActions } from '../../contexts/AudioContext';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import VideoThumb from '../../components/VideoThumb';
@@ -37,7 +37,7 @@ const TAB_KEYS = TABS.map(t => t.key);
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { playQueue } = useAudio();
+  const { playQueue } = useAudioActions();
   const { show: showOptions } = usePostOptions();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });

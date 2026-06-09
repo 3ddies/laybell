@@ -52,6 +52,26 @@ type AudioContextType = {
 
 const AudioContext = createContext<AudioContextType | null>(null);
 
+// A SEPARATE context exposing ONLY playback actions, with an identity that never
+// changes. Screens that merely TRIGGER playback (e.g. a profile grid) subscribe
+// here instead of useAudio(), so the ~4x/sec position-state updates don't
+// re-render them — re-rendering a screen while its PagerView mounts deadlocked
+// the UI thread (opening a profile from the player froze the app).
+type AudioActions = {
+  play: (track: Track) => void;
+  playQueue: (tracks: Track[], startIndex?: number) => void;
+  pause: () => void;
+  resume: () => void;
+  stop: () => void;
+  seekTo: (ms: number) => void;
+  expand: () => void;
+  collapse: () => void;
+  next: () => void;
+  previous: () => void;
+  toggleVideoMuted: () => void;
+};
+const AudioActionsContext = createContext<AudioActions | null>(null);
+
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -364,15 +384,46 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Stable action wrappers: identity is created once, but each call dispatches to
+  // the latest implementation via a ref — so consumers get current behavior without
+  // re-rendering when playback state ticks.
+  const latestActions = { play, playQueue, pause, resume, stop, seekTo, expand, collapse, next, previous, toggleVideoMuted };
+  const latestActionsRef = useRef(latestActions);
+  latestActionsRef.current = latestActions;
+  const stableActions = useRef<AudioActions>({
+    play: (t) => { latestActionsRef.current.play(t); },
+    playQueue: (t, i) => { latestActionsRef.current.playQueue(t, i); },
+    pause: () => { latestActionsRef.current.pause(); },
+    resume: () => { latestActionsRef.current.resume(); },
+    stop: () => { latestActionsRef.current.stop(); },
+    seekTo: (ms) => { latestActionsRef.current.seekTo(ms); },
+    expand: () => { latestActionsRef.current.expand(); },
+    collapse: () => { latestActionsRef.current.collapse(); },
+    next: () => { latestActionsRef.current.next(); },
+    previous: () => { latestActionsRef.current.previous(); },
+    toggleVideoMuted: () => { latestActionsRef.current.toggleVideoMuted(); },
+  }).current;
+
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted }}>
-      {children}
-    </AudioContext.Provider>
+    <AudioActionsContext.Provider value={stableActions}>
+      <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted }}>
+        {children}
+      </AudioContext.Provider>
+    </AudioActionsContext.Provider>
   );
 }
 
 export function useAudio() {
   const ctx = useContext(AudioContext);
   if (!ctx) throw new Error('useAudio must be used within AudioProvider');
+  return ctx;
+}
+
+// Playback actions only, with a stable identity — use this (instead of useAudio)
+// in screens that just trigger playback so they don't re-render on every position
+// tick. Critical for screens that mount a PagerView (it deadlocks under churn).
+export function useAudioActions() {
+  const ctx = useContext(AudioActionsContext);
+  if (!ctx) throw new Error('useAudioActions must be used within AudioProvider');
   return ctx;
 }
