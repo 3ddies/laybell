@@ -3,7 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useAudio } from '../../contexts/AudioContext';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Image, RefreshControl,
+  ScrollView, ActivityIndicator, Image, RefreshControl, Linking,
 } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +16,7 @@ import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { resolveRingColors, resolveBannerColors, rawTier } from '../../lib/badges';
+import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
 import { isAudioPost } from '../../lib/genres';
 import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
@@ -24,6 +25,7 @@ import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 type Profile = {
   id: string; username: string; display_name: string;
   bio: string | null; avatar_url: string | null; badge_tier: string; created_at: string;
+  link?: string | null;
 };
 type Stats = { followers: number; following: number; posts: number };
 
@@ -279,6 +281,12 @@ export default function ProfileScreen() {
           ? <Text style={styles.bio}>{profile.bio}</Text>
           : <Text style={styles.bioEmpty}>No bio yet</Text>
         }
+        {badgeProfile?.link ? (
+          <TouchableOpacity style={styles.linkRow} onPress={() => Linking.openURL(normalizeUrl(badgeProfile.link!)).catch(() => {})}>
+            <Ionicons name="link-outline" size={14} color={COLORS.primary} />
+            <Text style={styles.linkText} numberOfLines={1}>{displayUrl(badgeProfile.link)}</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* Action buttons */}
@@ -384,6 +392,8 @@ const styles = StyleSheet.create({
   displayName: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
   bio: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
   bioEmpty: { color: COLORS.textTertiary, fontSize: 14, fontStyle: 'italic' },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  linkText: { color: COLORS.primary, fontSize: 13, fontWeight: '600' },
 
   actionButtons: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: SPACING.sm },
   editButton: {

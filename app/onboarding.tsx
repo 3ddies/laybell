@@ -1,13 +1,14 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, FlatList, Image, ActivityIndicator,
-  Dimensions,
+  Dimensions, TextInput,
 } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { GENDER_OPTIONS, MIN_AGE } from '../lib/profileOptions';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -34,6 +35,9 @@ const GENRES = [
 export default function OnboardingScreen() {
   const router = useRouter();
   const [step, setStep] = useState(0);
+  const [gender, setGender] = useState<string | null>(null);
+  const [age, setAge] = useState('');
+  const [savingAbout, setSavingAbout] = useState(false);
   const [selectedGenres, setSelectedGenres] = useState<Set<string>>(new Set());
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [followed, setFollowed] = useState<Set<string>>(new Set());
@@ -46,6 +50,18 @@ export default function OnboardingScreen() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }
+
+  async function handleAboutContinue() {
+    const ageNum = parseInt(age, 10);
+    if (!gender || isNaN(ageNum) || ageNum < MIN_AGE || ageNum > 120) return;
+    setSavingAbout(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    // Save privately on the profile (no-ops gracefully if the columns aren't
+    // migrated yet — the user still proceeds through onboarding).
+    if (user) await supabase.from('profiles').update({ gender, age: ageNum }).eq('id', user.id);
+    setSavingAbout(false);
+    setStep(2);
   }
 
   async function handleGenresContinue() {
@@ -81,7 +97,7 @@ export default function OnboardingScreen() {
         if (genreUsers && genreUsers.length >= 3) {
           setSuggestions(genreUsers);
           setLoading(false);
-          setStep(2);
+          setStep(3);
           return;
         }
       }
@@ -91,7 +107,7 @@ export default function OnboardingScreen() {
     const { data } = await query;
     setSuggestions(data ?? []);
     setLoading(false);
-    setStep(2);
+    setStep(3);
   }
 
   async function handleFollow(userId: string) {
@@ -162,14 +178,82 @@ export default function OnboardingScreen() {
     );
   }
 
-  // Step 1: Genre selection
+  // Step 1: About you (gender + age) — both required
   if (step === 1) {
+    const ageNum = parseInt(age, 10);
+    const valid = !!gender && !isNaN(ageNum) && ageNum >= MIN_AGE && ageNum <= 120;
     return (
       <View style={styles.container}>
         <View style={styles.stepHeader}>
           <View style={styles.progressDots}>
             {[0, 1, 2].map(i => (
               <View key={i} style={[styles.dot, i === 0 && styles.dotActive]} />
+            ))}
+          </View>
+          <Text style={styles.stepTitle}>A bit about you</Text>
+          <Text style={styles.stepSub}>This helps tailor Laybell. Your gender and age stay private.</Text>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.aboutContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <Text style={styles.aboutLabel}>Gender</Text>
+          <View style={styles.genderGrid}>
+            {GENDER_OPTIONS.map(opt => {
+              const active = gender === opt;
+              return (
+                <TouchableOpacity
+                  key={opt}
+                  style={[styles.genderChip, active && styles.genderChipActive]}
+                  onPress={() => setGender(opt)}
+                >
+                  <Text style={[styles.genderText, active && styles.genderTextActive]}>{opt}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.aboutLabel, { marginTop: SPACING.lg }]}>Age</Text>
+          <TextInput
+            style={styles.ageInput}
+            value={age}
+            onChangeText={(t) => setAge(t.replace(/[^0-9]/g, '').slice(0, 3))}
+            placeholder="Your age"
+            placeholderTextColor={COLORS.textTertiary}
+            keyboardType="number-pad"
+            maxLength={3}
+          />
+          <Text style={styles.aboutHint}>You must be at least {MIN_AGE} to use Laybell.</Text>
+        </ScrollView>
+
+        <View style={styles.bottomBar}>
+          <TouchableOpacity
+            style={[styles.primaryBtn, !valid && styles.btnDisabled]}
+            onPress={handleAboutContinue}
+            disabled={!valid || savingAbout}
+          >
+            <LinearGradient colors={valid ? GRADIENTS.primary : ['#333', '#222']} style={styles.primaryBtnInner}>
+              {savingAbout ? (
+                <ActivityIndicator color={COLORS.text} />
+              ) : (
+                <>
+                  <Text style={styles.primaryBtnText}>Continue</Text>
+                  <Ionicons name="arrow-forward" size={20} color={COLORS.text} />
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Step 2: Genre selection
+  if (step === 2) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.stepHeader}>
+          <View style={styles.progressDots}>
+            {[0, 1, 2].map(i => (
+              <View key={i} style={[styles.dot, i === 1 && styles.dotActive]} />
             ))}
           </View>
           <Text style={styles.stepTitle}>What's your sound?</Text>
@@ -224,7 +308,7 @@ export default function OnboardingScreen() {
               )}
             </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setSuggestions([]); setStep(2); }}>
+          <TouchableOpacity onPress={() => { setSuggestions([]); setStep(3); }}>
             <Text style={styles.skipText}>Skip for now</Text>
           </TouchableOpacity>
         </View>
@@ -238,7 +322,7 @@ export default function OnboardingScreen() {
       <View style={styles.stepHeader}>
         <View style={styles.progressDots}>
           {[0, 1, 2].map(i => (
-            <View key={i} style={[styles.dot, i === 1 && styles.dotActive]} />
+            <View key={i} style={[styles.dot, i === 2 && styles.dotActive]} />
           ))}
         </View>
         <Text style={styles.stepTitle}>Follow some artists</Text>
@@ -341,6 +425,25 @@ const styles = StyleSheet.create({
   dotActive: { width: 24, backgroundColor: COLORS.primary },
   stepTitle: { color: COLORS.text, fontSize: 28, fontWeight: '800' },
   stepSub: { color: COLORS.textSecondary, fontSize: 15, lineHeight: 22 },
+
+  // About you (gender + age)
+  aboutContent: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.md, paddingBottom: 160 },
+  aboutLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SPACING.sm },
+  genderGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  genderChip: {
+    paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceLight,
+  },
+  genderChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '1A' },
+  genderText: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '500' },
+  genderTextActive: { color: COLORS.primaryLight, fontWeight: '700' },
+  ageInput: {
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
+    color: COLORS.text, fontSize: 15,
+  },
+  aboutHint: { color: COLORS.textTertiary, fontSize: 12, marginTop: SPACING.sm },
 
   // Genre grid
   genreGrid: {

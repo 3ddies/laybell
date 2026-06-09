@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
+import { GENDER_OPTIONS } from '../lib/profileOptions';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 
 export default function EditProfileScreen() {
@@ -17,6 +18,8 @@ export default function EditProfileScreen() {
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
+  const [link, setLink] = useState('');
+  const [gender, setGender] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -29,8 +32,12 @@ export default function EditProfileScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setUserId(user.id);
-    const { data } = await supabase.from('profiles').select('display_name, username, bio, avatar_url').eq('id', user.id).single();
-    if (data) { setDisplayName(data.display_name || ''); setUsername(data.username || ''); setBio(data.bio || ''); setAvatarUrl(data.avatar_url || null); }
+    // select('*') so pre-migration installs (no link/gender columns) don't error.
+    const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    if (data) {
+      setDisplayName(data.display_name || ''); setUsername(data.username || ''); setBio(data.bio || '');
+      setAvatarUrl(data.avatar_url || null); setLink(data.link || ''); setGender(data.gender || null);
+    }
     setLoading(false);
   }
 
@@ -63,13 +70,17 @@ export default function EditProfileScreen() {
     if (!displayName.trim() || !username.trim()) { Alert.alert('Error', 'Display name and username are required'); return; }
     if (!/^[a-zA-Z0-9_]+$/.test(username)) { Alert.alert('Error', 'Username can only contain letters, numbers, and underscores'); return; }
     setSaving(true);
-    const trimmed = { display_name: displayName.trim(), username: username.trim().toLowerCase(), bio: bio.trim() };
-    const { error } = await supabase.from('profiles').update(trimmed).eq('id', userId);
+    const core = { display_name: displayName.trim(), username: username.trim().toLowerCase(), bio: bio.trim() };
+    const { error } = await supabase.from('profiles').update(core).eq('id', userId);
     if (error) {
       Alert.alert('Error', error.message.includes('unique') ? 'Username is already taken' : error.message);
       setSaving(false); return;
     }
-    update(trimmed); // keep the global profile in sync
+    // Link + gender go in a separate update so a pre-migration column gap can't
+    // fail the whole save — best-effort, persists once profile_fields.sql is applied.
+    const extra = { link: link.trim() || null, gender: gender || null };
+    const { error: extraErr } = await supabase.from('profiles').update(extra).eq('id', userId);
+    update({ ...core, ...(extraErr ? {} : extra) }); // keep the global profile in sync
     Alert.alert('Saved!', 'Your profile has been updated', [{ text: 'OK', onPress: () => router.back() }]);
     setSaving(false);
   }
@@ -157,6 +168,58 @@ export default function EditProfileScreen() {
           />
           <Text style={styles.charCount}>{bio.length}/150</Text>
         </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Link</Text>
+          <TextInput
+            style={styles.input}
+            value={link}
+            onChangeText={setLink}
+            placeholder="yourwebsite.com"
+            placeholderTextColor={COLORS.textTertiary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
+          <Text style={styles.fieldHint}>Shown as a tappable link under your bio.</Text>
+        </View>
+
+        {/* Badges + Page Layout — square buttons side by side, above Gender */}
+        <View style={styles.squareRow}>
+          <TouchableOpacity style={styles.squareBtn} onPress={() => router.push('/badges')}>
+            <View style={styles.squareIcon}><Ionicons name="ribbon-outline" size={26} color={COLORS.primary} /></View>
+            <Text style={styles.squareLabel}>Badges</Text>
+            <Text style={styles.squareSub}>Emblem & rewards</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.squareBtn}
+            onPress={() => Alert.alert('Page Layout', 'Custom page layouts are coming soon — unlock different profile configurations as you earn higher badge tiers.')}
+          >
+            <View style={styles.squareIcon}><Ionicons name="grid-outline" size={26} color={COLORS.primary} /></View>
+            <Text style={styles.squareLabel}>Page Layout</Text>
+            <Text style={styles.squareSub}>Coming soon</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Gender</Text>
+          <View style={styles.genderRow}>
+            {GENDER_OPTIONS.map(opt => {
+              const active = gender === opt;
+              return (
+                <TouchableOpacity
+                  key={opt}
+                  style={[styles.genderChip, active && styles.genderChipActive]}
+                  onPress={() => setGender(active ? null : opt)}
+                >
+                  <Text style={[styles.genderChipText, active && styles.genderChipTextActive]}>{opt}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.fieldHint}>Private — never shown on your public profile.</Text>
+        </View>
       </View>
     </ScrollView>
   );
@@ -208,8 +271,36 @@ const styles = StyleSheet.create({
   usernameInput: { flex: 1, paddingVertical: SPACING.md, color: COLORS.text, fontSize: 15 },
   bioInput: {
     backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md, paddingBottom: SPACING.lg,
     color: COLORS.text, fontSize: 15, minHeight: 100, textAlignVertical: 'top',
   },
-  charCount: { color: COLORS.textTertiary, fontSize: 12, alignSelf: 'flex-end' },
+  // Floated into the input's corner so it doesn't add a line of flow height —
+  // keeps Bio↔Link spacing even with Display Name↔Username.
+  charCount: { position: 'absolute', bottom: 8, right: 12, color: COLORS.textTertiary, fontSize: 12 },
+  fieldHint: { color: COLORS.textTertiary, fontSize: 12 },
+
+  genderRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  genderChip: {
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceLight,
+  },
+  genderChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '1A' },
+  genderChipText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+  genderChipTextActive: { color: COLORS.primaryLight },
+
+  squareRow: { flexDirection: 'row', gap: SPACING.md },
+  squareBtn: {
+    flex: 1, aspectRatio: 1,
+    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, padding: SPACING.md,
+  },
+  squareIcon: {
+    width: 52, height: 52, borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center',
+  },
+  squareLabel: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
+  squareSub: { color: COLORS.textSecondary, fontSize: 12, textAlign: 'center' },
 });

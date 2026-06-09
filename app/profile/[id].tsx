@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Image, RefreshControl,
+  ScrollView, ActivityIndicator, Image, RefreshControl, Linking,
 } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,12 +15,14 @@ import ThumbStat from '../../components/ThumbStat';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { resolveRingColors, resolveBannerColors, rawTier } from '../../lib/badges';
+import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 
 type Profile = {
   id: string; username: string; display_name: string;
   bio: string | null; avatar_url: string | null; badge_tier: string;
+  link?: string | null;
 };
 type Stats = { followers: number; following: number; posts: number };
 
@@ -255,6 +257,12 @@ export default function PublicProfileScreen() {
           ? <Text style={styles.bio}>{profile.bio}</Text>
           : <Text style={styles.bioEmpty}>No bio yet</Text>
         }
+        {profile?.link ? (
+          <TouchableOpacity style={styles.linkRow} onPress={() => Linking.openURL(normalizeUrl(profile.link!)).catch(() => {})}>
+            <Ionicons name="link-outline" size={14} color={COLORS.primary} />
+            <Text style={styles.linkText} numberOfLines={1}>{displayUrl(profile.link)}</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* Follow / Message */}
@@ -365,6 +373,8 @@ const styles = StyleSheet.create({
   displayName: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
   bio: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
   bioEmpty: { color: COLORS.textTertiary, fontSize: 14, fontStyle: 'italic' },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  linkText: { color: COLORS.primary, fontSize: 13, fontWeight: '600' },
 
   actionButtons: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: SPACING.sm },
   followButton: { flex: 1, backgroundColor: COLORS.primary, borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2, alignItems: 'center' },

@@ -19,6 +19,9 @@ export type CurrentProfile = {
   badge_show?: boolean | null;
   profile_theme?: string | null;
   story_ring_style?: string | null;
+  link?: string | null;
+  gender?: string | null;
+  age?: number | null;
   [key: string]: any;
 };
 
