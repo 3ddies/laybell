@@ -152,7 +152,22 @@ export default function NowPlaying() {
   if (!render || !currentTrack) return null;
   const pid = currentTrack.id;
 
-  const goProfile = () => { if (ownerId) { collapse(); router.push(`/profile/${ownerId}`); } };
+  // Navigating AWAY from the player tears it down instantly rather than running the
+  // slide-down animation: mounting the destination screen's PagerView (e.g. a
+  // profile) during that native-driver animation deadlocked/froze the app. The
+  // animated collapse stays for swipe-down / chevron dismiss.
+  const closeInstant = () => {
+    translateY.setValue(SCREEN_H);
+    setRender(false);
+    collapse();
+  };
+
+  const goProfile = () => {
+    if (!ownerId) return;
+    const target = ownerId;
+    closeInstant();
+    router.push(`/profile/${target}`);
+  };
 
   async function handleLike() {
     if (!userId) return;
@@ -199,11 +214,11 @@ export default function NowPlaying() {
                 authorId: ownerId ?? undefined,
                 authorName: ownerName,
                 mediaType: 'audio',
-                onEdit: () => { collapse(); router.push(`/edit-post/${pid}`); },
+                onEdit: () => { closeInstant(); router.push(`/edit-post/${pid}`); },
                 onDeleted: () => collapse(),
                 onArchived: () => collapse(),
                 onBlocked: () => collapse(),
-                onNavigate: collapse,
+                onNavigate: closeInstant,
                 onLikeChanged: (l) => { setIsLiked(l); setLikeCount(c => Math.max(0, c + (l ? 1 : -1))); },
                 onSaveChanged: (s) => { setIsSaved(s); setSaves(c => Math.max(0, c + (s ? 1 : -1))); },
               })}
@@ -218,7 +233,7 @@ export default function NowPlaying() {
             postId={pid}
             ownerId={ownerId}
             contentPadding={SPACING.xl}
-            onNavigate={collapse}
+            onNavigate={closeInstant}
             ListHeaderComponent={
               <>
                 <View style={styles.artWrap}>
