@@ -11,8 +11,11 @@ import { COLORS, SPACING, RADIUS } from '../constants/theme';
 
 // Bottom-right "this post uses <song>" credit on image/video posts and stories.
 // Artist (bold) → artist profile · song name → plays the track · ⋮ → the song's
-// 3-dot menu. The host (e.g. story viewer) can pass onNavigate (close itself
-// before navigating) and onPauseHost (pause while the menu is open).
+// 3-dot menu. The host (e.g. post/reel/story viewer) can pass onNavigate to
+// dismiss itself when the SONG is played (so the full player, which renders
+// behind the host, surfaces in front). It is intentionally NOT used when opening
+// the artist profile — that just pushes on top. onPauseHost pauses while the menu
+// is open.
 export default function SongAttribution({
   songId, title, artist, artistId, style, inline = false, onNavigate, onPauseHost,
 }: {
@@ -35,7 +38,10 @@ export default function SongAttribution({
 
   function openArtist() {
     if (!artistId) return;
-    onNavigate?.();
+    // NOTE: do NOT call onNavigate() here. The profile is a normal screen that
+    // pushes on top of the host (post/reel/story) — the host doesn't need to close.
+    // onNavigate dismisses the host via an animated router.back() that fires AFTER
+    // a delay, so it would pop the profile we just pushed and freeze the app.
     router.push(`/profile/${artistId}`);
   }
 
