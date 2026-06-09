@@ -321,8 +321,10 @@ export default function PostScreen() {
         if (crop && crop.width > 1 && crop.height > 1) {
           const out = await manipulateAsync(
             media!.uri,
-            [{ crop }, { resize: { width: Math.min(1080, crop.width) } }],
-            { compress: 0.85, format: SaveFormat.JPEG },
+            // Keep the crop at up to 1440px wide (sharp on high-DPI screens, never
+            // upscaling past the source) at high JPEG quality.
+            [{ crop }, { resize: { width: Math.min(1440, crop.width) } }],
+            { compress: 0.92, format: SaveFormat.JPEG },
           );
           outUri = out.uri;
         }

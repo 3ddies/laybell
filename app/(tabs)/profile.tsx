@@ -90,7 +90,9 @@ export default function ProfileScreen() {
 
     if (profileRes.data) setProfile(profileRes.data);
     setStats({ followers: followersRes.count || 0, following: followingRes.count || 0, posts: postsCountRes.count || 0 });
-    if (postsRes.data) setUserPosts(postsRes.data);
+    // Archived posts (archived_at set) are hidden from the grid but kept in the
+    // Archive screen. archived_at is absent pre-migration → harmless no-op.
+    if (postsRes.data) setUserPosts(postsRes.data.filter((p: any) => !p.archived_at));
     if (likedRes.data) setLikedPosts(likedRes.data.map((l: any) => l.posts).filter(Boolean));
     if (savedRes.data) setSavedPosts(savedRes.data.map((s: any) => s.posts).filter(Boolean));
     // `reposts` may not be migrated yet — degrade to an empty tab if so.
@@ -151,8 +153,13 @@ export default function ProfileScreen() {
                 ? () => showOptions({
                     postId: post.id,
                     isOwn: true,
+                    mediaType: post.type,
                     onEdit: () => router.push(`/edit-post/${post.id}`),
                     onDeleted: () => {
+                      setUserPosts(prev => prev.filter(p => p.id !== post.id));
+                      setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
+                    },
+                    onArchived: () => {
                       setUserPosts(prev => prev.filter(p => p.id !== post.id));
                       setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
                     },

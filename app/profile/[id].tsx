@@ -14,6 +14,7 @@ import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import StoryAvatar from '../../components/StoryAvatar';
 import { createNotification } from '../../lib/createNotification';
+import { usePostOptions } from '../../contexts/PostOptionsContext';
 
 type Profile = {
   id: string; username: string; display_name: string;
@@ -43,6 +44,7 @@ export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { playQueue } = useAudio();
+  const { show: showOptions } = usePostOptions();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [posts, setPosts] = useState<any[]>([]);
@@ -83,9 +85,10 @@ export default function PublicProfileScreen() {
     setStats({ followers: followersRes.count || 0, following: followingRes.count || 0, posts: postsCountRes.count || 0 });
     const following = !!followCheckRes.data;
     if (postsRes.data) {
-      // Followers-only posts are visible to the owner and to followers; everyone else sees public only
+      // Followers-only posts are visible to the owner and to followers; everyone
+      // else sees public only. Archived posts (archived_at set) are hidden too.
       const canSeePrivate = following || currentUser?.id === id;
-      setPosts(postsRes.data.filter((p: any) => p.is_public || canSeePrivate));
+      setPosts(postsRes.data.filter((p: any) => (p.is_public || canSeePrivate) && !p.archived_at));
     }
     // Reposts are public — only surface the reposted posts that are themselves
     // public (so a private post can't leak through someone else's repost).
@@ -205,7 +208,21 @@ export default function PublicProfileScreen() {
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.usernameHeader}>@{profile?.username}</Text>
-        <View style={{ width: 40 }} />
+        {!isOwnProfile ? (
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => showOptions({
+              isOwn: false,
+              authorId: id as string,
+              authorName: profile?.username,
+              onBlocked: () => router.back(),
+            })}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
       </View>
 
       {/* Banner */}

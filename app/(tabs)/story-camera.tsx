@@ -9,7 +9,7 @@ import {
 } from 'expo-camera';
 import { Video, ResizeMode } from 'expo-av';
 import * as VideoThumbnails from 'expo-video-thumbnails';
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { manipulateAsync, SaveFormat, FlipType } from 'expo-image-manipulator';
 import { useIsFocused, useNavigation, useNavigationState } from '@react-navigation/native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +22,7 @@ import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 
 const VIDEO_MAX_SEC = 60;
 
-type Captured = { uri: string; type: 'image' | 'video'; durationSec?: number };
+type Captured = { uri: string; type: 'image' | 'video'; durationSec?: number; processed?: boolean };
 type Mode = 'picture' | 'video';
 
 // The live story camera, page 0 of the tab pager (LEFT of Home) so swiping right
@@ -99,8 +99,26 @@ export default function StoryCameraScreen() {
 
   async function takePhoto() {
     try {
-      const photo = await cameraRef.current?.takePictureAsync({ quality: 0.9 });
-      if (photo?.uri) setCapturedMedia({ uri: photo.uri, type: 'image' });
+      // Capture at full quality, then do ONE manipulate pass: front-camera shots
+      // are flipped to match the mirrored preview (expo-camera saves them
+      // un-mirrored by default), downscaled to 1080-wide story res, and compressed.
+      // A single re-encode (not the old double compression) keeps quality high.
+      const photo = await cameraRef.current?.takePictureAsync({ quality: 1 });
+      if (!photo?.uri) return;
+      const front = facing === 'front';
+      let uri = photo.uri;
+      try {
+        const out = await manipulateAsync(
+          photo.uri,
+          [
+            ...(front ? [{ flip: FlipType.Horizontal }] : []),
+            { resize: { width: 1440 } },
+          ],
+          { compress: 0.92, format: SaveFormat.JPEG },
+        );
+        uri = out.uri;
+      } catch {}
+      setCapturedMedia({ uri, type: 'image', processed: true });
     } catch (e: any) {
       Alert.alert('Could not take photo', e?.message ?? 'Please try again.');
     }
@@ -179,12 +197,16 @@ export default function StoryCameraScreen() {
 
       if (captured.type === 'image') {
         let outUri = captured.uri;
-        try {
-          const out = await manipulateAsync(captured.uri, [{ resize: { width: 1080 } }], {
-            compress: 0.85, format: SaveFormat.JPEG,
-          });
-          outUri = out.uri;
-        } catch {}
+        // Camera shots are already processed in takePhoto; only library picks
+        // still need the downscale/compress pass here.
+        if (!captured.processed) {
+          try {
+            const out = await manipulateAsync(captured.uri, [{ resize: { width: 1440 } }], {
+              compress: 0.92, format: SaveFormat.JPEG,
+            });
+            outUri = out.uri;
+          } catch {}
+        }
         mediaUrl = await uploadStoryMedia(user.id, outUri, 'jpg', 'image/jpeg');
       } else {
         const ext = captured.uri.split('.').pop() || 'mp4';
@@ -293,6 +315,9 @@ export default function StoryCameraScreen() {
           flash={flash}
           enableTorch={mode === 'video' && recording && flash !== 'off'}
           mode={mode}
+          // Record at Full HD (falls back to the highest the device supports) so
+          // story videos aren't soft.
+          videoQuality="1080p"
           mute={!micPermission?.granted}
           active={cameraActive}
         />

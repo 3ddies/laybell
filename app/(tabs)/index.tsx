@@ -25,6 +25,7 @@ import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useShare } from '../../contexts/ShareContext';
 import { isAudioPost } from '../../lib/genres';
+import { fetchBlockedIds } from '../../lib/blocks';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
@@ -366,15 +367,23 @@ export default function HomeScreen() {
       query = query.eq('is_public', true);
     }
 
-    const [{ data }, { data: likesData }, { data: savesData }] = await Promise.all([
+    const [{ data }, { data: likesData }, { data: savesData }, blockedIds] = await Promise.all([
       query,
       userId ? supabase.from('likes').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
       userId ? supabase.from('saves').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
+      userId ? fetchBlockedIds() : Promise.resolve(new Set<string>()),
     ]);
 
     if (data) {
       const followingSet = new Set<string>(
         followingData?.map((f: any) => f.following_id) ?? []
+      );
+
+      // Hide archived posts (owner-only, archived_at set) and posts from blocked
+      // users before ranking. archived_at is absent until the column is migrated,
+      // so this is a harmless no-op pre-migration.
+      const visible = (data as any[]).filter(
+        (p) => !p.archived_at && !blockedIds.has(p.user_id)
       );
 
       // Both feeds use the same recency × engagement × personalization ranking
@@ -384,14 +393,14 @@ export default function HomeScreen() {
       // instead of a flat chronological list.
       const now = Date.now();
       const profile = affinityProfile.current;
-      const scored = (data as any[])
+      const scored = visible
         .map((p) => ({ p, score: scorePost(p, profile, followingSet, seen, now) }))
         .sort((a, b) => b.score - a.score)
         .map((x) => x.p);
 
       setPosts(scored);
       // Persist post IDs shown to the user so they can be deprioritised next session.
-      recordSeenPostIds((data as any[]).map((p: any) => p.id));
+      recordSeenPostIds(visible.map((p: any) => p.id));
     }
     if (likesData) setLikedPosts(new Set(likesData.map((l: any) => l.post_id)));
     if (savesData) setSavedPosts(new Set(savesData.map((s: any) => s.post_id)));
@@ -477,8 +486,13 @@ export default function HomeScreen() {
     showOptions({
       postId: item.id,
       isOwn: item.user_id === live.current.currentUserId,
+      authorId: item.user_id,
+      authorName: item.profiles?.username,
+      mediaType: item.type,
       onEdit: () => live.current.router.push(`/edit-post/${item.id}`),
       onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+      onArchived: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+      onBlocked: () => setPosts(prev => prev.filter(p => p.user_id !== item.user_id)),
     });
   }, []);
 

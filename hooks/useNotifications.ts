@@ -3,19 +3,30 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { supabase } from '../lib/supabase';
+import { loadNotifPrefs, getCachedNotifPrefs, isNotifTypeEnabled } from '../lib/notificationPrefs';
 
-// How notifications appear when app is in the foreground
+// How notifications appear when the app is in the foreground. The per-category
+// toggles in Settings (cached in notificationPrefs) decide whether to present an
+// incoming push: the notification's data.type is matched to its category; an
+// untyped notification is shown unless the user turned every category off.
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async (notification) => {
+    const type = (notification?.request?.content?.data as any)?.type as string | undefined;
+    const prefs = getCachedNotifPrefs();
+    const anyOn = prefs.likes || prefs.comments || prefs.follows || prefs.messages;
+    const enabled = type ? isNotifTypeEnabled(type) : anyOn;
+    return {
+      shouldShowBanner: enabled,
+      shouldShowList: enabled,
+      shouldPlaySound: enabled,
+      shouldSetBadge: enabled,
+    };
+  },
 });
 
 export function useNotifications() {
   useEffect(() => {
+    loadNotifPrefs(); // seed the cache so the handler above honours saved prefs
     registerForPushNotifications();
   }, []);
 }

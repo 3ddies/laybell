@@ -202,8 +202,13 @@ export default function PostDetailScreen() {
                 onPress={() => showOptions({
                   postId: id as string,
                   isOwn: currentUserId === post.user_id,
+                  authorId: post.user_id,
+                  authorName: post.profiles?.username,
+                  mediaType: post.type,
                   onEdit: () => router.push(`/edit-post/${id}`),
                   onDeleted: () => router.back(),
+                  onArchived: () => router.back(),
+                  onBlocked: () => router.back(),
                 })}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >

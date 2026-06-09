@@ -213,6 +213,33 @@ export async function deleteStory(storyId: string): Promise<void> {
   await supabase.from('stories').delete().eq('id', storyId);
 }
 
+// The Stories archive: the current user's EXPIRED stories (the live tray hides
+// these once they pass 24h, but the rows remain — deleting a story removes it
+// entirely, so the archive only ever shows expired, never deleted, stories).
+export async function fetchArchivedStories(userId: string): Promise<Story[]> {
+  const nowIso = new Date().toISOString();
+  const { data } = await supabase
+    .from('stories')
+    .select('*')
+    .eq('user_id', userId)
+    .lte('expires_at', nowIso)
+    .order('created_at', { ascending: false });
+  return (data ?? []) as Story[];
+}
+
+// Restore (re-publish) an expired story: push created_at/expires_at forward so it
+// becomes active again for another 24h. Requires the stories UPDATE policy in
+// supabase/sql/stories.sql. Returns false if the write is rejected.
+export async function restoreStory(storyId: string): Promise<boolean> {
+  const now = new Date();
+  const expires = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const { error } = await supabase
+    .from('stories')
+    .update({ created_at: now.toISOString(), expires_at: expires.toISOString() })
+    .eq('id', storyId);
+  return !error;
+}
+
 export async function fetchStoryViewerCount(storyId: string): Promise<number> {
   const { count } = await supabase
     .from('story_views')

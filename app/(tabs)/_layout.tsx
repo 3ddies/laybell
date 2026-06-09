@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { withLayoutContext } from 'expo-router';
-import { TouchableOpacity, View, StyleSheet, Keyboard, Animated, Dimensions } from 'react-native';
+import { TouchableOpacity, View, StyleSheet, Keyboard, Animated, Dimensions, Image, Text } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useProfile } from '../../contexts/ProfileContext';
 import {
   createMaterialTopTabNavigator,
   type MaterialTopTabNavigationOptions,
@@ -42,6 +43,7 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
 
 function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { profile } = useProfile();
 
   // The bar is an absolute overlay so the pager fills the FULL screen — that's
   // what makes the story camera edge-to-edge with no reserved (gray) slot. While
@@ -77,6 +79,26 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
               <LinearGradient colors={GRADIENTS.primary} style={styles.postBtn}>
                 <Ionicons name="add" size={28} color={COLORS.text} />
               </LinearGradient>
+            </TouchableOpacity>
+          );
+        }
+
+        // Profile tab shows the user's own avatar (live via ProfileContext) instead
+        // of a generic icon — ringed in the accent colour when it's the active tab.
+        if (route.name === 'profile') {
+          return (
+            <TouchableOpacity key={route.key} style={styles.tabItem} onPress={onPress} activeOpacity={0.7}>
+              <View style={[styles.avatarRing, focused && styles.avatarRingActive]}>
+                {profile?.avatar_url ? (
+                  <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
+                ) : (
+                  <LinearGradient colors={GRADIENTS.primary} style={styles.avatarImg}>
+                    <Text style={styles.avatarInitial}>
+                      {(profile?.display_name || profile?.username || '?').charAt(0).toUpperCase()}
+                    </Text>
+                  </LinearGradient>
+                )}
+              </View>
             </TouchableOpacity>
           );
         }
@@ -150,6 +172,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // 26px avatar inside a 32px ring (transparent when inactive so there's no
+  // layout shift between states), matching the 26px icon footprint of the others.
+  avatarRing: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  avatarRingActive: { borderColor: COLORS.primary },
+  avatarImg: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: COLORS.surfaceLight,
+  },
+  avatarInitial: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
   postWrap: {
     flex: 1,
     alignItems: 'center',

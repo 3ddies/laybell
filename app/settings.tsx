@@ -5,9 +5,12 @@ import {
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
+import {
+  loadNotifPrefs, saveNotifPrefs, type NotifPrefs,
+} from '../lib/notificationPrefs';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 
 const APP_VERSION = '1.0.0';
@@ -77,7 +80,26 @@ function Section({ title, items }: { title: string; items: SectionItem[] }) {
 export default function SettingsScreen() {
   const router = useRouter();
   const { profile } = useProfile();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  // Per-category notification toggles (persisted locally). The "All" row is
+  // derived — on when every category is on, and flips all of them at once.
+  const [notifPrefs, setNotifPrefs] = useState<NotifPrefs>({
+    likes: true, comments: true, follows: true, messages: true,
+  });
+  useEffect(() => { loadNotifPrefs().then(setNotifPrefs); }, []);
+
+  const allNotifsOn = notifPrefs.likes && notifPrefs.comments && notifPrefs.follows && notifPrefs.messages;
+
+  function setNotifPref(key: keyof NotifPrefs, value: boolean) {
+    const next = { ...notifPrefs, [key]: value };
+    setNotifPrefs(next);
+    saveNotifPrefs(next);
+  }
+  function setAllNotifs(value: boolean) {
+    const next: NotifPrefs = { likes: value, comments: value, follows: value, messages: value };
+    setNotifPrefs(next);
+    saveNotifPrefs(next);
+  }
 
   async function handleLogout() {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
@@ -119,6 +141,18 @@ export default function SettingsScreen() {
       onPress: () => router.push('/private-posts'),
     },
     {
+      icon: 'archive-outline',
+      label: 'Archive',
+      subtitle: 'Posts and stories you archived',
+      onPress: () => router.push('/archive'),
+    },
+    {
+      icon: 'ban-outline',
+      label: 'Blocked',
+      subtitle: 'Accounts you blocked',
+      onPress: () => router.push('/blocked'),
+    },
+    {
       icon: 'lock-closed-outline',
       label: 'Change Password',
       onPress: () => Alert.alert('Change Password', 'A password reset email will be sent to your registered address.', [
@@ -134,24 +168,39 @@ export default function SettingsScreen() {
 
   const notifItems: SectionItem[] = [
     {
+      icon: 'notifications-outline',
+      label: 'All notifications',
+      subtitle: 'Turn every alert on or off',
+      value: allNotifsOn,
+      onValueChange: setAllNotifs,
+      chevron: false,
+    },
+    {
       icon: 'heart-outline',
       label: 'Likes',
-      value: notificationsEnabled,
-      onValueChange: setNotificationsEnabled,
+      value: notifPrefs.likes,
+      onValueChange: (v) => setNotifPref('likes', v),
       chevron: false,
     },
     {
       icon: 'chatbubble-outline',
       label: 'Comments',
-      value: notificationsEnabled,
-      onValueChange: setNotificationsEnabled,
+      value: notifPrefs.comments,
+      onValueChange: (v) => setNotifPref('comments', v),
       chevron: false,
     },
     {
       icon: 'person-add-outline',
       label: 'New Followers',
-      value: notificationsEnabled,
-      onValueChange: setNotificationsEnabled,
+      value: notifPrefs.follows,
+      onValueChange: (v) => setNotifPref('follows', v),
+      chevron: false,
+    },
+    {
+      icon: 'mail-outline',
+      label: 'Messages',
+      value: notifPrefs.messages,
+      onValueChange: (v) => setNotifPref('messages', v),
       chevron: false,
     },
   ];

@@ -4,7 +4,9 @@ import {
   Pressable, Animated, PanResponder, ActivityIndicator, Alert, Easing,
 } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
+import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,15 +17,21 @@ import {
   fetchStoriesForUsers, recordStoryView, deleteStory, fetchStoryViewerCount,
   type StoryGroup, type SourceRect,
 } from '../../lib/stories';
+import { reportUser } from '../../lib/postActions';
 import { useStories } from '../../contexts/StoriesContext';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const IMAGE_DURATION_MS = 5000;
-const TICK_MS = 50;
+// Video position updates fire on this cadence; the bar glides to each new position
+// over the same interval so it moves continuously instead of stepping.
+const VIDEO_PROGRESS_INTERVAL_MS = 250;
+// Horizontal swipe past this (or a flick) jumps to the next/previous person.
+const SWIPE_DIST = SCREEN_W * 0.25;
 
 export default function StoryViewerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const { refresh: refreshStories } = useStories();
   const { userId, users, src } = useLocalSearchParams<{ userId: string; users?: string; src?: string }>();
 
@@ -49,24 +57,31 @@ export default function StoryViewerScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userIndex, setUserIndex] = useState(0);
   const [storyIndex, setStoryIndex] = useState(0);
-  const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
   const [viewerCount, setViewerCount] = useState<number | null>(null);
 
-  const progressRef = useRef(0);
   const pausedRef = useRef(false);
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const animRef = useRef<Animated.CompositeAnimation | null>(null);
+  // Drives the CURRENT segment's fill (0→1, scaleX from the left).
+  const progressAnim = useRef(new Animated.Value(0)).current;
   const panY = useRef(new Animated.Value(0)).current;
   // Open/close "expand from rect" progress: 0 = at the source rect, 1 = fullscreen.
   const expand = useRef(new Animated.Value(srcRect ? 0 : 1)).current;
   const contentFadeIn = useRef(new Animated.Value(srcRect ? 0 : 1)).current; // slower open fade
   const closingRef = useRef(false);
   const panningRef = useRef(false);
+  const gestureAxisRef = useRef<'h' | 'v' | null>(null);
   const pressInfo = useRef({ t: 0, x: 0 });
 
   const group = groups[userIndex] ?? null;
   const story = group?.stories[storyIndex] ?? null;
   const isOwn = !!currentUserId && group?.user.id === currentUserId;
+
+  // Fresh snapshots for the gesture/advance callbacks.
+  const posRef = useRef({ userIndex: 0, storyIndex: 0 });
+  posRef.current = { userIndex, storyIndex };
+  const groupsRef = useRef<StoryGroup[]>([]);
+  groupsRef.current = groups;
 
   // ─── load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -84,7 +99,7 @@ export default function StoryViewerScreen() {
       setLoading(false);
     })();
     // On close, refresh global story state so newly-seen rings update everywhere.
-    return () => { clearTick(); refreshStories(); };
+    return () => { stopProgressAnim(); refreshStories(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -100,47 +115,103 @@ export default function StoryViewerScreen() {
   // ─── drive the active story (timer + view record) ────────────────────────────
   useEffect(() => {
     if (!story) return;
-    resetProgress();
+    pausedRef.current = false;
+    setPaused(false);
+    stopProgressAnim();
+    progressAnim.setValue(0);
     if (currentUserId) recordStoryView(story.id, currentUserId).catch(() => {});
 
     setViewerCount(null);
     if (isOwn) fetchStoryViewerCount(story.id).then(setViewerCount).catch(() => {});
 
-    // Images advance on a timer; videos advance from playback status instead.
-    if (story.media_type === 'image') startImageTimer();
-    return clearTick;
+    // Images advance on a timed fill; videos advance from playback status instead.
+    if (story.media_type === 'image') startImageProgress(0);
+    return stopProgressAnim;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story?.id]);
 
-  function clearTick() {
-    if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
+  // Freeze progress while the viewer is covered (e.g. you tapped through to a
+  // profile) and resume from where it left off on return.
+  useEffect(() => {
+    if (!isFocused) {
+      stopProgressAnim();
+    } else if (!loading && story && !pausedRef.current && story.media_type === 'image') {
+      progressAnim.stopAnimation((v: number) => startImageProgress(typeof v === 'number' ? v : 0));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFocused]);
+
+  function stopProgressAnim() {
+    if (animRef.current) { animRef.current.stop(); animRef.current = null; }
   }
-  function resetProgress() {
-    clearTick();
-    progressRef.current = 0;
-    setProgress(0);
+  // Animate the current image segment from `from`→1 over the remaining duration,
+  // advancing to the next story when it completes.
+  function startImageProgress(from = 0) {
+    stopProgressAnim();
+    progressAnim.setValue(from);
+    const anim = Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: Math.max(0, IMAGE_DURATION_MS * (1 - from)),
+      easing: Easing.linear,
+      useNativeDriver: false,
+    });
+    animRef.current = anim;
+    anim.start(({ finished }) => { if (finished) { animRef.current = null; goNext(); } });
   }
-  function startImageTimer() {
-    clearTick();
-    tickRef.current = setInterval(() => {
-      if (pausedRef.current) return;
-      progressRef.current += TICK_MS / IMAGE_DURATION_MS;
-      if (progressRef.current >= 1) {
-        progressRef.current = 1;
-        setProgress(1);
-        clearTick();
-        goNext();
-      } else {
-        setProgress(progressRef.current);
-      }
-    }, TICK_MS);
+  // Glide the fill to `toValue` over `duration` — used by video (continuous bar).
+  function animateProgressTo(toValue: number, duration: number) {
+    stopProgressAnim();
+    const anim = Animated.timing(progressAnim, {
+      toValue, duration, easing: Easing.linear, useNativeDriver: false,
+    });
+    animRef.current = anim;
+    anim.start();
+  }
+
+  // ─── advance / back (tap + auto-advance, story-by-story) ─────────────────────
+  function goNext() {
+    const { userIndex: ui, storyIndex: si } = posRef.current;
+    const g = groupsRef.current[ui];
+    if (!g) return;
+    if (si < g.stories.length - 1) { setStoryIndex(si + 1); return; }
+    if (ui < groupsRef.current.length - 1) { setUserIndex(ui + 1); setStoryIndex(0); return; }
+    dismiss();
+  }
+
+  function goPrev() {
+    const { userIndex: ui, storyIndex: si } = posRef.current;
+    if (si > 0) { setStoryIndex(si - 1); return; }
+    if (ui > 0) {
+      const prevG = groupsRef.current[ui - 1];
+      setUserIndex(ui - 1);
+      setStoryIndex(Math.max(0, (prevG?.stories.length ?? 1) - 1));
+      return;
+    }
+    // already at the very first story — restart it from the top (and unpause).
+    pausedRef.current = false;
+    setPaused(false);
+    stopProgressAnim();
+    progressAnim.setValue(0);
+    if (story?.media_type === 'image') startImageProgress(0);
+  }
+
+  // ─── horizontal swipe = jump to the next / previous PERSON ───────────────────
+  function goNextUser() {
+    const { userIndex: ui } = posRef.current;
+    if (ui < groupsRef.current.length - 1) { setUserIndex(ui + 1); setStoryIndex(0); }
+    else dismiss();
+  }
+  function goPrevUser() {
+    const { userIndex: ui } = posRef.current;
+    if (ui > 0) { setUserIndex(ui - 1); setStoryIndex(0); }
+    else resume();
   }
 
   // ─── dismiss (shrink back into the source rect, then pop) ─────────────────────
   const dismiss = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
-    clearTick();
+    stopProgressAnim();
     if (srcRect) {
       Animated.parallel([
         Animated.timing(expand, { toValue: 0, duration: 300, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
@@ -151,37 +222,19 @@ export default function StoryViewerScreen() {
     }
   }, [srcRect, router, expand, panY]);
 
-  // A ref snapshot of the current position so the advance/back callbacks read
-  // fresh indices without being recreated on every story change.
-  const posRef = useRef({ userIndex: 0, storyIndex: 0 });
-  posRef.current = { userIndex, storyIndex };
-
-  const goNext = useCallback(() => {
-    const { userIndex: ui, storyIndex: si } = posRef.current;
-    const g = groups[ui];
-    if (!g) return;
-    if (si < g.stories.length - 1) { setStoryIndex(si + 1); return; }
-    if (ui < groups.length - 1) { setUserIndex(ui + 1); setStoryIndex(0); return; }
-    dismiss();
-  }, [groups, dismiss]);
-
-  const goPrev = useCallback(() => {
-    const { userIndex: ui, storyIndex: si } = posRef.current;
-    if (si > 0) { setStoryIndex(si - 1); return; }
-    if (ui > 0) {
-      const prevG = groups[ui - 1];
-      setUserIndex(ui - 1);
-      setStoryIndex(Math.max(0, (prevG?.stories.length ?? 1) - 1));
-      return;
-    }
-    // already at the very first story — restart it
-    resetProgress();
-    if (story?.media_type === 'image') startImageTimer();
-  }, [groups, story?.media_type]);
-
   // ─── pause / resume + tap handling ───────────────────────────────────────────
-  function pause() { pausedRef.current = true; setPaused(true); }
-  function resume() { pausedRef.current = false; setPaused(false); }
+  function pause() {
+    pausedRef.current = true;
+    setPaused(true);
+    stopProgressAnim();
+  }
+  function resume() {
+    pausedRef.current = false;
+    setPaused(false);
+    if (story?.media_type === 'image') {
+      progressAnim.stopAnimation((v: number) => startImageProgress(typeof v === 'number' ? v : 0));
+    }
+  }
 
   function onPressIn(e: any) {
     pressInfo.current = { t: Date.now(), x: e.nativeEvent.locationX };
@@ -198,28 +251,53 @@ export default function StoryViewerScreen() {
     }
   }
 
-  // ─── swipe-down to dismiss ───────────────────────────────────────────────────
-  const live = useRef({ pause, resume, dismiss });
-  live.current = { pause, resume, dismiss };
+  // ─── gestures: horizontal = jump between people, vertical = swipe-down dismiss ─
+  // PanResponder is created once; it calls into `gh` (refreshed each render) so the
+  // handlers always see current state. Horizontal is an instant cut (no animation).
+  const gh = useRef<{ move: (g: any) => void; release: (g: any) => void; grant: () => void }>({
+    move: () => {}, release: () => {}, grant: () => {},
+  }).current;
+
+  gh.grant = () => {
+    panningRef.current = true;
+    gestureAxisRef.current = null;
+    pause();
+  };
+  gh.move = (g) => {
+    if (!gestureAxisRef.current) {
+      if (Math.abs(g.dx) > 6 && Math.abs(g.dx) >= Math.abs(g.dy)) gestureAxisRef.current = 'h';
+      else if (g.dy > 6) gestureAxisRef.current = 'v';
+      else return;
+    }
+    if (gestureAxisRef.current === 'v' && g.dy > 0) panY.setValue(g.dy);
+    // horizontal: no drag feedback — committed on release
+  };
+  gh.release = (g) => {
+    const axis = gestureAxisRef.current;
+    gestureAxisRef.current = null;
+    panningRef.current = false;
+    if (axis === 'h') {
+      if (g.dx <= -SWIPE_DIST || g.vx < -0.4) goNextUser();
+      else if (g.dx >= SWIPE_DIST || g.vx > 0.4) goPrevUser();
+      else resume();
+    } else if (axis === 'v') {
+      if (g.dy > 130) { dismiss(); return; }
+      Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      resume();
+    } else {
+      resume();
+    }
+  };
+
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => g.dy > 12 && g.dy > Math.abs(g.dx) * 1.5,
-      onPanResponderGrant: () => { panningRef.current = true; live.current.pause(); },
-      onPanResponderMove: (_, g) => { if (g.dy > 0) panY.setValue(g.dy); },
-      onPanResponderRelease: (_, g) => {
-        if (g.dy > 130) {
-          live.current.dismiss();
-        } else {
-          Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
-          panningRef.current = false;
-          live.current.resume();
-        }
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
-        panningRef.current = false;
-        live.current.resume();
-      },
+      onMoveShouldSetPanResponder: (_, g) =>
+        (Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy)) ||
+        (g.dy > 12 && g.dy > Math.abs(g.dx) * 1.2),
+      onPanResponderGrant: () => gh.grant(),
+      onPanResponderMove: (_, g) => gh.move(g),
+      onPanResponderRelease: (_, g) => gh.release(g),
+      onPanResponderTerminate: (_, g) => gh.release(g),
     }),
   ).current;
 
@@ -232,7 +310,6 @@ export default function StoryViewerScreen() {
         onPress: async () => {
           const deletedId = story.id;
           await deleteStory(deletedId);
-          // Drop it locally, then advance sensibly.
           setGroups((prev) => {
             const copy = prev.map((g) => ({ ...g, stories: [...g.stories] }));
             const g = copy[posRef.current.userIndex];
@@ -242,6 +319,13 @@ export default function StoryViewerScreen() {
         },
       },
     ]);
+  }
+
+  // Report another user's story — pause while the dialog is up, resume after.
+  function onReport() {
+    if (!group || isOwn) return;
+    pause();
+    reportUser(group.user.id, resume);
   }
 
   // After a delete reshapes groups, keep indices in range.
@@ -254,10 +338,7 @@ export default function StoryViewerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups]);
 
-  // ─── expand transform (rect → fullscreen) ────────────────────────────────────
-  // Memoized so the 50ms progress-timer re-renders don't rebuild these mid-animation
-  // (which makes the native transform stutter). `contentOpacity` fades the post out
-  // as it reaches the ring so the tiny shrunk rectangle is never visible.
+  // ─── expand transform (rect → fullscreen) + swipe-down ───────────────────────
   const { contentTransform, backdropOpacity, contentOpacity } = useMemo(() => {
     if (!srcRect) {
       return {
@@ -292,7 +373,8 @@ export default function StoryViewerScreen() {
         style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]}
       />
 
-      {/* The post itself — expands out of / shrinks into the tapped rect. */}
+      {/* The current story — expands out of the tapped rect on open, follows the
+          finger down to dismiss; tap / horizontal-swipe change story instantly. */}
       <Animated.View
         style={[styles.container, { opacity: contentOpacity, transform: contentTransform as any }]}
         {...(group && story ? panResponder.panHandlers : {})}
@@ -306,9 +388,11 @@ export default function StoryViewerScreen() {
           </View>
         ) : (
           <>
-            {/* Media */}
+            {/* Media. expo-image (cached, fast) avoids the flash when tapping between
+                stories; the video shows its thumbnail poster while it buffers so
+                there's no pitch-black gap on open / person change. */}
             {story.media_type === 'image' ? (
-              <Image source={{ uri: story.media_url }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+              <ExpoImage source={{ uri: story.media_url }} style={StyleSheet.absoluteFill} contentFit="contain" />
             ) : (
               <Video
                 key={story.id}
@@ -317,9 +401,15 @@ export default function StoryViewerScreen() {
                 resizeMode={ResizeMode.CONTAIN}
                 shouldPlay={!paused}
                 isLooping={false}
+                usePoster={!!story.thumbnail_url}
+                posterSource={story.thumbnail_url ? { uri: story.thumbnail_url } : undefined}
+                posterStyle={{ resizeMode: 'contain' }}
+                progressUpdateIntervalMillis={VIDEO_PROGRESS_INTERVAL_MS}
                 onPlaybackStatusUpdate={(st: any) => {
                   if (!st.isLoaded) return;
-                  if (st.durationMillis) setProgress(Math.min(1, (st.positionMillis ?? 0) / st.durationMillis));
+                  if (st.durationMillis && !pausedRef.current) {
+                    animateProgressTo(Math.min(1, (st.positionMillis ?? 0) / st.durationMillis), VIDEO_PROGRESS_INTERVAL_MS);
+                  }
                   if (st.didJustFinish) goNext();
                 }}
               />
@@ -335,10 +425,10 @@ export default function StoryViewerScreen() {
             <View style={[styles.progressRow, { top: insets.top + 6 }]} pointerEvents="none">
               {group.stories.map((s, i) => (
                 <View key={s.id} style={styles.progressTrack}>
-                  <View
+                  <Animated.View
                     style={[
                       styles.progressFill,
-                      { width: `${(i < storyIndex ? 1 : i === storyIndex ? progress : 0) * 100}%` },
+                      { transform: [{ scaleX: i < storyIndex ? 1 : i === storyIndex ? progressAnim : 0 }] },
                     ]}
                   />
                 </View>
@@ -349,7 +439,7 @@ export default function StoryViewerScreen() {
             <View style={[styles.header, { top: insets.top + 18 }]}>
               <TouchableOpacity
                 style={styles.author}
-                onPress={() => { clearTick(); router.push(`/profile/${group.user.id}`); }}
+                onPress={() => { stopProgressAnim(); router.push(`/profile/${group.user.id}`); }}
               >
                 {group.user.avatar_url ? (
                   <Image source={{ uri: group.user.avatar_url }} style={styles.avatar} />
@@ -363,9 +453,13 @@ export default function StoryViewerScreen() {
               </TouchableOpacity>
 
               <View style={styles.headerRight}>
-                {isOwn && (
+                {isOwn ? (
                   <TouchableOpacity style={styles.headerBtn} onPress={onDelete} hitSlop={8}>
                     <Ionicons name="trash-outline" size={22} color="#fff" />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.headerBtn} onPress={onReport} hitSlop={8}>
+                    <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity style={styles.headerBtn} onPress={dismiss} hitSlop={8}>
@@ -407,7 +501,9 @@ const styles = StyleSheet.create({
 
   progressRow: { position: 'absolute', left: SPACING.sm, right: SPACING.sm, flexDirection: 'row', gap: 4 },
   progressTrack: { flex: 1, height: 2.5, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#fff', borderRadius: 2 },
+  // Full-width fill scaled from the left via scaleX (0→1) so the bar can be driven
+  // by Animated without re-rendering or re-measuring each frame.
+  progressFill: { width: '100%', height: '100%', backgroundColor: '#fff', borderRadius: 2, transformOrigin: 'left' },
 
   header: {
     position: 'absolute', left: SPACING.md, right: SPACING.md,

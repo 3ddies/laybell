@@ -4,18 +4,42 @@ import {
   Pressable, Animated, PanResponder, Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../constants/theme';
-import { confirmDeletePost, reportPost } from '../lib/postActions';
+import { confirmDeletePost, reportPost, reportUser, confirmArchivePost } from '../lib/postActions';
+import { confirmBlockUser, isBlocked, unblockUser } from '../lib/blocks';
+import { isAudioPost } from '../lib/genres';
+import { supabase } from '../lib/supabase';
+import { createNotification } from '../lib/createNotification';
 import { useProfile } from './ProfileContext';
 import { isReposted, addRepost, removeRepost } from '../lib/reposts';
+import AddToPlaylistModal from '../components/AddToPlaylistModal';
 
 export type PostOptionsArgs = {
-  postId: string;
+  // postId is optional: omit it to show a profile-only (user) menu — e.g. the
+  // block button from someone's profile page, where there's no specific post.
+  postId?: string;
   isOwn: boolean;
+  // The post's author / the target user — enables "Block user" and (for audio)
+  // the "Artist" shortcut. authorName is the @handle used in labels/confirms.
+  authorId?: string;
+  authorName?: string;
+  // The post's `type`. Audio-family posts (audio/podcast/audiobook) get the music
+  // actions: Add to playlist, Like/Unlike, Save/Unsave, Artist.
+  mediaType?: string | null;
   onEdit?: () => void;
   onDeleted?: () => void;
+  onArchived?: () => void;
   onRepostChanged?: (reposted: boolean) => void;
+  onBlocked?: () => void;
+  // Keep an external like/save button (e.g. Now Playing) in sync when the menu
+  // toggles it.
+  onLikeChanged?: (liked: boolean) => void;
+  onSaveChanged?: (saved: boolean) => void;
+  // Called right before the sheet navigates away (Artist) — hosts that render an
+  // overlay (Now Playing) pass their collapse() so the profile shows in front.
+  onNavigate?: () => void;
 };
 
 type ContextValue = { show: (opts: PostOptionsArgs) => void };
@@ -29,13 +53,25 @@ export function usePostOptions() {
 export function PostOptionsProvider({ children }: { children: React.ReactNode }) {
   const [opts, setOpts] = useState<PostOptionsArgs | null>(null);
   const [visible, setVisible] = useState(false);
+  // "Add to playlist" opens a modal owned here (so it works from any 3-dot menu).
+  const [playlistPostId, setPlaylistPostId] = useState<string | null>(null);
 
   const show = (o: PostOptionsArgs) => { setOpts(o); setVisible(true); };
 
   return (
     <PostOptionsContext.Provider value={{ show }}>
       {children}
-      <PostOptionsSheet visible={visible} opts={opts} onClose={() => setVisible(false)} />
+      <PostOptionsSheet
+        visible={visible}
+        opts={opts}
+        onClose={() => setVisible(false)}
+        onAddToPlaylist={setPlaylistPostId}
+      />
+      <AddToPlaylistModal
+        visible={!!playlistPostId}
+        postId={playlistPostId ?? ''}
+        onClose={() => setPlaylistPostId(null)}
+      />
     </PostOptionsContext.Provider>
   );
 }
@@ -46,18 +82,33 @@ function rubber(drag: number, max = 32): number {
   return max * (1 - Math.exp(-drag / max));
 }
 
-function PostOptionsSheet({ visible, opts, onClose }: {
+type Opt = {
+  key: string;
+  label: string;
+  icon: any;
+  destructive?: boolean;
+  active?: boolean;        // filled state for like/save
+  activeColor?: string;
+  onPress: () => void;
+};
+
+function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
   visible: boolean;
   opts: PostOptionsArgs | null;
   onClose: () => void;
+  onAddToPlaylist: (postId: string) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { profile } = useProfile();
   const translateY = useRef(new Animated.Value(DISMISS_DIST)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
   const closeRef = useRef(onClose); closeRef.current = onClose;
   const optsRef = useRef(opts); optsRef.current = opts;
   const [reposted, setReposted] = useState(false);
+  const [liked, setLiked] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -67,10 +118,20 @@ function PostOptionsSheet({ visible, opts, onClose }: {
         Animated.timing(translateY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
         Animated.timing(backdrop, { toValue: 1, duration: 220, useNativeDriver: true }),
       ]).start();
-      // Resolve repost state for the (others') post so the label is correct.
-      setReposted(false);
-      if (opts && !opts.isOwn && profile?.id) {
-        isReposted(opts.postId, profile.id).then(setReposted);
+
+      // Resolve the dynamic option states for this post/user.
+      setReposted(false); setLiked(false); setSaved(false); setBlocked(false);
+      const o = opts;
+      const uid = profile?.id;
+      if (o && !o.isOwn && uid) {
+        if (o.postId) isReposted(o.postId, uid).then(setReposted);
+        if (o.authorId) isBlocked(o.authorId).then(setBlocked);
+      }
+      if (o?.postId && isAudioPost(o.mediaType) && uid) {
+        supabase.from('likes').select('user_id').eq('post_id', o.postId).eq('user_id', uid).maybeSingle()
+          .then(({ data }) => setLiked(!!data));
+        supabase.from('saves').select('id').eq('post_id', o.postId).eq('user_id', uid).maybeSingle()
+          .then(({ data }) => setSaved(!!data));
       }
     }
   }, [visible]);
@@ -82,10 +143,13 @@ function PostOptionsSheet({ visible, opts, onClose }: {
     ]).start(() => closeRef.current());
   }
 
+  // Run an action after the dismiss animation so the sheet is gone first.
+  function dismissThen(fn: () => void) { dismiss(); setTimeout(fn, 280); }
+
   function toggleRepost() {
     const o = optsRef.current;
     const uid = profile?.id;
-    if (!o || !uid) { dismiss(); return; }
+    if (!o?.postId || !uid) { dismiss(); return; }
     const next = !reposted;
     setReposted(next); // optimistic
     (next ? addRepost(o.postId, uid) : removeRepost(o.postId, uid)).then((ok) => {
@@ -95,12 +159,89 @@ function PostOptionsSheet({ visible, opts, onClose }: {
     dismiss();
   }
 
+  // Like/Save toggles keep the sheet OPEN so the filled state is visible and the
+  // user can chain actions (e.g. like, then add to playlist).
+  async function toggleLike() {
+    const o = optsRef.current;
+    const uid = profile?.id;
+    if (!o?.postId || !uid) return;
+    const next = !liked;
+    setLiked(next); // optimistic
+    if (next) {
+      await supabase.from('likes').insert({ user_id: uid, post_id: o.postId });
+      if (o.authorId && o.authorId !== uid) {
+        createNotification({ userId: o.authorId, actorId: uid, type: 'like', postId: o.postId });
+      }
+    } else {
+      await supabase.from('likes').delete().eq('user_id', uid).eq('post_id', o.postId);
+    }
+    o.onLikeChanged?.(next);
+  }
+
+  async function toggleSave() {
+    const o = optsRef.current;
+    const uid = profile?.id;
+    if (!o?.postId || !uid) return;
+    const next = !saved;
+    setSaved(next); // optimistic
+    if (next) await supabase.from('saves').insert({ user_id: uid, post_id: o.postId });
+    else await supabase.from('saves').delete().eq('user_id', uid).eq('post_id', o.postId);
+    o.onSaveChanged?.(next);
+  }
+
+  const isOwn = opts?.isOwn ?? false;
+  const hasPost = !!opts?.postId;
+  const isAudio = isAudioPost(opts?.mediaType);
+  const targetSuffix = opts?.authorName ? ` @${opts.authorName}` : ' user';
+
+  const blockOpt: Opt = blocked
+    ? { key: 'unblock', label: `Unblock${targetSuffix}`, icon: 'person-add-outline',
+        onPress: () => { const o = optsRef.current; dismissThen(async () => { if (o?.authorId) { await unblockUser(o.authorId); o.onBlocked?.(); } }); } }
+    : { key: 'block', label: `Block${targetSuffix}`, icon: 'ban-outline', destructive: true,
+        onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.authorId) confirmBlockUser(o.authorId, o.authorName, o.onBlocked); }); } };
+
+  const options: Opt[] = [];
+
+  // ── Music actions (audio posts) ───────────────────────────────────────────
+  if (hasPost && isAudio) {
+    options.push({ key: 'playlist', label: 'Add to playlist', icon: 'add-circle-outline',
+      onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) onAddToPlaylist(o.postId); }); } });
+    options.push({ key: 'like', label: liked ? 'Unlike' : 'Like', icon: liked ? 'heart' : 'heart-outline',
+      active: liked, activeColor: COLORS.like, onPress: toggleLike });
+    options.push({ key: 'save', label: saved ? 'Unsave' : 'Save', icon: saved ? 'bookmark' : 'bookmark-outline',
+      active: saved, activeColor: COLORS.primary, onPress: toggleSave });
+    if (opts?.authorId && !isOwn) {
+      options.push({ key: 'artist', label: 'Artist', icon: 'person-outline',
+        onPress: () => { const o = optsRef.current; dismissThen(() => { o?.onNavigate?.(); if (o?.authorId) router.push(`/profile/${o.authorId}`); }); } });
+    }
+  }
+
+  // ── Ownership / general actions ────────────────────────────────────────────
+  if (hasPost && isOwn) {
+    options.push({ key: 'edit', label: 'Edit post', icon: 'pencil-outline',
+      onPress: () => dismissThen(() => optsRef.current?.onEdit?.()) });
+    options.push({ key: 'archive', label: 'Archive post', icon: 'archive-outline',
+      onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) confirmArchivePost(o.postId, o.onArchived); }); } });
+    options.push({ key: 'delete', label: 'Delete post', icon: 'trash-outline', destructive: true,
+      onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) confirmDeletePost(o.postId, o.onDeleted); }); } });
+  } else if (hasPost && !isOwn) {
+    options.push({ key: 'repost', label: reposted ? 'Remove from reposts' : 'Repost',
+      icon: reposted ? 'repeat' : 'repeat-outline', onPress: toggleRepost });
+    options.push({ key: 'report', label: 'Report post', icon: 'flag-outline', destructive: true,
+      onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) reportPost(o.postId); }); } });
+    if (opts?.authorId) options.push(blockOpt);
+  } else if (!hasPost && opts?.authorId && !isOwn) {
+    // Profile-only menu (no specific post): report + block the user.
+    options.push({ key: 'report-user', label: 'Report user', icon: 'flag-outline', destructive: true,
+      onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.authorId) reportUser(o.authorId); }); } });
+    options.push(blockOpt);
+  }
+
   const pan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 3,
     onPanResponderMove: (_e, g) => {
       if (g.dy < 0) {
-        // Upward drag — sheet can't expand, give elastic resistance
         translateY.setValue(-rubber(Math.abs(g.dy)));
         backdrop.setValue(1);
       } else {
@@ -116,7 +257,6 @@ function PostOptionsSheet({ visible, opts, onClose }: {
           Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
         ]).start(() => closeRef.current());
       } else {
-        // Snap back (includes upward elastic release)
         Animated.parallel([
           Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 5, speed: 16 }),
           Animated.timing(backdrop, { toValue: 1, duration: 150, useNativeDriver: true }),
@@ -124,48 +264,6 @@ function PostOptionsSheet({ visible, opts, onClose }: {
       }
     },
   })).current;
-
-  const isOwn = opts?.isOwn ?? false;
-
-  const ownOptions = [
-    {
-      label: 'Edit post',
-      icon: 'pencil-outline' as const,
-      destructive: false,
-      onPress: () => { dismiss(); setTimeout(() => optsRef.current?.onEdit?.(), 280); },
-    },
-    {
-      label: 'Delete post',
-      icon: 'trash-outline' as const,
-      destructive: true,
-      onPress: () => {
-        dismiss();
-        setTimeout(() => { const o = optsRef.current; if (o) confirmDeletePost(o.postId, o.onDeleted); }, 280);
-      },
-    },
-  ];
-
-  const repostOption = {
-    label: reposted ? 'Remove from reposts' : 'Repost',
-    icon: (reposted ? 'repeat' : 'repeat-outline') as any,
-    destructive: false,
-    onPress: toggleRepost,
-  };
-
-  const otherOptions = [
-    repostOption,
-    {
-      label: 'Report post',
-      icon: 'flag-outline' as const,
-      destructive: true,
-      onPress: () => {
-        dismiss();
-        setTimeout(() => { const o = optsRef.current; if (o) reportPost(o.postId); }, 280);
-      },
-    },
-  ];
-
-  const options = isOwn ? ownOptions : otherOptions;
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
@@ -180,13 +278,21 @@ function PostOptionsSheet({ visible, opts, onClose }: {
           <View style={styles.divider} />
           {options.map((opt, i) => (
             <TouchableOpacity
-              key={opt.label}
+              key={opt.key}
               style={[styles.option, i < options.length - 1 && styles.optionBorder]}
               onPress={opt.onPress}
               activeOpacity={0.7}
             >
-              <View style={[styles.iconWrap, opt.destructive && styles.iconWrapDestructive]}>
-                <Ionicons name={opt.icon} size={20} color={opt.destructive ? COLORS.error : COLORS.text} />
+              <View style={[
+                styles.iconWrap,
+                opt.destructive && styles.iconWrapDestructive,
+                opt.active && { backgroundColor: (opt.activeColor ?? COLORS.primary) + '1A' },
+              ]}>
+                <Ionicons
+                  name={opt.icon}
+                  size={20}
+                  color={opt.active ? (opt.activeColor ?? COLORS.primary) : opt.destructive ? COLORS.error : COLORS.text}
+                />
               </View>
               <Text style={[styles.optionLabel, opt.destructive && styles.destructive]}>{opt.label}</Text>
             </TouchableOpacity>

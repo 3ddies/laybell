@@ -212,8 +212,13 @@ export default function ReelScreen() {
             onPress={() => showOptions({
               postId: item.id,
               isOwn: item.user_id === currentUserId,
+              authorId: item.user_id,
+              authorName: item.profiles?.username,
+              mediaType: item.type ?? 'video',
               onEdit: () => router.push(`/edit-post/${item.id}`),
               onDeleted: () => setPosts((prev) => prev.filter((p) => p.id !== item.id)),
+              onArchived: () => setPosts((prev) => prev.filter((p) => p.id !== item.id)),
+              onBlocked: () => setPosts((prev) => prev.filter((p) => p.user_id !== item.user_id)),
             })}
           >
             <Ionicons name="ellipsis-horizontal" size={28} color="#fff" />

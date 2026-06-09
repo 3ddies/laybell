@@ -6,6 +6,45 @@ export async function deletePostById(postId: string): Promise<boolean> {
   return !error;
 }
 
+// Archiving hides a post from your profile/feed/explore without deleting it.
+// `archived_at` is set to now (archive) or cleared to null (restore). Requires
+// the posts.archived_at column (supabase/sql/post_archive.sql); if it isn't
+// migrated yet the write errors and we report failure so the caller can alert.
+export async function archivePostById(postId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('posts')
+    .update({ archived_at: new Date().toISOString() })
+    .eq('id', postId);
+  return !error;
+}
+
+export async function restorePostById(postId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('posts')
+    .update({ archived_at: null })
+    .eq('id', postId);
+  return !error;
+}
+
+// Confirm, archive, then fire onArchived so the caller can drop it from view.
+export function confirmArchivePost(postId: string, onArchived?: () => void) {
+  Alert.alert(
+    'Archive post?',
+    'This hides the post from your profile, the feed and explore. You can restore it anytime from Settings → Archive.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Archive',
+        onPress: async () => {
+          const ok = await archivePostById(postId);
+          if (ok) onArchived?.();
+          else Alert.alert('Error', 'Could not archive the post. Please try again.');
+        },
+      },
+    ],
+  );
+}
+
 // Two-step destructive confirm, then delete, then fire onDeleted so the caller
 // can drop it from local state. Also used directly for long-press affordances.
 export function confirmDeletePost(postId: string, onDeleted?: () => void) {
@@ -45,6 +84,31 @@ export function reportPost(postId: string) {
       onPress: async () => {
         await submitReport(postId);
         Alert.alert('Thanks for the report', 'Our team will review this post.');
+      },
+    },
+  ]);
+}
+
+// Records a user report. Silently no-ops if user_reports isn't migrated yet.
+export async function submitUserReport(userId: string, reason = 'other') {
+  const { data: { user } } = await supabase.auth.getUser();
+  await supabase.from('user_reports').insert({
+    reported_id: userId, reporter_id: user?.id ?? null, reason,
+  });
+}
+
+// `onDone` (optional) fires after Cancel or after the report completes — used by
+// the story viewer to resume playback once the dialog is dismissed.
+export function reportUser(userId: string, onDone?: () => void) {
+  Alert.alert('Report user', 'Report this account for our team to review?', [
+    { text: 'Cancel', style: 'cancel', onPress: onDone },
+    {
+      text: 'Report',
+      style: 'destructive',
+      onPress: async () => {
+        await submitUserReport(userId);
+        onDone?.();
+        Alert.alert('Thanks for the report', 'Our team will review this account.');
       },
     },
   ]);

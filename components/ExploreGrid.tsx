@@ -63,8 +63,13 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
       ? () => showOptions({
           postId: p.id,
           isOwn: p.user_id === currentUserId,
+          authorId: p.user_id,
+          authorName: p.profiles?.username,
+          mediaType: p.type,
           onEdit: () => router.push(`/edit-post/${p.id}`),
           onDeleted: () => onPostDeleted?.(p.id),
+          onArchived: () => onPostDeleted?.(p.id),
+          onBlocked: () => onPostDeleted?.(p.id),
         })
       : undefined;
 

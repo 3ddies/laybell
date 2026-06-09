@@ -15,6 +15,7 @@ import HighlightText from '../../components/HighlightText';
 import StoryAvatar from '../../components/StoryAvatar';
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
+import { fetchBlockedIds } from '../../lib/blocks';
 import { useAudio } from '../../contexts/AudioContext';
 import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
 import {
@@ -75,6 +76,12 @@ export default function ExploreScreen() {
   const [orderedGenres, setOrderedGenres] = useState<string[]>([...GENRE_FILTERS, ...CONTENT_TAGS]);
   const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
   const followingSetRef = useRef<Set<string>>(new Set());
+  const blockedIdsRef = useRef<Set<string>>(new Set());
+
+  // Drop archived posts (archived_at set) and posts from blocked users before
+  // ranking/display. archived_at is absent pre-migration → harmless no-op.
+  const visiblePosts = (rows: any[] = []) =>
+    rows.filter((p) => !p.archived_at && !blockedIdsRef.current.has(p.user_id));
 
   useEffect(() => { setup(); }, []);
 
@@ -97,16 +104,18 @@ export default function ExploreScreen() {
     if (userId) setCurrentUserId(userId);
     setSeenPostIds(seen);
 
-    // Affinity profile (AsyncStorage cache) + following list in parallel
+    // Affinity profile (AsyncStorage cache) + following list + blocks in parallel
     if (userId) {
-      const [profile, followingResult] = await Promise.all([
+      const [profile, followingResult, blocked] = await Promise.all([
         buildAffinityProfile(userId),
         supabase.from('follows').select('following_id').eq('follower_id', userId),
+        fetchBlockedIds(),
       ]);
       affinityProfile.current = profile;
       followingSetRef.current = new Set(
         (followingResult.data ?? []).map((f: any) => f.following_id),
       );
+      blockedIdsRef.current = blocked;
     }
 
     // Reorder the genre rail by affinity (Meme floored near the front), keeping
@@ -127,7 +136,7 @@ export default function ExploreScreen() {
     if (data) {
       const seen = overrideSeen ?? seenPostIds;
       const now  = Date.now();
-      const sorted = [...data].sort((a: any, b: any) =>
+      const sorted = visiblePosts(data).sort((a: any, b: any) =>
         scorePost(b, affinityProfile.current, followingSetRef.current, seen, now) -
         scorePost(a, affinityProfile.current, followingSetRef.current, seen, now),
       );
@@ -162,7 +171,7 @@ export default function ExploreScreen() {
     if (data) {
       const seen = overrideSeen ?? seenPostIds;
       const now  = Date.now();
-      const sorted = [...data].sort((a: any, b: any) =>
+      const sorted = visiblePosts(data).sort((a: any, b: any) =>
         scorePost(b, affinityProfile.current, followingSetRef.current, seen, now) -
         scorePost(a, affinityProfile.current, followingSetRef.current, seen, now),
       );
@@ -222,7 +231,7 @@ export default function ExploreScreen() {
       // Relevancy = closeness of match first, then the post's algorithm score
       // (scorePost). No seen-penalty — the user is actively searching.
       const now = Date.now();
-      const ranked = [...data].sort((a: any, b: any) => {
+      const ranked = visiblePosts(data).sort((a: any, b: any) => {
         const ta = postMatchTier(a, q), tb = postMatchTier(b, q);
         if (tb !== ta) return tb - ta;
         return scorePost(b, affinityProfile.current, followingSetRef.current, new Set(), now) -
@@ -414,8 +423,13 @@ export default function ExploreScreen() {
               onOptions={() => showOptions({
                 postId: item.id,
                 isOwn: item.user_id === currentUserId,
+                authorId: item.user_id,
+                authorName: item.profiles?.username,
+                mediaType: item.type ?? 'audio',
                 onEdit: () => router.push(`/edit-post/${item.id}`),
                 onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+                onArchived: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+                onBlocked: () => setPosts(prev => prev.filter(p => p.user_id !== item.user_id)),
               })}
             />
           ) : (
@@ -436,8 +450,13 @@ export default function ExploreScreen() {
               onLongPress={() => showOptions({
                 postId: item.id,
                 isOwn: item.user_id === currentUserId,
+                authorId: item.user_id,
+                authorName: item.profiles?.username,
+                mediaType: item.type,
                 onEdit: () => router.push(`/edit-post/${item.id}`),
                 onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+                onArchived: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
+                onBlocked: () => setPosts(prev => prev.filter(p => p.user_id !== item.user_id)),
               })}
             >
               {item.type === 'image' || (item.type === 'video' && item.thumbnail_url) ? (

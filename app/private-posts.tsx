@@ -23,11 +23,12 @@ export default function PrivatePostsScreen() {
     if (!user) { setLoading(false); return; }
     const { data } = await supabase
       .from('posts')
-      .select('id, type, media_url, caption, thumbnail_url')
+      .select('*')
       .eq('user_id', user.id)
       .eq('is_public', false)
       .order('created_at', { ascending: false });
-    if (data) setPosts(data);
+    // Hide archived posts (archived_at set); absent pre-migration → no-op.
+    if (data) setPosts(data.filter((p: any) => !p.archived_at));
     setLoading(false);
   }
 

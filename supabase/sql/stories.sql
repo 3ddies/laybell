@@ -68,6 +68,15 @@ create policy "Users can delete own stories"
 on public.stories for delete
 using (auth.uid() = user_id);
 
+-- A user can update only their own stories. Powers "restore" from the Archive
+-- screen: re-publishing an expired story pushes its created_at/expires_at forward
+-- so it becomes active (and visible in the tray) again for another 24h.
+drop policy if exists "Users can update own stories" on public.stories;
+create policy "Users can update own stories"
+on public.stories for update
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
 -- ─── story_views ─────────────────────────────────────────────────────────────
 -- One row per (story, viewer). Drives the unseen-ring styling in the tray and
 -- the "seen by N" count shown on your own story.

@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { timeAgo } from '../../lib/timeAgo';
 import { sharedPostId } from '../../lib/postLinks';
+import { fetchBlockedIds } from '../../lib/blocks';
 import HighlightText from '../../components/HighlightText';
 import StoryAvatar from '../../components/StoryAvatar';
 import { useStories } from '../../contexts/StoriesContext';
@@ -71,22 +72,26 @@ export default function MessagesScreen() {
   }
 
   async function fetchConversations(userId: string) {
-    const { data } = await supabase
-      .from('messages')
-      .select('id, body, created_at, sender_id, receiver_id, read')
-      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-      .order('created_at', { ascending: false });
+    const [{ data }, blockedIds] = await Promise.all([
+      supabase
+        .from('messages')
+        .select('id, body, created_at, sender_id, receiver_id, read')
+        .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+        .order('created_at', { ascending: false }),
+      fetchBlockedIds(),
+    ]);
 
     if (!data) return;
 
     // `data` is newest-first, so the first message seen per partner is the latest.
+    // Blocked partners are skipped entirely (their chats are hidden until unblock).
     const partnerIds: string[] = [];
     const latestMessages: Record<string, any> = {};
     const unreadCounts: Record<string, number> = {};
     const bodiesByPartner: Record<string, string[]> = {};
     data.forEach(msg => {
       const partnerId = msg.sender_id === userId ? msg.receiver_id : msg.sender_id;
-      if (!partnerId) return;
+      if (!partnerId || blockedIds.has(partnerId)) return;
       if (!latestMessages[partnerId]) { partnerIds.push(partnerId); latestMessages[partnerId] = msg; }
       if (!bodiesByPartner[partnerId]) bodiesByPartner[partnerId] = [];
       if (msg.body) bodiesByPartner[partnerId].push(msg.body);

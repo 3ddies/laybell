@@ -13,6 +13,7 @@ import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
+import { fetchBlockedIds } from '../../lib/blocks';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GENRES, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
@@ -85,6 +86,7 @@ export default function MusicScreen() {
   const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
   const followingSetRef = useRef<Set<string>>(new Set());
   const seenRef         = useRef<Set<string>>(new Set());
+  const blockedIdsRef   = useRef<Set<string>>(new Set()); // hide blocked artists from discover/search
   const discoverRefreshedAt = useRef(0); // epoch ms of the last 4-day refresh cycle
 
   useEffect(() => { setup(); }, []);
@@ -114,7 +116,7 @@ export default function MusicScreen() {
     const authorIds = (matchedProfiles ?? []).map((p: any) => p.id);
     setSearchProfiles(
       (matchedProfiles ?? [])
-        .filter((p: any) => p.id !== currentUserId && profileMatchTier(p, ql) >= 2)
+        .filter((p: any) => p.id !== currentUserId && !blockedIdsRef.current.has(p.id) && profileMatchTier(p, ql) >= 2)
         .sort((a: any, b: any) => profileMatchTier(b, ql) - profileMatchTier(a, ql))
         .slice(0, 4),
     );
@@ -133,12 +135,14 @@ export default function MusicScreen() {
     if (data) {
       // Relevancy: closeness of match first, then the song's algorithm score.
       const now = Date.now();
-      const ranked = [...data].sort((a: any, b: any) => {
-        const ta = postMatchTier(a, ql), tb = postMatchTier(b, ql);
-        if (tb !== ta) return tb - ta;
-        return scorePost(b, affinityProfile.current, followingSetRef.current, new Set(), now) -
-               scorePost(a, affinityProfile.current, followingSetRef.current, new Set(), now);
-      });
+      const ranked = [...data]
+        .filter((p: any) => !blockedIdsRef.current.has(p.user_id))
+        .sort((a: any, b: any) => {
+          const ta = postMatchTier(a, ql), tb = postMatchTier(b, ql);
+          if (tb !== ta) return tb - ta;
+          return scorePost(b, affinityProfile.current, followingSetRef.current, new Set(), now) -
+                 scorePost(a, affinityProfile.current, followingSetRef.current, new Set(), now);
+        });
       setSearchResults(ranked);
     }
     setSearching(false);
@@ -152,6 +156,8 @@ export default function MusicScreen() {
         fetchSavedTracks(currentUserId);
         fetchLikedTracks(currentUserId);
         fetchPlaylists(currentUserId);
+        // Refresh blocks so unblocking restores artists in search/discover.
+        fetchBlockedIds().then(ids => { blockedIdsRef.current = ids; });
       }
     }, [currentUserId])
   );
@@ -160,6 +166,9 @@ export default function MusicScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setCurrentUserId(user.id);
+      // Load blocks early so search (which can fire before discover finishes) and
+      // the discover sections both hide blocked artists.
+      fetchBlockedIds().then(ids => { blockedIdsRef.current = ids; });
       await Promise.all([fetchPlaylists(user.id), fetchSavedTracks(user.id), fetchLikedTracks(user.id)]);
       fetchDiscoverData(user.id); // runs in background with its own loading state
     }
@@ -322,6 +331,7 @@ export default function MusicScreen() {
     if (data) {
       const now = Date.now();
       const scored = [...data]
+        .filter((p: any) => !blockedIdsRef.current.has(p.user_id))
         .map(p => ({ p, score: scorePost(p, affinityProfile.current, followingSetRef.current, seenRef.current, now) }))
         .sort((a, b) => b.score - a.score)
         .slice(0, 8)
@@ -341,6 +351,7 @@ export default function MusicScreen() {
     if (data) {
       const now = Date.now();
       const sorted = [...data]
+        .filter((p: any) => !blockedIdsRef.current.has(p.user_id))
         .map(p => ({ p, score: scorePost(p, affinityProfile.current, followingSetRef.current, seenRef.current, now) }))
         .sort((a, b) => b.score - a.score)
         .slice(0, 10)
@@ -401,8 +412,12 @@ export default function MusicScreen() {
 
     if (!candidates.length) return;
 
+    // Don't pick a blocked artist's track.
+    const visibleCandidates = candidates.filter((p: any) => !blockedIdsRef.current.has(p.user_id));
+    if (!visibleCandidates.length) return;
+
     const now = Date.now();
-    const scored = [...candidates]
+    const scored = [...visibleCandidates]
       .map(p => ({ p, score: scorePost(p, affinityProfile.current, followingSetRef.current, seenRef.current, now) }))
       .sort((a, b) => b.score - a.score);
 
@@ -554,8 +569,13 @@ export default function MusicScreen() {
               onOptions={() => showOptions({
                 postId: item.id,
                 isOwn: item.user_id === currentUserId,
+                authorId: item.user_id,
+                authorName: item.profiles?.username,
+                mediaType: item.type ?? 'audio',
                 onEdit: () => router.push(`/edit-post/${item.id}`),
                 onDeleted: () => setSearchResults(prev => prev.filter(p => p.id !== item.id)),
+                onArchived: () => setSearchResults(prev => prev.filter(p => p.id !== item.id)),
+                onBlocked: () => setSearchResults(prev => prev.filter(p => p.user_id !== item.user_id)),
               })}
             />
           )}
@@ -673,10 +693,21 @@ export default function MusicScreen() {
                     onOptions={() => showOptions({
                       postId: track.id,
                       isOwn: track.user_id === currentUserId,
+                      authorId: track.user_id,
+                      authorName: track.profiles?.username,
+                      mediaType: track.type ?? 'audio',
                       onEdit: () => router.push(`/edit-post/${track.id}`),
                       onDeleted: () => {
                         setTrendingTracks(prev => prev.filter(t => t.id !== track.id));
                         setForYouTracks(prev => prev.filter(t => t.id !== track.id));
+                      },
+                      onArchived: () => {
+                        setTrendingTracks(prev => prev.filter(t => t.id !== track.id));
+                        setForYouTracks(prev => prev.filter(t => t.id !== track.id));
+                      },
+                      onBlocked: () => {
+                        setTrendingTracks(prev => prev.filter(t => t.user_id !== track.user_id));
+                        setForYouTracks(prev => prev.filter(t => t.user_id !== track.user_id));
                       },
                     })}
                   />
@@ -862,8 +893,13 @@ export default function MusicScreen() {
                   onOptions={() => showOptions({
                     postId: item.post_id,
                     isOwn: item.posts.user_id === currentUserId,
+                    authorId: item.posts.user_id,
+                    authorName: item.posts.profiles?.username,
+                    mediaType: 'audio',
                     onEdit: () => router.push(`/edit-post/${item.post_id}`),
                     onDeleted: () => setTracks(prev => prev.filter(t => t.post_id !== item.post_id)),
+                    onArchived: () => setTracks(prev => prev.filter(t => t.post_id !== item.post_id)),
+                    onBlocked: () => setTracks(prev => prev.filter(t => t.posts.user_id !== item.posts.user_id)),
                   })}
                 />
               )}
@@ -918,8 +954,13 @@ export default function MusicScreen() {
               onOptions={() => showOptions({
                 postId: item.posts?.id,
                 isOwn: item.posts?.user_id === currentUserId,
+                authorId: item.posts?.user_id,
+                authorName: item.posts?.profiles?.username,
+                mediaType: item.posts?.type ?? 'audio',
                 onEdit: () => router.push(`/edit-post/${item.posts?.id}`),
                 onDeleted: () => setSavedTracks(prev => prev.filter((s: any) => s.posts?.id !== item.posts?.id)),
+                onArchived: () => setSavedTracks(prev => prev.filter((s: any) => s.posts?.id !== item.posts?.id)),
+                onBlocked: () => setSavedTracks(prev => prev.filter((s: any) => s.posts?.user_id !== item.posts?.user_id)),
               })}
             />
           )}
@@ -972,8 +1013,13 @@ export default function MusicScreen() {
               onOptions={() => showOptions({
                 postId: item.posts?.id,
                 isOwn: item.posts?.user_id === currentUserId,
+                authorId: item.posts?.user_id,
+                authorName: item.posts?.profiles?.username,
+                mediaType: item.posts?.type ?? 'audio',
                 onEdit: () => router.push(`/edit-post/${item.posts?.id}`),
                 onDeleted: () => setLikedTracks(prev => prev.filter((l: any) => l.posts?.id !== item.posts?.id)),
+                onArchived: () => setLikedTracks(prev => prev.filter((l: any) => l.posts?.id !== item.posts?.id)),
+                onBlocked: () => setLikedTracks(prev => prev.filter((l: any) => l.posts?.user_id !== item.posts?.user_id)),
               })}
             />
           )}
