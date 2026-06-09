@@ -13,6 +13,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
+import { processMentions } from '../../lib/mentions';
+import { createNotification } from '../../lib/createNotification';
 import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
@@ -445,7 +447,7 @@ export default function PostScreen() {
       const trimmed = postType === 'video' && videoDuration > VIDEO_MAX_SEC;
       const videoDurSec = trimmed ? VIDEO_MAX_SEC : Math.round(videoDuration);
 
-      const { error: postError } = await supabase.from('posts').insert({
+      const { data: newPost, error: postError } = await supabase.from('posts').insert({
         user_id: user.id,
         type: postType === 'audio' ? audioKind : postType,
         media_url: mediaUrl,
@@ -463,9 +465,17 @@ export default function PostScreen() {
         ...(song && postType !== 'audio'
           ? { song_id: song.id, song_title: song.title, song_artist: song.artist, song_artist_id: song.artistId }
           : {}),
-      });
+      }).select('id').single();
       if (postError) throw postError;
       if (isPublic) bumpBadge('posts_created'); // recomputes the Posts badge from the live grid
+
+      // Notify @mentions in the caption, and the original artist if their song was used.
+      if (newPost?.id) {
+        processMentions({ text: caption.trim(), actorId: user.id, postId: newPost.id });
+        if (song && postType !== 'audio' && song.artistId && song.artistId !== user.id) {
+          createNotification({ userId: song.artistId, actorId: user.id, type: 'song_used', postId: newPost.id });
+        }
+      }
 
       Alert.alert('Posted! 🎉', 'Your post is now live on Laybell');
       resetAll();

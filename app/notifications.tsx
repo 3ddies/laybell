@@ -14,7 +14,7 @@ import StoryAvatar from '../components/StoryAvatar';
 import BadgeEmblem from '../components/BadgeEmblem';
 
 type Notification = {
-  id: string; type: 'like' | 'comment' | 'follow' | 'message';
+  id: string; type: 'like' | 'comment' | 'follow' | 'message' | 'mention' | 'song_used' | 'song_story';
   post_id: string | null; actor_id: string; read: boolean; created_at: string;
   actor: { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null } | null;
 };
@@ -25,6 +25,9 @@ function notificationText(type: string) {
     case 'comment': return 'commented on your post';
     case 'follow': return 'started following you';
     case 'message': return 'sent you a message';
+    case 'mention': return 'mentioned you';
+    case 'song_used': return 'used your audio in a post';
+    case 'song_story': return 'used your audio in their story';
     default: return 'interacted with you';
   }
 }
@@ -35,6 +38,9 @@ function notificationIcon(type: string): { name: any; color: string } {
     case 'comment': return { name: 'chatbubble', color: COLORS.primary };
     case 'follow': return { name: 'person-add', color: COLORS.primaryLight };
     case 'message': return { name: 'chatbubbles', color: '#60A5FA' };
+    case 'mention': return { name: 'at', color: COLORS.primary };
+    case 'song_used': return { name: 'musical-notes', color: COLORS.primaryLight };
+    case 'song_story': return { name: 'musical-notes', color: COLORS.primaryLight };
     default: return { name: 'notifications', color: COLORS.primary };
   }
 }
@@ -80,6 +86,8 @@ export default function NotificationsScreen() {
 
   function handlePress(notif: Notification) {
     if (notif.type === 'message') router.push(`/messages/${notif.actor_id}`);
+    // A song-in-story notification opens the poster's story (only up for 24h).
+    else if (notif.type === 'song_story') router.push(`/story/${notif.actor_id}`);
     else if (notif.post_id) router.push(`/post/${notif.post_id}`);
     else if (notif.actor_id) router.push(`/profile/${notif.actor_id}`);
   }

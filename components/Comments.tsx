@@ -12,6 +12,7 @@ import BadgeEmblem from './BadgeEmblem';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
 import { createNotification } from '../lib/createNotification';
+import { processMentions } from '../lib/mentions';
 
 type Row = {
   id: string; body: string; created_at: string; user_id: string;
@@ -128,6 +129,7 @@ export default function Comments({
       setRows(prev => [...prev, { ...(data as any), profiles: myProfile ?? userProfile }]);
       if (!parent_id) setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
       if (ownerId && ownerId !== userId) createNotification({ userId: ownerId, actorId: userId, type: 'comment', postId });
+      processMentions({ text: body, actorId: userId, postId, commentId: (data as any).id });
     }
     setSending(false);
   }

@@ -2,9 +2,12 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const MESSAGES: Record<string, (name: string) => { title: string; body: string }> = {
-  like:    name => ({ title: '❤️ New Like',      body: `${name} liked your post` }),
-  comment: name => ({ title: '💬 New Comment',   body: `${name} commented on your post` }),
-  follow:  name => ({ title: '🔔 New Follower',  body: `${name} started following you` }),
+  like:       name => ({ title: '❤️ New Like',      body: `${name} liked your post` }),
+  comment:    name => ({ title: '💬 New Comment',   body: `${name} commented on your post` }),
+  follow:     name => ({ title: '🔔 New Follower',  body: `${name} started following you` }),
+  mention:    name => ({ title: '🏷️ Mentioned',    body: `${name} mentioned you` }),
+  song_used:  name => ({ title: '🎵 Your audio',    body: `${name} used your audio in a post` }),
+  song_story: name => ({ title: '🎵 Your audio',    body: `${name} used your audio in their story` }),
 };
 
 serve(async (req) => {

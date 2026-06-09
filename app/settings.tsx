@@ -147,6 +147,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/badges'),
     },
     {
+      icon: 'at-outline',
+      label: 'Tagged',
+      subtitle: 'Mentions, your audio used & more',
+      onPress: () => router.push('/tagged'),
+    },
+    {
       icon: 'repeat-outline',
       label: 'Reposts',
       subtitle: 'See who reposted your posts',

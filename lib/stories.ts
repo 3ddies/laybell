@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { createNotification } from './createNotification';
 
 // 24-hour stories. Schema + RLS live in supabase/sql/stories.sql.
 // A story is an ephemeral image/video visible to the author and their followers
@@ -85,6 +86,12 @@ export async function createStory(input: {
       : {}),
   });
   if (error) throw error;
+
+  // Notify the original artist when their song is used in a story (deep-links to
+  // the poster's story, which is only viewable for the 24h the story is up).
+  if (input.song && input.song.artistId && input.song.artistId !== input.userId) {
+    createNotification({ userId: input.song.artistId, actorId: input.userId, type: 'song_story' });
+  }
 }
 
 // Core loader: active (non-expired) stories for the given authors, grouped by

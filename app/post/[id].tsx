@@ -32,6 +32,7 @@ import { useExpandTransition } from '../../hooks/useExpandTransition';
 import SongAttribution from '../../components/SongAttribution';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
+import { processMentions } from '../../lib/mentions';
 
 type Post = {
   id: string; type: string; media_url: string; caption: string;
@@ -165,6 +166,7 @@ export default function PostDetailScreen() {
       if (post.user_id !== currentUserId) {
         createNotification({ userId: post.user_id, actorId: currentUserId, type: 'comment', postId: id });
       }
+      processMentions({ text: body, actorId: currentUserId, postId: id as string, commentId: (data as any).id });
     }
     setSending(false);
   }
