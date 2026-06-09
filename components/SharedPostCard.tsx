@@ -17,6 +17,7 @@ type SharedPost = {
   caption: string | null;
   cover_url: string | null;
   thumbnail_url: string | null;
+  user_id: string;
   profiles?: { username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null } | null;
 };
 
@@ -38,7 +39,7 @@ export default function SharedPostCard({ postId }: { postId: string }) {
     (async () => {
       const { data } = await supabase
         .from('posts')
-        .select('id, type, media_url, caption, cover_url, thumbnail_url, profiles!posts_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show)')
+        .select('id, type, media_url, caption, cover_url, thumbnail_url, user_id, profiles!posts_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show)')
         .eq('id', postId)
         .single();
       const value = (data as any) ?? null;
@@ -88,7 +89,7 @@ export default function SharedPostCard({ postId }: { postId: string }) {
             <LinearGradient colors={GRADIENTS.primary} style={styles.authorAvatar} />
           )}
           <Text style={styles.authorName} numberOfLines={1}>@{post.profiles?.username ?? 'laybell'}</Text>
-          <BadgeEmblem profile={post.profiles} size={12} />
+          <BadgeEmblem profile={post.profiles} ownerId={post.user_id} size={12} />
         </View>
         {!!post.caption && <Text style={styles.caption} numberOfLines={2}>{post.caption}</Text>}
         <Text style={styles.cta}>View post</Text>

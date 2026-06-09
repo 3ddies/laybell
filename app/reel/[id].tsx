@@ -256,7 +256,7 @@ export default function ReelScreen() {
                 onPressProfile={() => router.push(`/profile/${item.user_id}`)}
               />
               <Text style={styles.authorName} numberOfLines={1}>@{item.profiles?.username}</Text>
-              <BadgeEmblem profile={item.profiles} size={12} />
+              <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={12} />
               <Text style={styles.dot}>·</Text>
               <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
             </TouchableOpacity>

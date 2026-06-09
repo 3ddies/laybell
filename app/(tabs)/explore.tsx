@@ -410,6 +410,7 @@ export default function ExploreScreen() {
               cover={item.cover_url}
               avatarUrl={item.profiles?.avatar_url}
               badgeProfile={item.profiles}
+              badgeOwnerId={item.user_id}
               highlightQuery={hq}
               isPlaying={currentTrack?.id === item.id && isPlaying}
               onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
@@ -465,7 +466,7 @@ export default function ExploreScreen() {
                 <HighlightText text={item.caption || 'Audio Track'} query={hq} style={styles.postCaption} highlightStyle={styles.searchHl} numberOfLines={2} />
                 <View style={styles.postMeta}>
                   <HighlightText text={`@${item.profiles?.username}`} query={hq} style={styles.postUser} highlightStyle={styles.searchHl} numberOfLines={1} />
-                  <BadgeEmblem profile={item.profiles} size={11} />
+                  <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={11} />
                   {((item.likes?.[0]?.count || 0) + (item.comments?.[0]?.count || 0)) > 0 && (
                     <View style={styles.postStats}>
                       <Ionicons name="heart" size={11} color={COLORS.like} />

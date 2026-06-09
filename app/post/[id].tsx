@@ -217,7 +217,7 @@ export default function PostDetailScreen() {
               <View style={styles.postHeaderInfo}>
                 <View style={styles.postNameRow}>
                   <Text style={styles.displayName}>{post.profiles?.display_name}</Text>
-                  <BadgeEmblem profile={post.profiles} size={14} />
+                  <BadgeEmblem profile={post.profiles} ownerId={post.user_id} size={14} />
                 </View>
                 <Text style={styles.username}>@{post.profiles?.username} · {timeAgo(post.created_at)}</Text>
               </View>

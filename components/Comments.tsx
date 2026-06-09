@@ -159,7 +159,7 @@ export default function Comments({
             <TouchableOpacity onPress={() => goToProfile(item.user_id)}>
               <Text style={styles.name}>{item.profiles?.display_name}</Text>
             </TouchableOpacity>
-            <BadgeEmblem profile={item.profiles} size={12} />
+            <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={12} />
             <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
           </View>
           <Text style={styles.text}>{item.body}</Text>

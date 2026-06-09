@@ -119,7 +119,7 @@ const PostCard = memo(function PostCard({
         <View style={styles.postHeaderInfo}>
           <View style={styles.postNameRow}>
             <Text style={styles.postDisplayName}>{item.profiles?.display_name}</Text>
-            <BadgeEmblem profile={item.profiles} size={13} />
+            <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={13} />
           </View>
           <Text style={styles.postUsername}>
             @{item.profiles?.username} · {timeAgo(item.created_at)}

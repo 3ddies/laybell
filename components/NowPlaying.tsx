@@ -238,7 +238,7 @@ export default function NowPlaying() {
                       <Text style={styles.artist} numberOfLines={1}>
                         {currentTrack.artist || (ownerName ? `@${ownerName}` : '')}
                       </Text>
-                      <BadgeEmblem profile={ownerBadge} size={13} />
+                      <BadgeEmblem profile={ownerBadge} ownerId={ownerId} size={13} />
                     </View>
                   </TouchableOpacity>
                 </View>

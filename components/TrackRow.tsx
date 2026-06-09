@@ -15,13 +15,15 @@ function formatDuration(seconds?: number | null) {
 }
 
 export default function TrackRow({
-  caption, artist, username, duration, streams, cover, avatarUrl, badgeProfile,
+  caption, artist, username, duration, streams, cover, avatarUrl, badgeProfile, badgeOwnerId,
   isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, onOptions, hidePlayButton, highlightQuery,
 }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
   cover?: string | null; avatarUrl?: string | null; hidePlayButton?: boolean;
-  // The track owner's badge fields, so their emblem shows next to the handle.
+  // The track owner's badge fields + id, so their emblem shows next to the handle
+  // and tapping your own opens your Badges page.
   badgeProfile?: ProfileBadgeFields | null;
+  badgeOwnerId?: string | null;
   isPlaying: boolean; onPlay: () => void; onCoverPress?: () => void; onAddToPlaylist?: () => void; onAvatarPress?: () => void;
   // When provided (i.e. the track belongs to the current user), long-pressing the
   // row triggers it — used app-wide for "delete my post".
@@ -53,7 +55,7 @@ export default function TrackRow({
         <HighlightText text={caption || 'Audio Track'} query={highlightQuery} style={styles.caption} highlightStyle={styles.hl} numberOfLines={1} />
         <View style={styles.meta}>
           <HighlightText text={`@${username}`} query={highlightQuery} style={styles.artist} highlightStyle={styles.hl} numberOfLines={1} />
-          <BadgeEmblem profile={badgeProfile} size={11} />
+          <BadgeEmblem profile={badgeProfile} ownerId={badgeOwnerId} size={11} />
           <Ionicons name="play" size={9} color={COLORS.textTertiary} />
           <Text style={styles.streams}>{formatCount(streams)}</Text>
           {durationLabel && <Text style={styles.artist}>· {durationLabel}</Text>}
