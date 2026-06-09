@@ -251,7 +251,7 @@ export default function PostDetailScreen() {
                   </TouchableOpacity>
                 )}
                 {!!post.song_id && (
-                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} />
+                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={dismiss} />
                 )}
               </View>
             )}
@@ -284,7 +284,7 @@ export default function PostDetailScreen() {
                 </TouchableOpacity>
               )}
               {!!post.song_id && (
-                <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} />
+                <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={dismiss} />
               )}
               </View>
             )}

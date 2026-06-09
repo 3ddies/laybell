@@ -271,6 +271,7 @@ export default function ReelScreen() {
               title={item.song_title}
               artist={item.song_artist}
               artistId={item.song_artist_id}
+              onNavigate={dismiss}
             />
           )}
         </View>

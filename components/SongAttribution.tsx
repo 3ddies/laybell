@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,10 +27,11 @@ export default function SongAttribution({
   onPauseHost?: () => void;
 }) {
   const router = useRouter();
-  const { play, expand } = useAudio();
+  const { play, expand, currentTrack } = useAudio();
   const { stop: stopPostMusic } = usePostMusic();
   const { show } = usePostOptions();
   const { profile } = useProfile();
+  const busyRef = useRef(false); // guards against rapid re-taps piling up audio loads
 
   function openArtist() {
     if (!artistId) return;
@@ -38,17 +40,31 @@ export default function SongAttribution({
   }
 
   async function playSong() {
-    onNavigate?.();
-    stopPostMusic(); // promote from ambient to the main mini-player
-    const { data } = await supabase
-      .from('posts')
-      .select('id, media_url, caption, cover_url, profiles!posts_user_id_fkey(display_name)')
-      .eq('id', songId)
-      .single();
-    if (data) {
-      const d: any = data;
-      play({ id: d.id, uri: d.media_url, caption: d.caption, artist: d.profiles?.display_name ?? artist ?? '', cover: d.cover_url });
+    // Already this track? Just resurface the player — never refetch/reload. The
+    // reload churn from rapid taps (createAsync/unloadAsync) is what froze the app
+    // on screens where the player opens behind the post.
+    if (currentTrack?.id === songId) {
+      onNavigate?.();
       expand();
+      return;
+    }
+    if (busyRef.current) return; // a previous tap is still loading — ignore
+    busyRef.current = true;
+    try {
+      onNavigate?.(); // close the host (post/reel/story) so the root player shows in front
+      stopPostMusic(); // promote from ambient to the main mini-player
+      const { data } = await supabase
+        .from('posts')
+        .select('id, media_url, caption, cover_url, profiles!posts_user_id_fkey(display_name)')
+        .eq('id', songId)
+        .single();
+      if (data) {
+        const d: any = data;
+        play({ id: d.id, uri: d.media_url, caption: d.caption, artist: d.profiles?.display_name ?? artist ?? '', cover: d.cover_url });
+        expand();
+      }
+    } finally {
+      busyRef.current = false;
     }
   }
 
