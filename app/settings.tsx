@@ -2,10 +2,11 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Switch, Alert, Image,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import PagerView from 'react-native-pager-view';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
 import {
@@ -80,6 +81,11 @@ function Section({ title, items }: { title: string; items: SectionItem[] }) {
 export default function SettingsScreen() {
   const router = useRouter();
   const { profile } = useProfile();
+  // Swipe-right-to-go-back via a native pager dismiss page — same mechanism the
+  // profile screens use. The native pager arbitrates with the inner vertical
+  // ScrollView (like the home/explore tabs), so vertical scrolling never triggers
+  // an accidental horizontal exit, while swiping right anywhere still goes back.
+  const pagerRef = useRef<PagerView>(null);
 
   // Per-category notification toggles (persisted locally). The "All" row is
   // derived — on when every category is on, and flips all of them at once.
@@ -127,6 +133,12 @@ export default function SettingsScreen() {
       label: 'Edit Profile',
       subtitle: profile ? `@${profile.username}` : undefined,
       onPress: () => router.push('/edit-profile'),
+    },
+    {
+      icon: 'stats-chart-outline',
+      label: 'Creator Analytics',
+      subtitle: 'Stats & charts about your content',
+      onPress: () => router.push('/analytics'),
     },
     {
       icon: 'repeat-outline',
@@ -244,6 +256,9 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
+      {/* The pager owns the back-swipe, so turn off the stack's own gesture
+          (otherwise the two horizontal gestures fight — exactly the profile pattern). */}
+      <Stack.Screen options={{ gestureEnabled: false }} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
@@ -252,6 +267,21 @@ export default function SettingsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
+      {/* Pager: page 0 is the dismiss page (swipe right off the content → go back);
+          page 1 is the settings ScrollView. One pager, no nesting → can't glitch. */}
+      <PagerView
+        ref={pagerRef}
+        style={styles.pager}
+        initialPage={1}
+        onPageSelected={(e) => {
+          if (e.nativeEvent.position === 0) {
+            if (router.canGoBack()) router.back();
+            else pagerRef.current?.setPageWithoutAnimation(1);
+          }
+        }}
+      >
+        <View key="dismiss" style={styles.dismissPage} />
+        <View key="content" style={styles.page}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Profile card */}
         {profile && (
@@ -280,6 +310,8 @@ export default function SettingsScreen() {
 
         <Text style={styles.madeWith}>Made with 🧡 for artists everywhere</Text>
       </ScrollView>
+        </View>
+      </PagerView>
     </View>
   );
 }
@@ -296,6 +328,9 @@ const styles = StyleSheet.create({
   backBtn: { padding: SPACING.sm },
   headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
 
+  pager: { flex: 1 },
+  page: { flex: 1 },
+  dismissPage: { flex: 1, backgroundColor: COLORS.background },
   content: { padding: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.xxl },
 
   profileCard: {

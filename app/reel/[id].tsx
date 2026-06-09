@@ -20,7 +20,10 @@ import FollowButton from '../../components/FollowButton';
 import StoryAvatar from '../../components/StoryAvatar';
 import { trackVideoProgress } from '../../lib/viewTracker';
 import { timeAgo } from '../../lib/timeAgo';
+import SongAttribution from '../../components/SongAttribution';
 import { useAudio } from '../../contexts/AudioContext';
+import { usePostMusic } from '../../contexts/PostMusicContext';
+import { useIsFocused } from '@react-navigation/native';
 import { useExpandTransition } from '../../hooks/useExpandTransition';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, EMPTY_PROFILE,
@@ -35,6 +38,8 @@ export default function ReelScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { stop } = useAudio();
+  const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
+  const isFocused = useIsFocused();
   const { dismiss, backdropOpacity, contentStyle } = useExpandTransition();
 
   // Seed from the tapped video so it plays instantly (no loading spinner).
@@ -58,6 +63,16 @@ export default function ReelScreen() {
   }).current;
 
   useEffect(() => { stop(); setup(); }, [id]);
+
+  // Auto-play the focused reel's attached song (the video itself is muted when a
+  // song is set); stop on swipe-away / blur / unmount.
+  const visibleItem = posts.find((p) => p.id === visibleId);
+  useEffect(() => {
+    if (isFocused && visibleId && visibleItem?.song_id) playSong(visibleId, visibleItem.song_id);
+    else if (visibleId) stopSong(visibleId);
+    return () => { if (visibleId) stopSong(visibleId); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleId, visibleItem?.song_id, isFocused]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -164,6 +179,7 @@ export default function ReelScreen() {
             resizeMode={landscape ? ResizeMode.CONTAIN : ResizeMode.COVER}
             isLooping={item.trim_end == null}
             shouldPlay={visibleId === item.id && !paused}
+            isMuted={!!item.song_id}
             useNativeControls={false}
             usePoster={!!poster}
             posterSource={poster ? { uri: poster } : undefined}
@@ -243,6 +259,16 @@ export default function ReelScreen() {
             <FollowButton userId={item.user_id} />
           </View>
           {!!item.caption && <Text style={styles.caption} numberOfLines={2}>{item.caption}</Text>}
+          {!!item.song_id && (
+            <SongAttribution
+              inline
+              style={{ marginTop: SPACING.xs }}
+              songId={item.song_id}
+              title={item.song_title}
+              artist={item.song_artist}
+              artistId={item.song_artist_id}
+            />
+          )}
         </View>
       </ElasticSwipeView>
     );
@@ -282,6 +308,13 @@ export default function ReelScreen() {
             <Ionicons name="chevron-back" size={28} color="#fff" />
           </TouchableOpacity>
 
+          {/* Sound toggle for the attached song (when the focused reel has one) */}
+          {!!visibleItem?.song_id && (
+            <TouchableOpacity style={[styles.muteBtn, { top: insets.top + 8 }]} onPress={toggleSongMuted}>
+              <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={22} color="#fff" />
+            </TouchableOpacity>
+          )}
+
           <CommentsSheet
             visible={!!commentsFor}
             postId={commentsFor?.id ?? ''}
@@ -301,6 +334,10 @@ const styles = StyleSheet.create({
   empty: { color: COLORS.textSecondary, fontSize: 15 },
 
   back: { position: 'absolute', left: SPACING.sm, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  muteBtn: {
+    position: 'absolute', right: SPACING.sm, width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)',
+  },
 
   pausedWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   bottomFade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 220 },

@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
 import { AudioProvider } from '../contexts/AudioContext';
+import { PostMusicProvider } from '../contexts/PostMusicContext';
 import { PostOptionsProvider } from '../contexts/PostOptionsContext';
 import { ProfileProvider } from '../contexts/ProfileContext';
 import { ShareProvider } from '../contexts/ShareContext';
@@ -123,16 +124,18 @@ export default function RootLayout() {
 
   return (
     <AudioProvider>
-      <ProfileProvider>
-        <FollowProvider>
-          <ShareProvider>
-            <StatusBar style="light" />
-            <StoriesProvider>
-              <AppContent />
-            </StoriesProvider>
-          </ShareProvider>
-        </FollowProvider>
-      </ProfileProvider>
+      <PostMusicProvider>
+        <ProfileProvider>
+          <FollowProvider>
+            <ShareProvider>
+              <StatusBar style="light" />
+              <StoriesProvider>
+                <AppContent />
+              </StoriesProvider>
+            </ShareProvider>
+          </FollowProvider>
+        </ProfileProvider>
+      </PostMusicProvider>
     </AudioProvider>
   );
 }

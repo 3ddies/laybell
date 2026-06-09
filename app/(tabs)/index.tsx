@@ -34,7 +34,9 @@ import { aspectToNumber } from '../../lib/aspectRatio';
 import TrackRow from '../../components/TrackRow';
 import StoriesTray from '../../components/StoriesTray';
 import StoryAvatar from '../../components/StoryAvatar';
+import SongAttribution from '../../components/SongAttribution';
 import { useStories } from '../../contexts/StoriesContext';
+import { usePostMusic } from '../../contexts/PostMusicContext';
 import type { SourceRect } from '../../lib/stories';
 
 type Post = {
@@ -58,6 +60,10 @@ type Post = {
   thumbnail_url?: string | null;
   duration_seconds?: number | null;
   genre?: string | null;
+  song_id?: string | null;
+  song_title?: string | null;
+  song_artist?: string | null;
+  song_artist_id?: string | null;
 };
 
 type PostCardProps = {
@@ -67,6 +73,7 @@ type PostCardProps = {
   isSaved: boolean;
   audioActive: boolean;
   videoMuted: boolean;
+  songMuted: boolean;
   shouldPlayVideo: boolean;
   onProfile: (item: Post) => void;
   onOptions: (item: Post) => void;
@@ -76,6 +83,7 @@ type PostCardProps = {
   onPlayTrack: (item: Post) => void;
   onExpandTrack: (item: Post) => void;
   onToggleMuted: () => void;
+  onToggleSongMute: () => void;
   onLike: (item: Post) => void;
   onSave: (item: Post) => void;
   onShare: (item: Post) => void;
@@ -86,8 +94,8 @@ type PostCardProps = {
 // from HomeScreen are referentially stable, and `item` keeps its reference for
 // unchanged posts, so React.memo's shallow compare skips them.
 const PostCard = memo(function PostCard({
-  item, isOwn, isLiked, isSaved, audioActive, videoMuted, shouldPlayVideo,
-  onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare,
+  item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted, shouldPlayVideo,
+  onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare,
 }: PostCardProps) {
   const likeCount = item.likes[0]?.count || 0;
   const commentCount = item.comments[0]?.count || 0;
@@ -133,6 +141,14 @@ const PostCard = memo(function PostCard({
             style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
             resizeMode="cover"
           />
+          {!!item.song_id && (
+            <TouchableOpacity style={styles.videoAudioBtn} onPress={onToggleSongMute}>
+              <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color={COLORS.text} />
+            </TouchableOpacity>
+          )}
+          {!!item.song_id && (
+            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
+          )}
         </TouchableOpacity>
       )}
 
@@ -165,13 +181,16 @@ const PostCard = memo(function PostCard({
               style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
               resizeMode={ResizeMode.COVER}
               isLooping
-              isMuted={videoMuted}
+              isMuted={item.song_id ? true : videoMuted}
               shouldPlay={shouldPlayVideo}
             />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.videoAudioBtn} onPress={onToggleMuted}>
-            <Ionicons name={videoMuted ? 'volume-mute' : 'volume-high'} size={18} color={COLORS.text} />
+          <TouchableOpacity style={styles.videoAudioBtn} onPress={item.song_id ? onToggleSongMute : onToggleMuted}>
+            <Ionicons name={(item.song_id ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color={COLORS.text} />
           </TouchableOpacity>
+          {!!item.song_id && (
+            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
+          )}
         </View>
       )}
 
@@ -237,7 +256,9 @@ export default function HomeScreen() {
   const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string } | null>(null);
   const [playlistCount, setPlaylistCount] = useState(0);
   const [visibleVideoId, setVisibleVideoId] = useState<string | null>(null);
+  const [visibleMusicId, setVisibleMusicId] = useState<string | null>(null);
   const { refresh: refreshStories } = useStories();
+  const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
   const router = useRouter();
 
   // Only autoplay feed videos when this tab is settled and focused — not while
@@ -249,8 +270,8 @@ export default function HomeScreen() {
   // Latest values for the stable card callbacks below. Updating a ref (instead of
   // putting these in useCallback deps) lets the callbacks keep a constant identity
   // — so memoized PostCards don't re-render — while still acting on current state.
-  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, openShare });
-  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, openShare };
+  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare });
+  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare };
 
   // Track which video is on-screen so it auto-plays while others pause.
   // FlatList requires these references to be stable across renders.
@@ -258,6 +279,9 @@ export default function HomeScreen() {
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     const firstVideo = viewableItems.find(v => v.item?.type === 'video');
     setVisibleVideoId(firstVideo ? firstVideo.item.id : null);
+    // The most-visible post that carries an attached song — its track plays ambiently.
+    const firstMusic = viewableItems.find(v => v.item?.song_id);
+    setVisibleMusicId(firstMusic ? firstMusic.item.id : null);
   }).current;
   const [feedMode, setFeedMode] = useState<'all' | 'following'>('all');
   const [initialized, setInitialized] = useState(false);
@@ -312,6 +336,16 @@ export default function HomeScreen() {
   useEffect(() => {
     setup();
   }, []);
+
+  // Auto-play the attached song of the most-visible music post while the feed is
+  // focused; stop when it scrolls away or you leave the tab.
+  const visibleMusicItem = posts.find((p) => p.id === visibleMusicId);
+  useEffect(() => {
+    if (isFocused && visibleMusicId && visibleMusicItem?.song_id) playSong(visibleMusicId, visibleMusicItem.song_id);
+    else if (visibleMusicId) stopSong(visibleMusicId);
+    return () => { if (visibleMusicId) stopSong(visibleMusicId); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleMusicId, visibleMusicItem?.song_id, isFocused]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -481,6 +515,7 @@ export default function HomeScreen() {
     live.current.expand();
   }, []);
   const onToggleMuted = useCallback(() => live.current.toggleVideoMuted(), []);
+  const onToggleSongMute = useCallback(() => live.current.toggleSongMuted(), []);
 
   const onOptions = useCallback((item: Post) => {
     showOptions({
@@ -505,6 +540,7 @@ export default function HomeScreen() {
         isSaved={savedPosts.has(item.id)}
         audioActive={isPlaying && currentTrack?.id === item.id}
         videoMuted={videoMuted}
+        songMuted={songMuted}
         shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
         onProfile={onProfile}
         onOptions={onOptions}
@@ -514,13 +550,14 @@ export default function HomeScreen() {
         onPlayTrack={onPlayTrack}
         onExpandTrack={onExpandTrack}
         onToggleMuted={onToggleMuted}
+        onToggleSongMute={onToggleSongMute}
         onLike={onLike}
         onSave={onSave}
         onShare={onShare}
       />
     </ElasticSwipeView>
-  ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, canPlayVideo, visibleVideoId,
-      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onLike, onSave, onShare]);
+  ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, songMuted, canPlayVideo, visibleVideoId,
+      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare]);
 
   if (loading) {
     return (

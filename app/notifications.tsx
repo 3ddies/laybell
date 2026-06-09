@@ -2,14 +2,14 @@ import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, ActivityIndicator, Image, RefreshControl,
 } from 'react-native';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useEffect, useState, useRef } from 'react';
+import { useRouter, Stack } from 'expo-router';
+import PagerView from 'react-native-pager-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
-import ElasticSwipeView from '../components/ElasticSwipeView';
 import StoryAvatar from '../components/StoryAvatar';
 
 type Notification = {
@@ -43,6 +43,9 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Native-pager dismiss (page 0 = back) so swiping right goes back without the
+  // stack gesture fighting vertical scroll — same as settings / the profile pager.
+  const pagerRef = useRef<PagerView>(null);
 
   useEffect(() => { fetchNotifications(); }, []);
 
@@ -86,6 +89,7 @@ export default function NotificationsScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ gestureEnabled: false }} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
@@ -94,6 +98,19 @@ export default function NotificationsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
+      <PagerView
+        ref={pagerRef}
+        style={styles.pager}
+        initialPage={1}
+        onPageSelected={(e) => {
+          if (e.nativeEvent.position === 0) {
+            if (router.canGoBack()) router.back();
+            else pagerRef.current?.setPageWithoutAnimation(1);
+          }
+        }}
+      >
+        <View key="dismiss" style={styles.dismissPage} />
+        <View key="content" style={styles.page}>
       <FlatList
         data={notifications}
         keyExtractor={item => item.id}
@@ -114,7 +131,6 @@ export default function NotificationsScreen() {
         renderItem={({ item }) => {
           const icon = notificationIcon(item.type);
           return (
-            <ElasticSwipeView>
               <TouchableOpacity
                 style={[styles.notifRow, !item.read && styles.notifUnread]}
                 onPress={() => handlePress(item)}
@@ -141,10 +157,11 @@ export default function NotificationsScreen() {
 
                 {!item.read && <View style={styles.unreadDot} />}
               </TouchableOpacity>
-            </ElasticSwipeView>
           );
         }}
       />
+        </View>
+      </PagerView>
     </View>
   );
 }
@@ -152,6 +169,9 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+  pager: { flex: 1 },
+  page: { flex: 1 },
+  dismissPage: { flex: 1, backgroundColor: COLORS.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,

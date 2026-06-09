@@ -1,0 +1,99 @@
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../lib/supabase';
+import { useAudio } from '../contexts/AudioContext';
+import { usePostMusic } from '../contexts/PostMusicContext';
+import { usePostOptions } from '../contexts/PostOptionsContext';
+import { useProfile } from '../contexts/ProfileContext';
+import { COLORS, SPACING, RADIUS } from '../constants/theme';
+
+// Bottom-right "this post uses <song>" credit on image/video posts and stories.
+// Artist (bold) → artist profile · song name → plays the track · ⋮ → the song's
+// 3-dot menu. The host (e.g. story viewer) can pass onNavigate (close itself
+// before navigating) and onPauseHost (pause while the menu is open).
+export default function SongAttribution({
+  songId, title, artist, artistId, style, inline = false, onNavigate, onPauseHost,
+}: {
+  songId: string;
+  title?: string | null;
+  artist?: string | null;
+  artistId?: string | null;
+  style?: any;
+  // inline = flows in normal layout (left-aligned) instead of floating bottom-right.
+  inline?: boolean;
+  onNavigate?: () => void;
+  onPauseHost?: () => void;
+}) {
+  const router = useRouter();
+  const { play, expand } = useAudio();
+  const { stop: stopPostMusic } = usePostMusic();
+  const { show } = usePostOptions();
+  const { profile } = useProfile();
+
+  function openArtist() {
+    if (!artistId) return;
+    onNavigate?.();
+    router.push(`/profile/${artistId}`);
+  }
+
+  async function playSong() {
+    onNavigate?.();
+    stopPostMusic(); // promote from ambient to the main mini-player
+    const { data } = await supabase
+      .from('posts')
+      .select('id, media_url, caption, cover_url, profiles!posts_user_id_fkey(display_name)')
+      .eq('id', songId)
+      .single();
+    if (data) {
+      const d: any = data;
+      play({ id: d.id, uri: d.media_url, caption: d.caption, artist: d.profiles?.display_name ?? artist ?? '', cover: d.cover_url });
+      expand();
+    }
+  }
+
+  function openOptions() {
+    onPauseHost?.();
+    show({
+      postId: songId,
+      isOwn: !!artistId && artistId === profile?.id,
+      authorId: artistId ?? undefined,
+      authorName: artist ?? undefined,
+      mediaType: 'audio',
+      onNavigate,
+    });
+  }
+
+  return (
+    <View style={[styles.base, inline ? styles.inline : styles.floating, style]}>
+      <Ionicons name="musical-notes" size={13} color="#fff" style={styles.note} />
+      <View style={[styles.textCol, inline && styles.textColInline]}>
+        <TouchableOpacity onPress={openArtist} hitSlop={{ top: 6, bottom: 2, left: 6, right: 6 }} disabled={!artistId}>
+          <Text style={styles.artist} numberOfLines={1}>{artist || 'Unknown artist'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={playSong} hitSlop={{ top: 2, bottom: 6, left: 6, right: 6 }}>
+          <Text style={styles.song} numberOfLines={1}>{title || 'Audio track'}</Text>
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity onPress={openOptions} style={styles.dots} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Ionicons name="ellipsis-horizontal" size={18} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  base: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.32)', borderRadius: RADIUS.full,
+    paddingVertical: 5, paddingHorizontal: SPACING.sm,
+  },
+  floating: { position: 'absolute', right: SPACING.sm, bottom: SPACING.sm, maxWidth: '70%' },
+  inline: { alignSelf: 'flex-start', maxWidth: '100%' },
+  note: { textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3 },
+  textCol: { flexShrink: 1, alignItems: 'flex-end' },
+  textColInline: { alignItems: 'flex-start' },
+  artist: { color: '#fff', fontSize: 12, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3 },
+  song: { color: '#fff', fontSize: 11, fontWeight: '500', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3, marginTop: 1 },
+  dots: { paddingLeft: 2 },
+});

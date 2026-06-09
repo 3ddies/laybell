@@ -18,7 +18,9 @@ import {
   type StoryGroup, type SourceRect,
 } from '../../lib/stories';
 import { reportUser } from '../../lib/postActions';
+import SongAttribution from '../../components/SongAttribution';
 import { useStories } from '../../contexts/StoriesContext';
+import { usePostMusic } from '../../contexts/PostMusicContext';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const IMAGE_DURATION_MS = 5000;
@@ -33,6 +35,7 @@ export default function StoryViewerScreen() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const { refresh: refreshStories } = useStories();
+  const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
   const { userId, users, src } = useLocalSearchParams<{ userId: string; users?: string; src?: string }>();
 
   const orderedIds = useMemo<string[]>(() => {
@@ -140,6 +143,16 @@ export default function StoryViewerScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused]);
+
+  // Auto-play the song attached to the current story; stop on change/blur/close.
+  useEffect(() => {
+    const sid = story?.song_id;
+    const hostId = story?.id;
+    if (isFocused && hostId && sid) playSong(hostId, sid);
+    else if (hostId) stopSong(hostId);
+    return () => { if (hostId) stopSong(hostId); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.id, story?.song_id, isFocused]);
 
   function stopProgressAnim() {
     if (animRef.current) { animRef.current.stop(); animRef.current = null; }
@@ -401,6 +414,7 @@ export default function StoryViewerScreen() {
                 resizeMode={ResizeMode.CONTAIN}
                 shouldPlay={!paused}
                 isLooping={false}
+                isMuted={!!story.song_id}
                 usePoster={!!story.thumbnail_url}
                 posterSource={story.thumbnail_url ? { uri: story.thumbnail_url } : undefined}
                 posterStyle={{ resizeMode: 'contain' }}
@@ -453,6 +467,11 @@ export default function StoryViewerScreen() {
               </TouchableOpacity>
 
               <View style={styles.headerRight}>
+                {!!story.song_id && (
+                  <TouchableOpacity style={styles.headerBtn} onPress={toggleSongMuted} hitSlop={8}>
+                    <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={21} color="#fff" />
+                  </TouchableOpacity>
+                )}
                 {isOwn ? (
                   <TouchableOpacity style={styles.headerBtn} onPress={onDelete} hitSlop={8}>
                     <Ionicons name="trash-outline" size={22} color="#fff" />
@@ -481,6 +500,19 @@ export default function StoryViewerScreen() {
                 <Ionicons name="eye-outline" size={18} color="#fff" />
                 <Text style={styles.seenText}>{viewerCount ?? 0}</Text>
               </View>
+            )}
+
+            {/* Song used on this story */}
+            {!!story.song_id && (
+              <SongAttribution
+                style={{ bottom: insets.bottom + (story.caption ? 76 : isOwn ? 52 : 28) }}
+                songId={story.song_id}
+                title={story.song_title}
+                artist={story.song_artist}
+                artistId={story.song_artist_id}
+                onNavigate={dismiss}
+                onPauseHost={pause}
+              />
             )}
           </>
         )}

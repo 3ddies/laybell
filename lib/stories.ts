@@ -23,6 +23,11 @@ export type Story = {
   created_at: string;
   expires_at: string;
   seen?: boolean;
+  // Another creator's track used on this story (denormalised — see post_song.sql).
+  song_id?: string | null;
+  song_title?: string | null;
+  song_artist?: string | null;
+  song_artist_id?: string | null;
 };
 
 export type StoryGroup = {
@@ -63,6 +68,7 @@ export async function createStory(input: {
   caption?: string | null;
   aspectRatio?: string | null;
   durationSeconds?: number | null;
+  song?: { id: string; title: string; artist: string; artistId: string } | null;
 }): Promise<void> {
   const { error } = await supabase.from('stories').insert({
     user_id: input.userId,
@@ -72,6 +78,9 @@ export async function createStory(input: {
     ...(input.caption ? { caption: input.caption } : {}),
     ...(input.aspectRatio ? { aspect_ratio: input.aspectRatio } : {}),
     ...(input.durationSeconds != null ? { duration_seconds: input.durationSeconds } : {}),
+    ...(input.song
+      ? { song_id: input.song.id, song_title: input.song.title, song_artist: input.song.artist, song_artist_id: input.song.artistId }
+      : {}),
   });
   if (error) throw error;
 }

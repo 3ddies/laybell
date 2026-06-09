@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { uploadStoryMedia, createStory } from '../../lib/stories';
+import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePagerSwiping } from '../../contexts/PagerContext';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
@@ -57,6 +58,8 @@ export default function StoryCameraScreen() {
   const [stage, setStage] = useState<'capture' | 'preview'>('capture');
   const [captured, setCaptured] = useState<Captured | null>(null);
   const [caption, setCaption] = useState('');
+  const [song, setSong] = useState<PickedSong | null>(null);
+  const [showSongPicker, setShowSongPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   // Ask for camera access the first time you actually open the camera.
@@ -79,6 +82,7 @@ export default function StoryCameraScreen() {
         setStage('capture');
         setCaptured(null);
         setCaption('');
+        setSong(null);
         setMode('picture');
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -182,6 +186,7 @@ export default function StoryCameraScreen() {
   function retake() {
     setCaptured(null);
     setCaption('');
+    setSong(null);
     setStage('capture');
   }
 
@@ -225,6 +230,7 @@ export default function StoryCameraScreen() {
         caption: caption.trim() || null,
         aspectRatio: '9:16',
         durationSeconds: captured.type === 'video' ? captured.durationSec ?? null : null,
+        song,
       });
 
       retake();
@@ -281,6 +287,20 @@ export default function StoryCameraScreen() {
         </TouchableOpacity>
 
         <View style={[styles.previewBottom, { paddingBottom: insets.bottom + SPACING.md }]}>
+          {song ? (
+            <View style={styles.songPill}>
+              <Ionicons name="musical-notes" size={15} color="#fff" />
+              <Text style={styles.songPillText} numberOfLines={1}>{song.artist} · {song.title}</Text>
+              <TouchableOpacity onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={16} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.musicBtn} onPress={() => setShowSongPicker(true)}>
+              <Ionicons name="musical-notes-outline" size={18} color="#fff" />
+              <Text style={styles.musicBtnText}>Add music</Text>
+            </TouchableOpacity>
+          )}
           <TextInput
             style={styles.captionInput}
             placeholder="Add a caption…"
@@ -300,6 +320,7 @@ export default function StoryCameraScreen() {
             )}
           </TouchableOpacity>
         </View>
+        <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} />
       </View>
     );
   }
@@ -467,4 +488,17 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
   },
   shareBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  musicBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: RADIUS.md,
+    paddingVertical: SPACING.sm + 2, alignSelf: 'flex-start', paddingHorizontal: SPACING.md,
+  },
+  musicBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  songPill: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: RADIUS.full,
+    paddingVertical: 6, paddingHorizontal: SPACING.md, alignSelf: 'flex-start', maxWidth: '100%',
+  },
+  songPillText: { color: '#fff', fontSize: 13, fontWeight: '600', flexShrink: 1 },
 });

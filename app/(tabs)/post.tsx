@@ -19,6 +19,7 @@ import { GENRES } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
+import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import VideoTrimmer from '../../components/VideoTrimmer';
 import ErrorBoundary from '../../components/ErrorBoundary';
 
@@ -82,6 +83,8 @@ export default function PostScreen() {
   // details
   const [caption, setCaption] = useState('');
   const [genre, setGenre] = useState('');
+  const [song, setSong] = useState<PickedSong | null>(null); // another creator's track on this image/video
+  const [showSongPicker, setShowSongPicker] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -123,7 +126,7 @@ export default function PostScreen() {
     setMedia(null); setThumbnailUri(null); cropRef.current = null;
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
-    setCaption(''); setGenre(''); setError(''); setStep('pick');
+    setCaption(''); setGenre(''); setSong(null); setError(''); setStep('pick');
   }
 
   function switchType(t: PostType) {
@@ -132,6 +135,7 @@ export default function PostScreen() {
     setMedia(null); setThumbnailUri(null); cropRef.current = null;
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null);
+    setSong(null);
   }
 
   function cycleFormat() {
@@ -353,6 +357,9 @@ export default function PostScreen() {
         ...(trimmed ? { trim_start: trimStart, trim_end: trimStart + VIDEO_MAX_SEC } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(coverUrl ? { cover_url: coverUrl } : {}),
+        ...(song && postType !== 'audio'
+          ? { song_id: song.id, song_title: song.title, song_artist: song.artist, song_artist_id: song.artistId }
+          : {}),
       });
       if (postError) throw postError;
 
@@ -488,6 +495,33 @@ export default function PostScreen() {
             </View>
           )}
 
+          {/* Music — attach another creator's song to an image/video post */}
+          {postType !== 'audio' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Music</Text>
+              {song ? (
+                <View style={styles.songRow}>
+                  <Ionicons name="musical-notes" size={18} color={COLORS.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.songRowTitle} numberOfLines={1}>{song.title}</Text>
+                    <Text style={styles.songRowArtist} numberOfLines={1}>{song.artist}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setShowSongPicker(true)} style={styles.songChange}>
+                    <Text style={styles.songChangeText}>Change</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="close-circle" size={22} color={COLORS.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.addSongBtn} onPress={() => setShowSongPicker(true)}>
+                  <Ionicons name="musical-notes-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.addSongText}>Add music</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {/* Visibility */}
           <View style={styles.visibilityRow}>
             <View style={styles.visibilityLeft}>
@@ -512,6 +546,7 @@ export default function PostScreen() {
             </View>
           )}
         </ScrollView>
+        <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} />
       </View>
     );
   }
@@ -783,6 +818,22 @@ const styles = StyleSheet.create({
   genreChipActive: { backgroundColor: COLORS.primary + '22', borderColor: COLORS.primary },
   genreChipText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
   genreChipTextActive: { color: COLORS.primary },
+
+  addSongBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.md, paddingVertical: SPACING.md,
+  },
+  addSongText: { color: COLORS.primary, fontSize: 14, fontWeight: '700' },
+  songRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.md, padding: SPACING.sm + 2,
+  },
+  songRowTitle: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  songRowArtist: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
+  songChange: { paddingHorizontal: SPACING.sm, paddingVertical: 4, borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border },
+  songChangeText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
 
   visibilityRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

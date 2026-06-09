@@ -2,8 +2,9 @@ import {
   View, Text, StyleSheet, FlatList, TextInput,
   TouchableOpacity, ActivityIndicator, Image, RefreshControl, Keyboard,
 } from 'react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { useFocusEffect, useRouter, Stack } from 'expo-router';
+import PagerView from 'react-native-pager-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -46,6 +47,9 @@ export default function MessagesScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const { refresh: refreshStories } = useStories();
+  // Native-pager dismiss (page 0 = back), same as settings — clean swipe-back that
+  // doesn't fight the vertical list scroll.
+  const pagerRef = useRef<PagerView>(null);
 
   useEffect(() => { setup(); }, []);
 
@@ -165,6 +169,7 @@ export default function MessagesScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ gestureEnabled: false }} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
@@ -201,8 +206,22 @@ export default function MessagesScreen() {
         </View>
       </View>
 
+      <PagerView
+        ref={pagerRef}
+        style={styles.pager}
+        initialPage={1}
+        onPageSelected={(e) => {
+          if (e.nativeEvent.position === 0) {
+            if (router.canGoBack()) router.back();
+            else pagerRef.current?.setPageWithoutAnimation(1);
+          }
+        }}
+      >
+        <View key="dismiss" style={styles.dismissPage} />
+        <View key="content" style={styles.page}>
       <FlatList
         data={filtered}
+        style={styles.list}
         keyboardShouldPersistTaps="handled"
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
@@ -308,6 +327,8 @@ export default function MessagesScreen() {
           );
         }}
       />
+        </View>
+      </PagerView>
     </View>
   );
 }
@@ -315,6 +336,10 @@ export default function MessagesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+  pager: { flex: 1 },
+  page: { flex: 1 },
+  dismissPage: { flex: 1, backgroundColor: COLORS.background },
+  list: { flex: 1 },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

@@ -15,6 +15,8 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import StoryAvatar from '../../components/StoryAvatar';
 import { useAudio } from '../../contexts/AudioContext';
+import { usePostMusic } from '../../contexts/PostMusicContext';
+import { useIsFocused } from '@react-navigation/native';
 import Comments from '../../components/Comments';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
@@ -25,6 +27,7 @@ import { trackVideoProgress } from '../../lib/viewTracker';
 import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { useExpandTransition } from '../../hooks/useExpandTransition';
+import SongAttribution from '../../components/SongAttribution';
 
 type Post = {
   id: string; type: string; media_url: string; caption: string;
@@ -36,6 +39,10 @@ type Post = {
   share_count?: number;
   trim_start?: number | null;
   trim_end?: number | null;
+  song_id?: string | null;
+  song_title?: string | null;
+  song_artist?: string | null;
+  song_artist_id?: string | null;
   profiles: { username: string; display_name: string; avatar_url: string | null };
 };
 type Comment = {
@@ -49,6 +56,8 @@ export default function PostDetailScreen() {
   const { id, post: postParam } = useLocalSearchParams<{ id: string; post?: string }>();
   const router = useRouter();
   const { currentTrack, isPlaying, play, stop } = useAudio();
+  const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
+  const isFocused = useIsFocused();
   const flatListRef = useRef<any>(null);
   const videoRef = useRef<any>(null);
   const { dismiss, backdropOpacity, contentStyle } = useExpandTransition();
@@ -75,6 +84,15 @@ export default function PostDetailScreen() {
   const audioPlaying = currentTrack?.id === id && isPlaying;
 
   useEffect(() => { setup(); }, [id]);
+
+  // Auto-play the song attached to this image/video post (ambient); stop on
+  // blur/close. The media's own audio (video) is muted while a song is set.
+  useEffect(() => {
+    if (isFocused && post?.id && post?.song_id) playSong(post.id, post.song_id);
+    else if (post?.id) stopSong(post.id);
+    return () => { if (post?.id) stopSong(post.id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post?.id, post?.song_id, isFocused]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -218,13 +236,25 @@ export default function PostDetailScreen() {
 
             {/* Media */}
             {post.type === 'image' && post.media_url && (
-              <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined, backgroundColor: '#000' }]} resizeMode="cover" />
+              <View>
+                <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined, backgroundColor: '#000' }]} resizeMode="cover" />
+                {!!post.song_id && (
+                  <TouchableOpacity style={styles.songMuteBtn} onPress={toggleSongMuted}>
+                    <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+                  </TouchableOpacity>
+                )}
+                {!!post.song_id && (
+                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} />
+                )}
+              </View>
             )}
             {post.type === 'video' && post.media_url && (
+              <View>
               <Video
                 ref={videoRef}
                 source={{ uri: post.media_url }}
                 style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
+                isMuted={!!post.song_id}
                 useNativeControls
                 usePoster={!!(post.thumbnail_url ?? post.cover_url)}
                 posterSource={(post.thumbnail_url ?? post.cover_url) ? { uri: (post.thumbnail_url ?? post.cover_url) as string } : undefined}
@@ -241,6 +271,15 @@ export default function PostDetailScreen() {
                   }
                 }}
               />
+              {!!post.song_id && (
+                <TouchableOpacity style={styles.songMuteBtn} onPress={toggleSongMuted}>
+                  <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+                </TouchableOpacity>
+              )}
+              {!!post.song_id && (
+                <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} />
+              )}
+              </View>
             )}
             {isAudioPost(post.type) && (
               <TouchableOpacity
@@ -331,6 +370,11 @@ const styles = StyleSheet.create({
   username: { color: COLORS.textTertiary, fontSize: 12, marginTop: 1 },
   typeTag: { width: 28, height: 28, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: 340, backgroundColor: COLORS.surfaceLight },
+  songMuteBtn: {
+    position: 'absolute', top: SPACING.sm, right: SPACING.sm,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
+  },
   audioWrap: { marginHorizontal: SPACING.md, marginVertical: SPACING.sm, borderRadius: RADIUS.md, overflow: 'hidden' },
   audioCard: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, gap: SPACING.md, borderRadius: RADIUS.md },
   audioRing: { width: 48, height: 48, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + '44', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.primary + '88' },
