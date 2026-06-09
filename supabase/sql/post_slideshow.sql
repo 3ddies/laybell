@@ -12,5 +12,13 @@
 
 alter table posts add column if not exists slides jsonb;
 
+-- Allow the new 'slideshow' type. The posts.type CHECK constraint
+-- (posts_type_check) only permitted image/video/audio/podcast/audiobook, so
+-- inserting a slideshow failed with: new row for relation "posts" violates
+-- check constraint "posts_type_check". Recreate it with 'slideshow' added.
+alter table posts drop constraint if exists posts_type_check;
+alter table posts add constraint posts_type_check
+  check (type in ('image', 'video', 'audio', 'podcast', 'audiobook', 'slideshow'));
+
 -- (No new RLS needed: slides is just another column on posts, covered by the
 -- existing posts policies.)
