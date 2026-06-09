@@ -180,32 +180,46 @@ export default function PostScreen() {
   async function pickSlides() {
     const remaining = MAX_SLIDES - slides.length;
     if (remaining <= 0) { Alert.alert('Limit reached', `A slideshow can have up to ${MAX_SLIDES} items.`); return; }
-    const ImagePicker = await import('expo-image-picker');
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'] as any,
-      allowsMultipleSelection: true,
-      selectionLimit: remaining,
-      quality: 0.9,
-    });
-    if (result.canceled) return;
-    const picked: PickedSlide[] = [];
-    for (const a of result.assets) {
-      const isVid = a.type === 'video';
-      if (isVid) {
-        // expo-image-picker duration is ms on some platforms, s on others; >1000 ⇒ ms.
-        const durSec = a.duration != null ? (a.duration > 1000 ? a.duration / 1000 : a.duration) : null;
-        if (durSec != null && durSec > VIDEO_MAX_SEC) {
-          Alert.alert('Video skipped', `Slideshow videos must be ${VIDEO_MAX_SEC}s or shorter.`);
-          continue;
+    try {
+      const ImagePicker = await import('expo-image-picker');
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images', 'videos'] as any,
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+        quality: 0.9,
+      });
+      if (result.canceled) return;
+      const picked: PickedSlide[] = [];
+      let skipped = 0;
+      for (const a of result.assets) {
+        // A selected item iOS can't materialize (e.g. an undownloaded iCloud asset)
+        // arrives with no usable uri — skip it rather than failing the whole batch.
+        if (!a.uri) { skipped++; continue; }
+        const isVid = a.type === 'video';
+        if (isVid) {
+          // expo-image-picker duration is ms on some platforms, s on others; >1000 ⇒ ms.
+          const durSec = a.duration != null ? (a.duration > 1000 ? a.duration / 1000 : a.duration) : null;
+          if (durSec != null && durSec > VIDEO_MAX_SEC) {
+            Alert.alert('Video skipped', `Slideshow videos must be ${VIDEO_MAX_SEC}s or shorter.`);
+            continue;
+          }
         }
+        let thumb: string | null = null;
+        if (isVid) {
+          try { const { uri } = await VideoThumbnails.getThumbnailAsync(a.uri, { time: 1000 }); thumb = uri; } catch {}
+        }
+        picked.push({ uri: a.uri, type: isVid ? 'video' : 'image', width: a.width ?? 1, height: a.height ?? 1, thumbnailUri: thumb });
       }
-      let thumb: string | null = null;
-      if (isVid) {
-        try { const { uri } = await VideoThumbnails.getThumbnailAsync(a.uri, { time: 1000 }); thumb = uri; } catch {}
-      }
-      picked.push({ uri: a.uri, type: isVid ? 'video' : 'image', width: a.width ?? 1, height: a.height ?? 1, thumbnailUri: thumb });
+      if (picked.length) setSlides(prev => [...prev, ...picked].slice(0, MAX_SLIDES));
+      if (skipped > 0 && picked.length) Alert.alert('Some items skipped', "A few items couldn't be loaded (often iCloud photos that aren't downloaded yet).");
+    } catch (e: any) {
+      // PHPhotosErrorDomain 3164 etc.: the picker couldn't read a selected asset
+      // (commonly an iCloud item not downloaded locally). Fail softly with guidance.
+      Alert.alert(
+        "Couldn't load that media",
+        "One of the selected items couldn't be opened. If it's stored in iCloud, open it once in the Photos app so it downloads, then try adding it again.",
+      );
     }
-    if (picked.length) setSlides(prev => [...prev, ...picked].slice(0, MAX_SLIDES));
   }
 
   function removeSlide(i: number) { setSlides(prev => prev.filter((_, idx) => idx !== i)); }
