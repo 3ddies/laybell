@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, PanResponder, Easing,
-  KeyboardAvoidingView, Platform, Modal,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -181,10 +181,6 @@ export default function NowPlaying() {
   }
 
   return (
-    // Modal so the player renders in its own window — above the transparentModal
-    // post/reel screens too, not just the tabs. (zIndex can't cross that native
-    // boundary, which is why it slid in behind posts opened from a profile.)
-    <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={collapse}>
     <Animated.View style={[StyleSheet.absoluteFill, styles.layer, { transform: [{ translateY }] }]}>
       <LinearGradient colors={['#2A1206', '#150A04', COLORS.background]} style={styles.container}>
         {/* Top drag zone — swipe down to close */}
@@ -271,7 +267,6 @@ export default function NowPlaying() {
         </KeyboardAvoidingView>
       </LinearGradient>
     </Animated.View>
-    </Modal>
   );
 }
 
