@@ -35,6 +35,10 @@ type AudioContextType = {
   durationMs: number;
   play: (track: Track) => Promise<void>;
   playQueue: (tracks: Track[], startIndex?: number) => Promise<void>;
+  // Now Playing reports comment activity so a song ending at the end of the queue
+  // doesn't tear the sheet away while the user is still engaged with the comments.
+  setCommentComposing: (composing: boolean) => void; // focused / draft / reply
+  noteCommentEngagement: () => void;                  // any comment touch (armed only ≥80%)
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   stop: () => Promise<void>;
@@ -60,13 +64,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [durationMs, setDurationMs] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const expand = () => setExpanded(true);
-  const collapse = () => setExpanded(false);
+  // Manually leaving the full player for the mini player is the "safe to autoclose"
+  // signal — drop the near-end keep-open hold and finish any deferred song-end.
+  const collapse = () => {
+    setExpanded(false);
+    engagedNearEndRef.current = false;
+    maybeRunDeferredFinish();
+  };
   // Feed video audio. ON at app open; auto-muted once a song plays (no overlap).
   const [videoMuted, setVideoMuted] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
   const playTokenRef = useRef(0); // guards against overlapping plays (rapid next/prev)
+  const holdForCommentRef = useRef(false); // user is composing a comment in Now Playing
+  const engagedNearEndRef = useRef(false); // user touched the comments past 80% → keep the player open
+  const pendingFinishRef = useRef(false);   // track finished; advance/close deferred until the user's done
+  const progressRef = useRef(0);            // playback fraction (0–1), gates the 80% engagement check
+  const positionRef = useRef(0);            // live position (ms), for the "previous" 3s restart rule
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueLength, setQueueLength] = useState(0);
   // Per-post stream accounting, persisted for a rolling 24h window (keyed by post id):
@@ -143,6 +158,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function stop() {
+    pendingFinishRef.current = false;
     saveProgress();
     flushBadgeMs();
     playTokenRef.current++; // cancel any in-flight load
@@ -169,9 +185,25 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function resume() {
-    if (soundRef.current) {
-      await soundRef.current.playAsync();
+    const s = soundRef.current;
+    if (s) {
+      // Pressing play supersedes a deferred song-end — the track isn't "finished" anymore.
+      pendingFinishRef.current = false;
+      if (durationMs > 0 && positionMs >= durationMs - 250) {
+        // The track ran to the end and was held open for comments: replay from the
+        // top (a fresh listen, so near-end engagement re-arms cleanly).
+        engagedNearEndRef.current = false;
+        progressRef.current = 0;
+        await s.replayAsync().catch(() => {});
+      } else {
+        // Mid-track (incl. after the user scrubbed back) — resume from here.
+        await s.playAsync().catch(() => {});
+      }
       setIsPlaying(true);
+    } else if (currentTrack) {
+      // Sound already released — reload and replay the current track from the top.
+      pendingFinishRef.current = false;
+      await play(currentTrack, true);
     }
   }
 
@@ -189,6 +221,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   async function seekTo(ms: number) {
     if (soundRef.current) {
       setPositionMs(ms); // reflect immediately so the scrubber doesn't snap back
+      positionRef.current = ms;
       await soundRef.current.setPositionAsync(ms);
     }
   }
@@ -212,17 +245,116 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  function previous() {
-    const q = queueRef.current;
-    const pi = queueIndexRef.current - 1;
-    if (q.length && pi >= 0) {
-      queueIndexRef.current = pi;
-      setQueueIndex(pi);
-      play(q[pi], true);
+  // Restart the current track from the top — used by the Spotify-style "previous"
+  // rule below (and when there's no earlier track to go to).
+  function restartCurrent() {
+    const s = soundRef.current;
+    if (s) {
+      pendingFinishRef.current = false;
+      engagedNearEndRef.current = false;
+      progressRef.current = 0;
+      positionRef.current = 0;
+      setPositionMs(0);
+      setIsPlaying(true);
+      s.replayAsync().catch(() => {});
+    } else if (currentTrack) {
+      play(currentTrack, true);
     }
   }
 
+  // Spotify-style previous: more than 3s into the track, it restarts the current
+  // song; within the first 3s it jumps to the previous track (restarting the
+  // current one if there isn't an earlier track).
+  function previous() {
+    const q = queueRef.current;
+    const pi = queueIndexRef.current - 1;
+    if (positionRef.current < 3000 && q.length && pi >= 0) {
+      queueIndexRef.current = pi;
+      setQueueIndex(pi);
+      play(q[pi], true);
+    } else {
+      restartCurrent();
+    }
+  }
+
+  // Tear the queue down to the idle state (no track, empty queue) — the player
+  // closes. The end-of-the-line outcome when the LAST track finishes.
+  function endQueue() {
+    setIsPlaying(false);
+    setIsBuffering(false);
+    setCurrentTrack(null);
+    setPositionMs(0);
+    setDurationMs(0);
+    soundRef.current = null;
+    queueRef.current = [];
+    queueIndexRef.current = 0;
+    setQueueLength(0);
+    setQueueIndex(0);
+  }
+
+  // The normal "track finished" outcome: advance to the next track in the queue
+  // (a playlist plays on), or close if this was the last one.
+  function advanceOrEnd() {
+    const q = queueRef.current;
+    const nextIdx = queueIndexRef.current + 1;
+    if (q.length && nextIdx < q.length) {
+      queueIndexRef.current = nextIdx;
+      setQueueIndex(nextIdx);
+      soundRef.current = null;
+      play(q[nextIdx], true);
+    } else {
+      endQueue();
+    }
+  }
+
+  // A track finished. If the user is composing, or was interacting with the comments
+  // past 80%, keep the current track + comments on screen (just stop playback) and
+  // defer the advance/close — so a playlist won't skip ahead, and the player won't
+  // exit, out from under an active comment. Otherwise advance/close right away.
+  function handleTrackFinished() {
+    if (holdForCommentRef.current || engagedNearEndRef.current) {
+      // Keep the finished sound loaded + on screen so the user can replay or scrub
+      // it while they're still in the comments (see resume / seekTo).
+      pendingFinishRef.current = true;
+      setIsPlaying(false);
+      setIsBuffering(false);
+      return;
+    }
+    advanceOrEnd();
+  }
+
+  // Once nothing holds the player open (not composing, not engaged), run the deferred
+  // finish: advance to the next queued track, or close if it was the last.
+  function maybeRunDeferredFinish() {
+    if (pendingFinishRef.current && !holdForCommentRef.current && !engagedNearEndRef.current) {
+      pendingFinishRef.current = false;
+      // Release the finished-but-kept sound before moving on (safe here — we're not
+      // inside its own playback-status callback).
+      const s = soundRef.current;
+      soundRef.current = null;
+      if (s) s.unloadAsync().catch(() => {});
+      advanceOrEnd();
+    }
+  }
+
+  // Now Playing reports composing state (input focused, a draft, or a reply).
+  function setCommentComposing(composing: boolean) {
+    holdForCommentRef.current = composing;
+    if (!composing) maybeRunDeferredFinish();
+  }
+
+  // Now Playing reports a comment-section touch (scroll, like, type, reply). Past
+  // 80% of the track it arms the keep-open hold, so a finishing track won't advance
+  // or exit — until the user finishes (manually leaves for the mini player).
+  function noteCommentEngagement() {
+    if (progressRef.current >= 0.8) engagedNearEndRef.current = true;
+  }
+
   async function play(track: Track, fromQueue = false) {
+    pendingFinishRef.current = false;  // a fresh play cancels any deferred advance/close
+    engagedNearEndRef.current = false; // and resets near-end engagement for the new track
+    progressRef.current = 0;
+    positionRef.current = 0;
     if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; setQueueLength(0); setQueueIndex(0); }
     if (currentTrack?.id === track.id && isPlaying) {
       await stop();
@@ -288,6 +420,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         const dur = status.durationMillis ?? 0;
         setPositionMs(pos);
         setDurationMs(dur);
+        progressRef.current = dur > 0 ? pos / dur : 0;
+        positionRef.current = pos;
         setIsBuffering(status.isBuffering ?? false);
 
         // Accumulate genuine forward listen time (ignore seeks, rewinds and the
@@ -334,26 +468,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         if (status.didJustFinish) {
           saveProgress();
           flushBadgeMs();
-          const q = queueRef.current;
-          const next = queueIndexRef.current + 1;
-          if (q.length && next < q.length) {
-            // Auto-advance to the next track in the queue
-            queueIndexRef.current = next;
-            setQueueIndex(next);
-            soundRef.current = null;
-            play(q[next], true);
-          } else {
-            setIsPlaying(false);
-            setIsBuffering(false);
-            setCurrentTrack(null);
-            setPositionMs(0);
-            setDurationMs(0);
-            soundRef.current = null;
-            queueRef.current = [];
-            queueIndexRef.current = 0;
-            setQueueLength(0);
-            setQueueIndex(0);
-          }
+          handleTrackFinished();
         }
       });
     } catch (err) {
@@ -365,7 +480,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, setCommentComposing, noteCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted }}>
       {children}
     </AudioContext.Provider>
   );

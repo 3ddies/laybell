@@ -22,7 +22,7 @@ type Row = {
 };
 
 export default function Comments({
-  postId, ownerId, ListHeaderComponent, style, contentPadding, onRefresh, onNavigate,
+  postId, ownerId, ListHeaderComponent, style, contentPadding, onRefresh, onNavigate, onComposingChange, onEngage,
 }: {
   postId: string;
   ownerId?: string | null;
@@ -38,6 +38,13 @@ export default function Comments({
   // Called right before navigating away (tapping a commenter's avatar/name), so a
   // host overlay/sheet can close itself first to reveal the pushed profile screen.
   onNavigate?: () => void;
+  // Fires when the user starts/stops composing (input focused, a draft typed, or a
+  // reply queued). Lets a host (Now Playing) stay open so a song ending doesn't cut
+  // off an in-progress comment.
+  onComposingChange?: (composing: boolean) => void;
+  // Fires on any comment-section interaction (scroll, like, type, reply). A host
+  // (Now Playing) uses it to detect engagement near the end of a track.
+  onEngage?: () => void;
 }) {
   const listRef = useRef<FlatList>(null);
   const router = useRouter();
@@ -58,6 +65,7 @@ export default function Comments({
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -92,6 +100,19 @@ export default function Comments({
 
   useEffect(() => { load(); }, [load]);
 
+  // Report whether a comment is being composed — input focused, a draft typed, or a
+  // reply queued — so a host (Now Playing) can avoid closing mid-comment. Release on
+  // unmount so a deferred close isn't left hanging.
+  const composing = inputFocused || text.trim().length > 0 || replyTo != null;
+  useEffect(() => {
+    onComposingChange?.(composing);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composing]);
+  useEffect(() => {
+    return () => { onComposingChange?.(false); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([load(), onRefresh?.()]);
@@ -103,6 +124,7 @@ export default function Comments({
 
   async function toggleLike(commentId: string) {
     if (!userId) return;
+    onEngage?.();
     const liked = likedByMe.has(commentId);
     // Optimistic toggle.
     setLikedByMe(prev => { const n = new Set(prev); liked ? n.delete(commentId) : n.add(commentId); return n; });
@@ -178,7 +200,7 @@ export default function Comments({
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.metaBtn}
-            onPress={() => setReplyTo({ id: item.parent_id ?? item.id, name: item.profiles?.username || '' })}
+            onPress={() => { onEngage?.(); setReplyTo({ id: item.parent_id ?? item.id, name: item.profiles?.username || '' }); }}
           >
             <Ionicons name="arrow-undo-outline" size={14} color={COLORS.textTertiary} />
             <Text style={styles.metaText}>Reply</Text>
@@ -196,6 +218,7 @@ export default function Comments({
         data={topLevel}
         keyExtractor={c => c.id}
         keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => onEngage?.()}
         contentContainerStyle={[styles.list, contentPadding != null && { paddingHorizontal: contentPadding }]}
         refreshControl={
           onRefresh
@@ -243,7 +266,9 @@ export default function Comments({
             style={styles.input}
             placeholder={replyTo ? 'Add a reply...' : 'Add a comment...'}
             placeholderTextColor={COLORS.textTertiary}
-            value={text} onChangeText={setText}
+            value={text} onChangeText={(t) => { setText(t); onEngage?.(); }}
+            onFocus={() => { setInputFocused(true); onEngage?.(); }}
+            onBlur={() => setInputFocused(false)}
             multiline maxLength={300}
           />
           <TouchableOpacity style={[styles.sendBtn, !text.trim() && styles.sendDisabled]} onPress={submit} disabled={!text.trim() || sending}>

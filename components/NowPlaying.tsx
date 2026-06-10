@@ -69,7 +69,7 @@ function Controls() {
 }
 
 export default function NowPlaying() {
-  const { currentTrack, expanded, collapse } = useAudio();
+  const { currentTrack, expanded, collapse, setCommentComposing, noteCommentEngagement } = useAudio();
   const { show: showOptions } = usePostOptions();
   const router = useRouter();
   const [render, setRender] = useState(false);
@@ -219,6 +219,8 @@ export default function NowPlaying() {
             ownerId={ownerId}
             contentPadding={SPACING.xl}
             onNavigate={collapse}
+            onComposingChange={setCommentComposing}
+            onEngage={noteCommentEngagement}
             ListHeaderComponent={
               <>
                 <View style={styles.artWrap}>
