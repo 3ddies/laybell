@@ -1,6 +1,7 @@
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, TextInput, Modal, Image, Dimensions, RefreshControl, Keyboard,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -21,7 +22,7 @@ import StoryAvatar from '../../components/StoryAvatar';
 import FollowButton from '../../components/FollowButton';
 import {
   buildAffinityProfile, loadSeenPostIds, scorePost,
-  sortGenresByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
+  sortRailByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
 } from '../../lib/feedScorer';
 
 const SCREEN_W           = Dimensions.get('window').width;
@@ -75,7 +76,8 @@ export default function MusicScreen() {
 
   // ─── Discover tab state ────────────────────────────────────────────────────
   const [discoverGenre, setDiscoverGenre]       = useState('All');
-  const [orderedGenreList, setOrderedGenreList] = useState<string[]>([...GENRES]);
+  // Music genres + content-type tags, ordered by affinity (most-engaged first).
+  const [orderedGenreList, setOrderedGenreList] = useState<string[]>([...GENRES, ...CONTENT_TAGS]);
   const [trendingTracks, setTrendingTracks]     = useState<any[]>([]);
   const [trendingLoading, setTrendingLoading]   = useState(false);
   const [trendingExpanded, setTrendingExpanded] = useState(false);
@@ -269,7 +271,7 @@ export default function MusicScreen() {
       discoverRefreshedAt.current = Date.now();
     }
 
-    setOrderedGenreList(sortGenresByAffinity([...GENRES], profile));
+    setOrderedGenreList(sortRailByAffinity([...GENRES, ...CONTENT_TAGS], profile));
 
     const initialGenre = topGenreDisplay(profile);
     setDiscoverGenre(initialGenre);
@@ -295,7 +297,7 @@ export default function MusicScreen() {
       // tastes are reflected, then refetch every Discover section.
       const profile = await buildAffinityProfile(currentUserId, true);
       affinityProfile.current = profile;
-      setOrderedGenreList(sortGenresByAffinity([...GENRES], profile));
+      setOrderedGenreList(sortRailByAffinity([...GENRES, ...CONTENT_TAGS], profile));
       await Promise.all([
         fetchTrendingByGenre(discoverGenre),
         fetchForYouTracks(),
@@ -452,6 +454,13 @@ export default function MusicScreen() {
   const likedQueue = () => likedTracks.map((t: any) => ({
     id: t.posts?.id, uri: t.posts?.media_url, caption: t.posts?.caption,
     artist: t.posts?.profiles?.display_name ?? '', cover: t.posts?.cover_url,
+  }));
+  // Trending plays as a queue (like a playlist) so it autoplays through the
+  // section for the selected genre with working prev/next, then stops after the
+  // last track. Built from the full trendingTracks list, not the visible slice.
+  const trendingQueue = () => trendingTracks.map((t: any) => ({
+    id: t.id, uri: t.media_url, caption: t.caption,
+    artist: t.profiles?.display_name ?? '', cover: t.cover_url,
   }));
   const openNowPlaying = () => expand();
 
@@ -633,7 +642,7 @@ export default function MusicScreen() {
 
             {/* — Genre + content-type pills (All · genres · Podcasts · Audiobooks) — */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.genrePills}>
-              {(['All', ...orderedGenreList, ...CONTENT_TAGS]).map(genre => {
+              {(['All', ...orderedGenreList]).map(genre => {
                 const active = discoverGenre === genre;
                 const label  = genre === 'All' ? 'All genres' : genre;
                 return (
@@ -677,7 +686,7 @@ export default function MusicScreen() {
               </Text>
             ) : (
               <View style={styles.trendingList}>
-                {trendingTracks.slice(0, trendingExpanded ? 8 : 4).map(track => (
+                {trendingTracks.slice(0, trendingExpanded ? 8 : 4).map((track, i) => (
                   <TrackRow
                     key={track.id}
                     caption={track.caption}
@@ -687,8 +696,8 @@ export default function MusicScreen() {
                     cover={track.cover_url}
                     avatarUrl={track.profiles?.avatar_url}
                     isPlaying={playingId === track.id}
-                    onPlay={() => play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url)}
-                    onCoverPress={() => { play(track.id, track.media_url, track.caption, track.profiles?.display_name, track.cover_url); openNowPlaying(); }}
+                    onPlay={() => playQueue(trendingQueue(), i)}
+                    onCoverPress={() => { playQueue(trendingQueue(), i); openNowPlaying(); }}
                     onAvatarPress={() => router.push(`/profile/${track.user_id}`)}
                     onOptions={() => showOptions({
                       postId: track.id,
@@ -1030,7 +1039,7 @@ export default function MusicScreen() {
 
       {/* New playlist modal */}
       <Modal visible={showNewPlaylist} transparent animationType="slide" onRequestClose={() => setShowNewPlaylist(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>New Playlist</Text>
             <TextInput
@@ -1050,7 +1059,7 @@ export default function MusicScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Add to playlist modal */}

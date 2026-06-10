@@ -58,14 +58,26 @@ export const EMPTY_PROFILE: UserAffinityProfile = {
   creatorScores: {}, typeScores: {}, genreScores: {}, builtAt: 0,
 };
 
-// Orders the genre rail by how much the user has engaged with each genre, highest
-// first. Ties keep their incoming order (Array.sort is stable in Hermes), so a
-// brand-new user — and the untouched tail for everyone else — sees genres in the
-// exact order defined in lib/genres.ts. Shared by the Music Discover and Explore
-// genre bars so they order identically to each other and to onboarding.
-export function sortGenresByAffinity(genres: string[], profile: UserAffinityProfile): string[] {
-  return [...genres].sort((a, b) =>
-    (profile.genreScores[b.toLowerCase()] ?? 0) - (profile.genreScores[a.toLowerCase()] ?? 0));
+// Affinity score for one genre-rail item. Music genres read from genreScores;
+// the content-type tags (Podcasts / Audiobooks) read from typeScores — so a
+// content type the user engages with heavily ranks among the genres by relevancy
+// instead of being pinned to the end. Both dimensions are normalized to 0–1.
+export function railItemScore(item: string, profile: UserAffinityProfile): number {
+  switch (item.toLowerCase()) {
+    case 'podcasts':   return profile.typeScores['podcast']   ?? 0;
+    case 'audiobooks': return profile.typeScores['audiobook'] ?? 0;
+    default:           return profile.genreScores[item.toLowerCase()] ?? 0;
+  }
+}
+
+// Orders the genre rail (music genres + the Podcasts/Audiobooks tags) by how much
+// the user has engaged with each, most relevant first — so the single highest-
+// relevancy item sits right after "All". Ties keep their incoming order (Array.sort
+// is stable in Hermes), so a brand-new user — and the untouched tail for everyone
+// else — sees items in the exact order defined in lib/genres.ts. Shared by the
+// Music Discover and Explore genre bars so they order identically.
+export function sortRailByAffinity(items: string[], profile: UserAffinityProfile): string[] {
+  return [...items].sort((a, b) => railItemScore(b, profile) - railItemScore(a, profile));
 }
 
 function normalize(raw: Record<string, number>): Record<string, number> {

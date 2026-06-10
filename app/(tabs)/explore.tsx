@@ -24,7 +24,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
-  sortGenresByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
+  sortRailByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
 } from '../../lib/feedScorer';
 
 type Post = {
@@ -64,8 +64,9 @@ export default function ExploreScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [seenPostIds, setSeenPostIds] = useState<Set<string>>(new Set());
-  // Genre rail ordered by user affinity (Meme floored near the front), with the
-  // content-type tags pinned to the end — mirrors the Music Discover bar.
+  // Genre rail ordered by user affinity — music genres and the content-type tags
+  // (Podcasts / Audiobooks) interleave by relevancy, most-engaged first after
+  // "All". Mirrors the Music Discover bar.
   const [orderedGenres, setOrderedGenres] = useState<string[]>([...GENRE_FILTERS, ...CONTENT_TAGS]);
   const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
   const followingSetRef = useRef<Set<string>>(new Set());
@@ -122,9 +123,10 @@ export default function ExploreScreen() {
       blockedIdsRef.current = blocked;
     }
 
-    // Reorder the genre rail by affinity (Meme floored near the front), keeping
-    // "All" first and the Podcasts/Audiobooks tags pinned at the end.
-    setOrderedGenres(['All', ...sortGenresByAffinity([...MUSIC_GENRES], affinityProfile.current), ...CONTENT_TAGS]);
+    // Reorder the genre rail by affinity, keeping "All" pinned first. Genres and
+    // the Podcasts/Audiobooks tags are ranked together, so the user's most-engaged
+    // category (genre or content type) leads the scroll bar.
+    setOrderedGenres(['All', ...sortRailByAffinity([...MUSIC_GENRES, ...CONTENT_TAGS], affinityProfile.current)]);
 
     await fetchTrending(seen);
   }
