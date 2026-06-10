@@ -18,6 +18,7 @@ import { aspectToNumber } from '../../lib/aspectRatio';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
 import FollowButton from '../../components/FollowButton';
+import MentionText from '../../components/MentionText';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { trackVideoProgress } from '../../lib/viewTracker';
@@ -262,7 +263,7 @@ export default function ReelScreen() {
             </TouchableOpacity>
             <FollowButton userId={item.user_id} />
           </View>
-          {!!item.caption && <Text style={styles.caption} numberOfLines={2}>{item.caption}</Text>}
+          {!!item.caption && <MentionText style={styles.caption} numberOfLines={2} text={item.caption} />}
           {!!item.song_id && (
             <SongAttribution
               inline

@@ -38,6 +38,7 @@ import StoriesTray from '../../components/StoriesTray';
 import StoryAvatar from '../../components/StoryAvatar';
 import SongAttribution from '../../components/SongAttribution';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
+import MentionText from '../../components/MentionText';
 import TaggedPeopleButton from '../../components/TaggedPeopleButton';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { useStories } from '../../contexts/StoriesContext';
@@ -228,7 +229,7 @@ const PostCard = memo(function PostCard({
       {/* Caption */}
       {!!item.caption && !isAudioPost(item.type) && (
         <TouchableOpacity onPress={() => onOpenPost(item)}>
-          <Text style={styles.caption} numberOfLines={3}>{item.caption}</Text>
+          <MentionText style={styles.caption} numberOfLines={3} text={item.caption} />
         </TouchableOpacity>
       )}
 

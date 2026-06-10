@@ -20,6 +20,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 import { useIsFocused } from '@react-navigation/native';
 import Comments from '../../components/Comments';
+import MentionText from '../../components/MentionText';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
@@ -347,7 +348,7 @@ export default function PostDetailScreen() {
 
             {/* Caption */}
             {!!post.caption && !isAudioPost(post.type) && (
-              <Text style={styles.caption}>{post.caption}</Text>
+              <MentionText style={styles.caption} text={post.caption} />
             )}
 
             {/* Actions */}

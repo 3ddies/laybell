@@ -14,6 +14,7 @@ import { timeAgo } from '../lib/timeAgo';
 import { createNotification } from '../lib/createNotification';
 import { processMentions, getActiveMentionQuery, applyMention } from '../lib/mentions';
 import MentionSuggestions from './MentionSuggestions';
+import MentionText from './MentionText';
 
 type Row = {
   id: string; body: string; created_at: string; user_id: string;
@@ -165,7 +166,7 @@ export default function Comments({
             <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={12} />
             <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
           </View>
-          <Text style={styles.text}>{item.body}</Text>
+          <MentionText style={styles.text} text={item.body} />
         </TouchableOpacity>
         <View style={styles.metaRow}>
           <TouchableOpacity style={styles.metaBtn} onPress={() => toggleLike(item.id)}>
