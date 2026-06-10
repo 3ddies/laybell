@@ -77,6 +77,7 @@ export default function StickerLayer({
   cbRef.current = { onManipulate, onTapSticker, onTapEmpty };
 
   const active = useRef<string | null>(null);
+  const nearTap = useRef(false); // was the touch-down close enough to count a TAP as "edit this sticker"
   const moved = useRef(false);
   const grant = useRef({ x: 0, y: 0 });
   const base = useRef({ cx: 0, cy: 0, dist: 0, angle: 0, px: 0, py: 0, scale: 1, rotation: 0 });
@@ -91,6 +92,20 @@ export default function StickerLayer({
       px: cur?.x ?? 0, py: cur?.y ?? 0, scale: cur?.scale ?? 1, rotation: cur?.rotation ?? 0,
     };
     prevCount.current = touches.length;
+  }
+
+  // End of a gesture (last finger up, or the system terminated it). A tap edits
+  // the nearest sticker / creates one in open area; a drag commits the new placement.
+  function endGesture() {
+    const id = active.current;
+    if (!moved.current) {
+      if (id && nearTap.current) cbRef.current.onTapSticker(id);
+      else cbRef.current.onTapEmpty(grant.current.x / frameW, grant.current.y / frameH);
+    } else if (id) {
+      const cur = curRef.current[id];
+      if (cur) cbRef.current.onManipulate(id, { x: cur.x / frameW + 0.5, y: cur.y / frameH + 0.5, scale: cur.scale, rotation: cur.rotation });
+    }
+    active.current = null;
   }
 
   const responder = useRef(
@@ -111,7 +126,10 @@ export default function StickerLayer({
           const d = Math.hypot(c.x - sx, c.y - sy);
           if (d < best) { best = d; nearest = s.id; }
         }
-        active.current = nearest && best <= NEAR_PX ? nearest : null;
+        // Grab the nearest sticker ALWAYS, so a drag/pinch anywhere on the screen
+        // manipulates it. The distance only gates a TAP (near → edit; far → create).
+        active.current = nearest;
+        nearTap.current = !!nearest && best <= NEAR_PX;
         rebaseline(touches);
       },
       onPanResponderMove: (e: GestureResponderEvent) => {
@@ -136,17 +154,8 @@ export default function StickerLayer({
         a.pan.setValue({ x: nx, y: ny }); a.scale.setValue(ns); a.rot.setValue(nr);
         cur.x = nx; cur.y = ny; cur.scale = ns; cur.rotation = nr;
       },
-      onPanResponderRelease: () => {
-        const id = active.current;
-        if (!moved.current) {
-          if (id) cbRef.current.onTapSticker(id);
-          else cbRef.current.onTapEmpty(grant.current.x / frameW, grant.current.y / frameH);
-        } else if (id) {
-          const cur = curRef.current[id];
-          if (cur) cbRef.current.onManipulate(id, { x: cur.x / frameW + 0.5, y: cur.y / frameH + 0.5, scale: cur.scale, rotation: cur.rotation });
-        }
-        active.current = null;
-      },
+      onPanResponderRelease: endGesture,
+      onPanResponderTerminate: endGesture,
     }),
   ).current;
 
