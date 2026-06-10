@@ -203,7 +203,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     } else if (currentTrack) {
       // Sound already released — reload and replay the current track from the top.
       pendingFinishRef.current = false;
-      await play(currentTrack, true);
+      await play(currentTrack, true, true);
     }
   }
 
@@ -241,7 +241,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (q.length && ni < q.length) {
       queueIndexRef.current = ni;
       setQueueIndex(ni);
-      play(q[ni], true);
+      play(q[ni], true, true);
     }
   }
 
@@ -258,7 +258,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setIsPlaying(true);
       s.replayAsync().catch(() => {});
     } else if (currentTrack) {
-      play(currentTrack, true);
+      play(currentTrack, true, true);
     }
   }
 
@@ -271,7 +271,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (positionRef.current < 3000 && q.length && pi >= 0) {
       queueIndexRef.current = pi;
       setQueueIndex(pi);
-      play(q[pi], true);
+      play(q[pi], true, true);
     } else {
       restartCurrent();
     }
@@ -301,7 +301,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       queueIndexRef.current = nextIdx;
       setQueueIndex(nextIdx);
       soundRef.current = null;
-      play(q[nextIdx], true);
+      play(q[nextIdx], true, true);
     } else {
       endQueue();
     }
@@ -350,13 +350,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (progressRef.current >= 0.8) engagedNearEndRef.current = true;
   }
 
-  async function play(track: Track, fromQueue = false) {
+  async function play(track: Track, fromQueue = false, suppressToggle = false) {
     pendingFinishRef.current = false;  // a fresh play cancels any deferred advance/close
     engagedNearEndRef.current = false; // and resets near-end engagement for the new track
     progressRef.current = 0;
     positionRef.current = 0;
     if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; setQueueLength(0); setQueueIndex(0); }
-    if (currentTrack?.id === track.id && isPlaying) {
+    // Tapping the already-playing track in a list toggles it off. Queue navigation
+    // (next / previous / restart / advance) must always play its target — never
+    // stop and close the player — so it passes suppressToggle to skip this.
+    if (!suppressToggle && currentTrack?.id === track.id && isPlaying) {
       await stop();
       return;
     }
