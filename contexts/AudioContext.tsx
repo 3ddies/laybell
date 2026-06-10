@@ -194,6 +194,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         // top (a fresh listen, so near-end engagement re-arms cleanly).
         engagedNearEndRef.current = false;
         progressRef.current = 0;
+        positionRef.current = 0;
         await s.replayAsync().catch(() => {});
       } else {
         // Mid-track (incl. after the user scrubbed back) — resume from here.
@@ -222,6 +223,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (soundRef.current) {
       setPositionMs(ms); // reflect immediately so the scrubber doesn't snap back
       positionRef.current = ms;
+      progressRef.current = durationMs > 0 ? ms / durationMs : 0;
+      // A scrub/rewind resets the edge case: near-end engagement clears and any
+      // deferred finish is cancelled, so the track behaves like a normal one again
+      // and must be re-engaged past 80% to hold the song open.
+      engagedNearEndRef.current = false;
+      pendingFinishRef.current = false;
       await soundRef.current.setPositionAsync(ms);
     }
   }

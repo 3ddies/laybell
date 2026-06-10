@@ -218,7 +218,10 @@ export default function Comments({
         data={topLevel}
         keyExtractor={c => c.id}
         keyboardShouldPersistTaps="handled"
-        onScrollBeginDrag={() => onEngage?.()}
+        // With only a few comments (≤3), a scroll likely just runs to the bottom by
+        // accident — don't treat that as engagement that holds the song open. Liking,
+        // typing and replying still count regardless (they're deliberate).
+        onScrollBeginDrag={() => { if (rows.length > 3) onEngage?.(); }}
         contentContainerStyle={[styles.list, contentPadding != null && { paddingHorizontal: contentPadding }]}
         refreshControl={
           onRefresh
