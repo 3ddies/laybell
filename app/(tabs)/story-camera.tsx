@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Alert, Image, TextInput, Linking,
+  Alert, Image, TextInput, Linking, Dimensions,
 } from 'react-native';
 import {
   CameraView, CameraType, FlashMode,
@@ -18,12 +18,14 @@ import { supabase } from '../../lib/supabase';
 import { uploadStoryMedia, createStory } from '../../lib/stories';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import MentionSuggestions from '../../components/MentionSuggestions';
+import DraggableCaption, { DEFAULT_CAPTION_STYLE, type CaptionStyle } from '../../components/DraggableCaption';
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePagerSwiping } from '../../contexts/PagerContext';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 
 const VIDEO_MAX_SEC = 60;
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 type Captured = { uri: string; type: 'image' | 'video'; durationSec?: number; processed?: boolean };
 type Mode = 'picture' | 'video';
@@ -60,6 +62,8 @@ export default function StoryCameraScreen() {
   const [stage, setStage] = useState<'capture' | 'preview'>('capture');
   const [captured, setCaptured] = useState<Captured | null>(null);
   const [caption, setCaption] = useState('');
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>(DEFAULT_CAPTION_STYLE);
+  const [editingCaption, setEditingCaption] = useState(false);
   const [song, setSong] = useState<PickedSong | null>(null);
   const [showSongPicker, setShowSongPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -83,7 +87,7 @@ export default function StoryCameraScreen() {
         setRecSecs(0);
         setStage('capture');
         setCaptured(null);
-        setCaption('');
+        setCaption(''); setCaptionStyle(DEFAULT_CAPTION_STYLE); setEditingCaption(false);
         setSong(null);
         setMode('picture');
       };
@@ -187,7 +191,7 @@ export default function StoryCameraScreen() {
 
   function retake() {
     setCaptured(null);
-    setCaption('');
+    setCaption(''); setCaptionStyle(DEFAULT_CAPTION_STYLE); setEditingCaption(false);
     setSong(null);
     setStage('capture');
   }
@@ -233,6 +237,7 @@ export default function StoryCameraScreen() {
         aspectRatio: '9:16',
         durationSeconds: captured.type === 'video' ? captured.durationSec ?? null : null,
         song,
+        captionStyle: caption.trim() ? captionStyle : null,
       });
 
       retake();
@@ -284,6 +289,17 @@ export default function StoryCameraScreen() {
           />
         )}
 
+        {/* Draggable / pinch-resizable caption sticker over the media. */}
+        {!!caption.trim() && (
+          <DraggableCaption
+            text={caption}
+            frameW={SCREEN_W}
+            frameH={SCREEN_H}
+            initial={captionStyle}
+            onChange={setCaptionStyle}
+          />
+        )}
+
         <TouchableOpacity style={[styles.roundBtn, { position: 'absolute', top: insets.top + 8, left: SPACING.md }]} onPress={retake}>
           <Ionicons name="arrow-back" size={26} color="#fff" />
         </TouchableOpacity>
@@ -303,20 +319,38 @@ export default function StoryCameraScreen() {
               <Text style={styles.musicBtnText}>Add music</Text>
             </TouchableOpacity>
           )}
-          <MentionSuggestions
-            query={getActiveMentionQuery(caption, caption.length)}
-            onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
-            style={{ marginBottom: SPACING.xs }}
-            maxHeight={150}
-          />
-          <TextInput
-            style={styles.captionInput}
-            placeholder="Add a caption…"
-            placeholderTextColor="rgba(255,255,255,0.7)"
-            value={caption}
-            onChangeText={setCaption}
-            maxLength={200}
-          />
+          {editingCaption || !caption.trim() ? (
+            <>
+              <MentionSuggestions
+                query={getActiveMentionQuery(caption, caption.length)}
+                onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
+                style={{ marginBottom: SPACING.xs }}
+                maxHeight={150}
+              />
+              <TextInput
+                style={styles.captionInput}
+                placeholder="Add a caption…"
+                placeholderTextColor="rgba(255,255,255,0.7)"
+                value={caption}
+                onChangeText={setCaption}
+                maxLength={200}
+                autoFocus={editingCaption}
+                onFocus={() => setEditingCaption(true)}
+                onBlur={() => setEditingCaption(false)}
+              />
+            </>
+          ) : (
+            // Text now lives on the media as a draggable sticker — collapse the
+            // field to a compact edit chip so it isn't shown twice.
+            <TouchableOpacity style={styles.captionChip} onPress={() => setEditingCaption(true)}>
+              <Ionicons name="text" size={15} color="#fff" />
+              <Text style={styles.captionChipText} numberOfLines={1}>{caption}</Text>
+              <Ionicons name="pencil" size={13} color="rgba(255,255,255,0.75)" />
+            </TouchableOpacity>
+          )}
+          {!!caption.trim() && (
+            <Text style={styles.captionHint}>Drag the text to move it · pinch to resize</Text>
+          )}
           <TouchableOpacity style={styles.shareBtn} onPress={shareStory} disabled={uploading}>
             {uploading ? (
               <ActivityIndicator color="#fff" />
@@ -490,6 +524,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: RADIUS.md,
     color: '#fff', fontSize: 15, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 2,
   },
+  captionChip: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    alignSelf: 'flex-start', maxWidth: '100%',
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
+  },
+  captionChipText: { color: '#fff', fontSize: 14, flexShrink: 1 },
+  captionHint: { color: 'rgba(255,255,255,0.75)', fontSize: 12, textAlign: 'center', marginTop: SPACING.xs },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
     backgroundColor: COLORS.primary, borderRadius: RADIUS.full,

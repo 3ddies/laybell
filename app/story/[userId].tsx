@@ -20,6 +20,7 @@ import {
 import { reportUser } from '../../lib/postActions';
 import SongAttribution from '../../components/SongAttribution';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import { captionStickerTextStyle } from '../../components/DraggableCaption';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 
@@ -489,11 +490,31 @@ export default function StoryViewerScreen() {
               </View>
             </View>
 
-            {/* Caption */}
+            {/* Caption — at the author's chosen position (drag/resize), or the
+                default bottom spot for stories posted before placement existed. */}
             {!!story.caption && (
-              <View style={[styles.captionWrap, { bottom: insets.bottom + (isOwn ? 64 : 28) }]} pointerEvents="none">
-                <Text style={styles.caption}>{story.caption}</Text>
-              </View>
+              story.caption_style ? (
+                <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                  <View style={styles.captionStickerCenter}>
+                    <Text
+                      style={[captionStickerTextStyle, {
+                        transform: [
+                          { translateX: (story.caption_style.x - 0.5) * SCREEN_W },
+                          { translateY: (story.caption_style.y - 0.5) * SCREEN_H },
+                          { scale: story.caption_style.scale ?? 1 },
+                          { rotate: `${story.caption_style.rotation ?? 0}deg` },
+                        ],
+                      }]}
+                    >
+                      {story.caption}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={[styles.captionWrap, { bottom: insets.bottom + (isOwn ? 64 : 28) }]} pointerEvents="none">
+                  <Text style={styles.caption}>{story.caption}</Text>
+                </View>
+              )
             )}
 
             {/* Own-story footer: viewer count */}
@@ -552,6 +573,7 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   headerBtn: { padding: 2 },
 
+  captionStickerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   captionWrap: {
     position: 'absolute', left: SPACING.md, right: SPACING.md,
     backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: RADIUS.md, padding: SPACING.sm,

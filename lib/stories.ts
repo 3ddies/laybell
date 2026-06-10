@@ -31,6 +31,8 @@ export type Story = {
   song_title?: string | null;
   song_artist?: string | null;
   song_artist_id?: string | null;
+  // Author-chosen caption placement (drag/resize) — see story_caption_style.sql.
+  caption_style?: { x: number; y: number; scale: number; rotation: number } | null;
 };
 
 export type StoryGroup = {
@@ -72,6 +74,7 @@ export async function createStory(input: {
   aspectRatio?: string | null;
   durationSeconds?: number | null;
   song?: { id: string; title: string; artist: string; artistId: string } | null;
+  captionStyle?: { x: number; y: number; scale: number; rotation: number } | null;
 }): Promise<void> {
   const { error } = await supabase.from('stories').insert({
     user_id: input.userId,
@@ -84,6 +87,7 @@ export async function createStory(input: {
     ...(input.song
       ? { song_id: input.song.id, song_title: input.song.title, song_artist: input.song.artist, song_artist_id: input.song.artistId }
       : {}),
+    ...(input.captionStyle ? { caption_style: input.captionStyle } : {}),
   });
   if (error) throw error;
 
