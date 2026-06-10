@@ -33,10 +33,13 @@ function formatDur(s: number) {
 // URI directly via expo-image (fast, shows poster frames for videos — no full
 // export). The chosen asset is resolved to a file:// path only on tap, for the
 // cropper / manipulator / upload (which can't read ph://).
-export default function PhotoGrid({ mediaType, onPick, onScroll }: {
+export default function PhotoGrid({ mediaType, onPick, onScroll, onScrollActive }: {
   mediaType: 'image' | 'video';
   onPick: (m: PickedMedia) => void;
   onScroll?: (e: any) => void;
+  // Fires true when the grid starts being dragged and false when scrolling settles —
+  // lets the host suppress the tab swipe only during an active scroll (reliably).
+  onScrollActive?: (active: boolean) => void;
 }) {
   const [permission, requestPermission] = MediaLibrary.usePermissions();
   const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
@@ -142,6 +145,9 @@ export default function PhotoGrid({ mediaType, onPick, onScroll }: {
       contentContainerStyle={{ gap: GAP }}
       onScroll={onScroll}
       scrollEventThrottle={16}
+      onScrollBeginDrag={() => onScrollActive?.(true)}
+      onScrollEndDrag={() => onScrollActive?.(false)}
+      onMomentumScrollEnd={() => onScrollActive?.(false)}
       onEndReached={() => { if (hasNext && endCursor && !loadingRef.current) loadPage(endCursor); }}
       onEndReachedThreshold={0.6}
       ListFooterComponent={loading ? <ActivityIndicator color={COLORS.primary} style={{ margin: SPACING.md }} /> : null}

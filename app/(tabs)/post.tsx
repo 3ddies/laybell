@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useState, useCallback, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { usePagerSwiping } from '../../contexts/PagerContext';
+import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { Audio } from 'expo-av';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import * as DocumentPicker from 'expo-document-picker';
@@ -112,8 +112,21 @@ export default function PostScreen() {
 
   const { stop } = useAudio();
   const swiping = usePagerSwiping();
+  const setTabSwipe = useTabSwipeControl();
   const router = useRouter();
   useFocusEffect(useCallback(() => { stop(); }, []));
+
+  // Swiping to an adjacent tab is on only while browsing the image/video picker
+  // with NOTHING selected yet — picking any media turns it off (you're cropping /
+  // committing). The camera roll suppresses it only during an active scroll and
+  // restores it when the scroll settles (onScrollActive, below). Restored on leave
+  // so the other tabs stay swipeable.
+  const galleryPicker = step === 'pick' && (postType === 'image' || postType === 'video');
+  const swipeOn = galleryPicker && media == null;
+  useFocusEffect(useCallback(() => {
+    setTabSwipe(swipeOn);
+    return () => setTabSwipe(true);
+  }, [swipeOn, setTabSwipe]));
 
   function exitToExplore() {
     resetAll();
@@ -883,6 +896,9 @@ export default function PostScreen() {
                 mediaType={postType as 'image' | 'video'}
                 onPick={onPickMedia}
                 onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
+                // Hold the tab swipe off only while actively scrolling the grid;
+                // restore it (to swipeOn) once the scroll settles.
+                onScrollActive={(active) => setTabSwipe(active ? false : swipeOn)}
               />
             </ErrorBoundary>
           </View>

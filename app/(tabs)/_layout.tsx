@@ -148,9 +148,10 @@ export default function TabLayout() {
         <MaterialTopTabs.Screen name="story-camera" />
         <MaterialTopTabs.Screen name="index" />
         <MaterialTopTabs.Screen name="explore" />
-        {/* Create screen: swipe off so dragging/pinching the cropper never
-            swipes to an adjacent tab. */}
-        <MaterialTopTabs.Screen name="post" options={{ swipeEnabled: false }} />
+        {/* Create screen: swipe is controlled from within (post.tsx) — on only in
+            the image/video picker, and off while touching the camera roll or the
+            cropper so those gestures never change tabs. */}
+        <MaterialTopTabs.Screen name="post" />
         <MaterialTopTabs.Screen name="music" />
         {/* Profile owns its horizontal swipes via its own inner pager (incl. a
             "go to Music" dismiss page), so the outer swipe stays off here. */}
