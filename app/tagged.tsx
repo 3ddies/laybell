@@ -43,20 +43,26 @@ export default function TaggedScreen() {
     if (!user) { setLoading(false); return; }
     const uid = user.id;
 
-    const [mPostsRes, audioRes, mCommentsRes, storiesRes] = await Promise.all([
+    const [mPostsRes, audioRes, mCommentsRes, storiesRes, taggedPostsRes] = await Promise.all([
       supabase.from('mentions').select('post_id, created_at').eq('mentioned_user_id', uid).not('post_id', 'is', null).order('created_at', { ascending: false }).limit(100),
       supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url)').eq('song_artist_id', uid).neq('user_id', uid).order('created_at', { ascending: false }).limit(100),
       supabase.from('mentions').select('comment_id, created_at').eq('mentioned_user_id', uid).not('comment_id', 'is', null).order('created_at', { ascending: false }).limit(100),
       supabase.from('stories').select('id, user_id, media_url, thumbnail_url, media_type, song_title, created_at, expires_at').eq('song_artist_id', uid).neq('user_id', uid).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(100),
+      supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url)').contains('tagged_user_ids', [uid]).order('created_at', { ascending: false }).limit(100),
     ]);
 
-    // Posts that mentioned me — fetch + restore mention order.
+    // Posts where I'm @mentioned OR explicitly tagged — merge + dedupe, newest first.
     const postIds = [...new Set((mPostsRes.data ?? []).map((m: any) => m.post_id))];
+    let mentioned: any[] = [];
     if (postIds.length) {
       const { data } = await supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url)').in('id', postIds);
-      const byId = Object.fromEntries((data ?? []).map((p: any) => [p.id, p]));
-      setPosts(postIds.map((id) => byId[id]).filter(Boolean));
-    } else setPosts([]);
+      mentioned = data ?? [];
+    }
+    const seenP = new Set<string>();
+    const mergedPosts = [...mentioned, ...(taggedPostsRes.data ?? [])]
+      .filter((p: any) => (seenP.has(p.id) ? false : (seenP.add(p.id), true)))
+      .sort((a: any, b: any) => (a.created_at < b.created_at ? 1 : -1));
+    setPosts(mergedPosts);
 
     setAudio(audioRes.data ?? []);
 

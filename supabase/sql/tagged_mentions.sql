@@ -32,7 +32,7 @@ create index if not exists mentions_mentioned_idx on public.mentions(mentioned_u
 --    the new mention + song-usage types so those inserts don't fail.
 alter table public.notifications drop constraint if exists notifications_type_check;
 alter table public.notifications add constraint notifications_type_check
-  check (type in ('like','comment','follow','message','mention','song_used','song_story'));
+  check (type in ('like','comment','follow','message','mention','song_used','song_story','tag'));
 
 -- 3) Let the original artist SEE any post/story that used their song (for the
 --    Tagged screen) — even a followers-only one from someone they don't follow.

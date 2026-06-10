@@ -13,8 +13,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
-import { processMentions } from '../../lib/mentions';
+import { processMentions, getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { createNotification } from '../../lib/createNotification';
+import MentionSuggestions from '../../components/MentionSuggestions';
+import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleModal';
 import { useAudio } from '../../contexts/AudioContext';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
@@ -102,6 +104,8 @@ export default function PostScreen() {
   const [genre, setGenre] = useState('');
   const [song, setSong] = useState<PickedSong | null>(null); // another creator's track on this image/video
   const [showSongPicker, setShowSongPicker] = useState(false);
+  const [tagged, setTagged] = useState<TaggedPerson[]>([]); // accounts tagged on this post (≤10)
+  const [showTagModal, setShowTagModal] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -143,7 +147,7 @@ export default function PostScreen() {
     setMedia(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
-    setCaption(''); setGenre(''); setSong(null); setError(''); setStep('pick');
+    setCaption(''); setGenre(''); setSong(null); setTagged([]); setError(''); setStep('pick');
   }
 
   function switchType(t: PostType) {
@@ -152,7 +156,7 @@ export default function PostScreen() {
     setMedia(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null);
-    setSong(null);
+    setSong(null); setTagged([]);
   }
 
   function cycleFormat() {
@@ -465,6 +469,7 @@ export default function PostScreen() {
         ...(song && postType !== 'audio'
           ? { song_id: song.id, song_title: song.title, song_artist: song.artist, song_artist_id: song.artistId }
           : {}),
+        ...(tagged.length && postType !== 'audio' ? { tagged_user_ids: tagged.map((t) => t.id) } : {}),
       }).select('id').single();
       if (postError) throw postError;
       if (isPublic) bumpBadge('posts_created'); // recomputes the Posts badge from the live grid
@@ -474,6 +479,11 @@ export default function PostScreen() {
         processMentions({ text: caption.trim(), actorId: user.id, postId: newPost.id });
         if (song && postType !== 'audio' && song.artistId && song.artistId !== user.id) {
           createNotification({ userId: song.artistId, actorId: user.id, type: 'song_used', postId: newPost.id });
+        }
+        if (postType !== 'audio') {
+          for (const t of tagged) {
+            if (t.id !== user.id) createNotification({ userId: t.id, actorId: user.id, type: 'tag', postId: newPost.id });
+          }
         }
       }
 
@@ -551,6 +561,11 @@ export default function PostScreen() {
               editable={!swiping}
             />
           </View>
+
+          <MentionSuggestions
+            query={getActiveMentionQuery(caption, caption.length)}
+            onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
+          />
 
           {/* Audio category */}
           {postType === 'audio' && (
@@ -638,6 +653,27 @@ export default function PostScreen() {
             </View>
           )}
 
+          {/* Tag people — deliberate account tags (≤10), shown as a button on the post */}
+          {postType !== 'audio' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Tag people</Text>
+              {tagged.length > 0 ? (
+                <TouchableOpacity style={styles.songRow} onPress={() => setShowTagModal(true)}>
+                  <Ionicons name="people" size={18} color={COLORS.primary} />
+                  <Text style={styles.songRowTitle} numberOfLines={1}>
+                    {tagged.map((t) => `@${t.username}`).join(', ')}
+                  </Text>
+                  <View style={styles.songChange}><Text style={styles.songChangeText}>Edit</Text></View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.addSongBtn} onPress={() => setShowTagModal(true)}>
+                  <Ionicons name="person-add-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.addSongText}>Tag people</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {/* Visibility */}
           <View style={styles.visibilityRow}>
             <View style={styles.visibilityLeft}>
@@ -663,6 +699,7 @@ export default function PostScreen() {
           )}
         </ScrollView>
         <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} />
+        <TagPeopleModal visible={showTagModal} initial={tagged} onClose={() => setShowTagModal(false)} onDone={setTagged} />
       </View>
     );
   }

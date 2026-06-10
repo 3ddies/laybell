@@ -31,6 +31,7 @@ import { aspectToNumber } from '../../lib/aspectRatio';
 import { useExpandTransition } from '../../hooks/useExpandTransition';
 import SongAttribution from '../../components/SongAttribution';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
+import TaggedPeopleButton from '../../components/TaggedPeopleButton';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { processMentions } from '../../lib/mentions';
 
@@ -48,6 +49,7 @@ type Post = {
   song_title?: string | null;
   song_artist?: string | null;
   song_artist_id?: string | null;
+  tagged_user_ids?: string[] | null;
   slides?: any;
   profiles: { username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 };
@@ -261,6 +263,7 @@ export default function PostDetailScreen() {
                 {!!post.song_id && (
                   <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={dismiss} />
                 )}
+                <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
               </View>
             )}
             {isSlideshow(post.type) && (
@@ -276,6 +279,7 @@ export default function PostDetailScreen() {
                 {!!post.song_id && (
                   <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={dismiss} />
                 )}
+                <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
               </View>
             )}
             {post.type === 'video' && post.media_url && (
@@ -309,6 +313,7 @@ export default function PostDetailScreen() {
               {!!post.song_id && (
                 <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={dismiss} />
               )}
+              <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
               </View>
             )}
             {isAudioPost(post.type) && (
@@ -401,6 +406,7 @@ const styles = StyleSheet.create({
   username: { color: COLORS.textTertiary, fontSize: 12, marginTop: 1 },
   typeTag: { width: 28, height: 28, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: 340, backgroundColor: COLORS.surfaceLight },
+  tagBtnOverlay: { position: 'absolute', left: SPACING.sm, bottom: SPACING.sm },
   songMuteBtn: {
     position: 'absolute', top: SPACING.sm, right: SPACING.sm,
     width: 36, height: 36, borderRadius: 18,

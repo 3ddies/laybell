@@ -38,6 +38,7 @@ import StoriesTray from '../../components/StoriesTray';
 import StoryAvatar from '../../components/StoryAvatar';
 import SongAttribution from '../../components/SongAttribution';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
+import TaggedPeopleButton from '../../components/TaggedPeopleButton';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
@@ -68,6 +69,7 @@ type Post = {
   song_title?: string | null;
   song_artist?: string | null;
   song_artist_id?: string | null;
+  tagged_user_ids?: string[] | null;
 };
 
 type PostCardProps = {
@@ -159,6 +161,7 @@ const PostCard = memo(function PostCard({
           {!!item.song_id && (
             <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
           )}
+          <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
         </TouchableOpacity>
       )}
 
@@ -175,6 +178,7 @@ const PostCard = memo(function PostCard({
           {!!item.song_id && (
             <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
           )}
+          <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
         </View>
       )}
 
@@ -217,6 +221,7 @@ const PostCard = memo(function PostCard({
           {!!item.song_id && (
             <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
           )}
+          <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
         </View>
       )}
 
@@ -812,6 +817,7 @@ const styles = StyleSheet.create({
     width: 34, height: 34, borderRadius: RADIUS.full,
     backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
   },
+  tagBtnOverlay: { position: 'absolute', left: SPACING.sm, bottom: SPACING.sm },
   postImage: {
     width: '100%',
     height: 320,

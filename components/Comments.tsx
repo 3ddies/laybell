@@ -12,7 +12,8 @@ import BadgeEmblem from './BadgeEmblem';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
 import { createNotification } from '../lib/createNotification';
-import { processMentions } from '../lib/mentions';
+import { processMentions, getActiveMentionQuery, applyMention } from '../lib/mentions';
+import MentionSuggestions from './MentionSuggestions';
 
 type Row = {
   id: string; body: string; created_at: string; user_id: string;
@@ -230,6 +231,12 @@ export default function Comments({
             <TouchableOpacity onPress={() => setReplyTo(null)}><Ionicons name="close" size={16} color={COLORS.textSecondary} /></TouchableOpacity>
           </View>
         )}
+        <MentionSuggestions
+          query={getActiveMentionQuery(text, text.length)}
+          onPick={(u) => setText(applyMention(text, text.length, u).text)}
+          style={{ marginBottom: SPACING.xs }}
+          maxHeight={180}
+        />
         <View style={styles.inputBar}>
           <TextInput
             style={styles.input}

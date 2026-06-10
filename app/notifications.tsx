@@ -14,7 +14,7 @@ import StoryAvatar from '../components/StoryAvatar';
 import BadgeEmblem from '../components/BadgeEmblem';
 
 type Notification = {
-  id: string; type: 'like' | 'comment' | 'follow' | 'message' | 'mention' | 'song_used' | 'song_story';
+  id: string; type: 'like' | 'comment' | 'follow' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag';
   post_id: string | null; actor_id: string; read: boolean; created_at: string;
   actor: { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null } | null;
 };
@@ -26,6 +26,7 @@ function notificationText(type: string) {
     case 'follow': return 'started following you';
     case 'message': return 'sent you a message';
     case 'mention': return 'mentioned you';
+    case 'tag': return 'tagged you in a post';
     case 'song_used': return 'used your audio in a post';
     case 'song_story': return 'used your audio in their story';
     default: return 'interacted with you';
@@ -39,6 +40,7 @@ function notificationIcon(type: string): { name: any; color: string } {
     case 'follow': return { name: 'person-add', color: COLORS.primaryLight };
     case 'message': return { name: 'chatbubbles', color: '#60A5FA' };
     case 'mention': return { name: 'at', color: COLORS.primary };
+    case 'tag': return { name: 'pricetag', color: COLORS.primary };
     case 'song_used': return { name: 'musical-notes', color: COLORS.primaryLight };
     case 'song_story': return { name: 'musical-notes', color: COLORS.primaryLight };
     default: return { name: 'notifications', color: COLORS.primary };

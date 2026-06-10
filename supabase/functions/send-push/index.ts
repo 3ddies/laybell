@@ -6,6 +6,7 @@ const MESSAGES: Record<string, (name: string) => { title: string; body: string }
   comment:    name => ({ title: '💬 New Comment',   body: `${name} commented on your post` }),
   follow:     name => ({ title: '🔔 New Follower',  body: `${name} started following you` }),
   mention:    name => ({ title: '🏷️ Mentioned',    body: `${name} mentioned you` }),
+  tag:        name => ({ title: '🏷️ Tagged',       body: `${name} tagged you in a post` }),
   song_used:  name => ({ title: '🎵 Your audio',    body: `${name} used your audio in a post` }),
   song_story: name => ({ title: '🎵 Your audio',    body: `${name} used your audio in their story` }),
 };
