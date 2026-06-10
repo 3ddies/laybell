@@ -14,7 +14,7 @@ import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { resolveRingColors, resolveBannerColors, rawTier } from '../../lib/badges';
+import { resolveRingColors, resolveBannerColors, rawTier, specialRingTier } from '../../lib/badges';
 import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
@@ -247,7 +247,7 @@ export default function PublicProfileScreen() {
             avatarUrl={profile?.avatar_url}
             name={profile?.display_name}
             size={88}
-            ringColorsWhenNoStory={ringColors}
+            badgeRing={specialRingTier(ownerTier) ? ringColors : undefined}
           />
         </View>
 

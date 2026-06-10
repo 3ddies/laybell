@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useProfile } from './ProfileContext';
-import { fetchStoryTray, fetchActiveStoryFlags, type StoryGroup, type SourceRect } from '../lib/stories';
+import { fetchStoryTray, fetchActiveStoryFlags, type StoryGroup, type SourceRect, type StoryRingInfo } from '../lib/stories';
+import { rawTier, badgeRingColors, specialRingTier } from '../lib/badges';
 
 // Global source of truth for "who (that I can see) has an active story". Lets any
 // avatar in the app render a story ring + open the viewer via <StoryAvatar>, and
@@ -11,6 +12,9 @@ type StoriesContextValue = {
   groups: StoryGroup[];
   hasStory: (userId?: string | null) => boolean;
   hasUnseen: (userId?: string | null) => boolean;
+  // Badge-tier ring colors for a user with an active story (null if no story or no
+  // badge). Lets any avatar app-wide show the badge ring while a story is live.
+  ringColors: (userId?: string | null) => readonly [string, string] | null;
   openStory: (userId: string, orderedIds?: string[], src?: SourceRect) => void;
   openCamera: () => void;
   refresh: () => void;
@@ -20,6 +24,7 @@ const StoriesContext = createContext<StoriesContextValue>({
   groups: [],
   hasStory: () => false,
   hasUnseen: () => false,
+  ringColors: () => null,
   openStory: () => {},
   openCamera: () => {},
   refresh: () => {},
@@ -34,9 +39,10 @@ export function StoriesProvider({ children }: { children: React.ReactNode }) {
   const currentUserId = profile?.id ?? null;
   const router = useRouter();
   const [groups, setGroups] = useState<StoryGroup[]>([]);
-  // Global user_id -> hasUnseen map for ALL active stories (powers rings on any
-  // avatar app-wide). `groups` stays self+following for the tray + viewer order.
-  const [flags, setFlags] = useState<Map<string, boolean>>(new Map());
+  // Global user_id -> ring info (unseen + badge tier) for ALL active stories the
+  // viewer can see (powers story + badge rings on any avatar app-wide). `groups`
+  // stays self+following for the tray + viewer order.
+  const [flags, setFlags] = useState<Map<string, StoryRingInfo>>(new Map());
 
   const refresh = useCallback(() => {
     if (!currentUserId) { setGroups([]); setFlags(new Map()); return; }
@@ -48,7 +54,18 @@ export function StoriesProvider({ children }: { children: React.ReactNode }) {
 
   const hasStory = useCallback((uid?: string | null) => !!uid && flags.has(uid), [flags]);
   const hasUnseen = useCallback(
-    (uid?: string | null) => !!uid && flags.get(uid) === true,
+    (uid?: string | null) => !!uid && flags.get(uid)?.unseen === true,
+    [flags],
+  );
+  // Badge ring colors for a user who has an active story (their tier color); null
+  // if they have no active story or no badge. The ring only ever shows with a story.
+  const ringColors = useCallback(
+    (uid?: string | null): readonly [string, string] | null => {
+      const info = uid ? flags.get(uid) : undefined;
+      if (!info) return null;
+      const tier = specialRingTier(rawTier({ badge_tier: info.badge_tier }));
+      return tier ? badgeRingColors(tier) : null;
+    },
     [flags],
   );
 
@@ -71,8 +88,8 @@ export function StoriesProvider({ children }: { children: React.ReactNode }) {
   const openCamera = useCallback(() => router.navigate('/story-camera'), [router]);
 
   const value = useMemo(
-    () => ({ groups, hasStory, hasUnseen, openStory, openCamera, refresh }),
-    [groups, hasStory, hasUnseen, openStory, openCamera, refresh],
+    () => ({ groups, hasStory, hasUnseen, ringColors, openStory, openCamera, refresh }),
+    [groups, hasStory, hasUnseen, ringColors, openStory, openCamera, refresh],
   );
 
   return <StoriesContext.Provider value={value}>{children}</StoriesContext.Provider>;

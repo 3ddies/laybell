@@ -158,6 +158,12 @@ export function rawTier(profile: ProfileBadgeFields | null | undefined): Tier | 
   return asTier(profile?.badge_tier);
 }
 
+// Only silver and up earn a special profile-ring color. Bronze (like no badge)
+// uses the default Laybell ring, so it maps to null here.
+export function specialRingTier(tier: Tier | null | undefined): Tier | null {
+  return tier && tier !== 'bronze' ? tier : null;
+}
+
 // ─── Customization (rewards) ─────────────────────────────────────────────────
 // minTier null = always unlocked (e.g. Default). Otherwise the user's emblem tier
 // must rank >= minTier. Gating is enforced on READ so a downgraded user falls back.

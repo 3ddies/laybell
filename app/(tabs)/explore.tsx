@@ -16,7 +16,7 @@ import HighlightText from '../../components/HighlightText';
 import { maybeRefreshLocation } from '../../lib/location';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { badgeRingColors, rawTier } from '../../lib/badges';
+import { badgeRingColors, rawTier, specialRingTier } from '../../lib/badges';
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { fetchBlockedIds } from '../../lib/blocks';
@@ -267,7 +267,7 @@ export default function ExploreScreen() {
         avatarUrl={acc.avatar_url}
         name={acc.display_name}
         size={48}
-        ringColorsWhenNoStory={badgeRingColors(rawTier(acc))}
+        badgeRing={specialRingTier(rawTier(acc)) ? badgeRingColors(rawTier(acc)) : undefined}
       />
       <View style={styles.accountInfo}>
         <View style={styles.accountNameRow}>

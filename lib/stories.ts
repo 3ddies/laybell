@@ -195,11 +195,16 @@ export async function fetchStoriesForUsers(
     .filter((g): g is StoryGroup => !!g);
 }
 
+// Per-author ring data for an active story: whether the viewer has an unseen story
+// from them, plus their badge tier — so any avatar app-wide can render the badge
+// ring (in the tier color) while the story is live.
+export type StoryRingInfo = { unseen: boolean; badge_tier: string | null };
+
 // Global ring data: for EVERY active story the viewer can see (per RLS), map each
-// author's id → whether they have at least one UNSEEN story. Powers story rings
-// on avatars anywhere in the app, not just people you follow. Lightweight (ids
-// only). Returns an empty map if the stories table isn't set up yet.
-export async function fetchActiveStoryFlags(viewerId: string): Promise<Map<string, boolean>> {
+// author's id → their ring info (unseen + badge tier). Powers story + badge rings
+// on avatars anywhere in the app, not just people you follow. Returns an empty map
+// if the stories table isn't set up yet.
+export async function fetchActiveStoryFlags(viewerId: string): Promise<Map<string, StoryRingInfo>> {
   const nowIso = new Date().toISOString();
   const { data: stories } = await supabase
     .from('stories')
@@ -208,17 +213,25 @@ export async function fetchActiveStoryFlags(viewerId: string): Promise<Map<strin
   if (!stories || stories.length === 0) return new Map();
 
   const ids = stories.map((s: any) => s.id);
-  const { data: views } = await supabase
-    .from('story_views')
-    .select('story_id')
-    .eq('viewer_id', viewerId)
-    .in('story_id', ids);
+  const authorIds = Array.from(new Set(stories.map((s: any) => s.user_id)));
+  // stories.user_id references auth.users, so fetch badge tiers from profiles separately.
+  const [{ data: views }, { data: profiles }] = await Promise.all([
+    supabase.from('story_views').select('story_id').eq('viewer_id', viewerId).in('story_id', ids),
+    supabase.from('profiles').select('id, badge_tier').in('id', authorIds),
+  ]);
   const seen = new Set<string>((views ?? []).map((v: any) => v.story_id));
+  const tierById = new Map<string, string | null>(
+    (profiles ?? []).map((p: any) => [p.id, p.badge_tier ?? null]),
+  );
 
-  const flags = new Map<string, boolean>(); // user_id -> hasUnseen
+  const flags = new Map<string, StoryRingInfo>(); // user_id -> ring info
   for (const s of stories as any[]) {
     const unseen = !seen.has(s.id);
-    flags.set(s.user_id, (flags.get(s.user_id) ?? false) || unseen);
+    const prev = flags.get(s.user_id);
+    flags.set(s.user_id, {
+      unseen: (prev?.unseen ?? false) || unseen,
+      badge_tier: prev?.badge_tier ?? tierById.get(s.user_id) ?? null,
+    });
   }
   return flags;
 }

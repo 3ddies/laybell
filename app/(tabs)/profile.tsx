@@ -15,7 +15,7 @@ import { useProfile } from '../../contexts/ProfileContext';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { resolveRingColors, resolveBannerColors, rawTier } from '../../lib/badges';
+import { resolveRingColors, resolveBannerColors, rawTier, specialRingTier } from '../../lib/badges';
 import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
 import { isAudioPost } from '../../lib/genres';
 import VideoThumb from '../../components/VideoThumb';
@@ -258,7 +258,7 @@ export default function ProfileScreen() {
             avatarUrl={avatarUrl}
             name={profile?.display_name}
             size={88}
-            ringColorsWhenNoStory={ringColors}
+            badgeRing={specialRingTier(myTier) ? ringColors : undefined}
             onPressProfile={openCamera}
             showAdd
             onPressAdd={openCamera}

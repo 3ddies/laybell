@@ -6,12 +6,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, GRADIENTS } from '../constants/theme';
 import { useStories } from '../contexts/StoriesContext';
 
-// Drop-in avatar that shows a story ring (gradient = unseen, gray = seen) and
-// opens the story viewer on tap when `userId` has an active story; otherwise it
-// falls back to `onPressProfile`. `size` is the OUTER footprint, so it occupies
-// the same space as the avatar it replaces (the image shrinks slightly to fit a
-// ring, like Instagram). Pass `ringColorsWhenNoStory` to keep an existing ring
-// (e.g. a badge-tier ring) when there's no story.
+// Drop-in avatar that shows a ring ONLY while `userId` has an active story (the
+// story is what surfaces the ring) and opens the story viewer on tap; otherwise it
+// falls back to `onPressProfile` and shows no ring. `size` is the OUTER footprint,
+// so it occupies the same space as the avatar it replaces (the image shrinks
+// slightly to fit a ring, like Instagram). The ring is colored by the user's
+// badge tier (resolved globally from StoriesContext for any user with a story);
+// pass `badgeRing` to override with specific colors (e.g. a styled profile ring).
+// With no badge it uses the default story gradient (unseen) / gray (seen).
 
 type Props = {
   userId?: string | null;
@@ -20,7 +22,7 @@ type Props = {
   size: number;
   onPressProfile?: () => void;
   onBeforeOpenStory?: () => void; // e.g. close an overlay before pushing the viewer
-  ringColorsWhenNoStory?: readonly [string, string];
+  badgeRing?: readonly [string, string]; // badge-tier ring colors, shown only while a story is active
   showAdd?: boolean;
   onPressAdd?: () => void;
   style?: StyleProp<ViewStyle>;
@@ -28,18 +30,24 @@ type Props = {
 
 export default function StoryAvatar({
   userId, avatarUrl, name, size,
-  onPressProfile, onBeforeOpenStory, ringColorsWhenNoStory,
+  onPressProfile, onBeforeOpenStory, badgeRing,
   showAdd, onPressAdd, style,
 }: Props) {
-  const { hasStory, hasUnseen, openStory } = useStories();
+  const { hasStory, hasUnseen, openStory, ringColors } = useStories();
   const story = hasStory(userId);
   const unseen = hasUnseen(userId);
   const wrapRef = useRef<View>(null);
 
-  const ringColors: readonly [string, string] | null = story
-    ? (unseen ? GRADIENTS.primaryWarm : [COLORS.textTertiary, COLORS.textTertiary])
-    : (ringColorsWhenNoStory ?? null);
-  const showRing = !!ringColors;
+  // A ring shows ONLY while the user has an active story. Its color is the user's
+  // badge tier — resolved globally from the context so the badge ring shows on any
+  // avatar app-wide — or an explicit `badgeRing` override (e.g. a styled profile
+  // ring). With no badge it falls back to the story gradient (unseen) / gray (seen).
+  // No story → no ring.
+  const badge = badgeRing ?? ringColors(userId);
+  const ring: readonly [string, string] | null = story
+    ? (badge ?? (unseen ? GRADIENTS.primaryWarm : [COLORS.textTertiary, COLORS.textTertiary]))
+    : null;
+  const showRing = !!ring;
 
   const pad = size >= 64 ? 3 : 2;
   const inner = showRing ? size - pad * 2 : size;
@@ -85,7 +93,7 @@ export default function StoryAvatar({
 
   const content = showRing ? (
     <LinearGradient
-      colors={ringColors!}
+      colors={ring!}
       style={{ width: size, height: size, borderRadius: size / 2, padding: pad, alignItems: 'center', justifyContent: 'center' }}
     >
       {avatarNode}
