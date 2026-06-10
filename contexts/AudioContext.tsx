@@ -39,6 +39,7 @@ type AudioContextType = {
   // doesn't tear the sheet away while the user is still engaged with the comments.
   setCommentComposing: (composing: boolean) => void; // focused / draft / reply
   noteCommentEngagement: () => void;                  // any comment touch (armed only ≥80%)
+  clearCommentEngagement: () => void;                 // scrolled back to the top — drop the hold
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   stop: () => Promise<void>;
@@ -357,6 +358,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (progressRef.current >= 0.8) engagedNearEndRef.current = true;
   }
 
+  // Now Playing reports the comments were scrolled back to the very top — the user
+  // has left the comment area, so the edge case exits as if it were never triggered.
+  // If a finished track was held open only by this, it now advances/closes.
+  function clearCommentEngagement() {
+    engagedNearEndRef.current = false;
+    maybeRunDeferredFinish();
+  }
+
   async function play(track: Track, fromQueue = false, suppressToggle = false) {
     pendingFinishRef.current = false;  // a fresh play cancels any deferred advance/close
     engagedNearEndRef.current = false; // and resets near-end engagement for the new track
@@ -490,7 +499,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, setCommentComposing, noteCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted }}>
       {children}
     </AudioContext.Provider>
   );

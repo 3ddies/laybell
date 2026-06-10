@@ -22,7 +22,7 @@ type Row = {
 };
 
 export default function Comments({
-  postId, ownerId, ListHeaderComponent, style, contentPadding, onRefresh, onNavigate, onComposingChange, onEngage,
+  postId, ownerId, ListHeaderComponent, style, contentPadding, onRefresh, onNavigate, onComposingChange, onEngage, onScrollTop,
 }: {
   postId: string;
   ownerId?: string | null;
@@ -45,8 +45,12 @@ export default function Comments({
   // Fires on any comment-section interaction (scroll, like, type, reply). A host
   // (Now Playing) uses it to detect engagement near the end of a track.
   onEngage?: () => void;
+  // Fires when the list is scrolled back to the very top — lets a host (Now Playing)
+  // drop near-end engagement, since the user has left the comments.
+  onScrollTop?: () => void;
 }) {
   const listRef = useRef<FlatList>(null);
+  const atTopRef = useRef(true); // list starts at the top; tracks top-edge crossings
   const router = useRouter();
   const { profile: myProfile } = useProfile();
 
@@ -222,6 +226,14 @@ export default function Comments({
         // accident — don't treat that as engagement that holds the song open. Liking,
         // typing and replying still count regardless (they're deliberate).
         onScrollBeginDrag={() => { if (rows.length > 3) onEngage?.(); }}
+        // Scrolling back to the very top means the user left the comments — drop the
+        // near-end engagement so the song is no longer held open.
+        onScroll={(e) => {
+          const atTop = e.nativeEvent.contentOffset.y <= 0;
+          if (atTop && !atTopRef.current) onScrollTop?.();
+          atTopRef.current = atTop;
+        }}
+        scrollEventThrottle={16}
         contentContainerStyle={[styles.list, contentPadding != null && { paddingHorizontal: contentPadding }]}
         refreshControl={
           onRefresh
