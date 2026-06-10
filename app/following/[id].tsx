@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import FollowButton from '../../components/FollowButton';
 import { useStories } from '../../contexts/StoriesContext';
 
 type User = { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
@@ -19,8 +20,6 @@ export default function FollowingScreen() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [following, setFollowing] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { setup(); }, [id]);
@@ -36,38 +35,13 @@ export default function FollowingScreen() {
   }
 
   async function setup() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) setCurrentUserId(user.id);
-
-    const [followingRes, myFollowingRes] = await Promise.all([
-      supabase.from('follows')
-        .select('following_id, profiles!follows_following_id_fkey(id, username, display_name, avatar_url, badge_tier, badge_show)')
-        .eq('follower_id', id),
-      user ? supabase.from('follows').select('following_id').eq('follower_id', user.id) : Promise.resolve({ data: [] }),
-    ]);
-
-    if (followingRes.data) {
-      setUsers(followingRes.data.map((f: any) => f.profiles).filter(Boolean));
-    }
-    if (myFollowingRes.data) {
-      setFollowing(new Set((myFollowingRes.data as any[]).map(f => f.following_id)));
-    }
+    // Connection state (follow / friend) is handled app-wide by FollowButton via
+    // FollowContext, so this screen only needs the following list itself.
+    const { data } = await supabase.from('follows')
+      .select('following_id, profiles!follows_following_id_fkey(id, username, display_name, avatar_url, badge_tier, badge_show)')
+      .eq('follower_id', id);
+    if (data) setUsers(data.map((f: any) => f.profiles).filter(Boolean));
     setLoading(false);
-  }
-
-  async function toggleFollow(userId: string) {
-    if (!currentUserId) return;
-    const isFollowing = following.has(userId);
-    setFollowing(prev => {
-      const next = new Set(prev);
-      isFollowing ? next.delete(userId) : next.add(userId);
-      return next;
-    });
-    if (isFollowing) {
-      await supabase.from('follows').delete().eq('follower_id', currentUserId).eq('following_id', userId);
-    } else {
-      await supabase.from('follows').insert({ follower_id: currentUserId, following_id: userId });
-    }
   }
 
   return (
@@ -113,16 +87,7 @@ export default function FollowingScreen() {
                   <Text style={styles.username}>@{item.username}</Text>
                 </View>
               </TouchableOpacity>
-              {item.id !== currentUserId && (
-                <TouchableOpacity
-                  style={[styles.followBtn, following.has(item.id) && styles.followBtnActive]}
-                  onPress={() => toggleFollow(item.id)}
-                >
-                  <Text style={[styles.followBtnText, following.has(item.id) && styles.followBtnTextActive]}>
-                    {following.has(item.id) ? 'Following' : 'Follow'}
-                  </Text>
-                </TouchableOpacity>
-              )}
+              <FollowButton userId={item.id} />
             </View>
           )}
         />

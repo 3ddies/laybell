@@ -101,8 +101,8 @@ export default function EditPostScreen() {
         <Text style={styles.label}>Visibility</Text>
         <View style={styles.row}>
           {([
-            { val: true,  label: 'Public',         icon: 'earth' },
-            { val: false, label: 'Followers only', icon: 'people' },
+            { val: true,  label: 'Public',       icon: 'earth' },
+            { val: false, label: 'Friends only', icon: 'people' },
           ] as const).map(({ val, label, icon }) => {
             const on = isPublic === val;
             return (

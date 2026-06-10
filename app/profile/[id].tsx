@@ -46,6 +46,7 @@ export default function PublicProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [followsMe, setFollowsMe] = useState(false); // does this profile follow me back?
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('posts');
   const [followLoading, setFollowLoading] = useState(false);
@@ -63,7 +64,7 @@ export default function PublicProfileScreen() {
     const currentUser = user ?? null;
     if (currentUser) setCurrentUserId(currentUser.id);
 
-    const [profileRes, followersRes, followingRes, postsCountRes, postsRes, followCheckRes, repostsRes] = await Promise.all([
+    const [profileRes, followersRes, followingRes, postsCountRes, postsRes, followCheckRes, followsMeRes, repostsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', id).single(),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', id),
@@ -72,22 +73,29 @@ export default function PublicProfileScreen() {
       currentUser
         ? supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', id).maybeSingle()
         : Promise.resolve({ data: null }),
+      currentUser
+        ? supabase.from('follows').select('*').eq('follower_id', id).eq('following_id', currentUser.id).maybeSingle()
+        : Promise.resolve({ data: null }),
       supabase.from('reposts').select('created_at, posts(id, type, media_url, caption, is_public, thumbnail_url, cover_url, profiles!posts_user_id_fkey(display_name))').eq('user_id', id).order('created_at', { ascending: false }).limit(100),
     ]);
 
     if (profileRes.data) setProfile(profileRes.data);
     setStats({ followers: followersRes.count || 0, following: followingRes.count || 0, posts: postsCountRes.count || 0 });
     const following = !!followCheckRes.data;
+    const followsMeNow = !!followsMeRes.data;
     if (postsRes.data) {
-      // Followers-only posts are visible to the owner and to followers; everyone
-      // else sees public only. Archived posts (archived_at set) are hidden too.
-      const canSeePrivate = following || currentUser?.id === id;
+      // Private ("friends only") posts are visible to the owner and to FRIENDS
+      // (mutual follows); everyone else — including one-directional followers —
+      // sees public only. Archived posts (archived_at set) are hidden too.
+      const isFriend = following && followsMeNow;
+      const canSeePrivate = isFriend || currentUser?.id === id;
       setPosts(postsRes.data.filter((p: any) => (p.is_public || canSeePrivate) && !p.archived_at));
     }
     // Reposts are public — only surface the reposted posts that are themselves
     // public (so a private post can't leak through someone else's repost).
     setReposts((repostsRes.data ?? []).map((r: any) => r.posts).filter((p: any) => p && p.is_public));
     setIsFollowing(following);
+    setFollowsMe(followsMeNow);
     setLoading(false);
     setRefreshing(false);
   }
@@ -102,7 +110,8 @@ export default function PublicProfileScreen() {
       setStats(prev => ({ ...prev, followers: prev.followers - 1 }));
     } else {
       await supabase.from('follows').insert({ follower_id: currentUserId, following_id: id });
-      createNotification({ userId: id as string, actorId: currentUserId, type: 'follow' });
+      // If they already follow me, following back makes us friends → notify as such.
+      createNotification({ userId: id as string, actorId: currentUserId, type: followsMe ? 'friend' : 'follow' });
       setIsFollowing(true);
       setStats(prev => ({ ...prev, followers: prev.followers + 1 }));
     }
@@ -114,6 +123,8 @@ export default function PublicProfileScreen() {
   }
 
   const isOwnProfile = currentUserId === id;
+  const isFriend = isFollowing && followsMe;
+  const followLabel = isFriend ? 'Friends' : isFollowing ? 'Following' : followsMe ? 'Follow back' : 'Follow';
   const ownerTier = rawTier(profile);
   const ringColors = resolveRingColors(profile, ownerTier);
   const bannerColors = resolveBannerColors(profile, ownerTier);
@@ -282,7 +293,12 @@ export default function PublicProfileScreen() {
           >
             {followLoading
               ? <ActivityIndicator color={COLORS.text} size="small" />
-              : <Text style={styles.followButtonText}>{isFollowing ? 'Following' : 'Follow'}</Text>
+              : (
+                <View style={styles.followBtnInner}>
+                  {isFriend && <Ionicons name="people" size={15} color={COLORS.text} />}
+                  <Text style={styles.followButtonText}>{followLabel}</Text>
+                </View>
+              )
             }
           </TouchableOpacity>
           <TouchableOpacity style={styles.messageButton} onPress={() => router.push(`/messages/${id}`)}>
@@ -386,6 +402,7 @@ const styles = StyleSheet.create({
   actionButtons: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: SPACING.sm },
   followButton: { flex: 1, backgroundColor: COLORS.primary, borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2, alignItems: 'center' },
   followingButton: { backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: COLORS.border },
+  followBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   followButtonText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   messageButton: { flex: 1, backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   messageButtonText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },

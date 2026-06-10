@@ -677,10 +677,10 @@ export default function PostScreen() {
           {/* Visibility */}
           <View style={styles.visibilityRow}>
             <View style={styles.visibilityLeft}>
-              <Ionicons name={isPublic ? 'globe-outline' : 'lock-closed-outline'} size={20} color={COLORS.primary} />
+              <Ionicons name={isPublic ? 'globe-outline' : 'people-outline'} size={20} color={COLORS.primary} />
               <View>
-                <Text style={styles.visibilityLabel}>{isPublic ? 'Public' : 'Followers only'}</Text>
-                <Text style={styles.visibilitySub}>{isPublic ? 'Anyone on Laybell can see this' : 'Only your followers can see this'}</Text>
+                <Text style={styles.visibilityLabel}>{isPublic ? 'Public' : 'Friends only'}</Text>
+                <Text style={styles.visibilitySub}>{isPublic ? 'Anyone on Laybell can see this' : 'Only your friends (mutual follows) can see this'}</Text>
               </View>
             </View>
             <Switch

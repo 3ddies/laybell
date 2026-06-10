@@ -9,6 +9,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { GENDER_OPTIONS, MIN_AGE } from '../lib/profileOptions';
+import { captureAndSaveLocation } from '../lib/location';
+import { requestContactsPermission, readContactHashes } from '../lib/contacts';
+import { saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
+import { fetchSuggestedAccounts, REASON_LABEL } from '../lib/suggestions';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -38,6 +42,12 @@ export default function OnboardingScreen() {
   const [gender, setGender] = useState<string | null>(null);
   const [age, setAge] = useState('');
   const [savingAbout, setSavingAbout] = useState(false);
+  // Permissions step (location / contacts / optional phone) — all optional.
+  const [locEnabled, setLocEnabled] = useState(false);
+  const [contactsEnabled, setContactsEnabled] = useState(false);
+  const [obPhone, setObPhone] = useState('');
+  const [contactHashes, setContactHashes] = useState<string[]>([]);
+  const [permBusy, setPermBusy] = useState<string | null>(null);
   const [selectedGenres, setSelectedGenres] = useState<Set<string>>(new Set());
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [followed, setFollowed] = useState<Set<string>>(new Set());
@@ -64,50 +74,79 @@ export default function OnboardingScreen() {
     setStep(2);
   }
 
+  async function enableLocationOb() {
+    setPermBusy('location');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const saved = await captureAndSaveLocation(user.id);
+      if (saved) setLocEnabled(true);
+    }
+    setPermBusy(null);
+  }
+
+  async function enableContactsOb() {
+    setPermBusy('contacts');
+    const { data: { user } } = await supabase.auth.getUser();
+    const perm = await requestContactsPermission();
+    if (perm.granted && user) {
+      await supabase.from('profiles').update({ contacts_enabled: true }).eq('id', user.id);
+      setContactHashes(await readContactHashes());
+      setContactsEnabled(true);
+    }
+    setPermBusy(null);
+  }
+
+  async function handlePermissionsContinue() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user && obPhone.trim()) {
+      await saveOwnPhone(obPhone);
+      upsertOwnIdentifiers(user.id, user.email, obPhone);
+    }
+    setStep(3);
+  }
+
   async function handleGenresContinue() {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) { setLoading(false); return; }
 
-    // Find suggested accounts based on selected genres
-    let query = supabase
-      .from('profiles')
-      .select('id, username, display_name, avatar_url, badge_tier')
-      .neq('id', user.id)
-      .limit(20);
+    // 1) Personalized signals: contacts + nearby + mutual follows (empty if none on).
+    let personalized: any[] = [];
+    try { personalized = await fetchSuggestedAccounts(user.id, { contactHashes, max: 20 }); } catch {}
 
+    // 2) Genre-based accounts (users who post in the chosen genres).
+    let genreUsers: any[] = [];
     if (selectedGenres.size > 0) {
-      // Find users who post in selected genres
       const genreList = Array.from(selectedGenres);
       const { data: tagData } = await supabase
-        .from('post_tags')
-        .select('posts!inner(user_id)')
-        .in('genre', genreList)
-        .limit(50);
-
+        .from('post_tags').select('posts!inner(user_id)').in('genre', genreList).limit(50);
       const userIds = [...new Set((tagData ?? []).map((t: any) => t.posts?.user_id).filter(Boolean))];
-
       if (userIds.length > 0) {
-        const { data: genreUsers } = await supabase
-          .from('profiles')
-          .select('id, username, display_name, avatar_url, badge_tier')
-          .in('id', userIds)
-          .neq('id', user.id)
-          .limit(15);
-        if (genreUsers && genreUsers.length >= 3) {
-          setSuggestions(genreUsers);
-          setLoading(false);
-          setStep(3);
-          return;
-        }
+        const { data } = await supabase
+          .from('profiles').select('id, username, display_name, avatar_url, badge_tier')
+          .in('id', userIds).neq('id', user.id).limit(15);
+        genreUsers = data ?? [];
       }
     }
 
-    // Fallback: most active users
-    const { data } = await query;
-    setSuggestions(data ?? []);
+    // 3) Fallback to recent accounts if we still have too few.
+    let fallback: any[] = [];
+    if (personalized.length + genreUsers.length < 3) {
+      const { data } = await supabase
+        .from('profiles').select('id, username, display_name, avatar_url, badge_tier')
+        .neq('id', user.id).limit(20);
+      fallback = data ?? [];
+    }
+
+    // Merge, de-duped: personalized → genre → fallback.
+    const seen = new Set<string>();
+    const merged: any[] = [];
+    for (const list of [personalized, genreUsers, fallback]) {
+      for (const u of list) { if (u && !seen.has(u.id)) { seen.add(u.id); merged.push(u); } }
+    }
+    setSuggestions(merged);
     setLoading(false);
-    setStep(3);
+    setStep(4);
   }
 
   async function handleFollow(userId: string) {
@@ -186,7 +225,7 @@ export default function OnboardingScreen() {
       <View style={styles.container}>
         <View style={styles.stepHeader}>
           <View style={styles.progressDots}>
-            {[0, 1, 2].map(i => (
+            {[0, 1, 2, 3].map(i => (
               <View key={i} style={[styles.dot, i === 0 && styles.dotActive]} />
             ))}
           </View>
@@ -246,14 +285,91 @@ export default function OnboardingScreen() {
     );
   }
 
-  // Step 2: Genre selection
+  // Step 2: Permissions — location + contacts + optional phone (all optional)
   if (step === 2) {
     return (
       <View style={styles.container}>
         <View style={styles.stepHeader}>
           <View style={styles.progressDots}>
-            {[0, 1, 2].map(i => (
+            {[0, 1, 2, 3].map(i => (
               <View key={i} style={[styles.dot, i === 1 && styles.dotActive]} />
+            ))}
+          </View>
+          <Text style={styles.stepTitle}>Find your people</Text>
+          <Text style={styles.stepSub}>Help Laybell suggest accounts you may know. Optional — change it anytime in Settings → Permissions.</Text>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.aboutContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <View style={styles.permCard}>
+            <View style={styles.permIcon}><Ionicons name="location-outline" size={22} color={COLORS.primary} /></View>
+            <View style={styles.permInfo}>
+              <Text style={styles.permTitle}>Location</Text>
+              <Text style={styles.permSub}>Suggest people in your area (approximate only)</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.permBtn, locEnabled && styles.permBtnDone]}
+              onPress={enableLocationOb}
+              disabled={locEnabled || permBusy === 'location'}
+            >
+              {permBusy === 'location'
+                ? <ActivityIndicator color={COLORS.text} size="small" />
+                : <Text style={[styles.permBtnText, locEnabled && styles.permBtnTextDone]}>{locEnabled ? 'Enabled' : 'Enable'}</Text>}
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.permCard}>
+            <View style={styles.permIcon}><Ionicons name="people-outline" size={22} color={COLORS.primary} /></View>
+            <View style={styles.permInfo}>
+              <Text style={styles.permTitle}>Contacts</Text>
+              <Text style={styles.permSub}>Find contacts who are already on Laybell</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.permBtn, contactsEnabled && styles.permBtnDone]}
+              onPress={enableContactsOb}
+              disabled={contactsEnabled || permBusy === 'contacts'}
+            >
+              {permBusy === 'contacts'
+                ? <ActivityIndicator color={COLORS.text} size="small" />
+                : <Text style={[styles.permBtnText, contactsEnabled && styles.permBtnTextDone]}>{contactsEnabled ? 'Enabled' : 'Enable'}</Text>}
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.aboutLabel, { marginTop: SPACING.lg }]}>Phone (optional)</Text>
+          <TextInput
+            style={styles.ageInput}
+            value={obPhone}
+            onChangeText={setObPhone}
+            placeholder="Your number"
+            placeholderTextColor={COLORS.textTertiary}
+            keyboardType="phone-pad"
+            autoCorrect={false}
+          />
+          <Text style={styles.aboutHint}>Private — never shown publicly. Lets contacts who have your number find you.</Text>
+        </ScrollView>
+
+        <View style={styles.bottomBar}>
+          <TouchableOpacity style={styles.primaryBtn} onPress={handlePermissionsContinue}>
+            <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
+              <Text style={styles.primaryBtnText}>Continue</Text>
+              <Ionicons name="arrow-forward" size={20} color={COLORS.text} />
+            </LinearGradient>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handlePermissionsContinue}>
+            <Text style={styles.skipText}>Skip for now</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Step 3: Genre selection
+  if (step === 3) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.stepHeader}>
+          <View style={styles.progressDots}>
+            {[0, 1, 2, 3].map(i => (
+              <View key={i} style={[styles.dot, i === 2 && styles.dotActive]} />
             ))}
           </View>
           <Text style={styles.stepTitle}>What's your sound?</Text>
@@ -308,7 +424,7 @@ export default function OnboardingScreen() {
               )}
             </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setSuggestions([]); setStep(3); }}>
+          <TouchableOpacity onPress={handleGenresContinue}>
             <Text style={styles.skipText}>Skip for now</Text>
           </TouchableOpacity>
         </View>
@@ -316,13 +432,13 @@ export default function OnboardingScreen() {
     );
   }
 
-  // Step 2: Follow suggestions
+  // Step 4: Follow suggestions
   return (
     <View style={styles.container}>
       <View style={styles.stepHeader}>
         <View style={styles.progressDots}>
-          {[0, 1, 2].map(i => (
-            <View key={i} style={[styles.dot, i === 2 && styles.dotActive]} />
+          {[0, 1, 2, 3].map(i => (
+            <View key={i} style={[styles.dot, i === 3 && styles.dotActive]} />
           ))}
         </View>
         <Text style={styles.stepTitle}>Follow some artists</Text>
@@ -359,6 +475,7 @@ export default function OnboardingScreen() {
               <View style={styles.suggestionInfo}>
                 <Text style={styles.suggestionName}>{item.display_name}</Text>
                 <Text style={styles.suggestionUsername}>@{item.username}</Text>
+                {item.reason ? <Text style={styles.suggestionReason}>{REASON_LABEL[item.reason as keyof typeof REASON_LABEL]}</Text> : null}
               </View>
               <TouchableOpacity
                 style={[styles.followBtn, isFollowed && styles.followBtnActive]}
@@ -483,6 +600,28 @@ const styles = StyleSheet.create({
   suggestionInfo: { flex: 1 },
   suggestionName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   suggestionUsername: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
+  suggestionReason: { color: COLORS.primaryLight, fontSize: 11, fontWeight: '600', marginTop: 2 },
+
+  // Permissions step cards (location / contacts)
+  permCard: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: COLORS.border, padding: SPACING.md, marginBottom: SPACING.sm,
+  },
+  permIcon: {
+    width: 44, height: 44, borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center',
+  },
+  permInfo: { flex: 1 },
+  permTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  permSub: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  permBtn: {
+    paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, backgroundColor: COLORS.primary, minWidth: 78, alignItems: 'center',
+  },
+  permBtnDone: { backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: COLORS.success },
+  permBtnText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
+  permBtnTextDone: { color: COLORS.success },
   followBtn: {
     paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.full, backgroundColor: COLORS.primary,

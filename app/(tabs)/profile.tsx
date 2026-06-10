@@ -301,8 +301,8 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.editButton} onPress={() => router.push('/edit-profile')}>
           <Text style={styles.editButtonText}>Edit Profile</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton}>
-          <Ionicons name="person-add-outline" size={18} color={COLORS.text} />
+        <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/friends')}>
+          <Ionicons name="people-outline" size={18} color={COLORS.text} />
         </TouchableOpacity>
       </View>
 

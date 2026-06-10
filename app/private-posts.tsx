@@ -48,7 +48,7 @@ export default function PrivatePostsScreen() {
         <View style={styles.empty}>
           <Ionicons name="lock-closed-outline" size={40} color={COLORS.textTertiary} />
           <Text style={styles.emptyText}>No private posts</Text>
-          <Text style={styles.emptySubtext}>Posts set to "Followers only" show up here</Text>
+          <Text style={styles.emptySubtext}>Posts set to "Friends only" show up here</Text>
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>

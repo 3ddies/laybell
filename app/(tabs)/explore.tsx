@@ -11,7 +11,9 @@ import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/the
 import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
 import FollowButton from '../../components/FollowButton';
+import SuggestedAccounts from '../../components/SuggestedAccounts';
 import HighlightText from '../../components/HighlightText';
+import { maybeRefreshLocation } from '../../lib/location';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { badgeRingColors, rawTier } from '../../lib/badges';
@@ -94,6 +96,17 @@ export default function ExploreScreen() {
     const userId = user?.id ?? null;
     if (userId) setCurrentUserId(userId);
     setSeenPostIds(seen);
+
+    // Quietly refresh the coarse location if it's on and stale (>1 day) — keeps the
+    // "people near you" suggestions current without blocking the feed.
+    if (userId) {
+      (async () => {
+        try {
+          const { data } = await supabase.from('profiles').select('location_enabled').eq('id', userId).maybeSingle();
+          await maybeRefreshLocation(userId, data?.location_enabled);
+        } catch {}
+      })();
+    }
 
     // Affinity profile (AsyncStorage cache) + following list + blocks in parallel
     if (userId) {
@@ -500,6 +513,7 @@ export default function ExploreScreen() {
           onRefresh={onRefresh}
           songTiles={selectedGenre !== 'All'}
           currentUserId={currentUserId}
+          header={selectedGenre === 'All' ? <SuggestedAccounts currentUserId={currentUserId} /> : undefined}
           onPostDeleted={(id) => {
             setTrendingPosts(prev => prev.filter(p => p.id !== id));
             setPosts(prev => prev.filter(p => p.id !== id));

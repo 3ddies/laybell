@@ -135,6 +135,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/edit-profile'),
     },
     {
+      icon: 'people-outline',
+      label: 'Friends',
+      subtitle: 'People you both follow + discover more',
+      onPress: () => router.push('/friends'),
+    },
+    {
       icon: 'stats-chart-outline',
       label: 'Creator Analytics',
       subtitle: 'Stats & charts about your content',
@@ -161,7 +167,7 @@ export default function SettingsScreen() {
     {
       icon: 'lock-closed-outline',
       label: 'Private Posts',
-      subtitle: 'Posts only your followers can see',
+      subtitle: 'Posts only your friends can see',
       onPress: () => router.push('/private-posts'),
     },
     {
@@ -175,6 +181,12 @@ export default function SettingsScreen() {
       label: 'Blocked',
       subtitle: 'Accounts you blocked',
       onPress: () => router.push('/blocked'),
+    },
+    {
+      icon: 'options-outline',
+      label: 'Permissions',
+      subtitle: 'Camera, photos, location, contacts & more',
+      onPress: () => router.push('/permissions'),
     },
     {
       icon: 'lock-closed-outline',

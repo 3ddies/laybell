@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { touchLogin, evaluateBadges, onBadgeTierChange, type Tier } from '../lib/badges';
+import { upsertOwnIdentifiers, loadOwnPhone } from '../lib/identifiers';
 
 // Single source of truth for the CURRENT user's own profile (avatar, name, …).
 // Before this existed, every screen fetched `profiles` independently, so changing
@@ -56,6 +57,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     // Badges: mark today's login and recompute the emblem. Fire-and-forget so it
     // never blocks profile load; no-ops if the badges SQL isn't applied yet.
     touchLogin().then(() => evaluateBadges({ silent: true })).catch(() => {});
+    // Keep our contact-discovery hashes in sync (email always; phone only if it's
+    // stored on this device, so a fresh device never wipes an existing phone hash).
+    // Fire-and-forget; no-ops if expo-crypto/the table aren't available yet.
+    loadOwnPhone().then(phone => upsertOwnIdentifiers(user.id, user.email, phone || undefined)).catch(() => {});
   }, []);
 
   useEffect(() => {

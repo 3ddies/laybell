@@ -1,26 +1,38 @@
-import { Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Text, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFollow } from '../contexts/FollowContext';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 
-// Small orange "Follow" pill shown next to another user's username across the
-// feeds. Renders nothing for your own username (or before auth resolves).
+// Small connection pill shown next to another user's username across the feeds.
+// Reflects both follow tiers:
+//   • Friends     — mutual follow (outlined + people icon)
+//   • Follow back — they follow me, I don't follow them yet (filled, encourages)
+//   • Following   — one-directional, I follow them (outlined)
+//   • Follow      — no connection (filled)
+// Renders nothing for your own username (or before auth resolves).
 export default function FollowButton({ userId, style }: { userId?: string | null; style?: any }) {
-  const { currentUserId, following, toggleFollow } = useFollow();
+  const { currentUserId, following, followers, toggleFollow } = useFollow();
 
   if (!userId || !currentUserId || userId === currentUserId) return null;
 
   const isFollowing = following.has(userId);
+  const followsMe = followers.has(userId);
+  const isFriend = isFollowing && followsMe;
+
+  const filled = !isFollowing; // Follow / Follow back are the calls-to-action
+  const label = isFriend ? 'Friends' : isFollowing ? 'Following' : followsMe ? 'Follow back' : 'Follow';
 
   return (
     <TouchableOpacity
-      style={[styles.btn, isFollowing ? styles.following : styles.follow, style]}
+      style={[styles.btn, filled ? styles.follow : styles.following, style]}
       onPress={() => toggleFollow(userId)}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       activeOpacity={0.8}
     >
-      <Text style={[styles.text, isFollowing ? styles.followingText : styles.followText]}>
-        {isFollowing ? 'Following' : 'Follow'}
-      </Text>
+      <View style={styles.inner}>
+        {isFriend && <Ionicons name="people" size={12} color={COLORS.textSecondary} />}
+        <Text style={[styles.text, filled ? styles.followText : styles.followingText]}>{label}</Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -32,6 +44,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     borderWidth: 1,
   },
+  inner: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   follow: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   following: { backgroundColor: 'transparent', borderColor: COLORS.border },
   text: { fontSize: 12, fontWeight: '700' },

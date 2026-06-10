@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions, RefreshControl,
 } from 'react-native';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Video, ResizeMode } from 'expo-av';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -50,9 +50,9 @@ function mediaHeight(post: GridPost): number {
   return COL_W; // pictures render 1:1
 }
 
-export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, currentUserId, onPostDeleted }: {
+export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, currentUserId, onPostDeleted, header }: {
   posts: GridPost[]; refreshing?: boolean; onRefresh?: () => void; songTiles?: boolean;
-  currentUserId?: string | null; onPostDeleted?: (id: string) => void;
+  currentUserId?: string | null; onPostDeleted?: (id: string) => void; header?: ReactNode;
 }) {
   const router = useRouter();
   const { play, currentTrack, isPlaying } = useAudio();
@@ -182,7 +182,16 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
   }, [posts, songTiles]);
 
   if (!posts || posts.length === 0) {
-    return <View style={styles.empty}><Text style={styles.emptyText}>No posts in this genre yet</Text></View>;
+    return (
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} /> : undefined}
+      >
+        {header}
+        <View style={styles.empty}><Text style={styles.emptyText}>No posts in this genre yet</Text></View>
+      </ScrollView>
+    );
   }
 
   const renderMedia = (cell: Cell & { kind: 'media' }) => {
@@ -390,6 +399,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
         onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} /> : undefined
       }
     >
+      {header}
       {songTiles ? (
         <View style={styles.grid3}>{posts.map(renderSquare)}</View>
       ) : (

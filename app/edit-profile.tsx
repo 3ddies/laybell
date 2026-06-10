@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
 import { GENDER_OPTIONS } from '../lib/profileOptions';
+import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 
 export default function EditProfileScreen() {
@@ -20,10 +21,12 @@ export default function EditProfileScreen() {
   const [bio, setBio] = useState('');
   const [link, setLink] = useState('');
   const [gender, setGender] = useState<string | null>(null);
+  const [phone, setPhone] = useState(''); // device-only plaintext; only a hash is uploaded
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => { fetchProfile(); }, []);
@@ -32,12 +35,14 @@ export default function EditProfileScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setUserId(user.id);
+    setUserEmail(user.email ?? null);
     // select('*') so pre-migration installs (no link/gender columns) don't error.
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     if (data) {
       setDisplayName(data.display_name || ''); setUsername(data.username || ''); setBio(data.bio || '');
       setAvatarUrl(data.avatar_url || null); setLink(data.link || ''); setGender(data.gender || null);
     }
+    setPhone(await loadOwnPhone()); // plaintext lives on-device only
     setLoading(false);
   }
 
@@ -81,6 +86,10 @@ export default function EditProfileScreen() {
     const extra = { link: link.trim() || null, gender: gender || null };
     const { error: extraErr } = await supabase.from('profiles').update(extra).eq('id', userId);
     update({ ...core, ...(extraErr ? {} : extra) }); // keep the global profile in sync
+    // Phone: plaintext stays on this device; only a salted hash is uploaded so
+    // contacts who have this number can discover the account. '' clears the hash.
+    await saveOwnPhone(phone);
+    upsertOwnIdentifiers(userId!, userEmail, phone.trim() ? phone : '');
     Alert.alert('Saved!', 'Your profile has been updated', [{ text: 'OK', onPress: () => router.back() }]);
     setSaving(false);
   }
@@ -182,6 +191,20 @@ export default function EditProfileScreen() {
             keyboardType="url"
           />
           <Text style={styles.fieldHint}>Shown as a tappable link under your bio.</Text>
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Phone</Text>
+          <TextInput
+            style={styles.input}
+            value={phone}
+            onChangeText={setPhone}
+            placeholder="Add your number"
+            placeholderTextColor={COLORS.textTertiary}
+            keyboardType="phone-pad"
+            autoCorrect={false}
+          />
+          <Text style={styles.fieldHint}>Private — never shown publicly. Lets contacts who have your number find you on Laybell.</Text>
         </View>
 
         {/* Badges + Page Layout — square buttons side by side, above Gender */}
