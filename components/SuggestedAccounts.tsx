@@ -1,11 +1,11 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { fetchSuggestedAccounts, loadContactHashesIfEnabled, REASON_LABEL, type SuggestedAccount } from '../lib/suggestions';
 import { useFollow } from '../contexts/FollowContext';
 import FollowButton from './FollowButton';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import StoryAvatar from './StoryAvatar';
+import { COLORS, SPACING, RADIUS } from '../constants/theme';
 
 // Horizontal "Suggested for you" rail shown atop Explore. Blends contacts, nearby,
 // and mutual-follow signals (lib/suggestions). Renders nothing when there's nothing
@@ -44,14 +44,14 @@ export default function SuggestedAccounts({ currentUserId }: { currentUserId: st
         contentContainerStyle={styles.row}
         renderItem={({ item }) => (
           <View style={styles.card}>
-            <TouchableOpacity style={styles.cardTop} activeOpacity={0.85} onPress={() => router.push(`/profile/${item.id}`)}>
-              {item.avatar_url ? (
-                <Image source={{ uri: item.avatar_url }} style={styles.avatar} />
-              ) : (
-                <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
-                  <Text style={styles.avatarText}>{item.display_name?.charAt(0).toUpperCase()}</Text>
-                </LinearGradient>
-              )}
+            <StoryAvatar
+              userId={item.id}
+              avatarUrl={item.avatar_url}
+              name={item.display_name}
+              size={56}
+              onPressProfile={() => router.push(`/profile/${item.id}`)}
+            />
+            <TouchableOpacity style={styles.cardText} activeOpacity={0.85} onPress={() => router.push(`/profile/${item.id}`)}>
               <Text style={styles.name} numberOfLines={1}>{item.display_name}</Text>
               <Text style={styles.reason} numberOfLines={2}>{REASON_LABEL[item.reason]}</Text>
             </TouchableOpacity>
@@ -71,10 +71,10 @@ const styles = StyleSheet.create({
     width: 132, padding: SPACING.md, alignItems: 'center', gap: 6,
     backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border,
   },
-  cardTop: { alignItems: 'center', gap: 6 },
-  avatar: { width: 56, height: 56, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 22, fontWeight: '700' },
+  cardText: { alignItems: 'center', gap: 6 },
   name: { color: COLORS.text, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   reason: { color: COLORS.textSecondary, fontSize: 11, textAlign: 'center', minHeight: 28 },
-  followBtn: { marginTop: 2 },
+  // Full-width within the card with tighter side padding so "Follow back" fits on
+  // one line (the inline default is content-sized and wraps in the narrow card).
+  followBtn: { marginTop: 2, alignSelf: 'stretch', paddingHorizontal: SPACING.sm },
 });

@@ -31,7 +31,7 @@ export default function FollowButton({ userId, style }: { userId?: string | null
     >
       <View style={styles.inner}>
         {isFriend && <Ionicons name="people" size={12} color={COLORS.textSecondary} />}
-        <Text style={[styles.text, filled ? styles.followText : styles.followingText]}>{label}</Text>
+        <Text style={[styles.text, filled ? styles.followText : styles.followingText]} numberOfLines={1}>{label}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -44,7 +44,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     borderWidth: 1,
   },
-  inner: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  inner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   follow: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   following: { backgroundColor: 'transparent', borderColor: COLORS.border },
   text: { fontSize: 12, fontWeight: '700' },
