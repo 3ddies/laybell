@@ -1,46 +1,57 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, FlatList, Image, ActivityIndicator,
-  Dimensions, TextInput,
+  Dimensions, TextInput, Keyboard,
 } from 'react-native';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import { GENDER_OPTIONS, MIN_AGE } from '../lib/profileOptions';
+import { GENDER_OPTIONS, MIN_AGE, parseDob, ageFromDob, dobToISO } from '../lib/profileOptions';
 import { captureAndSaveLocation } from '../lib/location';
 import { requestContactsPermission, readContactHashes } from '../lib/contacts';
 import { saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { fetchSuggestedAccounts, REASON_LABEL } from '../lib/suggestions';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { GENRES as APP_GENRES } from '../lib/genres';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const GENRES = [
-  { id: 'rap', label: 'Rap', icon: '🎤' },
-  { id: 'rnb', label: 'R&B', icon: '🎶' },
-  { id: 'pop', label: 'Pop', icon: '⭐' },
-  { id: 'rock', label: 'Rock', icon: '🎸' },
-  { id: 'jazz', label: 'Jazz', icon: '🎷' },
-  { id: 'electronic', label: 'Electronic', icon: '🎛️' },
-  { id: 'gospel', label: 'Gospel', icon: '🙏' },
-  { id: 'afrobeats', label: 'Afrobeats', icon: '🥁' },
-  { id: 'lofi', label: 'Lo-Fi', icon: '☁️' },
-  { id: 'soul', label: 'Soul', icon: '✨' },
-  { id: 'hiphop', label: 'Hip-Hop', icon: '🧢' },
-  { id: 'country', label: 'Country', icon: '🤠' },
-  { id: 'classical', label: 'Classical', icon: '🎻' },
-  { id: 'reggae', label: 'Reggae', icon: '🌿' },
-  { id: 'latin', label: 'Latin', icon: '💃' },
-  { id: 'drill', label: 'Drill', icon: '🔥' },
-];
+// Genre chips derive from the canonical app-wide genre list (lib/genres.ts) so
+// onboarding always offers the SAME categories the user later sees on Explore
+// and Music — no orphan genres that exist in one place but not another. Each
+// chip's id is the genre's lowercased canonical value (what posts are tagged
+// with). Rap is presented as "Rap/Hip-Hop": rap, hip-hop and drill are treated
+// as one scene, so they collapse into this single tab.
+const GENRE_EMOJI: Record<string, string> = {
+  'Rap': '🎤', 'R&B': '🎶', 'Pop': '⭐', 'Rock': '🎸', 'Jazz': '🎷',
+  'Electronic': '🎛️', 'Gospel': '🙏', 'Afrobeats': '🥁', 'Lo-Fi': '☁️',
+  'Soul': '✨', 'Country': '🤠', 'Classical': '🎻', 'Reggae': '🌿',
+  'Latin': '💃', 'Life': '🌍', 'Meme': '😂',
+};
+const GENRE_LABEL: Record<string, string> = { 'Rap': 'Rap/Hip-Hop' };
+const GENRES = APP_GENRES.map(g => ({
+  id: g.toLowerCase(),
+  label: GENRE_LABEL[g] ?? g,
+  icon: GENRE_EMOJI[g] ?? '🎵',
+}));
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [gender, setGender] = useState<string | null>(null);
-  const [age, setAge] = useState('');
+  const [dobMonth, setDobMonth] = useState('');
+  const [dobDay, setDobDay] = useState('');
+  const [dobYear, setDobYear] = useState('');
+  // DOB auto-advance (first pass only): completing a box jumps to the next and
+  // finishing the year dismisses the keyboard. Turned off once the date has been
+  // entered in full, so going back to fix one field types normally after that.
+  const dobDayRef = useRef<TextInput>(null);
+  const dobYearRef = useRef<TextInput>(null);
+  const dobAutoAdvance = useRef(true);
   const [savingAbout, setSavingAbout] = useState(false);
   // Permissions step (location / contacts / optional phone) — all optional.
   const [locEnabled, setLocEnabled] = useState(false);
@@ -62,14 +73,39 @@ export default function OnboardingScreen() {
     });
   }
 
+  function handleDobMonth(t: string) {
+    const v = t.replace(/[^0-9]/g, '').slice(0, 2);
+    setDobMonth(v);
+    if (dobAutoAdvance.current && v.length === 2) dobDayRef.current?.focus();
+  }
+  function handleDobDay(t: string) {
+    const v = t.replace(/[^0-9]/g, '').slice(0, 2);
+    setDobDay(v);
+    if (dobAutoAdvance.current && v.length === 2) dobYearRef.current?.focus();
+  }
+  function handleDobYear(t: string) {
+    const v = t.replace(/[^0-9]/g, '').slice(0, 4);
+    setDobYear(v);
+    if (dobAutoAdvance.current && v.length === 4) {
+      dobAutoAdvance.current = false; // first full entry done — stop auto-advancing
+      Keyboard.dismiss();
+    }
+  }
+
   async function handleAboutContinue() {
-    const ageNum = parseInt(age, 10);
-    if (!gender || isNaN(ageNum) || ageNum < MIN_AGE || ageNum > 120) return;
+    const dob = parseDob(dobYear, dobMonth, dobDay);
+    if (!gender || !dob) return;
+    const ageNum = ageFromDob(dob);
+    if (ageNum < MIN_AGE || ageNum > 120) return;
     setSavingAbout(true);
     const { data: { user } } = await supabase.auth.getUser();
     // Save privately on the profile (no-ops gracefully if the columns aren't
-    // migrated yet — the user still proceeds through onboarding).
-    if (user) await supabase.from('profiles').update({ gender, age: ageNum }).eq('id', user.id);
+    // migrated yet — the user still proceeds through onboarding). dob is written
+    // separately so a pre-migration gap on that column can't drop gender + age.
+    if (user) {
+      await supabase.from('profiles').update({ gender, age: ageNum }).eq('id', user.id);
+      await supabase.from('profiles').update({ dob: dobToISO(dob) }).eq('id', user.id);
+    }
     setSavingAbout(false);
     setStep(2);
   }
@@ -114,13 +150,15 @@ export default function OnboardingScreen() {
     let personalized: any[] = [];
     try { personalized = await fetchSuggestedAccounts(user.id, { contactHashes, max: 20 }); } catch {}
 
-    // 2) Genre-based accounts (users who post in the chosen genres).
+    // 2) Genre-based accounts: people who've posted in the chosen genres. Matches
+    // against posts.genre — the exact lowercase tab category the composer writes —
+    // so onboarding interests line up with how content is tagged everywhere else.
     let genreUsers: any[] = [];
     if (selectedGenres.size > 0) {
       const genreList = Array.from(selectedGenres);
       const { data: tagData } = await supabase
-        .from('post_tags').select('posts!inner(user_id)').in('genre', genreList).limit(50);
-      const userIds = [...new Set((tagData ?? []).map((t: any) => t.posts?.user_id).filter(Boolean))];
+        .from('posts').select('user_id').in('genre', genreList).eq('is_public', true).limit(50);
+      const userIds = [...new Set((tagData ?? []).map((t: any) => t.user_id).filter(Boolean))];
       if (userIds.length > 0) {
         const { data } = await supabase
           .from('profiles').select('id, username, display_name, avatar_url, badge_tier')
@@ -180,11 +218,12 @@ export default function OnboardingScreen() {
   if (step === 0) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={['#1C0A04', COLORS.background, COLORS.background]} style={styles.welcomeBg}>
+        <LinearGradient
+          colors={['#1C0A04', COLORS.background, COLORS.background]}
+          style={[styles.welcomeBg, { paddingTop: insets.top + SPACING.md, paddingBottom: insets.bottom + SPACING.lg }]}
+        >
           <View style={styles.welcomeContent}>
-            <LinearGradient colors={GRADIENTS.primary} style={styles.logoMark}>
-              <Ionicons name="musical-notes" size={48} color={COLORS.text} />
-            </LinearGradient>
+            <Image source={require('../assets/icon.png')} style={styles.logoMark} resizeMode="cover" />
             <Text style={styles.welcomeTitle}>Welcome to{'\n'}Laybell</Text>
             <Text style={styles.welcomeSub}>
               The social platform built for artists, fans, and everyone in between.
@@ -219,8 +258,9 @@ export default function OnboardingScreen() {
 
   // Step 1: About you (gender + age) — both required
   if (step === 1) {
-    const ageNum = parseInt(age, 10);
-    const valid = !!gender && !isNaN(ageNum) && ageNum >= MIN_AGE && ageNum <= 120;
+    const dob = parseDob(dobYear, dobMonth, dobDay);
+    const ageNum = dob ? ageFromDob(dob) : NaN;
+    const valid = !!gender && dob != null && ageNum >= MIN_AGE && ageNum <= 120;
     return (
       <View style={styles.container}>
         <View style={styles.stepHeader}>
@@ -250,16 +290,38 @@ export default function OnboardingScreen() {
             })}
           </View>
 
-          <Text style={[styles.aboutLabel, { marginTop: SPACING.lg }]}>Age</Text>
-          <TextInput
-            style={styles.ageInput}
-            value={age}
-            onChangeText={(t) => setAge(t.replace(/[^0-9]/g, '').slice(0, 3))}
-            placeholder="Your age"
-            placeholderTextColor={COLORS.textTertiary}
-            keyboardType="number-pad"
-            maxLength={3}
-          />
+          <Text style={[styles.aboutLabel, { marginTop: SPACING.lg }]}>Date of birth</Text>
+          <View style={styles.dobRow}>
+            <TextInput
+              style={[styles.dobInput, { flex: 1 }]}
+              value={dobMonth}
+              onChangeText={handleDobMonth}
+              placeholder="MM"
+              placeholderTextColor={COLORS.textTertiary}
+              keyboardType="number-pad"
+              maxLength={2}
+            />
+            <TextInput
+              ref={dobDayRef}
+              style={[styles.dobInput, { flex: 1 }]}
+              value={dobDay}
+              onChangeText={handleDobDay}
+              placeholder="DD"
+              placeholderTextColor={COLORS.textTertiary}
+              keyboardType="number-pad"
+              maxLength={2}
+            />
+            <TextInput
+              ref={dobYearRef}
+              style={[styles.dobInput, { flex: 1.4 }]}
+              value={dobYear}
+              onChangeText={handleDobYear}
+              placeholder="YYYY"
+              placeholderTextColor={COLORS.textTertiary}
+              keyboardType="number-pad"
+              maxLength={4}
+            />
+          </View>
           <Text style={styles.aboutHint}>You must be at least {MIN_AGE} to use Laybell.</Text>
         </ScrollView>
 
@@ -372,7 +434,7 @@ export default function OnboardingScreen() {
               <View key={i} style={[styles.dot, i === 2 && styles.dotActive]} />
             ))}
           </View>
-          <Text style={styles.stepTitle}>What's your sound?</Text>
+          <Text style={styles.stepTitle}>What interests you?</Text>
           <Text style={styles.stepSub}>Pick the genres you love. We'll find your people.</Text>
         </View>
 
@@ -404,12 +466,12 @@ export default function OnboardingScreen() {
 
         <View style={styles.bottomBar}>
           <TouchableOpacity
-            style={[styles.primaryBtn, selectedGenres.size === 0 && styles.btnDisabled]}
+            style={styles.primaryBtn}
             onPress={handleGenresContinue}
-            disabled={selectedGenres.size === 0 || loading}
+            disabled={loading}
           >
             <LinearGradient
-              colors={selectedGenres.size > 0 ? GRADIENTS.primary : ['#333', '#222']}
+              colors={GRADIENTS.primary}
               style={styles.primaryBtnInner}
             >
               {loading ? (
@@ -561,6 +623,12 @@ const styles = StyleSheet.create({
     color: COLORS.text, fontSize: 15,
   },
   aboutHint: { color: COLORS.textTertiary, fontSize: 12, marginTop: SPACING.sm },
+  dobRow: { flexDirection: 'row', gap: SPACING.sm },
+  dobInput: {
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
+    color: COLORS.text, fontSize: 15, textAlign: 'center',
+  },
 
   // Genre grid
   genreGrid: {

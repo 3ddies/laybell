@@ -10,7 +10,11 @@
 --           PRIVATE — never shown on the public profile; used only for the
 --           account itself / future personalization.
 -- - age:    collected (required) at onboarding. PRIVATE — stored only, not shown.
+--           Derived from dob and kept in sync for any age-based logic.
+-- - dob:    date of birth collected (required) at onboarding. PRIVATE — stored
+--           only, never shown. Source of truth for the user's age.
 alter table public.profiles
   add column if not exists link   text,
   add column if not exists gender text,
-  add column if not exists age    integer;
+  add column if not exists age    integer,
+  add column if not exists dob    date;

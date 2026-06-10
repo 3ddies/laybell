@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 
-type Field = { icon: any; placeholder: string; value: string; onChange: (v: string) => void; secure?: boolean; keyboard?: any; capitalize?: any };
+type Field = { icon: any; placeholder: string; value: string; onChange: (v: string) => void; secure?: boolean; keyboard?: any; capitalize?: any; maxLength?: number };
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
@@ -25,7 +25,8 @@ export default function SignupScreen() {
     if (!email || !password || !confirmPassword || !username || !displayName) { setError('Please fill in all fields'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match'); return; }
     if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
-    if (username.length < 3) { setError('Username must be at least 3 characters'); return; }
+    if (username.length < 5) { setError('Username must be at least 5 characters'); return; }
+    if (username.length > 30) { setError('Username must be 30 characters or less'); return; }
     if (!/^[a-zA-Z0-9_]+$/.test(username)) { setError('Username can only contain letters, numbers, and underscores'); return; }
 
     setLoading(true); setError('');
@@ -39,7 +40,7 @@ export default function SignupScreen() {
 
   const fields: Field[] = [
     { icon: 'person-outline', placeholder: 'Display Name', value: displayName, onChange: setDisplayName },
-    { icon: 'at-outline', placeholder: 'Username', value: username, onChange: setUsername, capitalize: 'none' },
+    { icon: 'at-outline', placeholder: 'Username', value: username, onChange: setUsername, capitalize: 'none', maxLength: 30 },
     { icon: 'mail-outline', placeholder: 'Email', value: email, onChange: setEmail, capitalize: 'none', keyboard: 'email-address' },
     { icon: 'lock-closed-outline', placeholder: 'Password', value: password, onChange: setPassword, secure: true },
     { icon: 'lock-closed-outline', placeholder: 'Confirm Password', value: confirmPassword, onChange: setConfirmPassword, secure: true },
@@ -77,6 +78,7 @@ export default function SignupScreen() {
                 secureTextEntry={f.secure && !showPass}
                 keyboardType={f.keyboard}
                 autoCapitalize={f.capitalize ?? 'words'}
+                maxLength={f.maxLength}
               />
               {f.secure && (
                 <TouchableOpacity onPress={() => setShowPass(p => !p)}>

@@ -58,20 +58,14 @@ export const EMPTY_PROFILE: UserAffinityProfile = {
   creatorScores: {}, typeScores: {}, genreScores: {}, builtAt: 0,
 };
 
-// "Meme" gets a small affinity floor so funny content surfaces near the front of
-// the genre rail for everyone (broad universal appeal), while still sitting
-// *behind* any genre the user has genuinely engaged with. For a brand-new user
-// (all scores 0) this lands Meme right after "All"; for an engaged user it slots
-// in just behind their real preferences, ahead of untouched genres. Shared by
-// the Music Discover and Explore genre bars so they order identically.
-export const MEME_FLOOR = 0.001;
-
+// Orders the genre rail by how much the user has engaged with each genre, highest
+// first. Ties keep their incoming order (Array.sort is stable in Hermes), so a
+// brand-new user — and the untouched tail for everyone else — sees genres in the
+// exact order defined in lib/genres.ts. Shared by the Music Discover and Explore
+// genre bars so they order identically to each other and to onboarding.
 export function sortGenresByAffinity(genres: string[], profile: UserAffinityProfile): string[] {
-  const keyFor = (g: string) => {
-    const score = profile.genreScores[g.toLowerCase()] ?? 0;
-    return g.toLowerCase() === 'meme' ? Math.max(score, MEME_FLOOR) : score;
-  };
-  return [...genres].sort((a, b) => keyFor(b) - keyFor(a));
+  return [...genres].sort((a, b) =>
+    (profile.genreScores[b.toLowerCase()] ?? 0) - (profile.genreScores[a.toLowerCase()] ?? 0));
 }
 
 function normalize(raw: Record<string, number>): Record<string, number> {

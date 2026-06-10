@@ -9,7 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
-import { GENDER_OPTIONS } from '../lib/profileOptions';
+import { GENDER_OPTIONS, ageFromDob } from '../lib/profileOptions';
 import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 
@@ -28,6 +28,7 @@ export default function EditProfileScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [age, setAge] = useState<number | null>(null); // read-only, derived from dob
 
   useEffect(() => { fetchProfile(); }, []);
 
@@ -41,6 +42,13 @@ export default function EditProfileScreen() {
     if (data) {
       setDisplayName(data.display_name || ''); setUsername(data.username || ''); setBio(data.bio || '');
       setAvatarUrl(data.avatar_url || null); setLink(data.link || ''); setGender(data.gender || null);
+      // Age is read-only here — recomputed from the date of birth captured at
+      // onboarding (falls back to the stored age column for older accounts).
+      setAge(
+        data.dob ? ageFromDob(new Date(data.dob))
+          : typeof data.age === 'number' ? data.age
+          : null,
+      );
     }
     setPhone(await loadOwnPhone()); // plaintext lives on-device only
     setLoading(false);
@@ -73,6 +81,8 @@ export default function EditProfileScreen() {
 
   async function handleSave() {
     if (!displayName.trim() || !username.trim()) { Alert.alert('Error', 'Display name and username are required'); return; }
+    if (username.trim().length < 5) { Alert.alert('Error', 'Username must be at least 5 characters'); return; }
+    if (username.trim().length > 30) { Alert.alert('Error', 'Username must be 30 characters or less'); return; }
     if (!/^[a-zA-Z0-9_]+$/.test(username)) { Alert.alert('Error', 'Username can only contain letters, numbers, and underscores'); return; }
     setSaving(true);
     const core = { display_name: displayName.trim(), username: username.trim().toLowerCase(), bio: bio.trim() };
@@ -160,6 +170,7 @@ export default function EditProfileScreen() {
               placeholder="username"
               placeholderTextColor={COLORS.textTertiary}
               autoCapitalize="none"
+              maxLength={30}
             />
           </View>
         </View>
@@ -243,6 +254,14 @@ export default function EditProfileScreen() {
           </View>
           <Text style={styles.fieldHint}>Private — never shown on your public profile.</Text>
         </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Age</Text>
+          <View style={styles.readonlyBox}>
+            <Text style={styles.readonlyValue}>{age != null ? `${age}` : 'Not set'}</Text>
+          </View>
+          <Text style={styles.fieldHint}>Calculated from your date of birth. Private — never shown publicly.</Text>
+        </View>
       </View>
     </ScrollView>
   );
@@ -302,6 +321,13 @@ const styles = StyleSheet.create({
   // keeps Bio↔Link spacing even with Display Name↔Username.
   charCount: { position: 'absolute', bottom: 8, right: 12, color: COLORS.textTertiary, fontSize: 12 },
   fieldHint: { color: COLORS.textTertiary, fontSize: 12 },
+  // Read-only display box (e.g. Age) — dimmer surface + muted text so it reads
+  // as non-editable next to the real inputs.
+  readonlyBox: {
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
+  },
+  readonlyValue: { color: COLORS.textSecondary, fontSize: 15 },
 
   genderRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   genderChip: {
