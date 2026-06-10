@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Alert, Image, TextInput, Linking, Dimensions,
+  Alert, Image, TextInput, Linking, Dimensions, Pressable, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import {
   CameraView, CameraType, FlashMode,
@@ -21,7 +21,7 @@ import MentionSuggestions from '../../components/MentionSuggestions';
 import DraggableCaption, { DEFAULT_CAPTION_STYLE, type CaptionStyle } from '../../components/DraggableCaption';
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { useStories } from '../../contexts/StoriesContext';
-import { usePagerSwiping } from '../../contexts/PagerContext';
+import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 
 const VIDEO_MAX_SEC = 60;
@@ -39,6 +39,7 @@ export default function StoryCameraScreen() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const swiping = usePagerSwiping();
+  const setTabSwipe = useTabSwipeControl();
   // Name of the currently-settled tab. While dragging from Home toward the camera
   // it's still 'index' (focus only flips on settle), so we can light up the live
   // camera DURING the drag — without activating it on unrelated tab swipes.
@@ -60,10 +61,18 @@ export default function StoryCameraScreen() {
   const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [stage, setStage] = useState<'capture' | 'preview'>('capture');
+  // While editing a captured story, turn the tab pager's swipe OFF so dragging the
+  // text sticker can't swipe out to Home (and the pager/PanResponder don't fight,
+  // which was freezing). The back button exits instead. Restored on capture/leave.
+  useEffect(() => {
+    setTabSwipe(stage !== 'preview');
+    return () => setTabSwipe(true);
+  }, [stage]);
   const [captured, setCaptured] = useState<Captured | null>(null);
-  const [caption, setCaption] = useState('');
-  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>(DEFAULT_CAPTION_STYLE);
-  const [editingCaption, setEditingCaption] = useState(false);
+  const [caption, setCaption] = useState('');                  // plain bottom caption
+  const [stickerText, setStickerText] = useState('');           // draggable text sticker
+  const [stickerStyle, setStickerStyle] = useState<CaptionStyle>(DEFAULT_CAPTION_STYLE);
+  const [editingSticker, setEditingSticker] = useState(false);  // sticker text editor open
   const [song, setSong] = useState<PickedSong | null>(null);
   const [showSongPicker, setShowSongPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -87,7 +96,7 @@ export default function StoryCameraScreen() {
         setRecSecs(0);
         setStage('capture');
         setCaptured(null);
-        setCaption(''); setCaptionStyle(DEFAULT_CAPTION_STYLE); setEditingCaption(false);
+        setCaption(''); setStickerText(''); setStickerStyle(DEFAULT_CAPTION_STYLE); setEditingSticker(false);
         setSong(null);
         setMode('picture');
       };
@@ -191,7 +200,7 @@ export default function StoryCameraScreen() {
 
   function retake() {
     setCaptured(null);
-    setCaption(''); setCaptionStyle(DEFAULT_CAPTION_STYLE); setEditingCaption(false);
+    setCaption(''); setStickerText(''); setStickerStyle(DEFAULT_CAPTION_STYLE); setEditingSticker(false);
     setSong(null);
     setStage('capture');
   }
@@ -237,7 +246,8 @@ export default function StoryCameraScreen() {
         aspectRatio: '9:16',
         durationSeconds: captured.type === 'video' ? captured.durationSec ?? null : null,
         song,
-        captionStyle: caption.trim() ? captionStyle : null,
+        stickerText: stickerText.trim() || null,
+        stickerStyle: stickerText.trim() ? stickerStyle : null,
       });
 
       retake();
@@ -289,19 +299,26 @@ export default function StoryCameraScreen() {
           />
         )}
 
-        {/* Draggable / pinch-resizable caption sticker over the media. */}
-        {!!caption.trim() && (
+        {/* Tap anywhere on the media to add / edit the draggable text (IG-style). */}
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditingSticker(true)} />
+
+        {/* Draggable / pinch-resizable text sticker. Tap = edit, drag = move. */}
+        {!!stickerText.trim() && !editingSticker && (
           <DraggableCaption
-            text={caption}
+            text={stickerText}
             frameW={SCREEN_W}
             frameH={SCREEN_H}
-            initial={captionStyle}
-            onChange={setCaptionStyle}
+            initial={stickerStyle}
+            onChange={setStickerStyle}
+            onPress={() => setEditingSticker(true)}
           />
         )}
 
         <TouchableOpacity style={[styles.roundBtn, { position: 'absolute', top: insets.top + 8, left: SPACING.md }]} onPress={retake}>
           <Ionicons name="arrow-back" size={26} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.roundBtn, { position: 'absolute', top: insets.top + 8, right: SPACING.md }]} onPress={() => setEditingSticker(true)}>
+          <Text style={styles.aaBtnText}>Aa</Text>
         </TouchableOpacity>
 
         <View style={[styles.previewBottom, { paddingBottom: insets.bottom + SPACING.md }]}>
@@ -319,38 +336,21 @@ export default function StoryCameraScreen() {
               <Text style={styles.musicBtnText}>Add music</Text>
             </TouchableOpacity>
           )}
-          {editingCaption || !caption.trim() ? (
-            <>
-              <MentionSuggestions
-                query={getActiveMentionQuery(caption, caption.length)}
-                onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
-                style={{ marginBottom: SPACING.xs }}
-                maxHeight={150}
-              />
-              <TextInput
-                style={styles.captionInput}
-                placeholder="Add a caption…"
-                placeholderTextColor="rgba(255,255,255,0.7)"
-                value={caption}
-                onChangeText={setCaption}
-                maxLength={200}
-                autoFocus={editingCaption}
-                onFocus={() => setEditingCaption(true)}
-                onBlur={() => setEditingCaption(false)}
-              />
-            </>
-          ) : (
-            // Text now lives on the media as a draggable sticker — collapse the
-            // field to a compact edit chip so it isn't shown twice.
-            <TouchableOpacity style={styles.captionChip} onPress={() => setEditingCaption(true)}>
-              <Ionicons name="text" size={15} color="#fff" />
-              <Text style={styles.captionChipText} numberOfLines={1}>{caption}</Text>
-              <Ionicons name="pencil" size={13} color="rgba(255,255,255,0.75)" />
-            </TouchableOpacity>
-          )}
-          {!!caption.trim() && (
-            <Text style={styles.captionHint}>Drag the text to move it · pinch to resize</Text>
-          )}
+          {/* Plain bottom caption (separate from the draggable sticker). */}
+          <MentionSuggestions
+            query={getActiveMentionQuery(caption, caption.length)}
+            onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
+            style={{ marginBottom: SPACING.xs }}
+            maxHeight={150}
+          />
+          <TextInput
+            style={styles.captionInput}
+            placeholder="Add a caption…"
+            placeholderTextColor="rgba(255,255,255,0.7)"
+            value={caption}
+            onChangeText={setCaption}
+            maxLength={200}
+          />
           <TouchableOpacity style={styles.shareBtn} onPress={shareStory} disabled={uploading}>
             {uploading ? (
               <ActivityIndicator color="#fff" />
@@ -362,6 +362,41 @@ export default function StoryCameraScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* Full-screen text editor — tap-to-type; becomes the draggable sticker. */}
+        {editingSticker && (
+          <KeyboardAvoidingView
+            style={[StyleSheet.absoluteFill, styles.stickerEditor]}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditingSticker(false)} />
+            <View style={[styles.stickerDoneRow, { top: insets.top + 8 }]} pointerEvents="box-none">
+              <TouchableOpacity onPress={() => setEditingSticker(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Text style={styles.stickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.stickerInputWrap} pointerEvents="box-none">
+              <TextInput
+                style={styles.stickerInput}
+                value={stickerText}
+                onChangeText={setStickerText}
+                placeholder="Type something…"
+                placeholderTextColor="rgba(255,255,255,0.55)"
+                multiline
+                autoFocus
+                maxLength={200}
+                textAlign="center"
+              />
+              <MentionSuggestions
+                query={getActiveMentionQuery(stickerText, stickerText.length)}
+                onPick={(u) => setStickerText(applyMention(stickerText, stickerText.length, u).text)}
+                style={{ marginTop: SPACING.md, alignSelf: 'center', minWidth: 240 }}
+                maxHeight={160}
+              />
+            </View>
+          </KeyboardAvoidingView>
+        )}
+
         <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} />
       </View>
     );
@@ -524,14 +559,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: RADIUS.md,
     color: '#fff', fontSize: 15, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 2,
   },
-  captionChip: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    alignSelf: 'flex-start', maxWidth: '100%',
-    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: RADIUS.full,
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
+  aaBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  stickerEditor: { backgroundColor: 'rgba(0,0,0,0.55)' },
+  stickerDoneRow: { position: 'absolute', right: SPACING.md, flexDirection: 'row', justifyContent: 'flex-end' },
+  stickerDoneText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  stickerInputWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: SPACING.lg },
+  stickerInput: {
+    color: '#fff', fontSize: 28, fontWeight: '700', textAlign: 'center',
+    minWidth: 120, maxWidth: '100%',
+    textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 6,
   },
-  captionChipText: { color: '#fff', fontSize: 14, flexShrink: 1 },
-  captionHint: { color: 'rgba(255,255,255,0.75)', fontSize: 12, textAlign: 'center', marginTop: SPACING.xs },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
     backgroundColor: COLORS.primary, borderRadius: RADIUS.full,

@@ -25,14 +25,17 @@ export const captionStickerTextStyle = {
 };
 
 export default function DraggableCaption({
-  text, frameW, frameH, initial, onChange,
+  text, frameW, frameH, initial, onChange, onPress,
 }: {
   text: string;
   frameW: number;
   frameH: number;
   initial: CaptionStyle;
   onChange: (s: CaptionStyle) => void;
+  onPress?: () => void; // tap the sticker (no drag) → edit its text
 }) {
+  const onPressRef = useRef(onPress);
+  onPressRef.current = onPress;
   // pan holds the pixel offset from the frame CENTER (the container centers us).
   const pan = useRef(new Animated.ValueXY({ x: (initial.x - 0.5) * frameW, y: (initial.y - 0.5) * frameH })).current;
   const scale = useRef(new Animated.Value(initial.scale)).current;
@@ -42,10 +45,12 @@ export default function DraggableCaption({
 
   const responder = useRef(
     PanResponder.create({
-      // A tap shouldn't grab the responder (lets the controls underneath work);
-      // only an actual drag/pinch does.
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 3 || Math.abs(g.dy) > 3,
+      // Claim our own touches so the gesture can never leak to the tab pager
+      // (which would swipe out of story mode / freeze). A tap with no movement is
+      // treated as "edit" on release; movement drags/pinches.
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
         g0.current = { x: cur.current.x, y: cur.current.y, scale: cur.current.scale, rotation: cur.current.rotation, dist: 0, angle: 0 };
       },
@@ -68,7 +73,10 @@ export default function DraggableCaption({
           cur.current.x = nx; cur.current.y = ny;
         }
       },
-      onPanResponderRelease: () => {
+      onPanResponderRelease: (_e, g) => {
+        // No real movement and no pinch → it was a tap → edit the text.
+        const moved = Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6 || g0.current.dist !== 0;
+        if (!moved) { onPressRef.current?.(); return; }
         onChange({
           x: cur.current.x / frameW + 0.5,
           y: cur.current.y / frameH + 0.5,

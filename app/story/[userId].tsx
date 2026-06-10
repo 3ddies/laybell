@@ -490,8 +490,7 @@ export default function StoryViewerScreen() {
               </View>
             </View>
 
-            {/* Caption — at the author's chosen position (drag/resize), or the
-                default bottom spot for stories posted before placement existed. */}
+            {/* Bottom caption (or, for older stories, the single positioned caption). */}
             {!!story.caption && (
               story.caption_style ? (
                 <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -515,6 +514,26 @@ export default function StoryViewerScreen() {
                   <Text style={styles.caption}>{story.caption}</Text>
                 </View>
               )
+            )}
+
+            {/* Draggable text sticker, placed anywhere on the media by the author. */}
+            {!!story.sticker_text && story.sticker_style && (
+              <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                <View style={styles.captionStickerCenter}>
+                  <Text
+                    style={[captionStickerTextStyle, {
+                      transform: [
+                        { translateX: (story.sticker_style.x - 0.5) * SCREEN_W },
+                        { translateY: (story.sticker_style.y - 0.5) * SCREEN_H },
+                        { scale: story.sticker_style.scale ?? 1 },
+                        { rotate: `${story.sticker_style.rotation ?? 0}deg` },
+                      ],
+                    }]}
+                  >
+                    {story.sticker_text}
+                  </Text>
+                </View>
+              </View>
             )}
 
             {/* Own-story footer: viewer count */}
