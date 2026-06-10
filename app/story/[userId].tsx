@@ -20,7 +20,7 @@ import {
 import { reportUser } from '../../lib/postActions';
 import SongAttribution from '../../components/SongAttribution';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { captionStickerTextStyle } from '../../components/DraggableCaption';
+import { captionStickerTextStyle } from '../../components/StickerLayer';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 
@@ -516,25 +516,25 @@ export default function StoryViewerScreen() {
               )
             )}
 
-            {/* Draggable text sticker, placed anywhere on the media by the author. */}
-            {!!story.sticker_text && story.sticker_style && (
-              <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            {/* Draggable text stickers, placed anywhere on the media by the author. */}
+            {(story.stickers ?? []).map((st, i) => (
+              <View key={i} style={StyleSheet.absoluteFill} pointerEvents="none">
                 <View style={styles.captionStickerCenter}>
                   <Text
                     style={[captionStickerTextStyle, {
                       transform: [
-                        { translateX: (story.sticker_style.x - 0.5) * SCREEN_W },
-                        { translateY: (story.sticker_style.y - 0.5) * SCREEN_H },
-                        { scale: story.sticker_style.scale ?? 1 },
-                        { rotate: `${story.sticker_style.rotation ?? 0}deg` },
+                        { translateX: (st.x - 0.5) * SCREEN_W },
+                        { translateY: (st.y - 0.5) * SCREEN_H },
+                        { scale: st.scale ?? 1 },
+                        { rotate: `${st.rotation ?? 0}deg` },
                       ],
                     }]}
                   >
-                    {story.sticker_text}
+                    {st.text}
                   </Text>
                 </View>
               </View>
-            )}
+            ))}
 
             {/* Own-story footer: viewer count */}
             {isOwn && (

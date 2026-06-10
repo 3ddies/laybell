@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Alert, Image, TextInput, Linking, Dimensions, Pressable, KeyboardAvoidingView, Platform,
+  Alert, Image, TextInput, Linking, Dimensions, Pressable, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import {
   CameraView, CameraType, FlashMode,
@@ -18,7 +18,7 @@ import { supabase } from '../../lib/supabase';
 import { uploadStoryMedia, createStory } from '../../lib/stories';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import MentionSuggestions from '../../components/MentionSuggestions';
-import DraggableCaption, { DEFAULT_CAPTION_STYLE, type CaptionStyle } from '../../components/DraggableCaption';
+import StickerLayer, { type Sticker, type CaptionStyle } from '../../components/StickerLayer';
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
@@ -68,11 +68,44 @@ export default function StoryCameraScreen() {
     setTabSwipe(stage !== 'preview');
     return () => setTabSwipe(true);
   }, [stage]);
+
+  // Track keyboard height so the bottom caption can sit above it (not covered).
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const s = Keyboard.addListener(showEvt, (e) => setKbHeight(e.endCoordinates?.height ?? 0));
+    const h = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => { s.remove(); h.remove(); };
+  }, []);
+
+  // ── Text stickers ──────────────────────────────────────────────────────────
+  function addStickerAt(xNorm: number, yNorm: number) {
+    const id = `st${stickerIdRef.current++}`;
+    setStickers((prev) => [...prev, { id, text: '', x: xNorm, y: yNorm, scale: 1, rotation: 0 }]);
+    setEditingId(id);
+    setEditingText('');
+  }
+  function editSticker(id: string) {
+    setEditingId(id);
+    setEditingText(stickers.find((x) => x.id === id)?.text ?? '');
+  }
+  function manipulateSticker(id: string, style: CaptionStyle) {
+    setStickers((prev) => prev.map((s) => (s.id === id ? { ...s, ...style } : s)));
+  }
+  function finishEditing() {
+    setStickers((prev) =>
+      prev.map((s) => (s.id === editingId ? { ...s, text: editingText.trim() } : s)).filter((s) => s.text !== ''),
+    );
+    setEditingId(null);
+    setEditingText('');
+  }
   const [captured, setCaptured] = useState<Captured | null>(null);
-  const [caption, setCaption] = useState('');                  // plain bottom caption
-  const [stickerText, setStickerText] = useState('');           // draggable text sticker
-  const [stickerStyle, setStickerStyle] = useState<CaptionStyle>(DEFAULT_CAPTION_STYLE);
-  const [editingSticker, setEditingSticker] = useState(false);  // sticker text editor open
+  const [caption, setCaption] = useState('');                       // plain bottom caption
+  const [stickers, setStickers] = useState<Sticker[]>([]);           // draggable text stickers
+  const [editingId, setEditingId] = useState<string | null>(null);  // sticker whose text is being edited
+  const [editingText, setEditingText] = useState('');               // the editor's working text
+  const [kbHeight, setKbHeight] = useState(0);                       // keyboard height (lifts the bottom caption)
+  const stickerIdRef = useRef(0);
   const [song, setSong] = useState<PickedSong | null>(null);
   const [showSongPicker, setShowSongPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -96,7 +129,7 @@ export default function StoryCameraScreen() {
         setRecSecs(0);
         setStage('capture');
         setCaptured(null);
-        setCaption(''); setStickerText(''); setStickerStyle(DEFAULT_CAPTION_STYLE); setEditingSticker(false);
+        setCaption(''); setStickers([]); setEditingId(null); setEditingText('');
         setSong(null);
         setMode('picture');
       };
@@ -200,7 +233,7 @@ export default function StoryCameraScreen() {
 
   function retake() {
     setCaptured(null);
-    setCaption(''); setStickerText(''); setStickerStyle(DEFAULT_CAPTION_STYLE); setEditingSticker(false);
+    setCaption(''); setStickers([]); setEditingId(null); setEditingText('');
     setSong(null);
     setStage('capture');
   }
@@ -246,8 +279,9 @@ export default function StoryCameraScreen() {
         aspectRatio: '9:16',
         durationSeconds: captured.type === 'video' ? captured.durationSec ?? null : null,
         song,
-        stickerText: stickerText.trim() || null,
-        stickerStyle: stickerText.trim() ? stickerStyle : null,
+        stickers: stickers.length
+          ? stickers.map(({ text, x, y, scale, rotation }) => ({ text, x, y, scale, rotation }))
+          : null,
       });
 
       retake();
@@ -299,29 +333,32 @@ export default function StoryCameraScreen() {
           />
         )}
 
-        {/* Tap anywhere on the media to add / edit the draggable text (IG-style). */}
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditingSticker(true)} />
-
-        {/* Draggable / pinch-resizable text sticker. Tap = edit, drag = move. */}
-        {!!stickerText.trim() && !editingSticker && (
-          <DraggableCaption
-            text={stickerText}
-            frameW={SCREEN_W}
-            frameH={SCREEN_H}
-            initial={stickerStyle}
-            onChange={setStickerStyle}
-            onPress={() => setEditingSticker(true)}
-          />
-        )}
+        {/* Text stickers — ONE gesture layer that routes to the sticker nearest the
+            touch: tap a sticker to edit, tap open media to add a new one, drag/pinch
+            to move/resize (stays continuous while ≥1 finger is down). */}
+        <StickerLayer
+          stickers={stickers}
+          frameW={SCREEN_W}
+          frameH={SCREEN_H}
+          editingId={editingId}
+          onManipulate={manipulateSticker}
+          onTapSticker={editSticker}
+          onTapEmpty={(x, y) => {
+            // If the caption keyboard is up, the first tap just dismisses it
+            // (don't spawn a sticker); tap again on open media to add one.
+            if (kbHeight > 0) { Keyboard.dismiss(); return; }
+            addStickerAt(x, y);
+          }}
+        />
 
         <TouchableOpacity style={[styles.roundBtn, { position: 'absolute', top: insets.top + 8, left: SPACING.md }]} onPress={retake}>
           <Ionicons name="arrow-back" size={26} color="#fff" />
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.roundBtn, { position: 'absolute', top: insets.top + 8, right: SPACING.md }]} onPress={() => setEditingSticker(true)}>
+        <TouchableOpacity style={[styles.roundBtn, { position: 'absolute', top: insets.top + 8, right: SPACING.md }]} onPress={() => addStickerAt(0.5, 0.4)}>
           <Text style={styles.aaBtnText}>Aa</Text>
         </TouchableOpacity>
 
-        <View style={[styles.previewBottom, { paddingBottom: insets.bottom + SPACING.md }]}>
+        <View style={[styles.previewBottom, { bottom: kbHeight, paddingBottom: kbHeight > 0 ? SPACING.md : insets.bottom + SPACING.md }]}>
           {song ? (
             <View style={styles.songPill}>
               <Ionicons name="musical-notes" size={15} color="#fff" />
@@ -336,7 +373,7 @@ export default function StoryCameraScreen() {
               <Text style={styles.musicBtnText}>Add music</Text>
             </TouchableOpacity>
           )}
-          {/* Plain bottom caption (separate from the draggable sticker). */}
+          {/* Plain bottom caption (separate from the draggable stickers). */}
           <MentionSuggestions
             query={getActiveMentionQuery(caption, caption.length)}
             onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
@@ -363,23 +400,23 @@ export default function StoryCameraScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Full-screen text editor — tap-to-type; becomes the draggable sticker. */}
-        {editingSticker && (
+        {/* Full-screen text editor — tap-to-type; becomes / updates a sticker. */}
+        {editingId && (
           <KeyboardAvoidingView
             style={[StyleSheet.absoluteFill, styles.stickerEditor]}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditingSticker(false)} />
+            <Pressable style={StyleSheet.absoluteFill} onPress={finishEditing} />
             <View style={[styles.stickerDoneRow, { top: insets.top + 8 }]} pointerEvents="box-none">
-              <TouchableOpacity onPress={() => setEditingSticker(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <TouchableOpacity onPress={finishEditing} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                 <Text style={styles.stickerDoneText}>Done</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.stickerInputWrap} pointerEvents="box-none">
               <TextInput
                 style={styles.stickerInput}
-                value={stickerText}
-                onChangeText={setStickerText}
+                value={editingText}
+                onChangeText={setEditingText}
                 placeholder="Type something…"
                 placeholderTextColor="rgba(255,255,255,0.55)"
                 multiline
@@ -388,8 +425,8 @@ export default function StoryCameraScreen() {
                 textAlign="center"
               />
               <MentionSuggestions
-                query={getActiveMentionQuery(stickerText, stickerText.length)}
-                onPick={(u) => setStickerText(applyMention(stickerText, stickerText.length, u).text)}
+                query={getActiveMentionQuery(editingText, editingText.length)}
+                onPick={(u) => setEditingText(applyMention(editingText, editingText.length, u).text)}
                 style={{ marginTop: SPACING.md, alignSelf: 'center', minWidth: 240 }}
                 maxHeight={160}
               />

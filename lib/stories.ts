@@ -33,9 +33,8 @@ export type Story = {
   song_artist_id?: string | null;
   // Deprecated single-caption placement (story_caption_style.sql).
   caption_style?: { x: number; y: number; scale: number; rotation: number } | null;
-  // Draggable text sticker placed anywhere on the media — see story_sticker.sql.
-  sticker_text?: string | null;
-  sticker_style?: { x: number; y: number; scale: number; rotation: number } | null;
+  // Draggable text stickers placed anywhere on the media — see story_stickers.sql.
+  stickers?: { text: string; x: number; y: number; scale: number; rotation: number }[] | null;
 };
 
 export type StoryGroup = {
@@ -77,8 +76,7 @@ export async function createStory(input: {
   aspectRatio?: string | null;
   durationSeconds?: number | null;
   song?: { id: string; title: string; artist: string; artistId: string } | null;
-  stickerText?: string | null;
-  stickerStyle?: { x: number; y: number; scale: number; rotation: number } | null;
+  stickers?: { text: string; x: number; y: number; scale: number; rotation: number }[] | null;
 }): Promise<void> {
   const { error } = await supabase.from('stories').insert({
     user_id: input.userId,
@@ -91,8 +89,7 @@ export async function createStory(input: {
     ...(input.song
       ? { song_id: input.song.id, song_title: input.song.title, song_artist: input.song.artist, song_artist_id: input.song.artistId }
       : {}),
-    ...(input.stickerText ? { sticker_text: input.stickerText } : {}),
-    ...(input.stickerStyle ? { sticker_style: input.stickerStyle } : {}),
+    ...(input.stickers && input.stickers.length ? { stickers: input.stickers } : {}),
   });
   if (error) throw error;
 
