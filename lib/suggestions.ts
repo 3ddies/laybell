@@ -9,7 +9,7 @@ import { readContactHashes } from './contacts';
 // Every signal is independently guarded so a missing RPC/table (pre-migration)
 // just drops that signal instead of failing the whole set.
 
-export type SuggestionReason = 'contacts' | 'mutual' | 'nearby';
+export type SuggestionReason = 'contacts' | 'mutual' | 'nearby' | 'popular';
 
 export type SuggestedAccount = {
   id: string;
@@ -26,10 +26,63 @@ export const REASON_LABEL: Record<SuggestionReason, string> = {
   contacts: 'From your contacts',
   mutual: 'Followed by people you follow',
   nearby: 'In your area',
+  popular: 'Popular on Laybell',
 };
 
 const PROFILE_COLS = 'id, username, display_name, avatar_url, badge_tier, badge_show';
 const HASH_BATCH = 500;
+
+// Backfill so discovery is never empty even with zero contacts/location/mutual
+// signals (and before the recommendation SQL is applied). "Popular" = most-followed
+// from a sampled tally of the follows table (no aggregation SQL needed), falling
+// back to the newest accounts if there are no follows yet. Scores stay below the
+// nearby floor (1000) so any real signal always ranks above these.
+async function fetchPopularProfiles(exclude: Set<string>, need: number): Promise<SuggestedAccount[]> {
+  if (need <= 0) return [];
+  const ranked: string[] = [];
+  const seen = new Set<string>(exclude);
+
+  try {
+    const { data } = await supabase.from('follows').select('following_id').limit(1000);
+    const tally = new Map<string, number>();
+    for (const r of data ?? []) {
+      const id = r.following_id as string;
+      if (!seen.has(id)) tally.set(id, (tally.get(id) ?? 0) + 1);
+    }
+    for (const [id] of [...tally.entries()].sort((a, b) => b[1] - a[1])) {
+      ranked.push(id); seen.add(id);
+    }
+  } catch {}
+
+  // Top up with the newest accounts if the follow tally didn't yield enough.
+  if (ranked.length < need) {
+    try {
+      const { data } = await supabase.from('profiles').select('id')
+        .order('created_at', { ascending: false }).limit(need * 3 + 20);
+      for (const p of data ?? []) {
+        const id = p.id as string;
+        if (!seen.has(id)) { ranked.push(id); seen.add(id); }
+      }
+    } catch {}
+  }
+
+  const ids = ranked.slice(0, need);
+  if (!ids.length) return [];
+
+  const { data } = await supabase.from('profiles').select(PROFILE_COLS).in('id', ids);
+  const byId = new Map<string, any>((data ?? []).map((p: any) => [p.id, p]));
+  const out: SuggestedAccount[] = [];
+  ids.forEach((id, i) => {
+    const p = byId.get(id);
+    if (!p) return;
+    out.push({
+      id: p.id, username: p.username, display_name: p.display_name,
+      avatar_url: p.avatar_url ?? null, badge_tier: p.badge_tier ?? null,
+      badge_show: p.badge_show ?? null, reason: 'popular', score: 900 - i,
+    });
+  });
+  return out;
+}
 
 export async function fetchSuggestedAccounts(
   userId: string,
@@ -129,6 +182,14 @@ export async function fetchSuggestedAccounts(
   }
 
   out.sort((a, b) => b.score - a.score);
+
+  // Never return an empty (or thin) set: backfill with popular accounts. Real
+  // signals keep their higher scores, so popular fills only the remaining slots.
+  if (out.length < max) {
+    const have = new Set<string>([...exclude, ...out.map(o => o.id)]);
+    out.push(...await fetchPopularProfiles(have, max - out.length));
+  }
+
   return out.slice(0, max);
 }
 
