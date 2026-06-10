@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { uploadStoryMedia, createStory } from '../../lib/stories';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
+import MentionSuggestions from '../../components/MentionSuggestions';
+import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePagerSwiping } from '../../contexts/PagerContext';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
@@ -301,6 +303,12 @@ export default function StoryCameraScreen() {
               <Text style={styles.musicBtnText}>Add music</Text>
             </TouchableOpacity>
           )}
+          <MentionSuggestions
+            query={getActiveMentionQuery(caption, caption.length)}
+            onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
+            style={{ marginBottom: SPACING.xs }}
+            maxHeight={150}
+          />
           <TextInput
             style={styles.captionInput}
             placeholder="Add a caption…"

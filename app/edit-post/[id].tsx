@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { GENRES } from '../../lib/genres';
+import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
+import MentionSuggestions from '../../components/MentionSuggestions';
 
 export default function EditPostScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -88,6 +90,11 @@ export default function EditPostScreen() {
           placeholderTextColor={COLORS.textTertiary}
           multiline
           maxLength={500}
+        />
+        <MentionSuggestions
+          query={getActiveMentionQuery(caption, caption.length)}
+          onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
+          style={{ marginTop: SPACING.xs }}
         />
 
         {/* Visibility */}
