@@ -93,7 +93,7 @@ type Opt = {
   onPress: () => void;
 };
 
-function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
+export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
   visible: boolean;
   opts: PostOptionsArgs | null;
   onClose: () => void;

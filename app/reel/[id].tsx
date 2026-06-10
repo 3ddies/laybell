@@ -11,8 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { createNotification } from '../../lib/createNotification';
-import { usePostOptions } from '../../contexts/PostOptionsContext';
-import { useShare } from '../../contexts/ShareContext';
+import { usePostActionSheets } from '../../hooks/usePostActionSheets';
 import { formatCount } from '../../lib/format';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import CommentsSheet from '../../components/CommentsSheet';
@@ -35,8 +34,9 @@ import {
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export default function ReelScreen() {
-  const { show: showOptions } = usePostOptions();
-  const { share: openShare } = useShare();
+  // Hosted locally (not via the root context) so the sheets present over this
+  // transparentModal route on iOS — see usePostActionSheets.
+  const { share: openShare, showOptions, sheets } = usePostActionSheets();
   const { id, post: postParam } = useLocalSearchParams<{ id: string; post?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -327,6 +327,9 @@ export default function ReelScreen() {
             ownerId={commentsFor?.ownerId}
             onClose={() => setCommentsFor(null)}
           />
+
+          {/* Share + 3-dot sheets, hosted here so they appear over this modal route */}
+          {sheets}
         </View>
       </Animated.View>
     </View>

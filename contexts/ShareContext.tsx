@@ -125,7 +125,7 @@ const EXTERNAL_APPS: ExternalApp[] = [
   },
 ];
 
-function ShareSheet({ visible, payload, onClose }: {
+export function ShareSheet({ visible, payload, onClose }: {
   visible: boolean;
   payload: SharePayload | null;
   onClose: () => void;

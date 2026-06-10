@@ -23,8 +23,7 @@ import Comments from '../../components/Comments';
 import MentionText from '../../components/MentionText';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
-import { usePostOptions } from '../../contexts/PostOptionsContext';
-import { useShare } from '../../contexts/ShareContext';
+import { usePostActionSheets } from '../../hooks/usePostActionSheets';
 import FollowButton from '../../components/FollowButton';
 import { trackVideoProgress } from '../../lib/viewTracker';
 import { isAudioPost } from '../../lib/genres';
@@ -60,8 +59,9 @@ type Comment = {
 };
 
 export default function PostDetailScreen() {
-  const { show: showOptions } = usePostOptions();
-  const { share: openShare } = useShare();
+  // Hosted locally (not via the root context) so the sheets present over this
+  // transparentModal route on iOS — see usePostActionSheets.
+  const { share: openShare, showOptions, sheets } = usePostActionSheets();
   const { id, post: postParam, index: indexParam } = useLocalSearchParams<{ id: string; post?: string; index?: string }>();
   const initialSlide = indexParam ? (parseInt(indexParam, 10) || 0) : 0;
   const router = useRouter();
@@ -382,6 +382,9 @@ export default function PostDetailScreen() {
       ) : null}
       </KeyboardAvoidingView>
       </Animated.View>
+
+      {/* Share + 3-dot sheets, hosted here so they appear over this modal route */}
+      {sheets}
     </View>
   );
 }
