@@ -314,13 +314,15 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
                 {s.cover_url ? (
                   <View style={styles.songIcon}>
                     <Image source={{ uri: s.cover_url }} style={styles.songCoverImg} />
-                    <View style={styles.songCoverOverlay}>
-                      <Ionicons name={active ? 'pause' : 'play'} size={15} color={COLORS.text} />
-                    </View>
+                    {active && (
+                      <View style={styles.songCoverOverlay}>
+                        <Ionicons name="stop" size={15} color={COLORS.text} />
+                      </View>
+                    )}
                   </View>
                 ) : (
                   <LinearGradient colors={active ? GRADIENTS.primary : GRADIENTS.primarySoft} style={styles.songIcon}>
-                    <Ionicons name={active ? 'pause' : 'play'} size={16} color={active ? COLORS.text : COLORS.primary} />
+                    <Ionicons name={active ? 'stop' : 'musical-notes'} size={16} color={active ? COLORS.text : COLORS.primary} />
                   </LinearGradient>
                 )}
                 <View style={styles.songInfo}>

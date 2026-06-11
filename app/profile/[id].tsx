@@ -357,7 +357,7 @@ export default function PublicProfileScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.pageContent}
               refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setup(); }} tintColor={COLORS.primary} />
+                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setup(); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
             >
               {renderGrid(dataForTab(tab.key), tab.key)}
