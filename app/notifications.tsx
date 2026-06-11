@@ -13,12 +13,52 @@ import { timeAgo } from '../lib/timeAgo';
 import { displayedTier } from '../lib/badges';
 import StoryAvatar from '../components/StoryAvatar';
 import BadgeEmblem from '../components/BadgeEmblem';
+import FollowButton from '../components/FollowButton';
 
 type Notification = {
   id: string; type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag';
   post_id: string | null; actor_id: string; read: boolean; created_at: string;
   actor: { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null } | null;
 };
+
+// A row to render: a single notification, or several consecutive same-type actions
+// from the same actor collapsed into one. `children` holds every notification in the
+// run (newest-first) so a grouped row can expand to show each individual post.
+type DisplayNotif = Notification & { groupCount?: number; children?: Notification[] };
+
+// Plural phrasing for a grouped run of `count` actions by a single actor.
+function groupedText(type: string, count: number): string {
+  switch (type) {
+    case 'like': return `liked ${count} posts`;
+    case 'comment': return `commented on ${count} posts`;
+    case 'message': return `sent you ${count} messages`;
+    case 'mention': return `mentioned you in ${count} posts`;
+    case 'tag': return `tagged you in ${count} posts`;
+    case 'song_used': return `used your audio in ${count} posts`;
+    case 'song_story': return `used your audio in ${count} stories`;
+    default: return notificationText(type);
+  }
+}
+
+// Collapse a consecutive run of the SAME type from the SAME actor into one row
+// (e.g. five likes in a row → "<name> liked 5 posts"). follow/friend never group —
+// they carry a Follow button and only happen once. Input is newest-first, so the
+// kept representative is the most recent; `children` keeps the whole run so the row
+// can expand into the individual posts.
+function groupConsecutive(items: Notification[]): DisplayNotif[] {
+  const out: DisplayNotif[] = [];
+  for (const n of items) {
+    const groupable = n.type !== 'follow' && n.type !== 'friend';
+    const last = out[out.length - 1];
+    if (groupable && last && last.type === n.type && last.actor_id === n.actor_id) {
+      last.groupCount = (last.groupCount ?? 1) + 1;
+      last.children!.push(n);
+      continue;
+    }
+    out.push({ ...n, groupCount: 1, children: [n] });
+  }
+  return out;
+}
 
 function notificationText(type: string) {
   switch (type) {
@@ -75,6 +115,13 @@ export default function NotificationsScreen() {
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Grouped rows the user has expanded to reveal the individual posts.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string) => setExpandedIds((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
   // Native-pager dismiss (page 0 = back) so swiping right goes back without the
   // stack gesture fighting vertical scroll — same as settings / the profile pager.
   const pagerRef = useRef<PagerView>(null);
@@ -129,7 +176,7 @@ export default function NotificationsScreen() {
       const k = bucketFor(n.created_at, now);
       (map[k] ||= []).push(n);
     }
-    return BUCKET_ORDER.filter(k => map[k]?.length).map(k => ({ title: k, data: map[k] }));
+    return BUCKET_ORDER.filter(k => map[k]?.length).map(k => ({ title: k, data: groupConsecutive(map[k]) }));
   }, [notifications]);
 
   function handlePress(notif: Notification) {
@@ -193,43 +240,78 @@ export default function NotificationsScreen() {
             renderItem={({ item }) => {
               const icon = notificationIcon(item.type);
               const preview = item.post_id ? previews[item.post_id] : undefined;
+              const count = item.groupCount ?? 1;
+              const grouped = count > 1;
+              const isConnection = item.type === 'follow' || item.type === 'friend';
+              const children = item.children ?? [item];
+              // A grouped run of post-bearing actions can expand to show each post.
+              const expandable = grouped && children.some((c) => !!c.post_id);
+              const expanded = expandedIds.has(item.id);
               return (
-                <TouchableOpacity
-                  style={[styles.row, !item.read && styles.rowUnread]}
-                  onPress={() => handlePress(item)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.avatarWrap}>
-                    <StoryAvatar
-                      userId={item.actor?.id}
-                      avatarUrl={item.actor?.avatar_url}
-                      name={item.actor?.display_name}
-                      size={52}
-                    />
-                    <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
-                      <Ionicons name={icon.name} size={11} color={COLORS.text} />
+                <View>
+                  <TouchableOpacity
+                    style={[styles.row, !item.read && styles.rowUnread]}
+                    onPress={() => (expandable ? toggleExpand(item.id) : handlePress(item))}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.avatarWrap}>
+                      <StoryAvatar
+                        userId={item.actor?.id}
+                        avatarUrl={item.actor?.avatar_url}
+                        name={item.actor?.display_name}
+                        size={52}
+                      />
+                      <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
+                        <Ionicons name={icon.name} size={11} color={COLORS.text} />
+                      </View>
+                      {/* Keep the notifications list clean — only diamond status earns
+                          an emblem here (respects the user's hide-badge toggle). */}
+                      {displayedTier(item.actor) === 'diamond' && (
+                        <BadgeEmblem profile={item.actor} size={17} style={styles.notifEmblem} />
+                      )}
                     </View>
-                    {/* Keep the notifications list clean — only diamond status earns
-                        an emblem here (respects the user's hide-badge toggle). */}
-                    {displayedTier(item.actor) === 'diamond' && (
-                      <BadgeEmblem profile={item.actor} size={17} style={styles.notifEmblem} />
-                    )}
-                  </View>
 
-                  <View style={styles.body}>
-                    <Text style={styles.text} numberOfLines={2}>
-                      <Text style={styles.name}>{item.actor?.display_name ?? 'Someone'}</Text>
-                      {' '}{notificationText(item.type)}
-                    </Text>
-                    <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
-                  </View>
+                    <View style={styles.body}>
+                      <Text style={styles.text} numberOfLines={2}>
+                        <Text style={styles.name}>{item.actor?.display_name ?? 'Someone'}</Text>
+                        {' '}{grouped ? groupedText(item.type, count) : notificationText(item.type)}
+                      </Text>
+                      <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
+                    </View>
 
-                  {preview ? (
-                    <Image source={{ uri: preview }} style={styles.thumb} />
-                  ) : !item.read ? (
-                    <View style={styles.unreadDot} />
-                  ) : null}
-                </TouchableOpacity>
+                    {isConnection ? (
+                      <FollowButton userId={item.actor_id} style={styles.followBtn} />
+                    ) : expandable ? (
+                      <View style={styles.chevronWrap}>
+                        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color={COLORS.textSecondary} />
+                      </View>
+                    ) : preview ? (
+                      <Image source={{ uri: preview }} style={styles.thumb} />
+                    ) : !item.read ? (
+                      <View style={styles.unreadDot} />
+                    ) : null}
+                  </TouchableOpacity>
+
+                  {/* Expanded: each individual post in the run, tappable to open it. */}
+                  {expandable && expanded && (
+                    <View style={styles.expandStrip}>
+                      {children.map((c) => {
+                        const p = c.post_id ? previews[c.post_id] : undefined;
+                        return (
+                          <TouchableOpacity key={c.id} onPress={() => handlePress(c)} activeOpacity={0.8}>
+                            {p ? (
+                              <Image source={{ uri: p }} style={styles.expandThumb} />
+                            ) : (
+                              <View style={[styles.expandThumb, styles.expandThumbEmpty]}>
+                                <Ionicons name="image-outline" size={18} color={COLORS.textTertiary} />
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
               );
             }}
           />
@@ -282,6 +364,20 @@ const styles = StyleSheet.create({
 
   thumb: { width: 46, height: 46, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceLight },
   unreadDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: COLORS.primary, marginRight: SPACING.xs },
+  // Taller pill with a consistent min width so Follow / Follow back / Following all
+  // line up cleanly, and a little right inset so it isn't flush to the edge.
+  followBtn: { paddingVertical: 8, minWidth: 100, marginRight: SPACING.xs },
+  chevronWrap: { width: 46, alignItems: 'center', justifyContent: 'center' },
+
+  // Expanded grouped row: each liked/commented post as a tappable thumbnail,
+  // indented to line up under the notification text.
+  expandStrip: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm,
+    paddingLeft: 52 + SPACING.md + SPACING.sm, paddingRight: SPACING.sm,
+    paddingBottom: SPACING.sm, marginTop: -SPACING.xs,
+  },
+  expandThumb: { width: 56, height: 56, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceLight },
+  expandThumbEmpty: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
 
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 2, gap: SPACING.md, paddingHorizontal: SPACING.xl },
   emptyIconWrap: { width: 90, height: 90, borderRadius: RADIUS.xl + 8, alignItems: 'center', justifyContent: 'center' },

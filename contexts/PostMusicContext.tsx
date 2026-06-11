@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { Audio } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { getDeviceId } from '../lib/deviceId';
 import { useAudio } from './AudioContext';
 
 // Ambient post music: plays the attached song of the currently-FOCUSED image/video
@@ -8,6 +11,18 @@ import { useAudio } from './AudioContext';
 // toggle (the sound circle button). It DEFERS to the main player — if the user is
 // listening to a track in the mini-player, ambient stays silent so their music
 // isn't interrupted; tapping a post's song name promotes it to the main player.
+//
+// Ambient stream crediting (its own ecosystem — see record_ambient_stream_rpc.sql):
+// because this listening is often unintentional (autoplay while scrolling), it does
+// NOT use the regular duration-scaled rules. Instead, 30s of GENUINE, UNMUTED,
+// foreground listening — accumulated PER SONG across every post/story that uses it,
+// over a rolling 24h window — credits exactly ONE stream for that song. It stacks
+// on top of the regular up-to-3 (which only apply when the song is tapped/promoted
+// to the main player). Muted time, background time, and the loop seam never count.
+
+const AMBIENT_THRESHOLD_MS = 30_000;            // 30s of genuine listening → 1 stream
+const AMBIENT_WINDOW_MS = 24 * 60 * 60 * 1000;  // per-song cap window (matches the rest)
+const AMBIENT_KEY = 'ambient_stream_progress_v1';
 
 type PostMusicType = {
   activeId: string | null;          // host post/story id whose song is playing
@@ -32,6 +47,90 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   const mutedRef = useRef(false); mutedRef.current = muted;
   const mainPlayingRef = useRef(false); mainPlayingRef.current = mainPlaying;
   const urlCache = useRef<Map<string, string>>(new Map()).current;
+
+  // ─── ambient stream accounting (per song, rolling 24h window) ────────────────
+  // ms       – cumulative genuine unmuted foreground listen time for the song
+  // credited – whether this song's 1 ambient stream has already been earned
+  // windowStart – epoch ms the song's current 24h window began
+  const ambientMsRef = useRef<Record<string, number>>({});
+  const ambientCreditedRef = useRef<Record<string, boolean>>({});
+  const ambientWindowRef = useRef<Record<string, number>>({});
+  const uidRef = useRef<string | null>(null);
+  const deviceIdRef = useRef<string | null>(null);
+  const appActiveRef = useRef(true); // only foreground listening counts
+
+  // Resolve the device id (for the per-device anti-farm cap).
+  useEffect(() => { getDeviceId().then((id) => { deviceIdRef.current = id; }).catch(() => {}); }, []);
+
+  // Resolve the user and restore any in-progress (non-expired) per-song accrual so a
+  // force-quit can't reset the 30s toward a stream or re-earn an already-credited one.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        uidRef.current = user?.id ?? null;
+        if (!user) return;
+        const raw = await AsyncStorage.getItem(`${AMBIENT_KEY}_${user.id}`);
+        if (!raw) return;
+        const map = JSON.parse(raw) as Record<string, { ms: number; credited: boolean; ts: number }>;
+        const now = Date.now();
+        for (const [sid, e] of Object.entries(map)) {
+          if (e && now - e.ts < AMBIENT_WINDOW_MS) {
+            ambientMsRef.current[sid] = e.ms;
+            ambientCreditedRef.current[sid] = e.credited;
+            ambientWindowRef.current[sid] = e.ts;
+          }
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Background time must not count — pause accrual when the app isn't foreground.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      appActiveRef.current = s === 'active';
+      if (s !== 'active') saveAmbient();
+    });
+    return () => sub.remove();
+  }, []);
+
+  function saveAmbient() {
+    const uid = uidRef.current;
+    if (!uid) return;
+    try {
+      const now = Date.now();
+      const out: Record<string, { ms: number; credited: boolean; ts: number }> = {};
+      for (const sid of Object.keys(ambientMsRef.current)) {
+        const ts = ambientWindowRef.current[sid] ?? now;
+        if (now - ts < AMBIENT_WINDOW_MS) {
+          out[sid] = { ms: ambientMsRef.current[sid] || 0, credited: !!ambientCreditedRef.current[sid], ts };
+        }
+      }
+      AsyncStorage.setItem(`${AMBIENT_KEY}_${uid}`, JSON.stringify(out)).catch(() => {});
+    } catch {}
+  }
+
+  // Add `deltaMs` of genuine listening to `songId`; credit its single ambient stream
+  // once cumulative listening crosses 30s. Resets the song's tally when its 24h
+  // window elapses so a genuine listener can earn again the next day.
+  function accrueAmbient(songId: string, deltaMs: number) {
+    const now = Date.now();
+    const ws = ambientWindowRef.current[songId];
+    if (ws == null || now - ws >= AMBIENT_WINDOW_MS) {
+      ambientWindowRef.current[songId] = now;
+      ambientMsRef.current[songId] = 0;
+      ambientCreditedRef.current[songId] = false;
+    }
+    if (ambientCreditedRef.current[songId]) return; // already earned this window
+    const ms = (ambientMsRef.current[songId] || 0) + deltaMs;
+    ambientMsRef.current[songId] = ms;
+    if (ms >= AMBIENT_THRESHOLD_MS) {
+      ambientCreditedRef.current[songId] = true;
+      // Server is authoritative (no self-streams, per-user/device caps). Fire-and-forget.
+      supabase.rpc('record_ambient_stream', { p_song_id: songId, p_device_id: deviceIdRef.current }).then(undefined, () => {});
+      saveAmbient();
+    }
+  }
 
   async function teardown() {
     const s = soundRef.current;
@@ -74,10 +173,22 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     try {
       const { sound } = await Audio.Sound.createAsync(
         { uri: url },
-        { shouldPlay: false, isLooping: true, isMuted: mutedRef.current },
+        { shouldPlay: false, isLooping: true, isMuted: mutedRef.current, progressUpdateIntervalMillis: 500 },
       );
       if (token !== tokenRef.current) { try { await sound.unloadAsync(); } catch {} return; }
       soundRef.current = sound;
+      // Accrue genuine forward listen time for this song toward the 30s → 1 ambient
+      // stream. `lastPos` is per-sound, so reloading on a scroll to another post with
+      // the same song starts fresh while the PER-SONG tally persists; the loop seam
+      // reads as a negative/large jump and is ignored, as is muted/background time.
+      let lastPos = 0;
+      sound.setOnPlaybackStatusUpdate((st: any) => {
+        if (!st.isLoaded) return;
+        const pos = st.positionMillis ?? 0;
+        const delta = pos - lastPos;
+        lastPos = pos;
+        if (delta > 0 && delta < 1500 && !mutedRef.current && appActiveRef.current) accrueAmbient(songId, delta);
+      });
       sound.playAsync().catch(() => {});
     } catch {}
   }
@@ -94,8 +205,8 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   // stop ambient so the two don't overlap.
   useEffect(() => { if (mainPlaying) stop(); /* eslint-disable-next-line */ }, [mainPlaying]);
 
-  // Tidy up on unmount.
-  useEffect(() => () => { teardown(); }, []);
+  // Tidy up on unmount — persist ambient progress first so nothing is lost.
+  useEffect(() => () => { saveAmbient(); teardown(); }, []);
 
   return (
     <Ctx.Provider value={{ activeId, muted, toggleMuted, playSong, stop }}>
