@@ -1,15 +1,16 @@
 import {
-  View, Text, StyleSheet, FlatList,
+  View, Text, StyleSheet, SectionList,
   TouchableOpacity, ActivityIndicator, Image, RefreshControl,
 } from 'react-native';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter, Stack } from 'expo-router';
 import PagerView from 'react-native-pager-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { COLORS, SPACING, RADIUS } from '../constants/theme';
 import { timeAgo } from '../lib/timeAgo';
+import { displayedTier } from '../lib/badges';
 import StoryAvatar from '../components/StoryAvatar';
 import BadgeEmblem from '../components/BadgeEmblem';
 
@@ -49,9 +50,29 @@ function notificationIcon(type: string): { name: any; color: string } {
   }
 }
 
+// Pick an image to preview a post-related notification on the right of the row.
+function postPreviewUrl(p: any): string | null {
+  if (!p) return null;
+  if (p.type === 'image') return p.media_url ?? null;
+  if (p.type === 'video') return p.thumbnail_url ?? p.cover_url ?? null;
+  if (p.type === 'audio') return p.cover_url ?? null;
+  return p.media_url ?? p.thumbnail_url ?? p.cover_url ?? null; // slideshow / other
+}
+
+const DAY = 86400000;
+function bucketFor(iso: string, now: number): string {
+  const diff = now - new Date(iso).getTime();
+  if (diff < DAY) return 'Today';
+  if (diff < 7 * DAY) return 'This Week';
+  if (diff < 30 * DAY) return 'This Month';
+  return 'Earlier';
+}
+const BUCKET_ORDER = ['Today', 'This Week', 'This Month', 'Earlier'];
+
 export default function NotificationsScreen() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [previews, setPreviews] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // Native-pager dismiss (page 0 = back) so swiping right goes back without the
@@ -75,18 +96,41 @@ export default function NotificationsScreen() {
 
     if (notifData && notifData.length > 0) {
       const actorIds = [...new Set(notifData.map(n => n.actor_id))];
-      const { data: profileData } = await supabase
-        .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show').in('id', actorIds);
+      const postIds = [...new Set(notifData.map(n => n.post_id).filter(Boolean))] as string[];
+      const [{ data: profileData }, postsRes] = await Promise.all([
+        supabase.from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show').in('id', actorIds),
+        postIds.length
+          ? supabase.from('posts').select('id, type, media_url, cover_url, thumbnail_url').in('id', postIds)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
       const profileMap = Object.fromEntries((profileData ?? []).map(p => [p.id, p]));
+      const previewMap: Record<string, string> = {};
+      for (const p of postsRes.data ?? []) {
+        const url = postPreviewUrl(p);
+        if (url) previewMap[p.id] = url;
+      }
+      setPreviews(previewMap);
       setNotifications(notifData.map(n => ({ ...n, actor: profileMap[n.actor_id] ?? null })) as any);
     } else {
       setNotifications([]);
+      setPreviews({});
     }
 
     await supabase.from('notifications').update({ read: true }).eq('user_id', user.id).eq('read', false);
     setLoading(false);
     setRefreshing(false);
   }
+
+  // Group into time buckets (already sorted newest-first from the query).
+  const sections = useMemo(() => {
+    const now = Date.now();
+    const map: Record<string, Notification[]> = {};
+    for (const n of notifications) {
+      const k = bucketFor(n.created_at, now);
+      (map[k] ||= []).push(n);
+    }
+    return BUCKET_ORDER.filter(k => map[k]?.length).map(k => ({ title: k, data: map[k] }));
+  }, [notifications]);
 
   function handlePress(notif: Notification) {
     if (notif.type === 'message') router.push(`/messages/${notif.actor_id}`);
@@ -105,10 +149,10 @@ export default function NotificationsScreen() {
       <Stack.Screen options={{ gestureEnabled: false }} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={26} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: 42 }} />
       </View>
 
       <PagerView
@@ -124,56 +168,71 @@ export default function NotificationsScreen() {
       >
         <View key="dismiss" style={styles.dismissPage} />
         <View key="content" style={styles.page}>
-      <FlatList
-        data={notifications}
-        keyExtractor={item => item.id}
-        style={styles.list}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications(); }} tintColor={COLORS.primary} />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <LinearGradient colors={['#1C0A04', COLORS.background]} style={styles.emptyIconWrap}>
-              <Ionicons name="notifications-outline" size={40} color={COLORS.primary} />
-            </LinearGradient>
-            <Text style={styles.emptyTitle}>No notifications yet</Text>
-            <Text style={styles.emptySubtitle}>When someone likes, comments, or follows you — it'll show here</Text>
-          </View>
-        }
-        renderItem={({ item }) => {
-          const icon = notificationIcon(item.type);
-          return (
-              <TouchableOpacity
-                style={[styles.notifRow, !item.read && styles.notifUnread]}
-                onPress={() => handlePress(item)}
-              >
-                <View style={styles.avatarWrap}>
-                  <StoryAvatar
-                    userId={item.actor?.id}
-                    avatarUrl={item.actor?.avatar_url}
-                    name={item.actor?.display_name}
-                    size={50}
-                  />
-                  <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
-                    <Ionicons name={icon.name} size={10} color={COLORS.text} />
+          <SectionList
+            sections={sections}
+            keyExtractor={item => item.id}
+            style={styles.list}
+            contentContainerStyle={styles.listContent}
+            stickySectionHeadersEnabled={false}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications(); }} tintColor={COLORS.primary} />
+            }
+            renderSectionHeader={({ section }) => (
+              <Text style={styles.sectionHeader}>{section.title}</Text>
+            )}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <LinearGradient colors={['#1C0A04', COLORS.background]} style={styles.emptyIconWrap}>
+                  <Ionicons name="notifications-outline" size={40} color={COLORS.primary} />
+                </LinearGradient>
+                <Text style={styles.emptyTitle}>No notifications yet</Text>
+                <Text style={styles.emptySubtitle}>When someone likes, comments, or follows you — it'll show here</Text>
+              </View>
+            }
+            renderItem={({ item }) => {
+              const icon = notificationIcon(item.type);
+              const preview = item.post_id ? previews[item.post_id] : undefined;
+              return (
+                <TouchableOpacity
+                  style={[styles.row, !item.read && styles.rowUnread]}
+                  onPress={() => handlePress(item)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.avatarWrap}>
+                    <StoryAvatar
+                      userId={item.actor?.id}
+                      avatarUrl={item.actor?.avatar_url}
+                      name={item.actor?.display_name}
+                      size={52}
+                    />
+                    <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
+                      <Ionicons name={icon.name} size={11} color={COLORS.text} />
+                    </View>
+                    {/* Keep the notifications list clean — only diamond status earns
+                        an emblem here (respects the user's hide-badge toggle). */}
+                    {displayedTier(item.actor) === 'diamond' && (
+                      <BadgeEmblem profile={item.actor} size={17} style={styles.notifEmblem} />
+                    )}
                   </View>
-                  <BadgeEmblem profile={item.actor} size={17} style={styles.notifEmblem} />
-                </View>
 
-                <View style={styles.notifContent}>
-                  <Text style={styles.notifText} numberOfLines={2}>
-                    <Text style={styles.notifName}>{item.actor?.display_name ?? 'Someone'}</Text>
-                    {' '}{notificationText(item.type)}
-                  </Text>
-                  <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
-                </View>
+                  <View style={styles.body}>
+                    <Text style={styles.text} numberOfLines={2}>
+                      <Text style={styles.name}>{item.actor?.display_name ?? 'Someone'}</Text>
+                      {' '}{notificationText(item.type)}
+                    </Text>
+                    <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
+                  </View>
 
-                {!item.read && <View style={styles.unreadDot} />}
-              </TouchableOpacity>
-          );
-        }}
-      />
+                  {preview ? (
+                    <Image source={{ uri: preview }} style={styles.thumb} />
+                  ) : !item.read ? (
+                    <View style={styles.unreadDot} />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            }}
+          />
         </View>
       </PagerView>
     </View>
@@ -192,23 +251,38 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  headerTitle: { color: COLORS.text, fontSize: 22, fontWeight: '800', letterSpacing: 0.2 },
   list: { flex: 1 },
   // flexGrow so the scrollable content fills the screen even with few/no items —
   // makes pull-to-refresh work when dragging anywhere, not just over a row.
-  listContent: { flexGrow: 1, padding: SPACING.md, gap: SPACING.xs },
-  notifRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.md, paddingHorizontal: SPACING.sm, borderRadius: RADIUS.md, gap: SPACING.md },
-  notifUnread: { backgroundColor: COLORS.primary + '0D' },
-  avatarWrap: { position: 'relative', width: 50, height: 50 },
-  avatar: { width: 50, height: 50, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
-  iconBadge: { position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.background },
+  listContent: { flexGrow: 1, paddingHorizontal: SPACING.sm, paddingBottom: SPACING.xl },
+
+  sectionHeader: {
+    color: COLORS.textTertiary, fontSize: 12, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 0.9,
+    paddingHorizontal: SPACING.sm, paddingTop: SPACING.lg, paddingBottom: SPACING.xs,
+  },
+
+  row: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.md, gap: SPACING.md,
+  },
+  rowUnread: { backgroundColor: COLORS.primary + '12' },
+  avatarWrap: { position: 'relative', width: 52, height: 52 },
+  iconBadge: {
+    position: 'absolute', bottom: -2, right: -2, width: 21, height: 21, borderRadius: 10.5,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: COLORS.background,
+  },
   notifEmblem: { position: 'absolute', top: -2, right: -2, borderWidth: 1.5, borderColor: COLORS.background },
-  notifContent: { flex: 1 },
-  notifText: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
-  notifName: { color: COLORS.text, fontWeight: '700' },
-  notifTime: { color: COLORS.textTertiary, fontSize: 12, marginTop: 3 },
-  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.primary },
+  body: { flex: 1 },
+  text: { color: COLORS.textSecondary, fontSize: 14.5, lineHeight: 20 },
+  name: { color: COLORS.text, fontWeight: '700' },
+  time: { color: COLORS.textTertiary, fontSize: 12, marginTop: 3 },
+
+  thumb: { width: 46, height: 46, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceLight },
+  unreadDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: COLORS.primary, marginRight: SPACING.xs },
+
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 2, gap: SPACING.md, paddingHorizontal: SPACING.xl },
   emptyIconWrap: { width: 90, height: 90, borderRadius: RADIUS.xl + 8, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { color: COLORS.text, fontSize: 20, fontWeight: '800' },

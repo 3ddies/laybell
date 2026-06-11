@@ -107,6 +107,7 @@ export async function createStory(input: {
 async function loadGroups(
   authorIds: string[],
   viewerId: string,
+  localSeen: Set<string> = new Set(),
 ): Promise<Map<string, StoryGroup>> {
   const map = new Map<string, StoryGroup>();
   if (authorIds.length === 0) return map;
@@ -152,7 +153,9 @@ async function loadGroups(
       });
     }
     const group = map.get(s.user_id)!;
-    const isSeen = seen.has(s.id);
+    // `localSeen` carries client-side views that may not have round-tripped to the
+    // server yet, so a just-watched story never momentarily re-appears as unseen.
+    const isSeen = seen.has(s.id) || localSeen.has(s.id);
     group.stories.push({ ...(s as Story), seen: isSeen });
     if (!isSeen) group.hasUnseen = true;
   }
@@ -161,7 +164,7 @@ async function loadGroups(
 
 // The Home tray: the current user's active stories first, then active stories
 // from people they follow — unseen groups sorted ahead of seen ones.
-export async function fetchStoryTray(userId: string): Promise<StoryGroup[]> {
+export async function fetchStoryTray(userId: string, localSeen: Set<string> = new Set()): Promise<StoryGroup[]> {
   const { data: follows } = await supabase
     .from('follows')
     .select('following_id')
@@ -169,7 +172,7 @@ export async function fetchStoryTray(userId: string): Promise<StoryGroup[]> {
   const followingIds = (follows ?? []).map((f: any) => f.following_id);
   const authorIds = Array.from(new Set([userId, ...followingIds]));
 
-  const map = await loadGroups(authorIds, userId);
+  const map = await loadGroups(authorIds, userId, localSeen);
   const list = Array.from(map.values());
 
   list.sort((a, b) => {
@@ -188,8 +191,9 @@ export async function fetchStoryTray(userId: string): Promise<StoryGroup[]> {
 export async function fetchStoriesForUsers(
   userIds: string[],
   viewerId: string,
+  localSeen: Set<string> = new Set(),
 ): Promise<StoryGroup[]> {
-  const map = await loadGroups(userIds, viewerId);
+  const map = await loadGroups(userIds, viewerId, localSeen);
   return userIds
     .map((id) => map.get(id))
     .filter((g): g is StoryGroup => !!g);
@@ -204,7 +208,7 @@ export type StoryRingInfo = { unseen: boolean; badge_tier: string | null };
 // author's id → their ring info (unseen + badge tier). Powers story + badge rings
 // on avatars anywhere in the app, not just people you follow. Returns an empty map
 // if the stories table isn't set up yet.
-export async function fetchActiveStoryFlags(viewerId: string): Promise<Map<string, StoryRingInfo>> {
+export async function fetchActiveStoryFlags(viewerId: string, localSeen: Set<string> = new Set()): Promise<Map<string, StoryRingInfo>> {
   const nowIso = new Date().toISOString();
   const { data: stories } = await supabase
     .from('stories')
@@ -226,7 +230,8 @@ export async function fetchActiveStoryFlags(viewerId: string): Promise<Map<strin
 
   const flags = new Map<string, StoryRingInfo>(); // user_id -> ring info
   for (const s of stories as any[]) {
-    const unseen = !seen.has(s.id);
+    // `localSeen` keeps just-watched stories seen even before the view write lands.
+    const unseen = !seen.has(s.id) && !localSeen.has(s.id);
     const prev = flags.get(s.user_id);
     flags.set(s.user_id, {
       unseen: (prev?.unseen ?? false) || unseen,

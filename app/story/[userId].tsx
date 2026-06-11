@@ -36,7 +36,7 @@ export default function StoryViewerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
-  const { refresh: refreshStories } = useStories();
+  const { refresh: refreshStories, markSeen } = useStories();
   const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
   const { userId, users, src } = useLocalSearchParams<{ userId: string; users?: string; src?: string }>();
 
@@ -73,6 +73,14 @@ export default function StoryViewerScreen() {
   // Open/close "expand from rect" progress: 0 = at the source rect, 1 = fullscreen.
   const expand = useRef(new Animated.Value(srcRect ? 0 : 1)).current;
   const contentFadeIn = useRef(new Animated.Value(srcRect ? 0 : 1)).current; // slower open fade
+  // Free-floating text (stickers + a positioned caption) is hidden until the layout
+  // has settled (and, when opening from a ring, until the zoom is essentially done),
+  // then faded in at its composed positions. Without this the screen-sized translate
+  // offsets are briefly applied before/while the container is at the wrong scale, so
+  // the text piles up in the middle — the "glitchy jumble" on first view. This runs
+  // for EVERY open path (including no-zoom opens, e.g. from a notification) so it's
+  // fixed globally, not just when expanding out of a tapped circle.
+  const textReveal = useRef(new Animated.Value(0)).current;
   const closingRef = useRef(false);
   const panningRef = useRef(false);
   const gestureAxisRef = useRef<'h' | 'v' | null>(null);
@@ -87,6 +95,9 @@ export default function StoryViewerScreen() {
   posRef.current = { userIndex, storyIndex };
   const groupsRef = useRef<StoryGroup[]>([]);
   groupsRef.current = groups;
+  // Story ids watched this session — once all of a user's stories are seen, their
+  // ring is flipped to normal everywhere (optimistic; works even if not followed).
+  const viewedRef = useRef<Set<string>>(new Set());
 
   // ─── load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -114,6 +125,14 @@ export default function StoryViewerScreen() {
       Animated.timing(expand, { toValue: 1, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
       Animated.timing(contentFadeIn, { toValue: 1, duration: 340, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
     }
+    // Reveal the overlay text once it's settled at full size: after the zoom when
+    // expanding from a circle, or after a brief settle when opened without one.
+    Animated.timing(textReveal, {
+      toValue: 1,
+      delay: srcRect ? 330 : 70,
+      duration: 160,
+      useNativeDriver: true,
+    }).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -125,6 +144,14 @@ export default function StoryViewerScreen() {
     stopProgressAnim();
     progressAnim.setValue(0);
     if (currentUserId) recordStoryView(story.id, currentUserId).catch(() => {});
+
+    // Once every story from this author has been watched (this session or earlier),
+    // turn their ring back to normal immediately — no wait on the close-time refetch.
+    viewedRef.current.add(story.id);
+    const g = groupsRef.current[posRef.current.userIndex];
+    if (g && !isOwn && g.stories.every((s) => s.seen || viewedRef.current.has(s.id))) {
+      markSeen(g.user.id, g.stories.map((s) => s.id));
+    }
 
     setViewerCount(null);
     if (isOwn) fetchStoryViewerCount(story.id).then(setViewerCount).catch(() => {});
@@ -493,7 +520,7 @@ export default function StoryViewerScreen() {
             {/* Bottom caption (or, for older stories, the single positioned caption). */}
             {!!story.caption && (
               story.caption_style ? (
-                <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
                   <View style={styles.captionStickerCenter}>
                     <Text
                       style={[captionStickerTextStyle, {
@@ -508,7 +535,7 @@ export default function StoryViewerScreen() {
                       {story.caption}
                     </Text>
                   </View>
-                </View>
+                </Animated.View>
               ) : (
                 <View style={[styles.captionWrap, { bottom: insets.bottom + (isOwn ? 64 : 28) }]} pointerEvents="none">
                   <Text style={styles.caption}>{story.caption}</Text>
@@ -517,24 +544,28 @@ export default function StoryViewerScreen() {
             )}
 
             {/* Draggable text stickers, placed anywhere on the media by the author. */}
-            {(story.stickers ?? []).map((st, i) => (
-              <View key={i} style={StyleSheet.absoluteFill} pointerEvents="none">
-                <View style={styles.captionStickerCenter}>
-                  <Text
-                    style={[captionStickerTextStyle, {
-                      transform: [
-                        { translateX: (st.x - 0.5) * SCREEN_W },
-                        { translateY: (st.y - 0.5) * SCREEN_H },
-                        { scale: st.scale ?? 1 },
-                        { rotate: `${st.rotation ?? 0}deg` },
-                      ],
-                    }]}
-                  >
-                    {st.text}
-                  </Text>
-                </View>
-              </View>
-            ))}
+            {(story.stickers ?? []).length > 0 && (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
+                {(story.stickers ?? []).map((st, i) => (
+                  <View key={i} style={StyleSheet.absoluteFill}>
+                    <View style={styles.captionStickerCenter}>
+                      <Text
+                        style={[captionStickerTextStyle, {
+                          transform: [
+                            { translateX: (st.x - 0.5) * SCREEN_W },
+                            { translateY: (st.y - 0.5) * SCREEN_H },
+                            { scale: st.scale ?? 1 },
+                            { rotate: `${st.rotation ?? 0}deg` },
+                          ],
+                        }]}
+                      >
+                        {st.text}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+            )}
 
             {/* Own-story footer: viewer count */}
             {isOwn && (

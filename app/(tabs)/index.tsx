@@ -9,7 +9,7 @@ import { usePagerSwiping } from '../../contexts/PagerContext';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image, ActivityIndicator,
-  RefreshControl, Dimensions, Alert,
+  RefreshControl, Dimensions, Alert, Modal, Animated,
 } from 'react-native';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -323,8 +323,22 @@ export default function HomeScreen() {
     const firstMusic = viewableItems.find(v => v.item?.song_id);
     setVisibleMusicId(firstMusic ? firstMusic.item.id : null);
   }).current;
-  const [feedMode, setFeedMode] = useState<'all' | 'following'>('all');
+  const [feedMode, setFeedMode] = useState<'all' | 'following' | 'friends'>('all');
+  const [menuOpen, setMenuOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
+
+  // The dropdown chevron is hidden until the logo is tapped, then fades back out
+  // after 8s of no interaction.
+  const chevronOpacity = useRef(new Animated.Value(0)).current;
+  const chevronTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revealChevron = useCallback(() => {
+    if (chevronTimer.current) clearTimeout(chevronTimer.current);
+    Animated.timing(chevronOpacity, { toValue: 1, duration: 150, useNativeDriver: true }).start();
+    chevronTimer.current = setTimeout(() => {
+      Animated.timing(chevronOpacity, { toValue: 0, duration: 600, useNativeDriver: true }).start();
+    }, 8000);
+  }, [chevronOpacity]);
+  useEffect(() => () => { if (chevronTimer.current) clearTimeout(chevronTimer.current); }, []);
 
   useEffect(() => {
     if (initialized) fetchPosts(currentUserId || undefined, seenPostIds);
@@ -423,8 +437,9 @@ export default function HomeScreen() {
       .order('created_at', { ascending: false })
       .limit(50);
 
-    // Fetch the following list for both modes:
+    // Fetch the following list for every mode:
     //   • following mode  – needed to filter posts
+    //   • friends mode    – combined with my followers to find mutual follows
     //   • discovery mode  – needed to apply the follow-boost multiplier
     let followingData: any[] | null = null;
     if (userId) {
@@ -438,6 +453,19 @@ export default function HomeScreen() {
         setPosts([]); setLoading(false); setRefreshing(false); return;
       }
       query = query.in('user_id', followingIds);
+    } else if (feedMode === 'friends') {
+      // Friends = mutual follows: people I follow who also follow me.
+      const iFollow = new Set(followingData?.map((f: any) => f.following_id) ?? []);
+      const { data: followers } = userId
+        ? await supabase.from('follows').select('follower_id').eq('following_id', userId)
+        : { data: null };
+      const friendIds = (followers ?? [])
+        .map((f: any) => f.follower_id)
+        .filter((id: string) => iFollow.has(id));
+      if (friendIds.length === 0) {
+        setPosts([]); setLoading(false); setRefreshing(false); return;
+      }
+      query = query.in('user_id', friendIds);
     } else {
       query = query.eq('is_public', true);
     }
@@ -624,26 +652,22 @@ export default function HomeScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerLogo}>Laybell</Text>
+        <TouchableOpacity
+          style={styles.logoBtn}
+          onPress={() => { revealChevron(); setMenuOpen(true); }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.headerLogo}>Laybell</Text>
+          <Animated.View style={[styles.logoChevron, { opacity: chevronOpacity }]} pointerEvents="none">
+            <Ionicons name="chevron-down" size={20} color={COLORS.primaryLight} />
+          </Animated.View>
+        </TouchableOpacity>
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[styles.feedToggle, feedMode === 'all' && styles.feedToggleActive]}
-            onPress={() => setFeedMode('all')}
-          >
-            <Text style={[styles.feedToggleText, feedMode === 'all' && styles.feedToggleTextActive]}>All</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.feedToggle, feedMode === 'following' && styles.feedToggleActive]}
-            onPress={() => setFeedMode('following')}
-          >
-            <Text style={[styles.feedToggleText, feedMode === 'following' && styles.feedToggleTextActive]}>Following</Text>
-          </TouchableOpacity>
-
           <TouchableOpacity
             style={styles.headerIconBtn}
             onPress={() => { setUnreadCount(0); router.push('/notifications'); }}
           >
-            <Ionicons name="notifications-outline" size={24} color={COLORS.text} />
+            <Ionicons name="notifications-outline" size={28} color={COLORS.text} />
             {unreadCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -652,7 +676,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/messages')}>
-            <Ionicons name="chatbubbles-outline" size={24} color={COLORS.text} />
+            <Ionicons name="chatbubbles-outline" size={28} color={COLORS.text} />
             {unreadMessages > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
@@ -661,6 +685,47 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Feed-mode dropdown */}
+      <Modal
+        visible={menuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}
+      >
+        <TouchableOpacity
+          style={styles.menuOverlay}
+          activeOpacity={1}
+          onPress={() => setMenuOpen(false)}
+        >
+          <View style={styles.menuCard}>
+            {([
+              { key: 'all', label: 'All', icon: 'globe-outline' },
+              { key: 'following', label: 'Following', icon: 'person-add-outline' },
+              { key: 'friends', label: 'Friends', icon: 'people-outline' },
+            ] as const).map((opt) => {
+              const active = feedMode === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.menuItem, active && styles.menuItemActive]}
+                  onPress={() => { setFeedMode(opt.key); setMenuOpen(false); }}
+                >
+                  <Ionicons
+                    name={opt.icon}
+                    size={20}
+                    color={active ? COLORS.primaryLight : COLORS.textSecondary}
+                  />
+                  <Text style={[styles.menuItemText, active && styles.menuItemTextActive]}>{opt.label}</Text>
+                  {active && (
+                    <Ionicons name="checkmark" size={18} color={COLORS.primaryLight} style={styles.menuCheck} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <FlatList
         data={posts}
@@ -695,14 +760,20 @@ export default function HomeScreen() {
           <View style={styles.emptyContainer}>
             <Ionicons name="musical-notes" size={48} color={COLORS.textTertiary} />
             <Text style={styles.emptyTitle}>
-              {feedMode === 'following' ? 'No posts from people you follow' : 'No posts yet'}
+              {feedMode === 'following'
+                ? 'No posts from people you follow'
+                : feedMode === 'friends'
+                ? 'No posts from your friends'
+                : 'No posts yet'}
             </Text>
             <Text style={styles.emptySubtitle}>
               {feedMode === 'following'
                 ? 'Follow some artists to see their posts here'
+                : feedMode === 'friends'
+                ? 'When you and someone follow each other you become friends — their posts show up here'
                 : 'Be the first to post on Laybell'}
             </Text>
-            {feedMode === 'following' && (
+            {feedMode !== 'all' && (
               <TouchableOpacity style={styles.exploreBtn} onPress={() => router.push('/(tabs)/explore')}>
                 <Text style={styles.exploreBtnText}>Discover Artists</Text>
                 <Ionicons name="arrow-forward" size={16} color={COLORS.text} />
@@ -742,25 +813,41 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: COLORS.border,
   },
+  logoBtn: { flexDirection: 'row', alignItems: 'center' },
   headerLogo: {
     color: COLORS.primaryLight,
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  logoChevron: { marginLeft: 2, marginTop: 4 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   headerIconBtn: { position: 'relative', padding: 2 },
 
-  feedToggle: {
-    paddingVertical: 5,
-    paddingHorizontal: SPACING.sm,
-    borderRadius: RADIUS.full,
+  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+  menuCard: {
+    position: 'absolute',
+    top: SPACING.xxl + SPACING.sm + 44,
+    left: SPACING.md,
+    minWidth: 200,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
+    paddingVertical: SPACING.xs,
+    ...SHADOWS.md,
   },
-  feedToggleActive: { backgroundColor: COLORS.primaryDark, borderColor: COLORS.primary },
-  feedToggleText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500' },
-  feedToggleTextActive: { color: COLORS.text, fontWeight: '700' },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm + 2,
+    paddingHorizontal: SPACING.md,
+  },
+  menuItemActive: { backgroundColor: COLORS.primary + '14' },
+  menuItemText: { color: COLORS.textSecondary, fontSize: 16, fontWeight: '600' },
+  menuItemTextActive: { color: COLORS.text, fontWeight: '700' },
+  menuCheck: { marginLeft: 'auto' },
 
   badge: {
     position: 'absolute', top: -2, right: -2,

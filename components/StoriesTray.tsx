@@ -4,6 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import { COLORS, SPACING } from '../constants/theme';
 import { useProfile } from '../contexts/ProfileContext';
 import { useStories } from '../contexts/StoriesContext';
+import { rawTier, badgeRingColors } from '../lib/badges';
 import StoryAvatar from './StoryAvatar';
 
 // The row of story circles at the top of the Home feed. Your own circle leads
@@ -24,6 +25,11 @@ export default function StoriesTray() {
   const ownAvatar = profile?.avatar_url ?? ownGroup?.user.avatar_url ?? null;
   const ownName = profile?.display_name ?? profile?.username ?? '';
 
+  // The ＋ button is themed to the user's badge tier (like the cosmetic ring);
+  // no badge → undefined, so it falls back to the default Laybell orange.
+  const ownTier = rawTier(profile);
+  const addColors = ownTier ? badgeRingColors(ownTier) : undefined;
+
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
       {/* Your story */}
@@ -35,6 +41,7 @@ export default function StoriesTray() {
           size={RING}
           onPressProfile={openCamera} // no active story → tapping opens the camera
           showAdd
+          addColors={addColors}
           onPressAdd={openCamera}
         />
         <Text style={styles.label} numberOfLines={1}>Your story</Text>
@@ -58,7 +65,7 @@ export default function StoriesTray() {
   );
 }
 
-const RING = 64;
+const RING = 82;
 
 const styles = StyleSheet.create({
   row: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.md },

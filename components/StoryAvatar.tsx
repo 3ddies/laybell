@@ -24,6 +24,7 @@ type Props = {
   onBeforeOpenStory?: () => void; // e.g. close an overlay before pushing the viewer
   badgeRing?: readonly [string, string]; // badge-tier ring colors, shown only while a story is active
   showAdd?: boolean;
+  addColors?: readonly [string, string]; // gradient for the ＋ button (e.g. the user's badge tier)
   onPressAdd?: () => void;
   style?: StyleProp<ViewStyle>;
 };
@@ -31,22 +32,28 @@ type Props = {
 export default function StoryAvatar({
   userId, avatarUrl, name, size,
   onPressProfile, onBeforeOpenStory, badgeRing,
-  showAdd, onPressAdd, style,
+  showAdd, addColors, onPressAdd, style,
 }: Props) {
-  const { hasStory, hasUnseen, openStory, ringColors } = useStories();
+  const { hasStory, hasUnseen, openStory, ringColors, ringTier } = useStories();
   const story = hasStory(userId);
   const unseen = hasUnseen(userId);
   const wrapRef = useRef<View>(null);
 
-  // A ring shows ONLY while the user has an active story. Its color is the user's
-  // badge tier — resolved globally from the context so the badge ring shows on any
-  // avatar app-wide — or an explicit `badgeRing` override (e.g. a styled profile
-  // ring). With no badge it falls back to the story gradient (unseen) / gray (seen).
-  // No story → no ring.
+  // A ring shows ONLY while the user has an active story.
+  //  • Unseen → the user's badge-tier color (or an explicit `badgeRing` override,
+  //    e.g. a styled profile ring), falling back to the default story gradient.
+  //  • Seen  → dim to gray. Policy (global): every tier dims once all stories are
+  //    watched EXCEPT diamond, whose ring persists in its badge color.
+  const GRAY_RING: readonly [string, string] = [COLORS.textTertiary, COLORS.textTertiary];
   const badge = badgeRing ?? ringColors(userId);
-  const ring: readonly [string, string] | null = story
-    ? (badge ?? (unseen ? GRADIENTS.primaryWarm : [COLORS.textTertiary, COLORS.textTertiary]))
-    : null;
+  const isDiamond = ringTier(userId) === 'diamond';
+  const ring: readonly [string, string] | null = !story
+    ? null
+    : unseen
+    ? (badge ?? GRADIENTS.primaryWarm)
+    : isDiamond
+    ? (badge ?? GRADIENTS.primaryWarm)
+    : GRAY_RING;
   const showRing = !!ring;
 
   const pad = size >= 64 ? 3 : 2;
@@ -111,7 +118,8 @@ export default function StoryAvatar({
       )}
       {showAdd && (
         <TouchableOpacity style={styles.add} onPress={onPressAdd} activeOpacity={0.85} hitSlop={6}>
-          <Ionicons name="add" size={15} color="#fff" />
+          <LinearGradient colors={addColors ?? [COLORS.primary, COLORS.primary]} style={StyleSheet.absoluteFill} />
+          <Ionicons name="add" size={16} color="#fff" />
         </TouchableOpacity>
       )}
     </View>
@@ -121,8 +129,7 @@ export default function StoryAvatar({
 const styles = StyleSheet.create({
   add: {
     position: 'absolute', bottom: -2, right: -2,
-    width: 22, height: 22, borderRadius: 11,
-    backgroundColor: COLORS.primary,
+    width: 24, height: 24, borderRadius: 12, overflow: 'hidden',
     borderWidth: 2, borderColor: COLORS.background,
     alignItems: 'center', justifyContent: 'center',
   },
