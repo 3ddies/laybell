@@ -124,7 +124,9 @@ export default function BadgesScreen() {
   // chosen display badge). Default theme → your full earned tier. A specific theme
   // shows that tier's emblem + ring, so a higher-tier user can pick a lower badge.
   const themeOpt = THEME_OPTIONS.find(o => o.key === previewTheme);
-  const previewTier = themeOpt?.minTier ?? emblemTier;
+  // Default theme → no badge shown (matches the public profile); a specific theme
+  // previews that tier's badge.
+  const previewTier = themeOpt?.minTier ?? null;
   // Locked = above what you've actually earned (aspirational preview, can't apply).
   const isPreviewing = themeOpt ? !isUnlocked(themeOpt.minTier, emblemTier) : false;
   // Ring style is bundled into the theme now.
@@ -232,13 +234,13 @@ export default function BadgesScreen() {
                     <View style={styles.previewEmblem}><BadgeEmblem tier={previewTier} size={26} /></View>
                   )}
                 </View>
-                {emblemTier || isPreviewing ? (
+                {previewTier ? (
                   <View style={styles.heroTitleWrap}>
                     <Text style={styles.heroTierName}>{tierLabel(previewTier)}</Text>
                     <Text style={styles.heroTierWord}>{isPreviewing ? 'Preview' : 'Badge'}</Text>
                   </View>
                 ) : (
-                  <Text style={styles.heroTier}>No badge yet</Text>
+                  <Text style={styles.heroTier}>{emblemTier ? 'No badge shown' : 'No badge yet'}</Text>
                 )}
                 <Text style={styles.heroSub}>
                   {emblemTier

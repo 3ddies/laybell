@@ -290,7 +290,20 @@ export default function ProfileScreen() {
       <View style={styles.infoSection}>
         <View style={styles.nameRow}>
           <Text style={styles.displayName}>{profile?.display_name}</Text>
-          <BadgeEmblem profile={badgeProfile} size={17} />
+          {myTier ? (
+            <BadgeEmblem profile={badgeProfile} size={17} />
+          ) : (
+            // No badge chosen (Default theme) → a tappable outline placeholder that
+            // only YOU see (visitors see nothing), linking to the Badges page.
+            <TouchableOpacity
+              style={styles.badgeOutline}
+              activeOpacity={0.7}
+              hitSlop={8}
+              onPress={() => router.push('/badges')}
+            >
+              <Ionicons name="add" size={12} color={COLORS.textTertiary} />
+            </TouchableOpacity>
+          )}
         </View>
         {profile?.bio
           ? <Text style={styles.bio}>{profile.bio}</Text>
@@ -410,6 +423,11 @@ const styles = StyleSheet.create({
   infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   displayName: { color: COLORS.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  badgeOutline: {
+    width: 19, height: 19, borderRadius: RADIUS.full,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center',
+  },
   bio: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
   bioEmpty: { color: COLORS.textTertiary, fontSize: 14, fontStyle: 'italic' },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },

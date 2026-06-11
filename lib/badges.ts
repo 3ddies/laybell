@@ -187,14 +187,14 @@ export function rawTier(profile: ProfileBadgeFields | null | undefined): Tier | 
 
 // The tier the user has CHOSEN to present. Their profile theme doubles as the
 // badge they display: a tier-specific theme shows that tier (so a higher-tier user
-// can deliberately display a lower badge), while Default shows their full earned
-// tier. Always capped at what they've actually earned. This is the single source
-// of truth for the displayed emblem, ring color, and accents app-wide.
+// can deliberately display a lower badge), while Default shows NO badge at all
+// (clean look). Always capped at what they've actually earned. This is the single
+// source of truth for the displayed emblem, ring color, and accents app-wide.
 export function chosenTier(profile: ProfileBadgeFields | null | undefined): Tier | null {
   const earned = asTier(profile?.badge_tier);
   const opt = THEME_OPTIONS.find(o => o.key === profile?.profile_theme);
-  if (!opt || !opt.minTier) return earned;             // Default theme → true earned tier
-  if (!isUnlocked(opt.minTier, earned)) return earned; // safety: never show unearned
+  if (!opt || !opt.minTier) return null;               // Default theme → no displayed badge
+  if (!isUnlocked(opt.minTier, earned)) return null;   // safety: never show unearned
   return opt.minTier;
 }
 
