@@ -1,14 +1,15 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput,
-  TouchableOpacity, ActivityIndicator, Image, RefreshControl, Keyboard,
+  TouchableOpacity, Pressable, ActivityIndicator, Image, RefreshControl, Keyboard,
 } from 'react-native';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useFocusEffect, useRouter, Stack } from 'expo-router';
 import PagerView from 'react-native-pager-view';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
 import { timeAgo } from '../../lib/timeAgo';
 import { sharedPostId } from '../../lib/postLinks';
 import { fetchBlockedIds } from '../../lib/blocks';
@@ -16,6 +17,14 @@ import HighlightText from '../../components/HighlightText';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { useStories } from '../../contexts/StoriesContext';
+import { useFollow } from '../../contexts/FollowContext';
+
+type MsgTab = 'main' | 'friends' | 'followers';
+const MSG_TABS: { key: MsgTab; label: string }[] = [
+  { key: 'main', label: 'Main' },
+  { key: 'friends', label: 'Friends' },
+  { key: 'followers', label: 'Followers' },
+];
 
 type Conversation = {
   id: string;
@@ -41,12 +50,15 @@ function matchingCaption(c: Conversation, q: string): string | null {
 
 export default function MessagesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [tab, setTab] = useState<MsgTab>('main');
+  const { friends, followers } = useFollow();
   const { refresh: refreshStories } = useStories();
   // Native-pager dismiss (page 0 = back), same as settings — clean swipe-back that
   // doesn't fight the vertical list scroll.
@@ -164,6 +176,14 @@ export default function MessagesScreen() {
     );
   }, [conversations, q]);
 
+  // Then narrow by the selected tab. Main = all; Friends = mutual follows; Followers
+  // = one-sided (they follow you, you don't follow back) so friends stay separate.
+  const tabFiltered = useMemo(() => {
+    if (tab === 'friends') return filtered.filter(c => friends.has(c.other_user.id));
+    if (tab === 'followers') return filtered.filter(c => followers.has(c.other_user.id) && !friends.has(c.other_user.id));
+    return filtered;
+  }, [filtered, tab, friends, followers]);
+
   if (loading) {
     return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
   }
@@ -171,12 +191,12 @@ export default function MessagesScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ gestureEnabled: false }} />
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+      <View style={[styles.header, { paddingTop: insets.top + SPACING.sm + 4 }]}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons name="chevron-back" size={26} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Messages</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Search chats by username or message text */}
@@ -185,8 +205,8 @@ export default function MessagesScreen() {
           <Ionicons name="search-outline" size={18} color={COLORS.textTertiary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search names or messages..."
-            placeholderTextColor={COLORS.textTertiary}
+            placeholder="Search names or messages"
+            placeholderTextColor={COLORS.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onFocus={() => setSearchFocused(true)}
@@ -207,6 +227,23 @@ export default function MessagesScreen() {
         </View>
       </View>
 
+      {/* Filter conversations by relationship */}
+      <View style={styles.tabRow}>
+        {MSG_TABS.map(({ key, label }) => {
+          const active = tab === key;
+          return (
+            <TouchableOpacity
+              key={key}
+              style={[styles.tab, active && styles.tabActive]}
+              onPress={() => setTab(key)}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       <PagerView
         ref={pagerRef}
         style={styles.pager}
@@ -221,11 +258,13 @@ export default function MessagesScreen() {
         <View key="dismiss" style={styles.dismissPage} />
         <View key="content" style={styles.page}>
       <FlatList
-        data={filtered}
+        data={tabFiltered}
         style={styles.list}
         keyboardShouldPersistTaps="handled"
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
@@ -237,6 +276,22 @@ export default function MessagesScreen() {
               </LinearGradient>
               <Text style={styles.emptyTitle}>No chats found</Text>
               <Text style={styles.emptySubtitle}>No names or messages match "{searchQuery.trim()}"</Text>
+            </View>
+          ) : tab === 'friends' ? (
+            <View style={styles.emptyContainer}>
+              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
+                <Ionicons name="people-outline" size={34} color={COLORS.primary} />
+              </LinearGradient>
+              <Text style={styles.emptyTitle}>No chats with friends</Text>
+              <Text style={styles.emptySubtitle}>Conversations with people you both follow show up here</Text>
+            </View>
+          ) : tab === 'followers' ? (
+            <View style={styles.emptyContainer}>
+              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
+                <Ionicons name="person-outline" size={34} color={COLORS.primary} />
+              </LinearGradient>
+              <Text style={styles.emptyTitle}>No chats from followers</Text>
+              <Text style={styles.emptySubtitle}>Conversations with people who follow you (but you don't follow back) show up here</Text>
             </View>
           ) : (
             <View style={styles.emptyContainer}>
@@ -262,15 +317,18 @@ export default function MessagesScreen() {
           const showShared = !matchMsg && !matchCaption && !usernamePreview && sharedPostId(item.last_message);
           const preview = matchMsg ?? item.last_message;
           return (
-          <TouchableOpacity
-            style={[styles.conversationRow, unread && styles.conversationRowUnread]}
+          <Pressable
+            style={({ pressed }) => [styles.conversationRow, pressed && styles.conversationRowPressed]}
             onPress={() => router.push(`/messages/${item.other_user.id}`)}
           >
+            <View style={styles.unreadGutter}>
+              {unread ? <View style={styles.unreadDot} /> : null}
+            </View>
             <StoryAvatar
               userId={item.other_user.id}
               avatarUrl={item.other_user.avatar_url}
               name={item.other_user.display_name}
-              size={50}
+              size={56}
             />
             <View style={styles.convInfo}>
               <View style={styles.convHeader}>
@@ -306,28 +364,18 @@ export default function MessagesScreen() {
                   numberOfLines={1}
                 />
               ) : showShared ? (
-                <View style={styles.sharedPreview}>
-                  <Ionicons name="albums-outline" size={12} color={unread ? COLORS.text : COLORS.textSecondary} />
-                  <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>Shared a post</Text>
-                </View>
+                <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>Shared a post</Text>
               ) : (
                 <HighlightText
                   text={preview}
                   query={searchQuery}
                   style={[styles.lastMessage, unread && styles.lastMessageUnread]}
                   highlightStyle={styles.highlight}
-                  numberOfLines={1}
+                  numberOfLines={2}
                 />
               )}
             </View>
-            {unread ? (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadBadgeText}>{item.unread > 9 ? '9+' : item.unread}</Text>
-              </View>
-            ) : (
-              <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
-            )}
-          </TouchableOpacity>
+          </Pressable>
           );
         }}
       />
@@ -345,55 +393,75 @@ const styles = StyleSheet.create({
   dismissPage: { flex: 1, backgroundColor: COLORS.background },
   list: { flex: 1 },
 
+  // paddingTop is applied at runtime (insets.top + the same amount as paddingBottom)
+  // so the title + back button sit vertically centered, evenly spaced below the notch.
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm,
-    paddingTop: SPACING.xxl + SPACING.sm,
-    paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    paddingBottom: SPACING.sm + 4,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
   },
-  backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  backBtn: { width: 42, alignItems: 'flex-start', justifyContent: 'center', paddingVertical: SPACING.xs },
+  headerSpacer: { width: 42 }, // matches the back button's footprint → title truly centered
+  headerTitle: { color: COLORS.text, fontSize: 20, fontWeight: '800', letterSpacing: 0.2 },
 
-  searchRow: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm },
+  searchRow: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.sm + 4 },
+  // Raised, bordered pill so the search field reads as a distinct, polished element.
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surfaceElevated, borderRadius: RADIUS.full,
     paddingHorizontal: SPACING.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border,
+    ...SHADOWS.sm,
   },
-  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15 },
+  // System font (SF Pro / Roboto — same family Instagram's search uses), tuned light
+  // and lightly tracked for that clean, airy search-field look.
+  searchInput: { flex: 1, paddingVertical: SPACING.sm + 3, color: COLORS.text, fontSize: 15, fontWeight: '400', letterSpacing: 0.2 },
+
+  // Segmented relationship filter (Main / Friends / Followers). Equal gaps above
+  // (search) and below (list) keep the stack evenly spaced.
+  tabRow: {
+    flexDirection: 'row',
+    marginHorizontal: SPACING.md, marginBottom: SPACING.sm + 4,
+    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.full, padding: 3, gap: 3,
+  },
+  tab: { flex: 1, paddingVertical: 9, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
+  // Neutral raised "selected segment" (iOS-style), not a colored highlight.
+  tabActive: { backgroundColor: '#2C2C2E', ...SHADOWS.sm },
+  tabText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+  tabTextActive: { color: COLORS.text, fontWeight: '700' },
   searchClear: { padding: 2 },
   // Search match highlight (in usernames and message previews).
   highlight: { color: COLORS.primary, fontWeight: '800' },
 
   // flexGrow lets the list fill the viewport so pull-to-refresh can be started
   // anywhere on the screen — even when there are few or no conversations.
-  listContent: { padding: SPACING.md, gap: SPACING.sm, flexGrow: 1 },
+  listContent: { flexGrow: 1, paddingVertical: SPACING.xs },
 
+  // iOS-style flush row — no card/border; hairline separators give the structure.
   conversationRow: {
     flexDirection: 'row', alignItems: 'center',
-    padding: SPACING.md, backgroundColor: COLORS.surfaceLight,
-    borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, gap: SPACING.md,
+    paddingVertical: 10, paddingLeft: SPACING.sm, paddingRight: SPACING.md,
+    gap: SPACING.sm + 4, backgroundColor: COLORS.background,
   },
-  // Unread conversations get a subtle primary tint + accent border.
-  conversationRowUnread: { backgroundColor: COLORS.primary + '14', borderColor: COLORS.primary + '66' },
+  conversationRowPressed: { backgroundColor: COLORS.surfaceLight },
+  // Leading unread dot — reserves its width even when read so avatars stay aligned.
+  unreadGutter: { width: 12, alignItems: 'center', justifyContent: 'center' },
+  unreadDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: COLORS.primary },
+  // Hairline separator inset to the avatar's edge (iOS Messages style).
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: SPACING.sm + 12 + (SPACING.sm + 4) + 56 },
   avatar: { width: 50, height: 50, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: COLORS.text, fontSize: 20, fontWeight: '700' },
-  convInfo: { flex: 1 },
+  convInfo: { flex: 1, justifyContent: 'center', gap: 3 },
   convHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: SPACING.sm },
   convNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  displayName: { flexShrink: 1, color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  displayNameUnread: { fontWeight: '800' },
-  timeText: { color: COLORS.textTertiary, fontSize: 12 },
-  timeUnread: { color: COLORS.primary, fontWeight: '700' },
-  lastMessage: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
-  lastMessageUnread: { color: COLORS.text, fontWeight: '600' },
-  sharedPreview: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  unreadBadge: {
-    minWidth: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.primary,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6,
-  },
-  unreadBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  displayName: { flexShrink: 1, color: COLORS.text, fontSize: 16, fontWeight: '600' },
+  displayNameUnread: { fontWeight: '700' },
+  timeText: { color: COLORS.textTertiary, fontSize: 13 },
+  timeUnread: { color: COLORS.primary, fontWeight: '600' },
+  lastMessage: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 19 },
+  lastMessageUnread: { color: COLORS.text, fontWeight: '500' },
+  sharedPreview: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.md },
   emptyIcon: { width: 80, height: 80, borderRadius: RADIUS.xl, alignItems: 'center', justifyContent: 'center' },

@@ -40,22 +40,34 @@ function groupedText(type: string, count: number): string {
   }
 }
 
-// Collapse a consecutive run of the SAME type from the SAME actor into one row
-// (e.g. five likes in a row → "<name> liked 5 posts"). follow/friend never group —
-// they carry a Follow button and only happen once. Input is newest-first, so the
-// kept representative is the most recent; `children` keeps the whole run so the row
-// can expand into the individual posts.
-function groupConsecutive(items: Notification[]): DisplayNotif[] {
+const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+
+// Collapse same-type actions from the SAME actor into one row (e.g. "<name> liked 5
+// posts"), even when OTHER people's notifications are interleaved between them. An
+// action joins an open group as long as it's within 5h of that group's MOST RECENT
+// action (the representative); a larger gap starts a fresh group. follow/friend never
+// group — they carry a Follow button and only happen once. Input is newest-first, so
+// the representative is the most recent and `children` keeps the whole group so the
+// row can expand into the individual posts.
+function groupByProximity(items: Notification[]): DisplayNotif[] {
   const out: DisplayNotif[] = [];
+  const open = new Map<string, DisplayNotif>(); // `${type}:${actor}` → the open group
   for (const n of items) {
-    const groupable = n.type !== 'follow' && n.type !== 'friend';
-    const last = out[out.length - 1];
-    if (groupable && last && last.type === n.type && last.actor_id === n.actor_id) {
-      last.groupCount = (last.groupCount ?? 1) + 1;
-      last.children!.push(n);
+    if (n.type === 'follow' || n.type === 'friend') {
+      out.push({ ...n, groupCount: 1, children: [n] });
       continue;
     }
-    out.push({ ...n, groupCount: 1, children: [n] });
+    const key = `${n.type}:${n.actor_id}`;
+    const g = open.get(key);
+    // Within 5h of the group's newest (representative) → join; else open a new group.
+    if (g && new Date(g.created_at).getTime() - new Date(n.created_at).getTime() <= FIVE_HOURS_MS) {
+      g.groupCount = (g.groupCount ?? 1) + 1;
+      g.children!.push(n);
+    } else {
+      const disp: DisplayNotif = { ...n, groupCount: 1, children: [n] };
+      out.push(disp);
+      open.set(key, disp);
+    }
   }
   return out;
 }
@@ -168,15 +180,18 @@ export default function NotificationsScreen() {
     setRefreshing(false);
   }
 
-  // Group into time buckets (already sorted newest-first from the query).
+  // Group across the whole list FIRST (so a 5h cluster isn't split by interleaved
+  // notifications or a bucket edge), then file each group under a time section by its
+  // most-recent action. Input is already newest-first from the query.
   const sections = useMemo(() => {
     const now = Date.now();
-    const map: Record<string, Notification[]> = {};
-    for (const n of notifications) {
-      const k = bucketFor(n.created_at, now);
-      (map[k] ||= []).push(n);
+    const grouped = groupByProximity(notifications);
+    const map: Record<string, DisplayNotif[]> = {};
+    for (const d of grouped) {
+      const k = bucketFor(d.created_at, now);
+      (map[k] ||= []).push(d);
     }
-    return BUCKET_ORDER.filter(k => map[k]?.length).map(k => ({ title: k, data: groupConsecutive(map[k]) }));
+    return BUCKET_ORDER.filter(k => map[k]?.length).map(k => ({ title: k, data: map[k] }));
   }, [notifications]);
 
   function handlePress(notif: Notification) {
