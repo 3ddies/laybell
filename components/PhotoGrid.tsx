@@ -15,6 +15,7 @@ const CELL = (SCREEN_W - GAP * (NUM_COLS - 1)) / NUM_COLS;
 const PAGE = 60;
 
 export type PickedMedia = {
+  id: string;             // MediaLibrary asset id (or the uri for a fresh camera capture)
   uri: string;            // file:// — for cropping/upload
   posterUri?: string;     // ph:// (video) shown as a still preview via expo-image
   width: number;
@@ -29,17 +30,22 @@ function formatDur(s: number) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-// Device camera-roll grid (Instagram-style). Thumbnails render the asset's ph://
-// URI directly via expo-image (fast, shows poster frames for videos — no full
-// export). The chosen asset is resolved to a file:// path only on tap, for the
-// cropper / manipulator / upload (which can't read ph://).
-export default function PhotoGrid({ mediaType, onPick, onScroll, onScrollActive }: {
-  mediaType: 'image' | 'video';
+// Device camera-roll grid (Instagram-style) showing photos AND videos together.
+// Thumbnails render the asset's ph:// URI via expo-image (fast, poster frames for
+// videos); the chosen asset is resolved to a file:// path only on tap. Selected
+// items show a check (single) or an order number (slideshow), and tapping a
+// selected item removes it (onRemove).
+export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, selectedIds = [], numbered = false }: {
   onPick: (m: PickedMedia) => void;
+  onRemove?: (id: string) => void;
   onScroll?: (e: any) => void;
   // Fires true when the grid starts being dragged and false when scrolling settles —
   // lets the host suppress the tab swipe only during an active scroll (reliably).
   onScrollActive?: (active: boolean) => void;
+  // Asset ids currently selected (single → one; slideshow → ordered).
+  selectedIds?: string[];
+  // Show the selection order (slideshow) instead of a plain check (single).
+  numbered?: boolean;
 }) {
   const [permission, requestPermission] = MediaLibrary.usePermissions();
   const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
@@ -49,15 +55,13 @@ export default function PhotoGrid({ mediaType, onPick, onScroll, onScrollActive 
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const loadingRef = useRef(false);
 
-  const mlType = mediaType === 'video' ? MediaLibrary.MediaType.video : MediaLibrary.MediaType.photo;
-
   const loadPage = useCallback(async (after?: string) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
     try {
       const page = await MediaLibrary.getAssetsAsync({
-        mediaType: [mlType],
+        mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video],
         sortBy: [[MediaLibrary.SortBy.creationTime, false]],
         first: PAGE,
         after,
@@ -70,7 +74,7 @@ export default function PhotoGrid({ mediaType, onPick, onScroll, onScrollActive 
     }
     loadingRef.current = false;
     setLoading(false);
-  }, [mlType]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,7 +86,7 @@ export default function PhotoGrid({ mediaType, onPick, onScroll, onScrollActive 
       loadPage(undefined);
     })();
     return () => { cancelled = true; };
-  }, [mediaType]);
+  }, []);
 
   async function selectAsset(asset: MediaLibrary.Asset) {
     if (resolvingId) return;
@@ -90,9 +94,10 @@ export default function PhotoGrid({ mediaType, onPick, onScroll, onScrollActive 
     try {
       const info = await MediaLibrary.getAssetInfoAsync(asset);
       const uri = info.localUri || asset.uri;
+      const type: 'image' | 'video' = asset.mediaType === MediaLibrary.MediaType.video ? 'video' : 'image';
       // Video posters render reliably from the ph:// asset via expo-image.
-      const posterUri = mediaType === 'video' ? asset.uri : uri;
-      onPick({ uri, posterUri, width: asset.width, height: asset.height, duration: asset.duration, type: mediaType });
+      const posterUri = type === 'video' ? asset.uri : uri;
+      onPick({ id: asset.id, uri, posterUri, width: asset.width, height: asset.height, duration: asset.duration, type });
     } catch {
       // ignore — user can tap another
     } finally {
@@ -104,21 +109,13 @@ export default function PhotoGrid({ mediaType, onPick, onScroll, onScrollActive 
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return;
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: mediaType === 'video' ? ImagePicker.MediaTypeOptions.Videos : ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 1,
     });
     if (!result.canceled && result.assets[0]) {
       const a = result.assets[0];
-      // Camera video has no ph:// poster — post.tsx falls back to a generated thumbnail.
-      // ImagePicker reports video duration in ms; convert to seconds.
-      onPick({
-        uri: a.uri,
-        posterUri: mediaType === 'video' ? undefined : a.uri,
-        width: a.width ?? 1,
-        height: a.height ?? 1,
-        duration: a.duration != null ? a.duration / 1000 : undefined,
-        type: mediaType,
-      });
+      // No MediaLibrary id for a fresh capture — key it by its uri.
+      onPick({ id: a.uri, uri: a.uri, posterUri: a.uri, width: a.width ?? 1, height: a.height ?? 1, type: 'image' });
     }
   }
 
@@ -159,8 +156,15 @@ export default function PhotoGrid({ mediaType, onPick, onScroll, onScrollActive 
             </TouchableOpacity>
           );
         }
+        const selIndex = selectedIds.indexOf(item.id);
+        const selected = selIndex >= 0;
+        const isVideo = item.mediaType === MediaLibrary.MediaType.video;
         return (
-          <TouchableOpacity style={styles.cell} activeOpacity={0.85} onPress={() => selectAsset(item)}>
+          <TouchableOpacity
+            style={styles.cell}
+            activeOpacity={0.85}
+            onPress={() => (selected ? onRemove?.(item.id) : selectAsset(item))}
+          >
             <ExpoImage
               source={{ uri: item.uri }}
               style={styles.thumb}
@@ -168,8 +172,16 @@ export default function PhotoGrid({ mediaType, onPick, onScroll, onScrollActive 
               recyclingKey={item.id}
               transition={120}
             />
-            {mediaType === 'video' && item.duration > 0 && (
+            {isVideo && item.duration > 0 && (
               <Text style={styles.dur}>{formatDur(item.duration)}</Text>
+            )}
+            {selected && <View style={styles.selOverlay} pointerEvents="none" />}
+            {selected && (
+              <View style={styles.selBadge}>
+                {numbered
+                  ? <Text style={styles.selBadgeText}>{selIndex + 1}</Text>
+                  : <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
             )}
             {resolvingId === item.id && (
               <View style={styles.resolving}><ActivityIndicator color={COLORS.text} /></View>
@@ -189,6 +201,12 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 4, right: 4, color: '#fff', fontSize: 11, fontWeight: '700',
     textShadowColor: '#000', textShadowRadius: 3,
   },
+  selOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)', borderWidth: 2, borderColor: COLORS.primary },
+  selBadge: {
+    position: 'absolute', top: 4, right: 4, minWidth: 20, height: 20, borderRadius: 10,
+    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+  },
+  selBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   resolving: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)',

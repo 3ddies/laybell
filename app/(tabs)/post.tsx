@@ -34,11 +34,14 @@ type Step = 'pick' | 'edit' | 'details';
 
 // One picked item in a slideshow (before upload).
 type PickedSlide = {
+  id?: string;                  // source asset id — for in-app grid tap-to-toggle
   uri: string;
   type: 'image' | 'video';
   width: number;
   height: number;
   thumbnailUri?: string | null; // poster for video slides
+  posterUri?: string | null;    // ph:// poster (video) — renders reliably via expo-image
+  crop?: CropRect | null;       // user's drag/pinch crop (image slides) — baked on upload
 };
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -63,13 +66,6 @@ function fmtClock(sec: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-const POST_TYPES: { label: string; value: PostType }[] = [
-  { label: 'Image', value: 'image' },
-  { label: 'Slides', value: 'slideshow' },
-  { label: 'Video', value: 'video' },
-  { label: 'Audio', value: 'audio' },
-];
-
 export default function PostScreen() {
   const [step, setStep] = useState<Step>('pick');
   const [postType, setPostType] = useState<PostType>('image');
@@ -80,6 +76,7 @@ export default function PostScreen() {
 
   // image/video selection
   const [media, setMedia] = useState<{ uri: string; width: number; height: number; posterUri?: string } | null>(null);
+  const [pickedId, setPickedId] = useState<string | null>(null); // grid asset id of the single selection
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
   const [videoAspect, setVideoAspect] = useState(0.8); // native aspect for video display
   const [videoDuration, setVideoDuration] = useState(0); // seconds (source)
@@ -116,13 +113,13 @@ export default function PostScreen() {
   const router = useRouter();
   useFocusEffect(useCallback(() => { stop(); }, []));
 
-  // Swiping to an adjacent tab is on only while browsing the image/video picker
-  // with NOTHING selected yet — picking any media turns it off (you're cropping /
-  // committing). The camera roll suppresses it only during an active scroll and
-  // restores it when the scroll settles (onScrollActive, below). Restored on leave
-  // so the other tabs stay swipeable.
-  const galleryPicker = step === 'pick' && (postType === 'image' || postType === 'video');
-  const swipeOn = galleryPicker && media == null;
+  // Swiping to an adjacent tab is on only while browsing the Posts picker with
+  // NOTHING selected yet — selecting any media (single or a slide) turns it off.
+  // The camera roll suppresses it during an active scroll and restores it when the
+  // scroll settles (onScrollActive, below). Restored on leave so the other tabs
+  // stay swipeable.
+  const swipeOn = step === 'pick' && postType !== 'audio'
+    && (postType === 'slideshow' ? slides.length === 0 : media == null);
   useFocusEffect(useCallback(() => {
     setTabSwipe(swipeOn);
     return () => setTabSwipe(true);
@@ -152,12 +149,14 @@ export default function PostScreen() {
 
   const showGenre = postType !== 'audio' || audioKind === 'audio';
   const hasMedia = postType === 'audio' ? !!audioFile : postType === 'slideshow' ? slides.length > 0 : !!media;
+  const slideshowMode = postType === 'slideshow';
+  const lastSlide = slides.length ? slides[slides.length - 1] : null; // most recent — shown on the square
 
   function resetAll() {
     if (recordingRef.current) { recordingRef.current.stopAndUnloadAsync().catch(() => {}); recordingRef.current = null; }
     unloadPreview();
     setIsRecording(false); setRecSecs(0);
-    setMedia(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
+    setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setGenre(''); setSong(null); setTagged([]); setError(''); setStep('pick');
@@ -166,7 +165,7 @@ export default function PostScreen() {
   function switchType(t: PostType) {
     setPostType(t);
     setFormat(t === 'slideshow' ? '1:1' : defaultFormatFor(t as any));
-    setMedia(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
+    setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null);
     setSong(null); setTagged([]);
@@ -182,6 +181,9 @@ export default function PostScreen() {
       Alert.alert('Video too long', `Videos must be ${VIDEO_MAX_SEC} seconds or shorter.`);
       return;
     }
+    if (m.type !== postType) setFormat(defaultFormatFor(m.type as any)); // image↔video
+    setPostType(m.type);
+    setPickedId(m.id);
     setMedia({ uri: m.uri, width: m.width, height: m.height, posterUri: m.posterUri });
     setThumbnailUri(null);
     if (m.type === 'video') {
@@ -195,62 +197,51 @@ export default function PostScreen() {
     }
   }
 
-  // ── Slideshow: multi-pick / reorder / remove ──────────────────────────────
-  async function pickSlides() {
-    const remaining = MAX_SLIDES - slides.length;
-    if (remaining <= 0) { Alert.alert('Limit reached', `A slideshow can have up to ${MAX_SLIDES} items.`); return; }
-    try {
-      const ImagePicker = await import('expo-image-picker');
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images', 'videos'] as any,
-        allowsMultipleSelection: true,
-        selectionLimit: remaining,
-        quality: 0.9,
-      });
-      if (result.canceled) return;
-      const picked: PickedSlide[] = [];
-      let skipped = 0;
-      for (const a of result.assets) {
-        // A selected item iOS can't materialize (e.g. an undownloaded iCloud asset)
-        // arrives with no usable uri — skip it rather than failing the whole batch.
-        if (!a.uri) { skipped++; continue; }
-        const isVid = a.type === 'video';
-        if (isVid) {
-          // expo-image-picker duration is ms on some platforms, s on others; >1000 ⇒ ms.
-          const durSec = a.duration != null ? (a.duration > 1000 ? a.duration / 1000 : a.duration) : null;
-          if (durSec != null && durSec > VIDEO_MAX_SEC) {
-            Alert.alert('Video skipped', `Slideshow videos must be ${VIDEO_MAX_SEC}s or shorter.`);
-            continue;
-          }
-        }
-        let thumb: string | null = null;
-        if (isVid) {
-          try { const { uri } = await VideoThumbnails.getThumbnailAsync(a.uri, { time: 1000 }); thumb = uri; } catch {}
-        }
-        picked.push({ uri: a.uri, type: isVid ? 'video' : 'image', width: a.width ?? 1, height: a.height ?? 1, thumbnailUri: thumb });
-      }
-      if (picked.length) setSlides(prev => [...prev, ...picked].slice(0, MAX_SLIDES));
-      if (skipped > 0 && picked.length) Alert.alert('Some items skipped', "A few items couldn't be loaded (often iCloud photos that aren't downloaded yet).");
-    } catch (e: any) {
-      // PHPhotosErrorDomain 3164 etc.: the picker couldn't read a selected asset
-      // (commonly an iCloud item not downloaded locally). Fail softly with guidance.
-      Alert.alert(
-        "Couldn't load that media",
-        "One of the selected items couldn't be opened. If it's stored in iCloud, open it once in the Photos app so it downloads, then try adding it again.",
-      );
-    }
-  }
 
-  function removeSlide(i: number) { setSlides(prev => prev.filter((_, idx) => idx !== i)); }
-  function moveSlide(i: number, dir: -1 | 1) {
+  // ── Unified Posts picker: single vs slideshow, both off one in-app grid ───────
+  function clearMedia() {
+    setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null;
+    setVideoDuration(0); setTrimStart(0);
+    setPostType('image'); setFormat('1:1');
+  }
+  function enterSingle() {
+    if (postType !== 'slideshow') return;
+    setPostType('image'); setFormat('1:1'); setSlides([]);
+    setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null;
+  }
+  function enterSlideshow() {
+    if (postType === 'slideshow') return;
+    setPostType('slideshow'); setFormat('1:1');
+    setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null;
+  }
+  // Save the crop the user set on the slide currently in the cropper (the last
+  // image slide) before it's superseded by a new slide or committed on Next.
+  function captureLastSlideCrop() {
+    const c = cropperRef.current?.getCrop();
+    if (!c) return;
     setSlides(prev => {
-      const j = i + dir;
-      if (j < 0 || j >= prev.length) return prev;
+      const i = prev.length - 1;
+      if (i < 0 || prev[i].type !== 'image') return prev;
       const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
+      next[i] = { ...next[i], crop: c };
       return next;
     });
   }
+  // Add the tapped grid item (already resolved to a file uri) as the next slide.
+  async function addSlideFromGrid(m: PickedMedia) {
+    captureLastSlideCrop(); // preserve the crop set on the current last slide first
+    if (slides.length >= MAX_SLIDES) { Alert.alert('Limit reached', `A slideshow can have up to ${MAX_SLIDES} items.`); return; }
+    if (m.type === 'video' && m.duration != null && m.duration > VIDEO_MAX_SEC) {
+      Alert.alert('Video too long', `Slideshow videos must be ${VIDEO_MAX_SEC}s or shorter.`); return;
+    }
+    let thumb: string | null = null;
+    if (m.type === 'video') { try { const { uri } = await VideoThumbnails.getThumbnailAsync(m.uri, { time: 1000 }); thumb = uri; } catch {} }
+    setSlides(prev => prev.length >= MAX_SLIDES ? prev
+      : [...prev, { id: m.id, uri: m.uri, type: m.type, width: m.width, height: m.height, thumbnailUri: thumb, posterUri: m.posterUri }]);
+  }
+  function removeSlideById(id: string) { setSlides(prev => prev.filter(s => s.id !== id)); }
+  // Tabs: "Posts" returns from Music; "Music" is switchType('audio').
+  function selectPostsTab() { if (postType === 'audio') switchType('image'); }
 
   async function startRecording() {
     await unloadPreview();
@@ -368,6 +359,7 @@ export default function PostScreen() {
     }
     setError('');
     if (postType === 'image') cropRef.current = cropperRef.current?.getCrop() ?? null;
+    if (postType === 'slideshow') captureLastSlideCrop();
     // Long videos go through the trim editor to pick a 90s window.
     if (postType === 'video' && videoDuration > VIDEO_MAX_SEC) { setStep('edit'); return; }
     setStep('details');
@@ -419,7 +411,11 @@ export default function PostScreen() {
           if (s.type === 'image') {
             let outUri = s.uri;
             try {
-              const out = await manipulateAsync(s.uri, [{ resize: { width: 1440 } }], { compress: 0.9, format: SaveFormat.JPEG });
+              const crop = s.crop;
+              const ops: any[] = [];
+              if (crop && crop.width > 1 && crop.height > 1) ops.push({ crop });
+              ops.push({ resize: { width: crop && crop.width > 1 ? Math.min(1440, crop.width) : 1440 } });
+              const out = await manipulateAsync(s.uri, ops, { compress: 0.9, format: SaveFormat.JPEG });
               outUri = out.uri;
             } catch {}
             url = await uploadToStorage(user.id, outUri, 'jpg', 'image/jpeg');
@@ -786,70 +782,42 @@ export default function PostScreen() {
             Music up to 6 min · Podcasts & Audiobooks up to 35 min
           </Text>
         </View>
-      ) : postType === 'slideshow' ? (
-        <ScrollView contentContainerStyle={styles.slideshowPick} keyboardShouldPersistTaps="handled">
-          {/* Cover preview (slide 1) */}
-          <View style={[styles.previewArea, { height: fullPreviewH }]}>
-            {slides[0] ? (
-              <Image
-                source={{ uri: slides[0].type === 'video' ? (slides[0].thumbnailUri || slides[0].uri) : slides[0].uri }}
-                style={{ width: frameW, height: frameH }}
-                resizeMode="cover"
-              />
-            ) : (
-              <TouchableOpacity style={[styles.previewPlaceholder, { width: frameW, height: frameH }]} onPress={pickSlides}>
-                <Ionicons name="images-outline" size={40} color={COLORS.textTertiary} />
-                <Text style={styles.previewPlaceholderText}>Add up to {MAX_SLIDES} photos & videos</Text>
-              </TouchableOpacity>
-            )}
-            {slides.length > 0 && (
-              <TouchableOpacity style={styles.aspectBtn} onPress={cycleFormat}>
-                <Ionicons name="resize-outline" size={16} color={COLORS.text} />
-                <Text style={styles.aspectBtnText}>{format}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={styles.recentsRow}>
-            <Text style={styles.recentsText}>{slides.length}/{MAX_SLIDES} selected</Text>
-            {slides.length > 1 && <Text style={styles.recentsHint}>◀ ▶ to reorder</Text>}
-          </View>
-
-          {/* Selected slides — reorder / remove */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slideStrip}>
-            {slides.map((s, i) => (
-              <View key={`${s.uri}-${i}`} style={styles.slideThumbWrap}>
-                <Image source={{ uri: s.type === 'video' ? (s.thumbnailUri || s.uri) : s.uri }} style={styles.slideThumb} />
-                <View style={styles.slideIndexBadge}><Text style={styles.slideIndexText}>{i + 1}</Text></View>
-                {s.type === 'video' && <Ionicons name="videocam" size={13} color="#fff" style={styles.slideVidIcon} />}
-                <TouchableOpacity style={styles.slideRemove} onPress={() => removeSlide(i)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                  <Ionicons name="close-circle" size={20} color="#fff" />
-                </TouchableOpacity>
-                <View style={styles.slideMoveRow}>
-                  <TouchableOpacity onPress={() => moveSlide(i, -1)} disabled={i === 0} style={styles.slideMoveBtn}>
-                    <Ionicons name="chevron-back" size={14} color={i === 0 ? COLORS.textTertiary : COLORS.text} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => moveSlide(i, 1)} disabled={i === slides.length - 1} style={styles.slideMoveBtn}>
-                    <Ionicons name="chevron-forward" size={14} color={i === slides.length - 1 ? COLORS.textTertiary : COLORS.text} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-            {slides.length < MAX_SLIDES && (
-              <TouchableOpacity style={styles.slideAdd} onPress={pickSlides}>
-                <Ionicons name="add" size={28} color={COLORS.primary} />
-                <Text style={styles.slideAddText}>Add</Text>
-              </TouchableOpacity>
-            )}
-          </ScrollView>
-        </ScrollView>
       ) : (
         <>
-          {/* Collapsing cropper preview — shrinks as the gallery scrolls */}
+          {/* Collapsing preview — single media cropper OR the slideshow cover */}
           <Animated.View style={[styles.previewArea, { height: animatedPreviewH }]}>
-            {media ? (
+            {slideshowMode ? (
+              lastSlide ? (
+                lastSlide.type === 'image' ? (
+                  <ErrorBoundary label="Couldn't open this photo">
+                    <MediaCropper
+                      key={`${lastSlide.uri}-${previewAspect}`}
+                      ref={cropperRef}
+                      uri={lastSlide.uri}
+                      mediaWidth={lastSlide.width}
+                      mediaHeight={lastSlide.height}
+                      frameW={frameW}
+                      frameH={frameH}
+                      type="image"
+                    />
+                  </ErrorBoundary>
+                ) : (
+                  <ExpoImage
+                    source={{ uri: lastSlide.posterUri || lastSlide.thumbnailUri || lastSlide.uri }}
+                    style={{ width: frameW, height: frameH }}
+                    contentFit="cover"
+                  />
+                )
+              ) : (
+                <View style={[styles.previewPlaceholder, { width: frameW, height: frameH }]}>
+                  <Ionicons name="images-outline" size={40} color={COLORS.textTertiary} />
+                  <Text style={styles.previewPlaceholderText}>Tap items below to build a slideshow</Text>
+                </View>
+              )
+            ) : media ? (
               postType === 'video' ? (
-                // Static poster preview (cover) — reliable vs. live playback.
+                // Camera-roll videos are ph:// — expo-image renders the poster
+                // frame reliably (a live loop would need a file:// copy of the clip).
                 <ExpoImage
                   source={{ uri: media.posterUri || thumbnailUri || media.uri }}
                   style={{ width: frameW, height: frameH }}
@@ -871,30 +839,50 @@ export default function PostScreen() {
               )
             ) : (
               <View style={[styles.previewPlaceholder, { width: frameW, height: frameH }]}>
-                <Ionicons name={postType === 'video' ? 'videocam-outline' : 'image-outline'} size={40} color={COLORS.textTertiary} />
-                <Text style={styles.previewPlaceholderText}>Pick a {postType} below</Text>
+                <Ionicons name="image-outline" size={40} color={COLORS.textTertiary} />
+                <Text style={styles.previewPlaceholderText}>Pick a photo or video below</Text>
               </View>
             )}
-            {/* Aspect toggle (images only — videos use their native ratio) */}
-            {postType === 'image' && (
+            {/* Aspect toggle — single images + slideshows (videos use native ratio) */}
+            {((!slideshowMode && postType === 'image' && media) || (slideshowMode && slides.length > 0)) && (
               <TouchableOpacity style={styles.aspectBtn} onPress={cycleFormat}>
                 <Ionicons name="resize-outline" size={16} color={COLORS.text} />
                 <Text style={styles.aspectBtnText}>{format}</Text>
               </TouchableOpacity>
             )}
+            {/* Remove the selected media from the square (single mode) */}
+            {!slideshowMode && media && (
+              <TouchableOpacity style={styles.removeBtn} onPress={clearMedia} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={18} color="#fff" />
+              </TouchableOpacity>
+            )}
           </Animated.View>
 
-          {/* Gallery */}
+          {/* Single / Slideshow toggle + hint */}
           <View style={styles.recentsRow}>
-            <Text style={styles.recentsText}>Recents</Text>
-            {postType === 'image' && <Text style={styles.recentsHint}>Drag / pinch to crop</Text>}
-            {postType === 'video' && <Text style={styles.recentsHint}>Longer clips → trim to 90s</Text>}
+            <View style={styles.modeToggle}>
+              <TouchableOpacity onPress={enterSingle} style={[styles.modePill, !slideshowMode && styles.modePillActive]}>
+                <Text style={[styles.modePillText, !slideshowMode && styles.modePillTextActive]}>Single</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={enterSlideshow} style={[styles.modePill, slideshowMode && styles.modePillActive]}>
+                <Text style={[styles.modePillText, slideshowMode && styles.modePillTextActive]}>Slideshow</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.recentsHint}>
+              {slideshowMode ? `${slides.length}/${MAX_SLIDES} · tap in order` : 'Tap a photo or video'}
+            </Text>
           </View>
+
+          {/* One grid for all camera media (photos + videos) */}
           <View style={{ flex: 1 }}>
             <ErrorBoundary label="Couldn't open your photos">
               <PhotoGrid
-                mediaType={postType as 'image' | 'video'}
-                onPick={onPickMedia}
+                selectedIds={slideshowMode
+                  ? slides.map(s => s.id).filter((x): x is string => x != null)
+                  : (pickedId ? [pickedId] : [])}
+                numbered={slideshowMode}
+                onPick={slideshowMode ? addSlideFromGrid : onPickMedia}
+                onRemove={slideshowMode ? removeSlideById : clearMedia}
                 onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
                 // Hold the tab swipe off only while actively scrolling the grid;
                 // restore it (to swipeOn) once the scroll settles.
@@ -905,16 +893,14 @@ export default function PostScreen() {
         </>
       )}
 
-      {/* Bottom type strip (Instagram mode-strip style) */}
+      {/* Bottom strip — Posts (photo / video / slideshow) vs Music */}
       <View style={styles.typeStrip}>
-        {POST_TYPES.map(t => {
-          const on = postType === t.value;
-          return (
-            <TouchableOpacity key={t.value} onPress={() => switchType(t.value)} style={styles.typeStripBtn}>
-              <Text style={[styles.typeStripText, on && styles.typeStripTextActive]}>{t.label.toUpperCase()}</Text>
-            </TouchableOpacity>
-          );
-        })}
+        <TouchableOpacity onPress={selectPostsTab} style={styles.typeStripBtn}>
+          <Text style={[styles.typeStripText, postType !== 'audio' && styles.typeStripTextActive]}>POSTS</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => switchType('audio')} style={styles.typeStripBtn}>
+          <Text style={[styles.typeStripText, postType === 'audio' && styles.typeStripTextActive]}>MUSIC</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -951,25 +937,18 @@ const styles = StyleSheet.create({
   recentsText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   recentsHint: { color: COLORS.textTertiary, fontSize: 12 },
 
-  // slideshow picker
-  slideshowPick: { paddingBottom: SPACING.xl },
-  slideStrip: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm, paddingHorizontal: SPACING.md, paddingBottom: SPACING.md },
-  slideThumbWrap: { width: 84, gap: 4 },
-  slideThumb: { width: 84, height: 84, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceLight },
-  slideIndexBadge: {
-    position: 'absolute', top: 4, left: 4, minWidth: 18, height: 18, borderRadius: 9,
-    backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+  // Remove-media "x" on the preview square, and the Single/Slideshow mode toggle.
+  removeBtn: {
+    position: 'absolute', top: SPACING.sm, right: SPACING.sm,
+    width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  slideIndexText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  slideVidIcon: { position: 'absolute', left: 6, top: 62, textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
-  slideRemove: { position: 'absolute', top: 1, right: 1 },
-  slideMoveRow: { flexDirection: 'row', gap: 4 },
-  slideMoveBtn: { flex: 1, alignItems: 'center', paddingVertical: 3, backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.xs },
-  slideAdd: {
-    width: 84, height: 84, borderRadius: RADIUS.sm, borderWidth: 1.5, borderColor: COLORS.border,
-    borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 2,
-  },
-  slideAddText: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
+  modeToggle: { flexDirection: 'row', backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.full, padding: 2 },
+  modePill: { paddingHorizontal: SPACING.md, paddingVertical: 5, borderRadius: RADIUS.full },
+  modePillActive: { backgroundColor: COLORS.primary },
+  modePillText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '700' },
+  modePillTextActive: { color: '#fff' },
+
 
   typeStrip: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: SPACING.xl,
