@@ -3,7 +3,7 @@ import { TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { badgeRingColors, badgeGlow, displayedTier, type Tier, type ProfileBadgeFields } from '../lib/badges';
+import { emblemGradient, badgeRim, badgeGlow, displayedTier, type Tier, type ProfileBadgeFields } from '../lib/badges';
 import { useProfile } from '../contexts/ProfileContext';
 
 // The circular badge "emblem" shown next to a username app-wide (Instagram
@@ -27,9 +27,10 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
-// Dark check reads better on the light tiers; white on the darker ones.
+// Dark check reads better on the lighter tiers (silver/gold/diamond fills lead
+// with a bright stop); white on bronze's darker fill.
 function checkColor(tier: Tier): string {
-  return tier === 'silver' || tier === 'diamond' ? '#0B1A1E' : '#FFFFFF';
+  return tier === 'bronze' ? '#FFFFFF' : '#0B1A1E';
 }
 
 function BadgeEmblem({ profile, tier, ownerId, size = 14, style }: Props) {
@@ -40,11 +41,12 @@ function BadgeEmblem({ profile, tier, ownerId, size = 14, style }: Props) {
 
   const node = (
     <LinearGradient
-      colors={badgeRingColors(t)}
+      colors={emblemGradient(t)}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={[
         { width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center' },
+        badgeRim(t),
         badgeGlow(t),
         style,
       ]}

@@ -235,35 +235,35 @@ const PostCard = memo(function PostCard({
 
       {/* Actions */}
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onLike(item)}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onLike(item)} activeOpacity={0.6} hitSlop={8}>
           <Ionicons
             name={isLiked ? 'heart' : 'heart-outline'}
-            size={22}
+            size={23}
             color={isLiked ? COLORS.like : COLORS.textSecondary}
           />
           {likeCount > 0 && (
-            <Text style={[styles.actionCount, isLiked && { color: COLORS.primaryLight }]}>{likeCount}</Text>
+            <Text style={[styles.actionCount, isLiked && { color: COLORS.like }]}>{likeCount}</Text>
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onComments(item)}>
-          <Ionicons name="chatbubble-outline" size={20} color={COLORS.textSecondary} />
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onComments(item)} activeOpacity={0.6} hitSlop={8}>
+          <Ionicons name="chatbubble-outline" size={22} color={COLORS.textSecondary} />
           {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onSave(item)}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onSave(item)} activeOpacity={0.6} hitSlop={8}>
           <Ionicons
             name={isSaved ? 'bookmark' : 'bookmark-outline'}
-            size={20}
-            color={isSaved ? COLORS.primary : COLORS.textSecondary}
+            size={22}
+            color={isSaved ? COLORS.text : COLORS.textSecondary}
           />
           {saveCount > 0 && (
-            <Text style={[styles.actionCount, isSaved && { color: COLORS.primary }]}>{saveCount}</Text>
+            <Text style={[styles.actionCount, isSaved && { color: COLORS.text }]}>{saveCount}</Text>
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRight]} onPress={() => onShare(item)}>
-          <Ionicons name="share-social-outline" size={20} color={COLORS.textSecondary} />
+        <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRight]} onPress={() => onShare(item)} activeOpacity={0.6} hitSlop={8}>
+          <Ionicons name="share-social-outline" size={22} color={COLORS.textSecondary} />
         </TouchableOpacity>
       </View>
     </View>
@@ -885,7 +885,7 @@ const styles = StyleSheet.create({
   postHeaderInfo: { flex: 1 },
   postNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   postDisplayName: { color: COLORS.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.1 },
-  postUsername: { color: COLORS.textTertiary, fontSize: 12, marginTop: 1 },
+  postUsername: { color: COLORS.textMeta, fontSize: 12, marginTop: 1 },
   typeIconWrap: {
     width: 28, height: 28, borderRadius: RADIUS.full,
     backgroundColor: COLORS.primary + '18',
@@ -959,9 +959,9 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.xs,
     gap: SPACING.lg,
   },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionBtnRight: { marginLeft: 'auto' },
-  actionCount: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
+  actionCount: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
 
   emptyContainer: { alignItems: 'center', paddingTop: 100, gap: SPACING.md },
   emptyTitle: { color: COLORS.text, fontSize: 20, fontWeight: '700' },

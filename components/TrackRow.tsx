@@ -33,7 +33,12 @@ export default function TrackRow({
 }) {
   const durationLabel = formatDuration(duration);
   return (
-    <View style={styles.row}>
+    <LinearGradient
+      colors={isPlaying ? GRADIENTS.primarySoft : GRADIENTS.card}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.row, isPlaying && styles.rowActive]}
+    >
       {/* Cover art (left) — tap to expand to the now-playing screen */}
       <TouchableOpacity style={styles.coverWrap} onPress={onCoverPress ?? onPlay}>
         {cover ? (
@@ -64,8 +69,10 @@ export default function TrackRow({
 
       {/* Play / pause */}
       {!hidePlayButton && (
-        <TouchableOpacity style={styles.playToggle} onPress={onPlay}>
-          <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={COLORS.text} />
+        <TouchableOpacity onPress={onPlay} activeOpacity={0.8}>
+          <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.playToggle}>
+            <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={COLORS.text} style={!isPlaying && { marginLeft: 2 }} />
+          </LinearGradient>
         </TouchableOpacity>
       )}
 
@@ -87,18 +94,24 @@ export default function TrackRow({
           )}
         </TouchableOpacity>
       )}
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border, gap: SPACING.md,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
-  coverWrap: { width: 48, height: 48, borderRadius: RADIUS.sm, overflow: 'hidden' },
-  cover: { width: 48, height: 48, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
+  rowActive: { borderColor: COLORS.primary + '55' },
+  coverWrap: {
+    width: 50, height: 50, borderRadius: RADIUS.md, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+  },
+  cover: { width: 50, height: 50, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center' },
   coverOverlayActive: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(224,64,28,0.5)',
@@ -110,8 +123,10 @@ const styles = StyleSheet.create({
   artist: { color: COLORS.textSecondary, fontSize: 12 },
   streams: { color: COLORS.textTertiary, fontSize: 12 },
   playToggle: {
-    width: 34, height: 34, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: COLORS.primary, shadowOpacity: 0.5, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   addBtn: { padding: SPACING.xs },
   avatar: { width: 34, height: 34, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceElevated },

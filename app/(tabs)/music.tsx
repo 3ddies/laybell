@@ -233,13 +233,6 @@ export default function MusicScreen() {
 
   // ─── Discover helpers ─────────────────────────────────────────────────────
 
-  function topGenreDisplay(profile: UserAffinityProfile): string {
-    const entries = Object.entries(profile.genreScores);
-    if (!entries.length) return 'All';
-    const topLower = entries.reduce((a, b) => a[1] > b[1] ? a : b)[0];
-    return GENRES.find(g => g.toLowerCase() === topLower) ?? 'All';
-  }
-
   async function fetchDiscoverData(userId: string) {
     setDiscoverLoading(true);
     const [profile, followingResult, seen] = await Promise.all([
@@ -273,11 +266,13 @@ export default function MusicScreen() {
 
     setOrderedGenreList(sortRailByAffinity([...GENRES, ...CONTENT_TAGS], profile));
 
-    const initialGenre = topGenreDisplay(profile);
-    setDiscoverGenre(initialGenre);
+    // The genre tab always lands on "All genres" on a fresh start; the pill
+    // ordering above still reflects the user's affinity, but the active
+    // selection is not auto-jumped to their top genre.
+    setDiscoverGenre('All');
 
     await Promise.all([
-      fetchTrendingByGenre(initialGenre),
+      fetchTrendingByGenre('All'),
       fetchForYouTracks(),
       fetchTodaysPick(userId),
     ]);
@@ -609,8 +604,17 @@ export default function MusicScreen() {
             <TouchableOpacity
               key={view}
               style={[styles.toggleBtn, on && styles.toggleBtnActive]}
+              activeOpacity={0.8}
               onPress={() => { setActiveView(view); setSelectedPlaylist(null); }}
             >
+              {on && (
+                <LinearGradient
+                  colors={GRADIENTS.primary as any}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[StyleSheet.absoluteFill, { borderRadius: RADIUS.full }]}
+                />
+              )}
               <Ionicons name={(on ? icons[view][0] : icons[view][1]) as any} size={15} color={on ? COLORS.text : COLORS.textSecondary} />
               <Text style={[styles.toggleText, on && styles.toggleTextActive]} numberOfLines={1}>{labels[view]}</Text>
             </TouchableOpacity>
@@ -1081,7 +1085,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
   },
-  headerTitle: { color: COLORS.text, fontSize: 28, fontWeight: '800' },
+  headerTitle: { color: COLORS.text, fontSize: 32, fontWeight: '900', letterSpacing: 0.3 },
 
   searchRow: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
   searchBar: {
@@ -1103,10 +1107,16 @@ const styles = StyleSheet.create({
   },
   newBtnText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
 
+  // A single rounded "segmented control" track holding the 4 segments; the active
+  // one becomes a glowing gradient pill (rendered inside the button).
   toggleRow: {
     flexDirection: 'row',
-    paddingHorizontal: SPACING.sm,
-    gap: SPACING.xs,
+    marginHorizontal: SPACING.md,
+    gap: 4,
+    padding: 4,
+    backgroundColor: COLORS.surfaceLight,
+    borderRadius: RADIUS.full,
+    borderWidth: 1, borderColor: COLORS.border,
     // Centered between the search bar (8px below it) and the section title
     // (16px above its text): 8 + marginTop(16) = marginBottom(8) + 16 = 24 each side.
     marginTop: SPACING.md,
@@ -1115,13 +1125,17 @@ const styles = StyleSheet.create({
   toggleBtn: {
     flex: 1,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 4,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border,
+    gap: 5,
+    paddingVertical: SPACING.xs + 3,
+    borderRadius: RADIUS.full,
+    overflow: 'hidden',
   },
-  toggleBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  toggleText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500' },
-  toggleTextActive: { color: COLORS.text, fontWeight: '700' },
+  toggleBtnActive: {
+    shadowColor: COLORS.primary, shadowOpacity: 0.45, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  toggleText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
+  toggleTextActive: { color: COLORS.text, fontWeight: '800' },
 
   list: { flex: 1 },
   // flexGrow so short/empty lists still fill the screen — lets pull-to-refresh

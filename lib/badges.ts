@@ -116,10 +116,35 @@ export function badgeRingColors(tier: Tier | null | undefined): readonly [string
 }
 
 // Subtle outer glow for the "shine" tiers (notes: gold + diamond shine/glow).
+// Diamond is the app's peak status, so it's the ONLY tier that carries a glow —
+// applied everywhere it appears (emblem app-wide, avatar rings) so it always
+// reads as special. Other tiers intentionally do not glow globally.
 export function badgeGlow(tier: Tier | null | undefined): ViewStyle | null {
-  if (tier === 'gold')    return { shadowColor: '#F59E0B', shadowOpacity: 0.6, shadowRadius: 8,  shadowOffset: { width: 0, height: 0 }, elevation: 6 };
-  if (tier === 'diamond') return { shadowColor: '#67E8F9', shadowOpacity: 0.75, shadowRadius: 10, shadowOffset: { width: 0, height: 0 }, elevation: 7 };
+  if (tier === 'diamond') return { shadowColor: '#67E8F9', shadowOpacity: 0.7, shadowRadius: 9, shadowOffset: { width: 0, height: 0 }, elevation: 7 };
   return null;
+}
+
+// Emblem appeal scales with tier: the fill gets progressively richer (a flat
+// 2-stop bronze → a 3-stop shimmering gold → an iridescent diamond), so a higher
+// badge visibly looks more premium. Used by the app-wide BadgeEmblem.
+export function emblemGradient(tier: Tier): readonly [string, string, ...string[]] {
+  switch (tier) {
+    case 'bronze':  return ['#D08B43', '#7C3A0E'] as const;
+    case 'silver':  return ['#EDF2F7', '#9AA7B8', '#6B7687'] as const;
+    case 'gold':    return ['#FDE68A', '#F59E0B', '#B45309'] as const;
+    case 'diamond': return ['#FFFFFF', '#A5F3FC', '#22D3EE'] as const;
+  }
+}
+
+// A rim highlight that brightens with tier — bronze has none, diamond gets a
+// crisp luminous edge — reinforcing the appeal gradient on the emblem.
+export function badgeRim(tier: Tier): ViewStyle | null {
+  switch (tier) {
+    case 'bronze':  return null;
+    case 'silver':  return { borderWidth: 0.5,  borderColor: 'rgba(255,255,255,0.45)' };
+    case 'gold':    return { borderWidth: 0.75, borderColor: 'rgba(255,243,205,0.7)' };
+    case 'diamond': return { borderWidth: 1,    borderColor: 'rgba(224,251,255,0.9)' };
+  }
 }
 
 export function computeEmblemTier(points: number): Tier | null {
@@ -167,46 +192,56 @@ export function specialRingTier(tier: Tier | null | undefined): Tier | null {
 // ─── Customization (rewards) ─────────────────────────────────────────────────
 // minTier null = always unlocked (e.g. Default). Otherwise the user's emblem tier
 // must rank >= minTier. Gating is enforced on READ so a downgraded user falls back.
-export type ThemeOption = { key: string; label: string; minTier: Tier | null; banner: readonly [string, string] };
+// Profile banner gradients escalate with tier: Default/Bronze are modest single-
+// hue tints, while the higher tiers get richer, cooler, multi-stop schemes — so a
+// higher-badge profile visibly reads as more premium to anyone who views it.
+export type ThemeOption = { key: string; label: string; minTier: Tier | null; banner: readonly [string, string, ...string[]] };
 export const THEME_OPTIONS: ThemeOption[] = [
   { key: 'default', label: 'Default', minTier: null,      banner: ['#1C0A04', COLORS.background] },
-  { key: 'bronze',  label: 'Bronze',  minTier: 'bronze',  banner: ['#241206', COLORS.background] },
-  { key: 'silver',  label: 'Silver',  minTier: 'silver',  banner: ['#0F1822', COLORS.background] },
-  { key: 'gold',    label: 'Gold',    minTier: 'gold',    banner: ['#241B05', COLORS.background] },
-  { key: 'diamond', label: 'Diamond', minTier: 'diamond', banner: ['#06222B', COLORS.background] },
+  { key: 'bronze',  label: 'Bronze',  minTier: 'bronze',  banner: ['#3B1F0B', '#1A0D05', COLORS.background] },
+  { key: 'silver',  label: 'Silver',  minTier: 'silver',  banner: ['#26384A', '#101D27', COLORS.background] },
+  { key: 'gold',    label: 'Gold',    minTier: 'gold',    banner: ['#4E3A0C', '#2A2008', COLORS.background] },
+  { key: 'diamond', label: 'Diamond', minTier: 'diamond', banner: ['#0E4E5E', '#143158', COLORS.background] },
 ];
 
-export type RingStyleOption = { key: string; label: string; minTier: Tier | null };
-export const RING_STYLE_OPTIONS: RingStyleOption[] = [
-  { key: 'default', label: 'Tier Gradient', minTier: null },
-  { key: 'solid',   label: 'Solid',         minTier: 'bronze' },
-  { key: 'shine',   label: 'Shine',         minTier: 'gold' },
-];
+// The story-ring style is no longer a separate choice — it's bundled into the
+// profile theme, escalating with tier: tier-gradient (Default/Bronze) → solid
+// (Silver/Gold) → shine (Diamond). Picking a theme applies its ring too.
+export type RingStyle = 'default' | 'solid' | 'shine';
+export const THEME_RING_STYLE: Record<string, RingStyle> = {
+  default: 'default',
+  bronze:  'default',
+  silver:  'solid',
+  gold:    'solid',
+  diamond: 'shine',
+};
 
 export function isUnlocked(minTier: Tier | null, emblemTier: Tier | null): boolean {
   if (!minTier) return true;
   return tierRank(emblemTier) >= tierRank(minTier);
 }
 
-const DEFAULT_BANNER: readonly [string, string] = ['#1C0A04', COLORS.background];
+const DEFAULT_BANNER: readonly [string, string, ...string[]] = ['#1C0A04', COLORS.background];
 
 // Banner colors for a profile, honoring the owner's chosen theme but only if
 // their current tier still unlocks it (else default). Visitors pass the owner's
 // tier so they see the owner's unlocked choice.
-export function resolveBannerColors(profile: ProfileBadgeFields | null | undefined, emblemTier: Tier | null): readonly [string, string] {
+export function resolveBannerColors(profile: ProfileBadgeFields | null | undefined, emblemTier: Tier | null): readonly [string, string, ...string[]] {
   const opt = THEME_OPTIONS.find(o => o.key === profile?.profile_theme);
   if (!opt || !isUnlocked(opt.minTier, emblemTier)) return DEFAULT_BANNER;
   return opt.banner;
 }
 
-// Ring colors for a profile honoring the chosen ring style (gated by tier).
+// Ring colors for a profile. The ring style is derived from the chosen profile
+// theme (gated by tier — a downgraded user falls back to the default ring).
 export function resolveRingColors(
   profile: ProfileBadgeFields | null | undefined,
   emblemTier: Tier | null,
 ): readonly [string, string] {
   const base = badgeRingColors(emblemTier);
-  const opt = RING_STYLE_OPTIONS.find(o => o.key === profile?.story_ring_style);
-  const style = opt && isUnlocked(opt.minTier, emblemTier) ? opt.key : 'default';
+  const opt = THEME_OPTIONS.find(o => o.key === profile?.profile_theme);
+  const themeKey = opt && isUnlocked(opt.minTier, emblemTier) ? opt.key : 'default';
+  const style = THEME_RING_STYLE[themeKey] ?? 'default';
   if (style === 'solid') return [base[0], base[0]];
   if (style === 'shine') return [base[1], base[0]]; // flip → brighter stop leads
   return base;

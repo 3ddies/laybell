@@ -529,7 +529,7 @@ export default function ExploreScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: { paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 28, fontWeight: '800' },
+  headerTitle: { color: COLORS.text, fontSize: 32, fontWeight: '900', letterSpacing: 0.3 },
 
   searchRow: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
   searchBar: {

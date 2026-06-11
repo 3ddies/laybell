@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, GRADIENTS } from '../constants/theme';
+import { badgeGlow } from '../lib/badges';
 import { useStories } from '../contexts/StoriesContext';
 
 // Drop-in avatar that shows a ring ONLY while `userId` has an active story (the
@@ -101,7 +102,11 @@ export default function StoryAvatar({
   const content = showRing ? (
     <LinearGradient
       colors={ring!}
-      style={{ width: size, height: size, borderRadius: size / 2, padding: pad, alignItems: 'center', justifyContent: 'center' }}
+      style={[
+        { width: size, height: size, borderRadius: size / 2, padding: pad, alignItems: 'center', justifyContent: 'center' },
+        // Diamond — the peak status — glows wherever its ring appears.
+        isDiamond && badgeGlow('diamond'),
+      ]}
     >
       {avatarNode}
     </LinearGradient>

@@ -128,6 +128,13 @@ export default function PublicProfileScreen() {
   const ownerTier = rawTier(profile);
   const ringColors = resolveRingColors(profile, ownerTier);
   const bannerColors = resolveBannerColors(profile, ownerTier);
+  // Active tab underline + text + glow take the owner's emblem-theme color, so
+  // visitors see the owner's tier color on their profile too.
+  const tabAccent = ownerTier ? ringColors[0] : COLORS.primary;
+  const activeTabDyn = {
+    borderBottomColor: tabAccent,
+    shadowColor: tabAccent, shadowOpacity: 0.3, shadowRadius: 2.5, shadowOffset: { width: 0, height: 1 }, elevation: 1,
+  };
 
   function dataForTab(key: string) {
     switch (key) {
@@ -313,10 +320,10 @@ export default function PublicProfileScreen() {
         {TABS.map((tab, i) => (
           <TouchableOpacity
             key={tab.key}
-            style={[styles.tab, activeTab === tab.key && styles.activeTab]}
+            style={[styles.tab, activeTab === tab.key && styles.activeTab, activeTab === tab.key && activeTabDyn]}
             onPress={() => pagerRef.current?.setPage(i + 1)}
           >
-            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>{tab.label}</Text>
+            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText, activeTab === tab.key && { color: tabAccent }]}>{tab.label}</Text>
           </TouchableOpacity>
         ))}
       </View>

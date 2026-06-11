@@ -1,12 +1,15 @@
 import {
-  View, Text, StyleSheet, FlatList, TextInput,
+  View, Text, StyleSheet, FlatList, TextInput, Image,
   TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
 } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
 import { createNotification } from '../../lib/createNotification';
 import { sharedPostId, internalPathFromUrl } from '../../lib/postLinks';
 import SharedPostCard from '../../components/SharedPostCard';
@@ -17,6 +20,7 @@ type Message = { id: string; body: string; sender_id: string; receiver_id: strin
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -50,7 +54,7 @@ export default function ChatScreen() {
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) { setCurrentUserId(user.id); await fetchMessages(user.id); markAsRead(user.id); }
-    const { data: profile } = await supabase.from('profiles').select('username, display_name, badge_tier, badge_show').eq('id', id).single();
+    const { data: profile } = await supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show').eq('id', id).single();
     if (profile) setOtherUser(profile);
     setLoading(false);
   }
@@ -103,7 +107,7 @@ export default function ChatScreen() {
 
   // Render a message body with any URLs as tappable links. Laybell post links
   // show as a friendly "View post" instead of the raw URL.
-  function renderBody(body: string, isOwn: boolean) {
+  function renderBody(body: string, isOwn: boolean, time: string) {
     const parts = body.split(/(laybell:\/\/\S+|https?:\/\/\S+)/g);
     return (
       <Text style={styles.bubbleText}>
@@ -124,6 +128,9 @@ export default function ChatScreen() {
           }
           return part;
         })}
+        {/* Time flows inline after the text, hugging the trailing edge — no
+            cramped second line. The spacer keeps it off the last word. */}
+        <Text style={[styles.inlineTime, !isOwn && styles.inlineTimeOther]}>{`   ${time}`}</Text>
       </Text>
     );
   }
@@ -136,22 +143,31 @@ export default function ChatScreen() {
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={26} color={COLORS.primary} />
         </TouchableOpacity>
-        <View style={styles.headerInfo}>
-          <View style={styles.headerNameRow}>
-            <Text style={styles.headerName}>{otherUser?.display_name}</Text>
-            <BadgeEmblem profile={otherUser} size={14} />
+        <TouchableOpacity style={styles.headerUser} activeOpacity={0.7} onPress={() => router.push(`/profile/${id}`)}>
+          {otherUser?.avatar_url ? (
+            <Image source={{ uri: otherUser.avatar_url }} style={styles.headerAvatar} />
+          ) : (
+            <LinearGradient colors={GRADIENTS.primary} style={styles.headerAvatar}>
+              <Text style={styles.headerAvatarText}>{(otherUser?.display_name || otherUser?.username || '?').charAt(0).toUpperCase()}</Text>
+            </LinearGradient>
+          )}
+          <View style={styles.headerInfo}>
+            <View style={styles.headerNameRow}>
+              <Text style={styles.headerName} numberOfLines={1}>{otherUser?.display_name}</Text>
+              <BadgeEmblem profile={otherUser} size={14} />
+            </View>
+            <Text style={styles.headerUsername} numberOfLines={1}>@{otherUser?.username}</Text>
           </View>
-          <Text style={styles.headerUsername}>@{otherUser?.username}</Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       <FlatList
         ref={flatListRef}
         data={messages}
         keyExtractor={item => item.id}
-        contentContainerStyle={styles.messagesList}
+        contentContainerStyle={[styles.messagesList, { paddingBottom: insets.bottom + 76 }]}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -172,16 +188,31 @@ export default function ChatScreen() {
           }
           return (
             <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
-              <View style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther]}>
-                {renderBody(item.body, isOwn)}
-                <Text style={[styles.bubbleTime, !isOwn && styles.bubbleTimeOther]}>{formatTime(item.created_at)}</Text>
-              </View>
+              {isOwn ? (
+                <LinearGradient
+                  colors={GRADIENTS.primary}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.bubble, styles.bubbleOwn]}
+                >
+                  {renderBody(item.body, isOwn, formatTime(item.created_at))}
+                </LinearGradient>
+              ) : (
+                <View style={[styles.bubble, styles.bubbleOther]}>
+                  {renderBody(item.body, isOwn, formatTime(item.created_at))}
+                </View>
+              )}
             </View>
           );
         }}
       />
 
-      <View style={styles.inputBar}>
+      <BlurView
+        intensity={70}
+        tint="dark"
+        experimentalBlurMethod="dimezisBlurView"
+        style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}
+      >
         <TextInput
           style={styles.input}
           placeholder="Message..."
@@ -192,16 +223,19 @@ export default function ChatScreen() {
           maxLength={500}
         />
         <TouchableOpacity
-          style={[styles.sendBtn, !newMessage.trim() && styles.sendBtnDisabled]}
+          activeOpacity={0.85}
           onPress={sendMessage}
           disabled={!newMessage.trim() || sending}
+          style={!newMessage.trim() && styles.sendBtnDisabled}
         >
-          {sending
-            ? <ActivityIndicator color={COLORS.text} size="small" />
-            : <Ionicons name="arrow-up" size={20} color={COLORS.text} />
-          }
+          <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.sendBtn}>
+            {sending
+              ? <ActivityIndicator color={COLORS.text} size="small" />
+              : <Ionicons name="arrow-up" size={20} color={COLORS.text} />
+            }
+          </LinearGradient>
         </TouchableOpacity>
-      </View>
+      </BlurView>
     </KeyboardAvoidingView>
   );
 }
@@ -215,46 +249,70 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border, gap: SPACING.sm,
+    borderBottomWidth: 0.5, borderBottomColor: COLORS.border, gap: SPACING.xs,
   },
-  backBtn: { padding: SPACING.sm },
+  backBtn: { padding: SPACING.xs },
+  headerUser: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  headerAvatar: {
+    width: 40, height: 40, borderRadius: RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  headerAvatarText: { color: COLORS.text, fontSize: 17, fontWeight: '800' },
   headerInfo: { flex: 1 },
   headerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  headerName: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+  headerName: { color: COLORS.text, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
   headerUsername: { color: COLORS.textSecondary, fontSize: 13 },
 
-  messagesList: { padding: SPACING.md, gap: SPACING.xs, flexGrow: 1 },
+  messagesList: { padding: SPACING.md, gap: 2, flexGrow: 1 },
 
   bubbleWrap: { marginBottom: SPACING.xs },
   bubbleWrapOwn: { alignItems: 'flex-end' },
   bubbleWrapOther: { alignItems: 'flex-start' },
-  bubble: { maxWidth: '75%', padding: SPACING.sm + 2, borderRadius: RADIUS.lg },
-  bubbleOwn: { backgroundColor: COLORS.primary, borderBottomRightRadius: 4 },
-  bubbleOther: { backgroundColor: COLORS.surfaceElevated, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border },
-  bubbleText: { color: COLORS.text, fontSize: 15, lineHeight: 21 },
+  bubble: { maxWidth: '80%', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22 },
+  bubbleOwn: {
+    borderBottomRightRadius: 7,
+    shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  bubbleOther: {
+    backgroundColor: COLORS.surfaceElevated, borderBottomLeftRadius: 7,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  bubbleText: { color: COLORS.text, fontSize: 16, lineHeight: 22, letterSpacing: 0.1 },
   link: { textDecorationLine: 'underline', fontWeight: '700' },
   linkOwn: { color: '#fff' },
   linkOther: { color: COLORS.primaryLight },
-  bubbleTime: { fontSize: 10, color: 'rgba(255,255,255,0.6)', marginTop: 3, alignSelf: 'flex-end' },
-  bubbleTimeOther: { color: COLORS.textTertiary },
+  // Inline trailing timestamp — small + faded, baseline-flows after the message.
+  inlineTime: { fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
+  inlineTimeOther: { color: COLORS.textTertiary },
   cardTime: { fontSize: 10, color: COLORS.textTertiary, marginTop: 3 },
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
   emptyText: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center' },
 
+  // Floating frosted-glass bar (iOS-style): messages scroll under the blur.
   inputBar: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
     flexDirection: 'row', alignItems: 'flex-end',
-    padding: SPACING.md, borderTopWidth: 0.5, borderTopColor: COLORS.border, gap: SPACING.sm,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm + 2, gap: SPACING.sm,
+    borderTopWidth: 0.5, borderTopColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(9,9,9,0.45)',
+    overflow: 'hidden',
   },
   input: {
-    flex: 1, backgroundColor: COLORS.surfaceLight,
-    borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15, maxHeight: 100,
+    flex: 1, backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
+    borderRadius: RADIUS.xl, paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 3, color: COLORS.text, fontSize: 16, lineHeight: 21, maxHeight: 120,
   },
   sendBtn: {
-    width: 40, height: 40, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+    width: 42, height: 42, borderRadius: RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: COLORS.primary, shadowOpacity: 0.5, shadowRadius: 7, shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  sendBtnDisabled: { opacity: 0.35 },
+  sendBtnDisabled: { opacity: 0.4 },
 });

@@ -106,6 +106,13 @@ export default function ProfileScreen() {
   const ringColors = resolveRingColors(badgeProfile, myTier);
   const bannerColors = resolveBannerColors(badgeProfile, myTier);
   const avatarUrl = liveProfile?.avatar_url ?? profile?.avatar_url;
+  // Active sub-tab pill + glow take the user's emblem-theme color (orange default
+  // when they have no badge). Visible on public profiles too (owner's tier).
+  const tabAccent = myTier ? ringColors[0] : COLORS.primary;
+  const activeTabDyn = {
+    backgroundColor: tabAccent + '1F', borderColor: tabAccent + '4D',
+    shadowColor: tabAccent, shadowOpacity: 0.28, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 2,
+  };
 
   function dataForTab(key: string) {
     switch (key) {
@@ -261,6 +268,7 @@ export default function ProfileScreen() {
             badgeRing={specialRingTier(myTier) ? ringColors : undefined}
             onPressProfile={openCamera}
             showAdd
+            addColors={myTier ? ringColors : undefined}
             onPressAdd={openCamera}
           />
         </View>
@@ -312,15 +320,15 @@ export default function ProfileScreen() {
           {TABS.map((tab, i) => (
             <TouchableOpacity
               key={tab.key}
-              style={[styles.tab, activeTab === tab.key && styles.activeTab]}
+              style={[styles.tab, activeTab === tab.key && activeTabDyn]}
               onPress={() => pagerRef.current?.setPage(i + 1)}
             >
               <Ionicons
                 name={activeTab === tab.key ? tab.icon.replace('-outline', '') as any : tab.icon as any}
                 size={16}
-                color={activeTab === tab.key ? COLORS.primary : COLORS.textTertiary}
+                color={activeTab === tab.key ? tabAccent : COLORS.textTertiary}
               />
-              <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>
+              <Text style={[styles.tabText, activeTab === tab.key && { color: tabAccent, fontWeight: '700' }]}>
                 {tab.label}
               </Text>
             </TouchableOpacity>
@@ -376,12 +384,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
   },
-  usernameHeader: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
+  usernameHeader: { color: COLORS.text, fontSize: 24, fontWeight: '900' },
   settingsBtn: { padding: 4 },
 
   banner: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.md, gap: SPACING.lg,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.lg, gap: SPACING.lg,
+    borderBottomLeftRadius: RADIUS.xl, borderBottomRightRadius: RADIUS.xl,
   },
   avatarWrap: { alignItems: 'center', justifyContent: 'center' },
   avatarRing: { width: 88, height: 88, borderRadius: RADIUS.full, padding: 3, alignItems: 'center', justifyContent: 'center' },
@@ -389,14 +398,18 @@ const styles = StyleSheet.create({
   avatarPlaceholder: { width: 82, height: 82, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: COLORS.text, fontSize: 32, fontWeight: '700' },
 
-  statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
-  statItem: { alignItems: 'center', gap: 2 },
-  statNumber: { color: COLORS.primaryLight, fontSize: 22, fontWeight: '800' },
-  statLabel: { color: COLORS.textSecondary, fontSize: 12 },
+  statsRow: {
+    flex: 1, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', paddingVertical: SPACING.sm,
+  },
+  statItem: { flex: 1, alignItems: 'center', gap: 2 },
+  statNumber: { color: COLORS.primaryLight, fontSize: 21, fontWeight: '800', letterSpacing: -0.3 },
+  statLabel: { color: 'rgba(245,245,245,0.65)', fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
 
-  infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: 4 },
+  infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  displayName: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+  displayName: { color: COLORS.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
   bio: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
   bioEmpty: { color: COLORS.textTertiary, fontSize: 14, fontStyle: 'italic' },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
@@ -406,23 +419,24 @@ const styles = StyleSheet.create({
   editButton: {
     flex: 1, backgroundColor: COLORS.surfaceElevated,
     borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2, alignItems: 'center',
+    borderRadius: RADIUS.full, paddingVertical: SPACING.sm + 2, alignItems: 'center',
   },
-  editButtonText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  editButtonText: { color: COLORS.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
   secondaryButton: {
     backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm + 2, alignItems: 'center', justifyContent: 'center',
   },
 
   tabsScroll: { marginTop: SPACING.md, borderBottomWidth: 0.5, borderBottomColor: COLORS.border, flexGrow: 0 },
-  tabsRow: { flexDirection: 'row', paddingHorizontal: SPACING.sm },
+  tabsRow: { flexDirection: 'row', paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm, gap: 4 },
   tab: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.sm + 4,
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: 'transparent',
   },
-  activeTab: { borderBottomWidth: 2, borderBottomColor: COLORS.primary },
-  tabText: { color: COLORS.textTertiary, fontSize: 12, fontWeight: '500' },
+  activeTab: { backgroundColor: COLORS.primary + '18', borderColor: COLORS.primary + '3A' },
+  tabText: { color: COLORS.textTertiary, fontSize: 12, fontWeight: '600' },
   activeTabText: { color: COLORS.primary, fontWeight: '700' },
 
   pager: { flex: 1 },

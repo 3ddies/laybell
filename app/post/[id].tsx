@@ -353,16 +353,18 @@ export default function PostDetailScreen() {
 
             {/* Actions */}
             <View style={styles.actions}>
-              <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
-                <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={24} color={isLiked ? COLORS.like : COLORS.textSecondary} />
-                {likeCount > 0 && <Text style={[styles.actionCount, isLiked && { color: COLORS.primaryLight }]}>{likeCount}</Text>}
+              <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.6} hitSlop={8}>
+                <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={23} color={isLiked ? COLORS.like : COLORS.textSecondary} />
+                {likeCount > 0 && <Text style={[styles.actionCount, isLiked && { color: COLORS.like }]}>{likeCount}</Text>}
               </TouchableOpacity>
-              <TouchableOpacity style={styles.actionBtn} onPress={handleSave}>
-                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? COLORS.primary : COLORS.textSecondary} />
-                {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: COLORS.primary }]}>{saveCount}</Text>}
+              <TouchableOpacity style={styles.actionBtn} onPress={handleSave} activeOpacity={0.6} hitSlop={8}>
+                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? COLORS.text : COLORS.textSecondary} />
+                {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: COLORS.text }]}>{saveCount}</Text>}
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.actionBtn}
+                activeOpacity={0.6}
+                hitSlop={8}
                 onPress={() => openShare({
                   postId: id as string,
                   caption: post.caption,
@@ -407,7 +409,7 @@ const styles = StyleSheet.create({
   postHeaderInfo: { flex: 1 },
   postNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   displayName: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
-  username: { color: COLORS.textTertiary, fontSize: 12, marginTop: 1 },
+  username: { color: COLORS.textMeta, fontSize: 12, marginTop: 1 },
   typeTag: { width: 28, height: 28, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: 340, backgroundColor: COLORS.surfaceLight },
   tagBtnOverlay: { position: 'absolute', left: SPACING.sm, bottom: SPACING.sm },
@@ -427,8 +429,8 @@ const styles = StyleSheet.create({
   audioArtist: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   caption: { color: COLORS.text, fontSize: 15, lineHeight: 22, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.lg },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  actionCount: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '500' },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  actionCount: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
   divider: { height: 0.5, backgroundColor: COLORS.border, marginHorizontal: SPACING.md, marginTop: SPACING.sm },
   commentsLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
   emptyComments: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center', paddingVertical: SPACING.xl },

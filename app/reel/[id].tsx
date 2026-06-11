@@ -220,7 +220,7 @@ export default function ReelScreen() {
             {commentCount > 0 && <Text style={styles.railText}>{formatCount(commentCount)}</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.railBtn} onPress={() => toggleSave(item)}>
-            <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={28} color={isSaved ? COLORS.primary : '#fff'} />
+            <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={28} color="#fff" />
             {saveCount > 0 && <Text style={styles.railText}>{formatCount(saveCount)}</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.railBtn} onPress={() => share(item)}>

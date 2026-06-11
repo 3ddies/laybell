@@ -10,6 +10,7 @@ export const COLORS = {
   primaryDark: '#E8401C',
   text: '#F5F5F5',
   textSecondary: '#A0A0A0',
+  textMeta: '#7C7C7C',
   textTertiary: '#484848',
   gold: '#F59E0B',
   silver: '#94A3B8',

@@ -9,6 +9,8 @@ import { useEffect, useState, useRef } from 'react';
 import PagerView from 'react-native-pager-view';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
+import BadgeEmblem from '../components/BadgeEmblem';
+import { displayedTier } from '../lib/badges';
 import {
   loadNotifPrefs, saveNotifPrefs, type NotifPrefs,
 } from '../lib/notificationPrefs';
@@ -35,11 +37,11 @@ function SettingsRow({ item }: { item: SectionItem }) {
       disabled={!item.onPress && item.value === undefined}
       activeOpacity={item.onPress ? 0.7 : 1}
     >
-      <View style={[styles.rowIcon, item.destructive && styles.rowIconDestructive]}>
+      <View style={styles.rowIcon}>
         <Ionicons
           name={item.icon}
-          size={18}
-          color={item.destructive ? COLORS.error : COLORS.primary}
+          size={22}
+          color={item.destructive ? COLORS.error : COLORS.text}
         />
       </View>
       <View style={styles.rowContent}>
@@ -320,8 +322,12 @@ export default function SettingsScreen() {
               </LinearGradient>
             )}
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>{profile.display_name}</Text>
-              <Text style={styles.profileUsername}>@{profile.username}</Text>
+              <View style={styles.profileNameRow}>
+                <Text style={styles.profileName} numberOfLines={1}>{profile.display_name}</Text>
+                <BadgeEmblem tier={displayedTier(profile)} size={16} />
+              </View>
+              <Text style={styles.profileUsername} numberOfLines={1}>@{profile.username}</Text>
+              <Text style={styles.profileEdit}>View and edit profile</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
           </TouchableOpacity>
@@ -347,33 +353,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.07)',
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
 
   pager: { flex: 1 },
   page: { flex: 1 },
   dismissPage: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.xxl },
+  content: { padding: SPACING.md, gap: SPACING.lg, paddingBottom: SPACING.xxl },
 
   profileCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.surfaceLight,
-    borderRadius: RADIUS.lg, padding: SPACING.md,
-    borderWidth: 1, borderColor: COLORS.border, gap: SPACING.md,
+    borderRadius: RADIUS.xl, padding: SPACING.md,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: SPACING.md,
     marginBottom: SPACING.xs,
+    shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 12, shadowOffset: { width: 0, height: 5 },
+    elevation: 4,
   },
   profileAvatar: {
-    width: 52, height: 52, borderRadius: RADIUS.full,
+    width: 60, height: 60, borderRadius: RADIUS.full,
     alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.10)',
   },
-  profileAvatarText: { color: COLORS.text, fontSize: 20, fontWeight: '700' },
-  profileInfo: { flex: 1 },
-  profileName: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
-  profileUsername: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
+  profileAvatarText: { color: COLORS.text, fontSize: 22, fontWeight: '800' },
+  profileInfo: { flex: 1, gap: 1 },
+  profileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  profileName: { color: COLORS.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3, flexShrink: 1 },
+  profileUsername: { color: COLORS.textSecondary, fontSize: 13 },
+  profileEdit: { color: COLORS.primaryLight, fontSize: 12, fontWeight: '600', marginTop: 3 },
 
-  section: { gap: SPACING.xs },
+  section: { gap: SPACING.sm },
   sectionTitle: {
     color: COLORS.textTertiary, fontSize: 11, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.8,
@@ -381,26 +392,23 @@ const styles = StyleSheet.create({
   },
   sectionCard: {
     backgroundColor: COLORS.surfaceLight,
-    borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
     overflow: 'hidden',
   },
 
   row: {
     flexDirection: 'row', alignItems: 'center',
-    padding: SPACING.md, gap: SPACING.md,
+    paddingVertical: SPACING.sm + 4, paddingHorizontal: SPACING.md, gap: SPACING.md,
   },
   rowIcon: {
-    width: 32, height: 32, borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.primary + '18',
-    alignItems: 'center', justifyContent: 'center',
+    width: 28, alignItems: 'center', justifyContent: 'center',
   },
-  rowIconDestructive: { backgroundColor: COLORS.error + '18' },
   rowContent: { flex: 1 },
-  rowLabel: { color: COLORS.text, fontSize: 15 },
+  rowLabel: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
   rowLabelDestructive: { color: COLORS.error },
   rowSubtitle: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
 
-  separator: { height: 0.5, backgroundColor: COLORS.border, marginLeft: SPACING.md + 32 + SPACING.md },
+  separator: { height: 0.5, backgroundColor: 'rgba(255,255,255,0.06)', marginLeft: SPACING.md + 28 + SPACING.md },
 
   madeWith: {
     color: COLORS.textTertiary, fontSize: 13,

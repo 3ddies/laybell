@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Animated } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,8 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { isAudioPost } from '../lib/genres';
+import { bumpBadge } from '../lib/badges';
+import { createNotification } from '../lib/createNotification';
 import VideoThumb from './VideoThumb';
 import BadgeEmblem from './BadgeEmblem';
 
@@ -32,6 +34,9 @@ export default function SharedPostCard({ postId }: { postId: string }) {
   const [post, setPost] = useState<SharedPost | null | undefined>(
     cache.has(postId) ? cache.get(postId) : undefined,
   );
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [liked, setLiked] = useState(false);
+  const heartScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +54,40 @@ export default function SharedPostCard({ postId }: { postId: string }) {
     return () => { cancelled = true; };
   }, [postId]);
 
+  // Resolve the viewer + whether they've already liked this post (so the heart
+  // reflects state on open and toggles correctly).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      setCurrentUserId(user.id);
+      const { data } = await supabase.from('likes')
+        .select('post_id').eq('post_id', postId).eq('user_id', user.id).maybeSingle();
+      if (!cancelled) setLiked(!!data);
+    })();
+    return () => { cancelled = true; };
+  }, [postId]);
+
+  // Like / unlike the post straight from the chat thread (optimistic).
+  async function toggleLike() {
+    if (!currentUserId || !post) return;
+    const next = !liked;
+    setLiked(next);
+    // Pop the heart — a quick punch-up that springs back to rest.
+    heartScale.setValue(next ? 0.7 : 0.85);
+    Animated.spring(heartScale, { toValue: 1, friction: 3, tension: 160, useNativeDriver: true }).start();
+    if (next) {
+      await supabase.from('likes').insert({ user_id: currentUserId, post_id: post.id });
+      bumpBadge('likes');
+      if (post.user_id !== currentUserId) {
+        createNotification({ userId: post.user_id, actorId: currentUserId, type: 'like', postId: post.id });
+      }
+    } else {
+      await supabase.from('likes').delete().eq('user_id', currentUserId).eq('post_id', post.id);
+    }
+  }
+
   if (post === undefined) {
     return <View style={[styles.card, styles.stateCard]}><ActivityIndicator color={COLORS.primary} /></View>;
   }
@@ -65,34 +104,44 @@ export default function SharedPostCard({ postId }: { postId: string }) {
   const playable = post.type === 'video' || isAudioPost(post.type);
 
   return (
-    <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={() => router.push(`/post/${post.id}` as any)}>
-      <View style={styles.media}>
-        {post.type === 'video' ? (
-          <VideoThumb thumbnailUrl={cover} mediaUrl={post.media_url} style={styles.mediaInner} />
-        ) : cover ? (
-          <Image source={{ uri: cover }} style={styles.mediaInner} contentFit="cover" transition={0} cachePolicy="memory-disk" />
-        ) : (
-          <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaInner} />
-        )}
-        {(playable || post.type === 'slideshow') && (
-          <View style={styles.playBadge}>
-            <Ionicons name={post.type === 'slideshow' ? 'copy' : isAudioPost(post.type) ? 'musical-notes' : 'play'} size={16} color="#fff" />
-          </View>
-        )}
-      </View>
-
-      <View style={styles.body}>
-        <View style={styles.authorRow}>
-          {post.profiles?.avatar_url ? (
-            <Image source={{ uri: post.profiles.avatar_url }} style={styles.authorAvatar} contentFit="cover" transition={0} cachePolicy="memory-disk" />
+    <TouchableOpacity style={styles.cardShadow} activeOpacity={0.9} onPress={() => router.push(`/post/${post.id}` as any)}>
+      <View style={styles.card}>
+        <View style={styles.media}>
+          {post.type === 'video' ? (
+            <VideoThumb thumbnailUrl={cover} mediaUrl={post.media_url} style={styles.mediaInner} />
+          ) : cover ? (
+            <Image source={{ uri: cover }} style={styles.mediaInner} contentFit="cover" transition={0} cachePolicy="memory-disk" />
           ) : (
-            <LinearGradient colors={GRADIENTS.primary} style={styles.authorAvatar} />
+            <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaInner} />
           )}
-          <Text style={styles.authorName} numberOfLines={1}>@{post.profiles?.username ?? 'laybell'}</Text>
-          <BadgeEmblem profile={post.profiles} ownerId={post.user_id} size={12} />
+          {(playable || post.type === 'slideshow') && (
+            <View style={styles.playBadge}>
+              <Ionicons name={post.type === 'slideshow' ? 'copy' : isAudioPost(post.type) ? 'musical-notes' : 'play'} size={18} color="#fff" />
+            </View>
+          )}
         </View>
-        {!!post.caption && <Text style={styles.caption} numberOfLines={2}>{post.caption}</Text>}
-        <Text style={styles.cta}>View post</Text>
+
+        <View style={styles.body}>
+          <View style={styles.bodyText}>
+            <View style={styles.authorRow}>
+              {post.profiles?.avatar_url ? (
+                <Image source={{ uri: post.profiles.avatar_url }} style={styles.authorAvatar} contentFit="cover" transition={0} cachePolicy="memory-disk" />
+              ) : (
+                <LinearGradient colors={GRADIENTS.primary} style={styles.authorAvatar} />
+              )}
+              <Text style={styles.authorName} numberOfLines={1}>@{post.profiles?.username ?? 'laybell'}</Text>
+              <BadgeEmblem profile={post.profiles} ownerId={post.user_id} size={12} />
+            </View>
+            {!!post.caption && <Text style={styles.caption} numberOfLines={2}>{post.caption}</Text>}
+          </View>
+
+          {/* Like the post directly from the thread — centered on the caption bar. */}
+          <TouchableOpacity style={styles.likeBtn} activeOpacity={0.8} hitSlop={8} onPress={toggleLike}>
+            <Animated.View style={{ transform: [{ scale: heartScale }] }}>
+              <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? COLORS.like : COLORS.textSecondary} />
+            </Animated.View>
+          </TouchableOpacity>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -101,28 +150,43 @@ export default function SharedPostCard({ postId }: { postId: string }) {
 const CARD_W = 232;
 
 const styles = StyleSheet.create({
+  // Outer wrapper carries the drop shadow (can't combine with overflow:hidden).
+  cardShadow: {
+    width: CARD_W,
+    borderRadius: RADIUS.lg,
+    shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
   card: {
     width: CARD_W,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     overflow: 'hidden',
     backgroundColor: COLORS.surfaceElevated,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
   stateCard: { height: 96, alignItems: 'center', justifyContent: 'center', gap: SPACING.xs },
   unavailable: { color: COLORS.textTertiary, fontSize: 13 },
 
-  media: { width: '100%', height: 150, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight },
+  media: { width: '100%', height: 154, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight },
   mediaInner: { ...StyleSheet.absoluteFillObject, width: undefined, height: undefined },
   playBadge: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center',
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.85)',
   },
 
-  body: { padding: SPACING.sm, gap: 4 },
+  body: { flexDirection: 'row', alignItems: 'center', padding: SPACING.sm + 2, gap: SPACING.sm },
+  bodyText: { flex: 1, gap: 4 },
   authorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  authorAvatar: { width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.surfaceLight },
-  authorName: { flexShrink: 1, color: COLORS.text, fontSize: 12, fontWeight: '700' },
+  authorAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: COLORS.surfaceLight },
+  authorName: { flexShrink: 1, color: COLORS.text, fontSize: 12.5, fontWeight: '700' },
   caption: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 18 },
-  cta: { color: COLORS.primary, fontSize: 12, fontWeight: '700', marginTop: 2 },
+
+  likeBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });

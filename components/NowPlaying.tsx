@@ -260,7 +260,7 @@ export default function NowPlaying() {
                     <Text style={styles.centerStatLbl}>streams</Text>
                   </View>
                   <TouchableOpacity style={[styles.tapStat, isSaved && styles.tapStatActiveSave]} onPress={handleSave} activeOpacity={0.8}>
-                    <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color={isSaved ? COLORS.primary : COLORS.text} />
+                    <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color={COLORS.text} />
                     <Text style={styles.tapStatNum}>{formatCount(saves)}</Text>
                   </TouchableOpacity>
                 </View>
@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.border,
   },
   tapStatActiveLike: { borderColor: COLORS.like, backgroundColor: COLORS.like + '1A' },
-  tapStatActiveSave: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '1A' },
+  tapStatActiveSave: { borderColor: 'rgba(255,255,255,0.45)', backgroundColor: 'rgba(255,255,255,0.10)' },
   tapStatNum: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
   centerStat: { flex: 1, alignItems: 'center' },
   centerStatNum: { color: COLORS.text, fontSize: 18, fontWeight: '800' },

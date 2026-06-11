@@ -9,13 +9,19 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
+import { resolveRingColors, rawTier } from '../lib/badges';
 import { GENDER_OPTIONS, ageFromDob } from '../lib/profileOptions';
 import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 
 export default function EditProfileScreen() {
   const router = useRouter();
-  const { update } = useProfile();
+  const { profile: liveProfile, update } = useProfile();
+  // The avatar glow + camera button take the user's emblem-theme color (their
+  // tier ring gradient, honoring the selected theme) instead of a fixed brand orange.
+  const accentTier = rawTier(liveProfile);
+  const accentGrad = accentTier ? resolveRingColors(liveProfile, accentTier) : GRADIENTS.primary;
+  const accent = accentGrad[0]; // single color for the glow
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -123,7 +129,7 @@ export default function EditProfileScreen() {
 
       {/* Avatar */}
       <View style={styles.avatarSection}>
-        <TouchableOpacity style={styles.avatarWrap} onPress={handleChangePhoto} disabled={uploadingPhoto}>
+        <TouchableOpacity style={[styles.avatarWrap, { shadowColor: accent }]} onPress={handleChangePhoto} disabled={uploadingPhoto}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
           ) : (
@@ -131,13 +137,13 @@ export default function EditProfileScreen() {
               <Text style={styles.avatarText}>{displayName?.charAt(0).toUpperCase()}</Text>
             </LinearGradient>
           )}
-          <View style={styles.cameraOverlay}>
+          <LinearGradient colors={accentGrad as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.cameraOverlay}>
             {uploadingPhoto ? (
               <ActivityIndicator color={COLORS.text} size="small" />
             ) : (
               <Ionicons name="camera" size={18} color={COLORS.text} />
             )}
-          </View>
+          </LinearGradient>
         </TouchableOpacity>
         <TouchableOpacity onPress={handleChangePhoto} disabled={uploadingPhoto}>
           <Text style={styles.changePhotoText}>
@@ -220,19 +226,24 @@ export default function EditProfileScreen() {
 
         {/* Badges + Page Layout — square buttons side by side, above Gender */}
         <View style={styles.squareRow}>
-          <TouchableOpacity style={styles.squareBtn} onPress={() => router.push('/badges')}>
-            <View style={styles.squareIcon}><Ionicons name="ribbon-outline" size={26} color={COLORS.primary} /></View>
+          <TouchableOpacity style={styles.squareBtn} activeOpacity={0.85} onPress={() => router.push('/badges')}>
+            <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.squareIcon}>
+              <Ionicons name="ribbon" size={28} color="#fff" />
+            </LinearGradient>
             <Text style={styles.squareLabel}>Badges</Text>
             <Text style={styles.squareSub}>Emblem & rewards</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.squareBtn}
+            activeOpacity={0.85}
             onPress={() => Alert.alert('Page Layout', 'Custom page layouts are coming soon — unlock different profile configurations as you earn higher badge tiers.')}
           >
-            <View style={styles.squareIcon}><Ionicons name="grid-outline" size={26} color={COLORS.primary} /></View>
+            <LinearGradient colors={['#3A3A3A', '#222222']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.squareIcon}>
+              <Ionicons name="color-palette" size={28} color={COLORS.textSecondary} />
+            </LinearGradient>
             <Text style={styles.squareLabel}>Page Layout</Text>
-            <Text style={styles.squareSub}>Coming soon</Text>
+            <View style={styles.soonPill}><Text style={styles.soonText}>COMING SOON</Text></View>
           </TouchableOpacity>
         </View>
 
@@ -277,79 +288,90 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.07)',
   },
-  cancelBtn: { color: COLORS.textSecondary, fontSize: 15 },
-  headerTitle: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
-  saveBtn: { color: COLORS.primary, fontSize: 15, fontWeight: '700' },
+  cancelBtn: { color: COLORS.textSecondary, fontSize: 15, fontWeight: '500' },
+  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  saveBtn: { color: COLORS.primary, fontSize: 15, fontWeight: '800' },
 
-  avatarSection: { alignItems: 'center', paddingVertical: SPACING.xl, gap: SPACING.sm },
-  avatarWrap: { position: 'relative' },
-  avatarImage: { width: 96, height: 96, borderRadius: RADIUS.full },
-  avatarPlaceholder: { width: 96, height: 96, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 38, fontWeight: '700' },
+  avatarSection: { alignItems: 'center', paddingVertical: SPACING.xl, gap: SPACING.md },
+  avatarWrap: {
+    position: 'relative',
+    shadowColor: COLORS.primary, shadowOpacity: 0.4, shadowRadius: 14, shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+  },
+  avatarImage: { width: 100, height: 100, borderRadius: RADIUS.full, borderWidth: 2, borderColor: 'rgba(255,255,255,0.10)' },
+  avatarPlaceholder: { width: 100, height: 100, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: COLORS.text, fontSize: 40, fontWeight: '800' },
   cameraOverlay: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 30, height: 30, borderRadius: RADIUS.full,
+    position: 'absolute', bottom: 2, right: 2,
+    width: 32, height: 32, borderRadius: RADIUS.full,
     backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: COLORS.background,
+    borderWidth: 3, borderColor: COLORS.background,
   },
-  changePhotoText: { color: COLORS.primary, fontSize: 14, fontWeight: '600' },
+  changePhotoText: { color: COLORS.primary, fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
 
-  form: { paddingHorizontal: SPACING.md, gap: SPACING.lg },
-  field: { gap: 6 },
-  fieldLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  form: { paddingHorizontal: SPACING.md, gap: SPACING.lg + 2 },
+  field: { gap: 8 },
+  fieldLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
   input: {
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
-    color: COLORS.text, fontSize: 15,
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: 14,
+    color: COLORS.text, fontSize: 16,
   },
   usernameRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md,
   },
-  atSign: { color: COLORS.textSecondary, fontSize: 15 },
-  usernameInput: { flex: 1, paddingVertical: SPACING.md, color: COLORS.text, fontSize: 15 },
+  atSign: { color: COLORS.textSecondary, fontSize: 16, fontWeight: '600' },
+  usernameInput: { flex: 1, paddingVertical: 14, color: COLORS.text, fontSize: 16 },
   bioInput: {
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md,
     paddingTop: SPACING.md, paddingBottom: SPACING.lg,
-    color: COLORS.text, fontSize: 15, minHeight: 100, textAlignVertical: 'top',
+    color: COLORS.text, fontSize: 16, lineHeight: 22, minHeight: 110, textAlignVertical: 'top',
   },
   // Floated into the input's corner so it doesn't add a line of flow height —
   // keeps Bio↔Link spacing even with Display Name↔Username.
-  charCount: { position: 'absolute', bottom: 8, right: 12, color: COLORS.textTertiary, fontSize: 12 },
-  fieldHint: { color: COLORS.textTertiary, fontSize: 12 },
+  charCount: { position: 'absolute', bottom: 10, right: 14, color: COLORS.textTertiary, fontSize: 12, fontWeight: '500' },
+  fieldHint: { color: COLORS.textTertiary, fontSize: 12, lineHeight: 17 },
   // Read-only display box (e.g. Age) — dimmer surface + muted text so it reads
   // as non-editable next to the real inputs.
   readonlyBox: {
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)',
+    borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: 14,
   },
-  readonlyValue: { color: COLORS.textSecondary, fontSize: 15 },
+  readonlyValue: { color: COLORS.textSecondary, fontSize: 16 },
 
   genderRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   genderChip: {
-    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
+    paddingVertical: SPACING.sm + 1, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',
     backgroundColor: COLORS.surfaceLight,
   },
   genderChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '1A' },
-  genderChipText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
-  genderChipTextActive: { color: COLORS.primaryLight },
+  genderChipText: { color: COLORS.textSecondary, fontSize: 13.5, fontWeight: '600' },
+  genderChipTextActive: { color: COLORS.primaryLight, fontWeight: '700' },
 
   squareRow: { flexDirection: 'row', gap: SPACING.md },
   squareBtn: {
     flex: 1, aspectRatio: 1,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, padding: SPACING.md,
   },
   squareIcon: {
-    width: 52, height: 52, borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center',
+    width: 56, height: 56, borderRadius: RADIUS.lg,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 6, shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
-  squareLabel: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
+  squareLabel: { color: COLORS.text, fontSize: 15, fontWeight: '700', letterSpacing: -0.1 },
   squareSub: { color: COLORS.textSecondary, fontSize: 12, textAlign: 'center' },
+  soonPill: {
+    backgroundColor: COLORS.primary + '1A', borderWidth: 1, borderColor: COLORS.primary + '3A',
+    borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  soonText: { color: COLORS.primaryLight, fontSize: 9, fontWeight: '800', letterSpacing: 0.6 },
 });
