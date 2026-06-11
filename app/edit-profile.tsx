@@ -9,7 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
-import { resolveRingColors, rawTier } from '../lib/badges';
+import { resolveRingColors, chosenTier } from '../lib/badges';
 import { GENDER_OPTIONS, ageFromDob } from '../lib/profileOptions';
 import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
@@ -19,7 +19,7 @@ export default function EditProfileScreen() {
   const { profile: liveProfile, update } = useProfile();
   // The avatar glow + camera button take the user's emblem-theme color (their
   // tier ring gradient, honoring the selected theme) instead of a fixed brand orange.
-  const accentTier = rawTier(liveProfile);
+  const accentTier = chosenTier(liveProfile);
   const accentGrad = accentTier ? resolveRingColors(liveProfile, accentTier) : GRADIENTS.primary;
   const accent = accentGrad[0]; // single color for the glow
   const [displayName, setDisplayName] = useState('');

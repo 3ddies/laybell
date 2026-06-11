@@ -128,7 +128,7 @@ async function loadGroups(
   const [{ data: profiles }, { data: views }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url, badge_tier, badge_show')
+      .select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme')
       .in('id', distinctAuthors),
     supabase
       .from('story_views')
@@ -202,7 +202,7 @@ export async function fetchStoriesForUsers(
 // Per-author ring data for an active story: whether the viewer has an unseen story
 // from them, plus their badge tier — so any avatar app-wide can render the badge
 // ring (in the tier color) while the story is live.
-export type StoryRingInfo = { unseen: boolean; badge_tier: string | null };
+export type StoryRingInfo = { unseen: boolean; badge_tier: string | null; profile_theme: string | null };
 
 // Global ring data: for EVERY active story the viewer can see (per RLS), map each
 // author's id → their ring info (unseen + badge tier). Powers story + badge rings
@@ -221,11 +221,11 @@ export async function fetchActiveStoryFlags(viewerId: string, localSeen: Set<str
   // stories.user_id references auth.users, so fetch badge tiers from profiles separately.
   const [{ data: views }, { data: profiles }] = await Promise.all([
     supabase.from('story_views').select('story_id').eq('viewer_id', viewerId).in('story_id', ids),
-    supabase.from('profiles').select('id, badge_tier').in('id', authorIds),
+    supabase.from('profiles').select('id, badge_tier, profile_theme').in('id', authorIds),
   ]);
   const seen = new Set<string>((views ?? []).map((v: any) => v.story_id));
-  const tierById = new Map<string, string | null>(
-    (profiles ?? []).map((p: any) => [p.id, p.badge_tier ?? null]),
+  const profileById = new Map<string, { badge_tier: string | null; profile_theme: string | null }>(
+    (profiles ?? []).map((p: any) => [p.id, { badge_tier: p.badge_tier ?? null, profile_theme: p.profile_theme ?? null }]),
   );
 
   const flags = new Map<string, StoryRingInfo>(); // user_id -> ring info
@@ -233,9 +233,11 @@ export async function fetchActiveStoryFlags(viewerId: string, localSeen: Set<str
     // `localSeen` keeps just-watched stories seen even before the view write lands.
     const unseen = !seen.has(s.id) && !localSeen.has(s.id);
     const prev = flags.get(s.user_id);
+    const p = profileById.get(s.user_id);
     flags.set(s.user_id, {
       unseen: (prev?.unseen ?? false) || unseen,
-      badge_tier: prev?.badge_tier ?? tierById.get(s.user_id) ?? null,
+      badge_tier: prev?.badge_tier ?? p?.badge_tier ?? null,
+      profile_theme: prev?.profile_theme ?? p?.profile_theme ?? null,
     });
   }
   return flags;

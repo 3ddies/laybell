@@ -54,7 +54,7 @@ export default function ChatScreen() {
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) { setCurrentUserId(user.id); await fetchMessages(user.id); markAsRead(user.id); }
-    const { data: profile } = await supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show').eq('id', id).single();
+    const { data: profile } = await supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show, profile_theme').eq('id', id).single();
     if (profile) setOtherUser(profile);
     setLoading(false);
   }

@@ -111,7 +111,7 @@ export default function PostDetailScreen() {
     if (user) setCurrentUserId(user.id);
 
     const [postRes, likesRes] = await Promise.all([
-      supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show)').eq('id', id).single(),
+      supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show, profile_theme)').eq('id', id).single(),
       supabase.from('likes').select('user_id').eq('post_id', id),
     ]);
 

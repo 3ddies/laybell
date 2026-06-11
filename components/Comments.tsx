@@ -74,12 +74,12 @@ export default function Comments({
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     setUserId(user?.id ?? null);
-    if (user) supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show').eq('id', user.id).single()
+    if (user) supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show, profile_theme').eq('id', user.id).single()
       .then(({ data }) => setUserProfile(data));
 
     const { data: comments } = await supabase
       .from('comments')
-      .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show)')
+      .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show, profile_theme)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
     if (!comments) return;

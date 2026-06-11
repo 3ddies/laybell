@@ -4,7 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import { COLORS, SPACING } from '../constants/theme';
 import { useProfile } from '../contexts/ProfileContext';
 import { useStories } from '../contexts/StoriesContext';
-import { rawTier, badgeRingColors } from '../lib/badges';
+import { chosenTier, badgeRingColors } from '../lib/badges';
 import StoryAvatar from './StoryAvatar';
 
 // The row of story circles at the top of the Home feed. Your own circle leads
@@ -27,7 +27,7 @@ export default function StoriesTray() {
 
   // The ＋ button is themed to the user's badge tier (like the cosmetic ring);
   // no badge → undefined, so it falls back to the default Laybell orange.
-  const ownTier = rawTier(profile);
+  const ownTier = chosenTier(profile);
   const addColors = ownTier ? badgeRingColors(ownTier) : undefined;
 
   return (

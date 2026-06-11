@@ -15,7 +15,7 @@ import { useProfile } from '../../contexts/ProfileContext';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { resolveRingColors, resolveBannerColors, rawTier, specialRingTier } from '../../lib/badges';
+import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier } from '../../lib/badges';
 import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
 import { isAudioPost } from '../../lib/genres';
 import VideoThumb from '../../components/VideoThumb';
@@ -102,7 +102,7 @@ export default function ProfileScreen() {
   // Prefer the global ProfileContext copy (live tier + avatar, kept in sync after
   // edits / badge changes); fall back to this screen's own fetch on first paint.
   const badgeProfile = liveProfile ?? profile;
-  const myTier = rawTier(badgeProfile);
+  const myTier = chosenTier(badgeProfile);
   const ringColors = resolveRingColors(badgeProfile, myTier);
   const bannerColors = resolveBannerColors(badgeProfile, myTier);
   const avatarUrl = liveProfile?.avatar_url ?? profile?.avatar_url;

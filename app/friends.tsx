@@ -51,7 +51,7 @@ export default function FriendsScreen() {
     if (friendIds.length) {
       const { data } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url, badge_tier, badge_show')
+        .select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme')
         .in('id', friendIds);
       setFriends((data ?? []) as Profile[]);
     } else {

@@ -14,7 +14,7 @@ import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { resolveRingColors, resolveBannerColors, rawTier, specialRingTier } from '../../lib/badges';
+import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier } from '../../lib/badges';
 import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
@@ -125,7 +125,7 @@ export default function PublicProfileScreen() {
   const isOwnProfile = currentUserId === id;
   const isFriend = isFollowing && followsMe;
   const followLabel = isFriend ? 'Friends' : isFollowing ? 'Following' : followsMe ? 'Follow back' : 'Follow';
-  const ownerTier = rawTier(profile);
+  const ownerTier = chosenTier(profile);
   const ringColors = resolveRingColors(profile, ownerTier);
   const bannerColors = resolveBannerColors(profile, ownerTier);
   // Active tab underline + text + glow take the owner's emblem-theme color, so

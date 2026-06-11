@@ -430,7 +430,7 @@ export default function HomeScreen() {
       .from('posts')
       .select(`
         *,
-        profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show),
+        profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme),
         likes(count),
         comments(count)
       `)

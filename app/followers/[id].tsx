@@ -38,7 +38,7 @@ export default function FollowersScreen() {
     // Connection state (follow / friend) is handled app-wide by FollowButton via
     // FollowContext, so this screen only needs the follower list itself.
     const { data } = await supabase.from('follows')
-      .select('follower_id, profiles!follows_follower_id_fkey(id, username, display_name, avatar_url, badge_tier, badge_show)')
+      .select('follower_id, profiles!follows_follower_id_fkey(id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme)')
       .eq('following_id', id);
     if (data) setUsers(data.map((f: any) => f.profiles).filter(Boolean));
     setLoading(false);

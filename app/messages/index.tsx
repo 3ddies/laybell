@@ -139,7 +139,7 @@ export default function MessagesScreen() {
     }
 
     const { data: profiles } = await supabase
-      .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show').in('id', partnerIds);
+      .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme').in('id', partnerIds);
     if (!profiles) return;
 
     const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]));

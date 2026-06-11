@@ -16,7 +16,7 @@ import HighlightText from '../../components/HighlightText';
 import { maybeRefreshLocation } from '../../lib/location';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { badgeRingColors, rawTier, specialRingTier } from '../../lib/badges';
+import { badgeRingColors, chosenTier, specialRingTier } from '../../lib/badges';
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { fetchBlockedIds } from '../../lib/blocks';
@@ -135,7 +135,7 @@ export default function ExploreScreen() {
   async function fetchTrending(overrideSeen?: Set<string>) {
     const { data } = await supabase
       .from('posts')
-      .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show), likes(count), comments(count)')
+      .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show, profile_theme), likes(count), comments(count)')
       .eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(30);
@@ -159,7 +159,7 @@ export default function ExploreScreen() {
 
     let q = supabase
       .from('posts')
-      .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show), likes(count), comments(count)')
+      .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show, profile_theme), likes(count), comments(count)')
       .eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(30);
@@ -208,7 +208,7 @@ export default function ExploreScreen() {
     // their posts. Ordered by how closely the name matches.
     const { data: profData } = await supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url, badge_tier, badge_show')
+      .select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme')
       .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
       .limit(20);
     const matched = profData ?? [];
@@ -219,7 +219,7 @@ export default function ExploreScreen() {
       .from('posts')
       .select(`
         *,
-        profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show),
+        profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme),
         likes(count),
         comments(count)
       `)
@@ -267,7 +267,7 @@ export default function ExploreScreen() {
         avatarUrl={acc.avatar_url}
         name={acc.display_name}
         size={48}
-        badgeRing={specialRingTier(rawTier(acc)) ? badgeRingColors(rawTier(acc)) : undefined}
+        badgeRing={specialRingTier(chosenTier(acc)) ? badgeRingColors(chosenTier(acc)) : undefined}
       />
       <View style={styles.accountInfo}>
         <View style={styles.accountNameRow}>

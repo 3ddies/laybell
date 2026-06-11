@@ -120,12 +120,13 @@ export default function BadgesScreen() {
   const badgeShow = profile?.badge_show !== false;
   const next = TIER_THRESH.find(([, p]) => p > points);
 
-  // The tier implied by the current preview = the higher of the user's real tier
-  // and the previewed theme's tier. Driving the ring colors + emblem off this lets
-  // a Gold theme preview show the gold ring AND emblem.
+  // The previewed theme's tier IS the badge being shown (the theme doubles as the
+  // chosen display badge). Default theme → your full earned tier. A specific theme
+  // shows that tier's emblem + ring, so a higher-tier user can pick a lower badge.
   const themeOpt = THEME_OPTIONS.find(o => o.key === previewTheme);
-  const previewTier = maxTier(emblemTier, themeOpt?.minTier ?? null);
-  const isPreviewing = rankOf(previewTier) > rankOf(emblemTier);
+  const previewTier = themeOpt?.minTier ?? emblemTier;
+  // Locked = above what you've actually earned (aspirational preview, can't apply).
+  const isPreviewing = themeOpt ? !isUnlocked(themeOpt.minTier, emblemTier) : false;
   // Ring style is bundled into the theme now.
   const previewRingStyle = THEME_RING_STYLE[previewTheme] ?? 'default';
 

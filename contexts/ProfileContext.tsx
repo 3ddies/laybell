@@ -71,9 +71,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       else { setProfile(null); setLoading(false); }
     });
     // Keep the in-memory emblem in sync the instant the evaluator changes our tier
-    // (e.g. right after earning a badge), so it updates everywhere without a refetch.
+    // (e.g. right after earning a badge). Patch the tier immediately for snappy
+    // feedback, then refetch the whole profile so EVERY tier-derived surface — the
+    // emblem, theme banner, ring, and accent buttons — updates together instead of
+    // half-updating and looking buggy.
     const unsubscribeTier = onBadgeTierChange((tier: Tier | null) => {
       setProfile(prev => (prev ? { ...prev, badge_tier: tier } : prev));
+      refresh();
     });
     return () => { subscription.unsubscribe(); unsubscribeTier(); };
   }, [refresh]);

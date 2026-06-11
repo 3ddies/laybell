@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useRouter } from 'expo-router';
 import { useProfile } from './ProfileContext';
 import { fetchStoryTray, fetchActiveStoryFlags, type StoryGroup, type SourceRect, type StoryRingInfo } from '../lib/stories';
-import { rawTier, badgeRingColors, specialRingTier, type Tier } from '../lib/badges';
+import { chosenTier, badgeRingColors, specialRingTier, type Tier } from '../lib/badges';
 
 // Global source of truth for "who (that I can see) has an active story". Lets any
 // avatar in the app render a story ring + open the viewer via <StoryAvatar>, and
@@ -78,7 +78,7 @@ export function StoriesProvider({ children }: { children: React.ReactNode }) {
     (uid?: string | null): readonly [string, string] | null => {
       const info = uid ? flags.get(uid) : undefined;
       if (!info) return null;
-      const tier = specialRingTier(rawTier({ badge_tier: info.badge_tier }));
+      const tier = specialRingTier(chosenTier({ badge_tier: info.badge_tier, profile_theme: info.profile_theme }));
       return tier ? badgeRingColors(tier) : null;
     },
     [flags],
@@ -87,7 +87,7 @@ export function StoriesProvider({ children }: { children: React.ReactNode }) {
     (uid?: string | null): Tier | null => {
       const info = uid ? flags.get(uid) : undefined;
       if (!info) return null;
-      return specialRingTier(rawTier({ badge_tier: info.badge_tier }));
+      return specialRingTier(chosenTier({ badge_tier: info.badge_tier, profile_theme: info.profile_theme }));
     },
     [flags],
   );

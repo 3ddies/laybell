@@ -157,7 +157,7 @@ export default function NotificationsScreen() {
       const actorIds = [...new Set(notifData.map(n => n.actor_id))];
       const postIds = [...new Set(notifData.map(n => n.post_id).filter(Boolean))] as string[];
       const [{ data: profileData }, postsRes] = await Promise.all([
-        supabase.from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show').in('id', actorIds),
+        supabase.from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme').in('id', actorIds),
         postIds.length
           ? supabase.from('posts').select('id, type, media_url, cover_url, thumbnail_url').in('id', postIds)
           : Promise.resolve({ data: [] as any[] }),

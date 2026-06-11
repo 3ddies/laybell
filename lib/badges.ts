@@ -167,20 +167,35 @@ export type ProfileBadgeFields = {
 };
 
 // The tier to actually render next to a username: nothing if the user hid their
-// badge or has none. Used by <BadgeEmblem/> and the rings everywhere.
+// badge or has none. Used by <BadgeEmblem/> and the rings everywhere. Reflects the
+// badge the user has CHOSEN to display (see chosenTier), which may be lower than
+// their earned tier.
 export function displayedTier(profile: ProfileBadgeFields | null | undefined): Tier | null {
   if (!profile || profile.badge_show === false) return null;
-  return asTier(profile.badge_tier);
+  return chosenTier(profile);
 }
 
 function asTier(v: any): Tier | null {
   return v === 'bronze' || v === 'silver' || v === 'gold' || v === 'diamond' ? v : null;
 }
 
-// The user's actual tier, ignoring the hide toggle. Used for the cosmetic ring +
-// profile theme (opt-in customizations) — the hide toggle governs only the emblem.
+// The user's actual EARNED tier, ignoring both the hide toggle and the display
+// choice. Used for gating (which themes/badges they can pick) — never for display.
 export function rawTier(profile: ProfileBadgeFields | null | undefined): Tier | null {
   return asTier(profile?.badge_tier);
+}
+
+// The tier the user has CHOSEN to present. Their profile theme doubles as the
+// badge they display: a tier-specific theme shows that tier (so a higher-tier user
+// can deliberately display a lower badge), while Default shows their full earned
+// tier. Always capped at what they've actually earned. This is the single source
+// of truth for the displayed emblem, ring color, and accents app-wide.
+export function chosenTier(profile: ProfileBadgeFields | null | undefined): Tier | null {
+  const earned = asTier(profile?.badge_tier);
+  const opt = THEME_OPTIONS.find(o => o.key === profile?.profile_theme);
+  if (!opt || !opt.minTier) return earned;             // Default theme → true earned tier
+  if (!isUnlocked(opt.minTier, earned)) return earned; // safety: never show unearned
+  return opt.minTier;
 }
 
 // Only silver and up earn a special profile-ring color. Bronze (like no badge)
@@ -367,6 +382,18 @@ function emitTier(tier: Tier | null) {
   for (const f of tierListeners) { try { f(tier); } catch {} }
 }
 
+// Separate listeners fired ONLY when the tier goes UP (a real achievement), so a
+// celebratory in-app toast can notify the user mid-session.
+type TierUpgradeListener = (tier: Tier) => void;
+let tierUpgradeListeners: TierUpgradeListener[] = [];
+export function onBadgeTierUpgrade(fn: TierUpgradeListener): () => void {
+  tierUpgradeListeners.push(fn);
+  return () => { tierUpgradeListeners = tierUpgradeListeners.filter(f => f !== fn); };
+}
+function emitTierUpgrade(tier: Tier) {
+  for (const f of tierUpgradeListeners) { try { f(tier); } catch {} }
+}
+
 // Recompute which badges the user holds and their emblem tier, reconciling the
 // DB. Idempotent — safe to run on every app open and after every event.
 // Handles daily resets, streak breaks (reversion), and permanence automatically.
@@ -432,6 +459,8 @@ export async function evaluateBadges(opts: { silent?: boolean } = {}): Promise<E
     if (tier !== prevTier) {
       await supabase.from('profiles').update({ badge_tier: tier }).eq('id', user.id);
       emitTier(tier);
+      // Only fire the upgrade notification when the tier actually went UP.
+      if (tier && tierRank(tier) > tierRank(prevTier)) emitTierUpgrade(tier);
     }
 
     return { tier, points, newlyEarned: toInsert, held: Array.from(heldKeys) };

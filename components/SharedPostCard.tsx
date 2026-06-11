@@ -44,7 +44,7 @@ export default function SharedPostCard({ postId }: { postId: string }) {
     (async () => {
       const { data } = await supabase
         .from('posts')
-        .select('id, type, media_url, caption, cover_url, thumbnail_url, user_id, profiles!posts_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show)')
+        .select('id, type, media_url, caption, cover_url, thumbnail_url, user_id, profiles!posts_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show, profile_theme)')
         .eq('id', postId)
         .single();
       const value = (data as any) ?? null;

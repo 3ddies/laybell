@@ -29,7 +29,7 @@ export const REASON_LABEL: Record<SuggestionReason, string> = {
   popular: 'Popular on Laybell',
 };
 
-const PROFILE_COLS = 'id, username, display_name, avatar_url, badge_tier, badge_show';
+const PROFILE_COLS = 'id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme';
 const HASH_BATCH = 500;
 
 // Backfill so discovery is never empty even with zero contacts/location/mutual

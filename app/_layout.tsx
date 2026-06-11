@@ -14,6 +14,7 @@ import { FollowProvider } from '../contexts/FollowContext';
 import { StoriesProvider } from '../contexts/StoriesContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
+import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
 import { useNotifications } from '../hooks/useNotifications';
 
 function AppContent() {
@@ -65,6 +66,7 @@ function AppContent() {
       </Stack>
         <MiniPlayer />
         <NowPlaying />
+        <BadgeUpgradeToast />
       </View>
     </PostOptionsProvider>
   );

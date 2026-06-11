@@ -89,7 +89,7 @@ export default function ReelScreen() {
     ]);
     const followingSet = new Set<string>((followingRes.data ?? []).map((f: any) => f.following_id));
 
-    const SELECT = '*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show), likes(count), comments(count)';
+    const SELECT = '*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme), likes(count), comments(count)';
     const { data } = await supabase
       .from('posts').select(SELECT)
       .eq('is_public', true).eq('type', 'video')

@@ -115,7 +115,7 @@ export default function NowPlaying() {
       if (cancelled) return;
       setUserId(user?.id ?? null);
       const [postRes, likesRes, saveRes] = await Promise.all([
-        supabase.from('posts').select('stream_count, save_count, user_id, profiles!posts_user_id_fkey(username, display_name, badge_tier, badge_show)').eq('id', pid).single(),
+        supabase.from('posts').select('stream_count, save_count, user_id, profiles!posts_user_id_fkey(username, display_name, badge_tier, badge_show, profile_theme)').eq('id', pid).single(),
         supabase.from('likes').select('user_id').eq('post_id', pid),
         user ? supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', pid).maybeSingle() : Promise.resolve({ data: null }),
       ]);
