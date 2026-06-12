@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, Dimensions,
   Pressable, Animated, PanResponder, ActivityIndicator, Alert, Easing, FlatList,
+  TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { Image as ExpoImage } from 'expo-image';
@@ -20,6 +21,8 @@ import {
   type StoryGroup, type SourceRect, type StoryViewer,
 } from '../../lib/stories';
 import { reportUser } from '../../lib/postActions';
+import { storyReplyBody } from '../../lib/postLinks';
+import { createNotification } from '../../lib/createNotification';
 import SongAttribution from '../../components/SongAttribution';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { captionStickerTextStyle, resolveSticker } from '../../components/StickerLayer';
@@ -27,7 +30,7 @@ import { useStories } from '../../contexts/StoriesContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const IMAGE_DURATION_MS = 5000;
+const IMAGE_DURATION_MS = 10000;
 // Video position updates fire on this cadence; the bar glides to each new position
 // over the same interval so it moves continuously instead of stepping.
 const VIDEO_PROGRESS_INTERVAL_MS = 250;
@@ -68,9 +71,6 @@ export default function StoryViewerScreen() {
   const [storyIndex, setStoryIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [viewerCount, setViewerCount] = useState<number | null>(null);
-  // Measured height of the bottom caption box — the song attribution stacks
-  // above it (captions wrap, so the offset can't be a constant).
-  const [captionH, setCaptionH] = useState(0);
   // Own-story viewers sheet (who watched this story; likers ride on top).
   const [showViewers, setShowViewers] = useState(false);
   const [viewers, setViewers] = useState<StoryViewer[]>([]);
@@ -81,6 +81,11 @@ export default function StoryViewerScreen() {
   const closeViewersRef = useRef<() => void>(() => {});
   // Viewer's like on someone else's story (heart button, bottom-right).
   const [liked, setLiked] = useState(false);
+  // Reply composer (sends a DM with this story's stillshot attached).
+  const [replying, setReplying] = useState(false);
+  const [replyText, setReplyText] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
+  const [sentFlash, setSentFlash] = useState(false);
 
   const pausedRef = useRef(false);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -173,7 +178,6 @@ export default function StoryViewerScreen() {
     setViewerCount(null);
     setShowViewers(false);
     sheetAnim.setValue(0);
-    setCaptionH(0); // remeasured by the next story's caption (if any)
     setLiked(false);
     if (isOwn) fetchStoryViewerCount(story.id).then(setViewerCount).catch(() => {});
     else if (currentUserId) fetchStoryLiked(story.id, currentUserId).then(setLiked).catch(() => {});
@@ -435,6 +439,40 @@ export default function StoryViewerScreen() {
     setStoryLike(story.id, currentUserId, next);
   }
 
+  // ─── Story replies (DM with the story's stillshot attached) ────────────────
+  function openReply() {
+    if (!story || isOwn) return;
+    pause();
+    setReplying(true);
+  }
+  function closeReply() {
+    setReplying(false);
+    resume();
+  }
+  async function sendReply() {
+    if (!story || !group || !currentUserId || !replyText.trim() || sendingReply) return;
+    setSendingReply(true);
+    try {
+      // The stillshot: the image itself, or the video's thumbnail. Embedded in
+      // the message so the chat keeps the snapshot after the story expires.
+      const thumb = story.media_type === 'video' ? story.thumbnail_url ?? null : story.media_url;
+      const body = storyReplyBody({ storyId: story.id, ownerId: group.user.id, thumb }, replyText.trim());
+      const { error } = await supabase.from('messages')
+        .insert({ sender_id: currentUserId, receiver_id: group.user.id, body });
+      if (error) throw error;
+      createNotification({ userId: group.user.id, actorId: currentUserId, type: 'message' });
+      setReplyText('');
+      setReplying(false);
+      setSentFlash(true);
+      setTimeout(() => setSentFlash(false), 1500);
+      resume();
+    } catch (e: any) {
+      Alert.alert('Could not send reply', e?.message ?? 'Please try again.');
+    } finally {
+      setSendingReply(false);
+    }
+  }
+
   // Report another user's story — pause while the dialog is up, resume after.
   function onReport() {
     if (!group || isOwn) return;
@@ -608,18 +646,7 @@ export default function StoryViewerScreen() {
                     </Text>
                   </View>
                 </Animated.View>
-              ) : (
-                <View
-                  style={[styles.captionWrap, { bottom: insets.bottom + (isOwn ? 64 : 28) }]}
-                  pointerEvents="none"
-                  // Measured so the song attribution can stack ABOVE the
-                  // caption's real height (captions wrap — a fixed offset
-                  // collided with multi-line ones).
-                  onLayout={(e) => setCaptionH(Math.ceil(e.nativeEvent.layout.height))}
-                >
-                  <Text style={styles.caption}>{story.caption}</Text>
-                </View>
-              )
+              ) : null // bottom captions render in the bottom stack below
             )}
 
             {/* Draggable text/emoji stickers, placed anywhere on the media by the
@@ -666,40 +693,90 @@ export default function StoryViewerScreen() {
               </TouchableOpacity>
             )}
 
-            {/* Someone else's story: heart it (shows on their viewers list) */}
+            {/* Someone else's story: reply pill + heart */}
             {!isOwn && !!currentUserId && (
-              <TouchableOpacity
-                style={[styles.likeBtn, { bottom: insets.bottom + 18 }]}
-                onPress={toggleStoryLike}
-                activeOpacity={0.7}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Ionicons name={liked ? 'heart' : 'heart-outline'} size={30} color={liked ? '#F43F5E' : '#fff'} />
-              </TouchableOpacity>
+              <View style={[styles.replyRow, { bottom: insets.bottom + 12 }]}>
+                <TouchableOpacity style={styles.replyPill} activeOpacity={0.8} onPress={openReply}>
+                  <Text style={styles.replyPillText}>Reply to {group?.user.display_name || group?.user.username || 'story'}…</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={toggleStoryLike}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
+                >
+                  <Ionicons name={liked ? 'heart' : 'heart-outline'} size={30} color={liked ? '#F43F5E' : '#fff'} />
+                </TouchableOpacity>
+              </View>
             )}
 
-            {/* Song used on this story — stacked above the caption's MEASURED
-                height so the two can never overlap, however long the caption. */}
+            {/* Brief confirmation after a reply sends */}
+            {sentFlash && (
+              <View style={[styles.sentFlash, { bottom: insets.bottom + 70 }]} pointerEvents="none">
+                <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                <Text style={styles.sentFlashText}>Sent</Text>
+              </View>
+            )}
+
+            {/* Song chip — top-right, tucked under the header controls */}
             {!!story.song_id && (
-              <SongAttribution
-                style={{
-                  bottom: insets.bottom + (
-                    story.caption && !story.caption_style
-                      ? (isOwn ? 64 : 28) + captionH + 10
-                      : isOwn ? 52 : 28
-                  ),
-                }}
-                songId={story.song_id}
-                title={story.song_title}
-                artist={story.song_artist}
-                artistId={story.song_artist_id}
-                onNavigate={dismiss}
-                onPauseHost={pause}
-              />
+              <View style={[styles.songTopRight, { top: insets.top + 58 }]} pointerEvents="box-none">
+                <SongAttribution
+                  inline
+                  songId={story.song_id}
+                  title={story.song_title}
+                  artist={story.song_artist}
+                  artistId={story.song_artist_id}
+                  onNavigate={dismiss}
+                  onPauseHost={pause}
+                  onResumeHost={resume}
+                />
+              </View>
+            )}
+
+            {/* Bottom caption — bare bold text (no bar), inset clear of the
+                heart/eye controls so nothing collides. */}
+            {!!story.caption && !story.caption_style && (
+              <View style={[styles.bottomStack, { bottom: insets.bottom + 64 }]} pointerEvents="none">
+                <Text style={styles.caption}>{story.caption}</Text>
+              </View>
             )}
           </>
         )}
       </Animated.View>
+
+      {/* Reply composer — keyboard-attached input; the story stays paused
+          behind the dim until it's sent or dismissed. */}
+      {replying && (
+        <KeyboardAvoidingView
+          style={[StyleSheet.absoluteFill, styles.replyOverlay]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={{ flex: 1 }} onPress={closeReply} />
+          <View style={[styles.replyComposer, { paddingBottom: insets.bottom + SPACING.sm }]}>
+            <TextInput
+              style={styles.replyInput}
+              value={replyText}
+              onChangeText={setReplyText}
+              placeholder={`Reply to ${group?.user.display_name || group?.user.username || 'story'}…`}
+              placeholderTextColor="rgba(255,255,255,0.55)"
+              selectionColor="#FAB525"
+              cursorColor="#FAB525"
+              autoFocus
+              multiline
+              maxLength={500}
+            />
+            <TouchableOpacity
+              style={[styles.replySend, (!replyText.trim() || sendingReply) && { opacity: 0.4 }]}
+              onPress={sendReply}
+              disabled={!replyText.trim() || sendingReply}
+            >
+              {sendingReply
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Ionicons name="arrow-up" size={20} color="#fff" />}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      )}
 
       {/* Viewers sheet — who watched (and who LIKED — hearts ride on top).
           Fixed-height IG-style sheet that slides well up the screen even when
@@ -818,17 +895,61 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   headerBtn: { padding: 2 },
 
   captionStickerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  captionWrap: {
-    position: 'absolute', left: SPACING.md, right: SPACING.md,
-    backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: RADIUS.md, padding: SPACING.sm,
+  // Song credit, top-right under the header buttons.
+  songTopRight: { position: 'absolute', right: SPACING.md, maxWidth: '72%', alignItems: 'flex-end' },
+  // Bottom-left caption — right inset clears the heart/eye controls.
+  bottomStack: {
+    position: 'absolute', left: SPACING.md, right: 84,
+    alignItems: 'flex-start', gap: SPACING.sm,
   },
-  caption: { color: '#fff', fontSize: 15, lineHeight: 20 },
+  // Bare bold caption over the media (no bar) — modern iOS look; the shadow
+  // does the legibility work on bright footage.
+  caption: {
+    color: '#fff', fontSize: 17, fontWeight: '800', lineHeight: 22, letterSpacing: -0.2,
+    textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 8, textShadowOffset: { width: 0, height: 1 },
+  },
 
   seenRow: { position: 'absolute', left: SPACING.md, flexDirection: 'row', alignItems: 'center', gap: 5 },
   seenText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
-  // Heart on someone else's story (mirrors the owner's eye row, right side).
-  likeBtn: { position: 'absolute', right: SPACING.md },
+  // Reply pill + heart row on someone else's story.
+  replyRow: {
+    position: 'absolute', left: SPACING.md, right: SPACING.md,
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+  },
+  replyPill: {
+    flex: 1, height: 42, borderRadius: 21, justifyContent: 'center',
+    paddingHorizontal: SPACING.md,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  replyPillText: { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '600' },
+  sentFlash: {
+    position: 'absolute', alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 999,
+    paddingHorizontal: 14, paddingVertical: 7,
+  },
+  sentFlashText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+  // Reply composer overlay.
+  replyOverlay: { backgroundColor: 'rgba(0,0,0,0.45)' },
+  replyComposer: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: SPACING.sm,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm,
+  },
+  replyInput: {
+    flex: 1, minHeight: 44, maxHeight: 120,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 22, paddingHorizontal: SPACING.md + 2, paddingVertical: 11,
+    color: '#fff', fontSize: 16, lineHeight: 21,
+  },
+  replySend: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#F26522',
+  },
 
   // Viewers sheet (own stories): tall IG-style sheet — fixed height (set in
   // JSX) so it rises well up the screen even with only a couple of viewers.

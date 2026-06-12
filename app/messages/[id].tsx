@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput, Image,
   TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
-  Keyboard, Animated,
+  Keyboard, Animated, Alert,
 } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -13,7 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { createNotification } from '../../lib/createNotification';
-import { sharedPostId, internalPathFromUrl } from '../../lib/postLinks';
+import { sharedPostId, internalPathFromUrl, parseStoryReply, type StoryReplyRef } from '../../lib/postLinks';
 import SharedPostCard from '../../components/SharedPostCard';
 import BadgeEmblem from '../../components/BadgeEmblem';
 
@@ -126,6 +126,22 @@ export default function ChatScreen() {
     return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
+  // Open the story a reply points at — stories live 24h, so check first and
+  // explain when it's gone (the stillshot in the chat remains either way).
+  async function openStoryReply(ref: StoryReplyRef) {
+    try {
+      const { data } = await supabase
+        .from('stories').select('id, expires_at').eq('id', ref.storyId).maybeSingle();
+      if (!data || new Date(data.expires_at).getTime() <= Date.now()) {
+        Alert.alert('Story unavailable', 'Stories disappear after 24 hours.');
+        return;
+      }
+      router.push(`/story/${ref.ownerId}`);
+    } catch {
+      Alert.alert('Story unavailable', 'Stories disappear after 24 hours.');
+    }
+  }
+
   // Open a link found in a message. Laybell links route inside the app; anything
   // else opens externally.
   function openLink(url: string) {
@@ -205,6 +221,44 @@ export default function ChatScreen() {
         }
         renderItem={({ item }) => {
           const isOwn = item.sender_id === currentUserId;
+          // A story reply renders as its stillshot + the text underneath.
+          const storyRef = parseStoryReply(item.body);
+          if (storyRef) {
+            return (
+              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
+                <Text style={styles.storyReplyLabel}>
+                  {isOwn ? 'You replied to their story' : 'Replied to your story'}
+                </Text>
+                <TouchableOpacity activeOpacity={0.85} onPress={() => openStoryReply(storyRef)}>
+                  {storyRef.thumb ? (
+                    <Image source={{ uri: storyRef.thumb }} style={styles.storyReplyThumb} />
+                  ) : (
+                    <LinearGradient colors={GRADIENTS.primarySoft} style={[styles.storyReplyThumb, styles.storyReplyThumbEmpty]}>
+                      <Ionicons name="play-circle" size={30} color="#fff" />
+                    </LinearGradient>
+                  )}
+                </TouchableOpacity>
+                {storyRef.text ? (
+                  isOwn ? (
+                    <LinearGradient
+                      colors={GRADIENTS.primary}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={[styles.bubble, styles.bubbleOwn, styles.storyReplyBubble]}
+                    >
+                      {renderBody(storyRef.text, isOwn, formatTime(item.created_at))}
+                    </LinearGradient>
+                  ) : (
+                    <View style={[styles.bubble, styles.bubbleOther, styles.storyReplyBubble]}>
+                      {renderBody(storyRef.text, isOwn, formatTime(item.created_at))}
+                    </View>
+                  )
+                ) : (
+                  <Text style={styles.cardTime}>{formatTime(item.created_at)}</Text>
+                )}
+              </View>
+            );
+          }
           const postId = sharedPostId(item.body);
           // A shared post renders as a standalone preview card (no chat bubble).
           if (postId) {
@@ -277,10 +331,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 
+  // The chat presents as an iOS page sheet (it sits above the messages list's
+  // transparent modal), so content starts at the SHEET's top — only a little
+  // breathing room is needed, not status-bar clearance.
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: SPACING.sm,
-    paddingTop: SPACING.xxl + SPACING.sm,
+    paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
     borderBottomWidth: 0.5, borderBottomColor: colors.border, gap: SPACING.xs,
   },
@@ -325,6 +382,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
   emptyText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center' },
+
+  // Story replies: the story's stillshot above the text bubble.
+  storyReplyLabel: { color: colors.textTertiary, fontSize: 12, fontWeight: '600', marginBottom: 5 },
+  storyReplyThumb: {
+    width: 112, height: 178, borderRadius: 14,
+    backgroundColor: colors.surfaceLight,
+  },
+  storyReplyThumbEmpty: { alignItems: 'center', justifyContent: 'center' },
+  storyReplyBubble: { marginTop: 6 },
 
   // Floating frosted-glass bar (iOS-style): messages scroll under the blur.
   // The Animated wrapper owns the absolute position + keyboard slide.

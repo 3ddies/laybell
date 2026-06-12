@@ -18,7 +18,7 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 // the artist profile — that just pushes on top. onPauseHost pauses while the menu
 // is open.
 export default function SongAttribution({
-  songId, title, artist, artistId, style, inline = false, onNavigate, onPauseHost,
+  songId, title, artist, artistId, style, inline = false, onNavigate, onPauseHost, onResumeHost,
 }: {
   songId: string;
   title?: string | null;
@@ -29,6 +29,9 @@ export default function SongAttribution({
   inline?: boolean;
   onNavigate?: () => void;
   onPauseHost?: () => void;
+  // Fired when the song's 3-dot menu closes — a host paused via onPauseHost
+  // resumes from where it left off.
+  onResumeHost?: () => void;
 }) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -86,6 +89,7 @@ export default function SongAttribution({
       authorName: artist ?? undefined,
       mediaType: 'audio',
       onNavigate,
+      onDismiss: onResumeHost,
     });
   }
 

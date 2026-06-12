@@ -11,7 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
-import { sharedPostId } from '../../lib/postLinks';
+import { sharedPostId, parseStoryReply } from '../../lib/postLinks';
 import { fetchBlockedIds } from '../../lib/blocks';
 import HighlightText from '../../components/HighlightText';
 import StoryAvatar from '../../components/StoryAvatar';
@@ -310,6 +310,7 @@ export default function MessagesScreen() {
           const usernamePreview = !matchMsg && !matchCaption && userMatches && !nameMatches
             ? `@${item.other_user.username}` : null;
           const showShared = !matchMsg && !matchCaption && !usernamePreview && sharedPostId(item.last_message);
+          const storyReply = !matchMsg && !matchCaption && !usernamePreview && parseStoryReply(item.last_message);
           const preview = matchMsg ?? item.last_message;
           return (
           <Pressable
@@ -358,6 +359,8 @@ export default function MessagesScreen() {
                   highlightStyle={styles.highlight}
                   numberOfLines={1}
                 />
+              ) : storyReply ? (
+                <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>Replied to a story</Text>
               ) : showShared ? (
                 <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>Shared a post</Text>
               ) : (

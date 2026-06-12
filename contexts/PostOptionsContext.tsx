@@ -45,6 +45,9 @@ export type PostOptionsArgs = {
   // When the menu is opened from inside one of the user's own playlists, the
   // "Add to playlist" slot becomes "Remove from playlist" and calls this.
   onRemoveFromPlaylist?: () => void;
+  // Fired whenever the sheet closes (any path) — hosts that paused themselves
+  // while the menu was up (e.g. the story viewer) resume here.
+  onDismiss?: () => void;
 };
 
 type ContextValue = { show: (opts: PostOptionsArgs) => void };
@@ -68,7 +71,7 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
       <PostOptionsSheet
         visible={visible}
         opts={opts}
-        onClose={() => setVisible(false)}
+        onClose={() => { setVisible(false); opts?.onDismiss?.(); }}
         onAddToPlaylist={setPlaylistPostId}
       />
       <AddToPlaylistModal
