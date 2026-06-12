@@ -31,8 +31,6 @@ type AudioContextType = {
   currentTrack: Track | null;
   isPlaying: boolean;
   isBuffering: boolean;
-  positionMs: number;
-  durationMs: number;
   play: (track: Track) => Promise<void>;
   playQueue: (tracks: Track[], startIndex?: number) => Promise<void>;
   // Now Playing reports comment activity so a song ending at the end of the queue
@@ -57,12 +55,32 @@ type AudioContextType = {
 
 const AudioContext = createContext<AudioContextType | null>(null);
 
+// Playback position is deliberately NOT React state on the provider: a 250ms
+// setState there re-rendered EVERY useAudio() consumer (Home feed, Music page,
+// the whole Now Playing tree) four times a second for the entire duration of a
+// song — which is what made the Now Playing swipe-down stutter (the drag is
+// JS-driven and was fighting those re-renders). Position flows through this
+// subscription instead: only components that call useAudioPosition() re-render
+// on ticks (the scrubbers/time labels), everything else stays still.
+type PositionListener = (positionMs: number, durationMs: number) => void;
+type SubscribePosition = (fn: PositionListener) => () => void;
+const AudioPositionContext = createContext<SubscribePosition | null>(null);
+
+export function useAudioPosition(): { positionMs: number; durationMs: number } {
+  const subscribe = useContext(AudioPositionContext);
+  if (!subscribe) throw new Error('useAudioPosition must be used within AudioProvider');
+  const [state, setState] = useState({ positionMs: 0, durationMs: 0 });
+  useEffect(
+    () => subscribe((positionMs, durationMs) => setState({ positionMs, durationMs })),
+    [subscribe],
+  );
+  return state;
+}
+
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [positionMs, setPositionMs] = useState(0);
-  const [durationMs, setDurationMs] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const expand = () => setExpanded(true);
   // Manually leaving the full player for the mini player is the "safe to autoclose"
@@ -83,6 +101,22 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const pendingFinishRef = useRef(false);   // track finished; advance/close deferred until the user's done
   const progressRef = useRef(0);            // playback fraction (0–1), gates the 80% engagement check
   const positionRef = useRef(0);            // live position (ms), for the "previous" 3s restart rule
+  const durationRef = useRef(0);            // live duration (ms), mirror for non-render logic
+
+  // Position subscription (see useAudioPosition above): ticks bypass React
+  // state so the provider — and every useAudio() consumer — doesn't re-render
+  // four times a second while a song plays.
+  const positionListeners = useRef(new Set<PositionListener>()).current;
+  const emitPosition = (positionMs: number, durationMs: number) => {
+    positionRef.current = positionMs;
+    durationRef.current = durationMs;
+    positionListeners.forEach((fn) => { try { fn(positionMs, durationMs); } catch {} });
+  };
+  const subscribePosition = useRef<SubscribePosition>((fn) => {
+    positionListeners.add(fn);
+    fn(positionRef.current, durationRef.current); // push current values on mount
+    return () => { positionListeners.delete(fn); };
+  }).current;
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueLength, setQueueLength] = useState(0);
   // Per-post stream accounting, persisted for a rolling 24h window (keyed by post id):
@@ -172,8 +206,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsPlaying(false);
     setIsBuffering(false);
     setCurrentTrack(null);
-    setPositionMs(0);
-    setDurationMs(0);
+    emitPosition(0, 0);
   }
 
   async function pause() {
@@ -190,7 +223,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (s) {
       // Pressing play supersedes a deferred song-end — the track isn't "finished" anymore.
       pendingFinishRef.current = false;
-      if (durationMs > 0 && positionMs >= durationMs - 250) {
+      if (durationRef.current > 0 && positionRef.current >= durationRef.current - 250) {
         // The track ran to the end and was held open for comments: replay from the
         // top (a fresh listen, so near-end engagement re-arms cleanly).
         engagedNearEndRef.current = false;
@@ -222,9 +255,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   async function seekTo(ms: number) {
     if (soundRef.current) {
-      setPositionMs(ms); // reflect immediately so the scrubber doesn't snap back
-      positionRef.current = ms;
-      progressRef.current = durationMs > 0 ? ms / durationMs : 0;
+      emitPosition(ms, durationRef.current); // reflect immediately so the scrubber doesn't snap back
+      progressRef.current = durationRef.current > 0 ? ms / durationRef.current : 0;
       // A scrub/rewind resets the edge case: near-end engagement clears and any
       // deferred finish is cancelled, so the track behaves like a normal one again
       // and must be re-engaged past 80% to hold the song open.
@@ -261,8 +293,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       pendingFinishRef.current = false;
       engagedNearEndRef.current = false;
       progressRef.current = 0;
-      positionRef.current = 0;
-      setPositionMs(0);
+      emitPosition(0, durationRef.current);
       setIsPlaying(true);
       s.replayAsync().catch(() => {});
     } else if (currentTrack) {
@@ -291,8 +322,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsPlaying(false);
     setIsBuffering(false);
     setCurrentTrack(null);
-    setPositionMs(0);
-    setDurationMs(0);
+    emitPosition(0, 0);
     soundRef.current = null;
     queueRef.current = [];
     queueIndexRef.current = 0;
@@ -394,8 +424,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setCurrentTrack(track);
     setIsPlaying(true);
     setIsBuffering(true);
-    setPositionMs(0);
-    setDurationMs(0);
+    emitPosition(0, 0);
     setVideoMuted(true); // a song is playing → mute feed video to avoid overlap
 
     // --- Stream counting policy ---
@@ -437,10 +466,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         if (!status.isLoaded) return;
         const pos = status.positionMillis ?? 0;
         const dur = status.durationMillis ?? 0;
-        setPositionMs(pos);
-        setDurationMs(dur);
+        emitPosition(pos, dur); // ticks go to useAudioPosition subscribers only
         progressRef.current = dur > 0 ? pos / dur : 0;
-        positionRef.current = pos;
         setIsBuffering(status.isBuffering ?? false);
 
         // Accumulate genuine forward listen time (ignore seeks, rewinds and the
@@ -499,8 +526,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, positionMs, durationMs, play, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted }}>
-      {children}
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, play, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted }}>
+      <AudioPositionContext.Provider value={subscribePosition}>
+        {children}
+      </AudioPositionContext.Provider>
     </AudioContext.Provider>
   );
 }

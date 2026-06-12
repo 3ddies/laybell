@@ -1,12 +1,13 @@
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, PanResponder, Easing,
+  View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, Easing,
   KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useAudio } from '../contexts/AudioContext';
+import { useAudio, useAudioPosition } from '../contexts/AudioContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { supabase } from '../lib/supabase';
 import { bumpBadge } from '../lib/badges';
@@ -33,7 +34,10 @@ function formatMs(ms: number): string {
 function Progress() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const { positionMs, durationMs, seekTo } = useAudio();
+  const { seekTo } = useAudio();
+  // Position ticks live in their own subscription — only THIS small component
+  // re-renders 4×/sec, so dragging the sheet stays smooth.
+  const { positionMs, durationMs } = useAudioPosition();
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
   return (
     <View style={styles.progressBlock}>
@@ -93,6 +97,9 @@ export default function NowPlaying() {
   const [render, setRender] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
   const closeVel = useRef(0);
+  // True while a flick-down close is animating dragY itself — tells the
+  // expanded-effect to skip its own close spring (no double animation).
+  const closingViaDragRef = useRef(false);
   // Height of the comments area (list + input). Captured once via onLayout
   // (Math.max so the keyboard shrinking the KeyboardAvoidingView can't lower
   // it) and used to stretch the list header to exactly one screenful — the
@@ -114,8 +121,14 @@ export default function NowPlaying() {
   useEffect(() => {
     if (expanded) {
       setRender(true);
+      closingViaDragRef.current = false;
+      dragY.setValue(0);             // clear any leftover drag-close offset
+      translateY.setValue(SCREEN_H); // always enter from off-screen
       Animated.timing(translateY, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     } else if (render) {
+      // A drag/flick close is already animating dragY (started synchronously in
+      // the gesture handler for a pause-free handoff) — don't double-animate.
+      if (closingViaDragRef.current) return;
       Animated.spring(translateY, { toValue: SCREEN_H, velocity: closeVel.current, bounciness: 0, speed: 12, useNativeDriver: true })
         .start(() => setRender(false));
       closeVel.current = 0;
@@ -161,17 +174,36 @@ export default function NowPlaying() {
     return () => { cancelled = true; };
   }, [currentTrack?.id, expanded]);
 
-  const pan = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderMove: (_, g) => { if (g.dy > 0) translateY.setValue(g.dy); },
-      onPanResponderRelease: (_, g) => {
-        if (g.vy > 0.4 && g.dy > 70) { closeVel.current = g.vy * 1000; collapse(); }
-        else Animated.spring(translateY, { toValue: 0, speed: 14, bounciness: 4, useNativeDriver: true }).start();
-      },
-      onPanResponderTerminate: () => Animated.spring(translateY, { toValue: 0, speed: 14, bounciness: 4, useNativeDriver: true }).start(),
-    })
+  // Drag-to-dismiss — NATIVE-driven: the gesture writes dragY directly on the
+  // UI thread (Animated.event + useNativeDriver), so the sheet tracks the
+  // finger at full frame rate no matter what the JS thread is doing — this is
+  // what the old JS PanResponder (bridge round-trip per move event) could
+  // never guarantee, and why drags/flicks looked choppy. JS only hears about
+  // the END of the gesture to decide close vs spring back.
+  const dragY = useRef(new Animated.Value(0)).current;
+  // Upward drags clamp at 0 (the sheet only dismisses downward).
+  const dragClamped = dragY.interpolate({ inputRange: [0, SCREEN_H], outputRange: [0, SCREEN_H], extrapolate: 'clamp' });
+  const sheetY = useRef(Animated.add(translateY, dragClamped)).current;
+  const onDragEvent = useRef(
+    Animated.event([{ nativeEvent: { translationY: dragY } }], { useNativeDriver: true }),
   ).current;
+  const onDragStateChange = (e: any) => {
+    const { state, translationY, velocityY } = e.nativeEvent;
+    if (state !== State.END && state !== State.CANCELLED && state !== State.FAILED) return;
+    if (state === State.END && velocityY > 400 && translationY > 70) {
+      // Flick down → close. The spring starts in THIS event task, continuing
+      // dragY from the exact release position/velocity — routing through
+      // collapse() → re-render → effect first left a visible pause at
+      // finger-up. collapse() still runs (audio/engagement state), but the
+      // expanded-effect skips its own spring via closingViaDragRef.
+      closingViaDragRef.current = true;
+      Animated.spring(dragY, { toValue: SCREEN_H, velocity: velocityY, bounciness: 0, speed: 12, useNativeDriver: true })
+        .start(() => setRender(false));
+      collapse();
+    } else {
+      Animated.spring(dragY, { toValue: 0, speed: 14, bounciness: 4, useNativeDriver: true }).start();
+    }
+  };
 
   if (!render || !currentTrack) return null;
   const pid = currentTrack.id;
@@ -205,10 +237,19 @@ export default function NowPlaying() {
   }
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, styles.layer, { transform: [{ translateY }] }]}>
+    <Animated.View style={[StyleSheet.absoluteFill, styles.layer, { transform: [{ translateY: sheetY }] }]}>
       <LinearGradient colors={['#2A1206', '#150A04', colors.background]} style={styles.container}>
-        {/* Top drag zone — swipe down to close */}
-        <View {...pan.panHandlers}>
+        {/* Top drag zone — swipe down to close (native gesture: activates on a
+            6px downward move; clearly horizontal or upward moves fail fast so
+            the header buttons stay tappable). */}
+        <PanGestureHandler
+          onGestureEvent={onDragEvent}
+          onHandlerStateChange={onDragStateChange}
+          activeOffsetY={6}
+          failOffsetY={-12}
+          failOffsetX={[-16, 16]}
+        >
+        <Animated.View>
           <View style={styles.handle} />
           <View style={styles.header}>
             <TouchableOpacity style={styles.headerBtn} onPress={collapse}>
@@ -235,7 +276,8 @@ export default function NowPlaying() {
               <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
+        </PanGestureHandler>
 
         <KeyboardAvoidingView
           style={styles.flex}

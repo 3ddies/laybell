@@ -2,7 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react
 import { useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAudio } from '../contexts/AudioContext';
+import { useAudio, useAudioPosition } from '../contexts/AudioContext';
 import { useListenMode } from '../contexts/ListenModeContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -18,7 +18,8 @@ function formatMs(ms: number): string {
 export default function MiniPlayer({ compact = false }: { compact?: boolean }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, stop, seekTo, expanded, expand } = useAudio();
+  const { currentTrack, isPlaying, isBuffering, pause, resume, stop, seekTo, expanded, expand } = useAudio();
+  const { positionMs, durationMs } = useAudioPosition(); // tick subscription (4×/sec) — small tree, cheap
   const insets = useSafeAreaInsets();
   const { listenMode } = useListenMode();
 

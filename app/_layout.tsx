@@ -3,6 +3,7 @@ import { Stack, useSegments, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, Platform } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
@@ -106,8 +107,18 @@ function AppContent() {
         {/* iOS presents our swipe-back screens as NATIVE modals, which sit
             above the RN root view — so the global player chrome must live in
             a FullWindowOverlay to stay on top everywhere (playlist viewer,
-            settings, messages, …). Android keeps plain sibling rendering. */}
-        {Platform.OS === 'ios' ? <FullWindowOverlay>{overlays}</FullWindowOverlay> : overlays}
+            settings, messages, …). Android keeps plain sibling rendering.
+            The overlay is its own native window, OUTSIDE the app's gesture-
+            handler root — so it needs its own GestureHandlerRootView for the
+            NowPlaying drag-to-dismiss to work (box-none keeps empty areas
+            touch-transparent to the app underneath). */}
+        {Platform.OS === 'ios' ? (
+          <FullWindowOverlay>
+            <GestureHandlerRootView style={{ flex: 1 }} pointerEvents="box-none">
+              {overlays}
+            </GestureHandlerRootView>
+          </FullWindowOverlay>
+        ) : overlays}
       </View>
     </PostOptionsProvider>
   );
@@ -179,6 +190,7 @@ export default function RootLayout() {
   }
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <ThemeProvider>
     <AudioProvider>
       <PostMusicProvider>
@@ -197,5 +209,6 @@ export default function RootLayout() {
       </PostMusicProvider>
     </AudioProvider>
     </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
