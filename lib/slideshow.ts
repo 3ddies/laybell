@@ -36,3 +36,23 @@ export function parseSlides(post: any): Slide[] {
 export function slideCover(s: Slide): string {
   return s.type === 'video' ? (s.thumbnail_url || s.url) : s.url;
 }
+
+// Best STATIC thumbnail for a slideshow post on grids: slide 1's screenshot
+// when it's a video, or slide 1 itself when it's an image. Falls back to the
+// first image-type slide (older posts where the video screenshot upload
+// failed — media_url would be a video file an <Image> can't render).
+export function slideshowThumb(post: {
+  thumbnail_url?: string | null; media_url?: string | null; slides?: any;
+}): string | null {
+  if (post.thumbnail_url) return post.thumbnail_url;
+  const slides = parseSlides(post);
+  const first = slides[0];
+  if (first) {
+    if (first.type === 'image') return first.url;
+    if (first.thumbnail_url) return first.thumbnail_url;
+  }
+  const img = slides.find((s) => s.type === 'image');
+  if (img) return img.url;
+  // Last resort — only correct when slide 1 was an image.
+  return first?.type === 'image' ? first.url : post.media_url ?? null;
+}

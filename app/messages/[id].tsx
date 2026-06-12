@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { createNotification } from '../../lib/createNotification';
+import { useProfile } from '../../contexts/ProfileContext';
 import { sharedPostId, internalPathFromUrl, parseStoryReply, type StoryReplyRef } from '../../lib/postLinks';
 import SharedPostCard from '../../components/SharedPostCard';
 import BadgeEmblem from '../../components/BadgeEmblem';
@@ -21,6 +22,7 @@ type Message = { id: string; body: string; sender_id: string; receiver_id: strin
 
 export default function ChatScreen() {
   const { colors } = useTheme();
+  const { profile: myProfile } = useProfile();
   const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -105,6 +107,11 @@ export default function ChatScreen() {
 
   async function sendMessage() {
     if (!newMessage.trim() || !currentUserId || sending) return;
+    // Hidden accounts browse/listen only — no DMs while invisible.
+    if ((myProfile as any)?.hidden) {
+      Alert.alert('Profile hidden', 'Unhide your profile in Settings to send messages.');
+      return;
+    }
     setSending(true);
     const body = newMessage.trim();
     setNewMessage('');

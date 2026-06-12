@@ -212,10 +212,12 @@ export default function MusicScreen() {
     // Profiles whose name/handle matches — used to pull in their songs AND, when
     // the match is strong (name starts with / equals the query), surfaced as
     // tappable profile results above the songs.
-    const { data: matchedProfiles } = await supabase
+    const { data: rawProfiles } = await supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url, badge_tier')
+      .select('id, username, display_name, avatar_url, badge_tier, hidden')
       .or(`username.ilike.%${term}%,display_name.ilike.%${term}%`).limit(15);
+    // Hidden accounts never appear in search.
+    const matchedProfiles = (rawProfiles ?? []).filter((p: any) => !p.hidden);
     const authorIds = (matchedProfiles ?? []).map((p: any) => p.id);
     setSearchProfiles(
       (matchedProfiles ?? [])

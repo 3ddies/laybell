@@ -20,6 +20,7 @@ import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { formatCount } from '../../lib/format';
 import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
 import { isAudioPost } from '../../lib/genres';
+import { slideshowThumb } from '../../lib/slideshow';
 import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
@@ -241,7 +242,8 @@ export default function ProfileScreen() {
           >
             {post.type === 'slideshow' ? (
               <>
-                <Image source={{ uri: post.thumbnail_url || post.media_url }} style={styles.gridImage} resizeMode="cover" />
+                {/* Slide 1's screenshot (video) or slide 1 itself (image) */}
+                <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} resizeMode="cover" />
                 <View style={styles.gridPlayOverlay}>
                   <Ionicons name="copy" size={13} color={colors.text} />
                 </View>

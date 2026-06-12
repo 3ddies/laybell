@@ -19,6 +19,7 @@ import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, ra
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { formatCount } from '../../lib/format';
 import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
+import { slideshowThumb } from '../../lib/slideshow';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 
@@ -140,6 +141,21 @@ export default function PublicProfileScreen() {
     return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
   }
 
+  // Hidden accounts are invisible to everyone but themselves (their content is
+  // already gone from feeds via the restrictive policies — this blocks the
+  // profile page itself).
+  if ((profile as any)?.hidden && currentUserId !== id) {
+    return (
+      <View style={[styles.loadingContainer, { gap: SPACING.sm, padding: SPACING.xl }]}>
+        <Ionicons name="eye-off-outline" size={44} color={colors.textTertiary} />
+        <Text style={{ color: colors.text, fontSize: 17, fontWeight: '700' }}>This account is unavailable</Text>
+        <TouchableOpacity onPress={() => router.back()} style={{ padding: SPACING.sm }}>
+          <Text style={{ color: colors.primary, fontSize: 15, fontWeight: '600' }}>Go back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   const isOwnProfile = currentUserId === id;
   const isFriend = isFollowing && followsMe;
   const followLabel = isFriend ? 'Friends' : isFollowing ? 'Following' : followsMe ? 'Follow back' : 'Follow';
@@ -233,7 +249,8 @@ export default function PublicProfileScreen() {
           >
             {post.type === 'slideshow' ? (
               <>
-                <Image source={{ uri: post.thumbnail_url || post.media_url }} style={styles.gridImage} resizeMode="cover" />
+                {/* Slide 1's screenshot (video) or slide 1 itself (image) */}
+                <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} resizeMode="cover" />
                 <View style={styles.gridPlayOverlay}>
                   <Ionicons name="copy" size={13} color={colors.text} />
                 </View>

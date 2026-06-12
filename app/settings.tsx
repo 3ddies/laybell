@@ -94,6 +94,9 @@ function Section({ title, items }: { title: string; items: SectionItem[] }) {
 export default function SettingsScreen() {
   const router = useRouter();
   const { profile } = useProfile();
+  // Mirrors profiles.hidden (the switch needs local state for instant feedback).
+  const [hiddenOn, setHiddenOn] = useState(false);
+  useEffect(() => { setHiddenOn(!!(profile as any)?.hidden); }, [profile]);
   const { colors, mode, setMode } = useTheme();
   const styles = useThemedStyles(makeStyles);
 
@@ -124,16 +127,79 @@ export default function SettingsScreen() {
     ]);
   }
 
+  // ── Hide profile / soft deletion ─────────────────────────────────────────
+  // hidden=true makes the account invisible to others (server-side restrictive
+  // policies hide posts/stories/playlists; the profile page blocks). The owner
+  // can still browse + listen — but not DM or comment — and unhide anytime.
+  async function setHidden(on: boolean, extra: Record<string, any> = {}) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+    const patch = on
+      ? { hidden: true, ...extra }
+      // Unhiding also CANCELS any pending deletion (the 3-month grace path).
+      : { hidden: false, delete_requested_at: null, delete_immediately: false };
+    const { error } = await supabase.from('profiles').update(patch).eq('id', user.id);
+    if (error) { Alert.alert('Could not update', error.message); return false; }
+    setHiddenOn(on);
+    return true;
+  }
+
+  function toggleHidden(next: boolean) {
+    if (next) {
+      Alert.alert(
+        'Hide your profile?',
+        'Your account becomes invisible to everyone — profile, posts, stories and playlists disappear from Laybell. You can still browse and listen, and unhide here anytime.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Hide Profile', onPress: () => setHidden(true) },
+        ],
+      );
+    } else {
+      setHidden(false).then((ok) => {
+        if (ok) Alert.alert('Welcome back', 'Your profile is visible again. Any scheduled deletion has been cancelled.');
+      });
+    }
+  }
+
   async function handleDeleteAccount() {
     Alert.alert(
       'Delete Account',
-      'This will permanently delete your account and all your posts. This cannot be undone.',
+      'Before you go — you can hide your account instead. It disappears from Laybell, and if you stay away for 3 months it gets deleted permanently. Coming back and unhiding cancels everything.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => {
-          Alert.alert('Contact Support', 'Please email support@laybell.app to delete your account.');
-        }},
-      ]
+        {
+          text: 'Hide for 3 months',
+          onPress: async () => {
+            const ok = await setHidden(true, { delete_requested_at: new Date().toISOString(), delete_immediately: false });
+            if (ok) {
+              Alert.alert(
+                'Profile hidden',
+                'Your account is now invisible. If you stay away for 3 months it will be permanently deleted — unhide in Settings anytime to cancel.',
+              );
+            }
+          },
+        },
+        {
+          text: 'Delete now',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Delete permanently?',
+              'This cannot be undone. Your account and everything you posted will be removed.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete', style: 'destructive',
+                  onPress: async () => {
+                    const ok = await setHidden(true, { delete_requested_at: new Date().toISOString(), delete_immediately: true });
+                    if (ok) await supabase.auth.signOut();
+                  },
+                },
+              ],
+            );
+          },
+        },
+      ],
     );
   }
 
@@ -185,6 +251,13 @@ export default function SettingsScreen() {
       label: 'Private Posts',
       subtitle: 'Posts only your friends can see',
       onPress: () => router.push('/private-posts'),
+    },
+    {
+      icon: 'eye-off-outline',
+      label: 'Hide Profile',
+      subtitle: 'Make your account invisible to others',
+      value: hiddenOn,
+      onValueChange: toggleHidden,
     },
     {
       icon: 'archive-outline',
@@ -264,6 +337,12 @@ export default function SettingsScreen() {
       subtitle: APP_VERSION,
       chevron: false,
       onPress: undefined,
+    },
+    {
+      icon: 'help-circle-outline',
+      label: 'Help',
+      subtitle: 'Help center — coming soon',
+      onPress: () => Alert.alert('Help', 'The help center is coming soon.'),
     },
     {
       icon: 'document-text-outline',

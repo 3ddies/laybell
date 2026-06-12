@@ -396,10 +396,11 @@ export default function ExploreScreen() {
     // their posts. Ordered by how closely the name matches.
     const { data: profData } = await supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme')
+      .select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden')
       .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
       .limit(20);
-    const matched = profData ?? [];
+    // Hidden accounts never appear in search.
+    const matched = (profData ?? []).filter((p: any) => !p.hidden);
     setProfiles([...matched].sort((a: any, b: any) => profileMatchTier(b, q) - profileMatchTier(a, q)));
 
     const authorIds = matched.map((p: any) => p.id);

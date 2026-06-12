@@ -127,6 +127,19 @@ export default function RootLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Activity heartbeat: stamps last_seen_at once per app open. This is what
+  // keeps a hidden-but-active account from being eligible for the 3-month
+  // deletion sweep (deletion requires 3 months of NO sign-ins). Fails silently
+  // pre-migration (account_hidden.sql adds the column).
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    supabase.from('profiles')
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq('id', uid)
+      .then(undefined, () => {});
+  }, [session?.user?.id]);
+
   useEffect(() => {
     if (!initialized) return;
 

@@ -27,6 +27,7 @@ import SongAttribution from '../../components/SongAttribution';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { captionStickerTextStyle, resolveSticker } from '../../components/StickerLayer';
 import { useStories } from '../../contexts/StoriesContext';
+import { useProfile } from '../../contexts/ProfileContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -44,6 +45,7 @@ export default function StoryViewerScreen() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const { refresh: refreshStories, markSeen } = useStories();
+  const { profile: myProfile } = useProfile();
   const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
   const { userId, users, src } = useLocalSearchParams<{ userId: string; users?: string; src?: string }>();
 
@@ -451,6 +453,11 @@ export default function StoryViewerScreen() {
   }
   async function sendReply() {
     if (!story || !group || !currentUserId || !replyText.trim() || sendingReply) return;
+    // Hidden accounts browse/listen only — story replies are DMs.
+    if ((myProfile as any)?.hidden) {
+      Alert.alert('Profile hidden', 'Unhide your profile in Settings to send messages.');
+      return;
+    }
     setSendingReply(true);
     try {
       // The stillshot: the image itself, or the video's thumbnail. Embedded in
@@ -695,7 +702,7 @@ export default function StoryViewerScreen() {
 
             {/* Someone else's story: reply pill + heart */}
             {!isOwn && !!currentUserId && (
-              <View style={[styles.replyRow, { bottom: insets.bottom + 12 }]}>
+              <View style={[styles.replyRow, { bottom: insets.bottom }]}>
                 <TouchableOpacity style={styles.replyPill} activeOpacity={0.8} onPress={openReply}>
                   <Text style={styles.replyPillText}>Reply to {group?.user.display_name || group?.user.username || 'story'}…</Text>
                 </TouchableOpacity>
@@ -711,7 +718,7 @@ export default function StoryViewerScreen() {
 
             {/* Brief confirmation after a reply sends */}
             {sentFlash && (
-              <View style={[styles.sentFlash, { bottom: insets.bottom + 70 }]} pointerEvents="none">
+              <View style={[styles.sentFlash, { bottom: insets.bottom + 60 }]} pointerEvents="none">
                 <Ionicons name="checkmark-circle" size={16} color="#fff" />
                 <Text style={styles.sentFlashText}>Sent</Text>
               </View>
@@ -736,7 +743,7 @@ export default function StoryViewerScreen() {
             {/* Bottom caption — bare bold text (no bar), inset clear of the
                 heart/eye controls so nothing collides. */}
             {!!story.caption && !story.caption_style && (
-              <View style={[styles.bottomStack, { bottom: insets.bottom + 64 }]} pointerEvents="none">
+              <View style={[styles.bottomStack, { bottom: insets.bottom + 50 }]} pointerEvents="none">
                 <Text style={styles.caption}>{story.caption}</Text>
               </View>
             )}

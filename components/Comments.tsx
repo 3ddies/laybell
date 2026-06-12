@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { Fragment, useCallback, useEffect, useRef, useState, ReactElement } from 'react';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -153,6 +153,11 @@ export default function Comments({
 
   async function submit() {
     if (!text.trim() || !userId || sending) return;
+    // Hidden accounts browse/listen only — no commenting while invisible.
+    if ((myProfile as any)?.hidden) {
+      Alert.alert('Profile hidden', 'Unhide your profile in Settings to comment.');
+      return;
+    }
     setSending(true);
     const body = text.trim();
     const parent_id = replyTo?.id ?? null;
