@@ -11,6 +11,7 @@ import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/them
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { timeAgo } from '../lib/timeAgo';
 import { isAudioPost } from '../lib/genres';
+import { maskHiddenProfile, HIDDEN_NAME } from '../lib/hiddenProfile';
 import VideoThumb from '../components/VideoThumb';
 
 type RepostRow = {
@@ -50,8 +51,9 @@ export default function RepostsScreen() {
     let profileMap: Record<string, any> = {};
     if (reposterIds.length) {
       const { data: profiles } = await supabase
-        .from('profiles').select('id, username, display_name, avatar_url').in('id', reposterIds);
-      profileMap = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p]));
+        .from('profiles').select('id, username, display_name, avatar_url, hidden').in('id', reposterIds);
+      // Reposters who have since hidden their account read as "Hidden account".
+      profileMap = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, maskHiddenProfile(p)]));
     }
 
     setItems(rows.map(r => ({ ...r, reposter: profileMap[r.user_id] ?? null })));
@@ -116,7 +118,11 @@ export default function RepostsScreen() {
                 <Image source={{ uri: item.reposter.avatar_url }} style={styles.avatar} />
               ) : (
                 <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
-                  <Text style={styles.avatarText}>{item.reposter?.display_name?.charAt(0).toUpperCase()}</Text>
+                  {item.reposter?.display_name === HIDDEN_NAME ? (
+                    <Ionicons name="person" size={22} color="#fff" />
+                  ) : (
+                    <Text style={styles.avatarText}>{item.reposter?.display_name?.charAt(0).toUpperCase()}</Text>
+                  )}
                 </LinearGradient>
               )}
               <View style={styles.userInfo}>

@@ -12,6 +12,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import FollowButton from '../../components/FollowButton';
+import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import { useStories } from '../../contexts/StoriesContext';
 
 type User = { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
@@ -41,9 +42,11 @@ export default function FollowersScreen() {
     // Connection state (follow / friend) is handled app-wide by FollowButton via
     // FollowContext, so this screen only needs the follower list itself.
     const { data } = await supabase.from('follows')
-      .select('follower_id, profiles!follows_follower_id_fkey(id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme)')
+      .select('follower_id, profiles!follows_follower_id_fkey(id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden)')
       .eq('following_id', id);
-    if (data) setUsers(data.map((f: any) => f.profiles).filter(Boolean));
+    const { data: { user } } = await supabase.auth.getUser();
+    // Hidden accounts stay in the list but read as "Hidden account" (own row stays real).
+    if (data) setUsers(data.map((f: any) => maskHiddenProfile(f.profiles, f.profiles?.id === user?.id)).filter(Boolean));
     setLoading(false);
   }
 
@@ -87,7 +90,7 @@ export default function FollowersScreen() {
                     <Text style={styles.displayName}>{item.display_name}</Text>
                     <BadgeEmblem profile={item} size={13} />
                   </View>
-                  <Text style={styles.username}>@{item.username}</Text>
+                  {!!item.username && <Text style={styles.username}>@{item.username}</Text>}
                 </View>
               </TouchableOpacity>
               <FollowButton userId={item.id} />

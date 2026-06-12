@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { createNotification } from './createNotification';
+import { maskHiddenProfile } from './hiddenProfile';
 
 // 24-hour stories. Schema + RLS live in supabase/sql/stories.sql.
 // A story is an ephemeral image/video visible to the author and their followers
@@ -318,10 +319,11 @@ export async function fetchStoryViewers(storyId: string): Promise<StoryViewer[]>
   if (ids.length === 0) return [];
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, username, display_name, avatar_url, badge_tier, badge_show')
+    .select('id, username, display_name, avatar_url, badge_tier, badge_show, hidden')
     .in('id', ids);
+  // Viewers who have since hidden their account read as "Hidden account".
   return ((profiles ?? []) as StoryProfile[])
-    .map((p) => ({ ...p, liked: likedIds.has(p.id) }))
+    .map((p) => ({ ...maskHiddenProfile(p as any), liked: likedIds.has(p.id) }))
     .sort((a, b) => Number(!!b.liked) - Number(!!a.liked));
 }
 

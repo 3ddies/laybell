@@ -15,6 +15,7 @@ import { timeAgo } from '../lib/timeAgo';
 import { formatCount } from '../lib/format';
 import { createNotification } from '../lib/createNotification';
 import { processMentions, getActiveMentionQuery, applyMention } from '../lib/mentions';
+import { maskHiddenProfile } from '../lib/hiddenProfile';
 import MentionSuggestions from './MentionSuggestions';
 import MentionText from './MentionText';
 
@@ -87,11 +88,14 @@ export default function Comments({
 
     const { data: comments } = await supabase
       .from('comments')
-      .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show, profile_theme)')
+      .select('id, body, created_at, user_id, parent_id, profiles!comments_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
     if (!comments) return;
-    setRows(comments as any);
+    // Old comments from now-hidden accounts stay, but read as "Hidden account".
+    setRows(comments.map((c: any) => ({
+      ...c, profiles: maskHiddenProfile(c.profiles, c.user_id === user?.id),
+    })) as any);
 
     const ids = comments.map((c: any) => c.id);
     if (ids.length) {

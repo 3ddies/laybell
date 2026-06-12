@@ -17,6 +17,8 @@ alter table public.profiles
 -- the function can compute distance without exposing every user's coords through a
 -- plain `select`. Only opted-in profiles (location_enabled) are considered; the
 -- caller filters out already-followed / blocked accounts client-side.
+-- NOTE: requires account_hidden.sql first (the `hidden` column) — hidden accounts
+-- are never recommended.
 create or replace function public.nearby_profiles(
   p_lat   double precision,
   p_lng   double precision,
@@ -46,6 +48,7 @@ as $$
     ))) as distance_km
   from public.profiles p
   where p.location_enabled = true
+    and coalesce(p.hidden, false) = false
     and p.latitude is not null
     and p.longitude is not null
     and p.id <> auth.uid()

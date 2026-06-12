@@ -13,6 +13,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { sharedPostId, parseStoryReply } from '../../lib/postLinks';
 import { fetchBlockedIds } from '../../lib/blocks';
+import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import HighlightText from '../../components/HighlightText';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
@@ -139,10 +140,11 @@ export default function MessagesScreen() {
     }
 
     const { data: profiles } = await supabase
-      .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme').in('id', partnerIds);
+      .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden').in('id', partnerIds);
     if (!profiles) return;
 
-    const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]));
+    // Partners who have since hidden their account read as "Hidden account".
+    const profileMap = Object.fromEntries(profiles.map(p => [p.id, maskHiddenProfile(p as any)]));
     const convos = partnerIds
       .map(pid => {
         const p = profileMap[pid];

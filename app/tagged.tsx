@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { timeAgo } from '../lib/timeAgo';
 import { isSlideshow } from '../lib/slideshow';
+import { maskHiddenProfile, HIDDEN_NAME } from '../lib/hiddenProfile';
 import VideoThumb from '../components/VideoThumb';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -72,8 +73,9 @@ export default function TaggedScreen() {
     // Comments that mentioned me — fetch + restore mention order.
     const commentIds = [...new Set((mCommentsRes.data ?? []).map((m: any) => m.comment_id))];
     if (commentIds.length) {
-      const { data } = await supabase.from('comments').select('id, body, post_id, created_at, user_id, profiles!comments_user_id_fkey(username, display_name, avatar_url)').in('id', commentIds);
-      const byId = Object.fromEntries((data ?? []).map((c: any) => [c.id, c]));
+      const { data } = await supabase.from('comments').select('id, body, post_id, created_at, user_id, profiles!comments_user_id_fkey(username, display_name, avatar_url, hidden)').in('id', commentIds);
+      // Commenters who have since hidden their account read as "Hidden account".
+      const byId = Object.fromEntries((data ?? []).map((c: any) => [c.id, { ...c, profiles: maskHiddenProfile(c.profiles) }]));
       setComments(commentIds.map((id) => byId[id]).filter(Boolean));
     } else setComments([]);
 
@@ -241,7 +243,11 @@ function Avatar({ profile }: { profile: any }) {
   if (profile?.avatar_url) return <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />;
   return (
     <LinearGradient colors={['#3A1C0C', '#1C0E06']} style={styles.avatar}>
-      <Text style={styles.avatarText}>{(profile?.display_name || '?').charAt(0).toUpperCase()}</Text>
+      {profile?.display_name === HIDDEN_NAME ? (
+        <Ionicons name="person" size={16} color="#fff" />
+      ) : (
+        <Text style={styles.avatarText}>{(profile?.display_name || '?').charAt(0).toUpperCase()}</Text>
+      )}
     </LinearGradient>
   );
 }

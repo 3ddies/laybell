@@ -29,7 +29,7 @@ export const REASON_LABEL: Record<SuggestionReason, string> = {
   popular: 'Popular on Laybell',
 };
 
-const PROFILE_COLS = 'id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme';
+const PROFILE_COLS = 'id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden';
 const HASH_BATCH = 500;
 
 // Backfill so discovery is never empty even with zero contacts/location/mutual
@@ -58,6 +58,7 @@ async function fetchPopularProfiles(exclude: Set<string>, need: number): Promise
   if (ranked.length < need) {
     try {
       const { data } = await supabase.from('profiles').select('id')
+        .eq('hidden', false)
         .order('created_at', { ascending: false }).limit(need * 3 + 20);
       for (const p of data ?? []) {
         const id = p.id as string;
@@ -74,7 +75,7 @@ async function fetchPopularProfiles(exclude: Set<string>, need: number): Promise
   const out: SuggestedAccount[] = [];
   ids.forEach((id, i) => {
     const p = byId.get(id);
-    if (!p) return;
+    if (!p || p.hidden) return; // never recommend a hidden account
     out.push({
       id: p.id, username: p.username, display_name: p.display_name,
       avatar_url: p.avatar_url ?? null, badge_tier: p.badge_tier ?? null,
@@ -172,7 +173,7 @@ export async function fetchSuggestedAccounts(
   const out: SuggestedAccount[] = [];
   for (const id of ids) {
     const p = byId.get(id);
-    if (!p) continue;
+    if (!p || p.hidden) continue; // never recommend a hidden account
     const reason = reasonOf(id);
     out.push({
       id: p.id, username: p.username, display_name: p.display_name,
@@ -249,6 +250,16 @@ export async function getRotatingSuggestions(
 
   const now = Date.now();
   const cache = await readFeedCache(userId);
+
+  // A cached pick may have hidden their account since it was stored (the fresh
+  // pool already excludes hidden accounts) — drop those too.
+  if (cache?.items?.length) {
+    try {
+      const { data } = await supabase.from('profiles').select('id')
+        .in('id', cache.items.map(a => a.id)).eq('hidden', true);
+      for (const r of data ?? []) exclude.add(r.id as string);
+    } catch {}
+  }
 
   // First run — seed from the top of the fresh pool.
   if (!cache?.items?.length) {

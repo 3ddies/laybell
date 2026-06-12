@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { badgeGlow } from '../lib/badges';
+import { HIDDEN_NAME } from '../lib/hiddenProfile';
 import { useStories } from '../contexts/StoriesContext';
 
 // Drop-in avatar that shows a ring ONLY while `userId` has an active story (the
@@ -96,9 +97,14 @@ export default function StoryAvatar({
         story && { borderWidth: 1.5, borderColor: colors.background },
       ]}
     >
-      <Text style={{ color: '#fff', fontWeight: '700', fontSize: Math.round(inner * 0.42) }}>
-        {name?.charAt(0)?.toUpperCase()}
-      </Text>
+      {name === HIDDEN_NAME ? (
+        // Masked hidden account — anonymous silhouette, never an initial.
+        <Ionicons name="person" size={Math.round(inner * 0.5)} color="#fff" />
+      ) : (
+        <Text style={{ color: '#fff', fontWeight: '700', fontSize: Math.round(inner * 0.42) }}>
+          {name?.charAt(0)?.toUpperCase()}
+        </Text>
+      )}
     </LinearGradient>
   );
 

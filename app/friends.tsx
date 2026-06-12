@@ -14,6 +14,7 @@ import FollowButton from '../components/FollowButton';
 import {
   getRotatingSuggestions, loadContactHashesIfEnabled, REASON_LABEL, type SuggestedAccount,
 } from '../lib/suggestions';
+import { maskHiddenProfile } from '../lib/hiddenProfile';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
@@ -54,9 +55,10 @@ export default function FriendsScreen() {
     if (friendIds.length) {
       const { data } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme')
+        .select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden')
         .in('id', friendIds);
-      setFriends((data ?? []) as Profile[]);
+      // Friends who have since hidden their account read as "Hidden account".
+      setFriends((data ?? []).map((p: any) => maskHiddenProfile(p)) as Profile[]);
     } else {
       setFriends([]);
     }
@@ -83,7 +85,7 @@ export default function FriendsScreen() {
             <Text style={styles.displayName} numberOfLines={1}>{p.display_name}</Text>
             <BadgeEmblem profile={p} size={13} />
           </View>
-          <Text style={styles.username} numberOfLines={1}>@{p.username}</Text>
+          {!!p.username && <Text style={styles.username} numberOfLines={1}>@{p.username}</Text>}
           {sub ? <Text style={styles.reason} numberOfLines={1}>{sub}</Text> : null}
         </View>
       </TouchableOpacity>

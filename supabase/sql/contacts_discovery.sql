@@ -44,7 +44,8 @@ on public.user_identifiers for update
 using (auth.uid() = user_id);
 
 -- Returns the user_ids whose hashed identifier is in the caller's contact-hash set.
--- Excludes the caller. SECURITY DEFINER so it can read the opaque table.
+-- Excludes the caller and hidden accounts (account_hidden.sql must be applied first
+-- for the `hidden` column). SECURITY DEFINER so it can read the opaque table.
 create or replace function public.match_contacts(hashes text[])
 returns table (user_id uuid)
 language sql
@@ -56,6 +57,10 @@ as $$
   from public.user_identifiers ui
   where (ui.email_hash = any(hashes) or ui.phone_hash = any(hashes))
     and ui.user_id <> auth.uid()
+    and not exists (
+      select 1 from public.profiles pr
+      where pr.id = ui.user_id and coalesce(pr.hidden, false)
+    )
 $$;
 
 grant execute on function public.match_contacts(text[]) to authenticated;

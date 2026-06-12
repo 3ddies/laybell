@@ -11,6 +11,7 @@ import { COLORS, SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { timeAgo } from '../lib/timeAgo';
 import { displayedTier } from '../lib/badges';
+import { maskHiddenProfile } from '../lib/hiddenProfile';
 import StoryAvatar from '../components/StoryAvatar';
 import BadgeEmblem from '../components/BadgeEmblem';
 import FollowButton from '../components/FollowButton';
@@ -156,12 +157,13 @@ export default function NotificationsScreen() {
       const actorIds = [...new Set(notifData.map(n => n.actor_id))];
       const postIds = [...new Set(notifData.map(n => n.post_id).filter(Boolean))] as string[];
       const [{ data: profileData }, postsRes] = await Promise.all([
-        supabase.from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme').in('id', actorIds),
+        supabase.from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden').in('id', actorIds),
         postIds.length
           ? supabase.from('posts').select('id, type, media_url, cover_url, thumbnail_url').in('id', postIds)
           : Promise.resolve({ data: [] as any[] }),
       ]);
-      const profileMap = Object.fromEntries((profileData ?? []).map(p => [p.id, p]));
+      // Actors who have since hidden their account read as "Hidden account".
+      const profileMap = Object.fromEntries((profileData ?? []).map(p => [p.id, maskHiddenProfile(p as any)]));
       const previewMap: Record<string, string> = {};
       for (const p of postsRes.data ?? []) {
         const url = postPreviewUrl(p);

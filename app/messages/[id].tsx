@@ -15,6 +15,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { createNotification } from '../../lib/createNotification';
 import { useProfile } from '../../contexts/ProfileContext';
 import { sharedPostId, internalPathFromUrl, parseStoryReply, type StoryReplyRef } from '../../lib/postLinks';
+import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import SharedPostCard from '../../components/SharedPostCard';
 import BadgeEmblem from '../../components/BadgeEmblem';
 
@@ -85,8 +86,9 @@ export default function ChatScreen() {
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) { setCurrentUserId(user.id); await fetchMessages(user.id); markAsRead(user.id); }
-    const { data: profile } = await supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show, profile_theme').eq('id', id).single();
-    if (profile) setOtherUser(profile);
+    const { data: profile } = await supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden').eq('id', id).single();
+    // A partner who has since hidden their account reads as "Hidden account".
+    if (profile) setOtherUser(maskHiddenProfile(profile as any));
     setLoading(false);
   }
 
@@ -210,7 +212,7 @@ export default function ChatScreen() {
               <Text style={styles.headerName} numberOfLines={1}>{otherUser?.display_name}</Text>
               <BadgeEmblem profile={otherUser} size={14} />
             </View>
-            <Text style={styles.headerUsername} numberOfLines={1}>@{otherUser?.username}</Text>
+            {!!otherUser?.username && <Text style={styles.headerUsername} numberOfLines={1}>@{otherUser.username}</Text>}
           </View>
         </TouchableOpacity>
       </View>
