@@ -15,7 +15,13 @@ function formatMs(ms: number): string {
   return `${m}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function MiniPlayer({ compact = false }: { compact?: boolean }) {
+// 'bar'     — the normal bottom-docked player.
+// 'compact' — Create tab: small top-right card (1.5s dwell, per spec).
+// 'side'    — story camera: simplified right-edge chip (cover + play/pause
+//             only) so the viewfinder stays clear while the song rides along.
+type PlayerVariant = 'bar' | 'compact' | 'side';
+
+export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVariant }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { currentTrack, isPlaying, isBuffering, pause, resume, stop, seekTo, expanded, expand } = useAudio();
@@ -35,29 +41,76 @@ export default function MiniPlayer({ compact = false }: { compact?: boolean }) {
     }).start();
   }, [listenMode, listenSlide]);
 
-  // Compact mode (Create tab): the player migrates into a small top-right card
-  // so the song rides along while the user picks media. The card waits for a
-  // 1.5s dwell on the tab before fading in — a quick swipe-through never
-  // flashes it; leaving the tab resets the dwell.
+  // Overlay variants (Create tab card / camera side chip): the player waits
+  // out a short dwell on the tab before fading in — a quick swipe-through
+  // never flashes it; leaving the tab resets the dwell. The Create card keeps
+  // its spec'd 1.5s; the camera chip arrives quicker.
+  const isBar = variant === 'bar';
   const compactAnim = useRef(new Animated.Value(0)).current;
-  const [compactReady, setCompactReady] = useState(false);
+  const [overlayReady, setOverlayReady] = useState(false);
   useEffect(() => {
-    if (compact) {
+    if (!isBar) {
       compactAnim.setValue(0);
       const t = setTimeout(() => {
-        setCompactReady(true);
+        setOverlayReady(true);
         Animated.timing(compactAnim, { toValue: 1, duration: 350, useNativeDriver: true }).start();
-      }, 1500);
+      }, variant === 'compact' ? 1500 : 600);
       return () => clearTimeout(t);
     }
-    setCompactReady(false);
+    setOverlayReady(false);
     compactAnim.setValue(0);
-  }, [compact, compactAnim]);
+  }, [variant, isBar, compactAnim]);
+
+  // The BOTTOM BAR fades out/in as the variant flips instead of hard
+  // unmounting — rapid swipes across the Create/camera tabs used to make it
+  // vanish and pop back instantly, which read as a glitch.
+  const barFade = useRef(new Animated.Value(isBar ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(barFade, {
+      toValue: isBar ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [isBar, barFade]);
 
   if (!currentTrack || expanded) return null;
 
-  if (compact) {
-    if (!compactReady) return null; // still within the 1.5s dwell
+  // Camera side chip — minimal: cover (tap to open the full player) and
+  // play/pause. No title, no scrubber, no close — the camera stays the focus.
+  if (variant === 'side' && overlayReady) {
+    return (
+      <Animated.View
+        style={[
+          styles.sideChip,
+          {
+            opacity: compactAnim,
+            transform: [{ translateX: compactAnim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+          },
+        ]}
+      >
+        <TouchableOpacity style={styles.compactCoverWrap} onPress={() => expand()}>
+          {currentTrack.cover ? (
+            <Image source={{ uri: currentTrack.cover }} style={styles.compactCover} />
+          ) : (
+            <LinearGradient colors={GRADIENTS.primarySoft} style={styles.compactCover}>
+              <Ionicons name="musical-notes" size={13} color={colors.primary} />
+            </LinearGradient>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => (isPlaying ? pause() : resume())} hitSlop={8}>
+          <Ionicons
+            name={isBuffering ? 'hourglass' : isPlaying ? 'pause-circle' : 'play-circle'}
+            size={28} color={colors.primary}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.compactClose} onPress={stop} hitSlop={8}>
+          <Ionicons name="close" size={13} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  }
+
+  if (variant === 'compact' && overlayReady) {
     return (
       <Animated.View
         style={[
@@ -100,8 +153,13 @@ export default function MiniPlayer({ compact = false }: { compact?: boolean }) {
 
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
 
+  // Rendered in bar mode AND during an overlay dwell (fading out via barFade)
+  // — never hard-removed on a tab flip, so fast swipes look smooth.
   return (
-    <Animated.View style={[styles.container, { bottom: bottomOffset, transform: [{ translateY: listenSlide }] }]}>
+    <Animated.View
+      pointerEvents={isBar ? 'auto' : 'none'}
+      style={[styles.container, { bottom: bottomOffset, opacity: barFade, transform: [{ translateY: listenSlide }] }]}
+    >
       <View style={styles.scrubWrap}>
         <Scrubber
           progress={progress}
@@ -198,5 +256,18 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   compactClose: {
     width: 22, height: 22, borderRadius: 11,
     backgroundColor: colors.surfaceLight, alignItems: 'center', justifyContent: 'center',
+  },
+
+  // ── Side chip (story camera) — vertical pill hugging the right edge at
+  // mid-height, clear of the top camera controls and the bottom shutter. ──
+  sideChip: {
+    position: 'absolute', right: 8, top: '42%',
+    alignItems: 'center', gap: 8,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: RADIUS.full,
+    borderWidth: 0.5, borderColor: colors.primaryLight + '55',
+    paddingVertical: 8, paddingHorizontal: 6,
+    ...SHADOWS.md,
+    zIndex: 100,
   },
 });

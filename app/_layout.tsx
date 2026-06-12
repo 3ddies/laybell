@@ -29,12 +29,14 @@ function AppContent() {
   const immersive = segments[0] === 'story' || segments[0] === 'post' || segments[0] === 'reel';
   // On the Create tab the player migrates to a compact top-right card so the
   // song rides along instead of dying when the tab is swiped past; the post
-  // DETAILS step then stops it (see post.tsx).
-  const onCreateTab = segments[0] === '(tabs)' && (segments as string[])[1] === 'post';
+  // DETAILS step then stops it (see post.tsx). On the story camera it docks
+  // as a simplified side chip so the viewfinder stays clear.
+  const tab = segments[0] === '(tabs)' ? (segments as string[])[1] : undefined;
+  const playerVariant = tab === 'post' ? 'compact' as const : tab === 'story-camera' ? 'side' as const : 'bar' as const;
 
   const overlays = (
     <>
-      {!immersive && <MiniPlayer compact={onCreateTab} />}
+      {!immersive && <MiniPlayer variant={playerVariant} />}
       <NowPlaying />
       <BadgeUpgradeToast />
     </>

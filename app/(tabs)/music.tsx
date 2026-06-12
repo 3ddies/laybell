@@ -98,6 +98,10 @@ type Track = {
 export default function MusicScreen() {
   const { show: showOptions } = usePostOptions();
   const { listenMode, setListenMode } = useListenMode();
+  // Ref mirror for the dwell-swipe responder (created once) — Listen mode must
+  // also seal ITS edge fall-throughs to other app pages, not just the pager's.
+  const listenModeRef = useRef(listenMode);
+  listenModeRef.current = listenMode;
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -212,12 +216,15 @@ export default function MusicScreen() {
       const idx = VIEW_ORDER.indexOf(activeViewRef.current as any);
       if (idx < 0) return; // community detail etc. — leave swipes alone
       if (g.dx < 0) {
-        // Finger moved left → forward. Past Saved → next app page.
-        if (idx === VIEW_ORDER.length - 1) navigation.navigate('profile');
+        // Finger moved left → forward. Past Saved → next app page — UNLESS
+        // Listen mode is on: the user is locked to Music until they exit via
+        // the button (the pill steps inside Music stay available).
+        if (idx === VIEW_ORDER.length - 1) { if (!listenModeRef.current) navigation.navigate('profile'); }
         else { setActiveView(VIEW_ORDER[idx + 1]); setSelectedPlaylist(null); setSelectedCommunity(null); }
       } else {
-        // Finger moved right → back. Past Discover → previous app page.
-        if (idx === 0) navigation.navigate('post');
+        // Finger moved right → back. Past Discover → previous app page —
+        // sealed in Listen mode (same lock as above).
+        if (idx === 0) { if (!listenModeRef.current) navigation.navigate('post'); }
         else { setActiveView(VIEW_ORDER[idx - 1]); setSelectedPlaylist(null); setSelectedCommunity(null); }
       }
     },
