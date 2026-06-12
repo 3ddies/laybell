@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, Dimensions,
-  Pressable, Animated, PanResponder, ActivityIndicator, Alert, Easing,
+  Pressable, Animated, PanResponder, ActivityIndicator, Alert, Easing, FlatList,
 } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { Image as ExpoImage } from 'expo-image';
@@ -15,13 +15,14 @@ import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import {
-  fetchStoriesForUsers, recordStoryView, deleteStory, fetchStoryViewerCount,
-  type StoryGroup, type SourceRect,
+  fetchStoriesForUsers, recordStoryView, deleteStory, fetchStoryViewerCount, fetchStoryViewers,
+  fetchStoryLiked, setStoryLike,
+  type StoryGroup, type SourceRect, type StoryViewer,
 } from '../../lib/stories';
 import { reportUser } from '../../lib/postActions';
 import SongAttribution from '../../components/SongAttribution';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { captionStickerTextStyle } from '../../components/StickerLayer';
+import { captionStickerTextStyle, resolveSticker } from '../../components/StickerLayer';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 
@@ -67,6 +68,19 @@ export default function StoryViewerScreen() {
   const [storyIndex, setStoryIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [viewerCount, setViewerCount] = useState<number | null>(null);
+  // Measured height of the bottom caption box — the song attribution stacks
+  // above it (captions wrap, so the offset can't be a constant).
+  const [captionH, setCaptionH] = useState(0);
+  // Own-story viewers sheet (who watched this story; likers ride on top).
+  const [showViewers, setShowViewers] = useState(false);
+  const [viewers, setViewers] = useState<StoryViewer[]>([]);
+  const [viewersLoading, setViewersLoading] = useState(false);
+  const sheetAnim = useRef(new Animated.Value(0)).current; // 0 = hidden, 1 = up
+  // Finger-following drag offset while pulling the sheet's top bar down.
+  const sheetDragY = useRef(new Animated.Value(0)).current;
+  const closeViewersRef = useRef<() => void>(() => {});
+  // Viewer's like on someone else's story (heart button, bottom-right).
+  const [liked, setLiked] = useState(false);
 
   const pausedRef = useRef(false);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -157,7 +171,12 @@ export default function StoryViewerScreen() {
     }
 
     setViewerCount(null);
+    setShowViewers(false);
+    sheetAnim.setValue(0);
+    setCaptionH(0); // remeasured by the next story's caption (if any)
+    setLiked(false);
     if (isOwn) fetchStoryViewerCount(story.id).then(setViewerCount).catch(() => {});
+    else if (currentUserId) fetchStoryLiked(story.id, currentUserId).then(setLiked).catch(() => {});
 
     // Images advance on a timed fill; videos advance from playback status instead.
     if (story.media_type === 'image') startImageProgress(0);
@@ -366,6 +385,56 @@ export default function StoryViewerScreen() {
     ]);
   }
 
+  // Own-story viewers sheet: pause the story AND its music while it's open,
+  // slide the sheet up IG-style, resume both on close.
+  function openViewers() {
+    if (!story) return;
+    pause();
+    if (story.song_id) stopSong(story.id);
+    setShowViewers(true);
+    sheetAnim.setValue(0);
+    sheetDragY.setValue(0);
+    Animated.timing(sheetAnim, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    setViewersLoading(true);
+    fetchStoryViewers(story.id)
+      .then(setViewers)
+      .catch(() => setViewers([]))
+      .finally(() => setViewersLoading(false));
+  }
+  function closeViewers(navigatingAway = false) {
+    Animated.timing(sheetAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+      .start(() => setShowViewers(false));
+    if (!navigatingAway) {
+      resume();
+      if (story?.song_id && isFocused) playSong(story.id, story.song_id);
+    }
+  }
+
+  closeViewersRef.current = () => closeViewers();
+
+  // Drag the sheet down by its top bar (handle + "Viewers" header) to dismiss —
+  // follows the finger, springs back on a short pull.
+  const sheetPan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: (_e, g) => { if (g.dy > 0) sheetDragY.setValue(g.dy); },
+      onPanResponderRelease: (_e, g) => {
+        if (g.dy > 90 || g.vy > 0.5) closeViewersRef.current();
+        else Animated.spring(sheetDragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      },
+      onPanResponderTerminate: () =>
+        Animated.spring(sheetDragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start(),
+    }),
+  ).current;
+
+  // Like someone else's story (optimistic; heart bottom-right).
+  function toggleStoryLike() {
+    if (!story || !currentUserId || isOwn) return;
+    const next = !liked;
+    setLiked(next);
+    setStoryLike(story.id, currentUserId, next);
+  }
+
   // Report another user's story — pause while the dialog is up, resume after.
   function onReport() {
     if (!group || isOwn) return;
@@ -540,48 +609,86 @@ export default function StoryViewerScreen() {
                   </View>
                 </Animated.View>
               ) : (
-                <View style={[styles.captionWrap, { bottom: insets.bottom + (isOwn ? 64 : 28) }]} pointerEvents="none">
+                <View
+                  style={[styles.captionWrap, { bottom: insets.bottom + (isOwn ? 64 : 28) }]}
+                  pointerEvents="none"
+                  // Measured so the song attribution can stack ABOVE the
+                  // caption's real height (captions wrap — a fixed offset
+                  // collided with multi-line ones).
+                  onLayout={(e) => setCaptionH(Math.ceil(e.nativeEvent.layout.height))}
+                >
                   <Text style={styles.caption}>{story.caption}</Text>
                 </View>
               )
             )}
 
-            {/* Draggable text stickers, placed anywhere on the media by the author. */}
+            {/* Draggable text/emoji stickers, placed anywhere on the media by the
+                author — rendered through the SAME style resolver as the editor
+                (font / color / background / emoji metadata in stickers jsonb),
+                so the story looks exactly as it did when composed. */}
             {(story.stickers ?? []).length > 0 && (
               <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
-                {(story.stickers ?? []).map((st, i) => (
-                  <View key={i} style={StyleSheet.absoluteFill}>
-                    <View style={styles.captionStickerCenter}>
-                      <Text
-                        style={[captionStickerTextStyle, {
-                          transform: [
-                            { translateX: (st.x - 0.5) * SCREEN_W },
-                            { translateY: (st.y - 0.5) * SCREEN_H },
-                            { scale: st.scale ?? 1 },
-                            { rotate: `${st.rotation ?? 0}deg` },
-                          ],
-                        }]}
-                      >
-                        {st.text}
-                      </Text>
+                {(story.stickers ?? []).map((st: any, i: number) => {
+                  const { textStyle, boxStyle } = resolveSticker(st);
+                  return (
+                    <View key={i} style={StyleSheet.absoluteFill}>
+                      <View style={styles.captionStickerCenter}>
+                        <View
+                          style={[boxStyle, {
+                            transform: [
+                              { translateX: (st.x - 0.5) * SCREEN_W },
+                              { translateY: (st.y - 0.5) * SCREEN_H },
+                              { scale: st.scale ?? 1 },
+                              { rotate: `${st.rotation ?? 0}deg` },
+                            ],
+                          }]}
+                        >
+                          <Text style={textStyle}>{st.text}</Text>
+                        </View>
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               </Animated.View>
             )}
 
-            {/* Own-story footer: viewer count */}
+            {/* Own-story footer: viewer count — tap to see WHO watched */}
             {isOwn && (
-              <View style={[styles.seenRow, { bottom: insets.bottom + 18 }]} pointerEvents="none">
+              <TouchableOpacity
+                style={[styles.seenRow, { bottom: insets.bottom + 18 }]}
+                onPress={openViewers}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
+              >
                 <Ionicons name="eye-outline" size={18} color="#fff" />
                 <Text style={styles.seenText}>{viewerCount ?? 0}</Text>
-              </View>
+                <Ionicons name="chevron-up" size={14} color="rgba(255,255,255,0.7)" />
+              </TouchableOpacity>
             )}
 
-            {/* Song used on this story */}
+            {/* Someone else's story: heart it (shows on their viewers list) */}
+            {!isOwn && !!currentUserId && (
+              <TouchableOpacity
+                style={[styles.likeBtn, { bottom: insets.bottom + 18 }]}
+                onPress={toggleStoryLike}
+                activeOpacity={0.7}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons name={liked ? 'heart' : 'heart-outline'} size={30} color={liked ? '#F43F5E' : '#fff'} />
+              </TouchableOpacity>
+            )}
+
+            {/* Song used on this story — stacked above the caption's MEASURED
+                height so the two can never overlap, however long the caption. */}
             {!!story.song_id && (
               <SongAttribution
-                style={{ bottom: insets.bottom + (story.caption ? 76 : isOwn ? 52 : 28) }}
+                style={{
+                  bottom: insets.bottom + (
+                    story.caption && !story.caption_style
+                      ? (isOwn ? 64 : 28) + captionH + 10
+                      : isOwn ? 52 : 28
+                  ),
+                }}
                 songId={story.song_id}
                 title={story.song_title}
                 artist={story.song_artist}
@@ -593,6 +700,90 @@ export default function StoryViewerScreen() {
           </>
         )}
       </Animated.View>
+
+      {/* Viewers sheet — who watched (and who LIKED — hearts ride on top).
+          Fixed-height IG-style sheet that slides well up the screen even when
+          the list is short; story + music pause while it's open. */}
+      {showViewers && (
+        <View style={StyleSheet.absoluteFill}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.viewersBackdrop, { opacity: sheetAnim }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => closeViewers()} />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.viewersSheet,
+              {
+                height: SCREEN_H * 0.62,
+                paddingBottom: insets.bottom + SPACING.md,
+                transform: [
+                  { translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_H * 0.62, 0] }) },
+                  { translateY: sheetDragY },
+                ],
+              },
+            ]}
+          >
+            {/* Top bar is the drag target: pull anywhere on it to dismiss */}
+            <View {...sheetPan.panHandlers}>
+              <View style={styles.viewersHandle} />
+              <View style={styles.viewersHeader}>
+                <Text style={styles.viewersTitle}>Viewers</Text>
+                <View style={styles.viewersCountChip}>
+                  <Ionicons name="eye-outline" size={13} color="rgba(255,255,255,0.8)" />
+                  <Text style={styles.viewersCountText}>{viewerCount ?? viewers.length}</Text>
+                </View>
+              </View>
+              <View style={styles.viewersDivider} />
+            </View>
+            {viewersLoading ? (
+              <ActivityIndicator color="#fff" style={{ marginVertical: SPACING.xl }} />
+            ) : viewers.length === 0 ? (
+              <View style={styles.viewersEmptyWrap}>
+                <Ionicons name="eye-outline" size={34} color="rgba(255,255,255,0.35)" />
+                <Text style={styles.viewersEmpty}>No views yet</Text>
+                <Text style={styles.viewersEmptySub}>Check back soon</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={viewers}
+                keyExtractor={(v) => v.id}
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item: v }) => (
+                  <TouchableOpacity
+                    style={styles.viewerRow}
+                    activeOpacity={0.7}
+                    onPress={() => { closeViewers(true); router.push(`/profile/${v.id}`); }}
+                  >
+                    <View style={styles.viewerAvatarWrap}>
+                      {v.avatar_url ? (
+                        <ExpoImage source={{ uri: v.avatar_url }} style={styles.viewerAvatar} contentFit="cover" />
+                      ) : (
+                        <LinearGradient colors={['#F26522', '#E8401C']} style={styles.viewerAvatar}>
+                          <Text style={styles.viewerAvatarText}>
+                            {(v.display_name || v.username || '?').charAt(0).toUpperCase()}
+                          </Text>
+                        </LinearGradient>
+                      )}
+                      {/* Liked this story — red heart emblem on the avatar */}
+                      {v.liked && (
+                        <View style={styles.viewerLikeBadge}>
+                          <Ionicons name="heart" size={10} color="#fff" />
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.viewerInfo}>
+                      <View style={styles.viewerNameRow}>
+                        <Text style={styles.viewerName} numberOfLines={1}>{v.display_name || v.username}</Text>
+                        <BadgeEmblem profile={v} size={13} />
+                      </View>
+                      <Text style={styles.viewerHandle} numberOfLines={1}>@{v.username}</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </Animated.View>
+        </View>
+      )}
     </View>
   );
 }
@@ -635,4 +826,56 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   seenRow: { position: 'absolute', left: SPACING.md, flexDirection: 'row', alignItems: 'center', gap: 5 },
   seenText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+
+  // Heart on someone else's story (mirrors the owner's eye row, right side).
+  likeBtn: { position: 'absolute', right: SPACING.md },
+
+  // Viewers sheet (own stories): tall IG-style sheet — fixed height (set in
+  // JSX) so it rises well up the screen even with only a couple of viewers.
+  viewersBackdrop: { backgroundColor: 'rgba(0,0,0,0.55)' },
+  viewersSheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: '#0E0E0E',
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingTop: SPACING.sm, paddingHorizontal: SPACING.md,
+    borderTopWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)',
+  },
+  viewersHandle: {
+    width: 38, height: 5, borderRadius: 2.5, alignSelf: 'center',
+    backgroundColor: 'rgba(255,255,255,0.28)', marginBottom: SPACING.sm,
+  },
+  viewersHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: SPACING.xs, marginBottom: SPACING.xs,
+  },
+  viewersTitle: { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  viewersCountChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.10)', borderRadius: 999,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  viewersCountText: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '700' },
+  viewersDivider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.12)', marginBottom: SPACING.xs },
+  viewersEmptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingBottom: SPACING.xxl },
+  viewersEmpty: { color: 'rgba(255,255,255,0.75)', fontSize: 15, fontWeight: '700' },
+  viewersEmptySub: { color: 'rgba(255,255,255,0.45)', fontSize: 13 },
+  viewerRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 2, paddingVertical: SPACING.sm },
+  viewerAvatarWrap: { width: 44, height: 44 },
+  viewerAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  viewerAvatarText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  // Red heart emblem on likers' avatars (likers sort to the top of the list).
+  viewerLikeBadge: {
+    position: 'absolute', bottom: -2, right: -4,
+    width: 19, height: 19, borderRadius: 9.5,
+    backgroundColor: '#F43F5E',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#0E0E0E',
+  },
+  viewerInfo: { flex: 1 },
+  viewerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  viewerName: { color: '#fff', fontSize: 15, fontWeight: '700', flexShrink: 1 },
+  viewerHandle: { color: 'rgba(255,255,255,0.55)', fontSize: 12.5, marginTop: 1 },
 });

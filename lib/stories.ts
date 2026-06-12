@@ -33,8 +33,15 @@ export type Story = {
   song_artist_id?: string | null;
   // Deprecated single-caption placement (story_caption_style.sql).
   caption_style?: { x: number; y: number; scale: number; rotation: number } | null;
-  // Draggable text stickers placed anywhere on the media — see story_stickers.sql.
-  stickers?: { text: string; x: number; y: number; scale: number; rotation: number }[] | null;
+  // Draggable text/emoji stickers placed anywhere on the media — see
+  // story_stickers.sql. The optional style fields (font/color/bg/emoji) are
+  // resolved by components/StickerLayer's resolveSticker() in editor + viewer.
+  stickers?: StorySticker[] | null;
+};
+
+export type StorySticker = {
+  text: string; x: number; y: number; scale: number; rotation: number;
+  font?: string; color?: string; bg?: string; emoji?: boolean;
 };
 
 export type StoryGroup = {
@@ -76,7 +83,7 @@ export async function createStory(input: {
   aspectRatio?: string | null;
   durationSeconds?: number | null;
   song?: { id: string; title: string; artist: string; artistId: string } | null;
-  stickers?: { text: string; x: number; y: number; scale: number; rotation: number }[] | null;
+  stickers?: StorySticker[] | null;
 }): Promise<void> {
   const { error } = await supabase.from('stories').insert({
     user_id: input.userId,
@@ -290,4 +297,58 @@ export async function fetchStoryViewerCount(storyId: string): Promise<number> {
     .select('*', { count: 'exact', head: true })
     .eq('story_id', storyId);
   return count ?? 0;
+}
+
+// Who watched a story (owner-facing list), likers sorted to the top with a
+// `liked` flag. Manual two-step join — viewer_id references auth.users, so
+// profiles are fetched separately. Degrades gracefully if story_likes.sql
+// hasn't been applied (likes just read as empty).
+export type StoryViewer = StoryProfile & { liked?: boolean };
+
+export async function fetchStoryViewers(storyId: string): Promise<StoryViewer[]> {
+  const [viewsRes, likesRes] = await Promise.all([
+    supabase.from('story_views').select('viewer_id').eq('story_id', storyId),
+    supabase.from('story_likes').select('user_id').eq('story_id', storyId),
+  ]);
+  const likedIds = new Set((likesRes.data ?? []).map((l: any) => l.user_id));
+  const ids = Array.from(new Set([
+    ...(viewsRes.data ?? []).map((v: any) => v.viewer_id),
+    ...likedIds, // a liker should appear even if their view write is lagging
+  ]));
+  if (ids.length === 0) return [];
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, username, display_name, avatar_url, badge_tier, badge_show')
+    .in('id', ids);
+  return ((profiles ?? []) as StoryProfile[])
+    .map((p) => ({ ...p, liked: likedIds.has(p.id) }))
+    .sort((a, b) => Number(!!b.liked) - Number(!!a.liked));
+}
+
+// Whether the viewer has liked a story (drives the heart button state).
+export async function fetchStoryLiked(storyId: string, userId: string): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from('story_likes')
+      .select('story_id')
+      .eq('story_id', storyId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    return !!data;
+  } catch {
+    return false;
+  }
+}
+
+export async function setStoryLike(storyId: string, userId: string, liked: boolean): Promise<void> {
+  try {
+    if (liked) {
+      await supabase.from('story_likes').upsert(
+        { story_id: storyId, user_id: userId },
+        { onConflict: 'story_id,user_id', ignoreDuplicates: true },
+      );
+    } else {
+      await supabase.from('story_likes').delete().eq('story_id', storyId).eq('user_id', userId);
+    }
+  } catch {}
 }

@@ -1,8 +1,11 @@
 import { useRef } from 'react';
-import { Animated, PanResponder, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
+import {
+  Animated, PanResponder, Platform, StyleSheet, Text, View,
+  type GestureResponderEvent, type TextStyle, type ViewStyle,
+} from 'react-native';
 
-// Multiple draggable/pinch-resizable text stickers over story media, managed by a
-// SINGLE full-screen gesture layer:
+// Multiple draggable/pinch-resizable text + emoji stickers over story media,
+// managed by a SINGLE full-screen gesture layer:
 //  • the gesture routes to the sticker NEAREST the touch (so you don't have to hit
 //    it exactly); a touch far from any sticker counts as "open area".
 //  • a tap on a sticker → edit it; a tap on open area → create a new one.
@@ -10,13 +13,118 @@ import { Animated, PanResponder, StyleSheet, Text, View, type GestureResponderEv
 //    re-baselined whenever the finger count changes — so the gesture stays
 //    continuous as long as ≥1 finger remains (you can swap fingers without it
 //    releasing or jumping).
+//  • while a sticker is being dragged the host can show a trash zone; the release
+//    position is reported so dropping a sticker there deletes it.
 
 export type CaptionStyle = { x: number; y: number; scale: number; rotation: number };
 export const DEFAULT_CAPTION_STYLE: CaptionStyle = { x: 0.5, y: 0.5, scale: 1, rotation: 0 };
 
-export type Sticker = { id: string; text: string } & CaptionStyle;
+// ─── Text styling (iOS-style font presets, colors, backgrounds) ────────────────
+// All of this is PURE METADATA stored in the stories.stickers jsonb — the editor,
+// the live preview, and the story viewer all render through resolveSticker() so a
+// story looks identical everywhere. Every field is optional: stickers posted
+// before these existed render exactly as they used to.
 
-// Shared so the editor sticker and the viewer render identically.
+export type StickerFont = 'classic' | 'bold' | 'typewriter' | 'serif' | 'neon';
+export type StickerBg = 'none' | 'pill' | 'soft';
+
+export type Sticker = {
+  id: string;
+  text: string;
+  font?: StickerFont;
+  color?: string;
+  bg?: StickerBg;
+  size?: number;   // base font size chosen with the editor's slider (wrap density)
+  emoji?: boolean; // emoji sticker: rendered large, no shadow/background
+} & CaptionStyle;
+
+export const STICKER_FONTS: { key: StickerFont; label: string }[] = [
+  { key: 'classic', label: 'Classic' },
+  { key: 'bold', label: 'Bold' },
+  { key: 'typewriter', label: 'Typewriter' },
+  { key: 'serif', label: 'Serif' },
+  { key: 'neon', label: 'Neon' },
+];
+
+export const STICKER_COLORS = [
+  '#FFFFFF', '#0A0A0A', '#F26522', '#FAB525', '#F43F5E',
+  '#22C55E', '#3B82F6', '#A855F7', '#67E8F9', '#FB7185',
+];
+
+// Perceived luminance → black or white text over a colored pill.
+function contrastOn(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#0A0A0A' : '#FFFFFF';
+}
+
+// Explicit lineHeights matter: these styles also dress the EDITOR's multiline
+// TextInput, which auto-grows — custom families (Georgia/Menlo) misreport
+// their line metrics without one and clip as you type. textTransform is
+// deliberately absent (uppercase on a TextInput garbles measurement on iOS).
+const FONT_FACES: Record<StickerFont, TextStyle> = {
+  classic: { fontWeight: '700', fontSize: 26, lineHeight: 33 },
+  bold: { fontWeight: '900', fontSize: 30, letterSpacing: 0.3, lineHeight: 38 },
+  typewriter: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontWeight: '600', fontSize: 22, lineHeight: 29,
+  },
+  serif: {
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '600', fontSize: 26, lineHeight: 34,
+  },
+  neon: { fontWeight: '700', fontSize: 28, letterSpacing: 0.5, lineHeight: 36 },
+};
+
+// The full visual for a sticker: text style + the box (pill) behind it.
+export function resolveSticker(s: {
+  font?: StickerFont; color?: string; bg?: StickerBg; size?: number; emoji?: boolean;
+}): { textStyle: TextStyle; boxStyle: ViewStyle } {
+  if (s.emoji) {
+    return {
+      textStyle: { fontSize: 64, textAlign: 'center' },
+      boxStyle: { paddingHorizontal: 6, paddingVertical: 2 },
+    };
+  }
+  const font = FONT_FACES[s.font ?? 'classic'] ?? FONT_FACES.classic;
+  const color = s.color ?? '#FFFFFF';
+  const bg = s.bg ?? 'none';
+
+  const textStyle: TextStyle = {
+    ...font,
+    color,
+    textAlign: 'center',
+    maxWidth: 300,
+  };
+  // Slider-chosen size overrides the face's default (lineHeight tracks it so
+  // the auto-growing editor input never clips a wrapped line).
+  if (s.size) {
+    textStyle.fontSize = s.size;
+    textStyle.lineHeight = Math.round(s.size * 1.28);
+  }
+  const boxStyle: ViewStyle = { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 };
+
+  if (bg === 'pill') {
+    boxStyle.backgroundColor = color;
+    textStyle.color = contrastOn(color);
+  } else if (bg === 'soft') {
+    boxStyle.backgroundColor = 'rgba(0,0,0,0.45)';
+  } else if (s.font === 'neon') {
+    // Free-floating neon: the glow IS the separation from the media.
+    textStyle.textShadowColor = color;
+    textStyle.textShadowRadius = 14;
+    textStyle.textShadowOffset = { width: 0, height: 0 };
+  } else {
+    textStyle.textShadowColor = 'rgba(0,0,0,0.6)';
+    textStyle.textShadowRadius = 6;
+    textStyle.textShadowOffset = { width: 0, height: 1 };
+  }
+  return { textStyle, boxStyle };
+}
+
+// Legacy export — the viewer's old single-caption placement renders with this.
 export const captionStickerTextStyle = {
   color: '#fff',
   fontSize: 26,
@@ -48,6 +156,7 @@ function pinch(touches: any[]) {
 
 export default function StickerLayer({
   stickers, frameW, frameH, editingId, onManipulate, onTapSticker, onTapEmpty,
+  onDragActive, onDragMove, onRelease,
 }: {
   stickers: Sticker[];
   frameW: number;
@@ -56,6 +165,13 @@ export default function StickerLayer({
   onManipulate: (id: string, style: CaptionStyle) => void;
   onTapSticker: (id: string) => void;
   onTapEmpty: (xNorm: number, yNorm: number) => void;
+  // Fired when a sticker drag starts/ends — the host shows its trash zone.
+  onDragActive?: (active: boolean) => void;
+  // Live centroid (normalized) during a drag — lets the host highlight the trash.
+  onDragMove?: (xNorm: number, yNorm: number) => void;
+  // Release position of a finished drag; the host deletes the sticker if it was
+  // dropped on the trash. Fired after the placement has been committed.
+  onRelease?: (id: string, xNorm: number, yNorm: number) => void;
 }) {
   const animRef = useRef<Record<string, Anim>>({});
   const curRef = useRef<Record<string, Cur>>({});
@@ -73,13 +189,15 @@ export default function StickerLayer({
 
   // Latest props for the once-created PanResponder.
   const stickersRef = useRef(stickers); stickersRef.current = stickers;
-  const cbRef = useRef({ onManipulate, onTapSticker, onTapEmpty });
-  cbRef.current = { onManipulate, onTapSticker, onTapEmpty };
+  const cbRef = useRef({ onManipulate, onTapSticker, onTapEmpty, onDragActive, onDragMove, onRelease });
+  cbRef.current = { onManipulate, onTapSticker, onTapEmpty, onDragActive, onDragMove, onRelease };
 
   const active = useRef<string | null>(null);
   const nearTap = useRef(false); // was the touch-down close enough to count a TAP as "edit this sticker"
   const moved = useRef(false);
+  const dragSignalled = useRef(false);
   const grant = useRef({ x: 0, y: 0 });
+  const last = useRef({ x: 0, y: 0 });
   const base = useRef({ cx: 0, cy: 0, dist: 0, angle: 0, px: 0, py: 0, scale: 1, rotation: 0 });
   const prevCount = useRef(0);
 
@@ -104,7 +222,9 @@ export default function StickerLayer({
     } else if (id) {
       const cur = curRef.current[id];
       if (cur) cbRef.current.onManipulate(id, { x: cur.x / frameW + 0.5, y: cur.y / frameH + 0.5, scale: cur.scale, rotation: cur.rotation });
+      cbRef.current.onRelease?.(id, last.current.x / frameW, last.current.y / frameH);
     }
+    if (dragSignalled.current) { cbRef.current.onDragActive?.(false); dragSignalled.current = false; }
     active.current = null;
   }
 
@@ -118,6 +238,7 @@ export default function StickerLayer({
         const touches = e.nativeEvent.touches;
         const c = centroid(touches);
         grant.current = { x: c.x, y: c.y };
+        last.current = { x: c.x, y: c.y };
         moved.current = false;
         // Pick the nearest sticker to the touch (by committed center).
         let nearest: string | null = null, best = Infinity;
@@ -137,11 +258,17 @@ export default function StickerLayer({
         if (touches.length === 0) return;
         if (touches.length !== prevCount.current) rebaseline(touches); // finger added/removed → no jump
         const c = centroid(touches);
+        last.current = { x: c.x, y: c.y };
         if (Math.abs(c.x - grant.current.x) > 5 || Math.abs(c.y - grant.current.y) > 5) moved.current = true;
         const id = active.current;
         if (!id) return; // open-area drag: nothing to manipulate
         const a = animRef.current[id]; const cur = curRef.current[id];
         if (!a || !cur) return;
+        if (moved.current && !dragSignalled.current) {
+          dragSignalled.current = true;
+          cbRef.current.onDragActive?.(true);
+        }
+        if (moved.current) cbRef.current.onDragMove?.(c.x / frameW, c.y / frameH);
         const nx = base.current.px + (c.x - base.current.cx);
         const ny = base.current.py + (c.y - base.current.cy);
         let ns = base.current.scale, nr = base.current.rotation;
@@ -164,6 +291,7 @@ export default function StickerLayer({
       {stickers.map((s) => {
         if (s.id === editingId || !s.text) return null;
         const a = getAnim(s);
+        const { textStyle, boxStyle } = resolveSticker(s);
         return (
           <View key={s.id} style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
             <Animated.View
@@ -176,7 +304,9 @@ export default function StickerLayer({
                 ],
               }}
             >
-              <Text style={captionStickerTextStyle}>{s.text}</Text>
+              <View style={boxStyle}>
+                <Text style={textStyle}>{s.text}</Text>
+              </View>
             </Animated.View>
           </View>
         );

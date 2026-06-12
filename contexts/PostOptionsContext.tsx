@@ -75,6 +75,7 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
         visible={!!playlistPostId}
         postId={playlistPostId ?? ''}
         onClose={() => setPlaylistPostId(null)}
+        inOverlay
       />
     </>
   );
@@ -287,40 +288,51 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
     },
   })).current;
 
+  const content = (
+    <View style={styles.overlay}>
+      <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
+      </Animated.View>
+      <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.sm, transform: [{ translateY }] }]}>
+        <View style={styles.grab} {...pan.panHandlers}>
+          <View style={styles.handle} />
+        </View>
+        <View style={styles.divider} />
+        {options.map((opt, i) => (
+          <TouchableOpacity
+            key={opt.key}
+            style={[styles.option, i < options.length - 1 && styles.optionBorder]}
+            onPress={opt.onPress}
+            activeOpacity={0.7}
+          >
+            <View style={[
+              styles.iconWrap,
+              opt.destructive && styles.iconWrapDestructive,
+              opt.active && { backgroundColor: (opt.activeColor ?? COLORS.primary) + '1A' },
+            ]}>
+              <Ionicons
+                name={opt.icon}
+                size={20}
+                color={opt.active ? (opt.activeColor ?? COLORS.primary) : opt.destructive ? COLORS.error : COLORS.text}
+              />
+            </View>
+            <Text style={[styles.optionLabel, opt.destructive && styles.destructive]}>{opt.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </Animated.View>
+    </View>
+  );
+
+  // iOS: this sheet lives inside the provider's FullWindowOverlay, which
+  // already floats above EVERYTHING (native-modal screens included). A real
+  // <Modal> in there tries to present from the overlay's window and DEADLOCKS
+  // the app — so on iOS the overlay itself is the presentation layer.
+  if (Platform.OS === 'ios') {
+    return visible ? <View style={StyleSheet.absoluteFill}>{content}</View> : null;
+  }
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
-      <View style={styles.overlay}>
-        <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
-        </Animated.View>
-        <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.sm, transform: [{ translateY }] }]}>
-          <View style={styles.grab} {...pan.panHandlers}>
-            <View style={styles.handle} />
-          </View>
-          <View style={styles.divider} />
-          {options.map((opt, i) => (
-            <TouchableOpacity
-              key={opt.key}
-              style={[styles.option, i < options.length - 1 && styles.optionBorder]}
-              onPress={opt.onPress}
-              activeOpacity={0.7}
-            >
-              <View style={[
-                styles.iconWrap,
-                opt.destructive && styles.iconWrapDestructive,
-                opt.active && { backgroundColor: (opt.activeColor ?? COLORS.primary) + '1A' },
-              ]}>
-                <Ionicons
-                  name={opt.icon}
-                  size={20}
-                  color={opt.active ? (opt.activeColor ?? COLORS.primary) : opt.destructive ? COLORS.error : COLORS.text}
-                />
-              </View>
-              <Text style={[styles.optionLabel, opt.destructive && styles.destructive]}>{opt.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </Animated.View>
-      </View>
+      {content}
     </Modal>
   );
 }

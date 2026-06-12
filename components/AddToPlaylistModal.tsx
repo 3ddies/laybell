@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, Modal, FlatList,
-  TouchableOpacity, ActivityIndicator, Alert,
+  TouchableOpacity, ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,9 +15,13 @@ type Props = {
   visible: boolean;
   postId: string;
   onClose: () => void;
+  // True when this instance is hosted inside a FullWindowOverlay (the global
+  // 3-dot provider). A real <Modal> presented from inside an overlay window
+  // DEADLOCKS on iOS, so overlay-hosted instances render as plain views.
+  inOverlay?: boolean;
 };
 
-export default function AddToPlaylistModal({ visible, postId, onClose }: Props) {
+export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -82,8 +86,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose }: Props) 
     setAdding(null);
   }
 
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+  const content = (
       <TouchableOpacity style={styles.overlay} onPress={onClose} activeOpacity={1}>
         <TouchableOpacity style={styles.sheet} activeOpacity={1}>
           {/* Handle */}
@@ -148,6 +151,14 @@ export default function AddToPlaylistModal({ visible, postId, onClose }: Props) 
           )}
         </TouchableOpacity>
       </TouchableOpacity>
+  );
+
+  if (inOverlay && Platform.OS === 'ios') {
+    return visible ? <View style={StyleSheet.absoluteFill}>{content}</View> : null;
+  }
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      {content}
     </Modal>
   );
 }
