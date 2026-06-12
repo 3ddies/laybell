@@ -313,7 +313,11 @@ export default function Comments({
         }}
       />
 
-      <View style={[styles.inputWrap, contentPadding != null && { marginHorizontal: contentPadding }]}>
+      {/* The input bar always gets a horizontal inset (host's contentPadding,
+          or a default) — with none, the input's rounded corners sat clipped
+          against the screen edge (the expanded-post host passes no padding so
+          its media can stay full-bleed). */}
+      <View style={[styles.inputWrap, { marginHorizontal: contentPadding ?? SPACING.md }]}>
         {replyTo && (
           <View style={styles.replyingBar}>
             <Ionicons name="arrow-undo" size={13} color={colors.primary} />

@@ -985,14 +985,10 @@ export default function MusicScreen() {
               swiping and silences notifications for distraction-free listening;
               tap again to bring everything back. */}
           <TouchableOpacity onPress={() => setListenMode(!listenMode)} activeOpacity={0.85}>
-            <LinearGradient
-              colors={['#FAB525', '#F5921F']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={[styles.listenBtn, listenMode && styles.listenBtnActive]}
-            >
-              <Ionicons name={listenMode ? 'close' : 'headset'} size={16} color="#fff" />
+            <View style={styles.listenBtn}>
+              <Ionicons name={listenMode ? 'close' : 'headset'} size={16} color="#1C0E06" />
               <Text style={styles.listenBtnText}>{listenMode ? 'Exit' : 'Listen'}</Text>
-            </LinearGradient>
+            </View>
           </TouchableOpacity>
         </View>
       </View>
@@ -1915,17 +1911,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   newBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  // Listen mode pill — the Laybell logo yellow (#FAB525) easing into a soft
-  // orange tail; while active it dims a touch and reads "Exit" so the same
-  // button always shows the way back.
+  // Listen mode pill — solid Laybell logo yellow: the SAME colors.primaryLight
+  // hex the home-page wordmark uses, flat (no gradient/glow), with DARK glyphs
+  // — white icon/text inside the fill optically washed the yellow out and made
+  // it read brighter than the logo. No dim in the active/Exit state.
   listenBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: colors.primaryLight,
     borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md + 4,
-    shadowColor: colors.primaryLight, shadowOpacity: 0.5, shadowRadius: 9,
-    shadowOffset: { width: 0, height: 0 }, elevation: 6,
   },
-  listenBtnActive: { opacity: 0.85 },
   listenBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
 
   // A single rounded "segmented control" track holding the 4 segments; the active

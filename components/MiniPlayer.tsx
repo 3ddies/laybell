@@ -73,7 +73,32 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
     }).start();
   }, [isBar, barFade]);
 
-  if (!currentTrack || expanded) return null;
+  // Appearance/exit: when a song STARTS (no track → track), the card fades in
+  // with a gentle rise instead of popping up; when playback ENDS (track →
+  // none, via the ×, queue end, or stop) it fades back out the same way
+  // before unmounting. Track-to-track changes (queue advance) don't re-fade.
+  const appearAnim = useRef(new Animated.Value(0)).current;
+  const hadTrackRef = useRef(false);
+  const [barShown, setBarShown] = useState(false);
+  // Last track kept for the fade-out frames (currentTrack is already null).
+  const lastTrackRef = useRef(currentTrack);
+  if (currentTrack) lastTrackRef.current = currentTrack;
+  useEffect(() => {
+    const has = !!currentTrack;
+    if (has && !hadTrackRef.current) {
+      setBarShown(true);
+      appearAnim.setValue(0);
+      Animated.timing(appearAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
+    } else if (!has && hadTrackRef.current) {
+      Animated.timing(appearAnim, { toValue: 0, duration: 260, useNativeDriver: true })
+        .start(({ finished }) => { if (finished) setBarShown(false); });
+    }
+    hadTrackRef.current = has;
+  }, [currentTrack, appearAnim]);
+  const appearRise = appearAnim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] });
+
+  const track = currentTrack ?? lastTrackRef.current;
+  if ((!currentTrack && !barShown) || !track || expanded) return null;
 
   // Camera side chip — minimal: cover (tap to open the full player) and
   // play/pause. No title, no scrubber, no close — the camera stays the focus.
@@ -89,8 +114,8 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
         ]}
       >
         <TouchableOpacity style={styles.compactCoverWrap} onPress={() => expand()}>
-          {currentTrack.cover ? (
-            <Image source={{ uri: currentTrack.cover }} style={styles.compactCover} />
+          {track.cover ? (
+            <Image source={{ uri: track.cover }} style={styles.compactCover} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.compactCover}>
               <Ionicons name="musical-notes" size={13} color={colors.primary} />
@@ -123,8 +148,8 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
         ]}
       >
         <TouchableOpacity style={styles.compactCoverWrap} onPress={() => expand()}>
-          {currentTrack.cover ? (
-            <Image source={{ uri: currentTrack.cover }} style={styles.compactCover} />
+          {track.cover ? (
+            <Image source={{ uri: track.cover }} style={styles.compactCover} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.compactCover}>
               <Ionicons name="musical-notes" size={13} color={colors.primary} />
@@ -132,7 +157,7 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
           )}
         </TouchableOpacity>
         <TouchableOpacity style={styles.compactBody} activeOpacity={0.7} onPress={() => expand()}>
-          <Text style={styles.compactTitle} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
+          <Text style={styles.compactTitle} numberOfLines={1}>{track.caption || 'Audio Track'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.compactBtn} onPress={() => (isPlaying ? pause() : resume())} hitSlop={6}>
           <Ionicons
@@ -158,7 +183,11 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
   return (
     <Animated.View
       pointerEvents={isBar ? 'auto' : 'none'}
-      style={[styles.container, { bottom: bottomOffset, opacity: barFade, transform: [{ translateY: listenSlide }] }]}
+      style={[styles.container, {
+        bottom: bottomOffset,
+        opacity: Animated.multiply(barFade, appearAnim),
+        transform: [{ translateY: Animated.add(listenSlide, appearRise) }],
+      }]}
     >
       <View style={styles.scrubWrap}>
         <Scrubber
@@ -171,8 +200,8 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
       <View style={styles.inner}>
         {/* Album cover — tap to open the full now-playing screen */}
         <TouchableOpacity style={styles.coverWrap} onPress={() => expand()}>
-          {currentTrack.cover ? (
-            <Image source={{ uri: currentTrack.cover }} style={styles.cover} />
+          {track.cover ? (
+            <Image source={{ uri: track.cover }} style={styles.cover} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
               <Ionicons name="musical-notes" size={16} color={colors.primary} />
@@ -183,8 +212,8 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
         {/* Tapping the bar (except the controls) expands the now-playing screen */}
         <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => expand()}>
           <View style={styles.trackInfo}>
-            <Text style={styles.caption} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
-            <Text style={styles.artist} numberOfLines={1}>{currentTrack.artist}</Text>
+            <Text style={styles.caption} numberOfLines={1}>{track.caption || 'Audio Track'}</Text>
+            <Text style={styles.artist} numberOfLines={1}>{track.artist}</Text>
           </View>
           <Text style={styles.timeText}>
             {formatMs(positionMs)}{durationMs > 0 ? ` / ${formatMs(durationMs)}` : ''}

@@ -136,7 +136,13 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
         <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
         </Animated.View>
-        <Animated.View style={[styles.sheet, { height, paddingBottom: kbHeight > 0 ? kbHeight : insets.bottom, transform: [{ translateY }] }]}>
+        <Animated.View
+          // Bottom clearance: the input bar already carries its own bottom
+          // padding (SPACING.md), so the sheet only adds the REMAINDER of the
+          // safe-area inset — stacking the full inset on top left a thick dead
+          // strip under the input. Keyboard open → reserve its exact height.
+          style={[styles.sheet, { height, paddingBottom: kbHeight > 0 ? kbHeight : Math.max(0, insets.bottom - SPACING.md), transform: [{ translateY }] }]}
+        >
           {/* Drag grip — handle + title. Claims the gesture on touch. */}
           <View style={styles.grab} {...pan.panHandlers}>
             <View style={styles.handle} />
