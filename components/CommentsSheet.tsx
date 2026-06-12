@@ -6,7 +6,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Comments from './Comments';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 const SCREEN_H = Dimensions.get('window').height;
 
@@ -27,6 +28,8 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
   ownerId?: string | null;
   onClose: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const FULL_H = SCREEN_H - insets.top;
   const DEFAULT_H = Math.min(Math.round(SCREEN_H * 0.78), FULL_H);
@@ -140,7 +143,7 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
             <Text style={styles.title}>Comments</Text>
           </View>
           <TouchableOpacity style={styles.closeBtn} onPress={dismiss} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+            <Ionicons name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
           <View style={styles.divider} />
           <View style={styles.body}>
@@ -152,18 +155,18 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl,
     overflow: 'hidden',
   },
   grab: { paddingTop: SPACING.sm, paddingBottom: SPACING.sm, alignItems: 'center', gap: SPACING.sm },
-  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: COLORS.border },
-  title: { color: COLORS.text, fontSize: 16, fontWeight: '800' },
+  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: colors.border },
+  title: { color: colors.text, fontSize: 16, fontWeight: '800' },
   closeBtn: { position: 'absolute', top: SPACING.sm, right: SPACING.md, padding: 4 },
-  divider: { height: 0.5, backgroundColor: COLORS.border },
+  divider: { height: 0.5, backgroundColor: colors.border },
   body: { flex: 1 },
 });

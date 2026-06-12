@@ -14,7 +14,8 @@ import { captureAndSaveLocation } from '../lib/location';
 import { requestContactsPermission, readContactHashes } from '../lib/contacts';
 import { saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { fetchSuggestedAccounts, REASON_LABEL } from '../lib/suggestions';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { GENRES as APP_GENRES } from '../lib/genres';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -39,6 +40,8 @@ const GENRES = APP_GENRES.map(g => ({
 }));
 
 export default function OnboardingScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
@@ -219,7 +222,7 @@ export default function OnboardingScreen() {
     return (
       <View style={styles.container}>
         <LinearGradient
-          colors={['#1C0A04', COLORS.background, COLORS.background]}
+          colors={['#1C0A04', colors.background, colors.background]}
           style={[styles.welcomeBg, { paddingTop: insets.top + SPACING.md, paddingBottom: insets.bottom + SPACING.lg }]}
         >
           <View style={styles.welcomeContent}>
@@ -237,7 +240,7 @@ export default function OnboardingScreen() {
               ].map((f, i) => (
                 <View key={i} style={styles.featureRow}>
                   <View style={styles.featureIcon}>
-                    <Ionicons name={f.icon as any} size={20} color={COLORS.primary} />
+                    <Ionicons name={f.icon as any} size={20} color={colors.primary} />
                   </View>
                   <Text style={styles.featureText}>{f.text}</Text>
                 </View>
@@ -248,7 +251,7 @@ export default function OnboardingScreen() {
           <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep(1)}>
             <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
               <Text style={styles.primaryBtnText}>Get Started</Text>
-              <Ionicons name="arrow-forward" size={20} color={COLORS.text} />
+              <Ionicons name="arrow-forward" size={20} color={colors.text} />
             </LinearGradient>
           </TouchableOpacity>
         </LinearGradient>
@@ -297,7 +300,7 @@ export default function OnboardingScreen() {
               value={dobMonth}
               onChangeText={handleDobMonth}
               placeholder="MM"
-              placeholderTextColor={COLORS.textTertiary}
+              placeholderTextColor={colors.textTertiary}
               keyboardType="number-pad"
               maxLength={2}
             />
@@ -307,7 +310,7 @@ export default function OnboardingScreen() {
               value={dobDay}
               onChangeText={handleDobDay}
               placeholder="DD"
-              placeholderTextColor={COLORS.textTertiary}
+              placeholderTextColor={colors.textTertiary}
               keyboardType="number-pad"
               maxLength={2}
             />
@@ -317,7 +320,7 @@ export default function OnboardingScreen() {
               value={dobYear}
               onChangeText={handleDobYear}
               placeholder="YYYY"
-              placeholderTextColor={COLORS.textTertiary}
+              placeholderTextColor={colors.textTertiary}
               keyboardType="number-pad"
               maxLength={4}
             />
@@ -333,11 +336,11 @@ export default function OnboardingScreen() {
           >
             <LinearGradient colors={valid ? GRADIENTS.primary : ['#333', '#222']} style={styles.primaryBtnInner}>
               {savingAbout ? (
-                <ActivityIndicator color={COLORS.text} />
+                <ActivityIndicator color={colors.text} />
               ) : (
                 <>
                   <Text style={styles.primaryBtnText}>Continue</Text>
-                  <Ionicons name="arrow-forward" size={20} color={COLORS.text} />
+                  <Ionicons name="arrow-forward" size={20} color={colors.text} />
                 </>
               )}
             </LinearGradient>
@@ -363,7 +366,7 @@ export default function OnboardingScreen() {
 
         <ScrollView contentContainerStyle={styles.aboutContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View style={styles.permCard}>
-            <View style={styles.permIcon}><Ionicons name="location-outline" size={22} color={COLORS.primary} /></View>
+            <View style={styles.permIcon}><Ionicons name="location-outline" size={22} color={colors.primary} /></View>
             <View style={styles.permInfo}>
               <Text style={styles.permTitle}>Location</Text>
               <Text style={styles.permSub}>Suggest people in your area (approximate only)</Text>
@@ -374,13 +377,13 @@ export default function OnboardingScreen() {
               disabled={locEnabled || permBusy === 'location'}
             >
               {permBusy === 'location'
-                ? <ActivityIndicator color={COLORS.text} size="small" />
+                ? <ActivityIndicator color={colors.text} size="small" />
                 : <Text style={[styles.permBtnText, locEnabled && styles.permBtnTextDone]}>{locEnabled ? 'Enabled' : 'Enable'}</Text>}
             </TouchableOpacity>
           </View>
 
           <View style={styles.permCard}>
-            <View style={styles.permIcon}><Ionicons name="people-outline" size={22} color={COLORS.primary} /></View>
+            <View style={styles.permIcon}><Ionicons name="people-outline" size={22} color={colors.primary} /></View>
             <View style={styles.permInfo}>
               <Text style={styles.permTitle}>Contacts</Text>
               <Text style={styles.permSub}>Find contacts who are already on Laybell</Text>
@@ -391,7 +394,7 @@ export default function OnboardingScreen() {
               disabled={contactsEnabled || permBusy === 'contacts'}
             >
               {permBusy === 'contacts'
-                ? <ActivityIndicator color={COLORS.text} size="small" />
+                ? <ActivityIndicator color={colors.text} size="small" />
                 : <Text style={[styles.permBtnText, contactsEnabled && styles.permBtnTextDone]}>{contactsEnabled ? 'Enabled' : 'Enable'}</Text>}
             </TouchableOpacity>
           </View>
@@ -402,7 +405,7 @@ export default function OnboardingScreen() {
             value={obPhone}
             onChangeText={setObPhone}
             placeholder="Your number"
-            placeholderTextColor={COLORS.textTertiary}
+            placeholderTextColor={colors.textTertiary}
             keyboardType="phone-pad"
             autoCorrect={false}
           />
@@ -413,7 +416,7 @@ export default function OnboardingScreen() {
           <TouchableOpacity style={styles.primaryBtn} onPress={handlePermissionsContinue}>
             <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
               <Text style={styles.primaryBtnText}>Continue</Text>
-              <Ionicons name="arrow-forward" size={20} color={COLORS.text} />
+              <Ionicons name="arrow-forward" size={20} color={colors.text} />
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity onPress={handlePermissionsContinue}>
@@ -456,7 +459,7 @@ export default function OnboardingScreen() {
                 </Text>
                 {active && (
                   <View style={styles.genreCheck}>
-                    <Ionicons name="checkmark" size={12} color={COLORS.text} />
+                    <Ionicons name="checkmark" size={12} color={colors.text} />
                   </View>
                 )}
               </TouchableOpacity>
@@ -475,13 +478,13 @@ export default function OnboardingScreen() {
               style={styles.primaryBtnInner}
             >
               {loading ? (
-                <ActivityIndicator color={COLORS.text} />
+                <ActivityIndicator color={colors.text} />
               ) : (
                 <>
                   <Text style={styles.primaryBtnText}>
                     Continue {selectedGenres.size > 0 ? `(${selectedGenres.size})` : ''}
                   </Text>
-                  <Ionicons name="arrow-forward" size={20} color={COLORS.text} />
+                  <Ionicons name="arrow-forward" size={20} color={colors.text} />
                 </>
               )}
             </LinearGradient>
@@ -517,7 +520,7 @@ export default function OnboardingScreen() {
         contentContainerStyle={styles.suggestionList}
         ListEmptyComponent={
           <View style={styles.emptySuggestions}>
-            <Ionicons name="people-outline" size={40} color={COLORS.textTertiary} />
+            <Ionicons name="people-outline" size={40} color={colors.textTertiary} />
             <Text style={styles.emptySuggestionsText}>No suggestions yet — you'll discover people in the feed!</Text>
           </View>
         }
@@ -556,11 +559,11 @@ export default function OnboardingScreen() {
         <TouchableOpacity style={styles.primaryBtn} onPress={handleFinish} disabled={finishing}>
           <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
             {finishing ? (
-              <ActivityIndicator color={COLORS.text} />
+              <ActivityIndicator color={colors.text} />
             ) : (
               <>
                 <Text style={styles.primaryBtnText}>Take me to Laybell</Text>
-                <Ionicons name="musical-notes" size={20} color={COLORS.text} />
+                <Ionicons name="musical-notes" size={20} color={colors.text} />
               </>
             )}
           </LinearGradient>
@@ -570,8 +573,8 @@ export default function OnboardingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
 
   // Welcome
   welcomeBg: { flex: 1, paddingHorizontal: SPACING.lg },
@@ -581,53 +584,53 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: SPACING.sm,
   },
   welcomeTitle: {
-    color: COLORS.text, fontSize: 40, fontWeight: '800',
+    color: colors.text, fontSize: 40, fontWeight: '800',
     textAlign: 'center', lineHeight: 48,
   },
   welcomeSub: {
-    color: COLORS.textSecondary, fontSize: 16,
+    color: colors.textSecondary, fontSize: 16,
     textAlign: 'center', lineHeight: 24, paddingHorizontal: SPACING.md,
   },
   featureList: { width: '100%', gap: SPACING.md, marginTop: SPACING.sm },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   featureIcon: {
     width: 40, height: 40, borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary + '1A',
+    backgroundColor: colors.primary + '1A',
     alignItems: 'center', justifyContent: 'center',
   },
-  featureText: { color: COLORS.textSecondary, fontSize: 15, flex: 1 },
+  featureText: { color: colors.textSecondary, fontSize: 15, flex: 1 },
 
   // Steps
   stepHeader: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.xxl + SPACING.md, paddingBottom: SPACING.md, gap: SPACING.sm },
   progressDots: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.sm },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.border },
-  dotActive: { width: 24, backgroundColor: COLORS.primary },
-  stepTitle: { color: COLORS.text, fontSize: 28, fontWeight: '800' },
-  stepSub: { color: COLORS.textSecondary, fontSize: 15, lineHeight: 22 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
+  dotActive: { width: 24, backgroundColor: colors.primary },
+  stepTitle: { color: colors.text, fontSize: 28, fontWeight: '800' },
+  stepSub: { color: colors.textSecondary, fontSize: 15, lineHeight: 22 },
 
   // About you (gender + age)
   aboutContent: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.md, paddingBottom: 160 },
-  aboutLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SPACING.sm },
+  aboutLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SPACING.sm },
   genderGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   genderChip: {
     paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceLight,
+    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceLight,
   },
-  genderChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '1A' },
-  genderText: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '500' },
-  genderTextActive: { color: COLORS.primaryLight, fontWeight: '700' },
+  genderChipActive: { borderColor: colors.primary, backgroundColor: colors.primary + '1A' },
+  genderText: { color: colors.textSecondary, fontSize: 14, fontWeight: '500' },
+  genderTextActive: { color: colors.primaryLight, fontWeight: '700' },
   ageInput: {
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
-    color: COLORS.text, fontSize: 15,
+    color: colors.text, fontSize: 15,
   },
-  aboutHint: { color: COLORS.textTertiary, fontSize: 12, marginTop: SPACING.sm },
+  aboutHint: { color: colors.textTertiary, fontSize: 12, marginTop: SPACING.sm },
   dobRow: { flexDirection: 'row', gap: SPACING.sm },
   dobInput: {
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
-    color: COLORS.text, fontSize: 15, textAlign: 'center',
+    color: colors.text, fontSize: 15, textAlign: 'center',
   },
 
   // Genre grid
@@ -639,14 +642,14 @@ const styles = StyleSheet.create({
   genreChip: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceLight, gap: SPACING.sm,
+    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceLight, gap: SPACING.sm,
     overflow: 'hidden', position: 'relative',
   },
-  genreChipActive: { borderColor: COLORS.primary },
+  genreChipActive: { borderColor: colors.primary },
   genreEmoji: { fontSize: 18 },
-  genreLabel: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '500' },
-  genreLabelActive: { color: COLORS.text, fontWeight: '700' },
+  genreLabel: { color: colors.textSecondary, fontSize: 14, fontWeight: '500' },
+  genreLabelActive: { color: colors.text, fontWeight: '700' },
   genreCheck: {
     width: 18, height: 18, borderRadius: 9,
     backgroundColor: 'rgba(255,255,255,0.3)',
@@ -657,56 +660,56 @@ const styles = StyleSheet.create({
   suggestionList: { padding: SPACING.md, gap: SPACING.sm, paddingBottom: 140 },
   suggestionRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
-    padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border, gap: SPACING.md,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md,
+    padding: SPACING.md, borderWidth: 1, borderColor: colors.border, gap: SPACING.md,
   },
   suggestionAvatar: {
     width: 50, height: 50, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
   },
-  suggestionAvatarText: { color: COLORS.text, fontSize: 20, fontWeight: '700' },
+  suggestionAvatarText: { color: colors.text, fontSize: 20, fontWeight: '700' },
   suggestionInfo: { flex: 1 },
-  suggestionName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  suggestionUsername: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
-  suggestionReason: { color: COLORS.primaryLight, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  suggestionName: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  suggestionUsername: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+  suggestionReason: { color: colors.primaryLight, fontSize: 11, fontWeight: '600', marginTop: 2 },
 
   // Permissions step cards (location / contacts)
   permCard: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.border, padding: SPACING.md, marginBottom: SPACING.sm,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: colors.border, padding: SPACING.md, marginBottom: SPACING.sm,
   },
   permIcon: {
     width: 44, height: 44, borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary + '18', alignItems: 'center', justifyContent: 'center',
   },
   permInfo: { flex: 1 },
-  permTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  permSub: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  permTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  permSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
   permBtn: {
     paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, backgroundColor: COLORS.primary, minWidth: 78, alignItems: 'center',
+    borderRadius: RADIUS.full, backgroundColor: colors.primary, minWidth: 78, alignItems: 'center',
   },
-  permBtnDone: { backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: COLORS.success },
-  permBtnText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
-  permBtnTextDone: { color: COLORS.success },
+  permBtnDone: { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.success },
+  permBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  permBtnTextDone: { color: colors.success },
   followBtn: {
     paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.full, backgroundColor: colors.primary,
   },
-  followBtnActive: { backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: COLORS.border },
-  followBtnText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
-  followBtnTextActive: { color: COLORS.textSecondary },
+  followBtnActive: { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border },
+  followBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  followBtnTextActive: { color: colors.textSecondary },
 
   emptySuggestions: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.md, paddingHorizontal: SPACING.xl },
-  emptySuggestionsText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
+  emptySuggestionsText: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
 
   // Shared
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     padding: SPACING.lg, paddingBottom: SPACING.xl,
-    backgroundColor: COLORS.background,
-    borderTopWidth: 0.5, borderTopColor: COLORS.border,
+    backgroundColor: colors.background,
+    borderTopWidth: 0.5, borderTopColor: colors.border,
     gap: SPACING.sm,
   },
   primaryBtn: { borderRadius: RADIUS.md, overflow: 'hidden' },
@@ -714,7 +717,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: SPACING.md + 2, gap: SPACING.sm,
   },
-  primaryBtnText: { color: COLORS.text, fontSize: 16, fontWeight: '800' },
+  primaryBtnText: { color: colors.text, fontSize: 16, fontWeight: '800' },
   btnDisabled: { opacity: 0.5 },
-  skipText: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center' },
+  skipText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center' },
 });

@@ -1,7 +1,8 @@
 import { Text, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFollow } from '../contexts/FollowContext';
-import { COLORS, RADIUS, SPACING } from '../constants/theme';
+import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 // Small connection pill shown next to another user's username across the feeds.
 // Reflects both follow tiers:
@@ -11,6 +12,8 @@ import { COLORS, RADIUS, SPACING } from '../constants/theme';
 //   • Follow      — no connection (filled)
 // Renders nothing for your own username (or before auth resolves).
 export default function FollowButton({ userId, style }: { userId?: string | null; style?: any }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { currentUserId, following, followers, toggleFollow } = useFollow();
 
   if (!userId || !currentUserId || userId === currentUserId) return null;
@@ -30,14 +33,14 @@ export default function FollowButton({ userId, style }: { userId?: string | null
       activeOpacity={0.8}
     >
       <View style={styles.inner}>
-        {isFriend && <Ionicons name="people" size={12} color={COLORS.textSecondary} />}
+        {isFriend && <Ionicons name="people" size={12} color={colors.textSecondary} />}
         <Text style={[styles.text, filled ? styles.followText : styles.followingText]} numberOfLines={1}>{label}</Text>
       </View>
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   btn: {
     paddingHorizontal: SPACING.md,
     paddingVertical: 5,
@@ -45,9 +48,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   inner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
-  follow: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  following: { backgroundColor: 'transparent', borderColor: COLORS.border },
+  follow: { backgroundColor: colors.primary, borderColor: colors.primary },
+  following: { backgroundColor: 'transparent', borderColor: colors.border },
   text: { fontSize: 12, fontWeight: '700' },
   followText: { color: '#fff' },
-  followingText: { color: COLORS.textSecondary },
+  followingText: { color: colors.textSecondary },
 });

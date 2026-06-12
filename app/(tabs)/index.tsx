@@ -19,7 +19,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
-import { COLORS, SPACING, RADIUS, SHADOWS, GRADIENTS } from '../../constants/theme';
+import { SPACING, RADIUS, SHADOWS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
@@ -106,6 +107,8 @@ const PostCard = memo(function PostCard({
   item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted, shouldPlayVideo,
   onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive,
 }: PostCardProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const likeCount = item.likes[0]?.count || 0;
   const commentCount = item.comments[0]?.count || 0;
   const saveCount = item.save_count || 0;
@@ -139,7 +142,7 @@ const PostCard = memo(function PostCard({
           onPress={() => onOptions(item)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="ellipsis-horizontal" size={18} color={COLORS.textSecondary} />
+          <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
         </TouchableOpacity>
       </TouchableOpacity>
 
@@ -156,7 +159,7 @@ const PostCard = memo(function PostCard({
           />
           {!!item.song_id && (
             <TouchableOpacity style={styles.videoAudioBtn} onPress={onToggleSongMute}>
-              <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color={COLORS.text} />
+              <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color={colors.text} />
             </TouchableOpacity>
           )}
           {!!item.song_id && (
@@ -196,6 +199,7 @@ const PostCard = memo(function PostCard({
             isPlaying={audioActive}
             onPlay={() => onPlayTrack(item)}
             onCoverPress={() => onExpandTrack(item)}
+            onOptions={() => onOptions(item)}
           />
         </View>
       )}
@@ -217,7 +221,7 @@ const PostCard = memo(function PostCard({
             />
           </TouchableOpacity>
           <TouchableOpacity style={styles.videoAudioBtn} onPress={item.song_id ? onToggleSongMute : onToggleMuted}>
-            <Ionicons name={(item.song_id ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color={COLORS.text} />
+            <Ionicons name={(item.song_id ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color={colors.text} />
           </TouchableOpacity>
           {!!item.song_id && (
             <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
@@ -239,15 +243,15 @@ const PostCard = memo(function PostCard({
           <Ionicons
             name={isLiked ? 'heart' : 'heart-outline'}
             size={23}
-            color={isLiked ? COLORS.like : COLORS.textSecondary}
+            color={isLiked ? colors.like : colors.textSecondary}
           />
           {likeCount > 0 && (
-            <Text style={[styles.actionCount, isLiked && { color: COLORS.like }]}>{likeCount}</Text>
+            <Text style={[styles.actionCount, isLiked && { color: colors.like }]}>{likeCount}</Text>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionBtn} onPress={() => onComments(item)} activeOpacity={0.6} hitSlop={8}>
-          <Ionicons name="chatbubble-outline" size={22} color={COLORS.textSecondary} />
+          <Ionicons name="chatbubble-outline" size={22} color={colors.textSecondary} />
           {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
         </TouchableOpacity>
 
@@ -255,15 +259,15 @@ const PostCard = memo(function PostCard({
           <Ionicons
             name={isSaved ? 'bookmark' : 'bookmark-outline'}
             size={22}
-            color={isSaved ? COLORS.text : COLORS.textSecondary}
+            color={isSaved ? colors.text : colors.textSecondary}
           />
           {saveCount > 0 && (
-            <Text style={[styles.actionCount, isSaved && { color: COLORS.text }]}>{saveCount}</Text>
+            <Text style={[styles.actionCount, isSaved && { color: colors.text }]}>{saveCount}</Text>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRight]} onPress={() => onShare(item)} activeOpacity={0.6} hitSlop={8}>
-          <Ionicons name="share-social-outline" size={22} color={COLORS.textSecondary} />
+          <Ionicons name="share-social-outline" size={22} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
     </View>
@@ -272,6 +276,8 @@ const PostCard = memo(function PostCard({
 
 export default function HomeScreen() {
   const { show: showOptions } = usePostOptions();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { share: openShare } = useShare();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -643,7 +649,7 @@ export default function HomeScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator color={COLORS.primary} size="large" />
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
   }
@@ -659,7 +665,7 @@ export default function HomeScreen() {
         >
           <Text style={styles.headerLogo}>Laybell</Text>
           <Animated.View style={[styles.logoChevron, { opacity: chevronOpacity }]} pointerEvents="none">
-            <Ionicons name="chevron-down" size={20} color={COLORS.primaryLight} />
+            <Ionicons name="chevron-down" size={20} color={colors.primaryLight} />
           </Animated.View>
         </TouchableOpacity>
         <View style={styles.headerRight}>
@@ -667,7 +673,7 @@ export default function HomeScreen() {
             style={styles.headerIconBtn}
             onPress={() => { setUnreadCount(0); router.push('/notifications'); }}
           >
-            <Ionicons name="notifications-outline" size={28} color={COLORS.text} />
+            <Ionicons name="notifications-outline" size={28} color={colors.text} />
             {unreadCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -676,7 +682,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/messages')}>
-            <Ionicons name="chatbubbles-outline" size={28} color={COLORS.text} />
+            <Ionicons name="chatbubbles-outline" size={28} color={colors.text} />
             {unreadMessages > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
@@ -714,11 +720,11 @@ export default function HomeScreen() {
                   <Ionicons
                     name={opt.icon}
                     size={20}
-                    color={active ? COLORS.primaryLight : COLORS.textSecondary}
+                    color={active ? colors.primaryLight : colors.textSecondary}
                   />
                   <Text style={[styles.menuItemText, active && styles.menuItemTextActive]}>{opt.label}</Text>
                   {active && (
-                    <Ionicons name="checkmark" size={18} color={COLORS.primaryLight} style={styles.menuCheck} />
+                    <Ionicons name="checkmark" size={18} color={colors.primaryLight} style={styles.menuCheck} />
                   )}
                 </TouchableOpacity>
               );
@@ -753,12 +759,12 @@ export default function HomeScreen() {
               setSeenPostIds(seen);
               await fetchPosts(currentUserId || undefined, seen);
             }}
-            tintColor={COLORS.primary}
+            tintColor={colors.primary}
           />
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="musical-notes" size={48} color={COLORS.textTertiary} />
+            <Ionicons name="musical-notes" size={48} color={colors.textTertiary} />
             <Text style={styles.emptyTitle}>
               {feedMode === 'following'
                 ? 'No posts from people you follow'
@@ -776,7 +782,7 @@ export default function HomeScreen() {
             {feedMode !== 'all' && (
               <TouchableOpacity style={styles.exploreBtn} onPress={() => router.push('/(tabs)/explore')}>
                 <Text style={styles.exploreBtnText}>Discover Artists</Text>
-                <Ionicons name="arrow-forward" size={16} color={COLORS.text} />
+                <Ionicons name="arrow-forward" size={16} color={colors.text} />
               </TouchableOpacity>
             )}
           </View>
@@ -799,9 +805,9 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 
   header: {
     flexDirection: 'row',
@@ -811,11 +817,11 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.sm,
     borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: colors.border,
   },
   logoBtn: { flexDirection: 'row', alignItems: 'center' },
   headerLogo: {
-    color: COLORS.primaryLight,
+    color: colors.primaryLight,
     fontSize: 32,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -830,10 +836,10 @@ const styles = StyleSheet.create({
     top: SPACING.xxl + SPACING.sm + 44,
     left: SPACING.md,
     minWidth: 200,
-    backgroundColor: COLORS.surfaceElevated,
+    backgroundColor: colors.surfaceElevated,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     paddingVertical: SPACING.xs,
     ...SHADOWS.md,
   },
@@ -844,25 +850,25 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm + 2,
     paddingHorizontal: SPACING.md,
   },
-  menuItemActive: { backgroundColor: COLORS.primary + '14' },
-  menuItemText: { color: COLORS.textSecondary, fontSize: 16, fontWeight: '600' },
-  menuItemTextActive: { color: COLORS.text, fontWeight: '700' },
+  menuItemActive: { backgroundColor: colors.primary + '14' },
+  menuItemText: { color: colors.textSecondary, fontSize: 16, fontWeight: '600' },
+  menuItemTextActive: { color: colors.text, fontWeight: '700' },
   menuCheck: { marginLeft: 'auto' },
 
   badge: {
     position: 'absolute', top: -2, right: -2,
     minWidth: 16, height: 16, borderRadius: 8,
-    backgroundColor: COLORS.error,
+    backgroundColor: colors.error,
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
   },
-  badgeText: { color: COLORS.text, fontSize: 9, fontWeight: 'bold' },
+  badgeText: { color: colors.text, fontSize: 9, fontWeight: 'bold' },
 
   feedContent: { paddingBottom: SPACING.xxl + 60 },
 
   postCard: {
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
     borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.borderSubtle,
+    borderBottomColor: colors.borderSubtle,
     paddingBottom: SPACING.xs,
   },
 
@@ -877,24 +883,24 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  avatarText: { color: colors.text, fontSize: 15, fontWeight: '700' },
   postHeaderInfo: { flex: 1 },
   postNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  postDisplayName: { color: COLORS.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.1 },
-  postUsername: { color: COLORS.textMeta, fontSize: 12, marginTop: 1 },
+  postDisplayName: { color: colors.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.1 },
+  postUsername: { color: colors.textMeta, fontSize: 12, marginTop: 1 },
   typeIconWrap: {
     width: 28, height: 28, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary + '18',
+    backgroundColor: colors.primary + '18',
     alignItems: 'center', justifyContent: 'center',
   },
 
   postMedia: {
     width: '100%',
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: colors.surfaceLight,
   },
   postVideo: {
     width: '100%',
@@ -909,7 +915,7 @@ const styles = StyleSheet.create({
   postImage: {
     width: '100%',
     height: 320,
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: colors.surfaceLight,
   },
 
   audioCardWrap: { marginHorizontal: SPACING.md, marginVertical: SPACING.sm, borderRadius: RADIUS.md, overflow: 'hidden' },
@@ -923,9 +929,9 @@ const styles = StyleSheet.create({
   audioLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
   audioIconRing: {
     width: 44, height: 44, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary + '44',
+    backgroundColor: colors.primary + '44',
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: COLORS.primary + '88',
+    borderWidth: 1.5, borderColor: colors.primary + '88',
   },
   audioCover: { width: 48, height: 48, borderRadius: RADIUS.sm, overflow: 'hidden' },
   audioCoverImg: { width: 48, height: 48 },
@@ -934,17 +940,17 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)',
   },
   audioIconRingActive: {
-    backgroundColor: COLORS.primaryDark,
-    borderColor: COLORS.primaryLight,
+    backgroundColor: colors.primaryDark,
+    borderColor: colors.primaryLight,
     ...SHADOWS.glow,
   },
-  audioTitle: { color: COLORS.text, fontSize: 14, fontWeight: '600', maxWidth: 180 },
+  audioTitle: { color: colors.text, fontSize: 14, fontWeight: '600', maxWidth: 180 },
   audioMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  audioArtist: { color: COLORS.textSecondary, fontSize: 12 },
-  audioStreams: { color: COLORS.textTertiary, fontSize: 12 },
+  audioArtist: { color: colors.textSecondary, fontSize: 12 },
+  audioStreams: { color: colors.textTertiary, fontSize: 12 },
 
   caption: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 14,
     lineHeight: 21,
     paddingHorizontal: SPACING.md,
@@ -961,16 +967,16 @@ const styles = StyleSheet.create({
   },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionBtnRight: { marginLeft: 'auto' },
-  actionCount: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+  actionCount: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
 
   emptyContainer: { alignItems: 'center', paddingTop: 100, gap: SPACING.md },
-  emptyTitle: { color: COLORS.text, fontSize: 20, fontWeight: '700' },
-  emptySubtitle: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', paddingHorizontal: SPACING.lg },
+  emptyTitle: { color: colors.text, fontSize: 20, fontWeight: '700' },
+  emptySubtitle: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', paddingHorizontal: SPACING.lg },
   exploreBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: COLORS.primary, borderRadius: RADIUS.full,
+    backgroundColor: colors.primary, borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.lg,
     marginTop: SPACING.sm,
   },
-  exploreBtnText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
+  exploreBtnText: { color: colors.text, fontSize: 14, fontWeight: '700' },
 });

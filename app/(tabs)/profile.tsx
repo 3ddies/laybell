@@ -15,12 +15,15 @@ import { useProfile } from '../../contexts/ProfileContext';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier } from '../../lib/badges';
+import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
+import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
+import { formatCount } from '../../lib/format';
 import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
 import { isAudioPost } from '../../lib/genres';
 import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 
 type Profile = {
   id: string; username: string; display_name: string;
@@ -29,13 +32,14 @@ type Profile = {
 };
 type Stats = { followers: number; following: number; posts: number };
 
+// Liked/Saved deliberately have no profile tabs anymore — they live in the
+// Music page's pills. Playlists showcases the user's PUBLIC playlists.
 const TABS = [
   { key: 'posts', label: 'Posts', icon: 'grid-outline' },
   { key: 'music', label: 'Music', icon: 'musical-notes-outline' },
   { key: 'videos', label: 'Videos', icon: 'videocam-outline' },
   { key: 'reposts', label: 'Reposts', icon: 'repeat-outline' },
-  { key: 'liked', label: 'Liked', icon: 'heart-outline' },
-  { key: 'saved', label: 'Saved', icon: 'bookmark-outline' },
+  { key: 'playlists', label: 'Playlists', icon: 'albums-outline' },
 ];
 const TAB_KEYS = TABS.map(t => t.key);
 
@@ -43,21 +47,24 @@ export default function ProfileScreen() {
   const { show: showOptions } = usePostOptions();
   const { profile: liveProfile } = useProfile();
   const { openCamera } = useStories();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('posts');
   const [userPosts, setUserPosts] = useState<any[]>([]);
-  const [likedPosts, setLikedPosts] = useState<any[]>([]);
-  const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const [repostedPosts, setRepostedPosts] = useState<any[]>([]);
+  // Active public playlists (over-limit "locked" ones stay hidden, same as in
+  // public discovery), faced with their first track's cover.
+  const [publicPlaylists, setPublicPlaylists] = useState<any[]>([]);
   const router = useRouter();
   const navigation = useNavigation();
   const { playQueue } = useAudio();
 
   // Sub-tabs are a single native pager: page 0 is a "go to Music" dismiss page and
-  // pages 1-5 are the sub-tabs (Posts…Saved). Swiping right off Posts lands on page 0
+  // pages 1-5 are the sub-tabs (Posts…Playlists). Swiping right off Posts lands on page 0
   // and jumps to the Music main tab — one pager, no nesting or native gesture, so it
   // can't glitch or freeze (same mechanism as other users' profiles).
   const pagerRef = useRef<PagerView>(null);
@@ -71,15 +78,14 @@ export default function ProfileScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const [profileRes, followersRes, followingRes, postsCountRes, postsRes, likedRes, savedRes, repostsRes] = await Promise.all([
+    const [profileRes, followersRes, followingRes, postsCountRes, postsRes, repostsRes, playlistsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
       supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
       supabase.from('posts').select('*').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
-      supabase.from('likes').select('posts(*)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
-      supabase.from('saves').select('posts(*)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
       supabase.from('reposts').select('posts(*, profiles!posts_user_id_fkey(display_name))').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('playlists').select('*').eq('user_id', user.id).eq('is_public', true).order('play_count', { ascending: false }),
     ]);
 
     if (profileRes.data) setProfile(profileRes.data);
@@ -87,16 +93,23 @@ export default function ProfileScreen() {
     // Archived posts (archived_at set) are hidden from the grid but kept in the
     // Archive screen. archived_at is absent pre-migration → harmless no-op.
     if (postsRes.data) setUserPosts(postsRes.data.filter((p: any) => !p.archived_at));
-    if (likedRes.data) setLikedPosts(likedRes.data.map((l: any) => l.posts).filter(Boolean));
-    if (savedRes.data) setSavedPosts(savedRes.data.map((s: any) => s.posts).filter(Boolean));
     // `reposts` may not be migrated yet — degrade to an empty tab if so.
     setRepostedPosts((repostsRes.data ?? []).map((r: any) => r.posts).filter(Boolean));
+    // Public playlists tab: only the ones holding an active badge slot, faced
+    // with their first track's cover. Degrades to empty pre-migration.
+    try {
+      const pls = playlistsRes.data ?? [];
+      const active = activePublicIds(pls as any, rawTier(profileRes.data));
+      const shown = pls.filter((p: any) => active.has(p.id));
+      const covers = await fetchFirstTrackCovers(shown.map((p: any) => p.id));
+      setPublicPlaylists(shown.map((p: any) => ({ ...p, cover: covers[p.id] ?? null })));
+    } catch { setPublicPlaylists([]); }
     setLoading(false);
     setRefreshing(false);
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
+    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
   }
 
   // Prefer the global ProfileContext copy (live tier + avatar, kept in sync after
@@ -104,11 +117,11 @@ export default function ProfileScreen() {
   const badgeProfile = liveProfile ?? profile;
   const myTier = chosenTier(badgeProfile);
   const ringColors = resolveRingColors(badgeProfile, myTier);
-  const bannerColors = resolveBannerColors(badgeProfile, myTier);
+  const bannerColors = resolveBannerColors(myTier, colors.background);
   const avatarUrl = liveProfile?.avatar_url ?? profile?.avatar_url;
   // Active sub-tab pill + glow take the user's emblem-theme color (orange default
   // when they have no badge). Visible on public profiles too (owner's tier).
-  const tabAccent = myTier ? ringColors[0] : COLORS.primary;
+  const tabAccent = myTier ? ringColors[0] : colors.primary;
   const activeTabDyn = {
     backgroundColor: tabAccent + '1F', borderColor: tabAccent + '4D',
     shadowColor: tabAccent, shadowOpacity: 0.28, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 2,
@@ -119,10 +132,40 @@ export default function ProfileScreen() {
       case 'music': return userPosts.filter(p => p.type === 'audio');
       case 'videos': return userPosts.filter(p => p.type === 'video');
       case 'reposts': return repostedPosts;
-      case 'liked': return likedPosts;
-      case 'saved': return savedPosts;
       default: return userPosts; // posts
     }
+  }
+
+  // Public playlists as showcase cards: cover art, name, listen count.
+  function renderPlaylists() {
+    if (publicPlaylists.length === 0) {
+      return (
+        <View style={styles.emptyGrid}>
+          <Ionicons name="albums-outline" size={40} color={colors.textTertiary} />
+          <Text style={styles.emptyGridText}>No public playlists yet</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.plGrid}>
+        {publicPlaylists.map((pl: any) => (
+          <TouchableOpacity key={pl.id} style={styles.plCard} activeOpacity={0.8} onPress={() => router.push(`/playlist/${pl.id}`)}>
+            {pl.cover ? (
+              <Image source={{ uri: pl.cover }} style={styles.plCover} />
+            ) : (
+              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.plCover}>
+                <Ionicons name="musical-notes" size={26} color={colors.primary} />
+              </LinearGradient>
+            )}
+            <Text style={styles.plName} numberOfLines={1}>{pl.name}</Text>
+            <View style={styles.plMetaRow}>
+              <Ionicons name="headset" size={11} color={colors.textTertiary} />
+              <Text style={styles.plMeta}>{formatCount(pl.play_count ?? 0)} {pl.play_count === 1 ? 'listen' : 'listens'}</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
   }
 
   function renderGrid(data: any[], tabKey: string) {
@@ -130,15 +173,12 @@ export default function ProfileScreen() {
       return (
         <View style={styles.emptyGrid}>
           <Ionicons
-            name={tabKey === 'liked' ? 'heart-outline' : tabKey === 'saved' ? 'bookmark-outline' : tabKey === 'reposts' ? 'repeat-outline' : 'images-outline'}
+            name={tabKey === 'reposts' ? 'repeat-outline' : 'images-outline'}
             size={40}
-            color={COLORS.textTertiary}
+            color={colors.textTertiary}
           />
           <Text style={styles.emptyGridText}>
-            {tabKey === 'liked' ? 'No liked posts yet'
-              : tabKey === 'saved' ? 'No saved posts yet'
-              : tabKey === 'reposts' ? 'No reposts yet'
-              : `No ${tabKey} yet`}
+            {tabKey === 'reposts' ? 'No reposts yet' : `No ${tabKey} yet`}
           </Text>
         </View>
       );
@@ -203,14 +243,14 @@ export default function ProfileScreen() {
               <>
                 <Image source={{ uri: post.thumbnail_url || post.media_url }} style={styles.gridImage} resizeMode="cover" />
                 <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="copy" size={13} color={COLORS.text} />
+                  <Ionicons name="copy" size={13} color={colors.text} />
                 </View>
               </>
             ) : post.type === 'video' ? (
               <>
                 <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.gridImage} />
                 <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="play" size={14} color={COLORS.text} />
+                  <Ionicons name="play" size={14} color={colors.text} />
                 </View>
               </>
             ) : post.type === 'image' ? (
@@ -219,25 +259,16 @@ export default function ProfileScreen() {
               <>
                 <Image source={{ uri: post.cover_url }} style={styles.gridImage} resizeMode="cover" />
                 <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="musical-notes" size={13} color={COLORS.text} />
+                  <Ionicons name="musical-notes" size={13} color={colors.text} />
                 </View>
               </>
             ) : (
               <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
                 <Ionicons
                   name={isAudioPost(post.type) ? 'musical-notes' : 'videocam'}
-                  size={28} color={COLORS.primary}
+                  size={28} color={colors.primary}
                 />
               </LinearGradient>
-            )}
-            {/* Badge for liked/saved tabs */}
-            {(tabKey === 'liked' || tabKey === 'saved') && (
-              <View style={styles.gridBadge}>
-                <Ionicons
-                  name={tabKey === 'liked' ? 'heart' : 'bookmark'}
-                  size={10} color={COLORS.text}
-                />
-              </View>
             )}
             {/* View count (video) / listen count (audio) */}
             <ThumbStat type={post.type} viewCount={post.view_count} streamCount={post.stream_count} />
@@ -253,7 +284,7 @@ export default function ProfileScreen() {
       <View style={styles.headerBar}>
         <Text style={styles.usernameHeader}>@{profile?.username}</Text>
         <TouchableOpacity onPress={() => router.push('/settings')} style={styles.settingsBtn}>
-          <Ionicons name="settings-outline" size={22} color={COLORS.textSecondary} />
+          <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
@@ -301,7 +332,7 @@ export default function ProfileScreen() {
               hitSlop={8}
               onPress={() => router.push('/badges')}
             >
-              <Ionicons name="add" size={12} color={COLORS.textTertiary} />
+              <Ionicons name="add" size={12} color={colors.textTertiary} />
             </TouchableOpacity>
           )}
         </View>
@@ -311,7 +342,7 @@ export default function ProfileScreen() {
         }
         {badgeProfile?.link ? (
           <TouchableOpacity style={styles.linkRow} onPress={() => Linking.openURL(normalizeUrl(badgeProfile.link!)).catch(() => {})}>
-            <Ionicons name="link-outline" size={14} color={COLORS.primary} />
+            <Ionicons name="link-outline" size={14} color={colors.primary} />
             <Text style={styles.linkText} numberOfLines={1}>{displayUrl(badgeProfile.link)}</Text>
           </TouchableOpacity>
         ) : null}
@@ -323,7 +354,7 @@ export default function ProfileScreen() {
           <Text style={styles.editButtonText}>Edit Profile</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/friends')}>
-          <Ionicons name="people-outline" size={18} color={COLORS.text} />
+          <Ionicons name="people-outline" size={18} color={colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -339,7 +370,7 @@ export default function ProfileScreen() {
               <Ionicons
                 name={activeTab === tab.key ? tab.icon.replace('-outline', '') as any : tab.icon as any}
                 size={16}
-                color={activeTab === tab.key ? tabAccent : COLORS.textTertiary}
+                color={activeTab === tab.key ? tabAccent : colors.textTertiary}
               />
               <Text style={[styles.tabText, activeTab === tab.key && { color: tabAccent, fontWeight: '700' }]}>
                 {tab.label}
@@ -369,7 +400,7 @@ export default function ProfileScreen() {
         }}
       >
         <View key="dismiss" style={styles.dismissPage}>
-          <Ionicons name="arrow-back" size={28} color={COLORS.textTertiary} />
+          <Ionicons name="arrow-back" size={28} color={colors.textTertiary} />
         </View>
         {TABS.map(tab => (
           <View key={tab.key} style={styles.page}>
@@ -380,7 +411,7 @@ export default function ProfileScreen() {
                 <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile(); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
             >
-              {renderGrid(dataForTab(tab.key), tab.key)}
+              {tab.key === 'playlists' ? renderPlaylists() : renderGrid(dataForTab(tab.key), tab.key)}
             </ScrollView>
           </View>
         ))}
@@ -389,15 +420,15 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 
   headerBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
   },
-  usernameHeader: { color: COLORS.text, fontSize: 24, fontWeight: '900' },
+  usernameHeader: { color: colors.text, fontSize: 24, fontWeight: '900' },
   settingsBtn: { padding: 4 },
 
   banner: {
@@ -409,7 +440,7 @@ const styles = StyleSheet.create({
   avatarRing: { width: 88, height: 88, borderRadius: RADIUS.full, padding: 3, alignItems: 'center', justifyContent: 'center' },
   avatarImage: { width: 82, height: 82, borderRadius: RADIUS.full },
   avatarPlaceholder: { width: 82, height: 82, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 32, fontWeight: '700' },
+  avatarText: { color: colors.text, fontSize: 32, fontWeight: '700' },
 
   statsRow: {
     flex: 1, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center',
@@ -417,49 +448,49 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', paddingVertical: SPACING.sm,
   },
   statItem: { flex: 1, alignItems: 'center', gap: 2 },
-  statNumber: { color: COLORS.primaryLight, fontSize: 21, fontWeight: '800', letterSpacing: -0.3 },
+  statNumber: { color: colors.primaryLight, fontSize: 21, fontWeight: '800', letterSpacing: -0.3 },
   statLabel: { color: 'rgba(245,245,245,0.65)', fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  displayName: { color: COLORS.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  displayName: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
   badgeOutline: {
     width: 19, height: 19, borderRadius: RADIUS.full,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', borderStyle: 'dashed',
     alignItems: 'center', justifyContent: 'center',
   },
-  bio: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
-  bioEmpty: { color: COLORS.textTertiary, fontSize: 14, fontStyle: 'italic' },
+  bio: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
+  bioEmpty: { color: colors.textTertiary, fontSize: 14, fontStyle: 'italic' },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  linkText: { color: COLORS.primary, fontSize: 13, fontWeight: '600' },
+  linkText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
 
   actionButtons: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: SPACING.sm },
   editButton: {
-    flex: 1, backgroundColor: COLORS.surfaceElevated,
-    borderWidth: 1, borderColor: COLORS.border,
+    flex: 1, backgroundColor: colors.surfaceElevated,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.full, paddingVertical: SPACING.sm + 2, alignItems: 'center',
   },
-  editButtonText: { color: COLORS.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
+  editButtonText: { color: colors.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
   secondaryButton: {
-    backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.full, paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm + 2, alignItems: 'center', justifyContent: 'center',
   },
 
-  tabsScroll: { marginTop: SPACING.md, borderBottomWidth: 0.5, borderBottomColor: COLORS.border, flexGrow: 0 },
+  tabsScroll: { marginTop: SPACING.md, borderBottomWidth: 0.5, borderBottomColor: colors.border, flexGrow: 0 },
   tabsRow: { flexDirection: 'row', paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm, gap: 4 },
   tab: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: 'transparent',
   },
-  activeTab: { backgroundColor: COLORS.primary + '18', borderColor: COLORS.primary + '3A' },
-  tabText: { color: COLORS.textTertiary, fontSize: 12, fontWeight: '600' },
-  activeTabText: { color: COLORS.primary, fontWeight: '700' },
+  activeTab: { backgroundColor: colors.primary + '18', borderColor: colors.primary + '3A' },
+  tabText: { color: colors.textTertiary, fontSize: 12, fontWeight: '600' },
+  activeTabText: { color: colors.primary, fontWeight: '700' },
 
   pager: { flex: 1 },
   page: { flex: 1 },
-  dismissPage: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+  dismissPage: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   pageContent: { paddingBottom: SPACING.xxl + 80 },
 
   postsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
@@ -468,12 +499,13 @@ const styles = StyleSheet.create({
   gridPlaceholder: {
     width: '100%', height: '100%',
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 0.5, borderColor: COLORS.border,
+    borderWidth: 0.5, borderColor: colors.border,
   },
+  // (kept for reposts overlay parity if needed later)
   gridBadge: {
     position: 'absolute', top: 6, right: 6,
     width: 18, height: 18, borderRadius: 9,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center',
   },
   gridPlayOverlay: {
@@ -483,5 +515,21 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   emptyGrid: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm },
-  emptyGridText: { color: COLORS.textTertiary, fontSize: 14 },
+  emptyGridText: { color: colors.textTertiary, fontSize: 14 },
+
+  // Public playlists tab — 2-up showcase cards (cover, name, listens).
+  plGrid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.md,
+    columnGap: SPACING.md, rowGap: SPACING.lg,
+  },
+  plCard: { width: '47%' },
+  plCover: {
+    width: '100%', aspectRatio: 1, borderRadius: RADIUS.md,
+    backgroundColor: colors.surfaceLight, alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  plName: { color: colors.text, fontSize: 14, fontWeight: '700', marginTop: 8 },
+  plMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  plMeta: { color: colors.textTertiary, fontSize: 12 },
 });

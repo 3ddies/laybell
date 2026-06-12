@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, type StyleProp, type ViewStyl
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, GRADIENTS } from '../constants/theme';
+import { GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { badgeGlow } from '../lib/badges';
 import { useStories } from '../contexts/StoriesContext';
 
@@ -35,6 +36,8 @@ export default function StoryAvatar({
   onPressProfile, onBeforeOpenStory, badgeRing,
   showAdd, addColors, onPressAdd, style,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { hasStory, hasUnseen, openStory, ringColors, ringTier } = useStories();
   const story = hasStory(userId);
   const unseen = hasUnseen(userId);
@@ -45,7 +48,7 @@ export default function StoryAvatar({
   //    e.g. a styled profile ring), falling back to the default story gradient.
   //  • Seen  → dim to gray. Policy (global): every tier dims once all stories are
   //    watched EXCEPT diamond, whose ring persists in its badge color.
-  const GRAY_RING: readonly [string, string] = [COLORS.textTertiary, COLORS.textTertiary];
+  const GRAY_RING: readonly [string, string] = [colors.textTertiary, colors.textTertiary];
   const badge = badgeRing ?? ringColors(userId);
   const isDiamond = ringTier(userId) === 'diamond';
   const ring: readonly [string, string] | null = !story
@@ -78,8 +81,8 @@ export default function StoryAvatar({
     <Image
       source={{ uri: avatarUrl }}
       style={[
-        { width: inner, height: inner, borderRadius: inner / 2, backgroundColor: COLORS.surfaceLight },
-        story && { borderWidth: 1.5, borderColor: COLORS.background },
+        { width: inner, height: inner, borderRadius: inner / 2, backgroundColor: colors.surfaceLight },
+        story && { borderWidth: 1.5, borderColor: colors.background },
       ]}
       contentFit="cover"
       transition={0}
@@ -90,7 +93,7 @@ export default function StoryAvatar({
       colors={GRADIENTS.primary}
       style={[
         { width: inner, height: inner, borderRadius: inner / 2, alignItems: 'center', justifyContent: 'center' },
-        story && { borderWidth: 1.5, borderColor: COLORS.background },
+        story && { borderWidth: 1.5, borderColor: colors.background },
       ]}
     >
       <Text style={{ color: '#fff', fontWeight: '700', fontSize: Math.round(inner * 0.42) }}>
@@ -123,7 +126,7 @@ export default function StoryAvatar({
       )}
       {showAdd && (
         <TouchableOpacity style={styles.add} onPress={onPressAdd} activeOpacity={0.85} hitSlop={6}>
-          <LinearGradient colors={addColors ?? [COLORS.primary, COLORS.primary]} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={addColors ?? [colors.primary, colors.primary]} style={StyleSheet.absoluteFill} />
           <Ionicons name="add" size={16} color="#fff" />
         </TouchableOpacity>
       )}
@@ -131,11 +134,11 @@ export default function StoryAvatar({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   add: {
     position: 'absolute', bottom: -2, right: -2,
     width: 24, height: 24, borderRadius: 12, overflow: 'hidden',
-    borderWidth: 2, borderColor: COLORS.background,
+    borderWidth: 2, borderColor: colors.background,
     alignItems: 'center', justifyContent: 'center',
   },
 });

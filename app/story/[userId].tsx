@@ -11,7 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import {
   fetchStoriesForUsers, recordStoryView, deleteStory, fetchStoryViewerCount,
@@ -33,6 +34,8 @@ const VIDEO_PROGRESS_INTERVAL_MS = 250;
 const SWIPE_DIST = SCREEN_W * 0.25;
 
 export default function StoryViewerScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
@@ -594,12 +597,12 @@ export default function StoryViewerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   root: { flex: 1 },
   container: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
   center: { alignItems: 'center', justifyContent: 'center', gap: SPACING.md },
-  empty: { color: COLORS.textSecondary, fontSize: 15 },
-  emptyBtn: { paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg, borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border },
+  empty: { color: colors.textSecondary, fontSize: 15 },
+  emptyBtn: { paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg, borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border },
   emptyBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
   topScrim: { position: 'absolute', top: 0, left: 0, right: 0, height: 160 },

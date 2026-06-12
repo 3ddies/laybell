@@ -7,7 +7,8 @@ import { useAudio } from '../contexts/AudioContext';
 import { usePostMusic } from '../contexts/PostMusicContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { useProfile } from '../contexts/ProfileContext';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 // Bottom-right "this post uses <song>" credit on image/video posts and stories.
 // Artist (bold) → artist profile · song name → plays the track · ⋮ → the song's
@@ -30,6 +31,8 @@ export default function SongAttribution({
   onPauseHost?: () => void;
 }) {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { play, expand, currentTrack } = useAudio();
   const { stop: stopPostMusic } = usePostMusic();
   const { show } = usePostOptions();
@@ -104,7 +107,7 @@ export default function SongAttribution({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   base: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: 'rgba(0,0,0,0.32)', borderRadius: RADIUS.full,

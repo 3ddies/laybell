@@ -1,7 +1,8 @@
 import { View, StyleSheet, PanResponder, Animated } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS, GRADIENTS } from '../constants/theme';
+import { GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 
@@ -15,6 +16,8 @@ export default function Scrubber({
   onSeek: (ratio: number) => void;
   height?: number; trackHeight?: number; thumbSize?: number;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [width, setWidth] = useState(0);
   const ref = useRef<View>(null);
   const layout = useRef({ x: 0, w: 0 });
@@ -69,8 +72,8 @@ export default function Scrubber({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   area: { width: '100%', justifyContent: 'center' },
-  track: { width: '100%', backgroundColor: COLORS.border, overflow: 'hidden' },
-  thumb: { position: 'absolute', backgroundColor: COLORS.text, borderWidth: 2, borderColor: COLORS.primary },
+  track: { width: '100%', backgroundColor: colors.border, overflow: 'hidden' },
+  thumb: { position: 'absolute', backgroundColor: colors.text, borderWidth: 2, borderColor: colors.primary },
 });

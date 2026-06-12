@@ -2,7 +2,8 @@ import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio } from '../contexts/AudioContext';
-import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import Scrubber from './Scrubber';
 
@@ -13,6 +14,8 @@ function formatMs(ms: number): string {
 }
 
 export default function MiniPlayer() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, stop, seekTo, expanded, expand } = useAudio();
   const insets = useSafeAreaInsets();
 
@@ -41,7 +44,7 @@ export default function MiniPlayer() {
             <Image source={{ uri: currentTrack.cover }} style={styles.cover} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
-              <Ionicons name="musical-notes" size={16} color={COLORS.primary} />
+              <Ionicons name="musical-notes" size={16} color={colors.primary} />
             </LinearGradient>
           )}
         </TouchableOpacity>
@@ -58,23 +61,27 @@ export default function MiniPlayer() {
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
-          <Ionicons name={isBuffering ? 'hourglass' : isPlaying ? 'pause' : 'play'} size={15} color={COLORS.text} />
+          {isBuffering ? (
+            <Ionicons name="hourglass" size={18} color={colors.primary} />
+          ) : (
+            <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={34} color={colors.primary} />
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.stopBtn} onPress={stop}>
-          <Ionicons name="close" size={15} color={COLORS.textSecondary} />
+          <Ionicons name="close" size={15} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: {
     position: 'absolute', left: SPACING.sm, right: SPACING.sm,
-    backgroundColor: COLORS.surfaceElevated,
+    backgroundColor: colors.surfaceElevated,
     borderRadius: RADIUS.lg, overflow: 'hidden',
-    borderWidth: 0.5, borderColor: COLORS.primaryLight + '55',
+    borderWidth: 0.5, borderColor: colors.primaryLight + '55',
     ...SHADOWS.md,
     zIndex: 100,
   },
@@ -87,15 +94,14 @@ const styles = StyleSheet.create({
   cover: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   trackInfo: { flex: 1 },
-  caption: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
-  artist: { color: COLORS.textSecondary, fontSize: 11, marginTop: 1 },
-  timeText: { color: COLORS.textTertiary, fontSize: 11, fontVariant: ['tabular-nums'] },
-  playBtn: {
-    width: 32, height: 32, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
-  },
+  caption: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  artist: { color: colors.textSecondary, fontSize: 11, marginTop: 1 },
+  timeText: { color: colors.textTertiary, fontSize: 11, fontVariant: ['tabular-nums'] },
+  // Borderless filled-circle glyph (same as Today's Pick) — fixed box keeps
+  // the bar layout stable between the play/pause/buffering states.
+  playBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   stopBtn: {
     width: 30, height: 30, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surfaceElevated, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
   },
 });

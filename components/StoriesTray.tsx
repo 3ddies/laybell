@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { COLORS, SPACING } from '../constants/theme';
+import { SPACING, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { useStories } from '../contexts/StoriesContext';
 import { chosenTier, badgeRingColors } from '../lib/badges';
@@ -12,6 +13,8 @@ import StoryAvatar from './StoryAvatar';
 // (gradient) ahead of seen ones. Reads global story state from StoriesContext so
 // the rings/ordering match story rings shown elsewhere in the app.
 export default function StoriesTray() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { profile } = useProfile();
   const { groups, openCamera, refresh } = useStories();
   const currentUserId = profile?.id ?? null;
@@ -67,8 +70,8 @@ export default function StoriesTray() {
 
 const RING = 82;
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   row: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.md },
   item: { width: RING + 6, alignItems: 'center', gap: 5 },
-  label: { color: COLORS.textSecondary, fontSize: 12, maxWidth: RING + 6, textAlign: 'center' },
+  label: { color: colors.textSecondary, fontSize: 12, maxWidth: RING + 6, textAlign: 'center' },
 });

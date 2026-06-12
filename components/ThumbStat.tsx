@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, RADIUS } from '../constants/theme';
+import { RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { formatCount } from '../lib/format';
 import { isAudioPost } from '../lib/genres';
 
@@ -12,6 +13,8 @@ export default function ThumbStat({ type, viewCount, streamCount, style }: {
   streamCount?: number | null;
   style?: any;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const isVideo = type === 'video';
   const isAudio = isAudioPost(type ?? '');
   const count = isVideo ? (viewCount ?? 0) : isAudio ? (streamCount ?? 0) : 0;
@@ -24,7 +27,7 @@ export default function ThumbStat({ type, viewCount, streamCount, style }: {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   badge: {
     position: 'absolute', bottom: 6, right: 6,
     flexDirection: 'row', alignItems: 'center', gap: 3,

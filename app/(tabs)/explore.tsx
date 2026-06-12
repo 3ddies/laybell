@@ -1,13 +1,17 @@
 import {
   View, Text, StyleSheet, TextInput,
   FlatList, TouchableOpacity, Image, ActivityIndicator, Keyboard, ScrollView,
+  PanResponder, Animated, Easing, Dimensions,
 } from 'react-native';
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'expo-router';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
+import { useTabSwipeControl } from '../../contexts/PagerContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
 import FollowButton from '../../components/FollowButton';
@@ -16,7 +20,8 @@ import HighlightText from '../../components/HighlightText';
 import { maybeRefreshLocation } from '../../lib/location';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { badgeRingColors, chosenTier, specialRingTier } from '../../lib/badges';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { badgeRingColors, chosenTier, specialRingTier, rawTier, tierRank } from '../../lib/badges';
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { fetchBlockedIds } from '../../lib/blocks';
@@ -26,6 +31,17 @@ import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
   sortRailByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
 } from '../../lib/feedScorer';
+
+// Genre clusters for the All grid: 4-song stacks titled by genre, cached per
+// user. Refreshes every 24h — or every 3h when the user is actively consuming
+// from them (2+ cluster plays since the last refresh).
+const CLUSTERS_KEY = 'explore_genre_clusters_v1';
+const CLUSTERS_TTL_IDLE_MS = 24 * 60 * 60 * 1000;
+const CLUSTERS_TTL_ACTIVE_MS = 3 * 60 * 60 * 1000;
+const CLUSTERS_ACTIVE_PLAYS = 2;
+const CLUSTERS_MAX = 14;
+
+type SongCluster = { title: string; songs: any[] };
 
 type Post = {
   id: string; type: string; media_url: string;
@@ -47,6 +63,8 @@ type Profile = {
 
 export default function ExploreScreen() {
   const { show: showOptions } = usePostOptions();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { play, currentTrack, isPlaying, expand } = useAudio();
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,11 +89,90 @@ export default function ExploreScreen() {
   const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
   const followingSetRef = useRef<Set<string>>(new Set());
   const blockedIdsRef = useRef<Set<string>>(new Set());
+  // Genre song clusters (All view) + the cache record they came from, so plays
+  // can be counted against the active refresh window.
+  const [songClusters, setSongClusters] = useState<SongCluster[]>([]);
+  const clustersKeyRef = useRef<string | null>(null);
 
   // Drop archived posts (archived_at set) and posts from blocked users before
   // ranking/display. archived_at is absent pre-migration → harmless no-op.
   const visiblePosts = (rows: any[] = []) =>
     rows.filter((p) => !p.archived_at && !blockedIdsRef.current.has(p.user_id));
+
+  // ── Dwell-swipe rule (same as the Music page) ──────────────────────────────
+  // After 4 consecutive seconds on Explore, horizontal swipes step through the
+  // genre pills instead of changing app tabs. Edges fall through to the app
+  // pager (back past the first pill → Home; forward past the last → Post).
+  // EXTRA RULE: two forward swipes within 2.5 seconds jump straight to the
+  // next main screen (the new-post page), regardless of pill position.
+  const navigation = useNavigation<any>();
+  const setTabSwipe = useTabSwipeControl();
+  const dwellArmedRef = useRef(false);
+  const selectedGenreRef = useRef(selectedGenre);
+  selectedGenreRef.current = selectedGenre;
+  const orderedGenresRef = useRef(orderedGenres);
+  orderedGenresRef.current = orderedGenres;
+  const isSearchingRef = useRef(false);
+  const lastForwardTsRef = useRef(0);
+
+  useFocusEffect(useCallback(() => {
+    const t = setTimeout(() => {
+      dwellArmedRef.current = true;
+      setTabSwipe(false);
+    }, 4000);
+    return () => {
+      clearTimeout(t);
+      dwellArmedRef.current = false;
+      lastForwardTsRef.current = 0;
+      setTabSwipe(true);
+    };
+  }, [setTabSwipe]));
+
+  const genreSwipePan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) =>
+      dwellArmedRef.current && !isSearchingRef.current &&
+      Math.abs(g.dx) > 16 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+    onPanResponderTerminationRequest: () => true,
+    onPanResponderRelease: (_e, g) => {
+      if (Math.abs(g.dx) < 48) return;
+      const order = orderedGenresRef.current;
+      const idx = order.indexOf(selectedGenreRef.current);
+      if (g.dx < 0) {
+        // Forward. Double-swipe within 2.5s → straight to the new-post page.
+        const now = Date.now();
+        if (now - lastForwardTsRef.current < 2500) {
+          lastForwardTsRef.current = 0;
+          navigation.navigate('post');
+          return;
+        }
+        lastForwardTsRef.current = now;
+        if (idx < 0 || idx >= order.length - 1) navigation.navigate('post');
+        else fetchByGenre(order[idx + 1]);
+      } else {
+        lastForwardTsRef.current = 0;
+        if (idx <= 0) navigation.navigate('index');
+        else fetchByGenre(order[idx - 1]);
+      }
+    },
+  })).current;
+
+  // Slide the content in from the travel direction when the genre changes
+  // (fired by pill taps and the dwell-swipe alike).
+  const genreAnimX = useRef(new Animated.Value(0)).current;
+  const prevGenreIdxRef = useRef(0);
+  useEffect(() => {
+    const idx = orderedGenres.indexOf(selectedGenre);
+    if (idx < 0) return;
+    if (idx !== prevGenreIdxRef.current) {
+      const dir = idx > prevGenreIdxRef.current ? 1 : -1;
+      genreAnimX.setValue(dir * Dimensions.get('window').width);
+      Animated.timing(genreAnimX, {
+        toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      }).start();
+    }
+    prevGenreIdxRef.current = idx;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGenre]);
 
   useEffect(() => { setup(); }, []);
 
@@ -128,7 +225,97 @@ export default function ExploreScreen() {
     // category (genre or content type) leads the scroll bar.
     setOrderedGenres(['All', ...sortRailByAffinity([...MUSIC_GENRES, ...CONTENT_TAGS], affinityProfile.current)]);
 
+    loadGenreClusters(userId, seen); // cached — TTL-checked, non-blocking
     await fetchTrending(seen);
+  }
+
+  // Display name for a stored (lowercase) genre tag; untagged songs pool
+  // under the generic trending title.
+  function displayGenre(g?: string | null): string {
+    if (!g) return 'Trending Songs';
+    const hit = [...MUSIC_GENRES, ...CONTENT_TAGS].find(x => x.toLowerCase() === g.toLowerCase());
+    return hit ?? g.charAt(0).toUpperCase() + g.slice(1);
+  }
+
+  // Build (or load from cache) the genre clusters for the All grid.
+  // Selection: the shared feed scorer (relevance / trending / likes / fresh-
+  // ness vs the seen-set) times a modest creator-badge trust boost. The user's
+  // most-interacted genres lead, then the order CYCLES — each reappearance of
+  // a genre carries its next-best 4 songs — until the pool runs dry.
+  async function loadGenreClusters(userId: string | null, overrideSeen?: Set<string>) {
+    const key = `${CLUSTERS_KEY}_${userId ?? 'anon'}`;
+    clustersKeyRef.current = key;
+    try {
+      const raw = await AsyncStorage.getItem(key);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        const ttl = (cached.plays ?? 0) >= CLUSTERS_ACTIVE_PLAYS ? CLUSTERS_TTL_ACTIVE_MS : CLUSTERS_TTL_IDLE_MS;
+        if (Date.now() - (cached.refreshedAt ?? 0) < ttl && Array.isArray(cached.clusters) && cached.clusters.length) {
+          setSongClusters(cached.clusters);
+          return;
+        }
+      }
+    } catch {}
+
+    const { data } = await supabase
+      .from('posts')
+      .select('id, type, media_url, caption, cover_url, stream_count, genre, created_at, user_id, profiles!posts_user_id_fkey(id, username, display_name, badge_tier), likes(count), comments(count)')
+      .eq('is_public', true)
+      .eq('type', 'audio')
+      .order('stream_count', { ascending: false })
+      .limit(160);
+    const seen = overrideSeen ?? seenPostIds;
+    const now = Date.now();
+    const ranked = visiblePosts(data ?? [])
+      .map((p: any) => ({
+        p,
+        s: scorePost(p, affinityProfile.current, followingSetRef.current, seen, now)
+          * (1 + 0.05 * tierRank(rawTier(p.profiles))),
+      }))
+      .sort((a, b) => b.s - a.s);
+
+    // Bucket by genre (best-ranked first within each), chunk into stacks of 4
+    // (a trailing single is dropped — one-song cards look bare).
+    const byGenre: Record<string, any[]> = {};
+    for (const { p } of ranked) (byGenre[displayGenre(p.genre)] ||= []).push(p);
+    const chunksOf: Record<string, any[][]> = {};
+    for (const g of Object.keys(byGenre)) {
+      const chunks: any[][] = [];
+      for (let i = 0; i < byGenre[g].length; i += 4) chunks.push(byGenre[g].slice(i, i + 4));
+      chunksOf[g] = chunks.filter(c => c.length >= 2 || byGenre[g].length === 1);
+    }
+
+    // Most-interacted genres first, cycling round-robin down the feed.
+    const order = sortRailByAffinity(Object.keys(byGenre), affinityProfile.current);
+    const clusters: SongCluster[] = [];
+    for (let cycle = 0; clusters.length < CLUSTERS_MAX; cycle++) {
+      let pushedAny = false;
+      for (const g of order) {
+        const chunk = chunksOf[g]?.[cycle];
+        if (chunk?.length) {
+          clusters.push({ title: g, songs: chunk });
+          pushedAny = true;
+          if (clusters.length >= CLUSTERS_MAX) break;
+        }
+      }
+      if (!pushedAny) break;
+    }
+
+    setSongClusters(clusters);
+    AsyncStorage.setItem(key, JSON.stringify({ clusters, refreshedAt: Date.now(), plays: 0 })).catch(() => {});
+  }
+
+  // A song played from a cluster — counts toward the 2-play threshold that
+  // switches this window's refresh from 24h to 3h.
+  function noteClusterPlay() {
+    const key = clustersKeyRef.current;
+    if (!key) return;
+    AsyncStorage.getItem(key).then(raw => {
+      if (!raw) return;
+      const rec = JSON.parse(raw);
+      rec.plays = (rec.plays ?? 0) + 1;
+      return AsyncStorage.setItem(key, JSON.stringify(rec));
+    }).catch(() => {});
   }
 
   // `overrideSeen` is passed from setup() before the seenPostIds state update applies.
@@ -195,6 +382,7 @@ export default function ExploreScreen() {
     setSeenPostIds(seen);
     if (selectedGenre === 'All') await fetchTrending(seen);
     else await fetchByGenre(selectedGenre, true, seen);
+    loadGenreClusters(currentUserId, seen); // re-checks the 3h/24h window
     setRefreshing(false);
   }
 
@@ -250,6 +438,7 @@ export default function ExploreScreen() {
   }
 
   const isSearching = searchQuery.trim().length > 0;
+  isSearchingRef.current = isSearching; // dwell-swipe stays out of search mode
 
   // Highlight ONLY the single result at the very top of the Relevancy tab — the
   // first matching account if any, otherwise the top-ranked post. Everything else
@@ -281,7 +470,9 @@ export default function ExploreScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    // Dwell-swipe detector on the root: after 4s here, horizontal flings step
+    // the genre pills (see genreSwipePan).
+    <View style={styles.container} {...genreSwipePan.panHandlers}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Explore</Text>
@@ -290,11 +481,11 @@ export default function ExploreScreen() {
       {/* Search */}
       <View style={styles.searchRow}>
         <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={18} color={COLORS.textTertiary} style={styles.searchIcon} />
+          <Ionicons name="search-outline" size={18} color={colors.textTertiary} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Artists, songs, captions..."
-            placeholderTextColor={COLORS.textTertiary}
+            placeholderTextColor={colors.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onFocus={() => setSearchFocused(true)}
@@ -309,7 +500,7 @@ export default function ExploreScreen() {
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               style={styles.searchClear}
             >
-              <Ionicons name="close-circle" size={20} color={COLORS.textTertiary} />
+              <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
           )}
         </View>
@@ -366,10 +557,11 @@ export default function ExploreScreen() {
         />
       )}
 
-      {/* Content */}
+      {/* Content — slides in from the travel direction on genre change */}
+      <Animated.View style={[styles.contentWrap, { transform: [{ translateX: genreAnimX }] }]}>
       {loading || searching ? (
         <View style={styles.centered}>
-          <ActivityIndicator color={COLORS.primary} />
+          <ActivityIndicator color={colors.primary} />
         </View>
       ) : isSearching ? (
         searchTab === 'accounts' ? (
@@ -474,7 +666,7 @@ export default function ExploreScreen() {
                 <Image source={{ uri: item.type === 'image' ? item.media_url : (item.thumbnail_url || item.media_url) }} style={styles.postThumb} />
               ) : (
                 <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.postThumb}>
-                  <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={20} color={COLORS.primary} />
+                  <Ionicons name={item.type === 'audio' ? 'musical-notes' : 'videocam'} size={20} color={colors.primary} />
                 </LinearGradient>
               )}
               <View style={styles.postInfo}>
@@ -484,9 +676,9 @@ export default function ExploreScreen() {
                   <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={11} />
                   {((item.likes?.[0]?.count || 0) + (item.comments?.[0]?.count || 0)) > 0 && (
                     <View style={styles.postStats}>
-                      <Ionicons name="heart" size={11} color={COLORS.like} />
+                      <Ionicons name="heart" size={11} color={colors.like} />
                       <Text style={styles.postStatText}>{item.likes?.[0]?.count || 0}</Text>
-                      <Ionicons name="chatbubble" size={11} color={COLORS.textTertiary} />
+                      <Ionicons name="chatbubble" size={11} color={colors.textTertiary} />
                       <Text style={styles.postStatText}>{item.comments?.[0]?.count || 0}</Text>
                     </View>
                   )}
@@ -514,6 +706,8 @@ export default function ExploreScreen() {
           refreshing={refreshing}
           onRefresh={onRefresh}
           songTiles={selectedGenre !== 'All'}
+          songClusters={selectedGenre === 'All' ? songClusters : undefined}
+          onClusterSongPlay={noteClusterPlay}
           currentUserId={currentUserId}
           header={selectedGenre === 'All' ? <SuggestedAccounts currentUserId={currentUserId} /> : undefined}
           onPostDeleted={(id) => {
@@ -522,29 +716,31 @@ export default function ExploreScreen() {
           }}
         />
       )}
+      </Animated.View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  contentWrap: { flex: 1 },
   header: { paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 32, fontWeight: '900', letterSpacing: 0.3 },
+  headerTitle: { color: colors.text, fontSize: 32, fontWeight: '900', letterSpacing: 0.3 },
 
   searchRow: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: colors.surfaceLight,
     borderRadius: RADIUS.full,
-    borderWidth: 1, borderColor: COLORS.border,
+    borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: SPACING.md, gap: SPACING.sm,
   },
   searchIcon: { marginRight: -4 },
-  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15 },
+  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: colors.text, fontSize: 15 },
   searchClear: { padding: 2, marginLeft: 2 },
-  searchHl: { color: COLORS.primary, fontWeight: '800' },
+  searchHl: { color: colors.primary, fontWeight: '800' },
   accountsHeader: {},
-  accountsDivider: { height: 0.5, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
+  accountsDivider: { height: 0.5, backgroundColor: colors.border, marginVertical: SPACING.sm },
 
   // Horizontal tab scroller — flexShrink:0 (on the scroller AND each pill) keeps the
   // pills at their content width so they scroll instead of compressing. No explicit
@@ -555,11 +751,11 @@ const styles = StyleSheet.create({
   toggleBtn: {
     flexShrink: 0,
     paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border,
   },
-  toggleBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  toggleText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
-  toggleTextActive: { color: COLORS.text, fontWeight: '700' },
+  toggleBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  toggleText: { color: colors.textSecondary, fontSize: 13, fontWeight: '500' },
+  toggleTextActive: { color: colors.text, fontWeight: '700' },
 
   genreFlatList: {
     flexShrink: 0,
@@ -579,9 +775,9 @@ const styles = StyleSheet.create({
   genrePill: {
     paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.md + 2,
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.full,
   },
   genrePillGradient: {
@@ -589,8 +785,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md + 2,
     borderRadius: RADIUS.full,
   },
-  genreText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
-  genreTextActive: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
+  genreText: { color: colors.textSecondary, fontSize: 13, fontWeight: '500' },
+  genreTextActive: { color: colors.text, fontSize: 13, fontWeight: '700' },
 
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   listContent: { padding: SPACING.md, gap: SPACING.sm },
@@ -598,43 +794,43 @@ const styles = StyleSheet.create({
   accountRow: {
     flexDirection: 'row', alignItems: 'center',
     padding: SPACING.md,
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: colors.surfaceLight,
     borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.border, gap: SPACING.md,
+    borderWidth: 1, borderColor: colors.border, gap: SPACING.md,
   },
   accountAvatar: {
     width: 48, height: 48, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 2,
   },
-  accountAvatarText: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
+  accountAvatarText: { color: colors.text, fontSize: 18, fontWeight: '700' },
   accountInfo: { flex: 1 },
   accountNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   flexShrink: { flexShrink: 1 },
-  accountName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  accountUsername: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
+  accountName: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  accountUsername: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
 
   postRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: colors.surfaceLight,
     borderRadius: RADIUS.md, gap: SPACING.md, paddingRight: SPACING.md,
-    borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
-  postThumb: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface },
+  postThumb: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
   postInfo: { flex: 1, paddingRight: SPACING.xs },
-  postCaption: { color: COLORS.text, fontSize: 14, fontWeight: '500' },
+  postCaption: { color: colors.text, fontSize: 14, fontWeight: '500' },
   postMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: SPACING.sm },
-  postUser: { color: COLORS.textSecondary, fontSize: 12 },
+  postUser: { color: colors.textSecondary, fontSize: 12 },
   postStats: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  postStatText: { color: COLORS.textTertiary, fontSize: 11 },
+  postStatText: { color: colors.textTertiary, fontSize: 11 },
   postAuthorAvatar: {
     width: 30, height: 30, borderRadius: 15, flexShrink: 0,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight,
   },
   postAuthorInitial: { color: '#fff', fontSize: 12, fontWeight: '700' },
   postTypeTag: {
     width: 28, height: 28, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary + '18',
+    backgroundColor: colors.primary + '18',
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
 
@@ -642,14 +838,14 @@ const styles = StyleSheet.create({
   gridItem: {
     flex: 1, margin: SPACING.xs, aspectRatio: 1,
     borderRadius: RADIUS.md, overflow: 'hidden',
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: colors.surfaceLight,
   },
   gridImage: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm },
-  gridCaption: { color: COLORS.textSecondary, fontSize: 11, textAlign: 'center', paddingHorizontal: SPACING.sm },
+  gridCaption: { color: colors.textSecondary, fontSize: 11, textAlign: 'center', paddingHorizontal: SPACING.sm },
   gridOverlay: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: SPACING.sm, paddingVertical: 4,
   },
-  gridUsername: { color: COLORS.text, fontSize: 11, fontWeight: '600' },
-  emptyText: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center', marginTop: SPACING.xxl },
+  gridUsername: { color: colors.text, fontSize: 11, fontWeight: '600' },
+  emptyText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center', marginTop: SPACING.xxl },
 });

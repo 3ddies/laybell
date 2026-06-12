@@ -7,7 +7,8 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import FollowButton from '../../components/FollowButton';
@@ -16,6 +17,8 @@ import { useStories } from '../../contexts/StoriesContext';
 type User = { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 
 export default function FollowingScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
@@ -48,25 +51,25 @@ export default function FollowingScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Following</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {loading ? (
-        <View style={styles.centered}><ActivityIndicator color={COLORS.primary} size="large" /></View>
+        <View style={styles.centered}><ActivityIndicator color={colors.primary} size="large" /></View>
       ) : (
         <FlatList
           data={users}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="people-outline" size={40} color={COLORS.textTertiary} />
+              <Ionicons name="people-outline" size={40} color={colors.textTertiary} />
               <Text style={styles.emptyText}>Not following anyone yet</Text>
             </View>
           }
@@ -96,32 +99,32 @@ export default function FollowingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
   list: { padding: SPACING.md, gap: SPACING.sm, flexGrow: 1 },
   userRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
-    padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md,
+    padding: SPACING.md, borderWidth: 1, borderColor: colors.border,
   },
   userLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
-  avatar: { width: 46, height: 46, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
+  avatar: { width: 46, height: 46, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: colors.text, fontSize: 18, fontWeight: '700' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  displayName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  username: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
-  followBtn: { backgroundColor: COLORS.primary, borderRadius: RADIUS.full, paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md },
-  followBtnActive: { backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: COLORS.border },
-  followBtnText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
-  followBtnTextActive: { color: COLORS.textSecondary },
+  displayName: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  username: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  followBtn: { backgroundColor: colors.primary, borderRadius: RADIUS.full, paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md },
+  followBtnActive: { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border },
+  followBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  followBtnTextActive: { color: colors.textSecondary },
   empty: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.md },
-  emptyText: { color: COLORS.textTertiary, fontSize: 14 },
+  emptyText: { color: colors.textTertiary, fontSize: 14 },
 });

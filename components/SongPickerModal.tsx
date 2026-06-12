@@ -7,7 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { formatCount } from '../lib/format';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 export type PickedSong = {
   id: string;
@@ -23,6 +24,8 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
   onClose: () => void;
   onSelect: (song: PickedSong) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -84,15 +87,15 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
           <View style={styles.handle} />
           <View style={styles.head}>
             <Text style={styles.title}>Add music</Text>
-            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color={COLORS.textSecondary} /></TouchableOpacity>
+            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color={colors.textSecondary} /></TouchableOpacity>
           </View>
 
           <View style={styles.searchBar}>
-            <Ionicons name="search-outline" size={18} color={COLORS.textTertiary} />
+            <Ionicons name="search-outline" size={18} color={colors.textTertiary} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search songs or artists..."
-              placeholderTextColor={COLORS.textTertiary}
+              placeholderTextColor={colors.textTertiary}
               value={query}
               onChangeText={setQuery}
               autoCapitalize="none"
@@ -100,13 +103,13 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
             />
             {query.length > 0 && (
               <TouchableOpacity onPress={() => setQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
+                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
             )}
           </View>
 
           {loading ? (
-            <View style={styles.center}><ActivityIndicator color={COLORS.primary} /></View>
+            <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
           ) : results.length === 0 ? (
             <View style={styles.center}><Text style={styles.empty}>No songs found</Text></View>
           ) : (
@@ -121,7 +124,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
                     <Image source={{ uri: item.cover_url }} style={styles.cover} />
                   ) : (
                     <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
-                      <Ionicons name="musical-notes" size={18} color={COLORS.primary} />
+                      <Ionicons name="musical-notes" size={18} color={colors.primary} />
                     </LinearGradient>
                   )}
                   <View style={{ flex: 1 }}>
@@ -131,7 +134,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
                       {item.stream_count ? ` · ${formatCount(item.stream_count)} plays` : ''}
                     </Text>
                   </View>
-                  <Ionicons name="add-circle" size={24} color={COLORS.primary} />
+                  <Ionicons name="add-circle" size={24} color={colors.primary} />
                 </TouchableOpacity>
               )}
             />
@@ -142,31 +145,31 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     maxHeight: '80%', minHeight: '55%', paddingBottom: SPACING.xl,
   },
-  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: COLORS.border, alignSelf: 'center', marginTop: SPACING.sm },
+  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginTop: SPACING.sm },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md },
-  title: { color: COLORS.text, fontSize: 17, fontWeight: '800' },
+  title: { color: colors.text, fontSize: 17, fontWeight: '800' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.full,
-    borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.full,
+    borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: SPACING.md, marginHorizontal: SPACING.md,
   },
-  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15 },
+  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: colors.text, fontSize: 15 },
   center: { alignItems: 'center', justifyContent: 'center', padding: SPACING.xxl },
-  empty: { color: COLORS.textTertiary, fontSize: 14 },
+  empty: { color: colors.textTertiary, fontSize: 14 },
   list: { padding: SPACING.md, gap: SPACING.sm },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.border, padding: SPACING.sm + 2,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: colors.border, padding: SPACING.sm + 2,
   },
   cover: { width: 44, height: 44, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
-  rowTitle: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  rowArtist: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  rowTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  rowArtist: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
 });

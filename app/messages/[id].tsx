@@ -1,6 +1,7 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput, Image,
   TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
+  Keyboard, Animated,
 } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,7 +10,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { createNotification } from '../../lib/createNotification';
 import { sharedPostId, internalPathFromUrl } from '../../lib/postLinks';
 import SharedPostCard from '../../components/SharedPostCard';
@@ -18,6 +20,8 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 
 export default function ChatScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -28,6 +32,31 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
+
+  // The compose bar is absolutely positioned (so messages scroll under its
+  // blur), which means the KeyboardAvoidingView's padding never moves it —
+  // slide it with the keyboard ourselves, matching the keyboard's own
+  // animation timing. iOS only: Android resizes the window, so the bar
+  // already rides up for free.
+  const kbShift = useRef(new Animated.Value(0)).current;
+  const [kbUp, setKbUp] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const show = Keyboard.addListener('keyboardWillShow', (e: any) => {
+      setKbUp(true);
+      Animated.timing(kbShift, {
+        toValue: -(e.endCoordinates?.height ?? 0),
+        duration: e.duration ?? 250,
+        useNativeDriver: true,
+      }).start();
+    });
+    const hide = Keyboard.addListener('keyboardWillHide', (e: any) => {
+      setKbUp(false);
+      Animated.timing(kbShift, { toValue: 0, duration: e?.duration ?? 220, useNativeDriver: true }).start();
+    });
+    return () => { show.remove(); hide.remove(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => { setup(); }, [id]);
 
@@ -136,14 +165,14 @@ export default function ChatScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
+    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
   }
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={26} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={26} color={colors.primary} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.headerUser} activeOpacity={0.7} onPress={() => router.push(`/profile/${id}`)}>
           {otherUser?.avatar_url ? (
@@ -207,16 +236,19 @@ export default function ChatScreen() {
         }}
       />
 
+      <Animated.View style={[styles.inputBarWrap, { transform: [{ translateY: kbShift }] }]}>
       <BlurView
         intensity={70}
         tint="dark"
         experimentalBlurMethod="dimezisBlurView"
-        style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}
+        // Above the keyboard the home-indicator inset is irrelevant — use the
+        // slim padding so the bar hugs the keyboard like iMessage.
+        style={[styles.inputBar, { paddingBottom: kbUp ? SPACING.sm + 2 : Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}
       >
         <TextInput
           style={styles.input}
           placeholder="Message..."
-          placeholderTextColor={COLORS.textTertiary}
+          placeholderTextColor={colors.textTertiary}
           value={newMessage}
           onChangeText={setNewMessage}
           multiline
@@ -230,26 +262,27 @@ export default function ChatScreen() {
         >
           <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.sendBtn}>
             {sending
-              ? <ActivityIndicator color={COLORS.text} size="small" />
-              : <Ionicons name="arrow-up" size={20} color={COLORS.text} />
+              ? <ActivityIndicator color={colors.text} size="small" />
+              : <Ionicons name="arrow-up" size={20} color={colors.text} />
             }
           </LinearGradient>
         </TouchableOpacity>
       </BlurView>
+      </Animated.View>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: SPACING.sm,
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border, gap: SPACING.xs,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border, gap: SPACING.xs,
   },
   backBtn: { padding: SPACING.xs },
   headerUser: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
@@ -258,11 +291,11 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
-  headerAvatarText: { color: COLORS.text, fontSize: 17, fontWeight: '800' },
+  headerAvatarText: { color: colors.text, fontSize: 17, fontWeight: '800' },
   headerInfo: { flex: 1 },
   headerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  headerName: { color: COLORS.text, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
-  headerUsername: { color: COLORS.textSecondary, fontSize: 13 },
+  headerName: { color: colors.text, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+  headerUsername: { color: colors.textSecondary, fontSize: 13 },
 
   messagesList: { padding: SPACING.md, gap: 2, flexGrow: 1 },
 
@@ -272,47 +305,49 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: '80%', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22 },
   bubbleOwn: {
     borderBottomRightRadius: 7,
-    shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
+    shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
   bubbleOther: {
-    backgroundColor: COLORS.surfaceElevated, borderBottomLeftRadius: 7,
+    backgroundColor: colors.surfaceElevated, borderBottomLeftRadius: 7,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  bubbleText: { color: COLORS.text, fontSize: 16, lineHeight: 22, letterSpacing: 0.1 },
+  bubbleText: { color: colors.text, fontSize: 16, lineHeight: 22, letterSpacing: 0.1 },
   link: { textDecorationLine: 'underline', fontWeight: '700' },
   linkOwn: { color: '#fff' },
-  linkOther: { color: COLORS.primaryLight },
+  linkOther: { color: colors.primaryLight },
   // Inline trailing timestamp — small + faded, baseline-flows after the message.
   inlineTime: { fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
-  inlineTimeOther: { color: COLORS.textTertiary },
-  cardTime: { fontSize: 10, color: COLORS.textTertiary, marginTop: 3 },
+  inlineTimeOther: { color: colors.textTertiary },
+  cardTime: { fontSize: 10, color: colors.textTertiary, marginTop: 3 },
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
-  emptyText: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center' },
+  emptyText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center' },
 
   // Floating frosted-glass bar (iOS-style): messages scroll under the blur.
+  // The Animated wrapper owns the absolute position + keyboard slide.
+  inputBarWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   inputBar: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
     flexDirection: 'row', alignItems: 'flex-end',
     paddingHorizontal: SPACING.md, paddingTop: SPACING.sm + 2, gap: SPACING.sm,
-    borderTopWidth: 0.5, borderTopColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(9,9,9,0.45)',
+    // A whisper of a seam — the blur itself does the separating.
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(9,9,9,0.55)',
     overflow: 'hidden',
   },
+  // Quiet glass pill: low-key fill, hairline border, true 44pt height.
   input: {
-    flex: 1, backgroundColor: 'rgba(255,255,255,0.10)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
-    borderRadius: RADIUS.xl, paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 3, color: COLORS.text, fontSize: 16, lineHeight: 21, maxHeight: 120,
+    flex: 1, backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 22, minHeight: 44, paddingHorizontal: SPACING.md + 2,
+    paddingVertical: 11, color: colors.text, fontSize: 16, lineHeight: 21, maxHeight: 120,
   },
+  // Flat solid circle — no glow/elevation (the halo read as Android Material).
   sendBtn: {
-    width: 42, height: 42, borderRadius: RADIUS.full,
+    width: 44, height: 44, borderRadius: RADIUS.full,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: COLORS.primary, shadowOpacity: 0.5, shadowRadius: 7, shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
   },
-  sendBtnDisabled: { opacity: 0.4 },
+  sendBtnDisabled: { opacity: 0.35 },
 });

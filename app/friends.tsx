@@ -14,7 +14,8 @@ import FollowButton from '../components/FollowButton';
 import {
   getRotatingSuggestions, loadContactHashesIfEnabled, REASON_LABEL, type SuggestedAccount,
 } from '../lib/suggestions';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 type Profile = { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 
@@ -23,6 +24,8 @@ type Profile = { id: string; username: string; display_name: string; avatar_url:
 // accounts (see getRotatingSuggestions: highest-recommended on top, auto-rotates
 // the bottom 60% every few days).
 export default function FriendsScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { following } = useFollow();
   const [friends, setFriends] = useState<Profile[]>([]);
@@ -101,24 +104,24 @@ export default function FriendsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Friends</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {loading ? (
-        <View style={styles.centered}><ActivityIndicator color={COLORS.primary} size="large" /></View>
+        <View style={styles.centered}><ActivityIndicator color={colors.primary} size="large" /></View>
       ) : (
         <FlatList
           data={friends}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           ListHeaderComponent={friends.length ? <Text style={styles.sectionTitle}>Your friends</Text> : null}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="people-outline" size={40} color={COLORS.textTertiary} />
+              <Ionicons name="people-outline" size={40} color={colors.textTertiary} />
               <Text style={styles.emptyText}>No friends yet</Text>
               <Text style={styles.emptySub}>When you and someone follow each other you become friends — they'll show up here.</Text>
             </View>
@@ -131,38 +134,38 @@ export default function FriendsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
 
   list: { padding: SPACING.md, gap: SPACING.sm, flexGrow: 1 },
   sectionTitle: {
-    color: COLORS.textTertiary, fontSize: 11, fontWeight: '700',
+    color: colors.textTertiary, fontSize: 11, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: SPACING.xs, marginBottom: SPACING.xs,
   },
   userRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
-    padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border, gap: SPACING.sm,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md,
+    padding: SPACING.md, borderWidth: 1, borderColor: colors.border, gap: SPACING.sm,
   },
   userLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
   userInfo: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  displayName: { color: COLORS.text, fontSize: 15, fontWeight: '700', flexShrink: 1 },
-  username: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
-  reason: { color: COLORS.primaryLight, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  displayName: { color: colors.text, fontSize: 15, fontWeight: '700', flexShrink: 1 },
+  username: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  reason: { color: colors.primaryLight, fontSize: 11, fontWeight: '600', marginTop: 2 },
 
   // Discovery section below the friends list.
   suggestSection: { gap: SPACING.sm, marginTop: SPACING.lg },
 
   empty: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm, paddingHorizontal: SPACING.xl },
-  emptyText: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
-  emptySub: { color: COLORS.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  emptyText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  emptySub: { color: colors.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 19 },
 });

@@ -9,7 +9,8 @@ import { supabase } from '../lib/supabase';
 import { timeAgo } from '../lib/timeAgo';
 import { isSlideshow } from '../lib/slideshow';
 import VideoThumb from '../components/VideoThumb';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 type TabKey = 'posts' | 'audio' | 'comments' | 'stories';
 const TABS: { key: TabKey; label: string; icon: any }[] = [
@@ -27,6 +28,8 @@ const EMPTY: Record<TabKey, { icon: any; text: string }> = {
 };
 
 export default function TaggedScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const [tab, setTab] = useState<TabKey>('posts');
   const [loading, setLoading] = useState(true);
@@ -95,20 +98,20 @@ export default function TaggedScreen() {
   function gridThumb(post: any) {
     if (isSlideshow(post.type)) return (
       <><Image source={{ uri: post.thumbnail_url || post.media_url }} style={styles.gridImage} resizeMode="cover" />
-        <View style={styles.gridBadge}><Ionicons name="copy" size={12} color={COLORS.text} /></View></>
+        <View style={styles.gridBadge}><Ionicons name="copy" size={12} color={colors.text} /></View></>
     );
     if (post.type === 'video') return (
       <><VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.gridImage} />
-        <View style={styles.gridBadge}><Ionicons name="play" size={13} color={COLORS.text} /></View></>
+        <View style={styles.gridBadge}><Ionicons name="play" size={13} color={colors.text} /></View></>
     );
     if (post.type === 'image') return <Image source={{ uri: post.media_url }} style={styles.gridImage} resizeMode="cover" />;
     if (post.cover_url) return (
       <><Image source={{ uri: post.cover_url }} style={styles.gridImage} resizeMode="cover" />
-        <View style={styles.gridBadge}><Ionicons name="musical-notes" size={12} color={COLORS.text} /></View></>
+        <View style={styles.gridBadge}><Ionicons name="musical-notes" size={12} color={colors.text} /></View></>
     );
     return (
       <LinearGradient colors={['#1C0E06', '#120A04']} style={[styles.gridImage, styles.gridPlaceholder]}>
-        <Ionicons name="musical-notes" size={24} color={COLORS.primary} />
+        <Ionicons name="musical-notes" size={24} color={colors.primary} />
       </LinearGradient>
     );
   }
@@ -117,8 +120,8 @@ export default function TaggedScreen() {
     const e = EMPTY[tab];
     return (
       <View style={styles.empty}>
-        <LinearGradient colors={['#1C0A04', COLORS.background]} style={styles.emptyIcon}>
-          <Ionicons name={e.icon} size={36} color={COLORS.primary} />
+        <LinearGradient colors={['#1C0A04', colors.background]} style={styles.emptyIcon}>
+          <Ionicons name={e.icon} size={36} color={colors.primary} />
         </LinearGradient>
         <Text style={styles.emptyText}>{e.text}</Text>
       </View>
@@ -135,7 +138,7 @@ export default function TaggedScreen() {
           numColumns={3}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.gridContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={COLORS.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={colors.primary} />}
           ListEmptyComponent={renderEmpty}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.gridItem} onPress={() => openPost(item)} activeOpacity={0.85}>
@@ -153,7 +156,7 @@ export default function TaggedScreen() {
           data={comments}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={COLORS.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={colors.primary} />}
           ListEmptyComponent={renderEmpty}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.row} onPress={() => router.push(`/post/${item.post_id}`)} activeOpacity={0.8}>
@@ -165,7 +168,7 @@ export default function TaggedScreen() {
                 </Text>
                 <Text style={styles.rowTime}>{timeAgo(item.created_at)} · tap to view</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
             </TouchableOpacity>
           )}
         />
@@ -179,14 +182,14 @@ export default function TaggedScreen() {
         data={stories}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={COLORS.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={colors.primary} />}
         ListEmptyComponent={renderEmpty}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.row} onPress={() => router.push(`/story/${item.user_id}`)} activeOpacity={0.8}>
             {item.thumbnail_url || item.media_url ? (
               <Image source={{ uri: item.thumbnail_url || item.media_url }} style={styles.storyThumb} resizeMode="cover" />
             ) : (
-              <View style={[styles.storyThumb, styles.gridPlaceholder]}><Ionicons name="musical-notes" size={18} color={COLORS.primary} /></View>
+              <View style={[styles.storyThumb, styles.gridPlaceholder]}><Ionicons name="musical-notes" size={18} color={colors.primary} /></View>
             )}
             <View style={{ flex: 1 }}>
               <Text style={styles.rowText} numberOfLines={2}>
@@ -195,7 +198,7 @@ export default function TaggedScreen() {
               </Text>
               <Text style={styles.rowTime}>{timeAgo(item.created_at)} · up for 24h</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+            <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
           </TouchableOpacity>
         )}
       />
@@ -207,7 +210,7 @@ export default function TaggedScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Tagged</Text>
         <View style={{ width: 40 }} />
@@ -218,7 +221,7 @@ export default function TaggedScreen() {
           const on = tab === t.key;
           return (
             <TouchableOpacity key={t.key} style={[styles.tab, on && styles.tabActive]} onPress={() => setTab(t.key)}>
-              <Ionicons name={t.icon} size={16} color={on ? COLORS.primary : COLORS.textTertiary} />
+              <Ionicons name={t.icon} size={16} color={on ? colors.primary : colors.textTertiary} />
               <Text style={[styles.tabText, on && styles.tabTextActive]}>{t.label}</Text>
             </TouchableOpacity>
           );
@@ -226,13 +229,15 @@ export default function TaggedScreen() {
       </View>
 
       {loading
-        ? <View style={styles.loading}><ActivityIndicator color={COLORS.primary} size="large" /></View>
+        ? <View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /></View>
         : renderContent()}
     </View>
   );
 }
 
 function Avatar({ profile }: { profile: any }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   if (profile?.avatar_url) return <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />;
   return (
     <LinearGradient colors={['#3A1C0C', '#1C0E06']} style={styles.avatar}>
@@ -241,38 +246,38 @@ function Avatar({ profile }: { profile: any }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
 
-  tabsRow: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
+  tabsRow: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: colors.border },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: SPACING.sm + 2 },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: COLORS.primary },
-  tabText: { color: COLORS.textTertiary, fontSize: 13, fontWeight: '600' },
-  tabTextActive: { color: COLORS.text, fontWeight: '700' },
+  tabActive: { borderBottomWidth: 2, borderBottomColor: colors.primary },
+  tabText: { color: colors.textTertiary, fontSize: 13, fontWeight: '600' },
+  tabTextActive: { color: colors.text, fontWeight: '700' },
 
   gridContent: { flexGrow: 1 },
   gridItem: { width: '33.33%', aspectRatio: 1 },
   gridImage: { width: '100%', height: '100%' },
-  gridPlaceholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 0.5, borderColor: COLORS.border },
+  gridPlaceholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 0.5, borderColor: colors.border },
   gridBadge: { position: 'absolute', top: 6, left: 6, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
 
   listContent: { flexGrow: 1, padding: SPACING.md, gap: SPACING.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.sm, borderRadius: RADIUS.md },
   avatar: { width: 44, height: 44, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
-  storyThumb: { width: 44, height: 56, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceLight },
-  rowText: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 19 },
-  rowName: { color: COLORS.text, fontWeight: '700' },
-  rowTime: { color: COLORS.textTertiary, fontSize: 12, marginTop: 3 },
+  avatarText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  storyThumb: { width: 44, height: 56, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight },
+  rowText: { color: colors.textSecondary, fontSize: 14, lineHeight: 19 },
+  rowName: { color: colors.text, fontWeight: '700' },
+  rowTime: { color: colors.textTertiary, fontSize: 12, marginTop: 3 },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl * 2, gap: SPACING.md, paddingHorizontal: SPACING.xl },
   emptyIcon: { width: 84, height: 84, borderRadius: RADIUS.xl + 8, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 21 },
+  emptyText: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 21 },
 });

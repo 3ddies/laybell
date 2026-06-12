@@ -9,7 +9,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { createNotification } from '../../lib/createNotification';
 import { usePostActionSheets } from '../../hooks/usePostActionSheets';
 import { formatCount } from '../../lib/format';
@@ -34,6 +35,8 @@ import {
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export default function ReelScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   // Hosted locally (not via the root context) so the sheets present over this
   // transparentModal route on iOS — see usePostActionSheets.
   const { share: openShare, showOptions, sheets } = usePostActionSheets();
@@ -212,7 +215,7 @@ export default function ReelScreen() {
         {/* Right action rail */}
         <View style={[styles.rail, { bottom: insets.bottom + 90 }]}>
           <TouchableOpacity style={styles.railBtn} onPress={() => toggleLike(item)}>
-            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={32} color={isLiked ? COLORS.like : '#fff'} />
+            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={32} color={isLiked ? colors.like : '#fff'} />
             {likeCount > 0 && <Text style={styles.railText}>{formatCount(likeCount)}</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.railBtn} onPress={() => setCommentsFor({ id: item.id, ownerId: item.user_id })}>
@@ -336,11 +339,11 @@ export default function ReelScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   root: { flex: 1 },
   container: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { color: COLORS.textSecondary, fontSize: 15 },
+  empty: { color: colors.textSecondary, fontSize: 15 },
 
   back: { position: 'absolute', left: SPACING.sm, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   muteBtn: {

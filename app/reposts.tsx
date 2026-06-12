@@ -7,7 +7,8 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { timeAgo } from '../lib/timeAgo';
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
@@ -23,6 +24,8 @@ type RepostRow = {
 };
 
 export default function RepostsScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const [items, setItems] = useState<RepostRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,20 +73,20 @@ export default function RepostsScreen() {
     if (cover) return <Image source={{ uri: cover }} style={styles.thumb} />;
     return (
       <LinearGradient colors={['#1C0E06', '#120A04']} style={[styles.thumb, styles.thumbFallback]}>
-        <Ionicons name={isAudioPost(post.type) ? 'musical-notes' : 'image'} size={20} color={COLORS.primary} />
+        <Ionicons name={isAudioPost(post.type) ? 'musical-notes' : 'image'} size={20} color={colors.primary} />
       </LinearGradient>
     );
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
+    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
   }
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Reposts</Text>
         <View style={{ width: 40 }} />
@@ -95,12 +98,12 @@ export default function RepostsScreen() {
         style={styles.list}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchReposts(); }} tintColor={COLORS.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchReposts(); }} tintColor={colors.primary} />
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <LinearGradient colors={['#1C0A04', COLORS.background]} style={styles.emptyIcon}>
-              <Ionicons name="repeat" size={36} color={COLORS.primary} />
+            <LinearGradient colors={['#1C0A04', colors.background]} style={styles.emptyIcon}>
+              <Ionicons name="repeat" size={36} color={colors.primary} />
             </LinearGradient>
             <Text style={styles.emptyTitle}>No reposts yet</Text>
             <Text style={styles.emptySubtitle}>When someone reposts your post, you'll see them here</Text>
@@ -133,38 +136,38 @@ export default function RepostsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
 
   list: { flex: 1 },
   listContent: { padding: SPACING.md, gap: SPACING.sm, flexGrow: 1 },
 
   row: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: COLORS.surfaceLight,
-    borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border,
     padding: SPACING.sm + 2,
   },
   userPart: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   avatar: { width: 46, height: 46, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
+  avatarText: { color: colors.text, fontSize: 18, fontWeight: '700' },
   userInfo: { flex: 1 },
-  name: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  sub: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  name: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  sub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
 
-  thumb: { width: 50, height: 50, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceElevated },
+  thumb: { width: 50, height: 50, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceElevated },
   thumbFallback: { alignItems: 'center', justifyContent: 'center' },
 
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 2, gap: SPACING.md, paddingHorizontal: SPACING.xl },
   emptyIcon: { width: 90, height: 90, borderRadius: RADIUS.xl + 8, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { color: COLORS.text, fontSize: 20, fontWeight: '800' },
-  emptySubtitle: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
+  emptyTitle: { color: colors.text, fontSize: 20, fontWeight: '800' },
+  emptySubtitle: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
 });

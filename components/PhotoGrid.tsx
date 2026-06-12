@@ -6,7 +6,8 @@ import { Image as ExpoImage } from 'expo-image';
 import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING } from '../constants/theme';
+import { SPACING, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 const NUM_COLS = 4;
 const GAP = 2;
@@ -47,6 +48,8 @@ export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, 
   // Show the selection order (slideshow) instead of a plain check (single).
   numbered?: boolean;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [permission, requestPermission] = MediaLibrary.usePermissions();
   const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
   const [endCursor, setEndCursor] = useState<string | undefined>(undefined);
@@ -122,7 +125,7 @@ export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, 
   if (permission && !permission.granted) {
     return (
       <View style={styles.center}>
-        <Ionicons name="images-outline" size={36} color={COLORS.textTertiary} />
+        <Ionicons name="images-outline" size={36} color={colors.textTertiary} />
         <Text style={styles.permText}>Allow photo access to pick from your library</Text>
         <TouchableOpacity style={styles.permBtn} onPress={() => requestPermission()}>
           <Text style={styles.permBtnText}>Grant access</Text>
@@ -147,12 +150,12 @@ export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, 
       onMomentumScrollEnd={() => onScrollActive?.(false)}
       onEndReached={() => { if (hasNext && endCursor && !loadingRef.current) loadPage(endCursor); }}
       onEndReachedThreshold={0.6}
-      ListFooterComponent={loading ? <ActivityIndicator color={COLORS.primary} style={{ margin: SPACING.md }} /> : null}
+      ListFooterComponent={loading ? <ActivityIndicator color={colors.primary} style={{ margin: SPACING.md }} /> : null}
       renderItem={({ item }) => {
         if (item.id === '__camera__') {
           return (
             <TouchableOpacity style={[styles.cell, styles.cameraCell]} onPress={openCamera}>
-              <Ionicons name="camera" size={26} color={COLORS.text} />
+              <Ionicons name="camera" size={26} color={colors.text} />
             </TouchableOpacity>
           );
         }
@@ -184,7 +187,7 @@ export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, 
               </View>
             )}
             {resolvingId === item.id && (
-              <View style={styles.resolving}><ActivityIndicator color={COLORS.text} /></View>
+              <View style={styles.resolving}><ActivityIndicator color={colors.text} /></View>
             )}
           </TouchableOpacity>
         );
@@ -193,18 +196,18 @@ export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, 
   );
 }
 
-const styles = StyleSheet.create({
-  cell: { width: CELL, height: CELL, backgroundColor: COLORS.surfaceLight },
-  cameraCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceElevated },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  cell: { width: CELL, height: CELL, backgroundColor: colors.surfaceLight },
+  cameraCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceElevated },
   thumb: { width: '100%', height: '100%' },
   dur: {
     position: 'absolute', bottom: 4, right: 4, color: '#fff', fontSize: 11, fontWeight: '700',
     textShadowColor: '#000', textShadowRadius: 3,
   },
-  selOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)', borderWidth: 2, borderColor: COLORS.primary },
+  selOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)', borderWidth: 2, borderColor: colors.primary },
   selBadge: {
     position: 'absolute', top: 4, right: 4, minWidth: 20, height: 20, borderRadius: 10,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
   },
   selBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   resolving: {
@@ -212,7 +215,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)',
   },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.lg, gap: SPACING.md },
-  permText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
-  permBtn: { backgroundColor: COLORS.primary, borderRadius: 999, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg },
-  permBtnText: { color: COLORS.text, fontWeight: '700' },
+  permText: { color: colors.textSecondary, fontSize: 14, textAlign: 'center' },
+  permBtn: { backgroundColor: colors.primary, borderRadius: 999, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg },
+  permBtnText: { color: colors.text, fontWeight: '700' },
 });

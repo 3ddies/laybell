@@ -13,7 +13,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
-import { COLORS, SPACING, RADIUS, GRADIENTS, SHADOWS } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { useAudio } from '../../contexts/AudioContext';
@@ -29,6 +30,8 @@ import { trackVideoProgress } from '../../lib/viewTracker';
 import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
 import { useExpandTransition } from '../../hooks/useExpandTransition';
+import { TabSwipeContext } from '../../contexts/PagerContext';
+import SwipeBackPager from '../../components/SwipeBackPager';
 import SongAttribution from '../../components/SongAttribution';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
 import TaggedPeopleButton from '../../components/TaggedPeopleButton';
@@ -59,6 +62,8 @@ type Comment = {
 };
 
 export default function PostDetailScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   // Hosted locally (not via the root context) so the sheets present over this
   // transparentModal route on iOS — see usePostActionSheets.
   const { share: openShare, showOptions, sheets } = usePostActionSheets();
@@ -70,7 +75,11 @@ export default function PostDetailScreen() {
   const isFocused = useIsFocused();
   const flatListRef = useRef<any>(null);
   const videoRef = useRef<any>(null);
-  const { dismiss, backdropOpacity, contentStyle } = useExpandTransition();
+  const { dismiss, popInstant, backdropOpacity, contentStyle } = useExpandTransition();
+  // The swipe-back pager's gesture, paused while a slideshow carousel inside is
+  // being touched (it provides TabSwipeContext below) so swiping between slides
+  // never drags the whole post off-screen.
+  const [pageSwipeOn, setPageSwipeOn] = useState(true);
 
   // Seed from the post passed in on tap so the screen renders instantly (no
   // loading spinner) — the fetch below just refreshes counts/details.
@@ -183,28 +192,39 @@ export default function PostDetailScreen() {
 
   if (notFound && !post) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Post</Text>
-          <View style={{ width: 40 }} />
+      // onClose (not the default back) so this pager never intercepts
+      // beforeRemove — the expand hook already listens for that.
+      <SwipeBackPager onClose={popInstant}>
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+              <Ionicons name="chevron-back" size={24} color={colors.primary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Post</Text>
+            <View style={{ width: 40 }} />
+          </View>
+          <View style={styles.loadingContainer}><Text style={{ color: colors.textSecondary }}>Post not found</Text></View>
         </View>
-        <View style={styles.loadingContainer}><Text style={{ color: COLORS.textSecondary }}>Post not found</Text></View>
-      </View>
+      </SwipeBackPager>
     );
   }
 
   return (
     <View style={styles.root}>
+      {/* Swipe right anywhere to slide the whole post (backdrop included) off and
+          reveal the screen underneath — one motion, same feel as the tab pager.
+          onClose skips the shrink-to-thumbnail close (the page is already
+          off-screen); the back button still uses the shrink via dismiss().
+          animateIn off — the grow-from-thumbnail expand IS the entrance. */}
+      <SwipeBackPager onClose={popInstant} scrollEnabled={pageSwipeOn} animateIn={false}>
+      <TabSwipeContext.Provider value={setPageSwipeOn}>
       {/* Darkening backdrop — fades as the post grows out of / shrinks into the thumb. */}
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]} />
       <Animated.View style={[StyleSheet.absoluteFill, contentStyle]}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={dismiss}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Post</Text>
         <View style={{ width: 40 }} />
@@ -248,7 +268,7 @@ export default function PostDetailScreen() {
                 })}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Ionicons name="ellipsis-horizontal" size={16} color={COLORS.textSecondary} />
+                <Ionicons name="ellipsis-horizontal" size={16} color={colors.textSecondary} />
               </TouchableOpacity>
             </TouchableOpacity>
 
@@ -321,19 +341,32 @@ export default function PostDetailScreen() {
               <TouchableOpacity
                 style={styles.audioWrap}
                 onPress={() => audioPlaying ? stop() : play({ id: post.id, uri: post.media_url, caption: post.caption, artist: post.profiles?.display_name, cover: post.cover_url })}
+                // Hold the song card for the options sheet — same menu as the ⋯
+                onLongPress={() => showOptions({
+                  postId: id as string,
+                  isOwn: currentUserId === post.user_id,
+                  authorId: post.user_id,
+                  authorName: post.profiles?.username,
+                  mediaType: post.type,
+                  onEdit: () => router.push(`/edit-post/${id}`),
+                  onDeleted: () => router.back(),
+                  onArchived: () => router.back(),
+                  onBlocked: () => router.back(),
+                })}
               >
                 <LinearGradient colors={audioPlaying ? ['#E8401C', '#C03010'] : ['#1C0E06', '#120A04']} style={styles.audioCard}>
                   {post.cover_url ? (
                     <View style={styles.audioCover}>
                       <Image source={{ uri: post.cover_url }} style={styles.audioCoverImg} />
-                      <View style={[styles.audioCoverOverlay, audioPlaying && styles.audioRingActive]}>
-                        <Ionicons name={audioPlaying ? 'stop' : 'play'} size={22} color={COLORS.text} />
+                      <View style={styles.audioCoverOverlay}>
+                        {/* Filled-circle glyph, same as Today's Pick — white over artwork */}
+                        <Ionicons name={audioPlaying ? 'stop-circle' : 'play-circle'} size={36} color="#fff" />
                       </View>
                     </View>
                   ) : (
-                    <View style={[styles.audioRing, audioPlaying && styles.audioRingActive]}>
-                      <Ionicons name={audioPlaying ? 'stop' : 'play'} size={24} color={COLORS.text} />
-                    </View>
+                    // No artwork: the bare glyph carries the button on its own
+                    // (white when playing — the active card gradient is primary-bright).
+                    <Ionicons name={audioPlaying ? 'stop-circle' : 'play-circle'} size={48} color={audioPlaying ? '#fff' : colors.primary} />
                   )}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.audioTitle} numberOfLines={1}>{post.caption || 'Audio Track'}</Text>
@@ -341,7 +374,7 @@ export default function PostDetailScreen() {
                       @{post.profiles?.username} · {(post.stream_count || 0).toLocaleString()} {(post.stream_count === 1) ? 'play' : 'plays'}
                     </Text>
                   </View>
-                  <Ionicons name="musical-notes" size={28} color={COLORS.primary + '44'} />
+                  <Ionicons name="musical-notes" size={28} color={colors.primary + '44'} />
                 </LinearGradient>
               </TouchableOpacity>
             )}
@@ -354,12 +387,12 @@ export default function PostDetailScreen() {
             {/* Actions */}
             <View style={styles.actions}>
               <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.6} hitSlop={8}>
-                <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={23} color={isLiked ? COLORS.like : COLORS.textSecondary} />
-                {likeCount > 0 && <Text style={[styles.actionCount, isLiked && { color: COLORS.like }]}>{likeCount}</Text>}
+                <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={23} color={isLiked ? colors.like : colors.textSecondary} />
+                {likeCount > 0 && <Text style={[styles.actionCount, isLiked && { color: colors.like }]}>{likeCount}</Text>}
               </TouchableOpacity>
               <TouchableOpacity style={styles.actionBtn} onPress={handleSave} activeOpacity={0.6} hitSlop={8}>
-                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? COLORS.text : COLORS.textSecondary} />
-                {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: COLORS.text }]}>{saveCount}</Text>}
+                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? colors.text : colors.textSecondary} />
+                {saveCount > 0 && <Text style={[styles.actionCount, isSaved && { color: colors.text }]}>{saveCount}</Text>}
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.actionBtn}
@@ -374,7 +407,7 @@ export default function PostDetailScreen() {
                   cover: post.cover_url ?? post.thumbnail_url ?? (post.type === 'image' ? post.media_url : null),
                 })}
               >
-                <Ionicons name="share-social-outline" size={22} color={COLORS.textSecondary} />
+                <Ionicons name="share-social-outline" size={22} color={colors.textSecondary} />
                 {(post.share_count || 0) > 0 && <Text style={styles.actionCount}>{post.share_count}</Text>}
               </TouchableOpacity>
             </View>
@@ -384,6 +417,8 @@ export default function PostDetailScreen() {
       ) : null}
       </KeyboardAvoidingView>
       </Animated.View>
+      </TabSwipeContext.Provider>
+      </SwipeBackPager>
 
       {/* Share + 3-dot sheets, hosted here so they appear over this modal route */}
       {sheets}
@@ -391,27 +426,27 @@ export default function PostDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   root: { flex: 1 },
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
+  headerTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
   listContent: { paddingBottom: SPACING.xxl },
   postHeader: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, gap: SPACING.sm },
-  avatar: { width: 40, height: 40, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+  avatar: { width: 40, height: 40, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: colors.text, fontSize: 16, fontWeight: '700' },
   postHeaderInfo: { flex: 1 },
   postNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  displayName: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
-  username: { color: COLORS.textMeta, fontSize: 12, marginTop: 1 },
-  typeTag: { width: 28, height: 28, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center' },
-  media: { width: '100%', height: 340, backgroundColor: COLORS.surfaceLight },
+  displayName: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  username: { color: colors.textMeta, fontSize: 12, marginTop: 1 },
+  typeTag: { width: 28, height: 28, borderRadius: RADIUS.full, backgroundColor: colors.primary + '18', alignItems: 'center', justifyContent: 'center' },
+  media: { width: '100%', height: 340, backgroundColor: colors.surfaceLight },
   tagBtnOverlay: { position: 'absolute', left: SPACING.sm, bottom: SPACING.sm },
   songMuteBtn: {
     position: 'absolute', top: SPACING.sm, right: SPACING.sm,
@@ -420,32 +455,30 @@ const styles = StyleSheet.create({
   },
   audioWrap: { marginHorizontal: SPACING.md, marginVertical: SPACING.sm, borderRadius: RADIUS.md, overflow: 'hidden' },
   audioCard: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, gap: SPACING.md, borderRadius: RADIUS.md },
-  audioRing: { width: 48, height: 48, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + '44', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.primary + '88' },
   audioCover: { width: 52, height: 52, borderRadius: RADIUS.sm, overflow: 'hidden' },
   audioCoverImg: { width: 52, height: 52 },
   audioCoverOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
-  audioRingActive: { backgroundColor: COLORS.primaryDark, borderColor: COLORS.primaryLight, ...SHADOWS.glow },
-  audioTitle: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  audioArtist: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
-  caption: { color: COLORS.text, fontSize: 15, lineHeight: 22, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
+  audioTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  audioArtist: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  caption: { color: colors.text, fontSize: 15, lineHeight: 22, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.lg },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  actionCount: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
-  divider: { height: 0.5, backgroundColor: COLORS.border, marginHorizontal: SPACING.md, marginTop: SPACING.sm },
-  commentsLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
-  emptyComments: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center', paddingVertical: SPACING.xl },
+  actionCount: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  divider: { height: 0.5, backgroundColor: colors.border, marginHorizontal: SPACING.md, marginTop: SPACING.sm },
+  commentsLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
+  emptyComments: { color: colors.textTertiary, fontSize: 14, textAlign: 'center', paddingVertical: SPACING.xl },
   commentRow: { flexDirection: 'row', gap: SPACING.sm, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   commentAvatar: { width: 32, height: 32, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  commentAvatarText: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
-  commentContent: { flex: 1, backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md, padding: SPACING.sm, borderWidth: 1, borderColor: COLORS.border },
+  commentAvatarText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  commentContent: { flex: 1, backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md, padding: SPACING.sm, borderWidth: 1, borderColor: colors.border },
   commentHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
-  commentName: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
-  commentTime: { color: COLORS.textTertiary, fontSize: 11 },
-  commentBody: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
-  inputBar: { flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md, borderTopWidth: 0.5, borderTopColor: COLORS.border, gap: SPACING.sm },
+  commentName: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  commentTime: { color: colors.textTertiary, fontSize: 11 },
+  commentBody: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
+  inputBar: { flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md, borderTopWidth: 0.5, borderTopColor: colors.border, gap: SPACING.sm },
   inputAvatar: { width: 30, height: 30, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  inputAvatarText: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
-  input: { flex: 1, backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, color: COLORS.text, fontSize: 15, maxHeight: 100 },
-  sendBtn: { width: 36, height: 36, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  inputAvatarText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  input: { flex: 1, backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, color: colors.text, fontSize: 15, maxHeight: 100 },
+  sendBtn: { width: 36, height: 36, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.35 },
 });

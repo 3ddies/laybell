@@ -22,7 +22,8 @@ import StickerLayer, { type Sticker, type CaptionStyle } from '../../components/
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 
 const VIDEO_MAX_SEC = 60;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -35,6 +36,8 @@ type Mode = 'picture' | 'video';
 // paused via `active={isFocused}` — mounting/unmounting it on each swipe is what
 // froze the app before, so we never unmount it; we just pause it.
 export default function StoryCameraScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
@@ -298,7 +301,7 @@ export default function StoryCameraScreen() {
   if (camPermission && !camPermission.granted) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Ionicons name="camera-outline" size={48} color={COLORS.textTertiary} />
+        <Ionicons name="camera-outline" size={48} color={colors.textTertiary} />
         <Text style={styles.permTitle}>Camera access needed</Text>
         <Text style={styles.permSub}>Allow camera access to capture stories.</Text>
         <TouchableOpacity
@@ -505,7 +508,7 @@ export default function StoryCameraScreen() {
 
         <View style={styles.shutterRow}>
           <TouchableOpacity style={styles.galleryBtn} onPress={pickFromLibrary} disabled={recording}>
-            <Ionicons name="images-outline" size={26} color={recording ? COLORS.textTertiary : '#fff'} />
+            <Ionicons name="images-outline" size={26} color={recording ? colors.textTertiary : '#fff'} />
           </TouchableOpacity>
 
           <TouchableOpacity activeOpacity={0.8} onPress={onShutterPress} style={styles.shutterOuter}>
@@ -533,21 +536,21 @@ function fmtClock(sec: number) {
 
 const SHUTTER = 76;
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Absolute-fill (not flex:1) so it ignores the navigator's sceneContainerStyle
   // bottom padding and stays edge-to-edge — full-screen camera, no gray slot.
   container: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
   center: { alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, padding: SPACING.xl },
 
-  permTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700', marginTop: SPACING.sm },
-  permSub: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
+  permTitle: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: SPACING.sm },
+  permSub: { color: colors.textSecondary, fontSize: 14, textAlign: 'center' },
   permBtn: {
-    marginTop: SPACING.md, backgroundColor: COLORS.primary,
+    marginTop: SPACING.md, backgroundColor: colors.primary,
     borderRadius: RADIUS.full, paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.xl,
   },
   permBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   permClose: { marginTop: SPACING.sm, padding: SPACING.sm },
-  permCloseText: { color: COLORS.textSecondary, fontSize: 14 },
+  permCloseText: { color: colors.textSecondary, fontSize: 14 },
 
   topRow: {
     position: 'absolute', left: SPACING.md, right: SPACING.md,
@@ -566,7 +569,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: RADIUS.full,
     paddingVertical: 5, paddingHorizontal: SPACING.sm,
   },
-  recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.error },
+  recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.error },
   recText: { color: '#fff', fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
 
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', gap: SPACING.md },
@@ -574,7 +577,7 @@ const styles = StyleSheet.create({
   modeRow: { flexDirection: 'row', gap: SPACING.lg },
   modePill: { paddingHorizontal: SPACING.sm, paddingVertical: 4 },
   modeText: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '700', letterSpacing: 1.5 },
-  modeTextActive: { color: COLORS.primaryLight },
+  modeTextActive: { color: colors.primaryLight },
 
   shutterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingHorizontal: SPACING.xl },
   galleryBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
@@ -588,8 +591,8 @@ const styles = StyleSheet.create({
     width: SHUTTER - 16, height: SHUTTER - 16, borderRadius: (SHUTTER - 16) / 2,
     backgroundColor: '#fff',
   },
-  shutterInnerVideo: { backgroundColor: COLORS.error },
-  shutterInnerRecording: { width: 28, height: 28, borderRadius: 6, backgroundColor: COLORS.error },
+  shutterInnerVideo: { backgroundColor: colors.error },
+  shutterInnerRecording: { width: 28, height: 28, borderRadius: 6, backgroundColor: colors.error },
 
   previewBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: SPACING.md, gap: SPACING.sm },
   captionInput: {
@@ -608,7 +611,7 @@ const styles = StyleSheet.create({
   },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.primary, borderRadius: RADIUS.full,
+    backgroundColor: colors.primary, borderRadius: RADIUS.full,
     paddingVertical: SPACING.md,
   },
   shareBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },

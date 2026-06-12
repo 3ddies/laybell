@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity,
-  Pressable, Animated, PanResponder, Easing,
+  Pressable, Animated, PanResponder, Easing, Platform,
 } from 'react-native';
+import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,6 +42,9 @@ export type PostOptionsArgs = {
   // Called right before the sheet navigates away (Artist) — hosts that render an
   // overlay (Now Playing) pass their collapse() so the profile shows in front.
   onNavigate?: () => void;
+  // When the menu is opened from inside one of the user's own playlists, the
+  // "Add to playlist" slot becomes "Remove from playlist" and calls this.
+  onRemoveFromPlaylist?: () => void;
 };
 
 type ContextValue = { show: (opts: PostOptionsArgs) => void };
@@ -59,9 +63,8 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
 
   const show = (o: PostOptionsArgs) => { setOpts(o); setVisible(true); };
 
-  return (
-    <PostOptionsContext.Provider value={{ show }}>
-      {children}
+  const sheets = (
+    <>
       <PostOptionsSheet
         visible={visible}
         opts={opts}
@@ -73,6 +76,16 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
         postId={playlistPostId ?? ''}
         onClose={() => setPlaylistPostId(null)}
       />
+    </>
+  );
+
+  return (
+    <PostOptionsContext.Provider value={{ show }}>
+      {children}
+      {/* iOS: hosted in a FullWindowOverlay so the sheet presents ABOVE the
+          native-modal swipe-back screens (playlist viewer, settings, …) —
+          otherwise it opens invisibly behind them. */}
+      {Platform.OS === 'ios' ? <FullWindowOverlay>{sheets}</FullWindowOverlay> : sheets}
     </PostOptionsContext.Provider>
   );
 }
@@ -206,8 +219,15 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
 
   // ── Music actions (audio posts) ───────────────────────────────────────────
   if (hasPost && isAudio) {
-    options.push({ key: 'playlist', label: 'Add to playlist', icon: 'add-circle-outline',
-      onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) onAddToPlaylist(o.postId); }); } });
+    if (opts?.onRemoveFromPlaylist) {
+      // Opened from inside one of the user's playlists — the playlist slot
+      // removes the song from THAT playlist instead of adding to one.
+      options.push({ key: 'playlist', label: 'Remove from playlist', icon: 'remove-circle-outline',
+        onPress: () => { const o = optsRef.current; dismissThen(() => o?.onRemoveFromPlaylist?.()); } });
+    } else {
+      options.push({ key: 'playlist', label: 'Add to playlist', icon: 'add-circle-outline',
+        onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) onAddToPlaylist(o.postId); }); } });
+    }
     options.push({ key: 'like', label: liked ? 'Unlike' : 'Like', icon: liked ? 'heart' : 'heart-outline',
       active: liked, activeColor: COLORS.like, onPress: toggleLike });
     options.push({ key: 'save', label: saved ? 'Unsave' : 'Save', icon: saved ? 'bookmark' : 'bookmark-outline',

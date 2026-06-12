@@ -64,6 +64,15 @@ export function useExpandTransition() {
     runClose(() => router.back());
   }, [runClose, router]);
 
+  // Pop WITHOUT the shrink-back close — for the swipe-back pager, which has
+  // already slid the content off-screen (the shrink would run invisibly and
+  // just delay the pop). Marks closing so beforeRemove lets the pop through.
+  const popInstant = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    router.back();
+  }, [router]);
+
   // Intercept the hardware/gesture back so it shrinks first, then proceeds.
   useEffect(() => {
     const unsub = navigation.addListener('beforeRemove', (e: any) => {
@@ -100,5 +109,5 @@ export function useExpandTransition() {
     };
   }, [srcRect, expand, contentFadeIn]);
 
-  return { srcRect, dismiss, backdropOpacity, contentStyle: { opacity: contentOpacity, transform } };
+  return { srcRect, dismiss, popInstant, backdropOpacity, contentStyle: { opacity: contentOpacity, transform } };
 }

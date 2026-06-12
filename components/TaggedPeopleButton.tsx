@@ -4,7 +4,8 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 // Subtle person-avatar button (bottom-left of a post's media) shown when the post
 // has people tagged. Tapping opens a menu listing the tagged accounts; each opens
@@ -13,6 +14,8 @@ import { COLORS, SPACING, RADIUS } from '../constants/theme';
 type Person = { id: string; username: string; display_name: string; avatar_url: string | null };
 
 export default function TaggedPeopleButton({ userIds, style }: { userIds?: string[] | null; style?: any }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [people, setPeople] = useState<Person[]>([]);
@@ -43,7 +46,7 @@ export default function TaggedPeopleButton({ userIds, style }: { userIds?: strin
           <View style={styles.sheet}>
             <Text style={styles.title}>Tagged in this post</Text>
             {loading ? (
-              <ActivityIndicator color={COLORS.primary} style={{ marginVertical: SPACING.lg }} />
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: SPACING.lg }} />
             ) : (
               <FlatList
                 data={people}
@@ -62,7 +65,7 @@ export default function TaggedPeopleButton({ userIds, style }: { userIds?: strin
                       <Text style={styles.name} numberOfLines={1}>{item.display_name}</Text>
                       <Text style={styles.username} numberOfLines={1}>@{item.username}</Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+                    <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
                   </TouchableOpacity>
                 )}
               />
@@ -74,18 +77,18 @@ export default function TaggedPeopleButton({ userIds, style }: { userIds?: strin
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   btn: {
     width: 28, height: 28, borderRadius: 14,
     backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)',
   },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: SPACING.xl },
-  sheet: { width: '100%', maxWidth: 380, backgroundColor: COLORS.surfaceElevated, borderRadius: RADIUS.lg, padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border },
-  title: { color: COLORS.text, fontSize: 15, fontWeight: '800', marginBottom: SPACING.sm, paddingHorizontal: SPACING.xs },
+  sheet: { width: '100%', maxWidth: 380, backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.lg, padding: SPACING.md, borderWidth: 1, borderColor: colors.border },
+  title: { color: colors.text, fontSize: 15, fontWeight: '800', marginBottom: SPACING.sm, paddingHorizontal: SPACING.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.xs },
   avatar: { width: 40, height: 40, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  name: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  username: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
+  avatarText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  name: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  username: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
 });

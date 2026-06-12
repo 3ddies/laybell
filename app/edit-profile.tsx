@@ -12,9 +12,12 @@ import { useProfile } from '../contexts/ProfileContext';
 import { resolveRingColors, chosenTier } from '../lib/badges';
 import { GENDER_OPTIONS, ageFromDob } from '../lib/profileOptions';
 import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 export default function EditProfileScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { profile: liveProfile, update } = useProfile();
   // The avatar glow + camera button take the user's emblem-theme color (their
@@ -111,7 +114,7 @@ export default function EditProfileScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
+    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
   }
 
   return (
@@ -123,7 +126,7 @@ export default function EditProfileScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit Profile</Text>
         <TouchableOpacity onPress={handleSave} disabled={saving}>
-          {saving ? <ActivityIndicator color={COLORS.primary} size="small" /> : <Text style={styles.saveBtn}>Save</Text>}
+          {saving ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={styles.saveBtn}>Save</Text>}
         </TouchableOpacity>
       </View>
 
@@ -139,9 +142,9 @@ export default function EditProfileScreen() {
           )}
           <LinearGradient colors={accentGrad as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.cameraOverlay}>
             {uploadingPhoto ? (
-              <ActivityIndicator color={COLORS.text} size="small" />
+              <ActivityIndicator color={colors.text} size="small" />
             ) : (
-              <Ionicons name="camera" size={18} color={COLORS.text} />
+              <Ionicons name="camera" size={18} color={colors.text} />
             )}
           </LinearGradient>
         </TouchableOpacity>
@@ -161,7 +164,7 @@ export default function EditProfileScreen() {
             value={displayName}
             onChangeText={setDisplayName}
             placeholder="Your display name"
-            placeholderTextColor={COLORS.textTertiary}
+            placeholderTextColor={colors.textTertiary}
           />
         </View>
 
@@ -174,7 +177,7 @@ export default function EditProfileScreen() {
               value={username}
               onChangeText={setUsername}
               placeholder="username"
-              placeholderTextColor={COLORS.textTertiary}
+              placeholderTextColor={colors.textTertiary}
               autoCapitalize="none"
               maxLength={30}
             />
@@ -188,7 +191,7 @@ export default function EditProfileScreen() {
             value={bio}
             onChangeText={setBio}
             placeholder="Tell the world about yourself..."
-            placeholderTextColor={COLORS.textTertiary}
+            placeholderTextColor={colors.textTertiary}
             multiline
             maxLength={150}
           />
@@ -202,7 +205,7 @@ export default function EditProfileScreen() {
             value={link}
             onChangeText={setLink}
             placeholder="yourwebsite.com"
-            placeholderTextColor={COLORS.textTertiary}
+            placeholderTextColor={colors.textTertiary}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
@@ -217,7 +220,7 @@ export default function EditProfileScreen() {
             value={phone}
             onChangeText={setPhone}
             placeholder="Add your number"
-            placeholderTextColor={COLORS.textTertiary}
+            placeholderTextColor={colors.textTertiary}
             keyboardType="phone-pad"
             autoCorrect={false}
           />
@@ -240,7 +243,7 @@ export default function EditProfileScreen() {
             onPress={() => Alert.alert('Page Layout', 'Custom page layouts are coming soon — unlock different profile configurations as you earn higher badge tiers.')}
           >
             <LinearGradient colors={['#3A3A3A', '#222222']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.squareIcon}>
-              <Ionicons name="color-palette" size={28} color={COLORS.textSecondary} />
+              <Ionicons name="color-palette" size={28} color={colors.textSecondary} />
             </LinearGradient>
             <Text style={styles.squareLabel}>Page Layout</Text>
             <View style={styles.soonPill}><Text style={styles.soonText}>COMING SOON</Text></View>
@@ -278,9 +281,9 @@ export default function EditProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   inner: { paddingBottom: SPACING.xxl },
 
   header: {
@@ -290,74 +293,74 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.md,
     borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.07)',
   },
-  cancelBtn: { color: COLORS.textSecondary, fontSize: 15, fontWeight: '500' },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
-  saveBtn: { color: COLORS.primary, fontSize: 15, fontWeight: '800' },
+  cancelBtn: { color: colors.textSecondary, fontSize: 15, fontWeight: '500' },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  saveBtn: { color: colors.primary, fontSize: 15, fontWeight: '800' },
 
   avatarSection: { alignItems: 'center', paddingVertical: SPACING.xl, gap: SPACING.md },
   avatarWrap: {
     position: 'relative',
-    shadowColor: COLORS.primary, shadowOpacity: 0.4, shadowRadius: 14, shadowOffset: { width: 0, height: 0 },
+    shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 14, shadowOffset: { width: 0, height: 0 },
     elevation: 8,
   },
   avatarImage: { width: 100, height: 100, borderRadius: RADIUS.full, borderWidth: 2, borderColor: 'rgba(255,255,255,0.10)' },
   avatarPlaceholder: { width: 100, height: 100, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 40, fontWeight: '800' },
+  avatarText: { color: colors.text, fontSize: 40, fontWeight: '800' },
   cameraOverlay: {
     position: 'absolute', bottom: 2, right: 2,
     width: 32, height: 32, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 3, borderColor: COLORS.background,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 3, borderColor: colors.background,
   },
-  changePhotoText: { color: COLORS.primary, fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
+  changePhotoText: { color: colors.primary, fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
 
   form: { paddingHorizontal: SPACING.md, gap: SPACING.lg + 2 },
   field: { gap: 8 },
-  fieldLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
+  fieldLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
   input: {
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: 14,
-    color: COLORS.text, fontSize: 16,
+    color: colors.text, fontSize: 16,
   },
   usernameRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md,
   },
-  atSign: { color: COLORS.textSecondary, fontSize: 16, fontWeight: '600' },
-  usernameInput: { flex: 1, paddingVertical: 14, color: COLORS.text, fontSize: 16 },
+  atSign: { color: colors.textSecondary, fontSize: 16, fontWeight: '600' },
+  usernameInput: { flex: 1, paddingVertical: 14, color: colors.text, fontSize: 16 },
   bioInput: {
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md,
     paddingTop: SPACING.md, paddingBottom: SPACING.lg,
-    color: COLORS.text, fontSize: 16, lineHeight: 22, minHeight: 110, textAlignVertical: 'top',
+    color: colors.text, fontSize: 16, lineHeight: 22, minHeight: 110, textAlignVertical: 'top',
   },
   // Floated into the input's corner so it doesn't add a line of flow height —
   // keeps Bio↔Link spacing even with Display Name↔Username.
-  charCount: { position: 'absolute', bottom: 10, right: 14, color: COLORS.textTertiary, fontSize: 12, fontWeight: '500' },
-  fieldHint: { color: COLORS.textTertiary, fontSize: 12, lineHeight: 17 },
+  charCount: { position: 'absolute', bottom: 10, right: 14, color: colors.textTertiary, fontSize: 12, fontWeight: '500' },
+  fieldHint: { color: colors.textTertiary, fontSize: 12, lineHeight: 17 },
   // Read-only display box (e.g. Age) — dimmer surface + muted text so it reads
   // as non-editable next to the real inputs.
   readonlyBox: {
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)',
     borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: 14,
   },
-  readonlyValue: { color: COLORS.textSecondary, fontSize: 16 },
+  readonlyValue: { color: colors.textSecondary, fontSize: 16 },
 
   genderRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   genderChip: {
     paddingVertical: SPACING.sm + 1, paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: colors.surfaceLight,
   },
-  genderChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '1A' },
-  genderChipText: { color: COLORS.textSecondary, fontSize: 13.5, fontWeight: '600' },
-  genderChipTextActive: { color: COLORS.primaryLight, fontWeight: '700' },
+  genderChipActive: { borderColor: colors.primary, backgroundColor: colors.primary + '1A' },
+  genderChipText: { color: colors.textSecondary, fontSize: 13.5, fontWeight: '600' },
+  genderChipTextActive: { color: colors.primaryLight, fontWeight: '700' },
 
   squareRow: { flexDirection: 'row', gap: SPACING.md },
   squareBtn: {
     flex: 1, aspectRatio: 1,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.lg,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, padding: SPACING.md,
   },
@@ -367,11 +370,11 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 6, shadowOffset: { width: 0, height: 3 },
     elevation: 4,
   },
-  squareLabel: { color: COLORS.text, fontSize: 15, fontWeight: '700', letterSpacing: -0.1 },
-  squareSub: { color: COLORS.textSecondary, fontSize: 12, textAlign: 'center' },
+  squareLabel: { color: colors.text, fontSize: 15, fontWeight: '700', letterSpacing: -0.1 },
+  squareSub: { color: colors.textSecondary, fontSize: 12, textAlign: 'center' },
   soonPill: {
-    backgroundColor: COLORS.primary + '1A', borderWidth: 1, borderColor: COLORS.primary + '3A',
+    backgroundColor: colors.primary + '1A', borderWidth: 1, borderColor: colors.primary + '3A',
     borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3,
   },
-  soonText: { color: COLORS.primaryLight, fontSize: 9, fontWeight: '800', letterSpacing: 0.6 },
+  soonText: { color: colors.primaryLight, fontSize: 9, fontWeight: '800', letterSpacing: 0.6 },
 });

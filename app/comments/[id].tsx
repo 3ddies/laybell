@@ -8,7 +8,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 
@@ -18,6 +19,8 @@ type Comment = {
 };
 
 export default function CommentsScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const flatListRef = useRef<FlatList>(null);
@@ -95,14 +98,14 @@ export default function CommentsScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
+    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
   }
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Comments</Text>
         <View style={styles.countBadge}>
@@ -117,7 +120,7 @@ export default function CommentsScreen() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="chatbubbles-outline" size={44} color={COLORS.textTertiary} />
+            <Ionicons name="chatbubbles-outline" size={44} color={colors.textTertiary} />
             <Text style={styles.emptyTitle}>No comments yet</Text>
             <Text style={styles.emptySubtitle}>Be the first to comment!</Text>
           </View>
@@ -145,7 +148,7 @@ export default function CommentsScreen() {
         <TextInput
           style={styles.input}
           placeholder="Add a comment..."
-          placeholderTextColor={COLORS.textTertiary}
+          placeholderTextColor={colors.textTertiary}
           value={newComment}
           onChangeText={setNewComment}
           multiline
@@ -156,41 +159,41 @@ export default function CommentsScreen() {
           onPress={handleSendComment}
           disabled={!newComment.trim() || sending}
         >
-          {sending ? <ActivityIndicator color={COLORS.text} size="small" /> : <Ionicons name="arrow-up" size={18} color={COLORS.text} />}
+          {sending ? <ActivityIndicator color={colors.text} size="small" /> : <Ionicons name="arrow-up" size={18} color={colors.text} />}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { flex: 1, color: COLORS.text, fontSize: 17, fontWeight: '700', textAlign: 'center' },
-  countBadge: { width: 32, height: 32, borderRadius: RADIUS.full, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
-  countText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700' },
+  headerTitle: { flex: 1, color: colors.text, fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  countBadge: { width: 32, height: 32, borderRadius: RADIUS.full, backgroundColor: colors.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
+  countText: { color: colors.textSecondary, fontSize: 12, fontWeight: '700' },
   listContent: { padding: SPACING.md, gap: SPACING.md, flexGrow: 1 },
   commentRow: { flexDirection: 'row', gap: SPACING.sm },
   commentAvatar: { width: 36, height: 36, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  commentAvatarText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
-  commentContent: { flex: 1, backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md, padding: SPACING.sm, borderWidth: 1, borderColor: COLORS.border },
+  commentAvatarText: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  commentContent: { flex: 1, backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md, padding: SPACING.sm, borderWidth: 1, borderColor: colors.border },
   commentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
-  commentUsername: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
-  commentTime: { color: COLORS.textTertiary, fontSize: 11 },
-  commentBody: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
+  commentUsername: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  commentTime: { color: colors.textTertiary, fontSize: 11 },
+  commentBody: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl, gap: SPACING.md },
-  emptyTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
-  emptySubtitle: { color: COLORS.textSecondary, fontSize: 14 },
-  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md, borderTopWidth: 0.5, borderTopColor: COLORS.border, gap: SPACING.sm },
+  emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
+  emptySubtitle: { color: colors.textSecondary, fontSize: 14 },
+  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md, borderTopWidth: 0.5, borderTopColor: colors.border, gap: SPACING.sm },
   inputAvatar: { width: 32, height: 32, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  inputAvatarText: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
-  input: { flex: 1, backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, color: COLORS.text, fontSize: 15, maxHeight: 100 },
-  sendBtn: { width: 36, height: 36, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  inputAvatarText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  input: { flex: 1, backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, color: colors.text, fontSize: 15, maxHeight: 100 },
+  sendBtn: { width: 36, height: 36, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.35 },
 });

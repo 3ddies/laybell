@@ -2,21 +2,22 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Image, Modal,
   ScrollView, ActivityIndicator, Switch, RefreshControl,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState, useCallback, useRef } from 'react';
-import PagerView from 'react-native-pager-view';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
 import BadgeEmblem from '../components/BadgeEmblem';
+import SwipeBackPager from '../components/SwipeBackPager';
 import {
   BADGES, CATEGORY_META, CATEGORY_ORDER, THEME_OPTIONS, THEME_RING_STYLE,
   isUnlocked, tierLabel, rawTier, badgeRingColors,
   evaluateBadges, fetchBadgeState, computeMetrics,
   type Tier, type BadgeState, type BadgeMetrics, type EvalResult, type BadgeDef, type BadgeCategory,
 } from '../lib/badges';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 // Points needed for each emblem tier (mirrors computeEmblemTier).
 const TIER_THRESH: [Tier, number][] = [['bronze', 2], ['silver', 4], ['gold', 8], ['diamond', 16]];
@@ -66,11 +67,17 @@ function badgeStatus(def: BadgeDef, m: BadgeMetrics | null, held: Set<string>): 
     case 'music_streaming_gold':   return cur(m.musicMinutesToday, 30, 'min today');
     case 'comments_bronze': return cur(m.todayComments, 1, 'today');
     case 'comments_silver': return cur(m.todayComments, 2, 'today');
+    case 'curator_bronze':  return cur(m.playlistListens, 100, 'listens');
+    case 'curator_silver':  return cur(m.playlistListens, 500, 'listens');
+    case 'curator_gold':    return cur(m.playlistListens, 2500, 'listens');
+    case 'curator_diamond': return cur(m.playlistListens, 10000, 'listens');
     default: return { kind: 'progress', cur: 0, target: 1, unit: '' };
   }
 }
 
 export default function BadgesScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { profile, update } = useProfile();
   const [state, setState] = useState<BadgeState | null>(null);
@@ -82,7 +89,6 @@ export default function BadgesScreen() {
   // category → most recent earned_at (ms). Drives the All-badges ordering so the
   // user's latest achievements float to the top.
   const [recentByCat, setRecentByCat] = useState<Record<string, number>>({});
-  const pagerRef = useRef<PagerView>(null);
 
   // Live-preview theme for the hero emblem. Seeded from the saved value and
   // re-synced when it changes (i.e. after applying an unlocked theme). Tapping a
@@ -134,10 +140,10 @@ export default function BadgesScreen() {
 
   // Resolved colors for the live preview avatar + hero banner.
   const previewRingCols = previewRingColors(previewTier, previewRingStyle);
-  const previewBanner = themeOpt?.banner ?? DEFAULT_BANNER;
+  const previewBanner = previewTier ? [badgeRingColors(previewTier)[0], colors.background] : [colors.background, colors.background];
   // The avatar glow matches the previewed tier's ring color (falls back to the
   // brand color before any badge is earned).
-  const previewGlow = previewTier ? badgeRingColors(previewTier)[0] : COLORS.primary;
+  const previewGlow = previewTier ? badgeRingColors(previewTier)[0] : colors.primary;
   // Progress meter is tinted by the user's CURRENT tier (their real status), not
   // the previewed one — it reflects actual progress toward the next tier.
   const progressCols = emblemTier ? badgeRingColors(emblemTier) : GRADIENTS.primaryWarm;
@@ -151,7 +157,7 @@ export default function BadgesScreen() {
   const themeChip = (opt: typeof THEME_OPTIONS[number]) => {
     const unlocked = isUnlocked(opt.minTier, emblemTier);
     const selected = previewTheme === opt.key;
-    const accent = opt.minTier ? badgeRingColors(opt.minTier)[0] : COLORS.primary;
+    const accent = opt.minTier ? badgeRingColors(opt.minTier)[0] : colors.primary;
     const isDiamond = opt.key === 'diamond';
     return (
       <TouchableOpacity
@@ -168,7 +174,7 @@ export default function BadgesScreen() {
         <LinearGradient colors={opt.banner as any} style={styles.themeDot} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
         <Text style={[styles.chipText, isDiamond && styles.chipTextDiamond, selected && { color: accent, fontWeight: '700' }]}>{opt.label}</Text>
         {selected && unlocked && <Ionicons name="checkmark-circle" size={15} color={accent} />}
-        {!unlocked && <Ionicons name="lock-closed" size={12} color={COLORS.textTertiary} />}
+        {!unlocked && <Ionicons name="lock-closed" size={12} color={colors.textTertiary} />}
       </TouchableOpacity>
     );
   };
@@ -184,36 +190,25 @@ export default function BadgesScreen() {
   }
 
   return (
+    // Swipe right anywhere to slide the whole page (header included) off and
+    // reveal the screen underneath — one motion, same feel as the tab pager.
+    <SwipeBackPager>
     <View style={styles.container}>
-      <Stack.Screen options={{ gestureEnabled: false }} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Badges</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <PagerView
-        ref={pagerRef}
-        style={styles.pager}
-        initialPage={1}
-        onPageSelected={(e) => {
-          if (e.nativeEvent.position === 0) {
-            if (router.canGoBack()) router.back();
-            else pagerRef.current?.setPageWithoutAnimation(1);
-          }
-        }}
-      >
-        <View key="dismiss" style={styles.dismissPage} />
-        <View key="content" style={styles.page}>
           {loading ? (
-            <View style={styles.center}><ActivityIndicator color={COLORS.primary} /></View>
+            <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
           ) : (
             <ScrollView
               contentContainerStyle={styles.scroll}
               showsVerticalScrollIndicator={false}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={COLORS.primary} />}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
             >
               {/* Hero: live preview of the user's circle emblem — reflects the
                   currently-tapped ring style + theme (incl. locked, for motivation). */}
@@ -281,7 +276,7 @@ export default function BadgesScreen() {
 
                 {/* See the previewed theme applied to a mock of your profile page. */}
                 <TouchableOpacity style={styles.previewPageBtn} activeOpacity={0.85} onPress={() => setShowPreview(true)}>
-                  <Ionicons name="eye-outline" size={18} color={COLORS.text} />
+                  <Ionicons name="eye-outline" size={18} color={colors.text} />
                   <Text style={styles.previewPageBtnText}>Preview page</Text>
                 </TouchableOpacity>
               </View>
@@ -308,24 +303,24 @@ export default function BadgesScreen() {
                   <Switch
                     value={badgeShow}
                     onValueChange={(v) => persist({ badge_show: v })}
-                    trackColor={{ false: COLORS.border, true: COLORS.primary + '88' }}
-                    thumbColor={badgeShow ? COLORS.primary : COLORS.textTertiary}
+                    trackColor={{ false: colors.border, true: colors.primary + '88' }}
+                    thumbColor={badgeShow ? colors.primary : colors.textTertiary}
                   />
                 </View>
               </View>
             </ScrollView>
           )}
-        </View>
-      </PagerView>
 
       {/* Page preview — the previewed theme (banner + ring + emblem) on a mock of
-          the user's profile header, exactly as other people would see it. */}
+          the user's profile header, exactly as other people would see it. The
+          Modal renders in its own native window, so living inside the swipe
+          pager's page doesn't constrain it. */}
       <Modal visible={showPreview} animationType="slide" transparent onRequestClose={() => setShowPreview(false)}>
         <View style={styles.modalRoot}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Page preview</Text>
             <TouchableOpacity onPress={() => setShowPreview(false)} hitSlop={10}>
-              <Ionicons name="close" size={26} color={COLORS.text} />
+              <Ionicons name="close" size={26} color={colors.text} />
             </TouchableOpacity>
           </View>
           <Text style={styles.modalSub}>
@@ -371,10 +366,13 @@ export default function BadgesScreen() {
         </View>
       </Modal>
     </View>
+    </SwipeBackPager>
   );
 }
 
 function CategoryCard({ category, metrics, held }: { category: BadgeCategory; metrics: BadgeMetrics | null; held: Set<string> }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const meta = CATEGORY_META[category];
   const defs = BADGES.filter((b) => b.category === category);
   // The user's current standing in this category = the highest tier they hold
@@ -388,7 +386,7 @@ function CategoryCard({ category, metrics, held }: { category: BadgeCategory; me
           <BadgeEmblem tier={currentTier} size={50} />
         ) : (
           <View style={styles.catEmblemEmpty}>
-            <Ionicons name={meta.icon as any} size={24} color={COLORS.textTertiary} />
+            <Ionicons name={meta.icon as any} size={24} color={colors.textTertiary} />
           </View>
         )}
         <Text style={styles.catTitle}>{meta.label}</Text>
@@ -420,11 +418,8 @@ function CategoryCard({ category, metrics, held }: { category: BadgeCategory; me
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  pager: { flex: 1 },
-  page: { flex: 1 },
-  dismissPage: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {
@@ -435,7 +430,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.07)',
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
 
   scroll: { padding: SPACING.md, paddingBottom: SPACING.xxl + SPACING.lg, gap: SPACING.md },
 
@@ -447,7 +442,7 @@ const styles = StyleSheet.create({
   // Live preview avatar (story-ring look: gradient ring → gap → avatar).
   previewWrap: {
     width: 94, height: 94, alignItems: 'center', justifyContent: 'center', marginBottom: 2,
-    shadowColor: COLORS.primary, shadowOpacity: 0.5, shadowRadius: 15, shadowOffset: { width: 0, height: 0 },
+    shadowColor: colors.primary, shadowOpacity: 0.5, shadowRadius: 15, shadowOffset: { width: 0, height: 0 },
     elevation: 10,
   },
   previewRing: { width: 94, height: 94, borderRadius: 47, alignItems: 'center', justifyContent: 'center' },
@@ -456,16 +451,16 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   previewAvatar: { width: 78, height: 78, borderRadius: 39, alignItems: 'center', justifyContent: 'center' },
-  previewAvatarText: { color: COLORS.text, fontSize: 30, fontWeight: '800' },
+  previewAvatarText: { color: colors.text, fontSize: 30, fontWeight: '800' },
   previewEmblem: {
     position: 'absolute', bottom: -1, right: -1,
     backgroundColor: '#0B0603', borderRadius: RADIUS.full, padding: 2,
   },
-  heroTier: { color: COLORS.text, fontSize: 20, fontWeight: '800', marginTop: 8, letterSpacing: -0.3 },
+  heroTier: { color: colors.text, fontSize: 20, fontWeight: '800', marginTop: 8, letterSpacing: -0.3 },
   heroTitleWrap: { alignItems: 'center', marginTop: 8 },
-  heroTierName: { color: COLORS.text, fontSize: 32, fontWeight: '900', letterSpacing: -0.6 },
-  heroTierWord: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 1 },
-  heroSub: { color: COLORS.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  heroTierName: { color: colors.text, fontSize: 32, fontWeight: '900', letterSpacing: -0.6 },
+  heroTierWord: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 1 },
+  heroSub: { color: colors.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 18 },
   heroBarTrack: {
     width: '70%', height: 6, borderRadius: RADIUS.full, marginTop: SPACING.sm,
     backgroundColor: 'rgba(255,255,255,0.10)', overflow: 'hidden',
@@ -473,27 +468,27 @@ const styles = StyleSheet.create({
   heroBarFill: { height: '100%', borderRadius: RADIUS.full },
 
   card: {
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.lg,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: SPACING.md,
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
   toggleRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
-  toggleLabel: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  toggleSub: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
+  toggleLabel: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  toggleSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
 
   sectionTitle: {
-    color: COLORS.textTertiary, fontSize: 11, fontWeight: '700',
+    color: colors.textTertiary, fontSize: 11, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: SPACING.xs, marginTop: SPACING.xs,
   },
-  sectionHint: { color: COLORS.textTertiary, fontSize: 12, lineHeight: 16, paddingHorizontal: SPACING.xs, marginTop: -SPACING.sm },
-  pickerLabel: { color: COLORS.text, fontSize: 24, fontWeight: '900', letterSpacing: -0.4, marginBottom: SPACING.sm },
+  sectionHint: { color: colors.textTertiary, fontSize: 12, lineHeight: 16, paddingHorizontal: SPACING.xs, marginTop: -SPACING.sm },
+  pickerLabel: { color: colors.text, fontSize: 24, fontWeight: '900', letterSpacing: -0.4, marginBottom: SPACING.sm },
   chipRows: { gap: SPACING.sm },
   chipRow: { flexDirection: 'row', gap: SPACING.sm },
   chip: {
     flex: 1,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-    backgroundColor: COLORS.surfaceElevated, borderRadius: RADIUS.full,
+    backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.full,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md - 2,
   },
@@ -507,7 +502,7 @@ const styles = StyleSheet.create({
     borderRadius: 24, marginHorizontal: SPACING.lg,
   },
   chipLocked: { opacity: 0.7 },
-  chipText: { color: COLORS.text, fontSize: 13.5, fontWeight: '600' },
+  chipText: { color: colors.text, fontSize: 13.5, fontWeight: '600' },
   chipTextDiamond: {
     color: '#CFF6FF', fontSize: 18.5, fontWeight: '900',
     textTransform: 'uppercase', letterSpacing: 0.3,
@@ -516,7 +511,7 @@ const styles = StyleSheet.create({
   innerDivider: { height: 0.5, backgroundColor: 'rgba(255,255,255,0.07)', marginVertical: SPACING.md },
 
   catCard: {
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.lg,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: SPACING.md, gap: SPACING.sm,
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 2,
@@ -524,49 +519,49 @@ const styles = StyleSheet.create({
   catHead: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 2, marginBottom: SPACING.xs },
   catEmblemEmpty: {
     width: 50, height: 50, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
     alignItems: 'center', justifyContent: 'center',
   },
-  catTitle: { color: COLORS.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+  catTitle: { color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   // Fixed, centered status column so the checks / progress numbers line up
   // vertically across every row in a category.
   badgeStatus: { minWidth: 52, alignItems: 'center', justifyContent: 'center' },
   dimmed: { opacity: 0.6 },
-  badgeTitle: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
-  badgeTitleMuted: { color: COLORS.textSecondary },
-  badgeCriteria: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 17, marginTop: 2 },
+  badgeTitle: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  badgeTitleMuted: { color: colors.textSecondary },
+  badgeCriteria: { color: colors.textSecondary, fontSize: 13, lineHeight: 17, marginTop: 2 },
   // Earned badges show just a checkmark in a rounded green disc with a soft glow.
   earnedCheck: {
     width: 26, height: 26, borderRadius: 13,
-    backgroundColor: COLORS.success, alignItems: 'center', justifyContent: 'center',
-    shadowColor: COLORS.success, shadowOpacity: 0.6, shadowRadius: 7, shadowOffset: { width: 0, height: 0 },
+    backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center',
+    shadowColor: colors.success, shadowOpacity: 0.6, shadowRadius: 7, shadowOffset: { width: 0, height: 0 },
     elevation: 5,
   },
-  lockedText: { color: COLORS.textTertiary, fontSize: 12, fontStyle: 'italic' },
-  progressText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '700' },
+  lockedText: { color: colors.textTertiary, fontSize: 12, fontStyle: 'italic' },
+  progressText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
 
-  footnote: { color: COLORS.textTertiary, fontSize: 11, lineHeight: 16, paddingHorizontal: SPACING.xs, marginTop: SPACING.sm },
+  footnote: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, paddingHorizontal: SPACING.xs, marginTop: SPACING.sm },
 
   previewPageBtn: {
     marginTop: SPACING.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: SPACING.sm + 2, borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',
   },
-  previewPageBtnText: { color: COLORS.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
+  previewPageBtnText: { color: colors.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
 
   // ── Page-preview modal ──
   modalRoot: {
-    flex: 1, backgroundColor: COLORS.background,
+    flex: 1, backgroundColor: colors.background,
     paddingTop: SPACING.xxl + SPACING.sm, paddingHorizontal: SPACING.md,
   },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modalTitle: { color: COLORS.text, fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
-  modalSub: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 4, marginBottom: SPACING.lg },
+  modalTitle: { color: colors.text, fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
+  modalSub: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 4, marginBottom: SPACING.lg },
 
   ppCard: {
     borderRadius: RADIUS.xl, overflow: 'hidden',
-    backgroundColor: COLORS.background, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.background, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
   ppBanner: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.lg,
@@ -578,10 +573,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 8,
   },
   ppRing: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
-  ppAvatarGap: { width: 66, height: 66, borderRadius: 33, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+  ppAvatarGap: { width: 66, height: 66, borderRadius: 33, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   ppAvatar: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
-  ppAvatarText: { color: COLORS.text, fontSize: 24, fontWeight: '800' },
-  ppEmblem: { position: 'absolute', bottom: -1, right: -1, backgroundColor: COLORS.background, borderRadius: RADIUS.full, padding: 2 },
+  ppAvatarText: { color: colors.text, fontSize: 24, fontWeight: '800' },
+  ppEmblem: { position: 'absolute', bottom: -1, right: -1, backgroundColor: colors.background, borderRadius: RADIUS.full, padding: 2 },
   ppStats: {
     flex: 1, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: RADIUS.lg,
@@ -592,7 +587,7 @@ const styles = StyleSheet.create({
   ppStatLabel: { color: 'rgba(245,245,245,0.65)', fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   ppInfo: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, paddingBottom: SPACING.md, gap: 4 },
   ppNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  ppName: { color: COLORS.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
-  ppUsername: { color: COLORS.textMeta, fontSize: 13 },
-  ppBio: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20, marginTop: 2 },
+  ppName: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  ppUsername: { color: colors.textMeta, fontSize: 13 },
+  ppBio: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, marginTop: 2 },
 });

@@ -5,7 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { onBadgeTierUpgrade, tierLabel, badgeRingColors, type Tier } from '../lib/badges';
 import BadgeEmblem from './BadgeEmblem';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 // A celebratory banner that slides down from the top whenever the user levels up
 // to a higher badge tier mid-session. Auto-dismisses; tap to open the Badges page.
@@ -13,6 +14,8 @@ import { COLORS, SPACING, RADIUS } from '../constants/theme';
 export default function BadgeUpgradeToast() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [tier, setTier] = useState<Tier | null>(null);
   const y = useRef(new Animated.Value(-200)).current;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,26 +54,26 @@ export default function BadgeUpgradeToast() {
           <Text style={styles.title}>Badge upgraded!</Text>
           <Text style={styles.sub} numberOfLines={1}>You reached <Text style={{ color: accent, fontWeight: '800' }}>{tierLabel(tier)}</Text> status — tap to view</Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
+        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   wrap: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000,
     paddingHorizontal: SPACING.md,
   },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 2,
-    backgroundColor: COLORS.surfaceElevated,
+    backgroundColor: colors.surfaceElevated,
     borderRadius: RADIUS.lg, borderWidth: 1,
     paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.md,
     shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 },
     elevation: 10,
   },
   body: { flex: 1 },
-  title: { color: COLORS.text, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
-  sub: { color: COLORS.textSecondary, fontSize: 12.5, marginTop: 1 },
+  title: { color: colors.text, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
+  sub: { color: colors.textSecondary, fontSize: 12.5, marginTop: 1 },
 });

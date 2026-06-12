@@ -12,7 +12,8 @@ import {
   type MaterialTopTabBarProps,
 } from '@react-navigation/material-top-tabs';
 import type { ParamListBase, TabNavigationState } from '@react-navigation/native';
-import { COLORS, GRADIENTS, SHADOWS } from '../../constants/theme';
+import { GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { PagerContext, TabSwipeContext } from '../../contexts/PagerContext';
 
 // Land on Home, not the story camera, even though the camera is declared first
@@ -44,6 +45,8 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
 function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   const insets = useSafeAreaInsets();
   const { profile } = useProfile();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   // The bar is an absolute overlay so the pager fills the FULL screen — that's
   // what makes the story camera edge-to-edge with no reserved (gray) slot. While
@@ -77,7 +80,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
           return (
             <TouchableOpacity key={route.key} style={styles.postWrap} onPress={onPress} activeOpacity={0.85}>
               <LinearGradient colors={GRADIENTS.primary} style={styles.postBtn}>
-                <Ionicons name="add" size={28} color={COLORS.text} />
+                <Ionicons name="add" size={28} color="#fff" />
               </LinearGradient>
             </TouchableOpacity>
           );
@@ -109,7 +112,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
             <Ionicons
               name={focused ? icon[0] : icon[1]}
               size={26}
-              color={focused ? COLORS.primary : COLORS.textTertiary}
+              color={focused ? colors.primary : colors.textTertiary}
             />
           </TouchableOpacity>
         );
@@ -162,11 +165,11 @@ export default function TabLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemePalette) => StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    backgroundColor: COLORS.surface,
-    borderTopColor: COLORS.border,
+    backgroundColor: c.surface,
+    borderTopColor: c.border,
     borderTopWidth: 0.5,
     paddingTop: 6,
     overflow: 'visible',
@@ -189,7 +192,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  avatarRingActive: { borderColor: COLORS.primary },
+  avatarRingActive: { borderColor: c.primary },
   avatarImg: {
     width: 26,
     height: 26,
@@ -197,9 +200,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: c.surfaceLight,
   },
-  avatarInitial: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
+  avatarInitial: { color: '#fff', fontSize: 12, fontWeight: '700' },
   postWrap: {
     flex: 1,
     alignItems: 'center',
@@ -213,7 +216,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...SHADOWS.md,
-    shadowColor: COLORS.primary,
+    shadowColor: c.primary,
     shadowOpacity: 0.5,
     shadowRadius: 12,
     elevation: 10,

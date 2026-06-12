@@ -9,8 +9,10 @@ import { bumpBadge } from '../lib/badges';
 import { useProfile } from '../contexts/ProfileContext';
 import StoryAvatar from './StoryAvatar';
 import BadgeEmblem from './BadgeEmblem';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { timeAgo } from '../lib/timeAgo';
+import { formatCount } from '../lib/format';
 import { createNotification } from '../lib/createNotification';
 import { processMentions, getActiveMentionQuery, applyMention } from '../lib/mentions';
 import MentionSuggestions from './MentionSuggestions';
@@ -22,12 +24,16 @@ type Row = {
 };
 
 export default function Comments({
-  postId, ownerId, ListHeaderComponent, style, contentPadding, onRefresh, onNavigate, onComposingChange, onEngage, onScrollTop,
+  postId, ownerId, ListHeaderComponent, style, contentPadding, minHeaderHeight, onRefresh, onNavigate, onComposingChange, onEngage, onScrollTop,
 }: {
   postId: string;
   ownerId?: string | null;
   ListHeaderComponent?: ReactElement;
   style?: any;
+  // Stretches the host's header to (at least) this height, so the "Comments"
+  // label lands at the bottom of the first screenful and the comments
+  // themselves always start BELOW the fold (Now Playing passes this).
+  minHeaderHeight?: number;
   // Horizontal padding for the list content + input, applied without insetting the
   // list frame — so the scroll indicator stays at the screen's right edge even when
   // the caller would otherwise wrap this in a padded container.
@@ -60,6 +66,8 @@ export default function Comments({
     onNavigate?.();
     router.push(`/profile/${uid}` as any);
   }
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [userId, setUserId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [rows, setRows] = useState<Row[]>([]);
@@ -179,7 +187,7 @@ export default function Comments({
         userId={item.user_id}
         avatarUrl={item.profiles?.avatar_url}
         name={item.profiles?.display_name}
-        size={isReply ? 26 : 34}
+        size={isReply ? 30 : 34}
         onPressProfile={() => goToProfile(item.user_id)}
         onBeforeOpenStory={onNavigate}
       />
@@ -195,18 +203,33 @@ export default function Comments({
           <MentionText style={styles.text} text={item.body} />
         </TouchableOpacity>
         <View style={styles.metaRow}>
-          <TouchableOpacity style={styles.metaBtn} onPress={() => toggleLike(item.id)}>
+          <TouchableOpacity
+            style={styles.metaBtn}
+            onPress={() => toggleLike(item.id)}
+            hitSlop={{ top: 6, bottom: 8, left: 8, right: 4 }}
+          >
             <Ionicons
               name={likedByMe.has(item.id) ? 'heart' : 'heart-outline'}
-              size={14} color={likedByMe.has(item.id) ? COLORS.like : COLORS.textTertiary}
+              size={16} color={likedByMe.has(item.id) ? colors.like : colors.textTertiary}
             />
             {(likes[item.id] || 0) > 0 && <Text style={styles.metaText}>{likes[item.id]}</Text>}
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.metaBtn}
-            onPress={() => { onEngage?.(); setReplyTo({ id: item.parent_id ?? item.id, name: item.profiles?.username || '' }); }}
+            onPress={() => {
+              onEngage?.();
+              setReplyTo({ id: item.parent_id ?? item.id, name: item.profiles?.username || '' });
+              // Replying to a REPLY: prefill "@username " so the thread shows
+              // who is being addressed. Replying to the original comment needs
+              // no tag (the thread position already makes that clear). Never
+              // clobber a draft the user has already started.
+              if (item.parent_id != null && item.profiles?.username) {
+                setText(prev => (prev.trim().length ? prev : `@${item.profiles.username} `));
+              }
+            }}
+            hitSlop={{ top: 6, bottom: 8, left: 4, right: 8 }}
           >
-            <Ionicons name="arrow-undo-outline" size={14} color={COLORS.textTertiary} />
+            <Ionicons name="arrow-undo-outline" size={15} color={colors.textTertiary} />
             <Text style={styles.metaText}>Reply</Text>
           </TouchableOpacity>
         </View>
@@ -237,17 +260,32 @@ export default function Comments({
         contentContainerStyle={[styles.list, contentPadding != null && { paddingHorizontal: contentPadding }]}
         refreshControl={
           onRefresh
-            ? <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={COLORS.primary} />
+            ? <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
             : undefined
         }
         ListHeaderComponent={
           <>
-            {ListHeaderComponent}
+            {minHeaderHeight != null
+              ? <View style={{ minHeight: minHeaderHeight }}>{ListHeaderComponent}</View>
+              : ListHeaderComponent}
             <View style={styles.divider} />
-            <Text style={styles.label}>Comments · {rows.length}</Text>
+            <View style={[styles.labelRow, minHeaderHeight != null && styles.labelRowFold]}>
+              <Text style={styles.label}>Comments</Text>
+              {rows.length > 0 && (
+                <View style={styles.countChip}>
+                  <Text style={styles.countChipText}>{formatCount(rows.length)}</Text>
+                </View>
+              )}
+            </View>
           </>
         }
-        ListEmptyComponent={<Text style={styles.empty}>No comments yet — be the first!</Text>}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Ionicons name="chatbubble-ellipses-outline" size={26} color={colors.textTertiary} />
+            <Text style={styles.emptyTitle}>No comments yet</Text>
+            <Text style={styles.emptySub}>Be the first to say something</Text>
+          </View>
+        }
         renderItem={({ item }) => {
           const replies = repliesOf(item.id);
           return (
@@ -255,6 +293,9 @@ export default function Comments({
               {renderRow(item)}
               {replies.length > 0 && (
                 <View style={styles.replyWire}>
+                  {/* One rounded rule spanning the reply group (quote-bar style)
+                      — tracks the thread without per-row connector alignment. */}
+                  <View style={styles.replyRule} />
                   {replies.map(r => <Fragment key={r.id}>{renderRow(r, true)}</Fragment>)}
                 </View>
               )}
@@ -266,8 +307,25 @@ export default function Comments({
       <View style={[styles.inputWrap, contentPadding != null && { marginHorizontal: contentPadding }]}>
         {replyTo && (
           <View style={styles.replyingBar}>
-            <Text style={styles.replyingText}>Replying to @{replyTo.name}</Text>
-            <TouchableOpacity onPress={() => setReplyTo(null)}><Ionicons name="close" size={16} color={COLORS.textSecondary} /></TouchableOpacity>
+            <Ionicons name="arrow-undo" size={13} color={colors.primary} />
+            <Text style={styles.replyingText} numberOfLines={1}>
+              Replying to <Text style={styles.replyingName}>@{replyTo.name}</Text>
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                // Dropping the reply also drops the auto-inserted "@username "
+                // tag — but keeps anything else the user typed after it.
+                setText(prev => {
+                  const tag = `@${replyTo.name}`;
+                  if (!replyTo.name || !prev.startsWith(tag)) return prev;
+                  return prev.slice(tag.length).replace(/^\s+/, '');
+                });
+                setReplyTo(null);
+              }}
+              hitSlop={8}
+            >
+              <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
           </View>
         )}
         <MentionSuggestions
@@ -280,14 +338,14 @@ export default function Comments({
           <TextInput
             style={styles.input}
             placeholder={replyTo ? 'Add a reply...' : 'Add a comment...'}
-            placeholderTextColor={COLORS.textTertiary}
+            placeholderTextColor={colors.textTertiary}
             value={text} onChangeText={(t) => { setText(t); onEngage?.(); }}
             onFocus={() => { setInputFocused(true); onEngage?.(); }}
             onBlur={() => setInputFocused(false)}
             multiline maxLength={300}
           />
           <TouchableOpacity style={[styles.sendBtn, !text.trim() && styles.sendDisabled]} onPress={submit} disabled={!text.trim() || sending}>
-            {sending ? <ActivityIndicator color={COLORS.text} size="small" /> : <Ionicons name="arrow-up" size={18} color={COLORS.text} />}
+            {sending ? <ActivityIndicator color={colors.text} size="small" /> : <Ionicons name="arrow-up" size={20} color={colors.text} />}
           </TouchableOpacity>
         </View>
       </View>
@@ -295,40 +353,64 @@ export default function Comments({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   flex: { flex: 1 },
   list: { paddingBottom: SPACING.lg },
-  divider: { height: 0.5, backgroundColor: COLORS.border, marginTop: SPACING.lg },
-  label: { color: COLORS.text, fontSize: 14, fontWeight: '700', marginTop: SPACING.md, marginBottom: SPACING.xs },
-  empty: { color: COLORS.textTertiary, fontSize: 13, paddingVertical: SPACING.md },
+  divider: { height: 0.5, backgroundColor: colors.border, marginTop: SPACING.lg },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.md, marginBottom: SPACING.md },
+  // Player fold mode: a touch more room under the label so it sits with the
+  // reference spacing above the input bar while the first comment stays just
+  // below the fold. Kept modest so the scrolled-up list doesn't gape.
+  labelRowFold: { marginBottom: SPACING.xl + SPACING.sm },
+  label: { color: colors.text, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+  countChip: {
+    paddingHorizontal: 9, paddingVertical: 2, borderRadius: RADIUS.full,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+  },
+  countChipText: { color: colors.textSecondary, fontSize: 12, fontWeight: '700' },
+  empty: { alignItems: 'center', gap: 5, paddingVertical: SPACING.xl },
+  emptyTitle: { color: colors.textSecondary, fontSize: 14, fontWeight: '700', marginTop: 3 },
+  emptySub: { color: colors.textTertiary, fontSize: 13 },
 
   row: { flexDirection: 'row', gap: SPACING.sm, paddingVertical: SPACING.sm },
-  // Wire connecting a comment to its replies, so threads are easy to trace.
-  replyWire: { marginLeft: 17, borderLeftWidth: 2, borderLeftColor: COLORS.primary + '55', paddingLeft: SPACING.md },
-  replyRow: { paddingVertical: SPACING.xs },
+  // Reply thread: the group is inset under the parent's avatar, with a single
+  // rounded rule (quote-bar style) tracking the whole group — aligned to the
+  // parent avatar's center (34px avatar → center 17, rule width 2 → left 16).
+  replyWire: { marginLeft: 16, paddingLeft: 14 },
+  replyRow: { paddingVertical: 6 },
+  replyRule: {
+    position: 'absolute', left: 0, top: 4, bottom: 8,
+    width: 2, borderRadius: 1, backgroundColor: colors.border,
+  },
   avatar: { width: 34, height: 34, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   avatarSm: { width: 26, height: 26 },
-  avatarText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
+  avatarText: { color: colors.text, fontSize: 13, fontWeight: '700' },
   body: { flex: 1 },
   head: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  name: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
-  time: { color: COLORS.textTertiary, fontSize: 11 },
-  text: { color: COLORS.textSecondary, fontSize: 14, marginTop: 2, lineHeight: 19 },
-  metaRow: { flexDirection: 'row', gap: SPACING.lg, marginTop: 4 },
-  metaBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { color: COLORS.textTertiary, fontSize: 12, fontWeight: '600' },
+  name: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  time: { color: colors.textTertiary, fontSize: 11 },
+  text: { color: colors.textSecondary, fontSize: 14, marginTop: 2, lineHeight: 20 },
+  // Buttons carry their own padding (plus hitSlop in the JSX) so the touch
+  // targets are comfortably large without visually moving the row.
+  metaRow: { flexDirection: 'row', gap: SPACING.lg, marginTop: 2 },
+  metaBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 6 },
+  metaText: { color: colors.textTertiary, fontSize: 12, fontWeight: '600' },
 
-  inputWrap: { borderTopWidth: 0.5, borderTopColor: COLORS.border },
+  inputWrap: { borderTopWidth: 0.5, borderTopColor: colors.border },
   replyingBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.sm, paddingTop: SPACING.xs,
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    borderRadius: RADIUS.full, paddingHorizontal: SPACING.md, paddingVertical: 6,
+    marginTop: SPACING.sm,
   },
-  replyingText: { color: COLORS.textSecondary, fontSize: 12 },
-  inputBar: { flexDirection: 'row', alignItems: 'flex-end', gap: SPACING.sm, paddingVertical: SPACING.sm, paddingBottom: SPACING.md },
+  replyingText: { flex: 1, color: colors.textSecondary, fontSize: 12.5 },
+  replyingName: { color: colors.primary, fontWeight: '700' },
+  inputBar: { flexDirection: 'row', alignItems: 'flex-end', gap: SPACING.sm, paddingTop: SPACING.sm + 2, paddingBottom: SPACING.md },
   input: {
-    flex: 1, backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, color: COLORS.text, fontSize: 14, maxHeight: 90,
+    flex: 1, backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    borderRadius: 22, paddingHorizontal: SPACING.md + 2, paddingVertical: 11, minHeight: 44,
+    color: colors.text, fontSize: 15, lineHeight: 20, maxHeight: 110,
   },
-  sendBtn: { width: 38, height: 38, borderRadius: RADIUS.full, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  sendBtn: { width: 44, height: 44, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   sendDisabled: { opacity: 0.4 },
 });

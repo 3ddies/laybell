@@ -2,11 +2,11 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, ActivityIndicator, Image, RefreshControl,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState, useCallback, useRef } from 'react';
-import PagerView from 'react-native-pager-view';
+import { useEffect, useState, useCallback } from 'react';
+import SwipeBackPager from '../components/SwipeBackPager';
 import { supabase } from '../lib/supabase';
 import {
   fetchCreatorAnalytics, buildSeries, countInRange, hourLabel, dayLabel,
@@ -14,7 +14,8 @@ import {
 } from '../lib/analytics';
 import { BarChart, HBars } from '../components/AnalyticsCharts';
 import { formatCount } from '../lib/format';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 const RANGES: { key: RangeMode; label: string }[] = [
   { key: '7d', label: '7D' },
@@ -40,9 +41,11 @@ function shortHour(i: number): string {
 }
 
 function StatCard({ icon, value, label, tint }: { icon: any; value: string; label: string; tint?: string }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.statCard}>
-      <Ionicons name={icon} size={16} color={tint ?? COLORS.primary} />
+      <Ionicons name={icon} size={16} color={tint ?? colors.primary} />
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
@@ -50,6 +53,8 @@ function StatCard({ icon, value, label, tint }: { icon: any; value: string; labe
 }
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -60,14 +65,13 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
 }
 
 export default function AnalyticsScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const [data, setData] = useState<CreatorAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [range, setRange] = useState<RangeMode>('30d');
-  // Native-pager dismiss (page 0 = back), same as settings — clean swipe-back.
-  const pagerRef = useRef<PagerView>(null);
-
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); setRefreshing(false); return; }
@@ -83,43 +87,31 @@ export default function AnalyticsScreen() {
   useEffect(() => { load(); }, [load]);
 
   return (
+    // Swipe right anywhere to slide the whole page (header included) off and
+    // reveal the screen underneath — one motion, same feel as the tab pager.
+    <SwipeBackPager>
     <View style={styles.container}>
-      <Stack.Screen options={{ gestureEnabled: false }} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Creator Analytics</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <PagerView
-        ref={pagerRef}
-        style={styles.pager}
-        initialPage={1}
-        onPageSelected={(e) => {
-          if (e.nativeEvent.position === 0) {
-            if (router.canGoBack()) router.back();
-            else pagerRef.current?.setPageWithoutAnimation(1);
-          }
-        }}
-      >
-        <View key="dismiss" style={styles.dismissPage} />
-        <View key="content" style={styles.page}>
           {loading ? (
-            <View style={styles.center}><ActivityIndicator color={COLORS.primary} /></View>
+            <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
           ) : !data || data.totals.posts === 0 ? (
             <View style={styles.center}>
-              <Ionicons name="bar-chart-outline" size={44} color={COLORS.textTertiary} />
+              <Ionicons name="bar-chart-outline" size={44} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>No analytics yet</Text>
               <Text style={styles.emptySub}>Post some content and grow your audience — your stats and charts will show up here.</Text>
             </View>
           ) : (
             <Analytics data={data} range={range} setRange={setRange} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
           )}
-        </View>
-      </PagerView>
     </View>
+    </SwipeBackPager>
   );
 }
 
@@ -129,6 +121,8 @@ function Analytics({
   data: CreatorAnalytics; range: RangeMode; setRange: (r: RangeMode) => void;
   refreshing: boolean; onRefresh: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { totals } = data;
   const followerSeries = buildSeries(data.followerTs, range);
   const engagementSeries = buildSeries(data.engagementTs, range);
@@ -149,14 +143,14 @@ function Analytics({
     <ScrollView
       contentContainerStyle={styles.scroll}
       showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
       {/* Lifetime overview */}
       <Text style={styles.overviewLabel}>Lifetime</Text>
       <View style={styles.statGrid}>
         <StatCard icon="people" value={formatCount(totals.followers)} label="Followers" />
         <StatCard icon="grid" value={formatCount(totals.posts)} label="Posts" />
-        <StatCard icon="heart" value={formatCount(totals.likes)} label="Likes" tint={COLORS.like} />
+        <StatCard icon="heart" value={formatCount(totals.likes)} label="Likes" tint={colors.like} />
         <StatCard icon="chatbubble" value={formatCount(totals.comments)} label="Comments" />
         <StatCard icon="bookmark" value={formatCount(totals.saves)} label="Saves" />
         <StatCard icon="play" value={formatCount(totals.views)} label="Views & plays" />
@@ -234,19 +228,19 @@ function Analytics({
                   <Image source={{ uri: p.thumb }} style={styles.topThumb} />
                 ) : (
                   <LinearGradient colors={GRADIENTS.primarySoft} style={styles.topThumb}>
-                    <Ionicons name={p.type === 'video' ? 'videocam' : p.type === 'image' ? 'image' : 'musical-notes'} size={18} color={COLORS.primary} />
+                    <Ionicons name={p.type === 'video' ? 'videocam' : p.type === 'image' ? 'image' : 'musical-notes'} size={18} color={colors.primary} />
                   </LinearGradient>
                 )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.topCaption} numberOfLines={1}>{p.caption || typeLabel(p.type)}</Text>
                   <View style={styles.topStats}>
-                    <Ionicons name="heart" size={11} color={COLORS.like} />
+                    <Ionicons name="heart" size={11} color={colors.like} />
                     <Text style={styles.topStat}>{formatCount(p.likes)}</Text>
-                    <Ionicons name="chatbubble" size={11} color={COLORS.textTertiary} />
+                    <Ionicons name="chatbubble" size={11} color={colors.textTertiary} />
                     <Text style={styles.topStat}>{formatCount(p.comments)}</Text>
-                    <Ionicons name="bookmark" size={11} color={COLORS.textTertiary} />
+                    <Ionicons name="bookmark" size={11} color={colors.textTertiary} />
                     <Text style={styles.topStat}>{formatCount(p.saves)}</Text>
-                    {p.views > 0 && (<><Ionicons name="play" size={11} color={COLORS.textTertiary} /><Text style={styles.topStat}>{formatCount(p.views)}</Text></>)}
+                    {p.views > 0 && (<><Ionicons name="play" size={11} color={colors.textTertiary} /><Text style={styles.topStat}>{formatCount(p.views)}</Text></>)}
                   </View>
                 </View>
               </View>
@@ -262,77 +256,74 @@ function Analytics({
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  pager: { flex: 1 },
-  page: { flex: 1 },
-  dismissPage: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.xl, gap: SPACING.sm },
-  emptyTitle: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
-  emptySub: { color: COLORS.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  emptyTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
+  emptySub: { color: colors.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 19 },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm,
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
 
   scroll: { padding: SPACING.md, paddingBottom: SPACING.xxl + SPACING.lg, gap: SPACING.md },
 
   overviewLabel: {
-    color: COLORS.textTertiary, fontSize: 11, fontWeight: '700',
+    color: colors.textTertiary, fontSize: 11, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: SPACING.xs,
   },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   statCard: {
     width: '31.5%', flexGrow: 1,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: colors.border,
     padding: SPACING.md, gap: 3,
   },
-  statValue: { color: COLORS.text, fontSize: 20, fontWeight: '800', marginTop: 4 },
-  statLabel: { color: COLORS.textSecondary, fontSize: 12 },
+  statValue: { color: colors.text, fontSize: 20, fontWeight: '800', marginTop: 4 },
+  statLabel: { color: colors.textSecondary, fontSize: 12 },
 
   rateCard: {
     flexDirection: 'row', alignItems: 'center',
-    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border,
     padding: SPACING.md,
   },
-  rateValue: { color: COLORS.primaryLight, fontSize: 30, fontWeight: '800' },
-  rateLabel: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
+  rateValue: { color: colors.primaryLight, fontSize: 30, fontWeight: '800' },
+  rateLabel: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   rateRight: { alignItems: 'flex-end', gap: 4 },
-  rateSmall: { color: COLORS.textSecondary, fontSize: 12 },
+  rateSmall: { color: colors.textSecondary, fontSize: 12 },
 
   rangeRow: {
     flexDirection: 'row', gap: SPACING.xs,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.full,
-    padding: 4, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.full,
+    padding: 4, borderWidth: 1, borderColor: colors.border,
   },
   rangeBtn: { flex: 1, paddingVertical: SPACING.sm, alignItems: 'center', borderRadius: RADIUS.full },
-  rangeBtnActive: { backgroundColor: COLORS.primary },
-  rangeText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '700' },
-  rangeTextActive: { color: COLORS.text },
+  rangeBtnActive: { backgroundColor: colors.primary },
+  rangeText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
+  rangeTextActive: { color: colors.text },
 
   section: { gap: SPACING.xs },
-  sectionTitle: { color: COLORS.text, fontSize: 16, fontWeight: '800', paddingHorizontal: SPACING.xs },
-  sectionSubtitle: { color: COLORS.textSecondary, fontSize: 12, paddingHorizontal: SPACING.xs, lineHeight: 17 },
+  sectionTitle: { color: colors.text, fontSize: 16, fontWeight: '800', paddingHorizontal: SPACING.xs },
+  sectionSubtitle: { color: colors.textSecondary, fontSize: 12, paddingHorizontal: SPACING.xs, lineHeight: 17 },
   card: {
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: COLORS.border, padding: SPACING.md, marginTop: 2,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: colors.border, padding: SPACING.md, marginTop: 2,
   },
-  chartHint: { color: COLORS.textTertiary, fontSize: 11, fontWeight: '600', marginBottom: SPACING.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
-  innerDivider: { height: 0.5, backgroundColor: COLORS.border, marginVertical: SPACING.md },
+  chartHint: { color: colors.textTertiary, fontSize: 11, fontWeight: '600', marginBottom: SPACING.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
+  innerDivider: { height: 0.5, backgroundColor: colors.border, marginVertical: SPACING.md },
 
   topRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  topRank: { width: 16, color: COLORS.primaryLight, fontSize: 14, fontWeight: '800', textAlign: 'center' },
-  topThumb: { width: 44, height: 44, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
-  topCaption: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  topRank: { width: 16, color: colors.primaryLight, fontSize: 14, fontWeight: '800', textAlign: 'center' },
+  topThumb: { width: 44, height: 44, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
+  topCaption: { color: colors.text, fontSize: 14, fontWeight: '600' },
   topStats: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
-  topStat: { color: COLORS.textSecondary, fontSize: 12, marginRight: SPACING.xs },
+  topStat: { color: colors.textSecondary, fontSize: 12, marginRight: SPACING.xs },
 
-  footnote: { color: COLORS.textTertiary, fontSize: 11, lineHeight: 16, paddingHorizontal: SPACING.xs, marginTop: SPACING.sm },
+  footnote: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, paddingHorizontal: SPACING.xs, marginTop: SPACING.sm },
 });

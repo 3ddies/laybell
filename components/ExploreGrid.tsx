@@ -6,7 +6,8 @@ import { Video, ResizeMode } from 'expo-av';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { aspectToNumber } from '../lib/aspectRatio';
 import { useAudio } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
@@ -31,7 +32,7 @@ const VIDEO_GAP = 3;                // min non-video cells between videos
 
 type Cell =
   | { kind: 'media'; key: string; post: GridPost; height: number }
-  | { kind: 'music'; key: string; songs: GridPost[]; height: number };
+  | { kind: 'music'; key: string; title: string; songs: GridPost[]; height: number };
 
 function groupSongs(songs: GridPost[]): GridPost[][] {
   const groups: GridPost[][] = [];
@@ -50,11 +51,18 @@ function mediaHeight(post: GridPost): number {
   return COL_W; // pictures render 1:1
 }
 
-export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, currentUserId, onPostDeleted, header }: {
+export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, songClusters, onClusterSongPlay, currentUserId, onPostDeleted, header }: {
   posts: GridPost[]; refreshing?: boolean; onRefresh?: () => void; songTiles?: boolean;
+  // Pre-built genre clusters (title + songs) replacing the generic
+  // "Trending Songs" stacks in the All view; plays report back for the
+  // 3h/24h refresh window.
+  songClusters?: { title: string; songs: GridPost[] }[];
+  onClusterSongPlay?: () => void;
   currentUserId?: string | null; onPostDeleted?: (id: string) => void; header?: ReactNode;
 }) {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { play, currentTrack, isPlaying } = useAudio();
   const { show: showOptions } = usePostOptions();
 
@@ -124,7 +132,12 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
     const tileMedia = songTiles
       ? posts.filter(p => p.type === 'image' || isAudioPost(p.type))
       : images;
-    const musicGroups = songTiles ? [] : groupSongs(posts.filter(p => isAudioPost(p.type)));
+    // Genre clusters (when provided) supersede the grouped-from-feed stacks.
+    const musicGroups: { title: string; songs: GridPost[] }[] = songTiles
+      ? []
+      : songClusters && songClusters.length > 0
+      ? songClusters
+      : groupSongs(posts.filter(p => isAudioPost(p.type))).map(g => ({ title: 'Trending Songs', songs: g }));
 
     // Only ~1 in every 4 videos auto-plays; the rest stay as still thumbnails so the
     // grid isn't overstimulating. Prefer vertical (portrait) clips for the play
@@ -145,13 +158,13 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
       baseCells.push({ kind: 'media', key: m.id, post: m, height: mediaHeight(m) });
       if (idx % 2 === 1 && mi < musicGroups.length) {
         const g = musicGroups[mi];
-        baseCells.push({ kind: 'music', key: `music-${mi}`, songs: g, height: MUSIC_HEADER_H + g.length * ROW_H });
+        baseCells.push({ kind: 'music', key: `music-${mi}`, title: g.title, songs: g.songs, height: MUSIC_HEADER_H + g.songs.length * ROW_H });
         mi++;
       }
     });
     while (mi < musicGroups.length) {
       const g = musicGroups[mi];
-      baseCells.push({ kind: 'music', key: `music-${mi}`, songs: g, height: MUSIC_HEADER_H + g.length * ROW_H });
+      baseCells.push({ kind: 'music', key: `music-${mi}`, title: g.title, songs: g.songs, height: MUSIC_HEADER_H + g.songs.length * ROW_H });
       mi++;
     }
 
@@ -179,14 +192,14 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
     while (vi < videos.length) placeVideo();
 
     return { cols, playableSet };
-  }, [posts, songTiles]);
+  }, [posts, songTiles, songClusters]);
 
   if (!posts || posts.length === 0) {
     return (
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
-        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} /> : undefined}
+        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined}
       >
         {header}
         <View style={styles.empty}><Text style={styles.emptyText}>No posts in this genre yet</Text></View>
@@ -209,10 +222,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
             <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
           ) : (
             <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
-              <Ionicons name="videocam" size={28} color={COLORS.primary} />
+              <Ionicons name="videocam" size={28} color={colors.primary} />
             </LinearGradient>
           )}
-          <View style={styles.playBadge}><Ionicons name="play" size={12} color={COLORS.text} /></View>
+          <View style={styles.playBadge}><Ionicons name="play" size={12} color={colors.text} /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
           </LinearGradient>
@@ -243,10 +256,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
             <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
           ) : (
             <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
-              <Ionicons name="videocam" size={28} color={COLORS.primary} />
+              <Ionicons name="videocam" size={28} color={colors.primary} />
             </LinearGradient>
           )}
-          <View style={styles.playBadge}><Ionicons name="play" size={12} color={COLORS.text} /></View>
+          <View style={styles.playBadge}><Ionicons name="play" size={12} color={colors.text} /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
           </LinearGradient>
@@ -269,10 +282,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
             <Image source={{ uri: p.cover_url }} style={styles.mediaImage} resizeMode="cover" />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.mediaImage}>
-              <Ionicons name="musical-notes" size={28} color={COLORS.primary} />
+              <Ionicons name="musical-notes" size={28} color={colors.primary} />
             </LinearGradient>
           )}
-          <View style={styles.playBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={12} color={COLORS.text} /></View>
+          <View style={styles.playBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={12} color={colors.text} /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>{p.caption || `@${p.profiles?.username}`}</Text>
           </LinearGradient>
@@ -298,9 +311,9 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
     if (cell.kind === 'music') {
       return (
         <View key={cell.key} style={[styles.musicCard, { height: cell.height }]}>
+          {/* Centered genre word — heavy urban cut in the logo color */}
           <View style={styles.musicHeader}>
-            <Ionicons name="flame" size={13} color={COLORS.primary} />
-            <Text style={styles.musicHeaderText}>Trending Songs</Text>
+            <Text style={styles.musicHeaderText} numberOfLines={1}>{cell.title}</Text>
           </View>
           {cell.songs.map((s, i) => {
             const active = currentTrack?.id === s.id && isPlaying;
@@ -308,7 +321,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
               <TouchableOpacity
                 key={s.id}
                 style={[styles.songRow, { height: ROW_H }, i > 0 && styles.songRowBorder]}
-                onPress={() => play({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? '', cover: s.cover_url })}
+                onPress={() => {
+                  play({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? '', cover: s.cover_url });
+                  onClusterSongPlay?.();
+                }}
                 onLongPress={longPressFor(s)}
               >
                 {s.cover_url ? (
@@ -316,20 +332,20 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
                     <Image source={{ uri: s.cover_url }} style={styles.songCoverImg} />
                     {active && (
                       <View style={styles.songCoverOverlay}>
-                        <Ionicons name="stop" size={15} color={COLORS.text} />
+                        <Ionicons name="stop" size={15} color={colors.text} />
                       </View>
                     )}
                   </View>
                 ) : (
                   <LinearGradient colors={active ? GRADIENTS.primary : GRADIENTS.primarySoft} style={styles.songIcon}>
-                    <Ionicons name={active ? 'stop' : 'musical-notes'} size={16} color={active ? COLORS.text : COLORS.primary} />
+                    <Ionicons name={active ? 'stop' : 'musical-notes'} size={16} color={active ? colors.text : colors.primary} />
                   </LinearGradient>
                 )}
                 <View style={styles.songInfo}>
                   <Text style={styles.songTitle} numberOfLines={1}>{s.caption || 'Audio Track'}</Text>
                   <View style={styles.songMeta}>
                     <Text style={styles.songArtist} numberOfLines={1}>@{s.profiles?.username}</Text>
-                    <Ionicons name="play" size={9} color={COLORS.textTertiary} />
+                    <Ionicons name="play" size={9} color={colors.textTertiary} />
                     <Text style={styles.songStreams}>{formatCount(s.stream_count)}</Text>
                   </View>
                 </View>
@@ -358,10 +374,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
             <Image source={{ uri: p.cover_url }} style={styles.mediaImage} resizeMode="cover" />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.mediaImage}>
-              <Ionicons name="musical-notes" size={24} color={COLORS.primary} />
+              <Ionicons name="musical-notes" size={24} color={colors.primary} />
             </LinearGradient>
           )}
-          <View style={styles.squareBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={11} color={COLORS.text} /></View>
+          <View style={styles.squareBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={11} color={colors.text} /></View>
           <View style={styles.squareTitleBar}>
             <Text style={styles.squareTitleText} numberOfLines={1}>{p.caption || 'Audio Track'}</Text>
           </View>
@@ -375,10 +391,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
             <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
           ) : (
             <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
-              <Ionicons name="videocam" size={24} color={COLORS.primary} />
+              <Ionicons name="videocam" size={24} color={colors.primary} />
             </LinearGradient>
           )}
-          <View style={styles.squareBadge}><Ionicons name="play" size={11} color={COLORS.text} /></View>
+          <View style={styles.squareBadge}><Ionicons name="play" size={11} color={colors.text} /></View>
         </TouchableOpacity>
       );
     }
@@ -398,7 +414,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
       onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; recomputeActive(); }}
       onLayout={e => { viewportH.current = e.nativeEvent.layout.height; recomputeActive(); }}
       refreshControl={
-        onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} /> : undefined
+        onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined
       }
     >
       {header}
@@ -415,12 +431,12 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, c
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   scroll: { padding: H_PADDING, paddingBottom: SPACING.xxl },
   row: { flexDirection: 'row', gap: GAP },
   col: { width: COL_W, gap: GAP },
   grid3: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
-  square: { width: COL3_W, height: COL3_W, borderRadius: RADIUS.sm, overflow: 'hidden', backgroundColor: COLORS.surfaceLight },
+  square: { width: COL3_W, height: COL3_W, borderRadius: RADIUS.sm, overflow: 'hidden', backgroundColor: colors.surfaceLight },
   squareBadge: {
     position: 'absolute', top: 6, left: 6, width: 20, height: 20, borderRadius: 10,
     backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
@@ -431,7 +447,7 @@ const styles = StyleSheet.create({
   },
   squareTitleText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' },
 
-  mediaCard: { width: COL_W, borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: COLORS.surfaceLight },
+  mediaCard: { width: COL_W, borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: colors.surfaceLight },
   mediaImage: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   playBadge: {
     position: 'absolute', top: 8, left: 8, width: 22, height: 22, borderRadius: 11,
@@ -441,19 +457,31 @@ const styles = StyleSheet.create({
     position: 'absolute', left: 0, right: 0, bottom: 0,
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.lg, paddingBottom: 6,
   },
-  mediaUser: { color: COLORS.text, fontSize: 11, fontWeight: '600' },
+  mediaUser: { color: colors.text, fontSize: 11, fontWeight: '600' },
 
   musicCard: {
     width: COL_W, borderRadius: RADIUS.md, overflow: 'hidden',
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
   },
+  // Centered genre word: heavy black-italic cut in the Laybell-logo color —
+  // no banner background, the type carries the card header on its own.
   musicHeader: {
-    height: MUSIC_HEADER_H, flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: SPACING.sm, backgroundColor: COLORS.primary + '14',
+    height: MUSIC_HEADER_H, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: SPACING.sm,
+    backgroundColor: colors.primary,
   },
-  musicHeaderText: { color: COLORS.primary, fontSize: 11, fontWeight: '700' },
+  // Logo-yellow word on the bright orange: a tight dark drop shadow lifts the
+  // letters off the banner (raised-print look) so they stay crisp despite the
+  // two brand colors sitting close in brightness.
+  musicHeaderText: {
+    color: colors.primaryLight, fontSize: 14, fontWeight: '900', fontStyle: 'italic',
+    textTransform: 'uppercase', letterSpacing: 1.6,
+    textShadowColor: 'rgba(60, 18, 2, 0.85)',
+    textShadowOffset: { width: 0, height: 1.5 },
+    textShadowRadius: 2,
+  },
   songRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.sm },
-  songRowBorder: { borderTopWidth: 0.5, borderTopColor: COLORS.border },
+  songRowBorder: { borderTopWidth: 0.5, borderTopColor: colors.border },
   songIcon: { width: 32, height: 32, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   songCoverImg: { width: 32, height: 32 },
   songCoverOverlay: {
@@ -461,11 +489,11 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)',
   },
   songInfo: { flex: 1 },
-  songTitle: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
+  songTitle: { color: colors.text, fontSize: 12, fontWeight: '700' },
   songMeta: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
-  songArtist: { color: COLORS.textSecondary, fontSize: 11 },
-  songStreams: { color: COLORS.textTertiary, fontSize: 10 },
+  songArtist: { color: colors.textSecondary, fontSize: 11 },
+  songStreams: { color: colors.textTertiary, fontSize: 10 },
 
   empty: { alignItems: 'center', paddingTop: SPACING.xxl },
-  emptyText: { color: COLORS.textTertiary, fontSize: 14 },
+  emptyText: { color: colors.textTertiary, fontSize: 14 },
 });

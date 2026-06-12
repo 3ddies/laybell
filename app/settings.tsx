@@ -2,19 +2,27 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Switch, Alert, Image,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState, useRef } from 'react';
-import PagerView from 'react-native-pager-view';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import BadgeEmblem from '../components/BadgeEmblem';
+import SwipeBackPager from '../components/SwipeBackPager';
 import { displayedTier } from '../lib/badges';
 import {
   loadNotifPrefs, saveNotifPrefs, type NotifPrefs,
 } from '../lib/notificationPrefs';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemeMode, type ThemePalette } from '../constants/theme';
+
+// The three display modes shown in the Settings → Display section.
+const DISPLAY_MODES: { key: ThemeMode; label: string; sub: string; swatch: string; ring: string }[] = [
+  { key: 'dark',  label: 'Dark',  sub: 'Black background',  swatch: '#090909', ring: '#2A2A2A' },
+  { key: 'grey',  label: 'Grey',  sub: 'Lighter graphite',  swatch: '#2B2B2F', ring: '#54545C' },
+  { key: 'light', label: 'Light', sub: 'Soft white',        swatch: '#F2F2F6', ring: '#DCDCE2' },
+];
 
 const APP_VERSION = '1.0.0';
 
@@ -30,6 +38,8 @@ type SectionItem = {
 };
 
 function SettingsRow({ item }: { item: SectionItem }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity
       style={styles.row}
@@ -41,7 +51,7 @@ function SettingsRow({ item }: { item: SectionItem }) {
         <Ionicons
           name={item.icon}
           size={22}
-          color={item.destructive ? COLORS.error : COLORS.text}
+          color={item.destructive ? colors.error : colors.text}
         />
       </View>
       <View style={styles.rowContent}>
@@ -54,17 +64,18 @@ function SettingsRow({ item }: { item: SectionItem }) {
         <Switch
           value={item.value}
           onValueChange={item.onValueChange}
-          trackColor={{ false: COLORS.border, true: COLORS.primary + '88' }}
-          thumbColor={item.value ? COLORS.primary : COLORS.textTertiary}
+          trackColor={{ false: colors.border, true: colors.primary + '88' }}
+          thumbColor={item.value ? colors.primary : colors.textTertiary}
         />
       ) : item.chevron !== false ? (
-        <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
       ) : null}
     </TouchableOpacity>
   );
 }
 
 function Section({ title, items }: { title: string; items: SectionItem[] }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -83,11 +94,8 @@ function Section({ title, items }: { title: string; items: SectionItem[] }) {
 export default function SettingsScreen() {
   const router = useRouter();
   const { profile } = useProfile();
-  // Swipe-right-to-go-back via a native pager dismiss page — same mechanism the
-  // profile screens use. The native pager arbitrates with the inner vertical
-  // ScrollView (like the home/explore tabs), so vertical scrolling never triggers
-  // an accidental horizontal exit, while swiping right anywhere still goes back.
-  const pagerRef = useRef<PagerView>(null);
+  const { colors, mode, setMode } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   // Per-category notification toggles (persisted locally). The "All" row is
   // derived — on when every category is on, and flips all of them at once.
@@ -153,6 +161,12 @@ export default function SettingsScreen() {
       label: 'Badges',
       subtitle: 'Your emblem, rewards & progress',
       onPress: () => router.push('/badges'),
+    },
+    {
+      icon: 'albums-outline',
+      label: 'Playlists',
+      subtitle: 'Public, private & locked playlists',
+      onPress: () => router.push('/playlists'),
     },
     {
       icon: 'at-outline',
@@ -281,33 +295,18 @@ export default function SettingsScreen() {
   ];
 
   return (
+    // Swipe right anywhere to slide the whole page (header included) off and
+    // reveal the screen underneath — one motion, same feel as the tab pager.
+    <SwipeBackPager>
     <View style={styles.container}>
-      {/* The pager owns the back-swipe, so turn off the stack's own gesture
-          (otherwise the two horizontal gestures fight — exactly the profile pattern). */}
-      <Stack.Screen options={{ gestureEnabled: false }} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Pager: page 0 is the dismiss page (swipe right off the content → go back);
-          page 1 is the settings ScrollView. One pager, no nesting → can't glitch. */}
-      <PagerView
-        ref={pagerRef}
-        style={styles.pager}
-        initialPage={1}
-        onPageSelected={(e) => {
-          if (e.nativeEvent.position === 0) {
-            if (router.canGoBack()) router.back();
-            else pagerRef.current?.setPageWithoutAnimation(1);
-          }
-        }}
-      >
-        <View key="dismiss" style={styles.dismissPage} />
-        <View key="content" style={styles.page}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Profile card */}
         {profile && (
@@ -329,9 +328,31 @@ export default function SettingsScreen() {
               <Text style={styles.profileUsername} numberOfLines={1}>@{profile.username}</Text>
               <Text style={styles.profileEdit}>View and edit profile</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </TouchableOpacity>
         )}
+
+        {/* Display — choose the app's color scheme (applies live). */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Display</Text>
+          <View style={styles.sectionCard}>
+            {DISPLAY_MODES.map((m, i) => (
+              <View key={m.key}>
+                <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => setMode(m.key)}>
+                  <View style={[styles.swatch, { backgroundColor: m.swatch, borderColor: m.ring }]} />
+                  <View style={styles.rowContent}>
+                    <Text style={styles.rowLabel}>{m.label}</Text>
+                    <Text style={styles.rowSubtitle}>{m.sub}</Text>
+                  </View>
+                  {mode === m.key
+                    ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                    : <View style={styles.radioOff} />}
+                </TouchableOpacity>
+                {i < DISPLAY_MODES.length - 1 && <View style={styles.separator} />}
+              </View>
+            ))}
+          </View>
+        </View>
 
         <Section title="Account" items={accountItems} />
         <Section title="Notifications" items={notifItems} />
@@ -340,34 +361,30 @@ export default function SettingsScreen() {
 
         <Text style={styles.madeWith}>Made with 🧡 for artists everywhere</Text>
       </ScrollView>
-        </View>
-      </PagerView>
     </View>
+    </SwipeBackPager>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (c: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm,
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.07)',
+    borderBottomWidth: 0.5, borderBottomColor: c.borderSubtle,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  headerTitle: { color: c.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
 
-  pager: { flex: 1 },
-  page: { flex: 1 },
-  dismissPage: { flex: 1, backgroundColor: COLORS.background },
   content: { padding: SPACING.md, gap: SPACING.lg, paddingBottom: SPACING.xxl },
 
   profileCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: c.surfaceLight,
     borderRadius: RADIUS.xl, padding: SPACING.md,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: SPACING.md,
+    borderWidth: 1, borderColor: c.border, gap: SPACING.md,
     marginBottom: SPACING.xs,
     shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 12, shadowOffset: { width: 0, height: 5 },
     elevation: 4,
@@ -375,24 +392,24 @@ const styles = StyleSheet.create({
   profileAvatar: {
     width: 60, height: 60, borderRadius: RADIUS.full,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 2, borderColor: c.border,
   },
-  profileAvatarText: { color: COLORS.text, fontSize: 22, fontWeight: '800' },
+  profileAvatarText: { color: '#FFFFFF', fontSize: 22, fontWeight: '800' },
   profileInfo: { flex: 1, gap: 1 },
   profileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  profileName: { color: COLORS.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3, flexShrink: 1 },
-  profileUsername: { color: COLORS.textSecondary, fontSize: 13 },
-  profileEdit: { color: COLORS.primaryLight, fontSize: 12, fontWeight: '600', marginTop: 3 },
+  profileName: { color: c.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3, flexShrink: 1 },
+  profileUsername: { color: c.textSecondary, fontSize: 13 },
+  profileEdit: { color: c.primaryLight, fontSize: 12, fontWeight: '600', marginTop: 3 },
 
   section: { gap: SPACING.sm },
   sectionTitle: {
-    color: COLORS.textTertiary, fontSize: 11, fontWeight: '700',
+    color: c.textTertiary, fontSize: 11, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.8,
     paddingHorizontal: SPACING.xs,
   },
   sectionCard: {
-    backgroundColor: COLORS.surfaceLight,
-    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: c.surfaceLight,
+    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: c.border,
     overflow: 'hidden',
   },
 
@@ -404,14 +421,18 @@ const styles = StyleSheet.create({
     width: 28, alignItems: 'center', justifyContent: 'center',
   },
   rowContent: { flex: 1 },
-  rowLabel: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
-  rowLabelDestructive: { color: COLORS.error },
-  rowSubtitle: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
+  rowLabel: { color: c.text, fontSize: 15, fontWeight: '600' },
+  rowLabelDestructive: { color: c.error },
+  rowSubtitle: { color: c.textSecondary, fontSize: 12, marginTop: 1 },
 
-  separator: { height: 0.5, backgroundColor: 'rgba(255,255,255,0.06)', marginLeft: SPACING.md + 28 + SPACING.md },
+  // Display-mode color chip + unselected radio.
+  swatch: { width: 28, height: 28, borderRadius: RADIUS.sm, borderWidth: 1 },
+  radioOff: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: c.border },
+
+  separator: { height: 0.5, backgroundColor: c.border, marginLeft: SPACING.md + 28 + SPACING.md },
 
   madeWith: {
-    color: COLORS.textTertiary, fontSize: 13,
+    color: c.textTertiary, fontSize: 13,
     textAlign: 'center', paddingVertical: SPACING.lg,
   },
 });

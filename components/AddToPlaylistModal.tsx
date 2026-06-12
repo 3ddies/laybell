@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 type Playlist = { id: string; name: string; is_public: boolean };
 
@@ -17,6 +18,8 @@ type Props = {
 };
 
 export default function AddToPlaylistModal({ visible, postId, onClose }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState<string | null>(null);
@@ -42,25 +45,39 @@ export default function AddToPlaylistModal({ visible, postId, onClose }: Props) 
     setLoading(false);
   }
 
-  async function handleAdd(playlistId: string) {
-    if (added.has(playlistId)) return;
+  // First tap adds the track; tapping a playlist it's already in removes it.
+  async function handleToggle(playlistId: string) {
+    if (adding) return;
     setAdding(playlistId);
 
-    const { count } = await supabase
-      .from('playlist_tracks')
-      .select('*', { count: 'exact', head: true })
-      .eq('playlist_id', playlistId);
-
-    const { error } = await supabase.from('playlist_tracks').insert({
-      playlist_id: playlistId,
-      post_id: postId,
-      position: (count ?? 0) + 1,
-    });
-
-    if (error) {
-      Alert.alert('Error', error.message);
+    if (added.has(playlistId)) {
+      const { error } = await supabase
+        .from('playlist_tracks')
+        .delete()
+        .eq('playlist_id', playlistId)
+        .eq('post_id', postId);
+      if (error) {
+        Alert.alert('Error', error.message);
+      } else {
+        setAdded(prev => { const next = new Set(prev); next.delete(playlistId); return next; });
+      }
     } else {
-      setAdded(prev => new Set([...prev, playlistId]));
+      const { count } = await supabase
+        .from('playlist_tracks')
+        .select('*', { count: 'exact', head: true })
+        .eq('playlist_id', playlistId);
+
+      const { error } = await supabase.from('playlist_tracks').insert({
+        playlist_id: playlistId,
+        post_id: postId,
+        position: (count ?? 0) + 1,
+      });
+
+      if (error) {
+        Alert.alert('Error', error.message);
+      } else {
+        setAdded(prev => new Set([...prev, playlistId]));
+      }
     }
     setAdding(null);
   }
@@ -75,17 +92,17 @@ export default function AddToPlaylistModal({ visible, postId, onClose }: Props) 
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Add to Playlist</Text>
             <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           {loading ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator color={COLORS.primary} />
+              <ActivityIndicator color={colors.primary} />
             </View>
           ) : playlists.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Ionicons name="musical-notes-outline" size={36} color={COLORS.textTertiary} />
+              <Ionicons name="musical-notes-outline" size={36} color={colors.textTertiary} />
               <Text style={styles.emptyText}>No playlists yet</Text>
               <Text style={styles.emptySubtext}>Create a playlist in the Music tab first</Text>
             </View>
@@ -100,8 +117,8 @@ export default function AddToPlaylistModal({ visible, postId, onClose }: Props) 
                 return (
                   <TouchableOpacity
                     style={[styles.playlistRow, isAdded && styles.playlistRowAdded]}
-                    onPress={() => handleAdd(item.id)}
-                    disabled={isAdded || isAdding}
+                    onPress={() => handleToggle(item.id)}
+                    disabled={isAdding}
                   >
                     <LinearGradient
                       colors={isAdded ? GRADIENTS.primaryWarm : GRADIENTS.primarySoft}
@@ -110,7 +127,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose }: Props) 
                       <Ionicons
                         name={isAdded ? 'checkmark' : 'musical-notes'}
                         size={18}
-                        color={isAdded ? COLORS.text : COLORS.primary}
+                        color={isAdded ? colors.text : colors.primary}
                       />
                     </LinearGradient>
                     <View style={styles.playlistInfo}>
@@ -118,11 +135,11 @@ export default function AddToPlaylistModal({ visible, postId, onClose }: Props) 
                       <Text style={styles.playlistMeta}>{item.is_public ? 'Public' : 'Private'}</Text>
                     </View>
                     {isAdding ? (
-                      <ActivityIndicator size="small" color={COLORS.primary} />
+                      <ActivityIndicator size="small" color={colors.primary} />
                     ) : isAdded ? (
                       <Text style={styles.addedText}>Added</Text>
                     ) : (
-                      <Ionicons name="add-circle-outline" size={22} color={COLORS.primary} />
+                      <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
                     )}
                   </TouchableOpacity>
                 );
@@ -135,37 +152,37 @@ export default function AddToPlaylistModal({ visible, postId, onClose }: Props) 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     maxHeight: '70%', paddingBottom: SPACING.xxl,
   },
   handle: {
     width: 36, height: 4, borderRadius: 2,
-    backgroundColor: COLORS.border, alignSelf: 'center', marginTop: SPACING.sm,
+    backgroundColor: colors.border, alignSelf: 'center', marginTop: SPACING.sm,
   },
   sheetHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
-  sheetTitle: { color: COLORS.text, fontSize: 17, fontWeight: '800' },
+  sheetTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
   loadingWrap: { alignItems: 'center', justifyContent: 'center', padding: SPACING.xxl },
   emptyWrap: { alignItems: 'center', padding: SPACING.xxl, gap: SPACING.sm },
-  emptyText: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
-  emptySubtext: { color: COLORS.textSecondary, fontSize: 13, textAlign: 'center' },
+  emptyText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  emptySubtext: { color: colors.textSecondary, fontSize: 13, textAlign: 'center' },
   list: { padding: SPACING.md, gap: SPACING.sm },
   playlistRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md,
-    padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border, gap: SPACING.md,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md,
+    padding: SPACING.md, borderWidth: 1, borderColor: colors.border, gap: SPACING.md,
   },
-  playlistRowAdded: { borderColor: COLORS.primary + '44', backgroundColor: COLORS.primary + '0A' },
+  playlistRowAdded: { borderColor: colors.primary + '44', backgroundColor: colors.primary + '0A' },
   playlistIcon: { width: 40, height: 40, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center' },
   playlistInfo: { flex: 1 },
-  playlistName: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
-  playlistMeta: { color: COLORS.textTertiary, fontSize: 12, marginTop: 2 },
-  addedText: { color: COLORS.primary, fontSize: 13, fontWeight: '600' },
+  playlistName: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  playlistMeta: { color: colors.textTertiary, fontSize: 12, marginTop: 2 },
+  addedText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
 });

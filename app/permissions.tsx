@@ -2,10 +2,10 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Switch, Alert,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState, useRef, useCallback } from 'react';
-import PagerView from 'react-native-pager-view';
+import { useEffect, useState, useCallback } from 'react';
+import SwipeBackPager from '../components/SwipeBackPager';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
 import {
@@ -16,7 +16,8 @@ import {
 } from '../lib/permissions';
 import { captureAndSaveLocation, disableLocation } from '../lib/location';
 import { requestContactsPermission } from '../lib/contacts';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { COLORS, SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 const UNKNOWN: PermInfo = { granted: false, canAskAgain: true, status: 'undetermined' };
 
@@ -27,9 +28,10 @@ function statusText(s: PermInfo): { label: string; color: string } {
 }
 
 export default function PermissionsScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { profile, update } = useProfile();
-  const pagerRef = useRef<PagerView>(null);
 
   const [s, setS] = useState<Record<string, PermInfo>>({
     camera: UNKNOWN, microphone: UNKNOWN, photos: UNKNOWN,
@@ -115,29 +117,18 @@ export default function PermissionsScreen() {
   ];
 
   return (
+    // Swipe right anywhere to slide the whole page (header included) off and
+    // reveal the screen underneath — one motion, same feel as the tab pager.
+    <SwipeBackPager>
     <View style={styles.container}>
-      <Stack.Screen options={{ gestureEnabled: false }} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Permissions</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <PagerView
-        ref={pagerRef}
-        style={styles.pager}
-        initialPage={1}
-        onPageSelected={(e) => {
-          if (e.nativeEvent.position === 0) {
-            if (router.canGoBack()) router.back();
-            else pagerRef.current?.setPageWithoutAnimation(1);
-          }
-        }}
-      >
-        <View key="dismiss" style={styles.dismissPage} />
-        <View key="content" style={styles.page}>
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <Text style={styles.intro}>
               Control what Laybell can access. Location and contacts are only used to suggest people you may know — never shared on your profile.
@@ -148,7 +139,7 @@ export default function PermissionsScreen() {
               <Text style={styles.sectionTitle}>Recommendations</Text>
               <View style={styles.sectionCard}>
                 <View style={styles.row}>
-                  <View style={styles.rowIcon}><Ionicons name="location-outline" size={18} color={COLORS.primary} /></View>
+                  <View style={styles.rowIcon}><Ionicons name="location-outline" size={18} color={colors.primary} /></View>
                   <View style={styles.rowContent}>
                     <Text style={styles.rowLabel}>Location</Text>
                     <Text style={styles.rowSubtitle}>
@@ -159,13 +150,13 @@ export default function PermissionsScreen() {
                     value={locationOn}
                     onValueChange={toggleLocation}
                     disabled={busy === 'location'}
-                    trackColor={{ false: COLORS.border, true: COLORS.primary + '88' }}
-                    thumbColor={locationOn ? COLORS.primary : COLORS.textTertiary}
+                    trackColor={{ false: colors.border, true: colors.primary + '88' }}
+                    thumbColor={locationOn ? colors.primary : colors.textTertiary}
                   />
                 </View>
                 <View style={styles.separator} />
                 <View style={styles.row}>
-                  <View style={styles.rowIcon}><Ionicons name="people-outline" size={18} color={COLORS.primary} /></View>
+                  <View style={styles.rowIcon}><Ionicons name="people-outline" size={18} color={colors.primary} /></View>
                   <View style={styles.rowContent}>
                     <Text style={styles.rowLabel}>Contacts</Text>
                     <Text style={styles.rowSubtitle}>Find contacts who are on Laybell</Text>
@@ -174,8 +165,8 @@ export default function PermissionsScreen() {
                     value={contactsOn}
                     onValueChange={toggleContacts}
                     disabled={busy === 'contacts'}
-                    trackColor={{ false: COLORS.border, true: COLORS.primary + '88' }}
-                    thumbColor={contactsOn ? COLORS.primary : COLORS.textTertiary}
+                    trackColor={{ false: colors.border, true: colors.primary + '88' }}
+                    thumbColor={contactsOn ? colors.primary : colors.textTertiary}
                   />
                 </View>
               </View>
@@ -190,13 +181,13 @@ export default function PermissionsScreen() {
                   return (
                     <View key={r.key}>
                       <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => handleOsRow(r.key, r.request)}>
-                        <View style={styles.rowIcon}><Ionicons name={r.icon} size={18} color={COLORS.primary} /></View>
+                        <View style={styles.rowIcon}><Ionicons name={r.icon} size={18} color={colors.primary} /></View>
                         <View style={styles.rowContent}>
                           <Text style={styles.rowLabel}>{r.label}</Text>
                           <Text style={styles.rowSubtitle}>{r.sub}</Text>
                         </View>
                         <Text style={[styles.statusText, { color: st.color }]}>{st.label}</Text>
-                        <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+                        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
                       </TouchableOpacity>
                       {i < deviceRows.length - 1 && <View style={styles.separator} />}
                     </View>
@@ -206,46 +197,42 @@ export default function PermissionsScreen() {
               <Text style={styles.hint}>Tap a row to allow it, or to open your device Settings if it was previously denied.</Text>
             </View>
           </ScrollView>
-        </View>
-      </PagerView>
     </View>
+    </SwipeBackPager>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
 
-  pager: { flex: 1 },
-  page: { flex: 1 },
-  dismissPage: { flex: 1, backgroundColor: COLORS.background },
   content: { padding: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.xxl },
-  intro: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: SPACING.xs },
+  intro: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: SPACING.xs },
 
   section: { gap: SPACING.xs },
   sectionTitle: {
-    color: COLORS.textTertiary, fontSize: 11, fontWeight: '700',
+    color: colors.textTertiary, fontSize: 11, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: SPACING.xs,
   },
   sectionCard: {
-    backgroundColor: COLORS.surfaceLight,
-    borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
+    backgroundColor: colors.surfaceLight,
+    borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
   row: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, gap: SPACING.md },
   rowIcon: {
     width: 32, height: 32, borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.primary + '18', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary + '18', alignItems: 'center', justifyContent: 'center',
   },
   rowContent: { flex: 1 },
-  rowLabel: { color: COLORS.text, fontSize: 15 },
-  rowSubtitle: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
+  rowLabel: { color: colors.text, fontSize: 15 },
+  rowSubtitle: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
   statusText: { fontSize: 12, fontWeight: '700' },
-  separator: { height: 0.5, backgroundColor: COLORS.border, marginLeft: SPACING.md + 32 + SPACING.md },
-  hint: { color: COLORS.textTertiary, fontSize: 12, paddingHorizontal: SPACING.xs, lineHeight: 17 },
+  separator: { height: 0.5, backgroundColor: colors.border, marginLeft: SPACING.md + 32 + SPACING.md },
+  hint: { color: colors.textTertiary, fontSize: 12, paddingHorizontal: SPACING.xs, lineHeight: 17 },
 });

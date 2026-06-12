@@ -18,7 +18,8 @@ import { createNotification } from '../../lib/createNotification';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleModal';
 import { useAudio } from '../../contexts/AudioContext';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
 import { GENRES } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
@@ -67,6 +68,8 @@ function fmtClock(sec: number) {
 }
 
 export default function PostScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [step, setStep] = useState<Step>('pick');
   const [postType, setPostType] = useState<PostType>('image');
   const [format, setFormat] = useState<string>('1:1');
@@ -510,11 +513,11 @@ export default function PostScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerBtn} onPress={() => setStep('pick')}>
-            <Ionicons name="chevron-back" size={26} color={COLORS.text} />
+            <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Trim</Text>
           <TouchableOpacity style={styles.headerAction} onPress={() => setStep('details')}>
-            <Ionicons name="arrow-forward" size={24} color={COLORS.primary} />
+            <Ionicons name="arrow-forward" size={24} color={colors.primary} />
           </TouchableOpacity>
         </View>
         <View style={styles.trimBody}>
@@ -541,11 +544,11 @@ export default function PostScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerBtn} onPress={() => setStep('pick')}>
-            <Ionicons name="chevron-back" size={26} color={COLORS.text} />
+            <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>New post</Text>
           <TouchableOpacity style={styles.headerAction} onPress={handleShare} disabled={loading}>
-            {loading ? <ActivityIndicator color={COLORS.primary} size="small" /> : <Text style={styles.headerActionText}>Share</Text>}
+            {loading ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={styles.headerActionText}>Share</Text>}
           </TouchableOpacity>
         </View>
 
@@ -556,13 +559,13 @@ export default function PostScreen() {
               <Image source={{ uri: thumbUri }} style={styles.captionThumb} />
             ) : (
               <View style={[styles.captionThumb, styles.captionThumbPlaceholder]}>
-                <Ionicons name="musical-notes" size={20} color={COLORS.primary} />
+                <Ionicons name="musical-notes" size={20} color={colors.primary} />
               </View>
             )}
             <TextInput
               style={styles.captionInput}
               placeholder="Write a caption..."
-              placeholderTextColor={COLORS.textTertiary}
+              placeholderTextColor={colors.textTertiary}
               value={caption}
               onChangeText={setCaption}
               multiline
@@ -589,7 +592,7 @@ export default function PostScreen() {
                   const on = audioKind === val;
                   return (
                     <TouchableOpacity key={val} style={[styles.choice, on && styles.choiceActive]} onPress={() => setAudioKind(val)}>
-                      <Ionicons name={icon as any} size={15} color={on ? COLORS.primary : COLORS.textSecondary} />
+                      <Ionicons name={icon as any} size={15} color={on ? colors.primary : colors.textSecondary} />
                       <Text style={[styles.choiceText, on && styles.choiceTextActive]}>{label}</Text>
                     </TouchableOpacity>
                   );
@@ -606,13 +609,13 @@ export default function PostScreen() {
                 {coverUri ? (
                   <Image source={{ uri: coverUri }} style={styles.coverPreview} />
                 ) : (
-                  <View style={styles.coverPlaceholder}><Ionicons name="image-outline" size={24} color={COLORS.textTertiary} /></View>
+                  <View style={styles.coverPlaceholder}><Ionicons name="image-outline" size={24} color={colors.textTertiary} /></View>
                 )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.coverTitle}>{coverUri ? 'Cover selected' : 'Add cover art'}</Text>
                   <Text style={styles.coverSub}>{coverUri ? 'Tap to change or re-crop' : 'Square image shown next to your track'}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
             </View>
           )}
@@ -641,7 +644,7 @@ export default function PostScreen() {
               <Text style={styles.sectionLabel}>Music</Text>
               {song ? (
                 <View style={styles.songRow}>
-                  <Ionicons name="musical-notes" size={18} color={COLORS.primary} />
+                  <Ionicons name="musical-notes" size={18} color={colors.primary} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.songRowTitle} numberOfLines={1}>{song.title}</Text>
                     <Text style={styles.songRowArtist} numberOfLines={1}>{song.artist}</Text>
@@ -650,12 +653,12 @@ export default function PostScreen() {
                     <Text style={styles.songChangeText}>Change</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close-circle" size={22} color={COLORS.textTertiary} />
+                    <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
                   </TouchableOpacity>
                 </View>
               ) : (
                 <TouchableOpacity style={styles.addSongBtn} onPress={() => setShowSongPicker(true)}>
-                  <Ionicons name="musical-notes-outline" size={18} color={COLORS.primary} />
+                  <Ionicons name="musical-notes-outline" size={18} color={colors.primary} />
                   <Text style={styles.addSongText}>Add music</Text>
                 </TouchableOpacity>
               )}
@@ -668,7 +671,7 @@ export default function PostScreen() {
               <Text style={styles.sectionLabel}>Tag people</Text>
               {tagged.length > 0 ? (
                 <TouchableOpacity style={styles.songRow} onPress={() => setShowTagModal(true)}>
-                  <Ionicons name="people" size={18} color={COLORS.primary} />
+                  <Ionicons name="people" size={18} color={colors.primary} />
                   <Text style={styles.songRowTitle} numberOfLines={1}>
                     {tagged.map((t) => `@${t.username}`).join(', ')}
                   </Text>
@@ -676,7 +679,7 @@ export default function PostScreen() {
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity style={styles.addSongBtn} onPress={() => setShowTagModal(true)}>
-                  <Ionicons name="person-add-outline" size={18} color={COLORS.primary} />
+                  <Ionicons name="person-add-outline" size={18} color={colors.primary} />
                   <Text style={styles.addSongText}>Tag people</Text>
                 </TouchableOpacity>
               )}
@@ -686,7 +689,7 @@ export default function PostScreen() {
           {/* Visibility */}
           <View style={styles.visibilityRow}>
             <View style={styles.visibilityLeft}>
-              <Ionicons name={isPublic ? 'globe-outline' : 'people-outline'} size={20} color={COLORS.primary} />
+              <Ionicons name={isPublic ? 'globe-outline' : 'people-outline'} size={20} color={colors.primary} />
               <View>
                 <Text style={styles.visibilityLabel}>{isPublic ? 'Public' : 'Friends only'}</Text>
                 <Text style={styles.visibilitySub}>{isPublic ? 'Anyone on Laybell can see this' : 'Only your friends (mutual follows) can see this'}</Text>
@@ -695,14 +698,14 @@ export default function PostScreen() {
             <Switch
               value={isPublic}
               onValueChange={setIsPublic}
-              trackColor={{ false: COLORS.border, true: COLORS.primary + '88' }}
-              thumbColor={isPublic ? COLORS.primary : COLORS.textTertiary}
+              trackColor={{ false: colors.border, true: colors.primary + '88' }}
+              thumbColor={isPublic ? colors.primary : colors.textTertiary}
             />
           </View>
 
           {!!error && (
             <View style={styles.errorRow}>
-              <Ionicons name="alert-circle-outline" size={16} color={COLORS.error} />
+              <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
@@ -718,11 +721,11 @@ export default function PostScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.headerBtn} onPress={exitToExplore}>
-          <Ionicons name="close" size={26} color={COLORS.text} />
+          <Ionicons name="close" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>New post</Text>
         <TouchableOpacity style={styles.headerAction} onPress={goNext} disabled={!hasMedia}>
-          <Ionicons name="arrow-forward" size={24} color={hasMedia ? COLORS.primary : COLORS.textTertiary} />
+          <Ionicons name="arrow-forward" size={24} color={hasMedia ? colors.primary : colors.textTertiary} />
         </TouchableOpacity>
       </View>
 
@@ -734,16 +737,15 @@ export default function PostScreen() {
               <Text style={styles.recTime}>{fmtClock(recSecs)}</Text>
               <Text style={styles.audioPickSub}>Recording…</Text>
               <TouchableOpacity style={styles.stopBtn} onPress={stopRecording}>
-                <Ionicons name="stop" size={24} color={COLORS.text} />
+                <Ionicons name="stop" size={24} color={colors.text} />
                 <Text style={styles.stopBtnText}>Stop</Text>
               </TouchableOpacity>
             </View>
           ) : audioFile ? (
             <View style={styles.audioSelected}>
-              <TouchableOpacity onPress={togglePreview} activeOpacity={0.8}>
-                <LinearGradient colors={GRADIENTS.primary} style={styles.audioPickIcon}>
-                  <Ionicons name={isPreviewPlaying ? 'pause' : 'play'} size={30} color={COLORS.text} />
-                </LinearGradient>
+              {/* Borderless filled-circle glyph, same as Today's Pick */}
+              <TouchableOpacity onPress={togglePreview} activeOpacity={0.8} hitSlop={6}>
+                <Ionicons name={isPreviewPlaying ? 'pause-circle' : 'play-circle'} size={64} color={colors.primary} />
               </TouchableOpacity>
               <Text style={styles.audioPickTitle} numberOfLines={1}>{audioFile.name || 'Audio selected'}</Text>
               <Text style={styles.audioPickSub}>
@@ -751,11 +753,11 @@ export default function PostScreen() {
               </Text>
               <View style={styles.audioSelBtns}>
                 <TouchableOpacity style={styles.audioSelBtn} onPress={pickAudio}>
-                  <Ionicons name="cloud-upload-outline" size={16} color={COLORS.primary} />
+                  <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />
                   <Text style={styles.audioSelBtnText}>Replace</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.audioSelBtn} onPress={() => { setAudioFile(null); setAudioDuration(null); startRecording(); }}>
-                  <Ionicons name="mic" size={16} color={COLORS.primary} />
+                  <Ionicons name="mic" size={16} color={colors.primary} />
                   <Text style={styles.audioSelBtnText}>Record new</Text>
                 </TouchableOpacity>
               </View>
@@ -764,14 +766,14 @@ export default function PostScreen() {
             <View style={styles.audioChoices}>
               <TouchableOpacity style={styles.audioChoice} onPress={startRecording}>
                 <LinearGradient colors={GRADIENTS.primary} style={styles.audioChoiceIcon}>
-                  <Ionicons name="mic" size={28} color={COLORS.text} />
+                  <Ionicons name="mic" size={28} color={colors.text} />
                 </LinearGradient>
                 <Text style={styles.audioChoiceTitle}>Record</Text>
                 <Text style={styles.audioChoiceSub}>Talk into the mic</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.audioChoice} onPress={pickAudio}>
                 <View style={[styles.audioChoiceIcon, styles.audioChoiceIconAlt]}>
-                  <Ionicons name="cloud-upload-outline" size={28} color={COLORS.primary} />
+                  <Ionicons name="cloud-upload-outline" size={28} color={colors.primary} />
                 </View>
                 <Text style={styles.audioChoiceTitle}>Upload</Text>
                 <Text style={styles.audioChoiceSub}>MP3 · WAV · M4A</Text>
@@ -810,7 +812,7 @@ export default function PostScreen() {
                 )
               ) : (
                 <View style={[styles.previewPlaceholder, { width: frameW, height: frameH }]}>
-                  <Ionicons name="images-outline" size={40} color={COLORS.textTertiary} />
+                  <Ionicons name="images-outline" size={40} color={colors.textTertiary} />
                   <Text style={styles.previewPlaceholderText}>Tap items below to build a slideshow</Text>
                 </View>
               )
@@ -839,14 +841,14 @@ export default function PostScreen() {
               )
             ) : (
               <View style={[styles.previewPlaceholder, { width: frameW, height: frameH }]}>
-                <Ionicons name="image-outline" size={40} color={COLORS.textTertiary} />
+                <Ionicons name="image-outline" size={40} color={colors.textTertiary} />
                 <Text style={styles.previewPlaceholderText}>Pick a photo or video below</Text>
               </View>
             )}
             {/* Aspect toggle — single images + slideshows (videos use native ratio) */}
             {((!slideshowMode && postType === 'image' && media) || (slideshowMode && slides.length > 0)) && (
               <TouchableOpacity style={styles.aspectBtn} onPress={cycleFormat}>
-                <Ionicons name="resize-outline" size={16} color={COLORS.text} />
+                <Ionicons name="resize-outline" size={16} color={colors.text} />
                 <Text style={styles.aspectBtnText}>{format}</Text>
               </TouchableOpacity>
             )}
@@ -906,8 +908,8 @@ export default function PostScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   trimBody: { flex: 1, justifyContent: 'center', padding: SPACING.md },
 
   header: {
@@ -915,27 +917,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
   },
   headerBtn: { width: 64, paddingVertical: 4 },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   headerAction: { width: 64, alignItems: 'flex-end', paddingVertical: 4, paddingRight: SPACING.xs },
-  headerActionText: { color: COLORS.primary, fontSize: 16, fontWeight: '700' },
+  headerActionText: { color: colors.primary, fontSize: 16, fontWeight: '700' },
 
   previewArea: { backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.xs, overflow: 'hidden' },
-  previewPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface, gap: SPACING.sm, alignSelf: 'center' },
-  previewPlaceholderText: { color: COLORS.textTertiary, fontSize: 14 },
+  previewPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, gap: SPACING.sm, alignSelf: 'center' },
+  previewPlaceholderText: { color: colors.textTertiary, fontSize: 14 },
   aspectBtn: {
     position: 'absolute', left: SPACING.md, bottom: SPACING.md,
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full,
     paddingVertical: 5, paddingHorizontal: SPACING.sm,
   },
-  aspectBtnText: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
+  aspectBtnText: { color: colors.text, fontSize: 12, fontWeight: '700' },
 
   recentsRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
   },
-  recentsText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  recentsHint: { color: COLORS.textTertiary, fontSize: 12 },
+  recentsText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  recentsHint: { color: colors.textTertiary, fontSize: 12 },
 
   // Remove-media "x" on the preview square, and the Single/Slideshow mode toggle.
   removeBtn: {
@@ -943,132 +945,131 @@ const styles = StyleSheet.create({
     width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.6)',
     alignItems: 'center', justifyContent: 'center',
   },
-  modeToggle: { flexDirection: 'row', backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.full, padding: 2 },
+  modeToggle: { flexDirection: 'row', backgroundColor: colors.surfaceLight, borderRadius: RADIUS.full, padding: 2 },
   modePill: { paddingHorizontal: SPACING.md, paddingVertical: 5, borderRadius: RADIUS.full },
-  modePillActive: { backgroundColor: COLORS.primary },
-  modePillText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '700' },
+  modePillActive: { backgroundColor: colors.primary },
+  modePillText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
   modePillTextActive: { color: '#fff' },
 
 
   typeStrip: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: SPACING.xl,
-    paddingVertical: SPACING.md, borderTopWidth: 0.5, borderTopColor: COLORS.border,
+    paddingVertical: SPACING.md, borderTopWidth: 0.5, borderTopColor: colors.border,
   },
   typeStripBtn: { paddingHorizontal: SPACING.sm },
-  typeStripText: { color: COLORS.textTertiary, fontSize: 13, fontWeight: '700', letterSpacing: 1 },
-  typeStripTextActive: { color: COLORS.primary },
+  typeStripText: { color: colors.textTertiary, fontSize: 13, fontWeight: '700', letterSpacing: 1 },
+  typeStripTextActive: { color: colors.primary },
 
   audioPickArea: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.lg },
   audioPickBtn: {
     alignItems: 'center', gap: SPACING.sm, padding: SPACING.xl,
-    borderWidth: 1.5, borderColor: COLORS.border, borderStyle: 'dashed', borderRadius: RADIUS.lg,
+    borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed', borderRadius: RADIUS.lg,
     width: '100%',
   },
-  audioPickIcon: { width: 64, height: 64, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  audioPickTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700', textAlign: 'center' },
-  audioPickSub: { color: COLORS.textTertiary, fontSize: 13, textAlign: 'center' },
+  audioPickTitle: { color: colors.text, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  audioPickSub: { color: colors.textTertiary, fontSize: 13, textAlign: 'center' },
 
   audioChoices: { flexDirection: 'row', gap: SPACING.md, width: '100%' },
   audioChoice: {
     flex: 1, alignItems: 'center', gap: SPACING.xs, paddingVertical: SPACING.xl,
-    borderWidth: 1.5, borderColor: COLORS.border, borderStyle: 'dashed', borderRadius: RADIUS.lg,
+    borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed', borderRadius: RADIUS.lg,
   },
   audioChoiceIcon: { width: 56, height: 56, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  audioChoiceIconAlt: { backgroundColor: COLORS.surfaceElevated },
-  audioChoiceTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  audioChoiceSub: { color: COLORS.textTertiary, fontSize: 12 },
+  audioChoiceIconAlt: { backgroundColor: colors.surfaceElevated },
+  audioChoiceTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  audioChoiceSub: { color: colors.textTertiary, fontSize: 12 },
 
   recordBox: {
     alignItems: 'center', gap: SPACING.sm, padding: SPACING.xl, width: '100%',
-    borderWidth: 1.5, borderColor: COLORS.error, borderRadius: RADIUS.lg, backgroundColor: COLORS.error + '11',
+    borderWidth: 1.5, borderColor: colors.error, borderRadius: RADIUS.lg, backgroundColor: colors.error + '11',
   },
-  recDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: COLORS.error },
-  recTime: { color: COLORS.text, fontSize: 32, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  recDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: colors.error },
+  recTime: { color: colors.text, fontSize: 32, fontWeight: '800', fontVariant: ['tabular-nums'] },
   stopBtn: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginTop: SPACING.sm,
-    backgroundColor: COLORS.error, borderRadius: RADIUS.full, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg,
+    backgroundColor: colors.error, borderRadius: RADIUS.full, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg,
   },
-  stopBtnText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  stopBtnText: { color: colors.text, fontSize: 15, fontWeight: '700' },
 
   audioSelected: {
     alignItems: 'center', gap: SPACING.sm, padding: SPACING.xl, width: '100%',
-    borderWidth: 1.5, borderColor: COLORS.border, borderRadius: RADIUS.lg,
+    borderWidth: 1.5, borderColor: colors.border, borderRadius: RADIUS.lg,
   },
   audioSelBtns: { flexDirection: 'row', gap: SPACING.md, marginTop: SPACING.xs },
   audioSelBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.primary,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.primary,
   },
-  audioSelBtnText: { color: COLORS.primary, fontSize: 13, fontWeight: '700' },
+  audioSelBtnText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
 
   // details
   detailsContent: { padding: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.xxl },
   captionRow: { flexDirection: 'row', gap: SPACING.sm, alignItems: 'flex-start' },
-  captionThumb: { width: 64, height: 64, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceLight },
+  captionThumb: { width: 64, height: 64, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight },
   captionThumbPlaceholder: { alignItems: 'center', justifyContent: 'center' },
   captionInput: {
-    flex: 1, minHeight: 64, color: COLORS.text, fontSize: 15,
+    flex: 1, minHeight: 64, color: colors.text, fontSize: 15,
     textAlignVertical: 'top', paddingTop: SPACING.xs,
   },
 
   section: { gap: 6 },
-  sectionLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  sectionLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   row: { flexDirection: 'row', gap: SPACING.sm },
   choice: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
     paddingVertical: SPACING.sm + 2, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceLight,
   },
-  choiceActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '11' },
-  choiceText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
-  choiceTextActive: { color: COLORS.primary, fontWeight: '700' },
+  choiceActive: { borderColor: colors.primary, backgroundColor: colors.primary + '11' },
+  choiceText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  choiceTextActive: { color: colors.primary, fontWeight: '700' },
 
   coverPicker: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, padding: SPACING.sm,
   },
-  coverPreview: { width: 72, height: 72, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceElevated },
-  coverPlaceholder: { width: 72, height: 72, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
-  coverTitle: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  coverSub: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  coverPreview: { width: 72, height: 72, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceElevated },
+  coverPlaceholder: { width: 72, height: 72, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
+  coverTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  coverSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
 
   genreWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   genreChip: {
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.full, backgroundColor: COLORS.surfaceLight,
-    borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.full, backgroundColor: colors.surfaceLight,
+    borderWidth: 1, borderColor: colors.border,
   },
-  genreChipActive: { backgroundColor: COLORS.primary + '22', borderColor: COLORS.primary },
-  genreChipText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
-  genreChipTextActive: { color: COLORS.primary },
+  genreChipActive: { backgroundColor: colors.primary + '22', borderColor: colors.primary },
+  genreChipText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  genreChipTextActive: { color: colors.primary },
 
   addSongBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, paddingVertical: SPACING.md,
   },
-  addSongText: { color: COLORS.primary, fontSize: 14, fontWeight: '700' },
+  addSongText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
   songRow: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, padding: SPACING.sm + 2,
   },
-  songRowTitle: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  songRowArtist: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
-  songChange: { paddingHorizontal: SPACING.sm, paddingVertical: 4, borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border },
-  songChangeText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
+  songRowTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  songRowArtist: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  songChange: { paddingHorizontal: SPACING.sm, paddingVertical: 4, borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border },
+  songChangeText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
 
   visibilityRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, padding: SPACING.md,
   },
   visibilityLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
-  visibilityLabel: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
-  visibilitySub: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  visibilityLabel: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  visibilitySub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
 
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  errorText: { color: COLORS.error, fontSize: 13 },
+  errorText: { color: colors.error, fontSize: 13 },
 });

@@ -2,18 +2,19 @@ import {
   View, Text, StyleSheet, SectionList,
   TouchableOpacity, ActivityIndicator, Image, RefreshControl,
 } from 'react-native';
-import { useEffect, useState, useRef, useMemo } from 'react';
-import { useRouter, Stack } from 'expo-router';
-import PagerView from 'react-native-pager-view';
+import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { COLORS, SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { timeAgo } from '../lib/timeAgo';
 import { displayedTier } from '../lib/badges';
 import StoryAvatar from '../components/StoryAvatar';
 import BadgeEmblem from '../components/BadgeEmblem';
 import FollowButton from '../components/FollowButton';
+import SwipeBackPager from '../components/SwipeBackPager';
 
 type Notification = {
   id: string; type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag';
@@ -122,6 +123,8 @@ function bucketFor(iso: string, now: number): string {
 const BUCKET_ORDER = ['Today', 'This Week', 'This Month', 'Earlier'];
 
 export default function NotificationsScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [previews, setPreviews] = useState<Record<string, string>>({});
@@ -134,10 +137,6 @@ export default function NotificationsScreen() {
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
-  // Native-pager dismiss (page 0 = back) so swiping right goes back without the
-  // stack gesture fighting vertical scroll — same as settings / the profile pager.
-  const pagerRef = useRef<PagerView>(null);
-
   useEffect(() => { fetchNotifications(); }, []);
 
   async function fetchNotifications() {
@@ -194,7 +193,16 @@ export default function NotificationsScreen() {
     return BUCKET_ORDER.filter(k => map[k]?.length).map(k => ({ title: k, data: map[k] }));
   }, [notifications]);
 
+  // Clear the unread highlight for specific notifications the moment they're
+  // tapped — purely local (the DB is already marked read on load, so leaving
+  // the page or pull-refreshing resets EVERY row to the regular look).
+  function markReadLocally(ids: string[]) {
+    const set = new Set(ids);
+    setNotifications(prev => prev.map(n => (set.has(n.id) ? { ...n, read: true } : n)));
+  }
+
   function handlePress(notif: Notification) {
+    markReadLocally([notif.id]);
     if (notif.type === 'message') router.push(`/messages/${notif.actor_id}`);
     // A song-in-story notification opens the poster's story (only up for 24h).
     else if (notif.type === 'song_story') router.push(`/story/${notif.actor_id}`);
@@ -203,33 +211,28 @@ export default function NotificationsScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
+    // Same SwipeBackPager root as the loaded tree so the pager instance (and
+    // its slide-in entrance) carries over when the content swaps in.
+    return (
+      <SwipeBackPager>
+        <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>
+      </SwipeBackPager>
+    );
   }
 
   return (
+    // Swipe right anywhere to slide the whole page (header included) off and
+    // reveal the screen underneath — one motion, same feel as the tab pager.
+    <SwipeBackPager>
     <View style={styles.container}>
-      <Stack.Screen options={{ gestureEnabled: false }} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={26} color={COLORS.text} />
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
         <View style={{ width: 42 }} />
       </View>
 
-      <PagerView
-        ref={pagerRef}
-        style={styles.pager}
-        initialPage={1}
-        onPageSelected={(e) => {
-          if (e.nativeEvent.position === 0) {
-            if (router.canGoBack()) router.back();
-            else pagerRef.current?.setPageWithoutAnimation(1);
-          }
-        }}
-      >
-        <View key="dismiss" style={styles.dismissPage} />
-        <View key="content" style={styles.page}>
           <SectionList
             sections={sections}
             keyExtractor={item => item.id}
@@ -238,15 +241,15 @@ export default function NotificationsScreen() {
             stickySectionHeadersEnabled={false}
             showsVerticalScrollIndicator={false}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications(); }} tintColor={COLORS.primary} />
+              <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications(); }} tintColor={colors.primary} />
             }
             renderSectionHeader={({ section }) => (
               <Text style={styles.sectionHeader}>{section.title}</Text>
             )}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <LinearGradient colors={['#1C0A04', COLORS.background]} style={styles.emptyIconWrap}>
-                  <Ionicons name="notifications-outline" size={40} color={COLORS.primary} />
+                <LinearGradient colors={['#1C0A04', colors.background]} style={styles.emptyIconWrap}>
+                  <Ionicons name="notifications-outline" size={40} color={colors.primary} />
                 </LinearGradient>
                 <Text style={styles.emptyTitle}>No notifications yet</Text>
                 <Text style={styles.emptySubtitle}>When someone likes, comments, or follows you — it'll show here</Text>
@@ -266,7 +269,11 @@ export default function NotificationsScreen() {
                 <View>
                   <TouchableOpacity
                     style={[styles.row, !item.read && styles.rowUnread]}
-                    onPress={() => (expandable ? toggleExpand(item.id) : handlePress(item))}
+                    onPress={() => {
+                      // Tapping a row reads it (grouped rows read the whole run).
+                      markReadLocally([item.id, ...children.map((c) => c.id)]);
+                      expandable ? toggleExpand(item.id) : handlePress(item);
+                    }}
                     activeOpacity={0.7}
                   >
                     <View style={styles.avatarWrap}>
@@ -277,7 +284,7 @@ export default function NotificationsScreen() {
                         size={52}
                       />
                       <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
-                        <Ionicons name={icon.name} size={11} color={COLORS.text} />
+                        <Ionicons name={icon.name} size={11} color={colors.text} />
                       </View>
                       {/* Keep the notifications list clean — only diamond status earns
                           an emblem here (respects the user's hide-badge toggle). */}
@@ -298,7 +305,7 @@ export default function NotificationsScreen() {
                       <FollowButton userId={item.actor_id} style={styles.followBtn} />
                     ) : expandable ? (
                       <View style={styles.chevronWrap}>
-                        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color={COLORS.textSecondary} />
+                        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textSecondary} />
                       </View>
                     ) : preview ? (
                       <Image source={{ uri: preview }} style={styles.thumb} />
@@ -318,7 +325,7 @@ export default function NotificationsScreen() {
                               <Image source={{ uri: p }} style={styles.expandThumb} />
                             ) : (
                               <View style={[styles.expandThumb, styles.expandThumbEmpty]}>
-                                <Ionicons name="image-outline" size={18} color={COLORS.textTertiary} />
+                                <Ionicons name="image-outline" size={18} color={colors.textTertiary} />
                               </View>
                             )}
                           </TouchableOpacity>
@@ -330,32 +337,28 @@ export default function NotificationsScreen() {
               );
             }}
           />
-        </View>
-      </PagerView>
     </View>
+    </SwipeBackPager>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
-  pager: { flex: 1 },
-  page: { flex: 1 },
-  dismissPage: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 22, fontWeight: '800', letterSpacing: 0.2 },
+  headerTitle: { color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: 0.2 },
   list: { flex: 1 },
   // flexGrow so the scrollable content fills the screen even with few/no items —
   // makes pull-to-refresh work when dragging anywhere, not just over a row.
   listContent: { flexGrow: 1, paddingHorizontal: SPACING.sm, paddingBottom: SPACING.xl },
 
   sectionHeader: {
-    color: COLORS.textTertiary, fontSize: 12, fontWeight: '700',
+    color: colors.textTertiary, fontSize: 12, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.9,
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.lg, paddingBottom: SPACING.xs,
   },
@@ -365,20 +368,20 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.sm,
     borderRadius: RADIUS.md, gap: SPACING.md,
   },
-  rowUnread: { backgroundColor: COLORS.primary + '12' },
+  rowUnread: { backgroundColor: colors.primary + '12' },
   avatarWrap: { position: 'relative', width: 52, height: 52 },
   iconBadge: {
     position: 'absolute', bottom: -2, right: -2, width: 21, height: 21, borderRadius: 10.5,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: COLORS.background,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.background,
   },
-  notifEmblem: { position: 'absolute', top: -2, right: -2, borderWidth: 1.5, borderColor: COLORS.background },
+  notifEmblem: { position: 'absolute', top: -2, right: -2, borderWidth: 1.5, borderColor: colors.background },
   body: { flex: 1 },
-  text: { color: COLORS.textSecondary, fontSize: 14.5, lineHeight: 20 },
-  name: { color: COLORS.text, fontWeight: '700' },
-  time: { color: COLORS.textTertiary, fontSize: 12, marginTop: 3 },
+  text: { color: colors.textSecondary, fontSize: 14.5, lineHeight: 20 },
+  name: { color: colors.text, fontWeight: '700' },
+  time: { color: colors.textTertiary, fontSize: 12, marginTop: 3 },
 
-  thumb: { width: 46, height: 46, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceLight },
-  unreadDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: COLORS.primary, marginRight: SPACING.xs },
+  thumb: { width: 46, height: 46, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight },
+  unreadDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.primary, marginRight: SPACING.xs },
   // Taller pill with a consistent min width so Follow / Follow back / Following all
   // line up cleanly, and a little right inset so it isn't flush to the edge.
   followBtn: { paddingVertical: 8, minWidth: 100, marginRight: SPACING.xs },
@@ -391,11 +394,11 @@ const styles = StyleSheet.create({
     paddingLeft: 52 + SPACING.md + SPACING.sm, paddingRight: SPACING.sm,
     paddingBottom: SPACING.sm, marginTop: -SPACING.xs,
   },
-  expandThumb: { width: 56, height: 56, borderRadius: RADIUS.sm, backgroundColor: COLORS.surfaceLight },
-  expandThumbEmpty: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
+  expandThumb: { width: 56, height: 56, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight },
+  expandThumbEmpty: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
 
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 2, gap: SPACING.md, paddingHorizontal: SPACING.xl },
   emptyIconWrap: { width: 90, height: 90, borderRadius: RADIUS.xl + 8, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { color: COLORS.text, fontSize: 20, fontWeight: '800' },
-  emptySubtitle: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
+  emptyTitle: { color: colors.text, fontSize: 20, fontWeight: '800' },
+  emptySubtitle: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
 });

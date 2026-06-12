@@ -7,7 +7,8 @@ import { fetchSuggestedAccounts, loadContactHashesIfEnabled, REASON_LABEL, type 
 import { useFollow } from '../contexts/FollowContext';
 import FollowButton from './FollowButton';
 import StoryAvatar from './StoryAvatar';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 // When the user dismisses the rail we stamp the time here; it stays hidden until
 // 24h have elapsed, then resurfaces on the next Explore visit.
@@ -20,6 +21,8 @@ const DISMISS_MS = 24 * 60 * 60 * 1000;
 // it has value.
 export default function SuggestedAccounts({ currentUserId }: { currentUserId: string | null }) {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { following } = useFollow();
   const [items, setItems] = useState<SuggestedAccount[]>([]);
   // `null` while we read storage (avoids a flash), then true/false once known.
@@ -64,7 +67,7 @@ export default function SuggestedAccounts({ currentUserId }: { currentUserId: st
       <View style={styles.titleRow}>
         <Text style={styles.title}>Suggested for you</Text>
         <TouchableOpacity onPress={handleDismiss} style={styles.dismissBtn} hitSlop={10} activeOpacity={0.6}>
-          <Ionicons name="close" size={18} color={COLORS.textSecondary} />
+          <Ionicons name="close" size={18} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
       <FlatList
@@ -94,25 +97,25 @@ export default function SuggestedAccounts({ currentUserId }: { currentUserId: st
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { paddingBottom: SPACING.md, borderBottomWidth: 0.5, borderBottomColor: COLORS.border, marginBottom: SPACING.md },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  wrap: { paddingBottom: SPACING.md, borderBottomWidth: 0.5, borderBottomColor: colors.border, marginBottom: SPACING.md },
   titleRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.xs, marginBottom: SPACING.sm,
   },
-  title: { color: COLORS.text, fontSize: 15, fontWeight: '800' },
+  title: { color: colors.text, fontSize: 15, fontWeight: '800' },
   dismissBtn: {
     width: 24, height: 24, borderRadius: RADIUS.full,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight,
   },
   row: { gap: SPACING.sm, paddingHorizontal: SPACING.xs },
   card: {
     width: 132, padding: SPACING.md, alignItems: 'center', gap: 6,
-    backgroundColor: COLORS.surfaceLight, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border,
   },
   cardText: { alignItems: 'center', gap: 6 },
-  name: { color: COLORS.text, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  reason: { color: COLORS.textSecondary, fontSize: 11, textAlign: 'center', minHeight: 28 },
+  name: { color: colors.text, fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  reason: { color: colors.textSecondary, fontSize: 11, textAlign: 'center', minHeight: 28 },
   // Full-width within the card with tighter side padding so "Follow back" fits on
   // one line (the inline default is content-sized and wraps in the narrow card).
   followBtn: { marginTop: 2, alignSelf: 'stretch', paddingHorizontal: SPACING.sm },

@@ -4,7 +4,8 @@ import { Image as ExpoImage } from 'expo-image';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../constants/theme';
+import { type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 // Shows a video's thumbnail. Uses the stored thumbnail_url when present; otherwise
 // generates one from the (remote) media URL in the background, falling back to a
@@ -14,6 +15,8 @@ export default function VideoThumb({ thumbnailUrl, mediaUrl, style }: {
   mediaUrl: string;
   style?: any;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [uri, setUri] = useState<string | null>(thumbnailUrl || null);
 
   useEffect(() => {
@@ -34,11 +37,11 @@ export default function VideoThumb({ thumbnailUrl, mediaUrl, style }: {
   if (uri) return <ExpoImage source={{ uri }} style={style} contentFit="cover" />;
   return (
     <LinearGradient colors={['#1C0E06', '#120A04']} style={[style, styles.fallback]}>
-      <Ionicons name="videocam" size={24} color={COLORS.primary} />
+      <Ionicons name="videocam" size={24} color={colors.primary} />
     </LinearGradient>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   fallback: { alignItems: 'center', justifyContent: 'center' },
 });

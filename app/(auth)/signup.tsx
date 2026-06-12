@@ -7,11 +7,14 @@ import { Link } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 
 type Field = { icon: any; placeholder: string; value: string; onChange: (v: string) => void; secure?: boolean; keyboard?: any; capitalize?: any; maxLength?: number };
 
 export default function SignupScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -52,7 +55,7 @@ export default function SignupScreen() {
 
         <View style={styles.logoSection}>
           <LinearGradient colors={GRADIENTS.primary} style={styles.logoMark}>
-            <Ionicons name="musical-notes" size={32} color={COLORS.text} />
+            <Ionicons name="musical-notes" size={32} color={colors.text} />
           </LinearGradient>
           <Text style={styles.logo}>Laybell</Text>
           <Text style={styles.tagline}>Join the movement.</Text>
@@ -61,18 +64,18 @@ export default function SignupScreen() {
         <View style={styles.form}>
           {!!error && (
             <View style={styles.errorRow}>
-              <Ionicons name="alert-circle-outline" size={15} color={COLORS.error} />
+              <Ionicons name="alert-circle-outline" size={15} color={colors.error} />
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
 
           {fields.map((f, i) => (
             <View key={i} style={styles.inputWrap}>
-              <Ionicons name={f.icon} size={18} color={COLORS.textTertiary} style={styles.inputIcon} />
+              <Ionicons name={f.icon} size={18} color={colors.textTertiary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder={f.placeholder}
-                placeholderTextColor={COLORS.textTertiary}
+                placeholderTextColor={colors.textTertiary}
                 value={f.value}
                 onChangeText={f.onChange}
                 secureTextEntry={f.secure && !showPass}
@@ -82,7 +85,7 @@ export default function SignupScreen() {
               />
               {f.secure && (
                 <TouchableOpacity onPress={() => setShowPass(p => !p)}>
-                  <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={18} color={COLORS.textTertiary} />
+                  <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textTertiary} />
                 </TouchableOpacity>
               )}
             </View>
@@ -93,7 +96,7 @@ export default function SignupScreen() {
             onPress={handleSignup}
             disabled={loading}
           >
-            {loading ? <ActivityIndicator color={COLORS.text} /> : <Text style={styles.buttonText}>Create Account</Text>}
+            {loading ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>Create Account</Text>}
           </TouchableOpacity>
         </View>
 
@@ -108,32 +111,32 @@ export default function SignupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg, paddingVertical: SPACING.xxl },
 
   logoSection: { alignItems: 'center', marginBottom: SPACING.xl, gap: SPACING.sm },
   logoMark: { width: 72, height: 72, borderRadius: RADIUS.xl, alignItems: 'center', justifyContent: 'center' },
-  logo: { fontSize: 36, fontWeight: '800', color: COLORS.text, letterSpacing: 1 },
-  tagline: { fontSize: 14, color: COLORS.textSecondary },
+  logo: { fontSize: 36, fontWeight: '800', color: colors.text, letterSpacing: 1 },
+  tagline: { fontSize: 14, color: colors.textSecondary },
 
   form: { gap: SPACING.md },
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.error + '18', borderRadius: RADIUS.md, padding: SPACING.sm + 2 },
-  errorText: { color: COLORS.error, fontSize: 13, flex: 1 },
+  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.error + '18', borderRadius: RADIUS.md, padding: SPACING.sm + 2 },
+  errorText: { color: colors.error, fontSize: 13, flex: 1 },
 
   inputWrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, gap: SPACING.sm,
   },
   inputIcon: { flexShrink: 0 },
-  input: { flex: 1, paddingVertical: SPACING.md, color: COLORS.text, fontSize: 15 },
+  input: { flex: 1, paddingVertical: SPACING.md, color: colors.text, fontSize: 15 },
 
-  button: { backgroundColor: COLORS.primary, borderRadius: RADIUS.md, paddingVertical: SPACING.md + 2, alignItems: 'center', marginTop: SPACING.sm },
+  button: { backgroundColor: colors.primary, borderRadius: RADIUS.md, paddingVertical: SPACING.md + 2, alignItems: 'center', marginTop: SPACING.sm },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+  buttonText: { color: colors.text, fontSize: 16, fontWeight: '700' },
 
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: SPACING.xl },
-  footerText: { color: COLORS.textSecondary, fontSize: 14 },
-  linkText: { color: COLORS.primary, fontSize: 14, fontWeight: '700' },
+  footerText: { color: colors.textSecondary, fontSize: 14 },
+  linkText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
 });

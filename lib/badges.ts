@@ -16,7 +16,7 @@ import { COLORS, GRADIENTS } from '../constants/theme';
 
 export type Tier = 'bronze' | 'silver' | 'gold' | 'diamond';
 export type BadgeCategory =
-  | 'login' | 'daily_like' | 'posts' | 'music_streaming' | 'comments'
+  | 'login' | 'daily_like' | 'posts' | 'music_streaming' | 'comments' | 'curator'
   | 'community' | 'ads' | 'app_sharing';
 
 export type BadgeDef = {
@@ -74,6 +74,13 @@ export const BADGES: BadgeDef[] = [
   { key: 'comments_bronze', category: 'comments', tier: 'bronze', title: 'Bronze Voice', criteria: 'Leave a comment today',     permanent: false, locked: false },
   { key: 'comments_silver', category: 'comments', tier: 'silver', title: 'Silver Voice', criteria: 'Leave 2+ comments today',   permanent: false, locked: false },
 
+  // Curator (total listens by OTHERS across the user's public playlists — live
+  // count, so deleting a popular playlist can drop the badge back down)
+  { key: 'curator_bronze',  category: 'curator', tier: 'bronze',  title: 'Bronze Curator',  criteria: 'Get 100 listens on your public playlists',    permanent: false, locked: false },
+  { key: 'curator_silver',  category: 'curator', tier: 'silver',  title: 'Silver Curator',  criteria: 'Get 500 listens on your public playlists',    permanent: false, locked: false },
+  { key: 'curator_gold',    category: 'curator', tier: 'gold',    title: 'Gold Curator',    criteria: 'Get 2,500 listens on your public playlists',  permanent: false, locked: false },
+  { key: 'curator_diamond', category: 'curator', tier: 'diamond', title: 'Diamond Curator', criteria: 'Get 10,000 listens on your public playlists', permanent: true,  locked: false },
+
   // ── Locked stubs (no underlying system yet) ──
   { key: 'community_bronze', category: 'community', tier: 'bronze', title: 'Bronze Member',  criteria: 'Join a community',                       permanent: false, locked: true },
   { key: 'community_silver', category: 'community', tier: 'silver', title: 'Silver Member',  criteria: 'Stay in good standing for a week',        permanent: false, locked: true },
@@ -94,6 +101,7 @@ export const CATEGORY_META: Record<BadgeCategory, { label: string; icon: string 
   posts:           { label: 'Posts',            icon: 'images-outline' },
   music_streaming: { label: 'Music Streaming',  icon: 'musical-notes-outline' },
   comments:        { label: 'Comments',         icon: 'chatbubble-outline' },
+  curator:         { label: 'Playlists',        icon: 'albums-outline' },
   community:       { label: 'Community',         icon: 'people-outline' },
   ads:             { label: 'Ads',              icon: 'megaphone-outline' },
   app_sharing:     { label: 'App Sharing',      icon: 'share-social-outline' },
@@ -101,7 +109,7 @@ export const CATEGORY_META: Record<BadgeCategory, { label: string; icon: string 
 
 // Order the Badges page lists categories in.
 export const CATEGORY_ORDER: BadgeCategory[] = [
-  'login', 'daily_like', 'posts', 'music_streaming', 'comments', 'community', 'ads', 'app_sharing',
+  'login', 'daily_like', 'posts', 'music_streaming', 'comments', 'curator', 'community', 'ads', 'app_sharing',
 ];
 
 // ─── Colors / emblem ──────────────────────────────────────────────────────────
@@ -185,6 +193,14 @@ export function rawTier(profile: ProfileBadgeFields | null | undefined): Tier | 
   return asTier(profile?.badge_tier);
 }
 
+// How many PUBLIC playlists each earned tier may have at once (checked at
+// creation time; deleting one frees the slot). No badge → none. Private
+// playlists are unlimited for everyone.
+export const PUBLIC_PLAYLIST_LIMIT: Record<Tier, number> = { bronze: 1, silver: 2, gold: 3, diamond: 6 };
+export function publicPlaylistLimit(tier: Tier | null): number {
+  return tier ? PUBLIC_PLAYLIST_LIMIT[tier] : 0;
+}
+
 // The tier the user has CHOSEN to present. Their profile theme doubles as the
 // badge they display: a tier-specific theme shows that tier (so a higher-tier user
 // can deliberately display a lower badge), while Default shows NO badge at all
@@ -236,15 +252,13 @@ export function isUnlocked(minTier: Tier | null, emblemTier: Tier | null): boole
   return tierRank(emblemTier) >= tierRank(minTier);
 }
 
-const DEFAULT_BANNER: readonly [string, string, ...string[]] = ['#1C0A04', COLORS.background];
-
-// Banner colors for a profile, honoring the owner's chosen theme but only if
-// their current tier still unlocks it (else default). Visitors pass the owner's
-// tier so they see the owner's unlocked choice.
-export function resolveBannerColors(profile: ProfileBadgeFields | null | undefined, emblemTier: Tier | null): readonly [string, string, ...string[]] {
-  const opt = THEME_OPTIONS.find(o => o.key === profile?.profile_theme);
-  if (!opt || !isUnlocked(opt.minTier, emblemTier)) return DEFAULT_BANNER;
-  return opt.banner;
+// Profile banner: fades from the user's DISPLAYED badge color into the active
+// theme background (so it reads as "badge color → white" on Light, "→ black" on
+// Dark, etc.). No displayed badge → a flat themed background. `displayTier` is the
+// chosen/displayed tier; `background` is the current theme's background color.
+export function resolveBannerColors(displayTier: Tier | null, background: string): readonly [string, string] {
+  if (!displayTier) return [background, background];
+  return [badgeRingColors(displayTier)[0], background];
 }
 
 // Ring colors for a profile. The ring style is derived from the chosen profile
@@ -264,7 +278,7 @@ export function resolveRingColors(
 
 // ─── State + evaluation ───────────────────────────────────────────────────────
 export type DailyRow = { day: string; likes: number; comments: number; music_seconds: number; posts_created: number };
-export type BadgeState = { today: string; daily: DailyRow[]; public_posts: number };
+export type BadgeState = { today: string; daily: DailyRow[]; public_posts: number; playlist_listens: number };
 
 // Add `delta` UTC days to a 'YYYY-MM-DD' string. Pure UTC math anchored to the
 // server-provided day — never the device clock — so timezones can't shift "today".
@@ -325,6 +339,13 @@ export function qualifyingTiers(state: BadgeState): CategoryTiers {
   if (cm >= 2) out.comments = 'silver';
   else if (cm >= 1) out.comments = 'bronze';
 
+  // curator — total listens by others across the user's public playlists
+  const pl = state.playlist_listens;
+  if (pl >= 10000) out.curator = 'diamond';
+  else if (pl >= 2500) out.curator = 'gold';
+  else if (pl >= 500) out.curator = 'silver';
+  else if (pl >= 100) out.curator = 'bronze';
+
   return out;
 }
 
@@ -337,6 +358,7 @@ export type BadgeMetrics = {
   todayComments: number;
   musicMinutesToday: number;
   publicPosts: number;
+  playlistListens: number;
 };
 export function computeMetrics(state: BadgeState): BadgeMetrics {
   const byDay = new Map(state.daily.map(r => [r.day, r]));
@@ -349,18 +371,35 @@ export function computeMetrics(state: BadgeState): BadgeMetrics {
     todayComments: todayRow?.comments ?? 0,
     musicMinutesToday: Math.floor((todayRow?.music_seconds ?? 0) / 60),
     publicPosts: state.public_posts,
+    playlistListens: state.playlist_listens,
   };
 }
 
 export async function fetchBadgeState(): Promise<BadgeState | null> {
   try {
-    const { data, error } = await supabase.rpc('get_badge_state');
-    if (error || !data) return null;
-    const d: any = data;
+    // Playlist listens are summed client-side from playlists.play_count (added
+    // by public_playlists.sql) rather than baked into get_badge_state — if that
+    // migration isn't applied yet the select fails and the count is just 0.
+    const [stateRes, playsRes] = await Promise.all([
+      supabase.rpc('get_badge_state'),
+      (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return 0;
+          const { data, error } = await supabase
+            .from('playlists').select('play_count').eq('user_id', user.id).eq('is_public', true);
+          if (error || !data) return 0;
+          return data.reduce((sum, r: any) => sum + (r.play_count ?? 0), 0);
+        } catch { return 0; }
+      })(),
+    ]);
+    if (stateRes.error || !stateRes.data) return null;
+    const d: any = stateRes.data;
     return {
       today: d.today,
       daily: Array.isArray(d.daily) ? d.daily : [],
       public_posts: d.public_posts ?? 0,
+      playlist_listens: playsRes,
     };
   } catch {
     return null;

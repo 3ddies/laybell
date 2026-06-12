@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, PanResponder, Dimensions, Image } from 'react-n
 import { Image as ExpoImage } from 'expo-image';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -26,6 +27,8 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
   frameH: number;
   onChange: (start: number) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const win = Math.min(windowSec, duration);
   const trackW = SCREEN_W - SPACING.md * 2;
   const winW = Math.max(40, (win / duration) * trackW);
@@ -81,8 +84,8 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
         <View style={[styles.dim, { left: 0, width: startX }]} pointerEvents="none" />
         <View style={[styles.dim, { left: startX + winW, right: 0 }]} pointerEvents="none" />
         <View style={[styles.window, { width: winW, left: startX }]} {...pan.panHandlers}>
-          <View style={styles.handle}><Ionicons name="chevron-back" size={14} color={COLORS.text} /></View>
-          <View style={styles.handle}><Ionicons name="chevron-forward" size={14} color={COLORS.text} /></View>
+          <View style={styles.handle}><Ionicons name="chevron-back" size={14} color={colors.text} /></View>
+          <View style={styles.handle}><Ionicons name="chevron-forward" size={14} color={colors.text} /></View>
         </View>
       </View>
 
@@ -92,20 +95,20 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   wrap: { alignItems: 'center', gap: SPACING.sm },
   previewBox: { backgroundColor: '#000', borderRadius: RADIUS.md, overflow: 'hidden', alignSelf: 'center', alignItems: 'center', justifyContent: 'center' },
   track: {
     height: 52, borderRadius: RADIUS.sm, overflow: 'hidden', justifyContent: 'center',
-    marginTop: SPACING.sm, backgroundColor: COLORS.surfaceElevated, width: '100%',
+    marginTop: SPACING.sm, backgroundColor: colors.surfaceElevated, width: '100%',
   },
   dim: { position: 'absolute', top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)' },
   window: {
     position: 'absolute', top: 0, bottom: 0,
-    borderRadius: RADIUS.sm, borderWidth: 2, borderColor: COLORS.primary,
+    borderRadius: RADIUS.sm, borderWidth: 2, borderColor: colors.primary,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  handle: { width: 18, height: '100%', backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  label: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
-  hint: { color: COLORS.textTertiary, fontSize: 12 },
+  handle: { width: 18, height: '100%', backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  label: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  hint: { color: colors.textTertiary, fontSize: 12 },
 });

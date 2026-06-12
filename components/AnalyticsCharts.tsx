@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { formatCount } from '../lib/format';
 
 type Datum = { label: string; value: number };
@@ -11,6 +12,8 @@ export function BarChart({
   data, height = 132, accent = true,
 }: { data: Datum[]; height?: number; accent?: boolean }) {
   const max = Math.max(1, ...data.map((d) => d.value));
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const peakIdx = data.reduce((mi, d, i) => (d.value > data[mi].value ? i : mi), 0);
   const labelStep = Math.ceil(data.length / 8); // show ~8 labels max
 
@@ -47,6 +50,8 @@ export function BarChart({
 export function HBars({
   data, accentTop = false,
 }: { data: { label: string; value: number; caption?: string }[]; accentTop?: boolean }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const max = Math.max(1, ...data.map((d) => d.value));
   return (
     <View style={{ gap: SPACING.md }}>
@@ -60,7 +65,7 @@ export function HBars({
             {accentTop && i === 0 ? (
               <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.hbarFill, { width: `${(d.value / max) * 100}%` }]} />
             ) : (
-              <View style={[styles.hbarFill, { width: `${(d.value / max) * 100}%`, backgroundColor: COLORS.primary + (i === 0 ? 'FF' : '88') }]} />
+              <View style={[styles.hbarFill, { width: `${(d.value / max) * 100}%`, backgroundColor: colors.primary + (i === 0 ? 'FF' : '88') }]} />
             )}
           </View>
         </View>
@@ -69,22 +74,22 @@ export function HBars({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   barsRow: { flexDirection: 'row', alignItems: 'flex-end' },
   barCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
   bar: { width: '74%', minWidth: 3, borderRadius: 4 },
-  barPeak: { backgroundColor: COLORS.primary },
-  barDim: { backgroundColor: COLORS.primary + '4D' },
-  peakValue: { color: COLORS.primaryLight, fontSize: 10, fontWeight: '800', marginBottom: 3 },
+  barPeak: { backgroundColor: colors.primary },
+  barDim: { backgroundColor: colors.primary + '4D' },
+  peakValue: { color: colors.primaryLight, fontSize: 10, fontWeight: '800', marginBottom: 3 },
   labelsRow: { flexDirection: 'row', marginTop: 6 },
-  barLabel: { flex: 1, textAlign: 'center', color: COLORS.textTertiary, fontSize: 9 },
+  barLabel: { flex: 1, textAlign: 'center', color: colors.textTertiary, fontSize: 9 },
 
   emptyChart: { alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: COLORS.textTertiary, fontSize: 13 },
+  emptyText: { color: colors.textTertiary, fontSize: 13 },
 
   hbarHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
-  hbarLabel: { color: COLORS.text, fontSize: 13, fontWeight: '600', flex: 1 },
-  hbarCaption: { color: COLORS.textSecondary, fontSize: 12, marginLeft: SPACING.sm },
-  hbarTrack: { height: 9, borderRadius: RADIUS.full, backgroundColor: COLORS.surfaceElevated, overflow: 'hidden' },
+  hbarLabel: { color: colors.text, fontSize: 13, fontWeight: '600', flex: 1 },
+  hbarCaption: { color: colors.textSecondary, fontSize: 12, marginLeft: SPACING.sm },
+  hbarTrack: { height: 9, borderRadius: RADIUS.full, backgroundColor: colors.surfaceElevated, overflow: 'hidden' },
   hbarFill: { height: '100%', borderRadius: RADIUS.full },
 });

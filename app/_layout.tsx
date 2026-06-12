@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Stack, useSegments, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { View, Platform } from 'react-native';
+import { FullWindowOverlay } from 'react-native-screens';
 import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
@@ -9,6 +10,7 @@ import { AudioProvider } from '../contexts/AudioContext';
 import { PostMusicProvider } from '../contexts/PostMusicContext';
 import { PostOptionsProvider } from '../contexts/PostOptionsContext';
 import { ProfileProvider } from '../contexts/ProfileContext';
+import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
 import { ShareProvider } from '../contexts/ShareContext';
 import { FollowProvider } from '../contexts/FollowContext';
 import { StoriesProvider } from '../contexts/StoriesContext';
@@ -19,16 +21,29 @@ import { useNotifications } from '../hooks/useNotifications';
 
 function AppContent() {
   useNotifications();
+  const { colors } = useTheme();
+  const segments = useSegments();
+  // Full-screen media viewers stay immersive — no floating mini player there.
+  const immersive = segments[0] === 'story' || segments[0] === 'post' || segments[0] === 'reel';
+
+  const overlays = (
+    <>
+      {!immersive && <MiniPlayer />}
+      <NowPlaying />
+      <BadgeUpgradeToast />
+    </>
+  );
+
   return (
     <PostOptionsProvider>
-      <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
         <Stack
         screenOptions={{
           headerShown: false,
           gestureEnabled: true,
           fullScreenGestureEnabled: true,  // swipe to go back from anywhere, not just the edge
           animation: 'slide_from_right',   // previous screen sits behind during the transition
-          contentStyle: { backgroundColor: COLORS.background },
+          contentStyle: { backgroundColor: colors.background },
         }}
       >
         {/* The story viewer expands out of the tapped ring (Instagram shared-element
@@ -63,10 +78,31 @@ function AppContent() {
             contentStyle: { backgroundColor: 'transparent' },
           }}
         />
+        {/* One-motion swipe-back screens: each renders inside a SwipeBackPager,
+            so they're transparent modals — the screen you came from stays mounted
+            underneath and is revealed live as you drag the page off (same feel as
+            the tab pager). The pager drives the slide-in AND the slide-out, so
+            the route itself must not animate (iOS ignores slide_from_right on
+            modal presentations and would slide up from the bottom instead). The
+            stack's own back gesture stays off — the pager owns the swipe. */}
+        {['messages/index', 'notifications', 'settings', 'analytics', 'badges', 'permissions', 'playlists', 'playlist/[id]'].map((name) => (
+          <Stack.Screen
+            key={name}
+            name={name}
+            options={{
+              presentation: 'transparentModal',
+              animation: 'none',
+              gestureEnabled: false,
+              contentStyle: { backgroundColor: 'transparent' },
+            }}
+          />
+        ))}
       </Stack>
-        <MiniPlayer />
-        <NowPlaying />
-        <BadgeUpgradeToast />
+        {/* iOS presents our swipe-back screens as NATIVE modals, which sit
+            above the RN root view — so the global player chrome must live in
+            a FullWindowOverlay to stay on top everywhere (playlist viewer,
+            settings, messages, …). Android keeps plain sibling rendering. */}
+        {Platform.OS === 'ios' ? <FullWindowOverlay>{overlays}</FullWindowOverlay> : overlays}
       </View>
     </PostOptionsProvider>
   );
@@ -125,6 +161,7 @@ export default function RootLayout() {
   }
 
   return (
+    <ThemeProvider>
     <AudioProvider>
       <PostMusicProvider>
         <ProfileProvider>
@@ -139,5 +176,6 @@ export default function RootLayout() {
         </ProfileProvider>
       </PostMusicProvider>
     </AudioProvider>
+    </ThemeProvider>
   );
 }

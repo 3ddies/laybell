@@ -6,12 +6,15 @@ import { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { GENRES } from '../../lib/genres';
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import MentionSuggestions from '../../components/MentionSuggestions';
 
 export default function EditPostScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
@@ -61,7 +64,7 @@ export default function EditPostScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={COLORS.primary} size="large" /></View>;
+    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
   }
 
   return (
@@ -69,12 +72,12 @@ export default function EditPostScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="close" size={24} color={COLORS.textSecondary} />
+          <Ionicons name="close" size={24} color={colors.textSecondary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit post</Text>
         <TouchableOpacity style={styles.saveBtn} onPress={save} disabled={saving}>
           {saving
-            ? <ActivityIndicator color={COLORS.text} size="small" />
+            ? <ActivityIndicator color={colors.text} size="small" />
             : <Text style={styles.saveBtnText}>Save</Text>}
         </TouchableOpacity>
       </View>
@@ -87,7 +90,7 @@ export default function EditPostScreen() {
           value={caption}
           onChangeText={setCaption}
           placeholder="Write a caption…"
-          placeholderTextColor={COLORS.textTertiary}
+          placeholderTextColor={colors.textTertiary}
           multiline
           maxLength={500}
         />
@@ -111,7 +114,7 @@ export default function EditPostScreen() {
                 style={[styles.choice, on && styles.choiceActive]}
                 onPress={() => setIsPublic(val)}
               >
-                <Ionicons name={icon as any} size={15} color={on ? COLORS.text : COLORS.textSecondary} />
+                <Ionicons name={icon as any} size={15} color={on ? colors.text : colors.textSecondary} />
                 <Text style={[styles.choiceText, on && styles.choiceTextActive]}>{label}</Text>
               </TouchableOpacity>
             );
@@ -143,26 +146,26 @@ export default function EditPostScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { padding: SPACING.sm, width: 60 },
-  headerTitle: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
+  headerTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
   saveBtn: {
     width: 60, alignItems: 'flex-end', paddingHorizontal: SPACING.sm, paddingVertical: SPACING.xs,
   },
-  saveBtnText: { color: COLORS.primary, fontSize: 16, fontWeight: '700' },
+  saveBtnText: { color: colors.primary, fontSize: 16, fontWeight: '700' },
 
   content: { padding: SPACING.md, gap: SPACING.sm, paddingBottom: SPACING.xxl },
-  label: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '700', marginTop: SPACING.md },
+  label: { color: colors.textSecondary, fontSize: 13, fontWeight: '700', marginTop: SPACING.md },
   captionInput: {
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.md, padding: SPACING.md, color: COLORS.text, fontSize: 15,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    borderRadius: RADIUS.md, padding: SPACING.md, color: colors.text, fontSize: 15,
     minHeight: 90, textAlignVertical: 'top',
   },
 
@@ -170,18 +173,18 @@ const styles = StyleSheet.create({
   choice: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     paddingVertical: SPACING.sm + 2, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceLight,
   },
-  choiceActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  choiceText: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600' },
-  choiceTextActive: { color: COLORS.text, fontWeight: '700' },
+  choiceActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  choiceText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  choiceTextActive: { color: colors.text, fontWeight: '700' },
 
   pillsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   pill: {
     paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border,
   },
-  pillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  pillText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
-  pillTextActive: { color: COLORS.text, fontWeight: '700' },
+  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pillText: { color: colors.textSecondary, fontSize: 13, fontWeight: '500' },
+  pillTextActive: { color: colors.text, fontWeight: '700' },
 });

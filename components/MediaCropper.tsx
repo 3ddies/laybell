@@ -1,7 +1,8 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import { View, Animated, PanResponder, StyleSheet } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
-import { COLORS } from '../constants/theme';
+import { type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 export type CropRect = { originX: number; originY: number; width: number; height: number };
 export type MediaCropperHandle = { getCrop: () => CropRect | null };
@@ -22,6 +23,8 @@ type Props = {
 const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper(
   { uri, mediaWidth, mediaHeight, frameW, frameH, type, maxScale = 6 }, ref,
 ) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const safeW = mediaWidth || frameW;
   const safeH = mediaHeight || frameH;
   const baseScale = Math.max(frameW / safeW, frameH / safeH); // cover
@@ -137,6 +140,6 @@ const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper
 
 export default MediaCropper;
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   frame: { overflow: 'hidden', backgroundColor: '#000', alignSelf: 'center' },
 });

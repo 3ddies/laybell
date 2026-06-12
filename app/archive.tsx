@@ -11,11 +11,14 @@ import { restorePostById, deletePostById } from '../lib/postActions';
 import { fetchArchivedStories, restoreStory, deleteStory, type Story } from '../lib/stories';
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 type Tab = 'posts' | 'stories';
 
 export default function ArchiveScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('posts');
   const [posts, setPosts] = useState<any[]>([]);
@@ -104,7 +107,7 @@ export default function ArchiveScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Archive</Text>
         <View style={{ width: 40 }} />
@@ -121,7 +124,7 @@ export default function ArchiveScreen() {
             <Ionicons
               name={t === 'posts' ? 'grid-outline' : 'aperture-outline'}
               size={15}
-              color={tab === t ? COLORS.text : COLORS.textSecondary}
+              color={tab === t ? colors.text : colors.textSecondary}
             />
             <Text style={[styles.segmentText, tab === t && styles.segmentTextActive]}>
               {t === 'posts' ? 'Posts' : 'Stories'}
@@ -131,13 +134,13 @@ export default function ArchiveScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={COLORS.primary} /></View>
+        <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={COLORS.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
           }
         >
           <Text style={styles.hint}>
@@ -151,7 +154,7 @@ export default function ArchiveScreen() {
               <Ionicons
                 name={tab === 'posts' ? 'archive-outline' : 'aperture-outline'}
                 size={44}
-                color={COLORS.textTertiary}
+                color={colors.textTertiary}
               />
               <Text style={styles.emptyTitle}>
                 {tab === 'posts' ? 'No archived posts' : 'No archived stories'}
@@ -172,13 +175,13 @@ export default function ArchiveScreen() {
                         <Image source={{ uri: post.cover_url }} style={styles.cellMedia} resizeMode="cover" />
                       ) : (
                         <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.cellPlaceholder}>
-                          <Ionicons name={isAudioPost(post.type) ? 'musical-notes' : 'videocam'} size={26} color={COLORS.primary} />
+                          <Ionicons name={isAudioPost(post.type) ? 'musical-notes' : 'videocam'} size={26} color={colors.primary} />
                         </LinearGradient>
                       )}
                       <View style={styles.typeBadge}>
                         <Ionicons
                           name={post.type === 'slideshow' ? 'copy' : post.type === 'video' ? 'videocam' : isAudioPost(post.type) ? 'musical-notes' : 'image'}
-                          size={11} color={COLORS.text}
+                          size={11} color={colors.text}
                         />
                       </View>
                     </TouchableOpacity>
@@ -191,7 +194,7 @@ export default function ArchiveScreen() {
                         <Image source={{ uri: story.thumbnail_url ?? story.media_url }} style={styles.cellMedia} resizeMode="cover" />
                       )}
                       {story.media_type === 'video' && (
-                        <View style={styles.typeBadge}><Ionicons name="play" size={11} color={COLORS.text} /></View>
+                        <View style={styles.typeBadge}><Ionicons name="play" size={11} color={colors.text} /></View>
                       )}
                     </TouchableOpacity>
                   ))}
@@ -203,18 +206,18 @@ export default function ArchiveScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm,
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { padding: SPACING.sm },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
 
   segments: {
     flexDirection: 'row', gap: SPACING.sm,
@@ -223,15 +226,15 @@ const styles = StyleSheet.create({
   segment: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     paddingVertical: SPACING.sm, borderRadius: RADIUS.full,
-    borderWidth: 1, borderColor: COLORS.border,
+    borderWidth: 1, borderColor: colors.border,
   },
-  segmentActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  segmentText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
-  segmentTextActive: { color: COLORS.text, fontWeight: '700' },
+  segmentActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  segmentText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  segmentTextActive: { color: colors.text, fontWeight: '700' },
 
   scroll: { paddingBottom: SPACING.xxl, flexGrow: 1 },
   hint: {
-    color: COLORS.textSecondary, fontSize: 12, lineHeight: 18,
+    color: colors.textSecondary, fontSize: 12, lineHeight: 18,
     paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm,
   },
 
@@ -240,7 +243,7 @@ const styles = StyleSheet.create({
   cellMedia: { width: '100%', height: '100%' },
   cellPlaceholder: {
     width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 0.5, borderColor: COLORS.border,
+    borderWidth: 0.5, borderColor: colors.border,
   },
   typeBadge: {
     position: 'absolute', top: 6, right: 6,
@@ -249,5 +252,5 @@ const styles = StyleSheet.create({
   },
 
   empty: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm },
-  emptyTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+  emptyTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
 });

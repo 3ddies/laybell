@@ -5,7 +5,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { isAudioPost } from '../lib/genres';
 import { bumpBadge } from '../lib/badges';
 import { createNotification } from '../lib/createNotification';
@@ -30,6 +31,8 @@ const cache = new Map<string, SharedPost | null>();
 // Instagram-style "shell" of a shared post, rendered inside a chat bubble.
 // Tapping it opens the full post.
 export default function SharedPostCard({ postId }: { postId: string }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const [post, setPost] = useState<SharedPost | null | undefined>(
     cache.has(postId) ? cache.get(postId) : undefined,
@@ -89,12 +92,12 @@ export default function SharedPostCard({ postId }: { postId: string }) {
   }
 
   if (post === undefined) {
-    return <View style={[styles.card, styles.stateCard]}><ActivityIndicator color={COLORS.primary} /></View>;
+    return <View style={[styles.card, styles.stateCard]}><ActivityIndicator color={colors.primary} /></View>;
   }
   if (post === null) {
     return (
       <View style={[styles.card, styles.stateCard]}>
-        <Ionicons name="alert-circle-outline" size={22} color={COLORS.textTertiary} />
+        <Ionicons name="alert-circle-outline" size={22} color={colors.textTertiary} />
         <Text style={styles.unavailable}>Post unavailable</Text>
       </View>
     );
@@ -138,7 +141,7 @@ export default function SharedPostCard({ postId }: { postId: string }) {
           {/* Like the post directly from the thread — centered on the caption bar. */}
           <TouchableOpacity style={styles.likeBtn} activeOpacity={0.8} hitSlop={8} onPress={toggleLike}>
             <Animated.View style={{ transform: [{ scale: heartScale }] }}>
-              <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? COLORS.like : COLORS.textSecondary} />
+              <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? colors.like : colors.textSecondary} />
             </Animated.View>
           </TouchableOpacity>
         </View>
@@ -149,7 +152,7 @@ export default function SharedPostCard({ postId }: { postId: string }) {
 
 const CARD_W = 232;
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Outer wrapper carries the drop shadow (can't combine with overflow:hidden).
   cardShadow: {
     width: CARD_W,
@@ -161,14 +164,14 @@ const styles = StyleSheet.create({
     width: CARD_W,
     borderRadius: RADIUS.lg,
     overflow: 'hidden',
-    backgroundColor: COLORS.surfaceElevated,
+    backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
   stateCard: { height: 96, alignItems: 'center', justifyContent: 'center', gap: SPACING.xs },
-  unavailable: { color: COLORS.textTertiary, fontSize: 13 },
+  unavailable: { color: colors.textTertiary, fontSize: 13 },
 
-  media: { width: '100%', height: 154, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight },
+  media: { width: '100%', height: 154, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight },
   mediaInner: { ...StyleSheet.absoluteFillObject, width: undefined, height: undefined },
   playBadge: {
     width: 46, height: 46, borderRadius: 23,
@@ -179,14 +182,14 @@ const styles = StyleSheet.create({
   body: { flexDirection: 'row', alignItems: 'center', padding: SPACING.sm + 2, gap: SPACING.sm },
   bodyText: { flex: 1, gap: 4 },
   authorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  authorAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: COLORS.surfaceLight },
-  authorName: { flexShrink: 1, color: COLORS.text, fontSize: 12.5, fontWeight: '700' },
-  caption: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 18 },
+  authorAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.surfaceLight },
+  authorName: { flexShrink: 1, color: colors.text, fontSize: 12.5, fontWeight: '700' },
+  caption: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
 
   likeBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: COLORS.surfaceLight,
-    borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
 });

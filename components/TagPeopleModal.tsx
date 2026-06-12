@@ -5,7 +5,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 export type TaggedPerson = { id: string; username: string; display_name: string; avatar_url: string | null };
 
@@ -20,6 +21,8 @@ export default function TagPeopleModal({
   onClose: () => void;
   onDone: (people: TaggedPerson[]) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TaggedPerson[]>([]);
   const [selected, setSelected] = useState<TaggedPerson[]>(initial);
@@ -73,18 +76,18 @@ export default function TagPeopleModal({
               {selected.map((p) => (
                 <TouchableOpacity key={p.id} style={styles.chip} onPress={() => toggle(p)}>
                   <Text style={styles.chipText}>@{p.username}</Text>
-                  <Ionicons name="close" size={13} color={COLORS.text} />
+                  <Ionicons name="close" size={13} color={colors.text} />
                 </TouchableOpacity>
               ))}
             </View>
           )}
 
           <View style={styles.searchBar}>
-            <Ionicons name="search" size={16} color={COLORS.textTertiary} />
+            <Ionicons name="search" size={16} color={colors.textTertiary} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search accounts"
-              placeholderTextColor={COLORS.textTertiary}
+              placeholderTextColor={colors.textTertiary}
               value={query}
               onChangeText={setQuery}
               autoCapitalize="none"
@@ -99,7 +102,7 @@ export default function TagPeopleModal({
             contentContainerStyle={{ paddingBottom: SPACING.xl }}
             ListEmptyComponent={
               loading
-                ? <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.lg }} />
+                ? <ActivityIndicator color={colors.primary} style={{ marginTop: SPACING.lg }} />
                 : (query.trim() ? <Text style={styles.empty}>No accounts found</Text> : null)
             }
             renderItem={({ item }) => {
@@ -118,7 +121,7 @@ export default function TagPeopleModal({
                     <Text style={styles.username}>@{item.username}</Text>
                     {!!item.display_name && <Text style={styles.name}>{item.display_name}</Text>}
                   </View>
-                  <Ionicons name={on ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={on ? COLORS.primary : COLORS.textTertiary} />
+                  <Ionicons name={on ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={on ? colors.primary : colors.textTertiary} />
                 </TouchableOpacity>
               );
             }}
@@ -129,31 +132,31 @@ export default function TagPeopleModal({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { height: '80%', backgroundColor: COLORS.background, borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl, paddingTop: SPACING.sm },
+  sheet: { height: '80%', backgroundColor: colors.background, borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl, paddingTop: SPACING.sm },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
-  cancel: { color: COLORS.textSecondary, fontSize: 15 },
-  title: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
-  done: { color: COLORS.primary, fontSize: 15, fontWeight: '700' },
-  count: { color: COLORS.textTertiary, fontSize: 12, textAlign: 'center', marginBottom: SPACING.sm },
+  cancel: { color: colors.textSecondary, fontSize: 15 },
+  title: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  done: { color: colors.primary, fontSize: 15, fontWeight: '700' },
+  count: { color: colors.textTertiary, fontSize: 12, textAlign: 'center', marginBottom: SPACING.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs, paddingHorizontal: SPACING.md, marginBottom: SPACING.sm },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: COLORS.primary + '22', borderColor: COLORS.primary, borderWidth: 1,
+    backgroundColor: colors.primary + '22', borderColor: colors.primary, borderWidth: 1,
     borderRadius: RADIUS.full, paddingVertical: 4, paddingHorizontal: SPACING.sm,
   },
-  chipText: { color: COLORS.primaryLight, fontSize: 13, fontWeight: '600' },
+  chipText: { color: colors.primaryLight, fontSize: 13, fontWeight: '600' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.md,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md, marginHorizontal: SPACING.md, marginBottom: SPACING.sm,
   },
-  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: COLORS.text, fontSize: 15 },
+  searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: colors.text, fontSize: 15 },
   row: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md },
   avatar: { width: 40, height: 40, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  username: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  name: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
-  empty: { color: COLORS.textTertiary, fontSize: 14, textAlign: 'center', marginTop: SPACING.lg },
+  avatarText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  username: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  name: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  empty: { color: colors.textTertiary, fontSize: 14, textAlign: 'center', marginTop: SPACING.lg },
 });

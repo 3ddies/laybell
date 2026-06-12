@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { formatCount } from '../lib/format';
 import HighlightText from './HighlightText';
 import BadgeEmblem from './BadgeEmblem';
@@ -31,6 +32,8 @@ export default function TrackRow({
   // When set (search results), matches in the caption + handle are highlighted.
   highlightQuery?: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const durationLabel = formatDuration(duration);
   return (
     <LinearGradient
@@ -39,18 +42,19 @@ export default function TrackRow({
       end={{ x: 1, y: 1 }}
       style={[styles.row, isPlaying && styles.rowActive]}
     >
-      {/* Cover art (left) — tap to expand to the now-playing screen */}
-      <TouchableOpacity style={styles.coverWrap} onPress={onCoverPress ?? onPlay}>
+      {/* Cover art (left) — tap to expand to the now-playing screen.
+          Long-press opens the options sheet from ANY part of the row. */}
+      <TouchableOpacity style={styles.coverWrap} onPress={onCoverPress ?? onPlay} onLongPress={onOptions}>
         {cover ? (
           <Image source={{ uri: cover }} style={styles.cover} />
         ) : (
           <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
-            <Ionicons name="musical-notes" size={18} color={COLORS.primary} />
+            <Ionicons name="musical-notes" size={18} color={colors.primary} />
           </LinearGradient>
         )}
         {isPlaying && (
           <View style={styles.coverOverlayActive}>
-            <Ionicons name="musical-notes" size={16} color={COLORS.text} />
+            <Ionicons name="musical-notes" size={16} color={colors.text} />
           </View>
         )}
       </TouchableOpacity>
@@ -61,30 +65,28 @@ export default function TrackRow({
         <View style={styles.meta}>
           <HighlightText text={`@${username}`} query={highlightQuery} style={styles.artist} highlightStyle={styles.hl} numberOfLines={1} />
           <BadgeEmblem profile={badgeProfile} ownerId={badgeOwnerId} size={11} />
-          <Ionicons name="play" size={9} color={COLORS.textTertiary} />
+          <Ionicons name="play" size={9} color={colors.textTertiary} />
           <Text style={styles.streams}>{formatCount(streams)}</Text>
           {durationLabel && <Text style={styles.artist}>· {durationLabel}</Text>}
         </View>
       </TouchableOpacity>
 
-      {/* Play / pause */}
+      {/* Play / pause — borderless filled-circle glyph, same as Today's Pick */}
       {!hidePlayButton && (
-        <TouchableOpacity onPress={onPlay} activeOpacity={0.8}>
-          <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.playToggle}>
-            <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={COLORS.text} style={!isPlaying && { marginLeft: 2 }} />
-          </LinearGradient>
+        <TouchableOpacity onPress={onPlay} onLongPress={onOptions} activeOpacity={0.8} hitSlop={6}>
+          <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={44} color={colors.primary} />
         </TouchableOpacity>
       )}
 
       {onAddToPlaylist && (
-        <TouchableOpacity style={styles.addBtn} onPress={onAddToPlaylist}>
-          <Ionicons name="add-circle-outline" size={22} color={COLORS.primary} />
+        <TouchableOpacity style={styles.addBtn} onPress={onAddToPlaylist} onLongPress={onOptions}>
+          <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
         </TouchableOpacity>
       )}
 
       {/* Artist avatar (right) — tap to open profile */}
       {onAvatarPress && (
-        <TouchableOpacity onPress={onAvatarPress}>
+        <TouchableOpacity onPress={onAvatarPress} onLongPress={onOptions}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatar} />
           ) : (
@@ -98,15 +100,15 @@ export default function TrackRow({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center',
     borderRadius: RADIUS.lg,
-    padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border, gap: SPACING.md,
+    padding: SPACING.md, borderWidth: 1, borderColor: colors.border, gap: SPACING.md,
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
-  rowActive: { borderColor: COLORS.primary + '55' },
+  rowActive: { borderColor: colors.primary + '55' },
   coverWrap: {
     width: 50, height: 50, borderRadius: RADIUS.md, overflow: 'hidden',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
@@ -117,18 +119,12 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(224,64,28,0.5)',
   },
   info: { flex: 1 },
-  caption: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  hl: { color: COLORS.primary, fontWeight: '800' },
+  caption: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  hl: { color: colors.primary, fontWeight: '800' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  artist: { color: COLORS.textSecondary, fontSize: 12 },
-  streams: { color: COLORS.textTertiary, fontSize: 12 },
-  playToggle: {
-    width: 36, height: 36, borderRadius: RADIUS.full,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: COLORS.primary, shadowOpacity: 0.5, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
+  artist: { color: colors.textSecondary, fontSize: 12 },
+  streams: { color: colors.textTertiary, fontSize: 12 },
   addBtn: { padding: SPACING.xs },
-  avatar: { width: 34, height: 34, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceElevated },
-  avatarText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
+  avatar: { width: 34, height: 34, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceElevated },
+  avatarText: { color: colors.text, fontSize: 14, fontWeight: '700' },
 });
