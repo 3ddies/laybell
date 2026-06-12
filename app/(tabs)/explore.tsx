@@ -129,12 +129,16 @@ export default function ExploreScreen() {
   }, [setTabSwipe]));
 
   const genreSwipePan = useRef(PanResponder.create({
+    // Forgiving dominance bar (1.25×) so slightly diagonal side-swipes register.
     onMoveShouldSetPanResponder: (_e, g) =>
       dwellArmedRef.current && !isSearchingRef.current &&
-      Math.abs(g.dx) > 16 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
-    onPanResponderTerminationRequest: () => true,
+      Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.25,
+    // Once claimed, never surrender mid-gesture — a child stealing the responder
+    // meant the release handler never ran and the swipe silently vanished.
+    onPanResponderTerminationRequest: () => false,
     onPanResponderRelease: (_e, g) => {
-      if (Math.abs(g.dx) < 48) return;
+      // Register on distance OR a quick flick — short fast side-swipes count.
+      if (Math.abs(g.dx) < 40 && Math.abs(g.vx) < 0.3) return;
       const order = orderedGenresRef.current;
       const idx = order.indexOf(selectedGenreRef.current);
       if (g.dx < 0) {

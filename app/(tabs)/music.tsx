@@ -18,6 +18,7 @@ import PlaylistEditor from '../../components/PlaylistEditor';
 import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTabSwipeControl } from '../../contexts/PagerContext';
+import { useListenMode } from '../../contexts/ListenModeContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchBlockedIds } from '../../lib/blocks';
 import { formatCount } from '../../lib/format';
@@ -36,6 +37,14 @@ import {
 const SCREEN_W           = Dimensions.get('window').width;
 const FOR_YOU_W          = Math.floor((SCREEN_W - SPACING.md * 2 - SPACING.md) / 2.3);
 const TODAYS_PICK_KEY    = 'todays_pick_v2';
+// Listen mode is STRICTLY music: these genres never enter the curated mix
+// (podcasts/audiobooks are separate post types, excluded by type='audio').
+const NON_MUSIC_GENRES   = new Set(['meme', 'life']);
+// Listen-mix recommendation sweet spot: full songs (1:30–3:00) outrank
+// snippets and overlong tracks.
+const LISTEN_SWEET_MIN_S = 90;
+const LISTEN_SWEET_MAX_S = 180;
+const LISTEN_SWEET_BOOST = 1.3;
 const TODAYS_PICK_TTL_MS = 18 * 60 * 60 * 1000; // 18 hours
 // Discover content refreshes on a 4-day cadence. A manual pull-to-refresh only
 // triggers an actual refetch once this window has elapsed; within it, pulling
@@ -44,6 +53,37 @@ const DISCOVER_TS_KEY    = 'discover_refreshed_at';
 const DISCOVER_TTL_MS    = 4 * 24 * 60 * 60 * 1000; // 4 days
 
 type ContentType = 'music' | 'podcast' | 'audiobook';
+
+// A horizontal rail that suppresses the outer page swipes ONLY while it can
+// actually scroll (content wider than its frame). A rail with one or two cards
+// — or empty trailing space across the whole row — lets tab/pill swipes pass
+// straight through instead of dead-zoning the row.
+function GuardedRail({ onGuardStart, onGuardEnd, ...props }: any) {
+  const frameW = useRef(0);
+  const contentW = useRef(0);
+  const guarding = useRef(false);
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      {...props}
+      onLayout={(e: any) => { frameW.current = e.nativeEvent.layout.width; props.onLayout?.(e); }}
+      onContentSizeChange={(w: number, h: number) => { contentW.current = w; props.onContentSizeChange?.(w, h); }}
+      onTouchStart={(e: any) => {
+        if (contentW.current > frameW.current + 1) { guarding.current = true; onGuardStart(); }
+        props.onTouchStart?.(e);
+      }}
+      onTouchEnd={(e: any) => {
+        if (guarding.current) { guarding.current = false; onGuardEnd(); }
+        props.onTouchEnd?.(e);
+      }}
+      onTouchCancel={(e: any) => {
+        if (guarding.current) { guarding.current = false; onGuardEnd(); }
+        props.onTouchCancel?.(e);
+      }}
+    />
+  );
+}
 
 type Playlist = { id: string; name: string; is_public: boolean; created_at: string; play_count?: number; cover?: string | null };
 type Track = {
@@ -57,6 +97,7 @@ type Track = {
 
 export default function MusicScreen() {
   const { show: showOptions } = usePostOptions();
+  const { listenMode, setListenMode } = useListenMode();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -71,7 +112,7 @@ export default function MusicScreen() {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistPublic, setNewPlaylistPublic] = useState(false);
   const { playingId, play } = useAudioPlayer();
-  const { playQueue, expand } = useAudio();
+  const { playQueue, expand, currentTrack } = useAudio();
   const [savedTracks, setSavedTracks] = useState<any[]>([]);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'discover' | 'playlists' | 'saved' | 'liked' | 'community'>('discover');
@@ -140,15 +181,34 @@ export default function MusicScreen() {
     prevViewIdxRef.current = idx;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView]);
+  // Horizontal rails (genres, playlist cards, artists, view pills): while a
+  // finger is on one AND the rail can actually scroll, BOTH outer horizontal
+  // gestures must stand down — the app tab pager (pre-dwell it would drag the
+  // whole page mid-scroll) and the dwell-swipe pill stepper below. GuardedRail
+  // measures content vs frame and only fires these when scrolling is real, so
+  // sparse/empty rows still page-swipe. Restoring respects the dwell rule:
+  // once armed, the outer pager stays off anyway.
+  const railTouchRef = useRef(false);
+  const railGuardStart = () => { railTouchRef.current = true; setTabSwipe(false); };
+  const railGuardEnd = () => { railTouchRef.current = false; setTabSwipe(!innerSwipeRef.current); };
+
   const viewSwipePan = useRef(PanResponder.create({
-    // Claim only decisive horizontal moves, and only once the rule is armed —
-    // horizontal rails (genres, playlist cards) still win the gesture when the
-    // finger is on them, and vertical lists keep their scrolls.
+    // Claim horizontal moves once the rule is armed — horizontal rails win the
+    // gesture while the finger is on them (railTouchRef), and vertical lists
+    // keep their scrolls (dx must dominate dy). The dominance bar is deliberately
+    // forgiving (1.25×) so slightly diagonal side-swipes still count.
     onMoveShouldSetPanResponder: (_e, g) =>
-      innerSwipeRef.current && Math.abs(g.dx) > 16 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
-    onPanResponderTerminationRequest: () => true,
+      innerSwipeRef.current && !railTouchRef.current && Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.25,
+    // Capture DECISIVE horizontal moves before a child list can lock them away —
+    // without this, a swipe that grazes the vertical Discover scroll gets eaten.
+    onMoveShouldSetPanResponderCapture: (_e, g) =>
+      innerSwipeRef.current && !railTouchRef.current && Math.abs(g.dx) > 20 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    // Once claimed, NEVER surrender mid-gesture — a child stealing the responder
+    // meant the release handler never ran and the swipe silently vanished.
+    onPanResponderTerminationRequest: () => false,
     onPanResponderRelease: (_e, g) => {
-      if (Math.abs(g.dx) < 48) return;
+      // Register on distance OR a quick flick — short fast side-swipes count.
+      if (Math.abs(g.dx) < 40 && Math.abs(g.vx) < 0.3) return;
       const idx = VIEW_ORDER.indexOf(activeViewRef.current as any);
       if (idx < 0) return; // community detail etc. — leave swipes alone
       if (g.dx < 0) {
@@ -640,6 +700,54 @@ export default function MusicScreen() {
     if (data) setTop20Tracks(data.filter((p: any) => !blockedIdsRef.current.has(p.user_id)));
   }
 
+  // ── Listen-mode curated mix ──────────────────────────────────────────────
+  // Entering Listen mode with nothing playing starts a Laybell-curated queue,
+  // unique to this user: a wide popularity pool re-ranked by their affinity
+  // profile (creators/genres they like + save), strictly music — no memes, life
+  // audio, podcasts or audiobooks — with full-song lengths (1:30–3:00) boosted.
+  // If a track is already selected, the user's choice is respected and nothing
+  // is interrupted. Auto-advance through the queue is AudioContext's default.
+  const prevListenRef = useRef(false);
+  useEffect(() => {
+    if (listenMode && !prevListenRef.current && !currentTrack) startListenMix();
+    prevListenRef.current = listenMode;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listenMode]);
+
+  async function startListenMix() {
+    try {
+      const { data } = await supabase
+        .from('posts')
+        .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
+        .eq('is_public', true)
+        .eq('type', 'audio')
+        .order('stream_count', { ascending: false })
+        .limit(120);
+      if (!data) return;
+      const now = Date.now();
+      const mix = [...data]
+        .filter((p: any) => !blockedIdsRef.current.has(p.user_id))
+        .filter((p: any) => !NON_MUSIC_GENRES.has((p.genre ?? '').toLowerCase()))
+        .map((p: any) => {
+          let score = scorePost(p, affinityProfile.current, followingSetRef.current, seenRef.current, now);
+          const dur = p.duration_seconds ?? 0;
+          if (dur >= LISTEN_SWEET_MIN_S && dur <= LISTEN_SWEET_MAX_S) score *= LISTEN_SWEET_BOOST;
+          return { p, score };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 40)
+        .map(x => x.p);
+      if (!mix.length) return;
+      playQueue(
+        mix.map((t: any) => ({
+          id: t.id, uri: t.media_url, caption: t.caption,
+          artist: t.profiles?.display_name ?? '', cover: t.cover_url,
+        })),
+        0,
+      );
+    } catch {}
+  }
+
   async function fetchForYouTracks() {
     const { data } = await supabase
       .from('posts')
@@ -859,12 +967,27 @@ export default function MusicScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Music</Text>
-        {activeView === 'playlists' && (
-          <TouchableOpacity style={styles.newBtn} onPress={() => setShowNewPlaylist(true)}>
-            <Ionicons name="add" size={18} color={colors.text} />
-            <Text style={styles.newBtnText}>Playlist</Text>
+        <View style={styles.headerActions}>
+          {activeView === 'playlists' && (
+            <TouchableOpacity style={styles.newBtn} onPress={() => setShowNewPlaylist(true)}>
+              <Ionicons name="add" size={18} color={colors.text} />
+              <Text style={styles.newBtnText}>Playlist</Text>
+            </TouchableOpacity>
+          )}
+          {/* Listen mode — logo-gradient pill. Fades the tab bar away, locks tab
+              swiping and silences notifications for distraction-free listening;
+              tap again to bring everything back. */}
+          <TouchableOpacity onPress={() => setListenMode(!listenMode)} activeOpacity={0.85}>
+            <LinearGradient
+              colors={['#FAB525', '#F5921F']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={[styles.listenBtn, listenMode && styles.listenBtnActive]}
+            >
+              <Ionicons name={listenMode ? 'close' : 'headset'} size={16} color="#fff" />
+              <Text style={styles.listenBtnText}>{listenMode ? 'Exit' : 'Listen'}</Text>
+            </LinearGradient>
           </TouchableOpacity>
-        )}
+        </View>
       </View>
 
       {/* Search bar — find songs by name, username, or display name */}
@@ -955,9 +1078,9 @@ export default function MusicScreen() {
       <>
 
       {/* Toggle — horizontally scrollable so all 5 pills keep readable labels */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
+      <GuardedRail
+        onGuardStart={railGuardStart}
+        onGuardEnd={railGuardEnd}
         style={styles.toggleRow}
         contentContainerStyle={styles.toggleRowContent}
       >
@@ -992,7 +1115,7 @@ export default function MusicScreen() {
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
+      </GuardedRail>
 
       {/* All pill views share this wrapper so switching slides the incoming
           view in from the travel direction */}
@@ -1021,7 +1144,7 @@ export default function MusicScreen() {
             <Text style={styles.discoverSectionTitleLg}>Genres</Text>
 
             {/* — Genre + content-type pills (All · genres · Podcasts · Audiobooks) — */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.genrePills}>
+            <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.genrePills}>
               {(['All', ...orderedGenreList]).map(genre => {
                 const active = discoverGenre === genre;
                 const label  = genre === 'All' ? 'All genres' : genre;
@@ -1043,7 +1166,7 @@ export default function MusicScreen() {
                   </TouchableOpacity>
                 );
               })}
-            </ScrollView>
+            </GuardedRail>
 
             {/* — Trending: top songs for the selected genre — */}
             <Text style={styles.discoverSectionTitle}>
@@ -1125,9 +1248,9 @@ export default function MusicScreen() {
             {!isContentTag && popularPlaylists.length > 0 && (
               <>
                 <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>Popular Playlists</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.playlistRail}>
+                <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.playlistRail}>
                   {popularPlaylists.slice(0, 10).map(renderPlaylistCard)}
-                </ScrollView>
+                </GuardedRail>
               </>
             )}
 
@@ -1186,9 +1309,9 @@ export default function MusicScreen() {
             {!isContentTag && upcomingPlaylists.length > 0 && (
               <>
                 <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>Upcoming Playlists</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.playlistRail}>
+                <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.playlistRail}>
                   {upcomingPlaylists.map(renderPlaylistCard)}
-                </ScrollView>
+                </GuardedRail>
               </>
             )}
 
@@ -1199,7 +1322,7 @@ export default function MusicScreen() {
 
                 {/* Relevant artists — tap a circle to open that profile */}
                 {relevantArtists.length > 0 && (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.artistScroll}>
+                  <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.artistScroll}>
                     {relevantArtists.map(artist => (
                       <TouchableOpacity
                         key={artist.id}
@@ -1219,10 +1342,10 @@ export default function MusicScreen() {
                         </Text>
                       </TouchableOpacity>
                     ))}
-                  </ScrollView>
+                  </GuardedRail>
                 )}
 
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.forYouScroll}>
+                <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.forYouScroll}>
                   {forYouTracks.map(track => (
                     <TouchableOpacity
                       key={track.id}
@@ -1254,7 +1377,7 @@ export default function MusicScreen() {
                       </Text>
                     </TouchableOpacity>
                   ))}
-                </ScrollView>
+                </GuardedRail>
               </>
             )}
 
@@ -1317,7 +1440,7 @@ export default function MusicScreen() {
             playlists.some(p => p.is_public) ? (
               <View>
                 <Text style={styles.sectionTitle}>Your public playlists</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pubRail}>
+                <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.pubRail}>
                   {playlists.filter(p => p.is_public).map(p => {
                     const locked = !myActivePublicIds.has(p.id);
                     return (
@@ -1350,7 +1473,7 @@ export default function MusicScreen() {
                       </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
+                </GuardedRail>
                 {playlists.some(p => !p.is_public) && <Text style={styles.sectionTitle}>Your private playlists</Text>}
               </View>
             ) : undefined
@@ -1784,6 +1907,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
   },
   newBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  // Listen mode pill — the Laybell logo yellow (#FAB525) easing into a soft
+  // orange tail; while active it dims a touch and reads "Exit" so the same
+  // button always shows the way back.
+  listenBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: RADIUS.full,
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md + 4,
+    shadowColor: colors.primaryLight, shadowOpacity: 0.5, shadowRadius: 9,
+    shadowOffset: { width: 0, height: 0 }, elevation: 6,
+  },
+  listenBtnActive: { opacity: 0.85 },
+  listenBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
 
   // A single rounded "segmented control" track holding the 4 segments; the active
   // one becomes a glowing gradient pill (rendered inside the button).

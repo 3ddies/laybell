@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { withLayoutContext } from 'expo-router';
 import { TouchableOpacity, View, StyleSheet, Keyboard, Animated, Dimensions, Image, Text } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,7 +14,8 @@ import {
 import type { ParamListBase, TabNavigationState } from '@react-navigation/native';
 import { GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
-import { PagerContext, TabSwipeContext } from '../../contexts/PagerContext';
+import { PagerContext, TabSwipeContext, noteTabSwipe } from '../../contexts/PagerContext';
+import { useListenMode } from '../../contexts/ListenModeContext';
 
 // Land on Home, not the story camera, even though the camera is declared first
 // (so it sits to the LEFT of Home in the pager — swipe right from Home to reach it).
@@ -47,6 +48,19 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   const { profile } = useProfile();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { listenMode } = useListenMode();
+
+  // Listen mode (Music tab): the bar smoothly fades out (with a slight downward
+  // drift) and stops catching touches; toggling off fades it right back.
+  const listenFade = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.timing(listenFade, {
+      toValue: listenMode ? 0 : 1,
+      duration: 350,
+      useNativeDriver: true,
+    }).start();
+  }, [listenMode, listenFade]);
+  const listenDrift = listenFade.interpolate({ inputRange: [0, 1], outputRange: [24, 0] });
 
   // The bar is an absolute overlay so the pager fills the FULL screen — that's
   // what makes the story camera edge-to-edge with no reserved (gray) slot. While
@@ -60,7 +74,10 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   });
 
   return (
-    <Animated.View style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, transform: [{ translateX }] }]}>
+    <Animated.View
+      pointerEvents={listenMode ? 'none' : 'auto'}
+      style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: listenFade, transform: [{ translateX }, { translateY: listenDrift }] }]}
+    >
       {state.routes.map((route, index) => {
         if (route.name === 'story-camera') return null;
         const focused = state.index === index;
@@ -126,6 +143,10 @@ export default function TabLayout() {
   // Slideshow carousels flip this off while you swipe between slides so the swipe
   // doesn't bubble up and change tabs (re-enabled when the gesture ends).
   const [swipeEnabled, setSwipeEnabled] = useState(true);
+  // Listen mode locks the pager to the Music tab — no tab swipes until exit
+  // (Music's internal pill swipes are its own PanResponder, unaffected).
+  const { listenMode } = useListenMode();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
@@ -138,11 +159,17 @@ export default function TabLayout() {
         // Bar is an overlay (pager is full-screen), so inset each tab's content by
         // the bar height via sceneStyle. The camera screen uses an absolute-fill
         // root, which ignores this padding and stays edge-to-edge.
-        screenOptions={{ swipeEnabled, sceneStyle: { paddingBottom: 68 + insets.bottom } }}
+        // sceneStyle's backgroundColor matters: the bar-height padding strip at the
+        // bottom is normally covered by the bar overlay, but when Listen mode fades
+        // the bar away the pager's default (white) background would show through.
+        screenOptions={{ swipeEnabled: swipeEnabled && !listenMode, sceneStyle: { paddingBottom: 68 + insets.bottom, backgroundColor: colors.background } }}
         screenListeners={{
-          // Pause mid-swipe work (video autoplay, caption focus) until the page settles.
-          swipeStart: () => { setSwiping(true); Keyboard.dismiss(); },
-          swipeEnd: () => setSwiping(false),
+          // Pause mid-swipe work (video autoplay, caption focus) until the page
+          // settles. noteTabSwipe feeds the guardPress() tap suppressor — taps
+          // are filtered at the press handlers, NEVER by blocking touches, so
+          // rapid consecutive swipes always reach the pager.
+          swipeStart: () => { setSwiping(true); noteTabSwipe(true); Keyboard.dismiss(); },
+          swipeEnd: () => { setSwiping(false); noteTabSwipe(false); },
         }}
       >
         {/* Live camera, page 0 (LEFT of Home) — swipe right off Home reveals it.
@@ -156,9 +183,11 @@ export default function TabLayout() {
             cropper so those gestures never change tabs. */}
         <MaterialTopTabs.Screen name="post" />
         <MaterialTopTabs.Screen name="music" />
-        {/* Profile owns its horizontal swipes via its own inner pager (incl. a
-            "go to Music" dismiss page), so the outer swipe stays off here. */}
-        <MaterialTopTabs.Screen name="profile" options={{ swipeEnabled: false }} />
+        {/* Profile drives the outer swipe via TabSwipeContext: ON while its
+            Posts sub-tab is active (so a rightward drag is the REAL pager
+            drag to Music — live finger tracking), OFF on the other sub-tabs
+            (their swipes belong to profile's fling stepper). */}
+        <MaterialTopTabs.Screen name="profile" />
       </MaterialTopTabs>
      </TabSwipeContext.Provider>
     </PagerContext.Provider>

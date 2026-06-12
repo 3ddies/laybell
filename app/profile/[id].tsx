@@ -1,8 +1,8 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Image, RefreshControl, Linking,
+  ScrollView, ActivityIndicator, Image, RefreshControl, Linking, PanResponder,
+  Animated, Easing, Dimensions,
 } from 'react-native';
-import PagerView from 'react-native-pager-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState, useRef } from 'react';
@@ -38,6 +38,7 @@ const TABS = [
   { key: 'playlists', label: 'Playlists' },
 ];
 const TAB_KEYS = TABS.map(t => t.key);
+const SCREEN_W = Dimensions.get('window').width;
 
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -60,11 +61,71 @@ export default function PublicProfileScreen() {
   // This user's ACTIVE public playlists (locked over-limit ones stay hidden).
   const [publicPlaylists, setPublicPlaylists] = useState<any[]>([]);
 
-  // Sub-tabs are pages in a native pager — swiping slides the next grid in under
-  // your finger, matching the rest of the app.
-  const pagerRef = useRef<PagerView>(null);
   // Per-thumbnail nodes so opening a post/reel can expand out of the tapped cell.
   const gridRefs = useRef<Record<string, any>>({});
+
+  // ── Sub-tab navigation: Music-page pattern, NO pager ──────────────────────
+  // The sub-tabs used to live in a PagerView whose page 0 was a blank dismiss
+  // page — which made exiting a visible two-part motion. The pager is GONE:
+  // one fling PanResponder on the page ROOT steps the sub-tabs (with the same
+  // slide-in animation as the Music pills), and a right-fling on Posts goes
+  // straight back — there is no page 0 to reveal. Taps and vertical scrolls
+  // are untouched (decisive horizontal moves only).
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  // Slide the incoming sub-tab in from the travel direction (Music-pill style).
+  const tabAnimX = useRef(new Animated.Value(0)).current;
+  const prevTabIdxRef = useRef(0);
+  useEffect(() => {
+    const idx = TAB_KEYS.indexOf(activeTab);
+    if (idx !== prevTabIdxRef.current) {
+      const dir = idx > prevTabIdxRef.current ? 1 : -1;
+      tabAnimX.setValue(dir * SCREEN_W);
+      Animated.timing(tabAnimX, { toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    }
+    prevTabIdxRef.current = idx;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // One step per gesture — armed on grant, spent the moment a step fires.
+  const swipeFiredRef = useRef(false);
+
+  // Step the sub-tab (or exit) for a decisive horizontal gesture. The EXIT
+  // (popping the screen) only ever runs on release — navigating away under a
+  // live finger is glitch-prone — so mid-gesture calls pass allowExit=false.
+  const stepForGesture = (dx: number, allowExit: boolean) => {
+    const idx = TAB_KEYS.indexOf(activeTabRef.current);
+    if (dx < 0) {
+      if (idx < TAB_KEYS.length - 1) { swipeFiredRef.current = true; setActiveTab(TAB_KEYS[idx + 1]); }
+    } else if (idx === 0) {
+      if (allowExit && router.canGoBack()) { swipeFiredRef.current = true; router.back(); }
+    } else {
+      swipeFiredRef.current = true; setActiveTab(TAB_KEYS[idx - 1]);
+    }
+  };
+
+  const pageSwipePan = useRef(PanResponder.create({
+    // Forgiving dominance bar (1.25×) so slightly diagonal side-swipes register.
+    onMoveShouldSetPanResponder: (_e, g) =>
+      Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.25,
+    onPanResponderGrant: () => { swipeFiredRef.current = false; },
+    // Once claimed, never surrender mid-gesture — a child stealing the responder
+    // meant the release handler never ran and the swipe silently vanished.
+    onPanResponderTerminationRequest: () => false,
+    // Fire the step the moment the gesture is DECISIVE (distance or flick) —
+    // not on finger lift — so the switch starts with no perceptible delay.
+    onPanResponderMove: (_e, g) => {
+      if (swipeFiredRef.current) return;
+      if (Math.abs(g.dx) < 40 && Math.abs(g.vx) < 0.3) return;
+      stepForGesture(g.dx, false);
+    },
+    onPanResponderRelease: (_e, g) => {
+      if (swipeFiredRef.current) return;
+      if (Math.abs(g.dx) < 40 && Math.abs(g.vx) < 0.3) return;
+      stepForGesture(g.dx, true);
+    },
+  })).current;
 
   useEffect(() => { setup(); }, [id]);
 
@@ -284,11 +345,14 @@ export default function PublicProfileScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      {/* No native back-swipe — the pager's leading dismiss page (below) + the back
-          button handle going back, so nothing competes with the sub-tab swipes. */}
+    // pageSwipePan lives on the ROOT: flings anywhere — header, grid, empty
+    // space — step the sub-tabs; a right-fling on Posts goes straight back.
+    <View style={styles.container} {...pageSwipePan.panHandlers}>
+      {/* No native back-swipe — the root fling responder + the back button
+          handle going back, so nothing competes with the sub-tab swipes. */}
       <Stack.Screen options={{ gestureEnabled: false }} />
 
+      <View>
       {/* Back */}
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -381,44 +445,26 @@ export default function PublicProfileScreen() {
         </View>
       )}
 
-      {/* Tabs — tapping drives the pager; the pager drives the active highlight */}
+      {/* Tabs — tap or swipe anywhere on the page to switch */}
       <View style={styles.tabsRow}>
-        {TABS.map((tab, i) => (
+        {TABS.map((tab) => (
           <TouchableOpacity
             key={tab.key}
             style={[styles.tab, activeTab === tab.key && styles.activeTab, activeTab === tab.key && activeTabDyn]}
-            onPress={() => pagerRef.current?.setPage(i + 1)}
+            onPress={() => setActiveTab(tab.key)}
           >
             <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText, activeTab === tab.key && { color: tabAccent }]}>{tab.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
+      </View>
 
-      {/* Pager — page 0 is the back/dismiss page (swipe right off Posts to go back);
-          pages 1-3 are the sub-tabs. ONE pager, no nesting and no native gesture, so
-          there's nothing to fight: it can't glitch or freeze. */}
-      <PagerView
-        ref={pagerRef}
-        style={styles.pager}
-        initialPage={1}
-        onPageSelected={(e) => {
-          const pos = e.nativeEvent.position;
-          if (pos === 0) {
-            // Swiped onto the dismiss page → go back. If there's no history to pop
-            // (e.g. cold-start deep link straight to this profile), snap back to
-            // Posts instead of stranding the user on the blank dismiss page.
-            if (router.canGoBack()) router.back();
-            else pagerRef.current?.setPageWithoutAnimation(1);
-          } else {
-            setActiveTab(TAB_KEYS[pos - 1]);
-          }
-        }}
-      >
-        <View key="dismiss" style={styles.dismissPage}>
-          <Ionicons name="arrow-back" size={28} color={colors.textTertiary} />
-        </View>
-        {TABS.map(tab => (
-          <View key={tab.key} style={styles.page}>
+      {/* Sub-tab pages — ALL stay mounted; switching just flips visibility, so
+          a step never pays a grid-mount cost mid-swipe. The visible page slides
+          in from the travel direction (same pattern as the Music pills). */}
+      <Animated.View style={[styles.pager, { transform: [{ translateX: tabAnimX }] }]}>
+        {TAB_KEYS.map((key) => (
+          <View key={key} style={key === activeTab ? styles.pager : styles.pageHidden}>
             <ScrollView
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.pageContent}
@@ -426,11 +472,11 @@ export default function PublicProfileScreen() {
                 <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setup(); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
             >
-              {tab.key === 'playlists' ? renderPlaylists() : renderGrid(dataForTab(tab.key), tab.key)}
+              {key === 'playlists' ? renderPlaylists() : renderGrid(dataForTab(key), key)}
             </ScrollView>
           </View>
         ))}
-      </PagerView>
+      </Animated.View>
     </View>
   );
 }
@@ -487,7 +533,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   activeTabText: { color: colors.text, fontWeight: '700' },
 
   pager: { flex: 1 },
-  page: { flex: 1 },
+  // Off-tab pages stay MOUNTED but invisible — flipping display is what makes
+  // a sub-tab step instant (no grid mount mid-swipe).
+  pageHidden: { display: 'none' },
   pageContent: { paddingBottom: SPACING.xxl + 60 },
 
   postsGrid: { flexDirection: 'row', flexWrap: 'wrap' },

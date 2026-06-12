@@ -5,7 +5,7 @@ import {
 import { Video, ResizeMode } from 'expo-av';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
-import { usePagerSwiping } from '../../contexts/PagerContext';
+import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image, ActivityIndicator,
@@ -586,9 +586,11 @@ export default function HomeScreen() {
     });
   }, []);
 
-  const onProfile = useCallback((item: Post) => live.current.router.push(`/profile/${item.user_id}`), []);
-  const onOpenPost = useCallback((item: Post, src?: SourceRect, index?: number) => live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}), ...(index != null ? { index: String(index) } : {}) } }), []);
-  const onOpenReel = useCallback((item: Post, src?: SourceRect) => live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }), []);
+  // isSwipeTap guards: a tab swipe gliding over the feed must not open
+  // posts/reels/profiles (the swipe's touch can read as a tap on a card).
+  const onProfile = useCallback((item: Post) => { if (isSwipeTap()) return; live.current.router.push(`/profile/${item.user_id}`); }, []);
+  const onOpenPost = useCallback((item: Post, src?: SourceRect, index?: number) => { if (isSwipeTap()) return; live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}), ...(index != null ? { index: String(index) } : {}) } }); }, []);
+  const onOpenReel = useCallback((item: Post, src?: SourceRect) => { if (isSwipeTap()) return; live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }); }, []);
   const onComments = useCallback((item: Post) => setCommentsFor({ id: item.id, ownerId: item.user_id }), []);
   // Track which slideshows have their video audio on (idempotent — returns the same
   // set when nothing changes so it never triggers an extra render).
@@ -602,6 +604,7 @@ export default function HomeScreen() {
   }, []);
 
   const onPlayTrack = useCallback((item: Post) => {
+    if (isSwipeTap()) return; // never start audio from a swipe glide
     live.current.play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url });
   }, []);
   const onExpandTrack = useCallback((item: Post) => {

@@ -12,6 +12,7 @@ import { aspectToNumber } from '../lib/aspectRatio';
 import { useAudio } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
 import { usePostOptions } from '../contexts/PostOptionsContext';
+import { isSwipeTap } from '../contexts/PagerContext';
 import { isAudioPost } from '../lib/genres';
 import { trackVideoProgress } from '../lib/viewTracker';
 import ThumbStat from './ThumbStat';
@@ -64,7 +65,9 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const { play, currentTrack, isPlaying } = useAudio();
+  const { play: playRaw, currentTrack, isPlaying } = useAudio();
+  // Swipe-tap guard: a tab swipe gliding over the grid must not start audio.
+  const play: typeof playRaw = (t) => (isSwipeTap() ? Promise.resolve() : playRaw(t));
   const { show: showOptions } = usePostOptions();
 
   const longPressFor = (p: GridPost) =>
@@ -86,6 +89,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   // The press event gives the tapped cell's top-left (pageX/Y − locationX/Y) so the
   // viewer can expand out of / shrink back into the thumbnail (Instagram-style).
   const openMedia = (p: GridPost, e?: any) => {
+    if (isSwipeTap()) return; // a swipe glide must not open the viewer
     const ne = e?.nativeEvent;
     const src = ne
       ? JSON.stringify({ x: ne.pageX - ne.locationX, y: ne.pageY - ne.locationY, width: COL_W, height: COL_W })

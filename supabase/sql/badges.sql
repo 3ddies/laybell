@@ -9,8 +9,9 @@
 -- ─────
 -- A user accrues lightweight daily activity counters in `user_activity_daily`
 -- (one row per UTC day — the row's mere existence also means "logged in that
--- day"). The client's evaluator (lib/badges.ts) reads a 31-day window via
--- get_badge_state(), derives streaks/criteria, and reconciles which badges the
+-- day"). The client's evaluator (lib/badges.ts) reads a 92-day window via
+-- get_badge_state() (sized for the 90-day permanent login diamond + grace),
+-- derives streaks/criteria, and reconciles which badges the
 -- user currently holds into `user_badges`. Holding a badge can be revoked when
 -- its streak/criteria lapse (R), unless the badge is permanent (Per). The user's
 -- overall status is a point rollup cached on profiles.badge_tier (the emblem
@@ -158,7 +159,8 @@ grant execute on function public.record_badge_activity(text, integer) to authent
 
 -- ─── get_badge_state ──────────────────────────────────────────────────────────
 -- One round trip for the evaluator: the current UTC date, the caller's last
--- 31 daily rows (newest first), and their live public-post count using the SAME
+-- 92 daily rows (newest first — enough for the 90-day permanent login streak
+-- plus the grace day), and their live public-post count using the SAME
 -- filter the profile grid uses (is_public AND not archived) so the posts badge
 -- always agrees with what the user sees. Falls back to is_public-only if the
 -- archived_at column isn't present in this environment.
@@ -184,7 +186,7 @@ begin
       select day, likes, comments, music_seconds, posts_created
         from public.user_activity_daily
        where user_id = v_uid
-         and day >= v_today - 31
+         and day >= v_today - 92
     ) d;
 
   begin
@@ -204,7 +206,7 @@ $$;
 grant execute on function public.get_badge_state() to authenticated;
 
 -- ─── optional: old-activity cleanup ───────────────────────────────────────────
--- Not required for correctness (the evaluator only ever looks back ~31 days).
+-- Not required for correctness (the evaluator only ever looks back ~92 days).
 -- Housekeeping only — run manually, or schedule with pg_cron:
 --   select cron.schedule('purge-badge-activity', '30 3 * * *', $$select public.purge_old_badge_activity()$$);
 create or replace function public.purge_old_badge_activity()
@@ -214,5 +216,5 @@ security definer
 set search_path = public
 as $$
   delete from public.user_activity_daily
-   where day < (now() at time zone 'utc')::date - 60;
+   where day < (now() at time zone 'utc')::date - 120;
 $$;

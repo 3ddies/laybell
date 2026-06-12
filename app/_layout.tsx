@@ -14,6 +14,7 @@ import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
 import { ShareProvider } from '../contexts/ShareContext';
 import { FollowProvider } from '../contexts/FollowContext';
 import { StoriesProvider } from '../contexts/StoriesContext';
+import { ListenModeProvider } from '../contexts/ListenModeContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
@@ -25,10 +26,14 @@ function AppContent() {
   const segments = useSegments();
   // Full-screen media viewers stay immersive — no floating mini player there.
   const immersive = segments[0] === 'story' || segments[0] === 'post' || segments[0] === 'reel';
+  // On the Create tab the player migrates to a compact top-right card so the
+  // song rides along instead of dying when the tab is swiped past; the post
+  // DETAILS step then stops it (see post.tsx).
+  const onCreateTab = segments[0] === '(tabs)' && (segments as string[])[1] === 'post';
 
   const overlays = (
     <>
-      {!immersive && <MiniPlayer />}
+      {!immersive && <MiniPlayer compact={onCreateTab} />}
       <NowPlaying />
       <BadgeUpgradeToast />
     </>
@@ -182,7 +187,9 @@ export default function RootLayout() {
             <ShareProvider>
               <StatusBar style="light" />
               <StoriesProvider>
-                <AppContent />
+                <ListenModeProvider>
+                  <AppContent />
+                </ListenModeProvider>
               </StoriesProvider>
             </ShareProvider>
           </FollowProvider>

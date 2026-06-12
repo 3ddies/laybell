@@ -50,47 +50,49 @@ export function tierLabel(tier: Tier | null | undefined): string {
 // Mirrors the user's notes. Community / Ads / App-sharing have no underlying
 // system yet, so they're `locked: true` (shown as "coming soon", never auto-earned).
 export const BADGES: BadgeDef[] = [
-  // Login (streak; diamond is permanent)
-  { key: 'login_bronze',  category: 'login', tier: 'bronze',  title: 'Bronze Login',  criteria: 'Log in 3 days in a row',  permanent: false, locked: false },
-  { key: 'login_silver',  category: 'login', tier: 'silver',  title: 'Silver Login',  criteria: 'Log in 7 days in a row',  permanent: false, locked: false },
-  { key: 'login_gold',    category: 'login', tier: 'gold',    title: 'Gold Login',    criteria: 'Log in 14 days in a row', permanent: false, locked: false },
-  { key: 'login_diamond', category: 'login', tier: 'diamond', title: 'Diamond Login', criteria: 'Log in 30 days in a row', permanent: true,  locked: false },
+  // Login (streak; TWO diamonds — temporary at 30 days, permanent at 90. The only
+  // category with two badges of the same tier; see qualifyingKeys for the special
+  // handling. Both weigh diamond=8, so holding one or both rolls up identically.)
+  { key: 'login_bronze',       category: 'login', tier: 'bronze',  title: 'Bronze Login',            criteria: 'Log in 3+ days in a row',  permanent: false, locked: false },
+  { key: 'login_silver',       category: 'login', tier: 'silver',  title: 'Silver Login',            criteria: 'Log in 7+ days in a row',  permanent: false, locked: false },
+  { key: 'login_gold',         category: 'login', tier: 'gold',    title: 'Gold Login',              criteria: 'Log in 14+ days in a row', permanent: false, locked: false },
+  { key: 'login_diamond',      category: 'login', tier: 'diamond', title: 'Diamond Login',           criteria: 'Log in 30+ days in a row', permanent: false, locked: false },
+  { key: 'login_diamond_perm', category: 'login', tier: 'diamond', title: 'Permanent Diamond Login', criteria: 'Log in 90 days in a row', permanent: true,  locked: false },
 
   // Daily likes
-  { key: 'daily_like_bronze', category: 'daily_like', tier: 'bronze', title: 'Bronze Likes', criteria: 'Like 15+ posts today',                permanent: false, locked: false },
-  { key: 'daily_like_silver', category: 'daily_like', tier: 'silver', title: 'Silver Likes', criteria: 'Like 15+ posts each day for 3 days', permanent: false, locked: false },
-  { key: 'daily_like_gold',   category: 'daily_like', tier: 'gold',   title: 'Gold Likes',   criteria: 'Like 15+ posts each day for 7 days', permanent: false, locked: false },
+  { key: 'daily_like_bronze', category: 'daily_like', tier: 'bronze', title: 'Bronze Likes', criteria: 'Like 10+ posts today',                permanent: false, locked: false },
+  { key: 'daily_like_silver', category: 'daily_like', tier: 'silver', title: 'Silver Likes', criteria: 'Like 10+ posts each day for 3+ days', permanent: false, locked: false },
+  { key: 'daily_like_gold',   category: 'daily_like', tier: 'gold',   title: 'Gold Likes',   criteria: 'Like 10+ posts each day for 7+ days', permanent: false, locked: false },
 
   // Posts (live grid count)
   { key: 'posts_bronze', category: 'posts', tier: 'bronze', title: 'Bronze Poster', criteria: 'Share a public post',            permanent: false, locked: false },
-  { key: 'posts_silver', category: 'posts', tier: 'silver', title: 'Silver Poster', criteria: 'Have 5 public posts on your grid', permanent: false, locked: false },
+  { key: 'posts_silver', category: 'posts', tier: 'silver', title: 'Silver Poster', criteria: 'Have 5+ public posts on your grid', permanent: false, locked: false },
 
   // Music streaming (today's listen time)
-  { key: 'music_streaming_bronze', category: 'music_streaming', tier: 'bronze', title: 'Bronze Listener', criteria: 'Stream 10 min of audio today', permanent: false, locked: false },
-  { key: 'music_streaming_silver', category: 'music_streaming', tier: 'silver', title: 'Silver Listener', criteria: 'Stream 20 min of audio today', permanent: false, locked: false },
-  { key: 'music_streaming_gold',   category: 'music_streaming', tier: 'gold',   title: 'Gold Listener',   criteria: 'Stream 30 min of audio today', permanent: false, locked: false },
+  { key: 'music_streaming_bronze', category: 'music_streaming', tier: 'bronze', title: 'Bronze Listener', criteria: 'Stream 10+ min of audio today', permanent: false, locked: false },
+  { key: 'music_streaming_silver', category: 'music_streaming', tier: 'silver', title: 'Silver Listener', criteria: 'Stream 20+ min of audio today', permanent: false, locked: false },
+  { key: 'music_streaming_gold',   category: 'music_streaming', tier: 'gold',   title: 'Gold Listener',   criteria: 'Stream 30+ min of audio today', permanent: false, locked: false },
 
   // Comments (today)
   { key: 'comments_bronze', category: 'comments', tier: 'bronze', title: 'Bronze Voice', criteria: 'Leave a comment today',     permanent: false, locked: false },
   { key: 'comments_silver', category: 'comments', tier: 'silver', title: 'Silver Voice', criteria: 'Leave 2+ comments today',   permanent: false, locked: false },
 
-  // Curator (total listens by OTHERS across the user's public playlists — live
-  // count, so deleting a popular playlist can drop the badge back down)
-  { key: 'curator_bronze',  category: 'curator', tier: 'bronze',  title: 'Bronze Curator',  criteria: 'Get 100 listens on your public playlists',    permanent: false, locked: false },
-  { key: 'curator_silver',  category: 'curator', tier: 'silver',  title: 'Silver Curator',  criteria: 'Get 500 listens on your public playlists',    permanent: false, locked: false },
-  { key: 'curator_gold',    category: 'curator', tier: 'gold',    title: 'Gold Curator',    criteria: 'Get 2,500 listens on your public playlists',  permanent: false, locked: false },
-  { key: 'curator_diamond', category: 'curator', tier: 'diamond', title: 'Diamond Curator', criteria: 'Get 10,000 listens on your public playlists', permanent: true,  locked: false },
+  // Curator (listens by OTHERS on the user's single most-listened PUBLIC playlist —
+  // a live count, so privating or deleting that playlist drops the badge, and making
+  // it public again re-awards it on the next evaluation; caps at gold)
+  { key: 'curator_bronze',  category: 'curator', tier: 'bronze',  title: 'Bronze Curator',  criteria: 'Have 100+ listens on a public playlist',    permanent: false, locked: false },
+  { key: 'curator_silver',  category: 'curator', tier: 'silver',  title: 'Silver Curator',  criteria: 'Have 500+ listens on a public playlist',    permanent: false, locked: false },
+  { key: 'curator_gold',    category: 'curator', tier: 'gold',    title: 'Gold Curator',    criteria: 'Have 2,500+ listens on a public playlist',  permanent: false, locked: false },
 
   // ── Locked stubs (no underlying system yet) ──
   { key: 'community_bronze', category: 'community', tier: 'bronze', title: 'Bronze Member',  criteria: 'Join a community',                       permanent: false, locked: true },
   { key: 'community_silver', category: 'community', tier: 'silver', title: 'Silver Member',  criteria: 'Stay in good standing for a week',        permanent: false, locked: true },
   { key: 'community_gold',   category: 'community', tier: 'gold',   title: 'Gold Member',    criteria: 'Become a community manager',             permanent: false, locked: true },
   { key: 'ads_bronze',       category: 'ads',       tier: 'bronze', title: 'Bronze Patron',  criteria: 'Engage with an ad today',                permanent: false, locked: true },
-  { key: 'ads_silver',       category: 'ads',       tier: 'silver', title: 'Silver Patron',  criteria: 'Engage with 2 ads today',                permanent: false, locked: true },
+  { key: 'ads_silver',       category: 'ads',       tier: 'silver', title: 'Silver Patron',  criteria: 'Engage with 2+ ads today',               permanent: false, locked: true },
   { key: 'app_sharing_bronze',  category: 'app_sharing', tier: 'bronze',  title: 'Bronze Advocate',  criteria: 'Share the app',                  permanent: false, locked: true },
-  { key: 'app_sharing_silver',  category: 'app_sharing', tier: 'silver',  title: 'Silver Advocate',  criteria: 'Share the app with 8 people',    permanent: false, locked: true },
+  { key: 'app_sharing_silver',  category: 'app_sharing', tier: 'silver',  title: 'Silver Advocate',  criteria: 'Share the app with 8+ people',   permanent: false, locked: true },
   { key: 'app_sharing_gold',    category: 'app_sharing', tier: 'gold',    title: 'Gold Advocate',    criteria: 'Share the app with 15 people',   permanent: true,  locked: true },
-  { key: 'app_sharing_diamond', category: 'app_sharing', tier: 'diamond', title: 'Diamond Advocate', criteria: 'Get 5 people to download the app', permanent: true,  locked: true },
 ];
 
 export const BADGES_BY_KEY: Record<string, BadgeDef> = Object.fromEntries(BADGES.map(b => [b.key, b]));
@@ -286,7 +288,10 @@ export function resolveRingColors(
 
 // ─── State + evaluation ───────────────────────────────────────────────────────
 export type DailyRow = { day: string; likes: number; comments: number; music_seconds: number; posts_created: number };
-export type BadgeState = { today: string; daily: DailyRow[]; public_posts: number; playlist_listens: number };
+// `top_playlist_listens` = play count of the user's single most-listened PUBLIC
+// playlist (not a sum across playlists) — the curator badge requires one playlist
+// to hit the threshold on its own.
+export type BadgeState = { today: string; daily: DailyRow[]; public_posts: number; top_playlist_listens: number };
 
 // Add `delta` UTC days to a 'YYYY-MM-DD' string. Pure UTC math anchored to the
 // server-provided day — never the device clock — so timezones can't shift "today".
@@ -309,15 +314,68 @@ function streakLength(today: string, has: (day: string) => boolean): number {
 
 export type CategoryTiers = Partial<Record<BadgeCategory, Tier>>;
 
+// How many likes count as a qualifying "daily likes" day.
+const DAILY_LIKES_TARGET = 10;
+
+// SECRET grace period (deliberately not surfaced anywhere in the UI): for the
+// first 6 hours of each UTC day, yesterday's qualifications still count. Daily
+// badges and streaks therefore don't vanish the instant the day flips — a user
+// who met the requirements but is asleep/busy/offline at midnight keeps their
+// badges and has a real window to re-qualify. Anchored to the server-provided
+// day; the device clock only supplies the current instant (hour-level accuracy
+// is plenty for a 6h window).
+const GRACE_HOURS = 6;
+
+function withinGrace(today: string): boolean {
+  const [y, m, d] = today.split('-').map(Number);
+  return Date.now() < Date.UTC(y, m - 1, d) + GRACE_HOURS * 3600_000;
+}
+
+// Per-category max of two qualifying sets.
+function mergeTiers(a: CategoryTiers, b: CategoryTiers): CategoryTiers {
+  const out: CategoryTiers = { ...a };
+  for (const [cat, tier] of Object.entries(b) as [BadgeCategory, Tier][]) {
+    if (tierRank(tier) > tierRank(out[cat])) out[cat] = tier;
+  }
+  return out;
+}
+
 // The single highest tier the user currently QUALIFIES for in each (non-locked)
-// category, from the raw state. This is the live "qualifying set".
+// category, from the raw state. This is the live "qualifying set". During the
+// grace window the evaluation also runs anchored to YESTERDAY and the better
+// tier per category wins, so nothing reverts at the stroke of midnight.
 export function qualifyingTiers(state: BadgeState): CategoryTiers {
+  const base = qualifyingTiersAt(state, state.today);
+  if (!withinGrace(state.today)) return base;
+  return mergeTiers(base, qualifyingTiersAt(state, addDaysUTC(state.today, -1)));
+}
+
+// Login streak with the same midnight grace the tier evaluation gets.
+function loginStreakWithGrace(state: BadgeState): number {
   const byDay = new Map(state.daily.map(r => [r.day, r]));
-  const today = state.today;
+  const s = streakLength(state.today, d => byDay.has(d));
+  if (!withinGrace(state.today)) return s;
+  return Math.max(s, streakLength(addDaysUTC(state.today, -1), d => byDay.has(d)));
+}
+
+// The badge KEYS the user currently qualifies for: one per category from the tier
+// rollup, plus dual-tier specials — the 90-day PERMANENT login diamond coexists
+// with the 30-day temporary one (a 90-day streak holds both).
+export function qualifyingKeys(state: BadgeState): Set<string> {
+  const keys = new Set(
+    (Object.entries(qualifyingTiers(state)) as [BadgeCategory, Tier][]).map(([cat, tier]) => `${cat}_${tier}`),
+  );
+  if (loginStreakWithGrace(state) >= 90) keys.add('login_diamond_perm');
+  return keys;
+}
+
+// Qualifying set as of `today` (the anchor day for "today" counters + streaks).
+function qualifyingTiersAt(state: BadgeState, today: string): CategoryTiers {
+  const byDay = new Map(state.daily.map(r => [r.day, r]));
   const todayRow = byDay.get(today);
 
   const loginStreak = streakLength(today, d => byDay.has(d));
-  const likeStreak = streakLength(today, d => (byDay.get(d)?.likes ?? 0) >= 15);
+  const likeStreak = streakLength(today, d => (byDay.get(d)?.likes ?? 0) >= DAILY_LIKES_TARGET);
 
   const out: CategoryTiers = {};
 
@@ -330,7 +388,7 @@ export function qualifyingTiers(state: BadgeState): CategoryTiers {
   // daily likes — bronze is "today" specifically; silver/gold are streaks.
   if (likeStreak >= 7) out.daily_like = 'gold';
   else if (likeStreak >= 3) out.daily_like = 'silver';
-  else if ((todayRow?.likes ?? 0) >= 15) out.daily_like = 'bronze';
+  else if ((todayRow?.likes ?? 0) >= DAILY_LIKES_TARGET) out.daily_like = 'bronze';
 
   // posts — live grid count
   if (state.public_posts >= 5) out.posts = 'silver';
@@ -347,10 +405,11 @@ export function qualifyingTiers(state: BadgeState): CategoryTiers {
   if (cm >= 2) out.comments = 'silver';
   else if (cm >= 1) out.comments = 'bronze';
 
-  // curator — total listens by others across the user's public playlists
-  const pl = state.playlist_listens;
-  if (pl >= 10000) out.curator = 'diamond';
-  else if (pl >= 2500) out.curator = 'gold';
+  // curator — listens on the user's single best PUBLIC playlist (caps at gold).
+  // Live: privating/deleting the playlist drops this to the next-best (or 0), and
+  // re-publicizing restores it, so the badge revokes and re-awards automatically.
+  const pl = state.top_playlist_listens;
+  if (pl >= 2500) out.curator = 'gold';
   else if (pl >= 500) out.curator = 'silver';
   else if (pl >= 100) out.curator = 'bronze';
 
@@ -366,7 +425,7 @@ export type BadgeMetrics = {
   todayComments: number;
   musicMinutesToday: number;
   publicPosts: number;
-  playlistListens: number;
+  topPlaylistListens: number;
 };
 export function computeMetrics(state: BadgeState): BadgeMetrics {
   const byDay = new Map(state.daily.map(r => [r.day, r]));
@@ -374,20 +433,23 @@ export function computeMetrics(state: BadgeState): BadgeMetrics {
   const todayRow = byDay.get(today);
   return {
     loginStreak: streakLength(today, d => byDay.has(d)),
-    likeStreak: streakLength(today, d => (byDay.get(d)?.likes ?? 0) >= 15),
+    likeStreak: streakLength(today, d => (byDay.get(d)?.likes ?? 0) >= DAILY_LIKES_TARGET),
     todayLikes: todayRow?.likes ?? 0,
     todayComments: todayRow?.comments ?? 0,
     musicMinutesToday: Math.floor((todayRow?.music_seconds ?? 0) / 60),
     publicPosts: state.public_posts,
-    playlistListens: state.playlist_listens,
+    topPlaylistListens: state.top_playlist_listens,
   };
 }
 
 export async function fetchBadgeState(): Promise<BadgeState | null> {
   try {
-    // Playlist listens are summed client-side from playlists.play_count (added
-    // by public_playlists.sql) rather than baked into get_badge_state — if that
+    // Playlist listens are read client-side from playlists.play_count (added by
+    // public_playlists.sql) rather than baked into get_badge_state — if that
     // migration isn't applied yet the select fails and the count is just 0.
+    // Only PUBLIC playlists count and only the single best one (max, not sum):
+    // a privated playlist drops out of this query immediately, so the curator
+    // badge revokes on the next evaluation and re-awards if it goes public again.
     const [stateRes, playsRes] = await Promise.all([
       supabase.rpc('get_badge_state'),
       (async () => {
@@ -397,7 +459,7 @@ export async function fetchBadgeState(): Promise<BadgeState | null> {
           const { data, error } = await supabase
             .from('playlists').select('play_count').eq('user_id', user.id).eq('is_public', true);
           if (error || !data) return 0;
-          return data.reduce((sum, r: any) => sum + (r.play_count ?? 0), 0);
+          return data.reduce((max, r: any) => Math.max(max, r.play_count ?? 0), 0);
         } catch { return 0; }
       })(),
     ]);
@@ -407,7 +469,7 @@ export async function fetchBadgeState(): Promise<BadgeState | null> {
       today: d.today,
       daily: Array.isArray(d.daily) ? d.daily : [],
       public_posts: d.public_posts ?? 0,
-      playlist_listens: playsRes,
+      top_playlist_listens: playsRes,
     };
   } catch {
     return null;
@@ -456,18 +518,24 @@ export async function evaluateBadges(opts: { silent?: boolean } = {}): Promise<E
     ]);
     if (!state) return NOOP_RESULT; // SQL not applied yet → graceful no-op
 
-    const qualifying = qualifyingTiers(state);
-    const qKeys = new Set(
-      (Object.entries(qualifying) as [BadgeCategory, Tier][]).map(([cat, tier]) => `${cat}_${tier}`),
-    );
+    const qKeys = qualifyingKeys(state);
 
     const existing: { badge_key: string; category: string; tier: string; is_permanent: boolean }[] =
       existingRes.data ?? [];
     const existingByKey = new Map(existing.map(r => [r.badge_key, r]));
 
+    // Permanence comes from the CATALOG, not the stored row, so a rule change is
+    // retroactive (e.g. login_diamond was permanent when it meant 30 days; it's
+    // temporary now that the permanent one requires 90 — old holders revert too).
+    const isPerm = (r: { badge_key: string }) => !!BADGES_BY_KEY[r.badge_key]?.permanent;
+
     // Reconcile: drop non-permanent badges no longer qualifying; insert new ones;
-    // keep permanents and still-qualifying ones untouched (no churn).
-    const toDelete = existing.filter(r => !r.is_permanent && !qKeys.has(r.badge_key)).map(r => r.badge_key);
+    // keep permanents and still-qualifying ones untouched (no churn). Rows whose
+    // key was retired from the catalog (e.g. the old curator/app-sharing diamonds)
+    // are purged even if permanent — they no longer exist to be held.
+    const toDelete = existing
+      .filter(r => !BADGES_BY_KEY[r.badge_key] || (!isPerm(r) && !qKeys.has(r.badge_key)))
+      .map(r => r.badge_key);
     const toInsert = Array.from(qKeys).filter(k => !existingByKey.has(k));
 
     if (toDelete.length) {
@@ -485,7 +553,9 @@ export async function evaluateBadges(opts: { silent?: boolean } = {}): Promise<E
 
     // Final held set = kept existing (permanent OR still qualifying) + inserts.
     const heldKeys = new Set<string>([
-      ...existing.filter(r => r.is_permanent || qKeys.has(r.badge_key)).map(r => r.badge_key),
+      ...existing
+        .filter(r => BADGES_BY_KEY[r.badge_key] && (isPerm(r) || qKeys.has(r.badge_key)))
+        .map(r => r.badge_key),
       ...toInsert,
     ]);
 

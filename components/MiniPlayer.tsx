@@ -1,7 +1,9 @@
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio } from '../contexts/AudioContext';
+import { useListenMode } from '../contexts/ListenModeContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,13 +15,83 @@ function formatMs(ms: number): string {
   return `${m}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function MiniPlayer() {
+export default function MiniPlayer({ compact = false }: { compact?: boolean }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { currentTrack, isPlaying, isBuffering, positionMs, durationMs, pause, resume, stop, seekTo, expanded, expand } = useAudio();
   const insets = useSafeAreaInsets();
+  const { listenMode } = useListenMode();
+
+  // Listen mode: the tab bar fades away, so the player glides down into the
+  // space it vacated (the 68px bar height), staying flush above the home bar.
+  // Hooks run before the early return below, so the value stays mounted.
+  const listenSlide = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(listenSlide, {
+      toValue: listenMode ? 68 : 0,
+      duration: 350,
+      useNativeDriver: true,
+    }).start();
+  }, [listenMode, listenSlide]);
+
+  // Compact mode (Create tab): the player migrates into a small top-right card
+  // so the song rides along while the user picks media. The card waits for a
+  // 1.5s dwell on the tab before fading in — a quick swipe-through never
+  // flashes it; leaving the tab resets the dwell.
+  const compactAnim = useRef(new Animated.Value(0)).current;
+  const [compactReady, setCompactReady] = useState(false);
+  useEffect(() => {
+    if (compact) {
+      compactAnim.setValue(0);
+      const t = setTimeout(() => {
+        setCompactReady(true);
+        Animated.timing(compactAnim, { toValue: 1, duration: 350, useNativeDriver: true }).start();
+      }, 1500);
+      return () => clearTimeout(t);
+    }
+    setCompactReady(false);
+    compactAnim.setValue(0);
+  }, [compact, compactAnim]);
 
   if (!currentTrack || expanded) return null;
+
+  if (compact) {
+    if (!compactReady) return null; // still within the 1.5s dwell
+    return (
+      <Animated.View
+        style={[
+          styles.compactCard,
+          {
+            top: insets.top + 54, // just below the "New post" header row
+            opacity: compactAnim,
+            transform: [{ translateY: compactAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+          },
+        ]}
+      >
+        <TouchableOpacity style={styles.compactCoverWrap} onPress={() => expand()}>
+          {currentTrack.cover ? (
+            <Image source={{ uri: currentTrack.cover }} style={styles.compactCover} />
+          ) : (
+            <LinearGradient colors={GRADIENTS.primarySoft} style={styles.compactCover}>
+              <Ionicons name="musical-notes" size={13} color={colors.primary} />
+            </LinearGradient>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.compactBody} activeOpacity={0.7} onPress={() => expand()}>
+          <Text style={styles.compactTitle} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.compactBtn} onPress={() => (isPlaying ? pause() : resume())} hitSlop={6}>
+          <Ionicons
+            name={isBuffering ? 'hourglass' : isPlaying ? 'pause-circle' : 'play-circle'}
+            size={26} color={colors.primary}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.compactClose} onPress={stop} hitSlop={6}>
+          <Ionicons name="close" size={13} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  }
 
   // Sit just above the tab bar (68 + bottom inset), clearing the ~4px the center
   // "+" button now protrudes above it (its pop-up was reduced in the tab bar).
@@ -28,7 +100,7 @@ export default function MiniPlayer() {
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
 
   return (
-    <View style={[styles.container, { bottom: bottomOffset }]}>
+    <Animated.View style={[styles.container, { bottom: bottomOffset, transform: [{ translateY: listenSlide }] }]}>
       <View style={styles.scrubWrap}>
         <Scrubber
           progress={progress}
@@ -72,7 +144,7 @@ export default function MiniPlayer() {
           <Ionicons name="close" size={15} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -103,5 +175,27 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   stopBtn: {
     width: 30, height: 30, borderRadius: RADIUS.full,
     backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
+  },
+
+  // ── Compact card (Create tab) — small pill pinned top-right, below the
+  // "New post" header so it never covers the Next arrow. ──
+  compactCard: {
+    position: 'absolute', right: SPACING.sm, maxWidth: 210,
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.xs + 2,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: RADIUS.full,
+    borderWidth: 0.5, borderColor: colors.primaryLight + '55',
+    paddingVertical: 5, paddingLeft: 5, paddingRight: SPACING.sm,
+    ...SHADOWS.md,
+    zIndex: 100,
+  },
+  compactCoverWrap: { width: 28, height: 28, borderRadius: 14, overflow: 'hidden' },
+  compactCover: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  compactBody: { flexShrink: 1, maxWidth: 96 },
+  compactTitle: { color: colors.text, fontSize: 12, fontWeight: '600' },
+  compactBtn: { alignItems: 'center', justifyContent: 'center' },
+  compactClose: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: colors.surfaceLight, alignItems: 'center', justifyContent: 'center',
   },
 });

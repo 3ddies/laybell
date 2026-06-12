@@ -57,7 +57,8 @@ function badgeStatus(def: BadgeDef, m: BadgeMetrics | null, held: Set<string>): 
     case 'login_silver':  return cur(m.loginStreak, 7, 'days');
     case 'login_gold':    return cur(m.loginStreak, 14, 'days');
     case 'login_diamond': return cur(m.loginStreak, 30, 'days');
-    case 'daily_like_bronze': return cur(m.todayLikes, 15, 'today');
+    case 'login_diamond_perm': return cur(m.loginStreak, 90, 'days');
+    case 'daily_like_bronze': return cur(m.todayLikes, 10, 'today');
     case 'daily_like_silver': return cur(m.likeStreak, 3, 'days');
     case 'daily_like_gold':   return cur(m.likeStreak, 7, 'days');
     case 'posts_bronze': return cur(m.publicPosts, 1, 'public posts');
@@ -67,10 +68,9 @@ function badgeStatus(def: BadgeDef, m: BadgeMetrics | null, held: Set<string>): 
     case 'music_streaming_gold':   return cur(m.musicMinutesToday, 30, 'min today');
     case 'comments_bronze': return cur(m.todayComments, 1, 'today');
     case 'comments_silver': return cur(m.todayComments, 2, 'today');
-    case 'curator_bronze':  return cur(m.playlistListens, 100, 'listens');
-    case 'curator_silver':  return cur(m.playlistListens, 500, 'listens');
-    case 'curator_gold':    return cur(m.playlistListens, 2500, 'listens');
-    case 'curator_diamond': return cur(m.playlistListens, 10000, 'listens');
+    case 'curator_bronze':  return cur(m.topPlaylistListens, 100, 'listens');
+    case 'curator_silver':  return cur(m.topPlaylistListens, 500, 'listens');
+    case 'curator_gold':    return cur(m.topPlaylistListens, 2500, 'listens');
     default: return { kind: 'progress', cur: 0, target: 1, unit: '' };
   }
 }
@@ -397,7 +397,11 @@ function CategoryCard({ category, metrics, held }: { category: BadgeCategory; me
           <View key={def.key} style={styles.badgeRow}>
             <BadgeEmblem tier={def.tier} size={24} style={st.kind === 'earned' ? undefined : styles.dimmed} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.badgeTitle, st.kind !== 'earned' && styles.badgeTitleMuted]}>{tierLabel(def.tier)}</Text>
+              <Text style={[styles.badgeTitle, st.kind !== 'earned' && styles.badgeTitleMuted]}>
+                {tierLabel(def.tier)}
+                {/* Permanent badges never revert once earned — flag them. */}
+                {def.permanent && <Text style={styles.permanentTag}> (Permanent)</Text>}
+              </Text>
               <Text style={styles.badgeCriteria}>{def.criteria}</Text>
             </View>
             <View style={styles.badgeStatus}>
@@ -530,6 +534,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   dimmed: { opacity: 0.6 },
   badgeTitle: { color: colors.text, fontSize: 13, fontWeight: '700' },
   badgeTitleMuted: { color: colors.textSecondary },
+  permanentTag: { color: colors.textTertiary, fontSize: 11, fontWeight: '600' },
   badgeCriteria: { color: colors.textSecondary, fontSize: 13, lineHeight: 17, marginTop: 2 },
   // Earned badges show just a checkmark in a rounded green disc with a soft glow.
   earnedCheck: {

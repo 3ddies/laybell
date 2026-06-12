@@ -2,7 +2,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, ActivityIndicator, Alert, Switch, Image, Dimensions, Animated,
 } from 'react-native';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { Audio } from 'expo-av';
@@ -177,7 +177,11 @@ export default function PostScreen() {
   const swiping = usePagerSwiping();
   const setTabSwipe = useTabSwipeControl();
   const router = useRouter();
-  useFocusEffect(useCallback(() => { stop(); }, []));
+  // Music keeps playing while browsing the picker — the global MiniPlayer
+  // migrates to a compact top-right card on this tab (see app/_layout.tsx).
+  // Entering the DETAILS step is the cutoff: the song exits there so the user
+  // finishes their post in full focus.
+  useEffect(() => { if (step === 'details') stop(); }, [step, stop]);
 
   // Swiping to an adjacent tab is on only while browsing the Posts picker with
   // NOTHING selected yet — selecting any media (single or a slide) turns it off.
@@ -326,6 +330,7 @@ export default function PostScreen() {
 
   async function startRecording() {
     await unloadPreview();
+    stop(); // background music would bleed into (and distract from) the recording
     try {
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
@@ -376,6 +381,7 @@ export default function PostScreen() {
   // Let the user hear the recorded/selected audio before posting.
   async function togglePreview() {
     if (!audioFile) return;
+    stop(); // never layer the preview over background music
     try {
       if (previewSoundRef.current) {
         const st: any = await previewSoundRef.current.getStatusAsync();

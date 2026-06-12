@@ -149,7 +149,9 @@ export default function EditProfileScreen() {
           </LinearGradient>
         </TouchableOpacity>
         <TouchableOpacity onPress={handleChangePhoto} disabled={uploadingPhoto}>
-          <Text style={styles.changePhotoText}>
+          {/* Tinted by the user's displayed badge tier (same accent as the glow
+              + camera button); brand orange before any badge is shown. */}
+          <Text style={[styles.changePhotoText, { color: accent }]}>
             {uploadingPhoto ? 'Uploading...' : 'Change Profile Photo'}
           </Text>
         </TouchableOpacity>

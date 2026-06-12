@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { formatCount } from '../lib/format';
+import { guardPress } from '../contexts/PagerContext';
 import HighlightText from './HighlightText';
 import BadgeEmblem from './BadgeEmblem';
 import { type ProfileBadgeFields } from '../lib/badges';
@@ -35,6 +36,12 @@ export default function TrackRow({
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const durationLabel = formatDuration(duration);
+  // Swipe-tap guard: a tab swipe gliding over the row must not start playback
+  // or open a profile (presses during/just after a swipe are swallowed).
+  const safePlay = guardPress(onPlay)!;
+  const safeCover = guardPress(onCoverPress ?? onPlay)!;
+  const safeAdd = guardPress(onAddToPlaylist);
+  const safeAvatar = guardPress(onAvatarPress);
   return (
     <LinearGradient
       colors={isPlaying ? GRADIENTS.primarySoft : GRADIENTS.card}
@@ -44,7 +51,7 @@ export default function TrackRow({
     >
       {/* Cover art (left) — tap to expand to the now-playing screen.
           Long-press opens the options sheet from ANY part of the row. */}
-      <TouchableOpacity style={styles.coverWrap} onPress={onCoverPress ?? onPlay} onLongPress={onOptions}>
+      <TouchableOpacity style={styles.coverWrap} onPress={safeCover} onLongPress={onOptions}>
         {cover ? (
           <Image source={{ uri: cover }} style={styles.cover} />
         ) : (
@@ -60,7 +67,7 @@ export default function TrackRow({
       </TouchableOpacity>
 
       {/* Track outline — tap to play/pause, long-press for options (own tracks) */}
-      <TouchableOpacity style={styles.info} activeOpacity={0.7} onPress={onPlay} onLongPress={onOptions}>
+      <TouchableOpacity style={styles.info} activeOpacity={0.7} onPress={safePlay} onLongPress={onOptions}>
         <HighlightText text={caption || 'Audio Track'} query={highlightQuery} style={styles.caption} highlightStyle={styles.hl} numberOfLines={1} />
         <View style={styles.meta}>
           <HighlightText text={`@${username}`} query={highlightQuery} style={styles.artist} highlightStyle={styles.hl} numberOfLines={1} />
@@ -73,20 +80,20 @@ export default function TrackRow({
 
       {/* Play / pause — borderless filled-circle glyph, same as Today's Pick */}
       {!hidePlayButton && (
-        <TouchableOpacity onPress={onPlay} onLongPress={onOptions} activeOpacity={0.8} hitSlop={6}>
+        <TouchableOpacity onPress={safePlay} onLongPress={onOptions} activeOpacity={0.8} hitSlop={6}>
           <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={44} color={colors.primary} />
         </TouchableOpacity>
       )}
 
       {onAddToPlaylist && (
-        <TouchableOpacity style={styles.addBtn} onPress={onAddToPlaylist} onLongPress={onOptions}>
+        <TouchableOpacity style={styles.addBtn} onPress={safeAdd} onLongPress={onOptions}>
           <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
         </TouchableOpacity>
       )}
 
       {/* Artist avatar (right) — tap to open profile */}
       {onAvatarPress && (
-        <TouchableOpacity onPress={onAvatarPress} onLongPress={onOptions}>
+        <TouchableOpacity onPress={safeAvatar} onLongPress={onOptions}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatar} />
           ) : (
