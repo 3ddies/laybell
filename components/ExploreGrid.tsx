@@ -13,6 +13,7 @@ import { useAudio } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isAudioPost } from '../lib/genres';
+import { trackVideoProgress } from '../lib/viewTracker';
 import ThumbStat from './ThumbStat';
 
 type GridPost = {
@@ -251,6 +252,11 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
               resizeMode={ResizeMode.COVER}
               isLooping isMuted
               shouldPlay={playing}
+              // Muted grid autoplay counts toward views — genuine watch time
+              // accumulates app-wide; the server enforces the fairness caps.
+              onPlaybackStatusUpdate={(st: any) => {
+                if (st?.isLoaded) trackVideoProgress(p.id, st.positionMillis ?? 0, st.durationMillis ?? 0);
+              }}
             />
           ) : p.thumbnail_url ? (
             <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />

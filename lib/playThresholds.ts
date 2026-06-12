@@ -16,3 +16,14 @@ export function playThresholds(durationSec: number): { t1: number; t2: number; t
   const t3 = 2 * t2 - t1; // continue the cadence: another (t2 - t1) of play time
   return { t1, t2, t3 };
 }
+
+// VIDEO-VIEW variant: the 1st view lands at a flat 5 seconds of genuine watch
+// time (feeds autoplay muted — five real seconds on a video IS a view, like the
+// big platforms count it), while repeat views keep the longer duration-scaled
+// commitments so loops/rewatches still have to be earned. Audio streams keep
+// playThresholds above (a 5s "listen" would be far too cheap for music).
+export function viewThresholds(durationSec: number): { t1: number; t2: number; t3: number } {
+  const t1 = 5;
+  const t2 = Math.max(30, 0.7 * durationSec);
+  return { t1, t2, t3: 2 * t2 - t1 };
+}

@@ -7,6 +7,7 @@ import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { RADIUS } from '../constants/theme';
 import { useTabSwipeControl } from '../contexts/PagerContext';
+import { trackVideoProgress } from '../lib/viewTracker';
 import { type Slide } from '../lib/slideshow';
 
 // Swipeable carousel for slideshow posts. A horizontal paging ScrollView (NOT a
@@ -29,6 +30,10 @@ type Props = {
   aspectRatio: number; // container width / height
   active?: boolean; // gate video autoplay (feed item visible / viewer focused)
   initialIndex?: number;
+  // When set, watch time on video slides counts toward this post's views
+  // (kept INTERNAL for slideshows — never displayed — but it feeds relevance
+  // scoring and the owner's analytics).
+  postId?: string;
   onOpen?: (index: number) => void; // tap a slide → open the full viewer there (feed)
   // Reports whether the CURRENT slide is a video with its audio turned on, so the
   // host can pause/resume an attached song. Fires on slide change + toggle + unmount.
@@ -36,8 +41,11 @@ type Props = {
 };
 
 function SlideVideo({
-  uri, poster, width, height, play, muted,
-}: { uri: string; poster?: string | null; width: number; height: number; play: boolean; muted: boolean }) {
+  uri, poster, width, height, play, muted, onStatus,
+}: {
+  uri: string; poster?: string | null; width: number; height: number;
+  play: boolean; muted: boolean; onStatus?: (st: any) => void;
+}) {
   return (
     <Video
       source={{ uri }}
@@ -48,12 +56,13 @@ function SlideVideo({
       isMuted={muted}
       usePoster
       posterSource={poster ? { uri: poster } : undefined}
+      onPlaybackStatusUpdate={onStatus}
     />
   );
 }
 
 export default function SlideshowCarousel({
-  slides, width, aspectRatio, active = true, initialIndex = 0, onOpen, onVideoAudioActiveChange,
+  slides, width, aspectRatio, active = true, initialIndex = 0, postId, onOpen, onVideoAudioActiveChange,
 }: Props) {
   const height = Math.round(width / (aspectRatio || 1));
   const [index, setIndex] = useState(initialIndex);
@@ -115,6 +124,13 @@ export default function SlideshowCarousel({
                   height={height}
                   play={!!active && i === current}
                   muted={!videoAudioOn}
+                  // Watch time on video slides counts toward the post's
+                  // (internal-only) view tally — same tracker + server caps
+                  // as regular videos. Paused slides report no forward
+                  // progress, so only the playing slide accrues.
+                  onStatus={postId ? (st: any) => {
+                    if (st?.isLoaded) trackVideoProgress(postId, st.positionMillis ?? 0, st.durationMillis ?? 0);
+                  } : undefined}
                 />
               ) : (
                 <Image source={{ uri: s.url }} style={{ width, height }} resizeMode="cover" />

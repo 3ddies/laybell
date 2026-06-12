@@ -294,6 +294,7 @@ export default function PostDetailScreen() {
                   width={SCREEN_W}
                   aspectRatio={aspectToNumber(post.aspect_ratio, 1)}
                   active={isFocused}
+                  postId={id as string}
                   onVideoAudioActiveChange={setSlideAudioActive}
                   initialIndex={initialSlide}
                 />

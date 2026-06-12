@@ -12,7 +12,8 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { bumpBadge } from '../../lib/badges';
+import { bumpBadge, publicPostLimit, rawTier, tierLabel } from '../../lib/badges';
+import { useProfile } from '../../contexts/ProfileContext';
 import { processMentions, getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { createNotification } from '../../lib/createNotification';
 import MentionSuggestions from '../../components/MentionSuggestions';
@@ -26,6 +27,7 @@ import { Image as ExpoImage } from 'expo-image';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
 import { MAX_SLIDES, type Slide } from '../../lib/slideshow';
+import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/upload';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import VideoTrimmer from '../../components/VideoTrimmer';
 import ErrorBoundary from '../../components/ErrorBoundary';
@@ -40,22 +42,59 @@ type PickedSlide = {
   type: 'image' | 'video';
   width: number;
   height: number;
+  durationSec?: number | null;  // video slides — drives the slideshow video budget
   thumbnailUri?: string | null; // poster for video slides
   posterUri?: string | null;    // ph:// poster (video) — renders reliably via expo-image
   crop?: CropRect | null;       // user's drag/pinch crop (image slides) — baked on upload
 };
 
+// A slideshow's combined video time must stay under this — uploads of several
+// long clips in one post are where total size blows up, so the budget is the
+// guardrail (any single clip over it is auto-rejected too).
+const SLIDESHOW_VIDEO_BUDGET_SEC = 60;
+
+// Total seconds of video across the picked slides (images count as 0).
+function slideshowVideoSecs(list: PickedSlide[]): number {
+  return list.reduce((sum, s) => sum + (s.type === 'video' ? (s.durationSec ?? 0) : 0), 0);
+}
+
+// Translate raw upload/database failures into messages a person can act on.
+// Anything unrecognized falls back to the raw message so real bugs stay visible.
+function friendlyShareError(err: any): string {
+  const raw = String(err?.message ?? err ?? '').toLowerCase();
+  if (raw.includes('exceeded the maximum allowed size') || raw.includes('payload too large') || raw.includes('413')) {
+    return 'That file is too large to upload right now. Try a shorter clip or a slideshow with fewer videos.';
+  }
+  if (raw.includes('network') || raw.includes('nsurlerror') || raw.includes('timed out') || raw.includes('socket') || raw.includes('connection')) {
+    return 'Upload interrupted — check your connection and tap Share to try again.';
+  }
+  if (raw.includes('not authenticated') || raw.includes('jwt') || raw.includes('token')) {
+    return 'Your session expired. Log in again, then tap Share.';
+  }
+  if (raw.includes('row-level security') || raw.includes('policy')) {
+    return "Laybell couldn't save this post. Update the app and try again.";
+  }
+  if (raw.includes('storage') && raw.includes('bucket')) {
+    return 'Upload storage is unavailable right now. Try again in a moment.';
+  }
+  return err?.message || 'Something went wrong. Please try again.';
+}
+
 const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
 const PREVIEW_MAX_H = Math.round(SCREEN_H * 0.46);
 
-// Duration limits (seconds).
-const VIDEO_MAX_SEC  = 90;       // 1.5 min
+// Duration limits (seconds). Duration is the ONLY rule for videos — there are
+// deliberately NO file-size caps (an iPhone HD clip can be hundreds of MB and
+// must never be rejected for it; the storage bucket's limit is raised to
+// match). Videos longer than the cap aren't rejected either: the trim editor
+// lets the user pick a 3-minute window.
+const VIDEO_MAX_SEC  = 180;      // 3 min
 const MUSIC_MAX_SEC  = 6 * 60;   // music tracks
 const SPOKEN_MAX_SEC = 35 * 60;  // podcasts / audiobooks
 const AUDIO_MIN_SEC  = 5;        // global minimum length for any audio
 
-// Audio file-size cap (video is bounded by the 90s duration limit instead).
+// Audio file-size cap (video is bounded by the 3-minute duration limit instead).
 const AUDIO_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 
 function fmtMins(sec: number) {
@@ -107,7 +146,31 @@ export default function PostScreen() {
   const [tagged, setTagged] = useState<TaggedPerson[]>([]); // accounts tagged on this post (≤10)
   const [showTagModal, setShowTagModal] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
+  // Tier-gated public slots: none/bronze 6, silver 12, gold 24, diamond ∞.
+  // Friends-only posts are never gated; deleting/archiving frees a slot.
+  const { profile } = useProfile();
+  const myPostLimit = publicPostLimit(rawTier(profile));
+  const [publicCount, setPublicCount] = useState<number | null>(null);
+
+  // Live count of public (non-archived) posts for the slot hint + gate.
+  const refreshPublicCount = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const base = () => supabase.from('posts')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('is_public', true);
+    const filtered = await base().is('archived_at', null);
+    if (!filtered.error) { setPublicCount(filtered.count ?? 0); return; }
+    // archived_at not migrated yet → count all public posts
+    const plain = await base();
+    if (!plain.error) setPublicCount(plain.count ?? 0);
+  }, []);
+  useFocusEffect(useCallback(() => { refreshPublicCount(); }, [refreshPublicCount]));
   const [loading, setLoading] = useState(false);
+  // Live byte progress for the big uploads (video / audio); null = no upload
+  // in flight or a small file going through the plain helper.
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [error, setError] = useState('');
 
   const { stop } = useAudio();
@@ -180,10 +243,8 @@ export default function PostScreen() {
   }
 
   async function onPickMedia(m: PickedMedia) {
-    if (m.type === 'video' && m.duration != null && m.duration > VIDEO_MAX_SEC) {
-      Alert.alert('Video too long', `Videos must be ${VIDEO_MAX_SEC} seconds or shorter.`);
-      return;
-    }
+    // Long videos are never rejected — the edit step's trimmer picks a
+    // 3-minute window out of them instead.
     if (m.type !== postType) setFormat(defaultFormatFor(m.type as any)); // image↔video
     setPostType(m.type);
     setPickedId(m.id);
@@ -234,13 +295,30 @@ export default function PostScreen() {
   async function addSlideFromGrid(m: PickedMedia) {
     captureLastSlideCrop(); // preserve the crop set on the current last slide first
     if (slides.length >= MAX_SLIDES) { Alert.alert('Limit reached', `A slideshow can have up to ${MAX_SLIDES} items.`); return; }
-    if (m.type === 'video' && m.duration != null && m.duration > VIDEO_MAX_SEC) {
-      Alert.alert('Video too long', `Slideshow videos must be ${VIDEO_MAX_SEC}s or shorter.`); return;
+    // Slides have no trim editor, so slideshows keep hard duration gates: one
+    // clip can't exceed the video budget, and neither can all clips combined.
+    if (m.type === 'video' && m.duration != null && m.duration > SLIDESHOW_VIDEO_BUDGET_SEC) {
+      Alert.alert(
+        'Clip too long for a slideshow',
+        'Slideshow clips must be under 1 minute each. To share a longer video, post it on its own (up to 3 minutes).',
+      );
+      return;
+    }
+    if (m.type === 'video' && slideshowVideoSecs(slides) + (m.duration ?? 0) > SLIDESHOW_VIDEO_BUDGET_SEC) {
+      Alert.alert(
+        'Slideshow video limit',
+        'Total video in a slideshow must be under 1 minute. Remove a clip to make room for this one.',
+      );
+      return;
     }
     let thumb: string | null = null;
     if (m.type === 'video') { try { const { uri } = await VideoThumbnails.getThumbnailAsync(m.uri, { time: 1000 }); thumb = uri; } catch {} }
     setSlides(prev => prev.length >= MAX_SLIDES ? prev
-      : [...prev, { id: m.id, uri: m.uri, type: m.type, width: m.width, height: m.height, thumbnailUri: thumb, posterUri: m.posterUri }]);
+      : [...prev, {
+          id: m.id, uri: m.uri, type: m.type, width: m.width, height: m.height,
+          durationSec: m.type === 'video' ? m.duration ?? null : null,
+          thumbnailUri: thumb, posterUri: m.posterUri,
+        }]);
   }
   function removeSlideById(id: string) { setSlides(prev => prev.filter(s => s.id !== id)); }
   // Tabs: "Posts" returns from Music; "Music" is switchType('audio').
@@ -363,7 +441,7 @@ export default function PostScreen() {
     setError('');
     if (postType === 'image') cropRef.current = cropperRef.current?.getCrop() ?? null;
     if (postType === 'slideshow') captureLastSlideCrop();
-    // Long videos go through the trim editor to pick a 90s window.
+    // Long videos go through the trim editor to pick a 3-minute window.
     if (postType === 'video' && videoDuration > VIDEO_MAX_SEC) { setStep('edit'); return; }
     setStep('details');
   }
@@ -379,6 +457,15 @@ export default function PostScreen() {
 
   async function handleShare() {
     if (!caption.trim()) { setError('Please add a caption'); return; }
+    // Re-check the slideshow video budget at the Share button (slides can be
+    // added/removed after the add-time gate) — BEFORE any upload work starts.
+    if (postType === 'slideshow' && slideshowVideoSecs(slides) > SLIDESHOW_VIDEO_BUDGET_SEC) {
+      Alert.alert(
+        'Slideshow video limit',
+        'Total video in the slideshow must be under 1 minute. Trim it down by removing a clip and try again.',
+      );
+      return;
+    }
     if (postType === 'audio' && audioDuration != null) {
       if (audioDuration < AUDIO_MIN_SEC) {
         Alert.alert('Audio too short', `Audio must be at least ${AUDIO_MIN_SEC} seconds long.`);
@@ -399,6 +486,29 @@ export default function PostScreen() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
+
+      // Tier gate for PUBLIC posts — checked fresh before any upload work so a
+      // full slot count never wastes a long video upload. Friends-only always OK.
+      if (isPublic && Number.isFinite(myPostLimit)) {
+        const base = () => supabase.from('posts')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('is_public', true);
+        const filtered = await base().is('archived_at', null);
+        const count = (!filtered.error ? filtered.count : (await base()).count) ?? 0;
+        setPublicCount(count);
+        if (count >= myPostLimit) {
+          setLoading(false);
+          const tier = rawTier(profile);
+          Alert.alert(
+            'Public post limit reached',
+            tier
+              ? `Your ${tierLabel(tier)} badge allows ${myPostLimit} public posts at a time. Delete or archive one, switch this to Friends only, or earn a higher badge (Silver 12 · Gold 24 · Diamond unlimited).`
+              : `You can have 6 public posts at a time. Delete or archive one, switch this to Friends only, or earn badges for more slots (Silver 12 · Gold 24 · Diamond unlimited).`,
+          );
+          return;
+        }
+      }
 
       let mediaUrl: string;
       let thumbnailUrl: string | null = null;
@@ -423,8 +533,11 @@ export default function PostScreen() {
             } catch {}
             url = await uploadToStorage(user.id, outUri, 'jpg', 'image/jpeg');
           } else {
-            const ext = s.uri.split('.').pop() || 'mp4';
-            url = await uploadToStorage(user.id, s.uri, ext, 'video/mp4');
+            const upUri = await compressVideoIfPossible(s.uri, setUploadPct);
+            setUploadPct(null);
+            const ext = (upUri === s.uri ? s.uri.split('.').pop() : 'mp4') || 'mp4';
+            url = await uploadToStorageWithProgress('posts', user.id, upUri, ext, 'video/mp4', setUploadPct);
+            setUploadPct(null);
           }
           let thumb: string | null = s.type === 'image' ? url : null;
           if (s.type === 'video' && s.thumbnailUri) thumb = await uploadToStorage(user.id, s.thumbnailUri, 'jpg', 'image/jpeg');
@@ -436,7 +549,8 @@ export default function PostScreen() {
       } else if (postType === 'audio') {
         const a = audioFile;
         const ext = a.name ? a.name.split('.').pop() : (a.uri.split('.').pop() || 'mp3');
-        mediaUrl = await uploadToStorage(user.id, a.uri, ext, a.mimeType || 'audio/mpeg');
+        mediaUrl = await uploadToStorageWithProgress('posts', user.id, a.uri, ext, a.mimeType || 'audio/mpeg', setUploadPct);
+        setUploadPct(null);
         if (coverUri) coverUrl = await uploadToStorage(user.id, coverUri, 'jpg', 'image/jpeg');
       } else if (postType === 'image') {
         // Bake the user's pan/pinch crop into the uploaded image.
@@ -454,9 +568,15 @@ export default function PostScreen() {
         }
         mediaUrl = await uploadToStorage(user.id, outUri, 'jpg', 'image/jpeg');
       } else {
-        // video — uploaded as-is, shown contained at the chosen format
-        const ext = media!.uri.split('.').pop() || 'mp4';
-        mediaUrl = await uploadToStorage(user.id, media!.uri, ext, 'video/mp4');
+        // video — duration is the only rule (no size caps). Big files are
+        // first compressed to 1080p H.264 on-device (pass-through until the
+        // dev client carries the native compressor), then streamed with live
+        // progress so long uploads never look hung.
+        const upUri = await compressVideoIfPossible(media!.uri, setUploadPct);
+        setUploadPct(null);
+        const ext = (upUri === media!.uri ? media!.uri.split('.').pop() : 'mp4') || 'mp4';
+        mediaUrl = await uploadToStorageWithProgress('posts', user.id, upUri, ext, 'video/mp4', setUploadPct);
+        setUploadPct(null);
         if (thumbnailUri) thumbnailUrl = await uploadToStorage(user.id, thumbnailUri, 'jpg', 'image/jpeg');
       }
 
@@ -484,7 +604,10 @@ export default function PostScreen() {
         ...(tagged.length && postType !== 'audio' ? { tagged_user_ids: tagged.map((t) => t.id) } : {}),
       }).select('id').single();
       if (postError) throw postError;
-      if (isPublic) bumpBadge('posts_created'); // recomputes the Posts badge from the live grid
+      if (isPublic) {
+        bumpBadge('posts_created'); // recomputes the Posts badge from the live grid
+        setPublicCount((c) => (c == null ? c : c + 1)); // slot hint stays honest
+      }
 
       // Notify @mentions in the caption, and the original artist if their song was used.
       if (newPost?.id) {
@@ -502,8 +625,9 @@ export default function PostScreen() {
       Alert.alert('Posted! 🎉', 'Your post is now live on Laybell');
       resetAll();
     } catch (err: any) {
-      setError(err.message || 'Something went wrong');
+      setError(friendlyShareError(err));
     }
+    setUploadPct(null);
     setLoading(false);
   }
 
@@ -548,9 +672,20 @@ export default function PostScreen() {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>New post</Text>
           <TouchableOpacity style={styles.headerAction} onPress={handleShare} disabled={loading}>
-            {loading ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={styles.headerActionText}>Share</Text>}
+            {loading
+              ? uploadPct != null
+                ? <Text style={styles.headerActionText}>{Math.round(uploadPct * 100)}%</Text>
+                : <ActivityIndicator color={colors.primary} size="small" />
+              : <Text style={styles.headerActionText}>Share</Text>}
           </TouchableOpacity>
         </View>
+
+        {/* Real upload progress for big files (3-min videos can be 100s of MB) */}
+        {loading && uploadPct != null && (
+          <View style={styles.uploadBarTrack}>
+            <View style={[styles.uploadBarFill, { width: `${Math.round(uploadPct * 100)}%` }]} />
+          </View>
+        )}
 
         <ScrollView contentContainerStyle={styles.detailsContent} keyboardShouldPersistTaps="handled">
           {/* Caption row with media thumbnail (Instagram-style) */}
@@ -702,6 +837,15 @@ export default function PostScreen() {
               thumbColor={isPublic ? colors.primary : colors.textTertiary}
             />
           </View>
+
+          {/* Badge-tier public slots */}
+          {isPublic && publicCount != null && (
+            <Text style={[styles.slotHint, Number.isFinite(myPostLimit) && publicCount >= myPostLimit && { color: colors.error }]}>
+              {Number.isFinite(myPostLimit)
+                ? `${publicCount} of ${myPostLimit} public post ${myPostLimit === 1 ? 'slot' : 'slots'} used${rawTier(profile) ? ` · ${tierLabel(rawTier(profile))} badge` : ''}`
+                : 'Unlimited public posts · Diamond badge'}
+            </Text>
+          )}
 
           {!!error && (
             <View style={styles.errorRow}>
@@ -920,6 +1064,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   headerTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   headerAction: { width: 64, alignItems: 'flex-end', paddingVertical: 4, paddingRight: SPACING.xs },
   headerActionText: { color: colors.primary, fontSize: 16, fontWeight: '700' },
+  // Byte-level upload progress under the header while a big file streams up.
+  uploadBarTrack: { height: 3, backgroundColor: colors.surfaceLight, overflow: 'hidden' },
+  uploadBarFill: { height: 3, backgroundColor: colors.primary },
 
   previewArea: { backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.xs, overflow: 'hidden' },
   previewPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, gap: SPACING.sm, alignSelf: 'center' },
@@ -1069,6 +1216,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   visibilityLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
   visibilityLabel: { color: colors.text, fontSize: 15, fontWeight: '600' },
   visibilitySub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  slotHint: { color: colors.textTertiary, fontSize: 12, marginTop: -SPACING.xs, paddingHorizontal: SPACING.xs },
 
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   errorText: { color: colors.error, fontSize: 13 },

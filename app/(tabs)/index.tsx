@@ -34,6 +34,7 @@ import ElasticSwipeView from '../../components/ElasticSwipeView';
 import FollowButton from '../../components/FollowButton';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { aspectToNumber } from '../../lib/aspectRatio';
+import { trackVideoProgress } from '../../lib/viewTracker';
 import TrackRow from '../../components/TrackRow';
 import StoriesTray from '../../components/StoriesTray';
 import StoryAvatar from '../../components/StoryAvatar';
@@ -176,6 +177,7 @@ const PostCard = memo(function PostCard({
             width={SCREEN_W}
             aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
             active={shouldPlayVideo}
+            postId={item.id}
             onVideoAudioActiveChange={(a) => onSlideAudioActive(item, a)}
             onOpen={(idx) => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }, idx))}
           />
@@ -218,6 +220,12 @@ const PostCard = memo(function PostCard({
               isLooping
               isMuted={item.song_id ? true : videoMuted}
               shouldPlay={shouldPlayVideo}
+              // Feed watching counts toward views (muted autoplay included) —
+              // the tracker accumulates genuine watch time across surfaces and
+              // the server enforces the per-user/device caps.
+              onPlaybackStatusUpdate={(st: any) => {
+                if (st?.isLoaded) trackVideoProgress(item.id, st.positionMillis ?? 0, st.durationMillis ?? 0);
+              }}
             />
           </TouchableOpacity>
           <TouchableOpacity style={styles.videoAudioBtn} onPress={item.song_id ? onToggleSongMute : onToggleMuted}>

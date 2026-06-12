@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { getDeviceId } from './deviceId';
-import { playThresholds } from './playThresholds';
+import { viewThresholds } from './playThresholds';
 
 // Credits video VIEWS by cumulative genuine watch time, mirroring the audio
 // stream logic in AudioContext. A module singleton so watch time for a post
@@ -82,7 +82,8 @@ export function trackVideoProgress(postId: string, positionMs: number, durationM
   const watched = (watchMs[postId] || 0) + delta;
   watchMs[postId] = watched;
   const a = awarded[postId] || 0;
-  const { t1, t2, t3 } = playThresholds(durationMs / 1000);
+  // 1st view at a flat 5s of genuine watch; 2nd/3rd need real rewatching.
+  const { t1, t2, t3 } = viewThresholds(durationMs / 1000);
   if (a === 0 && watched >= t1 * 1000) { awarded[postId] = 1; recordView(postId); save(); }
   else if (a === 1 && watched >= t2 * 1000) { awarded[postId] = 2; recordView(postId); save(); }
   else if (a === 2 && watched >= t3 * 1000) { awarded[postId] = 3; recordView(postId); save(); }

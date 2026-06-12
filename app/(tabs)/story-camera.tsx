@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { uploadStoryMedia, createStory } from '../../lib/stories';
+import { compressVideoIfPossible } from '../../lib/upload';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import StickerLayer, {
@@ -583,8 +584,11 @@ export default function StoryCameraScreen() {
         }
         mediaUrl = await uploadStoryMedia(user.id, outUri, 'jpg', 'image/jpeg');
       } else {
-        const ext = captured.uri.split('.').pop() || 'mp4';
-        mediaUrl = await uploadStoryMedia(user.id, captured.uri, ext, 'video/mp4');
+        // Library picks can be 4K originals — shrink to 1080p when the native
+        // compressor is in the build (pass-through otherwise).
+        const upUri = await compressVideoIfPossible(captured.uri);
+        const ext = (upUri === captured.uri ? captured.uri.split('.').pop() : 'mp4') || 'mp4';
+        mediaUrl = await uploadStoryMedia(user.id, upUri, ext, 'video/mp4');
         try {
           const { uri } = await VideoThumbnails.getThumbnailAsync(captured.uri, { time: 0 });
           thumbnailUrl = await uploadStoryMedia(user.id, uri, 'jpg', 'image/jpeg');

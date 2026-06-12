@@ -201,6 +201,14 @@ export function publicPlaylistLimit(tier: Tier | null): number {
   return tier ? PUBLIC_PLAYLIST_LIMIT[tier] : 0;
 }
 
+// How many PUBLIC posts each earned tier may have live at once (checked at
+// post time; deleting or archiving one frees its slot). No badge shares the
+// bronze allowance; diamond is unlimited. Friends-only posts are never gated.
+export const PUBLIC_POST_LIMIT: Record<Tier, number> = { bronze: 6, silver: 12, gold: 24, diamond: Infinity };
+export function publicPostLimit(tier: Tier | null): number {
+  return tier ? PUBLIC_POST_LIMIT[tier] : 6;
+}
+
 // The tier the user has CHOSEN to present. Their profile theme doubles as the
 // badge they display: a tier-specific theme shows that tier (so a higher-tier user
 // can deliberately display a lower badge), while Default shows NO badge at all
