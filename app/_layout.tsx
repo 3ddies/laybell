@@ -93,7 +93,7 @@ function AppContent() {
             the route itself must not animate (iOS ignores slide_from_right on
             modal presentations and would slide up from the bottom instead). The
             stack's own back gesture stays off — the pager owns the swipe. */}
-        {['messages/index', 'notifications', 'settings', 'analytics', 'badges', 'permissions', 'playlists', 'playlist/[id]'].map((name) => (
+        {['messages/index', 'notifications', 'settings', 'analytics', 'spotlight', 'badges', 'permissions', 'playlists', 'playlist/[id]'].map((name) => (
           <Stack.Screen
             key={name}
             name={name}

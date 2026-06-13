@@ -1,0 +1,700 @@
+import {
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  ActivityIndicator, Image, Alert, RefreshControl, Modal,
+} from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useState, useCallback, useRef } from 'react';
+import { supabase } from '../lib/supabase';
+import {
+  SPOTLIGHT_PACKAGES, fmtPrice, packageFor, effectiveStatus, timeLeftLabel, rampHoursFor,
+  purchaseCampaign, activateCampaign, cancelPendingCampaign, endCampaign,
+  fetchMyCampaigns, setPendingSpotlight, clearPendingSpotlight,
+  type SpotlightPackage, type SpotlightCampaign, type SpotlightStatus,
+} from '../lib/spotlight';
+import { isAudioPost } from '../lib/genres';
+import VideoThumb from '../components/VideoThumb';
+import SwipeBackPager from '../components/SwipeBackPager';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+
+// Spotlight manager (reached from the profile's Spotlight button and Settings).
+// Pay (simulated) → the campaign is born `pending` → attach a post (an
+// existing public one via the grid here, or a brand-new one via the composer
+// handoff in lib/spotlight) → it launches as the Home feed's #3 post (climbing
+// toward #1 only when genuinely trending) and holds placement as long as
+// engagement backs it up. Campaign cards double as the basic analytics view:
+// views, taps, likes, time left.
+
+type FlowStep = 'package' | 'pay' | 'choose' | 'grid';
+
+const STATUS_LABEL: Record<SpotlightStatus, string> = {
+  pending: 'Needs a post',
+  active: 'Live',
+  ended: 'Ended',
+  canceled: 'Canceled',
+};
+
+function thumbFor(post: any): { uri: string | null; video: boolean } {
+  if (!post) return { uri: null, video: false };
+  if (post.type === 'video') return { uri: post.thumbnail_url ?? null, video: true };
+  if (post.type === 'slideshow') return { uri: post.thumbnail_url || post.media_url, video: false };
+  if (isAudioPost(post.type)) return { uri: post.cover_url ?? null, video: false };
+  return { uri: post.media_url ?? null, video: false };
+}
+
+export default function SpotlightScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const router = useRouter();
+
+  const [campaigns, setCampaigns] = useState<SpotlightCampaign[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Create / resume flow (modal)
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [flowStep, setFlowStep] = useState<FlowStep>('package');
+  const [pkg, setPkg] = useState<SpotlightPackage | null>(null);
+  const [paying, setPaying] = useState(false);
+  // Synchronous re-entry guard: `paying` state only disables the button after a
+  // re-render commits, so a fast double-tap would buy twice without this.
+  const payingRef = useRef(false);
+  const [flowCampaign, setFlowCampaign] = useState<SpotlightCampaign | null>(null);
+  const [myPosts, setMyPosts] = useState<any[]>([]);
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [attachingId, setAttachingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setCampaigns(await fetchMyCampaigns());
+    setLoading(false);
+    setRefreshing(false);
+  }, []);
+
+  // Reload whenever the screen gains focus — a campaign may have just gone
+  // live through the composer handoff.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  function statusColor(s: SpotlightStatus): string {
+    switch (s) {
+      case 'active': return colors.primary;
+      case 'pending': return '#F59E0B';
+      default: return colors.textTertiary;
+    }
+  }
+
+  // ─── Create flow ────────────────────────────────────────────────────────────
+
+  function startFlow() {
+    setPkg(null);
+    setFlowCampaign(null);
+    setFlowStep('package');
+    setFlowOpen(true);
+  }
+
+  // A paid `pending` campaign (e.g. the app died mid-flow) re-enters at the
+  // choose step — the purchase is never lost.
+  function resumeFlow(c: SpotlightCampaign) {
+    setFlowCampaign(c);
+    setPkg(packageFor(c.package_key));
+    setFlowStep('choose');
+    setFlowOpen(true);
+  }
+
+  async function handlePay() {
+    if (!pkg || payingRef.current) return;
+    payingRef.current = true;
+    setPaying(true);
+    try {
+      // Simulated checkout: a short beat for the "processing" feel, then the
+      // campaign + payment rows. A real provider slots in right here.
+      await new Promise(r => setTimeout(r, 900));
+      const campaign = await purchaseCampaign(pkg);
+      if (!campaign) {
+        Alert.alert('Payment failed', 'Could not complete the purchase. Please try again.');
+        return;
+      }
+      setFlowCampaign(campaign);
+      setFlowStep('choose');
+      load();
+    } finally {
+      payingRef.current = false;
+      setPaying(false);
+    }
+  }
+
+  // Own public, non-archived posts that aren't already spotlighted.
+  async function openPostGrid() {
+    setFlowStep('grid');
+    setPostsLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setMyPosts([]); return; }
+      const base = () => supabase
+        .from('posts')
+        .select('id, type, media_url, thumbnail_url, cover_url, caption, created_at')
+        .eq('user_id', user.id)
+        .eq('is_public', true)
+        .order('created_at', { ascending: false });
+      // archived_at is absent until the archive migration — fall back cleanly.
+      let { data, error } = await base().is('archived_at', null);
+      if (error) ({ data } = await base());
+      const taken = new Set(
+        campaigns
+          .filter(c => c.status === 'pending' || effectiveStatus(c) === 'active')
+          .map(c => c.post_id)
+          .filter(Boolean),
+      );
+      setMyPosts((data ?? []).filter((p: any) => !taken.has(p.id)));
+    } finally {
+      setPostsLoading(false);
+    }
+  }
+
+  function handleNewPost() {
+    if (!flowCampaign || !pkg) return;
+    setPendingSpotlight({ campaignId: flowCampaign.id, days: pkg.days, label: pkg.label });
+    setFlowOpen(false);
+    // ONE atomic op: pop the Spotlight modal (and any modal stacked beneath it,
+    // e.g. when opened from Settings) AND select the EXISTING composer tab.
+    // Two things were wrong before: (a) a BARE '/post' href issued from this
+    // transparent modal doesn't resolve to the live (tabs) pager — the root
+    // Stack re-resolves it into a SECOND (tabs) group (which starts on Home),
+    // double-mounting HomeScreen (the realtime-channel crash); (b) dismissAll()
+    // + a separately-dispatched navigate() raced, and the dismiss-to-profile
+    // landing committed last, so the composer flashed then bounced to Profile.
+    // dismissTo with the GROUP-QUALIFIED href fixes both: it's a single POP_TO
+    // dispatch (no race) and the '(tabs)' segment pins resolution to the
+    // already-mounted pager (no duplicate group), the same reason an in-tab
+    // router.navigate('/explore') works. Fallback (older expo-router without
+    // dismissTo) keeps the grouped href — the bare '/post' was itself the bug.
+    const r = router as any;
+    if (typeof r.dismissTo === 'function') {
+      r.dismissTo('/(tabs)/post');
+    } else {
+      try { r.dismissAll?.(); } catch {}
+      r.navigate('/(tabs)/post');
+    }
+  }
+
+  function handlePickPost(post: any) {
+    if (!flowCampaign || !pkg || attachingId) return;
+    Alert.alert(
+      'Spotlight this post?',
+      `It launches as the #3 post in the Home feed and stays spotlighted for ${pkg.label.toLowerCase()}, marked with a Spotlight tag.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Spotlight',
+          onPress: async () => {
+            setAttachingId(post.id);
+            const ok = await activateCampaign(flowCampaign.id, post.id, pkg.days);
+            setAttachingId(null);
+            if (!ok) {
+              Alert.alert('Error', 'Could not start the spotlight. Please try again.');
+              return;
+            }
+            // Any parked "create a new post" handoff is stale now that the
+            // campaign went live through the grid.
+            clearPendingSpotlight();
+            setFlowOpen(false);
+            load();
+            Alert.alert('Your post is in the Spotlight! ✨', `It launches as the #3 post in the Home feed for the next ${pkg.label.toLowerCase()} — and can climb to #1 if it takes off.`);
+          },
+        },
+      ],
+    );
+  }
+
+  // ─── Campaign card actions ──────────────────────────────────────────────────
+
+  function confirmCancelPending(c: SpotlightCampaign) {
+    Alert.alert(
+      'Cancel this spotlight?',
+      'This purchase has no post attached yet. Canceling refunds the (simulated) payment.',
+      [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: 'Cancel spotlight',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await cancelPendingCampaign(c.id);
+            if (ok) load();
+            else Alert.alert('Error', 'Could not cancel the spotlight. Please try again.');
+          },
+        },
+      ],
+    );
+  }
+
+  function confirmEndEarly(c: SpotlightCampaign) {
+    Alert.alert(
+      'End this spotlight early?',
+      'Your post drops back to normal ranking right away. The remaining time is not refunded.',
+      [
+        { text: 'Keep running', style: 'cancel' },
+        {
+          text: 'End spotlight',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await endCampaign(c.id);
+            if (ok) load();
+            else Alert.alert('Error', 'Could not end the spotlight. Please try again.');
+          },
+        },
+      ],
+    );
+  }
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
+
+  function renderCampaign(c: SpotlightCampaign) {
+    const status = effectiveStatus(c);
+    const pack = packageFor(c.package_key);
+    const { uri, video } = thumbFor(c.posts);
+    const likeCount = c.posts?.likes?.[0]?.count ?? 0;
+    return (
+      <View key={c.id} style={styles.card}>
+        <View style={styles.cardTop}>
+          {c.posts ? (
+            video && !uri ? (
+              <VideoThumb thumbnailUrl={c.posts.thumbnail_url} mediaUrl={c.posts.media_url} style={styles.cardThumb} />
+            ) : uri ? (
+              <Image source={{ uri }} style={styles.cardThumb} resizeMode="cover" />
+            ) : (
+              <View style={[styles.cardThumb, styles.cardThumbPlaceholder]}>
+                <Ionicons name={isAudioPost(c.posts.type) ? 'musical-notes' : 'image'} size={20} color={colors.primary} />
+              </View>
+            )
+          ) : (
+            <View style={[styles.cardThumb, styles.cardThumbPlaceholder]}>
+              <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
+            </View>
+          )}
+          <View style={styles.cardInfo}>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.cardTitle}>{pack?.label ?? c.package_key} · {fmtPrice(c.price_cents)}</Text>
+              <View style={[styles.statusChip, { borderColor: statusColor(status) }]}>
+                <Text style={[styles.statusChipText, { color: statusColor(status) }]}>{STATUS_LABEL[status]}</Text>
+              </View>
+            </View>
+            <Text style={styles.cardCaption} numberOfLines={1}>
+              {c.posts?.caption || (status === 'pending' ? 'No post attached yet' : 'Post unavailable')}
+            </Text>
+            <Text style={styles.cardMeta}>
+              {status === 'active'
+                ? timeLeftLabel(c.ends_at)
+                : `Purchased ${new Date(c.created_at).toLocaleDateString()}`}
+            </Text>
+          </View>
+        </View>
+
+        {status !== 'pending' && (
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              <Ionicons name="eye-outline" size={15} color={colors.textSecondary} />
+              <Text style={styles.statText}>{c.impression_count} views</Text>
+            </View>
+            <View style={styles.stat}>
+              <Ionicons name="hand-left-outline" size={15} color={colors.textSecondary} />
+              <Text style={styles.statText}>{c.tap_count} taps</Text>
+            </View>
+            <View style={styles.stat}>
+              <Ionicons name="heart-outline" size={15} color={colors.textSecondary} />
+              <Text style={styles.statText}>{likeCount} likes</Text>
+            </View>
+          </View>
+        )}
+
+        {status === 'pending' && (
+          <View style={styles.cardActions}>
+            <TouchableOpacity style={styles.cardActionPrimary} onPress={() => resumeFlow(c)}>
+              <Ionicons name="albums-outline" size={15} color={colors.text} />
+              <Text style={styles.cardActionPrimaryText}>Choose a post</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cardActionGhost} onPress={() => confirmCancelPending(c)}>
+              <Text style={styles.cardActionGhostText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {status === 'active' && (
+          <View style={styles.cardActions}>
+            <TouchableOpacity style={styles.cardActionGhost} onPress={() => confirmEndEarly(c)}>
+              <Text style={styles.cardActionGhostText}>End early</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  const flowTitle = flowStep === 'package' ? 'Choose a package'
+    : flowStep === 'pay' ? 'Checkout'
+    : flowStep === 'grid' ? 'Pick a post'
+    : 'Almost there';
+
+  return (
+    <SwipeBackPager>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Spotlight</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
+          }
+        >
+          <Text style={styles.hint}>
+            Put a post in the Spotlight: it launches as the #3 post in the Home feed — and can climb
+            all the way to #1 if it takes off. Strong engagement keeps it up there; slow engagement
+            lets it drift down, but a spotlighted post is always seen. Any media type works.
+          </Text>
+
+          <TouchableOpacity style={styles.createBtn} onPress={startFlow} activeOpacity={0.85}>
+            <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
+              <Ionicons name="sparkles" size={18} color={colors.text} />
+              <Text style={styles.createBtnText}>Spotlight a Post</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {campaigns.length === 0 ? (
+            <View style={styles.empty}>
+              <Ionicons name="sparkles-outline" size={44} color={colors.textTertiary} />
+              <Text style={styles.emptyTitle}>No spotlights yet</Text>
+              <Text style={styles.emptySub}>Your spotlighted posts and their stats will show up here.</Text>
+            </View>
+          ) : (
+            <View style={styles.cards}>
+              <Text style={styles.sectionTitle}>Your spotlights</Text>
+              {campaigns.map(renderCampaign)}
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      {/* Create / resume flow */}
+      <Modal visible={flowOpen} animationType="slide" onRequestClose={() => setFlowOpen(false)}>
+        <View style={styles.flowContainer}>
+          <View style={styles.flowHeader}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => {
+                if (flowStep === 'pay') setFlowStep('package');
+                else if (flowStep === 'grid') setFlowStep('choose');
+                else setFlowOpen(false);
+              }}
+            >
+              <Ionicons name={flowStep === 'pay' || flowStep === 'grid' ? 'chevron-back' : 'close'} size={24} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{flowTitle}</Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          {flowStep === 'package' && (
+            <ScrollView contentContainerStyle={styles.flowScroll}>
+              <Text style={styles.flowLead}>
+                Every package launches your post at the #3 spot in the feed. Bigger packages hold
+                that placement longer before engagement takes over — and engagement itself extends
+                it further.
+              </Text>
+              {SPOTLIGHT_PACKAGES.map(p => {
+                const on = pkg?.key === p.key;
+                return (
+                  <TouchableOpacity
+                    key={p.key}
+                    style={[styles.pkgCard, on && styles.pkgCardActive]}
+                    onPress={() => setPkg(p)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.pkgTop}>
+                      <Text style={[styles.pkgLabel, on && { color: colors.primary }]}>{p.label}</Text>
+                      <Text style={[styles.pkgPrice, on && { color: colors.primary }]}>{fmtPrice(p.priceCents)}</Text>
+                    </View>
+                    <Text style={styles.pkgBlurb}>{p.blurb}</Text>
+                    <View style={styles.pkgMetaRow}>
+                      <Ionicons name="trending-up-outline" size={13} color={colors.textTertiary} />
+                      <Text style={styles.pkgMeta}>~{rampHoursFor(p.weight)}h guaranteed placement — engagement extends it</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity
+                style={[styles.primaryBtn, !pkg && styles.primaryBtnDisabled]}
+                disabled={!pkg}
+                onPress={() => setFlowStep('pay')}
+              >
+                <Text style={styles.primaryBtnText}>Continue</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+
+          {flowStep === 'pay' && pkg && (
+            <ScrollView contentContainerStyle={styles.flowScroll}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryTitle}>Order summary</Text>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryKey}>Package</Text>
+                  <Text style={styles.summaryVal}>{pkg.label} in the Spotlight</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryKey}>Launch placement</Text>
+                  <Text style={styles.summaryVal}>~{rampHoursFor(pkg.weight)}h at #3 or higher</Text>
+                </View>
+                <View style={styles.summaryDivider} />
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryTotalKey}>Total</Text>
+                  <Text style={styles.summaryTotalVal}>{fmtPrice(pkg.priceCents)}</Text>
+                </View>
+              </View>
+              <Text style={styles.simNote}>
+                Simulated checkout — no real charge is made while Laybell payments are in preview.
+              </Text>
+              <TouchableOpacity style={styles.primaryBtn} onPress={handlePay} disabled={paying}>
+                {paying
+                  ? <ActivityIndicator color={colors.text} size="small" />
+                  : <Text style={styles.primaryBtnText}>Pay {fmtPrice(pkg.priceCents)}</Text>}
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+
+          {flowStep === 'choose' && (
+            <ScrollView contentContainerStyle={styles.flowScroll}>
+              <Text style={styles.flowLead}>
+                Payment confirmed. Your spotlight starts the moment a post is attached — pick one of
+                yours or make something new.
+              </Text>
+              <TouchableOpacity style={styles.chooseCard} onPress={openPostGrid} activeOpacity={0.8}>
+                <View style={styles.chooseIcon}><Ionicons name="albums-outline" size={24} color={colors.primary} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.chooseTitle}>Spotlight an existing post</Text>
+                  <Text style={styles.chooseSub}>Pick one of your public posts to boost</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.chooseCard} onPress={handleNewPost} activeOpacity={0.8}>
+                <View style={styles.chooseIcon}><Ionicons name="add-circle-outline" size={24} color={colors.primary} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.chooseTitle}>Create a new post</Text>
+                  <Text style={styles.chooseSub}>Make a fresh post — it launches in the Spotlight</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+              </TouchableOpacity>
+              <Text style={styles.simNote}>
+                Not ready? Close this — your purchase is saved and you can attach a post here anytime.
+              </Text>
+            </ScrollView>
+          )}
+
+          {flowStep === 'grid' && (
+            postsLoading ? (
+              <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+            ) : myPosts.length === 0 ? (
+              <View style={styles.empty}>
+                <Ionicons name="images-outline" size={44} color={colors.textTertiary} />
+                <Text style={styles.emptyTitle}>No posts to spotlight</Text>
+                <Text style={styles.emptySub}>
+                  Only your public posts can be spotlighted — and a post carries one spotlight at a time.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView contentContainerStyle={styles.gridScroll}>
+                <Text style={[styles.hint, { paddingHorizontal: SPACING.md }]}>Public posts only. Tap one to spotlight it.</Text>
+                <View style={styles.grid}>
+                  {myPosts.map(post => {
+                    const { uri, video } = thumbFor(post);
+                    return (
+                      <TouchableOpacity key={post.id} style={styles.cell} onPress={() => handlePickPost(post)} activeOpacity={0.85}>
+                        {video && !uri ? (
+                          <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.cellMedia} />
+                        ) : uri ? (
+                          <Image source={{ uri }} style={styles.cellMedia} resizeMode="cover" />
+                        ) : (
+                          <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.cellPlaceholder}>
+                            <Ionicons name={isAudioPost(post.type) ? 'musical-notes' : 'videocam'} size={26} color={colors.primary} />
+                          </LinearGradient>
+                        )}
+                        {attachingId === post.id && (
+                          <View style={styles.cellBusy}><ActivityIndicator color={colors.text} size="small" /></View>
+                        )}
+                        <View style={styles.typeBadge}>
+                          <Ionicons
+                            name={post.type === 'slideshow' ? 'copy' : post.type === 'video' ? 'videocam' : isAudioPost(post.type) ? 'musical-notes' : 'image'}
+                            size={11} color={colors.text}
+                          />
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            )
+          )}
+        </View>
+      </Modal>
+    </View>
+    </SwipeBackPager>
+  );
+}
+
+const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.sm,
+    paddingTop: SPACING.xxl + SPACING.sm,
+    paddingBottom: SPACING.md,
+    borderBottomWidth: 0.5, borderBottomColor: colors.borderSubtle,
+  },
+  backBtn: { padding: SPACING.sm },
+  headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
+
+  scroll: { padding: SPACING.md, paddingBottom: SPACING.xxl, gap: SPACING.md },
+  hint: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
+
+  createBtn: { borderRadius: RADIUS.lg, overflow: 'hidden' },
+  createBtnInner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+  },
+  createBtnText: { color: colors.text, fontSize: 15, fontWeight: '800' },
+
+  sectionTitle: {
+    color: colors.textTertiary, fontSize: 11, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: SPACING.xs,
+  },
+  cards: { gap: SPACING.sm },
+  card: {
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: colors.border,
+    padding: SPACING.md, gap: SPACING.sm,
+  },
+  cardTop: { flexDirection: 'row', gap: SPACING.sm, alignItems: 'center' },
+  cardThumb: { width: 54, height: 54, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceElevated },
+  cardThumbPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  cardInfo: { flex: 1, gap: 2 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SPACING.sm },
+  cardTitle: { color: colors.text, fontSize: 14, fontWeight: '700', flexShrink: 1 },
+  statusChip: {
+    borderWidth: 1, borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.sm, paddingVertical: 2,
+  },
+  statusChipText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
+  cardCaption: { color: colors.textSecondary, fontSize: 12 },
+  cardMeta: { color: colors.textTertiary, fontSize: 11 },
+
+  statsRow: {
+    flexDirection: 'row', gap: SPACING.lg,
+    borderTopWidth: 0.5, borderTopColor: colors.border, paddingTop: SPACING.sm,
+  },
+  stat: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  statText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
+
+  cardActions: { flexDirection: 'row', gap: SPACING.sm },
+  cardActionPrimary: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.primary, borderRadius: RADIUS.full,
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md, flex: 1,
+  },
+  cardActionPrimaryText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  cardActionGhost: {
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.full,
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
+  },
+  cardActionGhostText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
+
+  empty: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm, paddingHorizontal: SPACING.lg },
+  emptyTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  emptySub: { color: colors.textSecondary, fontSize: 13, textAlign: 'center' },
+
+  // Flow modal
+  flowContainer: { flex: 1, backgroundColor: colors.background },
+  flowHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.sm,
+    paddingTop: SPACING.xxl + SPACING.sm,
+    paddingBottom: SPACING.md,
+    borderBottomWidth: 0.5, borderBottomColor: colors.borderSubtle,
+  },
+  flowScroll: { padding: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.xxl },
+  flowLead: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+
+  pkgCard: {
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1.5, borderColor: colors.border,
+    padding: SPACING.md, gap: 6,
+  },
+  pkgCardActive: { borderColor: colors.primary, backgroundColor: colors.primary + '11' },
+  pkgTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  pkgLabel: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  pkgPrice: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  pkgBlurb: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
+  pkgMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  pkgMeta: { color: colors.textTertiary, fontSize: 11, fontWeight: '600' },
+
+  primaryBtn: {
+    backgroundColor: colors.primary, borderRadius: RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
+    paddingVertical: SPACING.md, marginTop: SPACING.sm,
+  },
+  primaryBtnDisabled: { opacity: 0.4 },
+  primaryBtnText: { color: colors.text, fontSize: 15, fontWeight: '800' },
+
+  summaryCard: {
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: colors.border,
+    padding: SPACING.md, gap: SPACING.sm,
+  },
+  summaryTitle: { color: colors.text, fontSize: 14, fontWeight: '800', marginBottom: 2 },
+  summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  summaryKey: { color: colors.textSecondary, fontSize: 13 },
+  summaryVal: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  summaryDivider: { height: 0.5, backgroundColor: colors.border },
+  summaryTotalKey: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  summaryTotalVal: { color: colors.primary, fontSize: 16, fontWeight: '800' },
+  simNote: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, textAlign: 'center' },
+
+  chooseCard: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: colors.border, padding: SPACING.md,
+  },
+  chooseIcon: {
+    width: 46, height: 46, borderRadius: RADIUS.full,
+    backgroundColor: colors.primary + '18',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  chooseTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  chooseSub: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+
+  // Post grid
+  gridScroll: { paddingTop: SPACING.sm, paddingBottom: SPACING.xxl },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingTop: SPACING.sm },
+  cell: { width: '33.33%', aspectRatio: 1, position: 'relative', padding: 1 },
+  cellMedia: { width: '100%', height: '100%' },
+  cellPlaceholder: {
+    width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 0.5, borderColor: colors.border,
+  },
+  cellBusy: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center',
+  },
+  typeBadge: {
+    position: 'absolute', top: 6, right: 6,
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
+  },
+});

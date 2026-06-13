@@ -223,6 +223,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/analytics'),
     },
     {
+      icon: 'sparkles-outline',
+      label: 'Spotlight',
+      subtitle: 'Launch a post at #3 in the Home feed',
+      onPress: () => router.push('/spotlight'),
+    },
+    {
       icon: 'ribbon-outline',
       label: 'Badges',
       subtitle: 'Your emblem, rewards & progress',

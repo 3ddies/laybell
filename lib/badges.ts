@@ -84,12 +84,16 @@ export const BADGES: BadgeDef[] = [
   { key: 'curator_silver',  category: 'curator', tier: 'silver',  title: 'Silver Curator',  criteria: 'Have 500+ listens on a public playlist',    permanent: false, locked: false },
   { key: 'curator_gold',    category: 'curator', tier: 'gold',    title: 'Gold Curator',    criteria: 'Have 2,500+ listens on a public playlist',  permanent: false, locked: false },
 
+  // Spotlight (distinct spotlighted posts engaged with today — like/comment/
+  // save/share on a served spotlight. Counted through ad_engagements; requires
+  // spotlight.sql. Keys keep the ads_ prefix — they're stored in the DB.)
+  { key: 'ads_bronze',       category: 'ads',       tier: 'bronze', title: 'Bronze Patron',  criteria: 'Engage with a spotlighted post today',   permanent: false, locked: false },
+  { key: 'ads_silver',       category: 'ads',       tier: 'silver', title: 'Silver Patron',  criteria: 'Engage with 2+ spotlighted posts today', permanent: false, locked: false },
+
   // ── Locked stubs (no underlying system yet) ──
   { key: 'community_bronze', category: 'community', tier: 'bronze', title: 'Bronze Member',  criteria: 'Join a community',                       permanent: false, locked: true },
   { key: 'community_silver', category: 'community', tier: 'silver', title: 'Silver Member',  criteria: 'Stay in good standing for a week',        permanent: false, locked: true },
   { key: 'community_gold',   category: 'community', tier: 'gold',   title: 'Gold Member',    criteria: 'Become a community manager',             permanent: false, locked: true },
-  { key: 'ads_bronze',       category: 'ads',       tier: 'bronze', title: 'Bronze Patron',  criteria: 'Engage with an ad today',                permanent: false, locked: true },
-  { key: 'ads_silver',       category: 'ads',       tier: 'silver', title: 'Silver Patron',  criteria: 'Engage with 2+ ads today',               permanent: false, locked: true },
   { key: 'app_sharing_bronze',  category: 'app_sharing', tier: 'bronze',  title: 'Bronze Advocate',  criteria: 'Share the app',                  permanent: false, locked: true },
   { key: 'app_sharing_silver',  category: 'app_sharing', tier: 'silver',  title: 'Silver Advocate',  criteria: 'Share the app with 8+ people',   permanent: false, locked: true },
   { key: 'app_sharing_gold',    category: 'app_sharing', tier: 'gold',    title: 'Gold Advocate',    criteria: 'Share the app with 15 people',   permanent: true,  locked: true },
@@ -105,7 +109,7 @@ export const CATEGORY_META: Record<BadgeCategory, { label: string; icon: string 
   comments:        { label: 'Comments',         icon: 'chatbubble-outline' },
   curator:         { label: 'Playlists',        icon: 'albums-outline' },
   community:       { label: 'Community',         icon: 'people-outline' },
-  ads:             { label: 'Ads',              icon: 'megaphone-outline' },
+  ads:             { label: 'Spotlight',        icon: 'sparkles-outline' },
   app_sharing:     { label: 'App Sharing',      icon: 'share-social-outline' },
 };
 
@@ -287,7 +291,8 @@ export function resolveRingColors(
 }
 
 // ─── State + evaluation ───────────────────────────────────────────────────────
-export type DailyRow = { day: string; likes: number; comments: number; music_seconds: number; posts_created: number };
+// `ad_engagements` arrives only after the updated badges.sql is applied — absent reads as 0.
+export type DailyRow = { day: string; likes: number; comments: number; music_seconds: number; posts_created: number; ad_engagements?: number };
 // `top_playlist_listens` = play count of the user's single most-listened PUBLIC
 // playlist (not a sum across playlists) — the curator badge requires one playlist
 // to hit the threshold on its own.
@@ -405,6 +410,12 @@ function qualifyingTiersAt(state: BadgeState, today: string): CategoryTiers {
   if (cm >= 2) out.comments = 'silver';
   else if (cm >= 1) out.comments = 'bronze';
 
+  // spotlight — distinct spotlighted posts engaged with today (0 until
+  // spotlight.sql lands)
+  const ad = todayRow?.ad_engagements ?? 0;
+  if (ad >= 2) out.ads = 'silver';
+  else if (ad >= 1) out.ads = 'bronze';
+
   // curator — listens on the user's single best PUBLIC playlist (caps at gold).
   // Live: privating/deleting the playlist drops this to the next-best (or 0), and
   // re-publicizing restores it, so the badge revokes and re-awards automatically.
@@ -426,6 +437,7 @@ export type BadgeMetrics = {
   musicMinutesToday: number;
   publicPosts: number;
   topPlaylistListens: number;
+  todayAdEngagements: number;
 };
 export function computeMetrics(state: BadgeState): BadgeMetrics {
   const byDay = new Map(state.daily.map(r => [r.day, r]));
@@ -439,6 +451,7 @@ export function computeMetrics(state: BadgeState): BadgeMetrics {
     musicMinutesToday: Math.floor((todayRow?.music_seconds ?? 0) / 60),
     publicPosts: state.public_posts,
     topPlaylistListens: state.top_playlist_listens,
+    todayAdEngagements: todayRow?.ad_engagements ?? 0,
   };
 }
 

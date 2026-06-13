@@ -18,7 +18,7 @@ function fmt(t: number) {
 // post. The poster (ph:// via expo-image) shows instantly so the box is never
 // black; a single low-quality frame at the window start is generated on top when
 // possible (expo-av <Video> renders black for local files, so we avoid it).
-export default function VideoTrimmer({ uri, posterUri, duration, windowSec, frameW, frameH, onChange }: {
+export default function VideoTrimmer({ uri, posterUri, duration, windowSec, frameW, frameH, onChange, initialStart = 0 }: {
   uri: string;
   posterUri?: string;
   duration: number;
@@ -26,6 +26,9 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
   frameW: number;
   frameH: number;
   onChange: (start: number) => void;
+  // Seconds to open the window at — used when re-entering trim for a resumed
+  // draft so the saved 3-min selection is shown (and kept) instead of 0.
+  initialStart?: number;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -34,9 +37,10 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
   const winW = Math.max(40, (win / duration) * trackW);
   const maxX = trackW - winW;
 
+  const initX = Math.min(Math.max((initialStart / duration) * trackW, 0), maxX);
   const [frameUri, setFrameUri] = useState<string | null>(null);
-  const [startX, setStartX] = useState(0);
-  const startXRef = useRef(0);
+  const [startX, setStartX] = useState(initX);
+  const startXRef = useRef(initX);
   const grabX = useRef(0);
   const genId = useRef(0);
 
@@ -52,7 +56,7 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
     }
   }
 
-  useEffect(() => { genFrame(0); }, [uri]);
+  useEffect(() => { genFrame((startXRef.current / trackW) * duration); }, [uri]);
 
   const setStartFromX = (x: number) => {
     const nx = Math.min(Math.max(x, 0), maxX);

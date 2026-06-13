@@ -15,13 +15,17 @@ type Props = {
   frameH: number;
   type: 'image' | 'video';
   maxScale?: number;
+  // Seed the pan/zoom so the cropper opens showing this exact crop (the inverse
+  // of getCrop). Used when re-opening a resumed draft's image so its saved crop
+  // is shown — and re-committed unchanged — instead of snapping back to center.
+  initialCrop?: CropRect | null;
 };
 
 // Instagram-style cropper: the media is shown to COVER the frame and the user
 // pans (1 finger) / pinches (2 fingers) to reposition & zoom. getCrop() converts
 // the on-screen transform into a source-pixel crop rect for expo-image-manipulator.
 const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper(
-  { uri, mediaWidth, mediaHeight, frameW, frameH, type, maxScale = 6 }, ref,
+  { uri, mediaWidth, mediaHeight, frameW, frameH, type, maxScale = 6, initialCrop = null }, ref,
 ) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -31,14 +35,30 @@ const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper
   const baseW = safeW * baseScale;
   const baseH = safeH * baseScale;
 
+  // Initial transform — centered cover by default (scale 1, no offset), or the
+  // inverse of `initialCrop` so a saved crop reopens exactly. Clamped the same
+  // way apply() clamps. Computed once at mount (the cropper is keyed on uri, so
+  // it remounts — and recomputes — when the media changes).
+  const seed = useMemo(() => {
+    if (type !== 'image' || !initialCrop || !(initialCrop.width > 1)) return { s: 1, tx: 0, ty: 0 };
+    const s = Math.min(Math.max(frameW / (baseScale * initialCrop.width), 1), maxScale);
+    const f = baseScale * s;
+    const maxTx = Math.max(0, (baseW * s - frameW) / 2);
+    const maxTy = Math.max(0, (baseH * s - frameH) / 2);
+    const txv = Math.min(Math.max(baseW * s / 2 - frameW / 2 - initialCrop.originX * f, -maxTx), maxTx);
+    const tyv = Math.min(Math.max(baseH * s / 2 - frameH / 2 - initialCrop.originY * f, -maxTy), maxTy);
+    return { s, tx: txv, ty: tyv };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Live numeric transform (read by getCrop) + animated mirrors (drive rendering
   // without re-rendering on every gesture frame).
-  const scale = useRef(1);
-  const tx = useRef(0);
-  const ty = useRef(0);
-  const aScale = useRef(new Animated.Value(1)).current;
-  const aTx = useRef(new Animated.Value(0)).current;
-  const aTy = useRef(new Animated.Value(0)).current;
+  const scale = useRef(seed.s);
+  const tx = useRef(seed.tx);
+  const ty = useRef(seed.ty);
+  const aScale = useRef(new Animated.Value(seed.s)).current;
+  const aTx = useRef(new Animated.Value(seed.tx)).current;
+  const aTy = useRef(new Animated.Value(seed.ty)).current;
 
   const pan = useRef({ active: false, startX: 0, startY: 0, startTx: 0, startTy: 0 });
   const pinch = useRef({ active: false, startDist: 1, startScale: 1, startCx: 0, startCy: 0, startTx: 0, startTy: 0 });

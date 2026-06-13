@@ -28,6 +28,10 @@ import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useShare } from '../../contexts/ShareContext';
 import { isAudioPost } from '../../lib/genres';
 import { fetchBlockedIds } from '../../lib/blocks';
+import {
+  fetchFeedSpotlights, mergeSpotlights, rankSpotlight,
+  recordSpotlightImpression, recordSpotlightTap, type SpotlightMeta,
+} from '../../lib/spotlight';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
@@ -73,6 +77,10 @@ type Post = {
   song_artist?: string | null;
   song_artist_id?: string | null;
   tagged_user_ids?: string[] | null;
+  // Present only on served spotlight instances (see lib/spotlight.ts) — drives
+  // the Spotlight tag and impression/tap reporting. Spotlights rank via
+  // computeSpotlightScore (launch boost → performance, floored), not scorePost.
+  __spotlight?: SpotlightMeta;
 };
 
 type PostCardProps = {
@@ -132,6 +140,12 @@ const PostCard = memo(function PostCard({
           <View style={styles.postNameRow}>
             <Text style={styles.postDisplayName}>{item.profiles?.display_name}</Text>
             <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={13} />
+            {!!item.__spotlight && (
+              <View style={styles.spotPill}>
+                <Ionicons name="sparkles" size={9} color={colors.primaryLight} />
+                <Text style={styles.spotPillText}>Spotlight</Text>
+              </View>
+            )}
           </View>
           <Text style={styles.postUsername}>
             @{item.profiles?.username} · {timeAgo(item.created_at)}
@@ -299,7 +313,8 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
-  const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string } | null>(null);
+  // `item` rides along so a submitted comment on an ad can be counted as a tap.
+  const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string; item?: Post } | null>(null);
   const [playlistCount, setPlaylistCount] = useState(0);
   const [visibleVideoId, setVisibleVideoId] = useState<string | null>(null);
   const [visibleMusicId, setVisibleMusicId] = useState<string | null>(null);
@@ -336,6 +351,12 @@ export default function HomeScreen() {
     // The most-visible post that carries an attached song — its track plays ambiently.
     const firstMusic = viewableItems.find(v => v.item?.song_id);
     setVisibleMusicId(firstMusic ? firstMusic.item.id : null);
+    // A spotlight card crossing the 60% visibility line counts as one
+    // impression (deduped per campaign per session in lib/spotlight, owner
+    // views never count).
+    for (const v of viewableItems) {
+      if (v.item?.__spotlight) recordSpotlightImpression(v.item, live.current.currentUserId);
+    }
   }).current;
   const [feedMode, setFeedMode] = useState<'all' | 'following' | 'friends'>('all');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -360,8 +381,14 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!currentUserId) return;
+    // Channel name carries a per-mount suffix: supabase.channel() RETURNS the
+    // existing instance for a repeated name, and calling .on() on an already-
+    // subscribed channel throws ("cannot add postgres_changes callbacks ...
+    // after subscribe()") — which crashed the app whenever a second HomeScreen
+    // instance mounted (e.g. a duplicate (tabs) pushed by cross-modal
+    // navigation). The filters below scope the events; the name is arbitrary.
     const channel = supabase
-      .channel(`notif-badge-${currentUserId}`)
+      .channel(`notif-badge-${currentUserId}-${Date.now().toString(36)}`)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${currentUserId}` },
         () => { setUnreadCount(prev => prev + 1); }
@@ -484,11 +511,14 @@ export default function HomeScreen() {
       query = query.eq('is_public', true);
     }
 
-    const [{ data }, { data: likesData }, { data: savesData }, blockedIds] = await Promise.all([
+    const [{ data }, { data: likesData }, { data: savesData }, blockedIds, spotItems] = await Promise.all([
       query,
       userId ? supabase.from('likes').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
       userId ? supabase.from('saves').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
       userId ? fetchBlockedIds() : Promise.resolve(new Set<string>()),
+      // Spotlights serve only in the discovery feed — Following/Friends keep
+      // their strict "people you chose" guarantee.
+      feedMode === 'all' ? fetchFeedSpotlights() : Promise.resolve([] as any[]),
     ]);
 
     if (data) {
@@ -510,14 +540,75 @@ export default function HomeScreen() {
       // instead of a flat chronological list.
       const now = Date.now();
       const profile = affinityProfile.current;
-      const scored = visible
-        .map((p) => ({ p, score: scorePost(p, profile, followingSet, seen, now) }))
-        .sort((a, b) => b.score - a.score)
-        .map((x) => x.p);
+      const scoredPairs = visible.map((p) => ({
+        item: p,
+        score: scorePost(p, profile, followingSet, seen, now),
+      }));
+      // The spotlight anchor is the feed's best organic score WITHOUT the
+      // seen-penalty, matching the spotlights' own penalty-free scoring so
+      // perf compares like-with-like. Anchoring on the penalized scores would
+      // collapse the denominator ~6.7× on a refreshed, all-seen feed and pin
+      // every spotlight at the ceiling regardless of real performance.
+      const neverSeen = new Set<string>();
+      const topScore = visible.reduce(
+        (m: number, p: any) => Math.max(m, scorePost(p, profile, followingSet, neverSeen, now)),
+        0,
+      );
 
-      setPosts(scored);
-      // Persist post IDs shown to the user so they can be deprioritised next session.
-      recordSeenPostIds(visible.map((p: any) => p.id));
+      // Spotlights rank INTO the feed: scored like a regular post times a
+      // decaying, never-recovering multiplier (see lib/spotlight). The top
+      // spotlight defaults to the 3rd slot — only genuine trending performance
+      // lets it climb higher — and a decayed one sinks toward (but never
+      // below) the feed's average. mergeSpotlights then guarantees ≥6 regular
+      // posts between any two spotlights. They skip the seen-penalty (empty
+      // seen-set here) and the seen-set write below — bought reach must not
+      // decay like scored reach does.
+      const spots = spotItems.filter((s) => !blockedIds.has(s.user_id));
+      const spotPostIds = new Set(spots.map((s) => s.id));
+      // Anchors must live in the same deduped space mergeSpotlights ranks in:
+      // the spotlights' own organic copies are removed there, so counting them
+      // here would point the "3rd post" anchor one slot off (or pick a small-
+      // feed branch that no longer applies).
+      const anchorPairs = scoredPairs.filter((p) => !spotPostIds.has(p.item.id));
+      const sortedOrg = [...anchorPairs].sort((a, b) => b.score - a.score);
+      const anchors = {
+        top: sortedOrg[0]?.score ?? 0,
+        second: sortedOrg[1]?.score ?? sortedOrg[0]?.score ?? 0,
+        third: sortedOrg[2]?.score ?? 0,
+        avg: anchorPairs.length
+          ? anchorPairs.reduce((s, x) => s + x.score, 0) / anchorPairs.length
+          : 0,
+        count: anchorPairs.length,
+      };
+      // How strongly THIS viewer's demonstrated tastes match a spotlighted
+      // post (0..1): top creator counts in full, genre/type progressively
+      // less, an explicit follow counts a lot. Feeds the per-viewer trending
+      // lift — a spotlight can top the feed of someone who loves its maker.
+      const affinityFor = (p: any) => Math.max(
+        profile.creatorScores[p.user_id] ?? 0,
+        (profile.genreScores[p.genre ?? ''] ?? 0) * 0.8,
+        (profile.typeScores[p.type] ?? 0) * 0.6,
+        followingSet.has(p.user_id) ? 0.6 : 0,
+      );
+      const spotPairs = await Promise.all(spots.map(async (s) => ({
+        item: s,
+        score: await rankSpotlight({
+          campaignId: s.__spotlight?.campaignId ?? s.id,
+          organicPf: scorePost(s, profile, followingSet, neverSeen, now),
+          topPf: topScore,
+          anchors,
+          startsAt: s.__spotlight?.startsAt ?? null,
+          weight: s.__spotlight?.weight ?? 1,
+          now,
+          affinity: affinityFor(s),
+          viewerId: userId ?? null,
+        }),
+      })));
+      setPosts(mergeSpotlights(scoredPairs, spotPairs));
+      // Persist post IDs shown to the user so they can be deprioritised next
+      // session — spotlighted posts excluded, so a campaign never leaves its
+      // post pre-penalised in organic ranking once it ends.
+      recordSeenPostIds(visible.filter((p: any) => !spotPostIds.has(p.id)).map((p: any) => p.id));
     }
     if (likesData) setLikedPosts(new Set(likesData.map((l: any) => l.post_id)));
     if (savesData) setSavedPosts(new Set(savesData.map((s: any) => s.post_id)));
@@ -546,6 +637,7 @@ export default function HomeScreen() {
     } else {
       await supabase.from('likes').insert({ user_id: uid, post_id: item.id });
       bumpBadge('likes');
+      if (item.__spotlight) recordSpotlightTap(item, 'like', uid);
       if (item.user_id !== uid) {
         createNotification({ userId: item.user_id, actorId: uid, type: 'like', postId: item.id });
       }
@@ -570,12 +662,14 @@ export default function HomeScreen() {
       await supabase.from('saves').delete().eq('user_id', uid).eq('post_id', item.id);
     } else {
       await supabase.from('saves').insert({ user_id: uid, post_id: item.id });
+      if (item.__spotlight) recordSpotlightTap(item, 'save', uid);
       // Audio: if the user has playlists, offer to add the just-saved track to one.
       if (item.type === 'audio' && plCount > 0) setPlaylistModalPostId(item.id);
     }
   }, []);
 
   const onShare = useCallback((item: Post) => {
+    if (item.__spotlight) recordSpotlightTap(item, 'share', live.current.currentUserId);
     live.current.openShare({
       postId: item.id,
       caption: item.caption,
@@ -591,7 +685,11 @@ export default function HomeScreen() {
   const onProfile = useCallback((item: Post) => { if (isSwipeTap()) return; live.current.router.push(`/profile/${item.user_id}`); }, []);
   const onOpenPost = useCallback((item: Post, src?: SourceRect, index?: number) => { if (isSwipeTap()) return; live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}), ...(index != null ? { index: String(index) } : {}) } }); }, []);
   const onOpenReel = useCallback((item: Post, src?: SourceRect) => { if (isSwipeTap()) return; live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }); }, []);
-  const onComments = useCallback((item: Post) => setCommentsFor({ id: item.id, ownerId: item.user_id }), []);
+  // The spotlight tap is NOT recorded here — opening the sheet to read isn't
+  // an engagement. It's counted in the sheet's onPosted, on actual submission.
+  const onComments = useCallback((item: Post) => {
+    setCommentsFor({ id: item.id, ownerId: item.user_id, item });
+  }, []);
   // Track which slideshows have their video audio on (idempotent — returns the same
   // set when nothing changes so it never triggers an extra render).
   const onSlideAudioActive = useCallback((item: Post, on: boolean) => {
@@ -746,7 +844,9 @@ export default function HomeScreen() {
 
       <FlatList
         data={posts}
-        keyExtractor={(item) => item.id}
+        // Spotlight instances key off their campaign so a promoted post can
+        // never key-collide with itself (organic copies are filtered at merge).
+        keyExtractor={(item) => (item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
         renderItem={renderPost}
         ListHeaderComponent={<StoriesTray />}
         showsVerticalScrollIndicator={false}
@@ -811,6 +911,10 @@ export default function HomeScreen() {
         postId={commentsFor?.id ?? ''}
         ownerId={commentsFor?.ownerId}
         onClose={() => setCommentsFor(null)}
+        onPosted={() => {
+          const it = commentsFor?.item;
+          if (it?.__spotlight) recordSpotlightTap(it, 'comment', currentUserId);
+        }}
       />
     </View>
   );
@@ -901,6 +1005,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   avatarText: { color: colors.text, fontSize: 15, fontWeight: '700' },
   postHeaderInfo: { flex: 1 },
   postNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  spotPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    marginLeft: 2,
+    paddingHorizontal: 6, paddingVertical: 1,
+    borderRadius: RADIUS.full,
+    backgroundColor: colors.primary + '22',
+    borderWidth: 1, borderColor: colors.primary + '66',
+  },
+  spotPillText: { color: colors.primaryLight, fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
   postDisplayName: { color: colors.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.1 },
   postUsername: { color: colors.textMeta, fontSize: 12, marginTop: 1 },
   typeIconWrap: {

@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, ActivityIndicator, Alert, Switch, Image, Dimensions, Animated,
+  ScrollView, ActivityIndicator, Alert, Switch, Image, Dimensions, Animated, Modal,
 } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -28,6 +28,10 @@ import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../comp
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
 import { MAX_SLIDES, type Slide } from '../../lib/slideshow';
 import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/upload';
+import { peekPendingSpotlight, clearPendingSpotlight, activateCampaign } from '../../lib/spotlight';
+import {
+  loadDrafts, saveDraft, deleteDraft, draftThumb, draftSummary, makeDraftId, type Draft,
+} from '../../lib/drafts';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import VideoTrimmer from '../../components/VideoTrimmer';
 import ErrorBoundary from '../../components/ErrorBoundary';
@@ -76,6 +80,12 @@ function friendlyShareError(err: any): string {
   }
   if (raw.includes('storage') && raw.includes('bucket')) {
     return 'Upload storage is unavailable right now. Try again in a moment.';
+  }
+  // A resumed draft whose on-device media was deleted/evicted since it was saved.
+  if (raw.includes('no such file') || raw.includes('file not found') || raw.includes('does not exist')
+      || raw.includes('cannot find') || raw.includes("couldn't be opened") || raw.includes('could not be opened')
+      || raw.includes('unable to open') || raw.includes('no such') ) {
+    return "The photo, video, or audio for this post is no longer on your device, so it can't be posted. If this is a draft, open Drafts and delete it.";
   }
   return err?.message || 'Something went wrong. Please try again.';
 }
@@ -173,6 +183,24 @@ export default function PostScreen() {
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [error, setError] = useState('');
 
+  // A paid spotlight campaign waiting for this post (Spotlight → "Create a new
+  // post"). Mirrored into state so the details-step banner renders; refreshed
+  // on focus since the handoff happens on another screen.
+  const [pendingSpot, setPendingSpotBanner] = useState(peekPendingSpotlight());
+  useFocusEffect(useCallback(() => { setPendingSpotBanner(peekPendingSpotlight()); }, []));
+
+  // Local drafts (device-only, see lib/drafts). editingDraftId tracks a draft
+  // being resumed so saving again UPDATES it (no dup) and publishing it removes
+  // it. A ref — it must not trigger re-renders or reset on step changes.
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const editingDraftId = useRef<string | null>(null);
+  useFocusEffect(useCallback(() => { loadDrafts().then(setDrafts); }, []));
+  // Drop the "I'm editing draft X" link. Called whenever the resumed media is
+  // abandoned (cleared / type-switched) so a later UNRELATED post can't, on
+  // publish or re-save, delete or overwrite the original draft.
+  function forgetResumedDraft() { editingDraftId.current = null; }
+
   const { stop } = useAudio();
   const swiping = usePagerSwiping();
   const setTabSwipe = useTabSwipeControl();
@@ -230,6 +258,89 @@ export default function PostScreen() {
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setGenre(''); setSong(null); setTagged([]); setError(''); setStep('pick');
+    // Abandoning the compose drops any parked spotlight handoff so it can't
+    // silently attach to an unrelated later post — the paid campaign itself
+    // stays safe as `pending` on the Spotlight screen. (No-op on the share
+    // path: the campaign was already consumed before resetAll runs.)
+    clearPendingSpotlight(); setPendingSpotBanner(null);
+    // Drop the resumed-draft link — the next compose is a fresh post unless the
+    // user opens a draft again. (The draft row itself is untouched here; it's
+    // removed explicitly on publish, or kept if the user just navigated away.)
+    editingDraftId.current = null;
+  }
+
+  // ─── Drafts (saved locally) ──────────────────────────────────────────────────
+  // Snapshot the current composer state into a draft. Re-saving a resumed draft
+  // updates it in place. Media stays on-device and is uploaded only on Share.
+  async function handleSaveDraft() {
+    if (!hasMedia) {
+      setError(postType === 'audio' ? 'Select an audio file first'
+        : postType === 'slideshow' ? 'Add at least one photo or video'
+        : `Select a ${postType} first`);
+      return;
+    }
+    // Capture the live crop the cropper holds while it's still mounted (pick
+    // step). On the details step goNext already stored it into cropRef.
+    if (step === 'pick') {
+      if (postType === 'image') cropRef.current = cropperRef.current?.getCrop() ?? cropRef.current;
+      if (postType === 'slideshow') captureLastSlideCrop();
+    }
+    const now = Date.now();
+    const id = editingDraftId.current ?? makeDraftId();
+    const draft: Draft = {
+      id, createdAt: now, updatedAt: now,
+      postType, format, caption, genre, isPublic,
+      media, crop: cropRef.current as any, thumbnailUri,
+      videoAspect, videoDuration, trimStart,
+      slides,
+      audioFile, audioDuration, coverUri, audioKind,
+      song, tagged,
+    };
+    const next = await saveDraft(draft);
+    setDrafts(next);
+    resetAll(); // clears the composer + the editing link
+    Alert.alert('Saved to Drafts', 'Find it under “Drafts” on the New post screen to finish later.');
+  }
+
+  // Load a saved draft back into the composer and jump to the details step.
+  function resumeDraft(d: Draft) {
+    editingDraftId.current = d.id;
+    setPostType(d.postType);
+    setFormat(d.format);
+    setCaption(d.caption);
+    setGenre(d.genre);
+    setIsPublic(d.isPublic);
+    setMedia(d.media);
+    cropRef.current = (d.crop as any) ?? null;
+    setThumbnailUri(d.thumbnailUri);
+    setVideoAspect(d.videoAspect);
+    setVideoDuration(d.videoDuration);
+    setTrimStart(d.trimStart);
+    setSlides(d.slides ?? []);
+    setPickedId(null);
+    setAudioFile(d.audioFile);
+    setAudioDuration(d.audioDuration);
+    setCoverUri(d.coverUri);
+    setAudioKind(d.audioKind);
+    setSong(d.song);
+    setTagged(d.tagged ?? []);
+    setError('');
+    setDraftsOpen(false);
+    setStep('details');
+  }
+
+  function confirmDeleteDraft(d: Draft) {
+    Alert.alert('Delete draft?', 'This removes the saved draft from this device.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          const next = await deleteDraft(d.id);
+          setDrafts(next);
+          if (editingDraftId.current === d.id) editingDraftId.current = null;
+        },
+      },
+    ]);
   }
 
   function switchType(t: PostType) {
@@ -239,6 +350,7 @@ export default function PostScreen() {
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null);
     setSong(null); setTagged([]);
+    forgetResumedDraft(); // the resumed draft's media is gone — stop tracking it
   }
 
   function cycleFormat() {
@@ -254,6 +366,10 @@ export default function PostScreen() {
     setPickedId(m.id);
     setMedia({ uri: m.uri, width: m.width, height: m.height, posterUri: m.posterUri });
     setThumbnailUri(null);
+    // Freshly picked media starts at the centered cover crop — drop any crop
+    // carried over from a previous selection (the cropper now seeds from
+    // cropRef via initialCrop, so a stale value would mis-position the new pick).
+    cropRef.current = null;
     if (m.type === 'video') {
       setVideoAspect(clampFeedAspect((m.width || 1) / (m.height || 1)));
       setVideoDuration(m.duration ?? 0);
@@ -271,16 +387,19 @@ export default function PostScreen() {
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null;
     setVideoDuration(0); setTrimStart(0);
     setPostType('image'); setFormat('1:1');
+    forgetResumedDraft();
   }
   function enterSingle() {
     if (postType !== 'slideshow') return;
     setPostType('image'); setFormat('1:1'); setSlides([]);
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null;
+    forgetResumedDraft();
   }
   function enterSlideshow() {
     if (postType === 'slideshow') return;
     setPostType('slideshow'); setFormat('1:1');
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null;
+    forgetResumedDraft();
   }
   // Save the crop the user set on the slide currently in the cropper (the last
   // image slide) before it's superseded by a new slide or committed on Next.
@@ -463,6 +582,15 @@ export default function PostScreen() {
 
   async function handleShare() {
     if (!caption.trim()) { setError('Please add a caption'); return; }
+    // Spotlights only serve public posts — a friends-only spotlight would buy
+    // invisible reach.
+    if (pendingSpot && !isPublic) {
+      Alert.alert(
+        'Spotlighted posts must be public',
+        'This post is attached to your paid spotlight. Switch it to Public, or remove the spotlight from it (the purchase stays available on your Spotlight page).',
+      );
+      return;
+    }
     // Re-check the slideshow video budget at the Share button (slides can be
     // added/removed after the add-time gate) — BEFORE any upload work starts.
     if (postType === 'slideshow' && slideshowVideoSecs(slides) > SLIDESHOW_VIDEO_BUDGET_SEC) {
@@ -628,7 +756,28 @@ export default function PostScreen() {
         }
       }
 
-      Alert.alert('Posted! 🎉', 'Your post is now live on Laybell');
+      // The "create a brand new post" spotlight path: attach the paid campaign
+      // to the post that was just created — the moment the spotlight goes live.
+      let spotLabel: string | null = null;
+      const ps = peekPendingSpotlight();
+      if (ps && newPost?.id) {
+        const ok = await activateCampaign(ps.campaignId, newPost.id, ps.days);
+        if (ok) spotLabel = ps.label;
+        clearPendingSpotlight();
+        setPendingSpotBanner(null);
+      }
+
+      // If this post came from a saved draft, the draft has now been published
+      // — remove it. (resetAll, below, clears the editing link, so capture +
+      // delete first.)
+      if (editingDraftId.current) deleteDraft(editingDraftId.current).then(setDrafts);
+
+      Alert.alert(
+        spotLabel ? 'Posted — and in the Spotlight! ✨' : 'Posted! 🎉',
+        spotLabel
+          ? `Your post launches as the #3 post in the Home feed for the next ${spotLabel.toLowerCase()} — and can climb to #1 if it takes off.`
+          : 'Your post is now live on Laybell',
+      );
       resetAll();
     } catch (err: any) {
       setError(friendlyShareError(err));
@@ -659,6 +808,7 @@ export default function PostScreen() {
             frameW={frameW}
             frameH={frameH}
             onChange={setTrimStart}
+            initialStart={trimStart}
           />
         </View>
       </View>
@@ -667,9 +817,13 @@ export default function PostScreen() {
 
   // ─── Details step ──────────────────────────────────────────────────────────
   if (step === 'details') {
+    // Prefer the durable ph:// poster over the evictable cache thumbnail for
+    // videos (matches the live-preview fallback order elsewhere) so a resumed
+    // draft whose cache thumb was cleared still shows an image.
     const thumbUri = postType === 'audio' ? coverUri
-      : postType === 'slideshow' ? (slides[0] ? (slides[0].type === 'video' ? slides[0].thumbnailUri : slides[0].uri) : null)
-      : (postType === 'video' ? thumbnailUri : media?.uri);
+      : postType === 'slideshow'
+        ? (slides[0] ? (slides[0].type === 'video' ? (slides[0].posterUri || slides[0].thumbnailUri || slides[0].uri) : slides[0].uri) : null)
+        : (postType === 'video' ? (thumbnailUri ?? media?.posterUri ?? null) : media?.uri);
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -694,10 +848,34 @@ export default function PostScreen() {
         )}
 
         <ScrollView contentContainerStyle={styles.detailsContent} keyboardShouldPersistTaps="handled">
+          {/* This post is spoken for: a paid spotlight attaches on Share. */}
+          {pendingSpot && (
+            <View style={styles.adPendingRow}>
+              <Ionicons name="sparkles" size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.adPendingTitle}>In the Spotlight · {pendingSpot.label}</Text>
+                <Text style={styles.adPendingSub}>Your paid spotlight starts when you share this post</Text>
+              </View>
+              <TouchableOpacity
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={() => {
+                  // Detach only — the paid campaign stays `pending` on the
+                  // Spotlight screen, so the purchase is never lost.
+                  clearPendingSpotlight();
+                  setPendingSpotBanner(null);
+                }}
+              >
+                <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Caption row with media thumbnail (Instagram-style) */}
           <View style={styles.captionRow}>
             {thumbUri ? (
-              <Image source={{ uri: thumbUri }} style={styles.captionThumb} />
+              // ExpoImage renders ph:// reliably and degrades to empty (not a
+              // broken-image glyph) if the file is gone — unlike RN core Image.
+              <ExpoImage source={{ uri: thumbUri }} style={styles.captionThumb} contentFit="cover" />
             ) : (
               <View style={[styles.captionThumb, styles.captionThumbPlaceholder]}>
                 <Ionicons name="musical-notes" size={20} color={colors.primary} />
@@ -859,6 +1037,19 @@ export default function PostScreen() {
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
+
+          {/* Save as draft — keeps everything (media stays on-device, nothing
+              uploaded) to finish and publish later. Disabled mid-upload. */}
+          <TouchableOpacity
+            style={[styles.draftSaveBtn, loading && styles.draftSaveBtnDisabled]}
+            onPress={handleSaveDraft}
+            disabled={loading}
+          >
+            <Ionicons name="document-text-outline" size={18} color={colors.primary} />
+            <Text style={styles.draftSaveText}>
+              {editingDraftId.current ? 'Update draft' : 'Save as draft'}
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
         <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} />
         <TagPeopleModal visible={showTagModal} initial={tagged} onClose={() => setShowTagModal(false)} onDone={setTagged} />
@@ -878,6 +1069,17 @@ export default function PostScreen() {
           <Ionicons name="arrow-forward" size={24} color={hasMedia ? colors.primary : colors.textTertiary} />
         </TouchableOpacity>
       </View>
+
+      {/* Drafts opener — only when there are saved drafts to resume. */}
+      {drafts.length > 0 && (
+        <TouchableOpacity style={styles.draftsBar} onPress={() => setDraftsOpen(true)} activeOpacity={0.7}>
+          <Ionicons name="document-text-outline" size={16} color={colors.primary} />
+          <Text style={styles.draftsBarText}>
+            Drafts <Text style={styles.draftsBarCount}>({drafts.length})</Text>
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} style={{ marginLeft: 'auto' }} />
+        </TouchableOpacity>
+      )}
 
       {postType === 'audio' ? (
         <View style={styles.audioPickArea}>
@@ -951,6 +1153,7 @@ export default function PostScreen() {
                       frameW={frameW}
                       frameH={frameH}
                       type="image"
+                      initialCrop={lastSlide.crop}
                     />
                   </ErrorBoundary>
                 ) : (
@@ -986,6 +1189,7 @@ export default function PostScreen() {
                     frameW={frameW}
                     frameH={frameH}
                     type="image"
+                    initialCrop={cropRef.current}
                   />
                 </ErrorBoundary>
               )
@@ -1054,6 +1258,60 @@ export default function PostScreen() {
           <Text style={[styles.typeStripText, postType === 'audio' && styles.typeStripTextActive]}>MUSIC</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Saved drafts — resume or delete. Local to this device. */}
+      <Modal visible={draftsOpen} animationType="slide" onRequestClose={() => setDraftsOpen(false)}>
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.headerBtn} onPress={() => setDraftsOpen(false)}>
+              <Ionicons name="close" size={26} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Drafts</Text>
+            <View style={{ width: 64 }} />
+          </View>
+          {drafts.length === 0 ? (
+            <View style={styles.draftsEmpty}>
+              <Ionicons name="document-text-outline" size={44} color={colors.textTertiary} />
+              <Text style={styles.draftsEmptyTitle}>No drafts</Text>
+              <Text style={styles.draftsEmptySub}>Saved drafts live on this device until you publish them.</Text>
+            </View>
+          ) : (
+            <ScrollView contentContainerStyle={styles.draftsList}>
+              <Text style={styles.draftsHint}>Saved on this device · tap to continue</Text>
+              {drafts.map((d) => {
+                const thumb = draftThumb(d);
+                return (
+                  <TouchableOpacity key={d.id} style={styles.draftRow} onPress={() => resumeDraft(d)} activeOpacity={0.8}>
+                    {thumb ? (
+                      <ExpoImage source={{ uri: thumb }} style={styles.draftThumb} contentFit="cover" />
+                    ) : (
+                      <View style={[styles.draftThumb, styles.draftThumbPlaceholder]}>
+                        <Ionicons name="musical-notes" size={20} color={colors.primary} />
+                      </View>
+                    )}
+                    <View style={styles.draftInfo}>
+                      <Text style={styles.draftCaption} numberOfLines={1}>{draftSummary(d)}</Text>
+                      <Text style={styles.draftMeta}>
+                        {d.postType === 'audio' ? (d.audioKind === 'audio' ? 'Music' : d.audioKind === 'podcast' ? 'Podcast' : 'Audiobook')
+                          : d.postType.charAt(0).toUpperCase() + d.postType.slice(1)}
+                        {' · '}{new Date(d.updatedAt).toLocaleDateString()}
+                        {!d.isPublic ? ' · Friends only' : ''}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.draftDelete}
+                      onPress={() => confirmDeleteDraft(d)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="trash-outline" size={20} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1222,8 +1480,53 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   visibilityLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
   visibilityLabel: { color: colors.text, fontSize: 15, fontWeight: '600' },
   visibilitySub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+
+  adPendingRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: colors.primary + '11', borderWidth: 1, borderColor: colors.primary + '55',
+    borderRadius: RADIUS.md, padding: SPACING.sm + 2,
+  },
+  adPendingTitle: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  adPendingSub: { color: colors.textSecondary, fontSize: 11, marginTop: 1 },
   slotHint: { color: colors.textTertiary, fontSize: 12, marginTop: -SPACING.xs, paddingHorizontal: SPACING.xs },
 
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   errorText: { color: colors.error, fontSize: 13 },
+
+  // Save-as-draft button (details step)
+  draftSaveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
+    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md, marginTop: SPACING.xs,
+  },
+  draftSaveBtnDisabled: { opacity: 0.5 },
+  draftSaveText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
+
+  // Drafts opener bar (pick step)
+  draftsBar: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 2,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
+  },
+  draftsBarText: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  draftsBarCount: { color: colors.textSecondary, fontWeight: '600' },
+
+  // Drafts modal
+  draftsList: { padding: SPACING.md, gap: SPACING.sm, paddingBottom: SPACING.xxl },
+  draftsHint: { color: colors.textTertiary, fontSize: 12, paddingHorizontal: SPACING.xs, paddingBottom: SPACING.xs },
+  draftRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    borderRadius: RADIUS.md, padding: SPACING.sm,
+  },
+  draftThumb: { width: 52, height: 52, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceElevated },
+  draftThumbPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  draftInfo: { flex: 1 },
+  draftCaption: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  draftMeta: { color: colors.textTertiary, fontSize: 12, marginTop: 2 },
+  draftDelete: { padding: SPACING.xs },
+
+  draftsEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, padding: SPACING.lg },
+  draftsEmptyTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  draftsEmptySub: { color: colors.textSecondary, fontSize: 13, textAlign: 'center' },
 });

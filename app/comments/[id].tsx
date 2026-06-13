@@ -35,8 +35,11 @@ export default function CommentsScreen() {
   useEffect(() => { setup(); }, [id]);
 
   useEffect(() => {
+    // Per-mount suffix: a repeated channel name returns the EXISTING (already
+    // subscribed) instance and .on() then throws — fatal if this screen is
+    // ever stacked twice for the same post.
     const channel = supabase
-      .channel(`comments-${id}`)
+      .channel(`comments-${id}-${Date.now().toString(36)}`)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'comments', filter: `post_id=eq.${id}` },
         async (payload) => {

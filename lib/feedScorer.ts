@@ -171,12 +171,23 @@ export async function buildAffinityProfile(
 //   typeBoost    = 1 + typeScore × 0.5       → [1.0, 1.5×]
 //   genreBoost   = 1 + genreScore × 0.3      → [1.0, 1.3×]
 //   followBoost  = 1.5 if user follows creator
+//   badgeBoost   = creator's earned badge tier: bronze 1.02 / silver 1.05 /
+//                  gold 1.08 / diamond 1.12 — deliberately subtle, a nudge
+//                  that rewards earned status without ever outranking real
+//                  engagement (Spotlight launches just above it at 1.15×).
 //   seenPenalty  = 0.15 if shown in a prior session (7-day window)
 //
 // BASE(2) ensures a brand-new 0-engagement post always scores above zero and
 // competes purely on recency until real engagement accumulates.
 
 const BASE = 2;
+
+// Earned tier (profiles.badge_tier, cached by the badge evaluator) → score
+// multiplier. Missing/unknown tier → 1.0, so this is a no-op for posts whose
+// query didn't embed the profile.
+export const BADGE_SCORE_BOOST: Record<string, number> = {
+  bronze: 1.02, silver: 1.05, gold: 1.08, diamond: 1.12,
+};
 
 export interface ScoredPost {
   id:           string;
@@ -213,7 +224,8 @@ export function scorePost(
   const typeBoost    = 1.0 + (profile.typeScores[post.type]         ?? 0) * 0.5;
   const genreBoost   = 1.0 + (profile.genreScores[post.genre ?? ''] ?? 0) * 0.3;
   const followMul    = followingSet.has(post.user_id) ? 1.5 : 1.0;
+  const badgeMul     = BADGE_SCORE_BOOST[post.profiles?.badge_tier ?? ''] ?? 1.0;
   const seenMul      = seenSet.has(post.id) ? 0.15 : 1.0;
 
-  return decayed * creatorBoost * typeBoost * genreBoost * followMul * seenMul;
+  return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul;
 }

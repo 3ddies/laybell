@@ -22,11 +22,13 @@ function rubber(excess: number, max = 38): number {
 // Drag the grab bar UP to expand, DOWN to collapse, further DOWN to dismiss.
 // Transparent so a playing reel stays visible behind it; the comment list scrolls
 // on its own (only the top bar is the drag grip).
-export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
+export default function CommentsSheet({ visible, postId, ownerId, onClose, onPosted }: {
   visible: boolean;
   postId: string;
   ownerId?: string | null;
   onClose: () => void;
+  // Forwarded to Comments — fires when a comment is actually submitted.
+  onPosted?: () => void;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -153,7 +155,7 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose }: {
           </TouchableOpacity>
           <View style={styles.divider} />
           <View style={styles.body}>
-            {postId ? <Comments postId={postId} ownerId={ownerId} contentPadding={SPACING.md} onNavigate={dismiss} /> : null}
+            {postId ? <Comments postId={postId} ownerId={ownerId} contentPadding={SPACING.md} onNavigate={dismiss} onPosted={onPosted} /> : null}
           </View>
         </Animated.View>
       </View>

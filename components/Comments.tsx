@@ -25,7 +25,7 @@ type Row = {
 };
 
 export default function Comments({
-  postId, ownerId, ListHeaderComponent, style, contentPadding, minHeaderHeight, onRefresh, onNavigate, onComposingChange, onEngage, onScrollTop,
+  postId, ownerId, ListHeaderComponent, style, contentPadding, minHeaderHeight, onRefresh, onNavigate, onComposingChange, onEngage, onScrollTop, onPosted,
 }: {
   postId: string;
   ownerId?: string | null;
@@ -55,6 +55,9 @@ export default function Comments({
   // Fires when the list is scrolled back to the very top — lets a host (Now Playing)
   // drop near-end engagement, since the user has left the comments.
   onScrollTop?: () => void;
+  // Fires after a comment is actually SUBMITTED (not on open/typing) — the feed
+  // uses it to count a genuine ad engagement.
+  onPosted?: () => void;
 }) {
   const listRef = useRef<FlatList>(null);
   const atTopRef = useRef(true); // list starts at the top; tracks top-edge crossings
@@ -171,6 +174,7 @@ export default function Comments({
       .from('comments').insert({ user_id: userId, post_id: postId, body, parent_id }).select().single();
     if (!error && data) {
       bumpBadge('comments');
+      onPosted?.();
       setRows(prev => [...prev, { ...(data as any), profiles: myProfile ?? userProfile }]);
       if (!parent_id) setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
       if (ownerId && ownerId !== userId) createNotification({ userId: ownerId, actorId: userId, type: 'comment', postId });

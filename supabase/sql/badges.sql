@@ -36,9 +36,16 @@ create table if not exists public.user_activity_daily (
   comments       integer not null default 0,
   music_seconds  integer not null default 0,
   posts_created  integer not null default 0,
+  ad_engagements integer not null default 0,
   updated_at     timestamptz not null default now(),
   primary key (user_id, day)
 );
+
+-- Installs that predate the Spotlight feature gain the counter on re-run (this
+-- file is the single source of truth for the badge schema + functions —
+-- spotlight.sql depends on it but never redefines any of this).
+alter table public.user_activity_daily
+  add column if not exists ad_engagements integer not null default 0;
 
 create index if not exists user_activity_daily_user_day_idx
   on public.user_activity_daily (user_id, day desc);
@@ -146,11 +153,12 @@ begin
   end if;
 
   update public.user_activity_daily
-     set likes         = likes         + (case when p_category = 'likes'         then p_count else 0 end),
-         comments      = comments      + (case when p_category = 'comments'      then p_count else 0 end),
-         music_seconds = music_seconds + (case when p_category = 'music_seconds' then p_count else 0 end),
-         posts_created = posts_created + (case when p_category = 'posts_created' then p_count else 0 end),
-         updated_at    = now()
+     set likes          = likes          + (case when p_category = 'likes'          then p_count else 0 end),
+         comments       = comments       + (case when p_category = 'comments'       then p_count else 0 end),
+         music_seconds  = music_seconds  + (case when p_category = 'music_seconds'  then p_count else 0 end),
+         posts_created  = posts_created  + (case when p_category = 'posts_created'  then p_count else 0 end),
+         ad_engagements = ad_engagements + (case when p_category = 'ad_engagements' then p_count else 0 end),
+         updated_at     = now()
    where user_id = v_uid and day = v_day;
 end;
 $$;
@@ -183,7 +191,7 @@ begin
   select coalesce(jsonb_agg(to_jsonb(d) order by d.day desc), '[]'::jsonb)
     into v_daily
     from (
-      select day, likes, comments, music_seconds, posts_created
+      select day, likes, comments, music_seconds, posts_created, ad_engagements
         from public.user_activity_daily
        where user_id = v_uid
          and day >= v_today - 92

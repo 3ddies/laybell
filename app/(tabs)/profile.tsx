@@ -418,35 +418,47 @@ export default function ProfileScreen() {
         </View>
       </LinearGradient>
 
-      {/* Name + bio */}
+      {/* Name + bio — with the Spotlight shortcut on the right */}
       <View style={styles.infoSection}>
-        <View style={styles.nameRow}>
-          <Text style={styles.displayName}>{profile?.display_name}</Text>
-          {myTier ? (
-            <BadgeEmblem profile={badgeProfile} size={17} />
-          ) : (
-            // No badge chosen (Default theme) → a tappable outline placeholder that
-            // only YOU see (visitors see nothing), linking to the Badges page.
-            <TouchableOpacity
-              style={styles.badgeOutline}
-              activeOpacity={0.7}
-              hitSlop={8}
-              onPress={() => router.push('/badges')}
-            >
-              <Ionicons name="add" size={12} color={colors.textTertiary} />
-            </TouchableOpacity>
-          )}
-        </View>
-        {profile?.bio
-          ? <Text style={styles.bio}>{profile.bio}</Text>
-          : <Text style={styles.bioEmpty}>No bio yet</Text>
-        }
-        {badgeProfile?.link ? (
-          <TouchableOpacity style={styles.linkRow} onPress={() => Linking.openURL(normalizeUrl(badgeProfile.link!)).catch(() => {})}>
-            <Ionicons name="link-outline" size={14} color={colors.primary} />
-            <Text style={styles.linkText} numberOfLines={1}>{displayUrl(badgeProfile.link)}</Text>
+        <View style={styles.infoRow}>
+          <View style={styles.infoLeft}>
+            <View style={styles.nameRow}>
+              <Text style={styles.displayName}>{profile?.display_name}</Text>
+              {myTier ? (
+                <BadgeEmblem profile={badgeProfile} size={17} />
+              ) : (
+                // No badge chosen (Default theme) → a tappable outline placeholder that
+                // only YOU see (visitors see nothing), linking to the Badges page.
+                <TouchableOpacity
+                  style={styles.badgeOutline}
+                  activeOpacity={0.7}
+                  hitSlop={8}
+                  onPress={() => router.push('/badges')}
+                >
+                  <Ionicons name="add" size={12} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
+            {profile?.bio
+              ? <Text style={styles.bio}>{profile.bio}</Text>
+              : <Text style={styles.bioEmpty}>No bio yet</Text>
+            }
+            {badgeProfile?.link ? (
+              <TouchableOpacity style={styles.linkRow} onPress={() => Linking.openURL(normalizeUrl(badgeProfile.link!)).catch(() => {})}>
+                <Ionicons name="link-outline" size={14} color={colors.primary} />
+                <Text style={styles.linkText} numberOfLines={1}>{displayUrl(badgeProfile.link)}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          <TouchableOpacity
+            style={styles.spotlightBtn}
+            activeOpacity={0.8}
+            onPress={() => router.push('/spotlight')}
+          >
+            <Ionicons name="sparkles" size={15} color={colors.primary} />
+            <Text style={styles.spotlightBtnText}>Spotlight</Text>
           </TouchableOpacity>
-        ) : null}
+        </View>
       </View>
 
       {/* Action buttons */}
@@ -544,7 +556,17 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   statNumber: { color: colors.primaryLight, fontSize: 21, fontWeight: '800', letterSpacing: -0.3 },
   statLabel: { color: 'rgba(245,245,245,0.65)', fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
 
-  infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: 4 },
+  infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  infoLeft: { flex: 1, gap: 4 },
+  spotlightBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderColor: colors.primary + '66',
+    backgroundColor: colors.primary + '14',
+    borderRadius: RADIUS.full,
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
+  },
+  spotlightBtnText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   displayName: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
   badgeOutline: {

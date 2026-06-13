@@ -71,6 +71,8 @@ function badgeStatus(def: BadgeDef, m: BadgeMetrics | null, held: Set<string>): 
     case 'curator_bronze':  return cur(m.topPlaylistListens, 100, 'listens');
     case 'curator_silver':  return cur(m.topPlaylistListens, 500, 'listens');
     case 'curator_gold':    return cur(m.topPlaylistListens, 2500, 'listens');
+    case 'ads_bronze': return cur(m.todayAdEngagements, 1, 'today');
+    case 'ads_silver': return cur(m.todayAdEngagements, 2, 'today');
     default: return { kind: 'progress', cur: 0, target: 1, unit: '' };
   }
 }
@@ -290,7 +292,7 @@ export default function BadgesScreen() {
               <Text style={styles.footnote}>
                 Each badge is worth Bronze=1, Silver=2, Gold=4, Diamond=8 points (highest tier per category). Your emblem
                 unlocks at 2 / 4 / 8 / 16 total points for Bronze / Silver / Gold / Diamond. Streak badges revert if you break
-                the streak; permanent ones stay. Community, Ads and App Sharing are coming soon.
+                the streak; permanent ones stay. Community and App Sharing are coming soon.
               </Text>
 
               {/* Show / hide emblem — moved to the bottom. */}

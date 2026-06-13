@@ -65,8 +65,11 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (!currentUserId) return;
+    // Per-mount suffix: a repeated channel name returns the EXISTING (already
+    // subscribed) instance and .on() then throws — fatal if this conversation
+    // is ever stacked twice.
     const channel = supabase
-      .channel(`chat-${currentUserId}-${id}`)
+      .channel(`chat-${currentUserId}-${id}-${Date.now().toString(36)}`)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${currentUserId}` },
         (payload) => {
