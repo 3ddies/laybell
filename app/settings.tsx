@@ -15,6 +15,7 @@ import { displayedTier } from '../lib/badges';
 import {
   loadNotifPrefs, saveNotifPrefs, type NotifPrefs,
 } from '../lib/notificationPrefs';
+import { isAdPersonalizationEnabled, setAdPersonalization } from '../lib/adPrefs';
 import { SPACING, RADIUS, GRADIENTS, type ThemeMode, type ThemePalette } from '../constants/theme';
 
 // The three display modes shown in the Settings → Display section.
@@ -106,6 +107,12 @@ export default function SettingsScreen() {
     likes: true, comments: true, follows: true, messages: true,
   });
   useEffect(() => { loadNotifPrefs().then(setNotifPrefs); }, []);
+
+  // Ad personalization opt-out ("Limit ad targeting"). The switch shows the
+  // INVERSE of the stored pref (on = limit = personalization off).
+  const [limitAds, setLimitAds] = useState(false);
+  useEffect(() => { isAdPersonalizationEnabled().then((on) => setLimitAds(!on)); }, []);
+  function toggleLimitAds(v: boolean) { setLimitAds(v); setAdPersonalization(!v); }
 
   const allNotifsOn = notifPrefs.likes && notifPrefs.comments && notifPrefs.follows && notifPrefs.messages;
 
@@ -229,6 +236,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/spotlight'),
     },
     {
+      icon: 'megaphone-outline',
+      label: 'Ad Manager',
+      subtitle: 'Create and manage ad campaigns',
+      onPress: () => router.push('/ad-manager'),
+    },
+    {
       icon: 'ribbon-outline',
       label: 'Badges',
       subtitle: 'Your emblem, rewards & progress',
@@ -332,6 +345,17 @@ export default function SettingsScreen() {
       label: 'Messages',
       value: notifPrefs.messages,
       onValueChange: (v) => setNotifPref('messages', v),
+      chevron: false,
+    },
+  ];
+
+  const adItems: SectionItem[] = [
+    {
+      icon: 'shield-checkmark-outline',
+      label: 'Limit ad targeting',
+      subtitle: "Don't use my activity to personalize ads",
+      value: limitAds,
+      onValueChange: toggleLimitAds,
       chevron: false,
     },
   ];
@@ -441,6 +465,7 @@ export default function SettingsScreen() {
 
         <Section title="Account" items={accountItems} />
         <Section title="Notifications" items={notifItems} />
+        <Section title="Ads" items={adItems} />
         <Section title="About" items={aboutItems} />
         <Section title="" items={dangerItems} />
 

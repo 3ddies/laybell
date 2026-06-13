@@ -9,7 +9,7 @@ import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image, ActivityIndicator,
-  RefreshControl, Dimensions, Alert, Modal, Animated,
+  RefreshControl, Dimensions, Alert, Modal, Animated, Linking,
 } from 'react-native';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -32,6 +32,12 @@ import {
   fetchFeedSpotlights, mergeSpotlights, rankSpotlight,
   recordSpotlightImpression, recordSpotlightTap, type SpotlightMeta,
 } from '../../lib/spotlight';
+import {
+  fetchFeedAds, injectFeedAds, recordAdImpression, recordAdClick, reportAd,
+  type AdViewer,
+} from '../../lib/ads';
+import SponsoredCard from '../../components/SponsoredCard';
+import { useProfile } from '../../contexts/ProfileContext';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
@@ -308,6 +314,11 @@ export default function HomeScreen() {
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [seenPostIds, setSeenPostIds] = useState<Set<string>>(new Set());
   const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
+  // Current user's own profile (age/gender/location) for ad targeting. Kept in a
+  // ref so fetchPosts can read it without re-running on every profile change.
+  const { profile: myProfile } = useProfile();
+  const viewerProfileRef = useRef(myProfile);
+  viewerProfileRef.current = myProfile;
   const { play, currentTrack, isPlaying, expand, videoMuted, toggleVideoMuted } = useAudio();
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
@@ -356,6 +367,9 @@ export default function HomeScreen() {
     // views never count).
     for (const v of viewableItems) {
       if (v.item?.__spotlight) recordSpotlightImpression(v.item, live.current.currentUserId);
+      // A sponsored ad card crossing 60% visibility counts one impression
+      // (deduped per campaign/placement/session + per-hour server-side).
+      if (v.item?.__ad) recordAdImpression(v.item, 'feed', live.current.currentUserId);
     }
   }).current;
   const [feedMode, setFeedMode] = useState<'all' | 'following' | 'friends'>('all');
@@ -511,14 +525,27 @@ export default function HomeScreen() {
       query = query.eq('is_public', true);
     }
 
-    const [{ data }, { data: likesData }, { data: savesData }, blockedIds, spotItems] = await Promise.all([
+    // Viewer context for ad targeting (own profile demographics + taste affinity).
+    const adViewer: AdViewer = {
+      id: userId ?? null,
+      profile: viewerProfileRef.current ? {
+        age: (viewerProfileRef.current as any).age,
+        gender: (viewerProfileRef.current as any).gender,
+        latitude: (viewerProfileRef.current as any).latitude,
+        longitude: (viewerProfileRef.current as any).longitude,
+      } : null,
+      affinity: affinityProfile.current,
+    };
+
+    const [{ data }, { data: likesData }, { data: savesData }, blockedIds, spotItems, adItems] = await Promise.all([
       query,
       userId ? supabase.from('likes').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
       userId ? supabase.from('saves').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
       userId ? fetchBlockedIds() : Promise.resolve(new Set<string>()),
-      // Spotlights serve only in the discovery feed — Following/Friends keep
-      // their strict "people you chose" guarantee.
+      // Spotlights and ads serve only in the discovery feed — Following/Friends
+      // keep their strict "people you chose" guarantee.
       feedMode === 'all' ? fetchFeedSpotlights() : Promise.resolve([] as any[]),
+      feedMode === 'all' ? fetchFeedAds(adViewer) : Promise.resolve([] as any[]),
     ]);
 
     if (data) {
@@ -604,7 +631,13 @@ export default function HomeScreen() {
           viewerId: userId ?? null,
         }),
       })));
-      setPosts(mergeSpotlights(scoredPairs, spotPairs));
+      // Ads inject AFTER the spotlight merge via a pure spacing pass — they
+      // never flow through scorePost/rankSpotlight, so the tuned organic +
+      // spotlight ranking is byte-for-byte unchanged. injectFeedAds no-ops when
+      // there are no ads (Following/Friends, or empty inventory).
+      const merged = mergeSpotlights(scoredPairs, spotPairs);
+      const adsForFeed = (adItems as any[]).filter((a) => a.user_id !== userId && !blockedIds.has(a.user_id));
+      setPosts(injectFeedAds(merged, adsForFeed));
       // Persist post IDs shown to the user so they can be deprioritised next
       // session — spotlighted posts excluded, so a campaign never leaves its
       // post pre-penalised in organic ranking once it ends.
@@ -712,6 +745,32 @@ export default function HomeScreen() {
   const onToggleMuted = useCallback(() => live.current.toggleVideoMuted(), []);
   const onToggleSongMute = useCallback(() => live.current.toggleSongMuted(), []);
 
+  // Ad CTA — record the click and open the destination (https normalized in lib/ads).
+  const onAdCta = useCallback((item: any) => {
+    if (isSwipeTap()) return;
+    recordAdClick(item, 'feed', live.current.currentUserId);
+    const url = item.__ad?.ctaUrl;
+    if (url) Linking.openURL(url).catch(() => {});
+  }, []);
+  // Ad 3-dot: report / why this ad / ad settings.
+  const onAdOptions = useCallback((item: any) => {
+    const ad = item.__ad;
+    if (!ad) return;
+    Alert.alert(ad.advertiserName || 'Sponsored ad', 'Sponsored', [
+      {
+        text: 'Report ad',
+        onPress: () => reportAd(ad.campaignId, ad.creativeId).then((ok) =>
+          Alert.alert(ok ? 'Thanks for the report' : 'Could not report', ok ? "We'll review this ad." : 'Please try again later.')),
+      },
+      {
+        text: 'Why am I seeing this?',
+        onPress: () => Alert.alert('Why this ad?', 'You\'re seeing this because it matched its audience and ran in your feed. Manage ad personalization in Settings → Ads.'),
+      },
+      { text: 'Ad settings', onPress: () => live.current.router.push('/settings') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, []);
+
   const onOptions = useCallback((item: Post) => {
     showOptions({
       postId: item.id,
@@ -728,32 +787,41 @@ export default function HomeScreen() {
 
   const renderPost = useCallback(({ item }: { item: Post }) => (
     <ElasticSwipeView>
-      <PostCard
-        item={item}
-        isOwn={item.user_id === currentUserId}
-        isLiked={likedPosts.has(item.id)}
-        isSaved={savedPosts.has(item.id)}
-        audioActive={isPlaying && currentTrack?.id === item.id}
-        videoMuted={videoMuted}
-        songMuted={songMuted}
-        shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
-        onProfile={onProfile}
-        onOptions={onOptions}
-        onOpenPost={onOpenPost}
-        onOpenReel={onOpenReel}
-        onComments={onComments}
-        onPlayTrack={onPlayTrack}
-        onExpandTrack={onExpandTrack}
-        onToggleMuted={onToggleMuted}
-        onToggleSongMute={onToggleSongMute}
-        onLike={onLike}
-        onSave={onSave}
-        onShare={onShare}
-        onSlideAudioActive={onSlideAudioActive}
-      />
+      {(item as any).__ad ? (
+        <SponsoredCard
+          item={item}
+          shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
+          onCta={onAdCta}
+          onOptions={onAdOptions}
+        />
+      ) : (
+        <PostCard
+          item={item}
+          isOwn={item.user_id === currentUserId}
+          isLiked={likedPosts.has(item.id)}
+          isSaved={savedPosts.has(item.id)}
+          audioActive={isPlaying && currentTrack?.id === item.id}
+          videoMuted={videoMuted}
+          songMuted={songMuted}
+          shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
+          onProfile={onProfile}
+          onOptions={onOptions}
+          onOpenPost={onOpenPost}
+          onOpenReel={onOpenReel}
+          onComments={onComments}
+          onPlayTrack={onPlayTrack}
+          onExpandTrack={onExpandTrack}
+          onToggleMuted={onToggleMuted}
+          onToggleSongMute={onToggleSongMute}
+          onLike={onLike}
+          onSave={onSave}
+          onShare={onShare}
+          onSlideAudioActive={onSlideAudioActive}
+        />
+      )}
     </ElasticSwipeView>
   ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, songMuted, canPlayVideo, visibleVideoId,
-      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive]);
+      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions]);
 
   if (loading) {
     return (

@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, Easing,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { useEffect, useRef, useState } from 'react';
@@ -18,6 +18,7 @@ import { formatCount } from '../lib/format';
 import { createNotification } from '../lib/createNotification';
 import Scrubber from './Scrubber';
 import Comments from './Comments';
+import { recordAdClick, AD_SKIP_MS } from '../lib/ads';
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 // Full-width art (capped at 300): at rest the header fills the screen down to
@@ -91,7 +92,7 @@ function Controls() {
 export default function NowPlaying() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const { currentTrack, expanded, collapse, setCommentComposing, noteCommentEngagement, clearCommentEngagement } = useAudio();
+  const { currentTrack, expanded, collapse, setCommentComposing, noteCommentEngagement, clearCommentEngagement, adState, skipAudioAd } = useAudio();
   const { show: showOptions } = usePostOptions();
   const router = useRouter();
   const [render, setRender] = useState(false);
@@ -347,6 +348,36 @@ export default function NowPlaying() {
             }
           />
         </KeyboardAvoidingView>
+
+        {/* Audio-ad takeover — covers the player while a playlist break plays.
+            The music is paused; only Skip (after 5s) and the CTA are available. */}
+        {adState && (
+          <View style={styles.adOverlay}>
+            <View style={styles.adIcon}><Ionicons name="megaphone" size={36} color={colors.primary} /></View>
+            <Text style={styles.adSponsored}>SPONSORED</Text>
+            <Text style={styles.adBrand} numberOfLines={1}>{adState.advertiserName}</Text>
+            {!!adState.headline && <Text style={styles.adHeadline}>{adState.headline}</Text>}
+            {!!adState.ctaUrl && (
+              <TouchableOpacity
+                style={styles.adCtaBtn}
+                onPress={() => { recordAdClick(adState, 'audio', adState.viewerId); Linking.openURL(adState.ctaUrl!).catch(() => {}); }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.adCtaText}>{adState.ctaLabel}</Text>
+                <Ionicons name="arrow-forward" size={16} color={colors.text} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.adSkipBtn, !adState.canSkip && styles.adSkipDisabled]}
+              disabled={!adState.canSkip}
+              onPress={skipAudioAd}
+            >
+              <Text style={styles.adSkipText}>
+                {adState.canSkip ? 'Skip ad' : `Skip in ${Math.max(1, Math.ceil((AD_SKIP_MS - adState.elapsedMs) / 1000))}s`}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </LinearGradient>
     </Animated.View>
   );
@@ -403,5 +434,33 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   centerStat: { flex: 1, alignItems: 'center' },
   centerStatNum: { color: colors.text, fontSize: 18, fontWeight: '800' },
   centerStatLbl: { color: colors.textSecondary, fontSize: 11, marginTop: 1 },
+
+  // ── Audio-ad takeover overlay ──
+  adOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10,6,2,0.97)',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: SPACING.xl, gap: SPACING.sm,
+  },
+  adIcon: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center',
+    marginBottom: SPACING.sm,
+  },
+  adSponsored: { color: colors.primaryLight, fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
+  adBrand: { color: colors.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  adHeadline: { color: colors.textSecondary, fontSize: 15, textAlign: 'center', lineHeight: 21, marginTop: 2 },
+  adCtaBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.primary, borderRadius: RADIUS.full,
+    paddingVertical: SPACING.md, paddingHorizontal: SPACING.xl, marginTop: SPACING.lg,
+  },
+  adCtaText: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  adSkipBtn: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.full,
+    paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.xl, marginTop: SPACING.sm,
+  },
+  adSkipDisabled: { opacity: 0.5 },
+  adSkipText: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
 
 });

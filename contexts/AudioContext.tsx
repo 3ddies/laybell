@@ -5,6 +5,12 @@ import { supabase } from '../lib/supabase';
 import { getDeviceId } from '../lib/deviceId';
 import { playThresholds } from '../lib/playThresholds';
 import { bumpBadge } from '../lib/badges';
+import {
+  pickAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
+  AUDIO_AD_FIRST_MS, AUDIO_AD_EVERY_MS, AD_SKIP_MS,
+  type AdViewer, type AudioAd,
+} from '../lib/ads';
+import { buildAffinityProfile, EMPTY_PROFILE } from '../lib/feedScorer';
 
 // Per-post listen progress persists for a rolling 24h window (matches the
 // server's per-user/post stream cap) so force-quitting can't reset it.
@@ -25,6 +31,24 @@ export type Track = {
   caption: string;
   artist: string;
   cover?: string | null;
+};
+
+// Audio-ad takeover state surfaced to the player UIs (NowPlaying / MiniPlayer)
+// while an audio ad is interrupting a playlist. Carries the campaign/creative
+// ids so the UI's CTA can record a click via lib/ads.
+export type AudioAdState = {
+  campaignId: string;
+  creativeId: string;
+  ownerId: string;
+  advertiserName: string;
+  headline: string;
+  ctaLabel: string;
+  ctaUrl: string | null;
+  cover?: string | null;
+  viewerId: string | null;
+  elapsedMs: number;
+  durationMs: number;
+  canSkip: boolean;
 };
 
 type AudioContextType = {
@@ -51,6 +75,9 @@ type AudioContextType = {
   queueLength: number;
   videoMuted: boolean;
   toggleVideoMuted: () => void;
+  // Audio ads (playlist breaks). adState is non-null only while an ad is playing.
+  adState: AudioAdState | null;
+  skipAudioAd: () => void;
 };
 
 const AudioContext = createContext<AudioContextType | null>(null);
@@ -134,6 +161,115 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // seconds via record_badge_activity (keeping the sub-second remainder → no drift).
   const badgeMsRef = useRef(0);
 
+  // ── Audio-ad scheduler ──────────────────────────────────────────────────────
+  // Armed ONLY while a real playlist queue plays (playQueue). Accrues genuine
+  // forward listen ms across the queue session; fires the first ad at 1 min and
+  // every 6 min after. The ad plays on a SEPARATE sound so the music's stream/
+  // badge accounting is never touched; the music is paused (not unloaded) and
+  // resumes at the same spot when the ad ends/skips.
+  const [adState, setAdState] = useState<AudioAdState | null>(null);
+  const adArmedRef = useRef(false);
+  const adListenMsRef = useRef(0);
+  const adNextThresholdRef = useRef(AUDIO_AD_FIRST_MS);
+  const adSoundRef = useRef<Audio.Sound | null>(null);
+  const adPlayingRef = useRef(false);
+  const adMetaRef = useRef<AudioAd | null>(null);
+  const adViewerRef = useRef<AdViewer | null>(null);
+
+  function disarmAds() {
+    adArmedRef.current = false;
+    adListenMsRef.current = 0;
+    adNextThresholdRef.current = AUDIO_AD_FIRST_MS;
+  }
+
+  // Resolve the viewer (demographics + taste) for ad targeting when a playlist
+  // starts. Cached affinity makes this cheap; failures fall back to untargeted.
+  async function armAdViewer() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { adViewerRef.current = { id: null, profile: null, affinity: EMPTY_PROFILE }; return; }
+      const [{ data: prof }, affinity] = await Promise.all([
+        supabase.from('profiles').select('age, gender, latitude, longitude').eq('id', user.id).single(),
+        buildAffinityProfile(user.id),
+      ]);
+      adViewerRef.current = { id: user.id, profile: (prof as any) ?? null, affinity };
+    } catch {
+      adViewerRef.current = { id: uidRef.current, profile: null, affinity: EMPTY_PROFILE };
+    }
+  }
+
+  // A listening threshold was crossed → interrupt with one audio ad (if any
+  // inventory matches). Pauses the music in place and plays the ad creative on a
+  // separate sound with its own status handler.
+  async function fireAudioAd() {
+    if (adPlayingRef.current) return;
+    adPlayingRef.current = true;
+    const viewer = adViewerRef.current ?? { id: uidRef.current, profile: null, affinity: EMPTY_PROFILE };
+    let ad: AudioAd | null = null;
+    try { ad = await pickAudioAd(viewer); } catch {}
+    if (!ad) {
+      // No matching inventory — push the next break out, keep the music playing.
+      adPlayingRef.current = false;
+      adNextThresholdRef.current = adListenMsRef.current + AUDIO_AD_EVERY_MS;
+      return;
+    }
+    adMetaRef.current = ad;
+    try { await soundRef.current?.pauseAsync(); } catch {}
+    setIsPlaying(false);
+    flushBadgeMs();
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: ad.uri },
+        { shouldPlay: true, progressUpdateIntervalMillis: 250 },
+      );
+      adSoundRef.current = sound;
+      setAdState({
+        campaignId: ad.campaignId, creativeId: ad.creativeId, ownerId: ad.ownerId,
+        advertiserName: ad.advertiserName, headline: ad.headline,
+        ctaLabel: ad.ctaLabel, ctaUrl: ad.ctaUrl, cover: ad.cover ?? null,
+        viewerId: uidRef.current,
+        elapsedMs: 0, durationMs: 0, canSkip: false,
+      });
+      recordAdImpression(ad, 'audio', uidRef.current);
+      sound.setOnPlaybackStatusUpdate((st: any) => {
+        if (!st.isLoaded) return;
+        const pos = st.positionMillis ?? 0;
+        const dur = st.durationMillis ?? 0;
+        setAdState((prev) => (prev ? { ...prev, elapsedMs: pos, durationMs: dur, canSkip: pos >= AD_SKIP_MS } : prev));
+        if (st.didJustFinish) finishAudioAd(false);
+      });
+    } catch {
+      // Couldn't load the ad — just resume the music and reschedule.
+      finishAudioAd(false, true);
+    }
+  }
+
+  // End the current audio ad: log complete/skip, unload it, reschedule the next
+  // break, and resume the music exactly where it was paused.
+  async function finishAudioAd(skipped: boolean, failed = false) {
+    const ad = adMetaRef.current;
+    if (ad && !failed) {
+      if (skipped) recordAdSkip(ad, 'audio', uidRef.current);
+      else recordAdComplete(ad, 'audio', uidRef.current);
+    }
+    adMetaRef.current = null;
+    try { await adSoundRef.current?.stopAsync(); } catch {}
+    try { await adSoundRef.current?.unloadAsync(); } catch {}
+    adSoundRef.current = null;
+    setAdState(null);
+    adPlayingRef.current = false;
+    adNextThresholdRef.current = adListenMsRef.current + AUDIO_AD_EVERY_MS;
+    if (pendingFinishRef.current) {
+      // The track ended WHILE the ad played (handleTrackFinished deferred it) —
+      // advance/close now instead of resuming a finished track.
+      maybeRunDeferredFinish();
+    } else if (soundRef.current) {
+      try { await soundRef.current.playAsync(); setIsPlaying(true); } catch {}
+    }
+  }
+
+  function skipAudioAd() { finishAudioAd(true); }
+
   // Configure the audio session once up front so the first tap plays immediately
   // (a cold session previously made the first createAsync fail to start).
   useEffect(() => { Audio.setAudioModeAsync(AUDIO_MODE).catch(() => {}); }, []);
@@ -196,6 +332,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     pendingFinishRef.current = false;
     saveProgress();
     flushBadgeMs();
+    // Tear down any in-flight audio ad and disarm scheduling.
+    adPlayingRef.current = false;
+    adMetaRef.current = null;
+    if (adSoundRef.current) { try { await adSoundRef.current.unloadAsync(); } catch {} adSoundRef.current = null; }
+    setAdState(null);
+    disarmAds();
     playTokenRef.current++; // cancel any in-flight load
     if (soundRef.current) {
       await soundRef.current.stopAsync();
@@ -254,6 +396,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function seekTo(ms: number) {
+    if (adPlayingRef.current) return; // controls are locked during an audio ad
     if (soundRef.current) {
       emitPosition(ms, durationRef.current); // reflect immediately so the scrubber doesn't snap back
       progressRef.current = durationRef.current > 0 ? ms / durationRef.current : 0;
@@ -272,10 +415,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     queueIndexRef.current = startIndex;
     setQueueLength(tracks.length);
     setQueueIndex(startIndex);
+    // Arm audio-ad scheduling for THIS playlist session (single-track taps go
+    // through play() with fromQueue=false and never arm).
+    adArmedRef.current = true;
+    adListenMsRef.current = 0;
+    adNextThresholdRef.current = AUDIO_AD_FIRST_MS;
+    armAdViewer();
     await play(tracks[startIndex], true);
   }
 
   function next() {
+    if (adPlayingRef.current) return; // locked during an audio ad
     const q = queueRef.current;
     const ni = queueIndexRef.current + 1;
     if (q.length && ni < q.length) {
@@ -305,6 +455,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // song; within the first 3s it jumps to the previous track (restarting the
   // current one if there isn't an earlier track).
   function previous() {
+    if (adPlayingRef.current) return; // locked during an audio ad
     const q = queueRef.current;
     const pi = queueIndexRef.current - 1;
     if (positionRef.current < 3000 && q.length && pi >= 0) {
@@ -328,6 +479,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     queueIndexRef.current = 0;
     setQueueLength(0);
     setQueueIndex(0);
+    disarmAds(); // the playlist is over — stop the ad clock
   }
 
   // The normal "track finished" outcome: advance to the next track in the queue
@@ -350,6 +502,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // defer the advance/close — so a playlist won't skip ahead, and the player won't
   // exit, out from under an active comment. Otherwise advance/close right away.
   function handleTrackFinished() {
+    // A track finishing WHILE an audio ad is playing must not advance the queue
+    // under the ad (which would overlap audio and lose the resume position) —
+    // defer it; finishAudioAd runs the deferred advance when the ad ends.
+    if (adPlayingRef.current) {
+      pendingFinishRef.current = true;
+      setIsPlaying(false);
+      return;
+    }
     if (holdForCommentRef.current || engagedNearEndRef.current) {
       // Keep the finished sound loaded + on screen so the user can replay or scrub
       // it while they're still in the comments (see resume / seekTo).
@@ -401,7 +561,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     engagedNearEndRef.current = false; // and resets near-end engagement for the new track
     progressRef.current = 0;
     positionRef.current = 0;
-    if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; setQueueLength(0); setQueueIndex(0); }
+    // A fresh play supersedes any in-flight audio ad (e.g. tapping a feed track
+    // while a playlist break is on screen) — tear the ad down like stop() does.
+    if (adPlayingRef.current) {
+      adPlayingRef.current = false;
+      adMetaRef.current = null;
+      if (adSoundRef.current) { try { await adSoundRef.current.unloadAsync(); } catch {} adSoundRef.current = null; }
+      setAdState(null);
+    }
+    if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; setQueueLength(0); setQueueIndex(0); disarmAds(); }
     // Tapping the already-playing track in a list toggles it off. Queue navigation
     // (next / previous / restart / advance) must always play its target — never
     // stop and close the player — so it passes suppressToggle to skip this.
@@ -480,6 +648,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             // posts, independent of the per-post stream window) and flush in chunks.
             badgeMsRef.current += delta;
             if (badgeMsRef.current >= 15000) flushBadgeMs();
+            // Audio-ad clock: only while a playlist is armed and no ad is mid-
+            // play. Crossing the threshold fires one ad (fire-and-forget; it
+            // guards its own re-entry via adPlayingRef).
+            if (adArmedRef.current && !adPlayingRef.current) {
+              adListenMsRef.current += delta;
+              if (adListenMsRef.current >= adNextThresholdRef.current) fireAudioAd();
+            }
             const id = track.id;
             // Reset a post's accounting once its 24h window elapses so a genuine
             // listener can earn again the next day (mirrors the server cap window).
@@ -526,7 +701,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, play, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, play, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>
       <AudioPositionContext.Provider value={subscribePosition}>
         {children}
       </AudioPositionContext.Provider>

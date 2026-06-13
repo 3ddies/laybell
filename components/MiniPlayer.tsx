@@ -1,8 +1,9 @@
-import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Animated, Linking } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
+import { recordAdClick, AD_SKIP_MS } from '../lib/ads';
 import { useListenMode } from '../contexts/ListenModeContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -24,7 +25,7 @@ type PlayerVariant = 'bar' | 'compact' | 'side';
 export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVariant }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const { currentTrack, isPlaying, isBuffering, pause, resume, stop, seekTo, expanded, expand } = useAudio();
+  const { currentTrack, isPlaying, isBuffering, pause, resume, stop, seekTo, expanded, expand, adState, skipAudioAd } = useAudio();
   const { positionMs, durationMs } = useAudioPosition(); // tick subscription (4×/sec) — small tree, cheap
   const insets = useSafeAreaInsets();
   const { listenMode } = useListenMode();
@@ -99,6 +100,39 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
 
   const track = currentTrack ?? lastTrackRef.current;
   if ((!currentTrack && !barShown) || !track || expanded) return null;
+
+  // Audio-ad takeover: while a playlist break is playing, the bar becomes a
+  // "Sponsored" strip (brand + CTA + skip-after-5s) instead of the track row.
+  // Shown for every variant — the music is paused, so the normal controls don't
+  // apply. NowPlaying handles the takeover when the full player is expanded.
+  if (adState) {
+    const bottomOffset = 68 + insets.bottom + 6;
+    const secsLeft = Math.max(1, Math.ceil((AD_SKIP_MS - adState.elapsedMs) / 1000));
+    return (
+      <Animated.View style={[styles.container, { bottom: bottomOffset, transform: [{ translateY: listenSlide }] }]}>
+        <View style={styles.adBar}>
+          <View style={styles.adCover}>
+            <Ionicons name="megaphone" size={16} color={colors.primary} />
+          </View>
+          <View style={styles.body}>
+            <Text style={styles.adSponsored} numberOfLines={1}>Sponsored · {adState.advertiserName}</Text>
+            <Text style={styles.caption} numberOfLines={1}>{adState.headline || 'Advertisement'}</Text>
+          </View>
+          {!!adState.ctaUrl && (
+            <TouchableOpacity
+              style={styles.adCta}
+              onPress={() => { recordAdClick(adState, 'audio', adState.viewerId); Linking.openURL(adState.ctaUrl!).catch(() => {}); }}
+            >
+              <Text style={styles.adCtaText} numberOfLines={1}>{adState.ctaLabel}</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.adSkip} disabled={!adState.canSkip} onPress={skipAudioAd} hitSlop={8}>
+            <Text style={styles.adSkipText}>{adState.canSkip ? 'Skip' : secsLeft}</Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    );
+  }
 
   // Camera side chip — minimal: cover (tap to open the full player) and
   // play/pause. No title, no scrubber, no close — the camera stays the focus.
@@ -264,6 +298,27 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     width: 30, height: 30, borderRadius: RADIUS.full,
     backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
   },
+
+  // ── Audio-ad takeover strip ──
+  adBar: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
+  },
+  adCover: {
+    width: 38, height: 38, borderRadius: RADIUS.sm,
+    backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center',
+  },
+  adSponsored: { color: colors.primaryLight, fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
+  adCta: {
+    backgroundColor: colors.primary, borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.md, paddingVertical: 6, maxWidth: 110,
+  },
+  adCtaText: { color: colors.text, fontSize: 12, fontWeight: '800' },
+  adSkip: {
+    minWidth: 34, height: 28, borderRadius: RADIUS.full, paddingHorizontal: SPACING.sm,
+    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+  },
+  adSkipText: { color: colors.textSecondary, fontSize: 12, fontWeight: '700' },
 
   // ── Compact card (Create tab) — small pill pinned top-right, below the
   // "New post" header so it never covers the Next arrow. ──

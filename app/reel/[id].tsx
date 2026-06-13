@@ -1,6 +1,6 @@
 import { Video, ResizeMode } from 'expo-av';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator, Animated,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator, Animated, Linking, Alert,
 } from 'react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -31,6 +31,11 @@ import { useExpandTransition } from '../../hooks/useExpandTransition';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, EMPTY_PROFILE,
 } from '../../lib/feedScorer';
+import {
+  fetchReelAds, weaveReelAds, recordAdImpression, recordAdClick, recordAdSkip, reportAd, type AdViewer,
+} from '../../lib/ads';
+import ReelAd from '../../components/ReelAd';
+import { useProfile } from '../../contexts/ProfileContext';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -62,10 +67,21 @@ export default function ReelScreen() {
   const [paused, setPaused] = useState(false);
   const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string } | null>(null);
   const videoRefs = useRef<Record<string, any>>({});
+  const listRef = useRef<FlatList>(null);
+  // Read by the frozen onViewableItemsChanged callback (which can't see state).
+  const currentUserIdRef = useRef<string | null>(null);
+  const { profile: myProfile } = useProfile();
+  const myProfileRef = useRef(myProfile);
+  myProfileRef.current = myProfile;
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
-    if (viewableItems[0]?.item) { setVisibleId(viewableItems[0].item.id); setPaused(false); }
+    const it = viewableItems[0]?.item;
+    if (it) {
+      setVisibleId(it.id);
+      setPaused(false);
+      if (it.__ad) recordAdImpression(it, 'reels', currentUserIdRef.current);
+    }
   }).current;
 
   useEffect(() => { stop(); setup(); }, [id]);
@@ -84,6 +100,7 @@ export default function ReelScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     const uid = user?.id ?? null;
     setCurrentUserId(uid);
+    currentUserIdRef.current = uid;
 
     const [seen, profile, followingRes] = await Promise.all([
       loadSeenPostIds(),
@@ -126,6 +143,23 @@ export default function ReelScreen() {
     }
     recordSeenPostIds(ordered.map((p) => p.id));
     setLoading(false);
+
+    // Weave reel ads in WITHOUT blocking the first render: ads land at output
+    // indices 2, 7, 12 … (the 3rd reel, then every 5th). The tapped video is
+    // index 0, so weaving never disturbs what's currently on screen.
+    const adViewer: AdViewer = {
+      id: uid,
+      profile: myProfileRef.current ? {
+        age: (myProfileRef.current as any).age,
+        gender: (myProfileRef.current as any).gender,
+        latitude: (myProfileRef.current as any).latitude,
+        longitude: (myProfileRef.current as any).longitude,
+      } : null,
+      affinity: profile,
+    };
+    fetchReelAds(adViewer)
+      .then((pool) => { if (pool.length) setPosts(weaveReelAds(ordered, pool)); })
+      .catch(() => {});
   }
 
   async function toggleLike(item: any) {
@@ -162,7 +196,36 @@ export default function ReelScreen() {
     });
   }
 
-  function renderItem({ item }: { item: any }) {
+  function renderItem({ item, index }: { item: any; index: number }) {
+    if (item.__ad) {
+      return (
+        <ReelAd
+          item={item}
+          visible={visibleId === item.id}
+          paused={paused}
+          insets={insets}
+          onSkip={() => {
+            recordAdSkip(item, 'reels', currentUserId);
+            listRef.current?.scrollToIndex({ index: index + 1, animated: true });
+          }}
+          onCta={() => {
+            recordAdClick(item, 'reels', currentUserId);
+            const url = item.__ad?.ctaUrl;
+            if (url) Linking.openURL(url).catch(() => {});
+          }}
+          onOptions={() => {
+            const ad = item.__ad;
+            Alert.alert(ad?.advertiserName || 'Sponsored ad', 'Sponsored', [
+              { text: 'Report ad', onPress: () => reportAd(ad.campaignId, ad.creativeId).then((ok) =>
+                Alert.alert(ok ? 'Thanks for the report' : 'Could not report', ok ? "We'll review this ad." : 'Please try again later.')) },
+              { text: 'Why am I seeing this?', onPress: () => Alert.alert('Why this ad?', 'You\'re seeing this because it matched its audience. Manage ad personalization in Settings → Ads.') },
+              { text: 'Ad settings', onPress: () => router.push('/settings') },
+              { text: 'Cancel', style: 'cancel' },
+            ]);
+          }}
+        />
+      );
+    }
     const isLiked = liked.has(item.id);
     const isSaved = saved.has(item.id);
     const likeCount = item.likes?.[0]?.count || 0;
@@ -291,6 +354,7 @@ export default function ReelScreen() {
         <View style={styles.container}>
           {posts.length > 0 ? (
             <FlatList
+              ref={listRef}
               data={posts}
               keyExtractor={(p) => p.id}
               pagingEnabled
