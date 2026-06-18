@@ -93,7 +93,7 @@ function AppContent() {
             the route itself must not animate (iOS ignores slide_from_right on
             modal presentations and would slide up from the bottom instead). The
             stack's own back gesture stays off — the pager owns the swipe. */}
-        {['messages/index', 'notifications', 'settings', 'analytics', 'spotlight', 'ad-manager/index', 'ad-manager/create', 'ad-manager/[id]', 'badges', 'permissions', 'playlists', 'playlist/[id]'].map((name) => (
+        {['messages/index', 'notifications', 'settings', 'analytics', 'spotlight', 'ad-manager/index', 'ad-manager/create', 'ad-manager/[id]', 'badges', 'permissions', 'playlists', 'playlist/[id]', 'privacy-policy', 'terms-of-service', 'privacy-center'].map((name) => (
           <Stack.Screen
             key={name}
             name={name}
@@ -163,12 +163,16 @@ export default function RootLayout() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inOnboarding = segments[0] === 'onboarding';
+    // Legal docs are reachable without a session and without finishing
+    // onboarding, so the sign-up consent links and the minor-consent step can
+    // open them without the auth/onboarding guards bouncing the user away.
+    const inLegal = segments[0] === 'privacy-policy' || segments[0] === 'terms-of-service';
 
-    if (!session && !inAuthGroup) {
+    if (!session && !inAuthGroup && !inLegal) {
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
       checkOnboarding();
-    } else if (session && !inAuthGroup && !inOnboarding) {
+    } else if (session && !inAuthGroup && !inOnboarding && !inLegal) {
       checkOnboarding(true);
     }
   }, [session, initialized, segments]);

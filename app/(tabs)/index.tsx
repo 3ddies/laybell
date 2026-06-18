@@ -840,7 +840,10 @@ export default function HomeScreen() {
           onPress={() => { revealChevron(); setMenuOpen(true); }}
           activeOpacity={0.7}
         >
-          <Text style={styles.headerLogo}>Laybell</Text>
+          <View style={styles.logoWrap}>
+            <Text style={styles.headerLogo}>Laybell</Text>
+            <Text style={styles.tm}>™</Text>
+          </View>
           <Animated.View style={[styles.logoChevron, { opacity: chevronOpacity }]} pointerEvents="none">
             <Ionicons name="chevron-down" size={20} color={colors.primaryLight} />
           </Animated.View>
@@ -1010,6 +1013,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     letterSpacing: 0.5,
   },
   logoChevron: { marginLeft: 2, marginTop: 4 },
+  // Wordmark + ™ tucked into the bottom-right corner of "Laybell".
+  logoWrap: { flexDirection: 'row', alignItems: 'flex-end' },
+  tm: { fontSize: 11, fontWeight: '700', color: colors.primaryLight, marginLeft: 1, marginBottom: 3 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   headerIconBtn: { position: 'relative', padding: 2 },
 

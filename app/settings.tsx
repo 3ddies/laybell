@@ -210,6 +210,18 @@ export default function SettingsScreen() {
     );
   }
 
+  // Paid advertising features (Spotlight, Ad Manager) are 18+ per the Terms of
+  // Service. Block users we KNOW to be under 18 (age is set during onboarding);
+  // if age is unknown we allow it, since we can't determine it.
+  function requireAdult(action: () => void) {
+    const age = (profile as any)?.age;
+    if (typeof age === 'number' && age < 18) {
+      Alert.alert('18+ only', 'Spotlight and the Ad Manager are available only to users who are at least 18 years old.');
+      return;
+    }
+    action();
+  }
+
   const accountItems: SectionItem[] = [
     {
       icon: 'person-outline',
@@ -233,13 +245,13 @@ export default function SettingsScreen() {
       icon: 'sparkles-outline',
       label: 'Spotlight',
       subtitle: 'Launch a post at #3 in the Home feed',
-      onPress: () => router.push('/spotlight'),
+      onPress: () => requireAdult(() => router.push('/spotlight')),
     },
     {
       icon: 'megaphone-outline',
       label: 'Ad Manager',
       subtitle: 'Create and manage ad campaigns',
-      onPress: () => router.push('/ad-manager'),
+      onPress: () => requireAdult(() => router.push('/ad-manager')),
     },
     {
       icon: 'ribbon-outline',
@@ -295,6 +307,12 @@ export default function SettingsScreen() {
       label: 'Permissions',
       subtitle: 'Camera, photos, location, contacts & more',
       onPress: () => router.push('/permissions'),
+    },
+    {
+      icon: 'shield-checkmark-outline',
+      label: 'Privacy & data',
+      subtitle: 'Download your data, ad settings & your rights',
+      onPress: () => router.push('/privacy-center'),
     },
     {
       icon: 'lock-closed-outline',
@@ -377,12 +395,12 @@ export default function SettingsScreen() {
     {
       icon: 'document-text-outline',
       label: 'Privacy Policy',
-      onPress: () => Alert.alert('Privacy Policy', 'Coming soon at laybell.app/privacy'),
+      onPress: () => router.push('/privacy-policy'),
     },
     {
       icon: 'shield-outline',
       label: 'Terms of Service',
-      onPress: () => Alert.alert('Terms of Service', 'Coming soon at laybell.app/terms'),
+      onPress: () => router.push('/terms-of-service'),
     },
   ];
 

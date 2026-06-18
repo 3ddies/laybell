@@ -14,6 +14,7 @@ import { GENDER_OPTIONS, ageFromDob } from '../lib/profileOptions';
 import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { removePublicUrls } from '../lib/storageCleanup';
 
 export default function EditProfileScreen() {
   const { colors } = useTheme();
@@ -64,6 +65,7 @@ export default function EditProfileScreen() {
   }
 
   async function handleChangePhoto() {
+    const oldAvatar = avatarUrl; // remove this once the new one is saved
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'] as any, allowsEditing: true, aspect: [1, 1], quality: 0.8,
     });
@@ -84,6 +86,8 @@ export default function EditProfileScreen() {
     if (!updateError) {
       setAvatarUrl(publicUrl);
       update({ avatar_url: publicUrl }); // propagate to every screen showing the avatar
+      // Delete the previous avatar object so old photos don't linger publicly.
+      if (oldAvatar && oldAvatar !== publicUrl) removePublicUrls([oldAvatar]);
     }
     setUploadingPhoto(false);
   }

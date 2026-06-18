@@ -1,9 +1,25 @@
 import { Alert } from 'react-native';
 import { supabase } from './supabase';
+import { collectPostMediaUrls, removePublicUrls } from './storageCleanup';
 
 export async function deletePostById(postId: string): Promise<boolean> {
+  // Capture media URLs BEFORE deleting the row so we can also clean up the
+  // public Storage objects (the DB delete only removes the row). Best-effort —
+  // the profile-delete trigger in storage_cleanup.sql is the backstop, and the
+  // per-user Storage DELETE policy from that same migration is what lets this run.
+  let media: string[] = [];
+  try {
+    const { data } = await supabase
+      .from('posts')
+      .select('media_url, thumbnail_url, cover_url, slides')
+      .eq('id', postId)
+      .single();
+    if (data) media = collectPostMediaUrls(data);
+  } catch {}
   const { error } = await supabase.from('posts').delete().eq('id', postId);
-  return !error;
+  if (error) return false;
+  if (media.length) await removePublicUrls(media);
+  return true;
 }
 
 // Archiving hides a post from your profile/feed/explore without deleting it.

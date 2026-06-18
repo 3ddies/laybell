@@ -1,11 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Per-device ad-personalization preference. When OFF ("Limit ad targeting" in
-// Settings), targeted ads stop for this user — only campaigns with NO targeting
-// (house / broad ads) are served, and no profile/affinity signals are used to
-// pick ads. Default ON. Stored locally; this is the user-facing privacy control
-// the ad ecosystem exposes today (a real launch also ties it to a server-side
-// flag + privacy-policy disclosure — see ad_ecosystem.sql notes).
+// Per-device ad-personalization preference. When OFF, targeted ads stop for
+// this user — only campaigns with NO targeting (house / broad ads) are served,
+// and no profile/affinity signals are used to pick ads. Default OFF (opt-IN):
+// we do not personalize ads until the user explicitly turns on "Personalized
+// ads" in Settings. This meets the GDPR/ePrivacy opt-in standard for the EU and
+// applies the stricter, privacy-first default everywhere. Stored locally; a real
+// launch also ties it to a server-side flag + privacy-policy disclosure.
 
 const KEY = 'ad_personalization_v1';
 let cached: boolean | null = null;
@@ -14,9 +15,9 @@ export async function isAdPersonalizationEnabled(): Promise<boolean> {
   if (cached != null) return cached;
   try {
     const raw = await AsyncStorage.getItem(KEY);
-    cached = raw == null ? true : raw === '1';
+    cached = raw == null ? false : raw === '1';
   } catch {
-    cached = true;
+    cached = false;
   }
   return cached;
 }
@@ -27,7 +28,7 @@ export async function setAdPersonalization(enabled: boolean): Promise<void> {
 }
 
 // Synchronous best-effort read (returns the last loaded value, defaulting to
-// ON). Call isAdPersonalizationEnabled() once on mount to warm it.
+// OFF). Call isAdPersonalizationEnabled() once on mount to warm it.
 export function adPersonalizationCached(): boolean {
-  return cached ?? true;
+  return cached ?? false;
 }

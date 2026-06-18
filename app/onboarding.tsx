@@ -46,6 +46,9 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [gender, setGender] = useState<string | null>(null);
+  // Parental consent for users aged 13–17 (captured in the About-you step).
+  const [parentEmail, setParentEmail] = useState('');
+  const [minorConsent, setMinorConsent] = useState(false);
   const [dobMonth, setDobMonth] = useState('');
   const [dobDay, setDobDay] = useState('');
   const [dobYear, setDobYear] = useState('');
@@ -100,6 +103,10 @@ export default function OnboardingScreen() {
     if (!gender || !dob) return;
     const ageNum = ageFromDob(dob);
     if (ageNum < MIN_AGE || ageNum > 120) return;
+    // Users 13–17 must supply a parent/guardian email + attest to consent before
+    // continuing (see the minor-consent block in step 1).
+    const isMinor = ageNum < 18;
+    if (isMinor && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim()) || !minorConsent)) return;
     setSavingAbout(true);
     const { data: { user } } = await supabase.auth.getUser();
     // Save privately on the profile (no-ops gracefully if the columns aren't
@@ -108,6 +115,22 @@ export default function OnboardingScreen() {
     if (user) {
       await supabase.from('profiles').update({ gender, age: ageNum }).eq('id', user.id);
       await supabase.from('profiles').update({ dob: dobToISO(dob) }).eq('id', user.id);
+      if (isMinor) {
+        // Record parental-consent intent in its own update so a pre-migration
+        // gap on these columns can't drop the gender/age/dob writes above.
+        await supabase.from('profiles').update({
+          is_minor: true,
+          parent_email: parentEmail.trim().toLowerCase(),
+          minor_consent_at: new Date().toISOString(),
+          parent_consent_method: 'onboarding_attestation',
+        }).eq('id', user.id);
+        // Email the parent/guardian a one-time confirmation link. No-ops
+        // gracefully until the parent-consent Edge Function + email secret are
+        // configured; the attestation above already gates the account.
+        supabase.functions.invoke('parent-consent', {
+          body: { userId: user.id, parentEmail: parentEmail.trim().toLowerCase() },
+        }).catch(() => {});
+      }
     }
     setSavingAbout(false);
     setStep(2);
@@ -227,7 +250,7 @@ export default function OnboardingScreen() {
         >
           <View style={styles.welcomeContent}>
             <Image source={require('../assets/icon.png')} style={styles.logoMark} resizeMode="cover" />
-            <Text style={styles.welcomeTitle}>Welcome to{'\n'}Laybell</Text>
+            <Text style={styles.welcomeTitle}>Welcome to{'\n'}Laybell™</Text>
             <Text style={styles.welcomeSub}>
               The social platform built for artists, fans, and everyone in between.
             </Text>
@@ -263,7 +286,10 @@ export default function OnboardingScreen() {
   if (step === 1) {
     const dob = parseDob(dobYear, dobMonth, dobDay);
     const ageNum = dob ? ageFromDob(dob) : NaN;
-    const valid = !!gender && dob != null && ageNum >= MIN_AGE && ageNum <= 120;
+    const isMinor = Number.isFinite(ageNum) && ageNum >= MIN_AGE && ageNum < 18;
+    const parentEmailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim());
+    const valid = !!gender && dob != null && ageNum >= MIN_AGE && ageNum <= 120
+      && (!isMinor || (parentEmailOk && minorConsent));
     return (
       <View style={styles.container}>
         <View style={styles.stepHeader}>
@@ -326,6 +352,42 @@ export default function OnboardingScreen() {
             />
           </View>
           <Text style={styles.aboutHint}>You must be at least {MIN_AGE} to use Laybell.</Text>
+
+          {isMinor && (
+            <View style={styles.minorBox}>
+              <View style={styles.minorHeader}>
+                <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} />
+                <Text style={styles.minorTitle}>Parent or guardian consent</Text>
+              </View>
+              <Text style={styles.minorSub}>
+                Because you're under 18, a parent or guardian must agree to Laybell's terms for you. Enter their email and confirm below — we'll email them a link to verify.
+              </Text>
+              <TextInput
+                style={[styles.ageInput, { marginTop: SPACING.xs }]}
+                value={parentEmail}
+                onChangeText={setParentEmail}
+                placeholder="Parent or guardian email"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity style={styles.consentRow} onPress={() => setMinorConsent(v => !v)} activeOpacity={0.7}>
+                <View style={[styles.checkbox, minorConsent && styles.checkboxOn]}>
+                  {minorConsent && <Ionicons name="checkmark" size={14} color={colors.text} />}
+                </View>
+                <Text style={styles.consentText}>
+                  My parent or guardian has reviewed and agrees to Laybell's terms on my behalf.
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.minorLinks}>
+                Read the{' '}
+                <Text style={styles.consentLink} onPress={() => router.push('/terms-of-service')}>Terms of Service</Text>
+                {' '}and{' '}
+                <Text style={styles.consentLink} onPress={() => router.push('/privacy-policy')}>Privacy Policy</Text>.
+              </Text>
+            </View>
+          )}
         </ScrollView>
 
         <View style={styles.bottomBar}>
@@ -626,6 +688,24 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     color: colors.text, fontSize: 15,
   },
   aboutHint: { color: colors.textTertiary, fontSize: 12, marginTop: SPACING.sm },
+  // Minor (13–17) parental-consent block on the About-you step.
+  minorBox: {
+    marginTop: SPACING.lg, backgroundColor: colors.surfaceLight,
+    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md,
+    padding: SPACING.md, gap: SPACING.sm,
+  },
+  minorHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  minorTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  minorSub: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  consentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm, marginTop: SPACING.xs },
+  checkbox: {
+    width: 22, height: 22, borderRadius: RADIUS.xs + 2, borderWidth: 1.5,
+    borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 1,
+  },
+  checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  consentText: { flex: 1, color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  minorLinks: { color: colors.textTertiary, fontSize: 12, lineHeight: 18 },
+  consentLink: { color: colors.primaryLight, fontWeight: '700' },
   dobRow: { flexDirection: 'row', gap: SPACING.sm },
   dobInput: {
     backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,

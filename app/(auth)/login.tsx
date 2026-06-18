@@ -35,7 +35,7 @@ export default function LoginScreen() {
           <LinearGradient colors={GRADIENTS.primary} style={styles.logoMark}>
             <Ionicons name="musical-notes" size={32} color={colors.text} />
           </LinearGradient>
-          <Text style={styles.logo}>Laybell</Text>
+          <Text style={styles.logo}>Laybell™</Text>
           <Text style={styles.tagline}>Your music. Your label.</Text>
         </View>
 

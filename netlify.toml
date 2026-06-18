@@ -1,0 +1,20 @@
+# Host the Laybell legal pages on Netlify.
+#  1. Push this repo to GitHub and "Add new site → Import" it in Netlify, OR
+#     run `npx netlify deploy --prod` from this folder.
+#  2. Point laybell.app/privacy and laybell.app/terms here (the redirects below
+#     give you clean URLs). Netlify rebuilds the HTML from lib/legal/*.json on
+#     every deploy, so the site never drifts from the in-app documents.
+
+[build]
+  command = "node scripts/build-legal-html.mjs"
+  publish = "web"
+
+[[redirects]]
+  from = "/privacy"
+  to = "/privacy.html"
+  status = 200
+
+[[redirects]]
+  from = "/terms"
+  to = "/terms.html"
+  status = 200

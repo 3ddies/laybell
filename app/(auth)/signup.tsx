@@ -3,7 +3,7 @@ import {
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { useState } from 'react';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -15,6 +15,7 @@ type Field = { icon: any; placeholder: string; value: string; onChange: (v: stri
 export default function SignupScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -57,7 +58,7 @@ export default function SignupScreen() {
           <LinearGradient colors={GRADIENTS.primary} style={styles.logoMark}>
             <Ionicons name="musical-notes" size={32} color={colors.text} />
           </LinearGradient>
-          <Text style={styles.logo}>Laybell</Text>
+          <Text style={styles.logo}>Laybell™</Text>
           <Text style={styles.tagline}>Join the movement.</Text>
         </View>
 
@@ -98,6 +99,13 @@ export default function SignupScreen() {
           >
             {loading ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>Create Account</Text>}
           </TouchableOpacity>
+
+          <Text style={styles.consent}>
+            By tapping Create Account, you confirm you are at least 13 years old and agree to Laybell's{' '}
+            <Text style={styles.consentLink} onPress={() => router.push('/terms-of-service')}>Terms of Service</Text>
+            {' '}and{' '}
+            <Text style={styles.consentLink} onPress={() => router.push('/privacy-policy')}>Privacy Policy</Text>.
+          </Text>
         </View>
 
         <View style={styles.footer}>
@@ -135,6 +143,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   button: { backgroundColor: colors.primary, borderRadius: RADIUS.md, paddingVertical: SPACING.md + 2, alignItems: 'center', marginTop: SPACING.sm },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  consent: { color: colors.textTertiary, fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: SPACING.xs },
+  consentLink: { color: colors.primary, fontWeight: '700' },
 
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: SPACING.xl },
   footerText: { color: colors.textSecondary, fontSize: 14 },

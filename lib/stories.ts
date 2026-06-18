@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { createNotification } from './createNotification';
 import { maskHiddenProfile } from './hiddenProfile';
+import { removePublicUrls } from './storageCleanup';
 
 // 24-hour stories. Schema + RLS live in supabase/sql/stories.sql.
 // A story is an ephemeral image/video visible to the author and their followers
@@ -262,7 +263,15 @@ export async function recordStoryView(storyId: string, viewerId: string): Promis
 }
 
 export async function deleteStory(storyId: string): Promise<void> {
+  // Grab the media URLs first, delete the row, then best-effort remove the
+  // underlying Storage objects so they don't linger in the public bucket.
+  let media: string[] = [];
+  try {
+    const { data } = await supabase.from('stories').select('media_url, thumbnail_url').eq('id', storyId).single();
+    if (data) media = [data.media_url, (data as any).thumbnail_url].filter(Boolean) as string[];
+  } catch {}
   await supabase.from('stories').delete().eq('id', storyId);
+  if (media.length) await removePublicUrls(media);
 }
 
 // The Stories archive: the current user's EXPIRED stories (the live tray hides
