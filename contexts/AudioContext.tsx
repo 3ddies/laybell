@@ -16,6 +16,10 @@ import { buildAffinityProfile, EMPTY_PROFILE } from '../lib/feedScorer';
 // server's per-user/post stream cap) so force-quitting can't reset it.
 const STREAM_PROGRESS_KEY = 'stream_progress_v1';
 const STREAM_WINDOW_MS = 24 * 60 * 60 * 1000;
+// Anti-farm cap for the music-streaming badge: a single song contributes at most
+// 10 minutes of listen time toward badge progress, no matter how long it's looped.
+// Once a song hits the cap it stops counting until a DIFFERENT song is streamed.
+const BADGE_SONG_CAP_MS = 10 * 60 * 1000;
 
 const AUDIO_MODE = {
   allowsRecordingIOS: false,
@@ -160,6 +164,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // sums across posts and isn't tied to any 24h per-post window. Flushed as whole
   // seconds via record_badge_activity (keeping the sub-second remainder → no drift).
   const badgeMsRef = useRef(0);
+  // Per-song badge accounting. Only OTHER creators' songs count toward the badge
+  // (badgeEligibleRef) so a user can't farm it by looping their own track, and each
+  // song is capped at BADGE_SONG_CAP_MS (badgeSongMsRef, keyed by badgeSongIdRef so
+  // loops/replays of the same song share one budget; switching songs resets it).
+  const badgeSongIdRef = useRef<string | null>(null);
+  const badgeSongMsRef = useRef(0);
+  const badgeEligibleRef = useRef(false);
 
   // ── Audio-ad scheduler ──────────────────────────────────────────────────────
   // Armed ONLY while a real playlist queue plays (playQueue). Accrues genuine
@@ -595,12 +606,22 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     emitPosition(0, 0);
     setVideoMuted(true); // a song is playing → mute feed video to avoid overlap
 
+    // Music-badge accounting: reset the per-song 10-min cap only when the SONG
+    // changes (loops/replays of the same song keep sharing its budget). Eligibility
+    // defaults OFF until ownership resolves below — only OTHER creators' songs count.
+    if (badgeSongIdRef.current !== track.id) {
+      badgeSongIdRef.current = track.id;
+      badgeSongMsRef.current = 0;
+    }
+    badgeEligibleRef.current = false;
+
     // --- Stream counting policy ---
     // Credit streams by cumulative listen time, scaled by duration (see
     // streamThresholds): the 1st stream at the tier's 1st threshold, the 2nd once
     // combined listening reaches the 2nd threshold. Genuine forward listen time is
     // accumulated per post across replays this session. The server (record_stream)
-    // still enforces no self-streams and the 10-per-24h per-user cap.
+    // is the authority on eligibility — it credits the owner's OWN listen exactly
+    // once (lifetime), and caps everyone else per the age/device rules.
     // canCount is resolved in the background so playback never waits on the network.
     let canCount = false;
     (async () => {
@@ -608,7 +629,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         const u = (await supabase.auth.getUser()).data.user;
         canCount = !!u;
         if (u) uidRef.current = u.id;
-      } catch {}
+        // Badge eligibility: only OTHER creators' songs count (no self-loop farming).
+        // Resolve this track's owner once; a non-post track (e.g. an ad) returns null
+        // and stays ineligible. Per-post stream credit (canCount) is unaffected — the
+        // server's record_stream enforces its own self-stream rule.
+        const { data: ownerRow } = await supabase.from('posts').select('user_id').eq('id', track.id).single();
+        badgeEligibleRef.current = !!u && !!ownerRow && ownerRow.user_id !== u.id;
+      } catch { badgeEligibleRef.current = false; }
     })();
     const recordStream = () => {
       supabase.rpc('record_stream', { p_post_id: track.id, p_device_id: deviceIdRef.current }).then(undefined, () => {});
@@ -646,8 +673,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           if (delta > 0 && delta < 1500) {
             // Daily music badge: accrue this genuine forward delta (across all
             // posts, independent of the per-post stream window) and flush in chunks.
-            badgeMsRef.current += delta;
-            if (badgeMsRef.current >= 15000) flushBadgeMs();
+            // ONLY counts OTHER creators' songs (badgeEligibleRef — no self-loop
+            // farming), and at most BADGE_SONG_CAP_MS per song (badgeSongMsRef), so
+            // looping one track past 10 min stops adding to badge progress until a
+            // different song plays.
+            if (badgeEligibleRef.current && badgeSongMsRef.current < BADGE_SONG_CAP_MS) {
+              const credit = Math.min(delta, BADGE_SONG_CAP_MS - badgeSongMsRef.current);
+              badgeSongMsRef.current += credit;
+              badgeMsRef.current += credit;
+              if (badgeMsRef.current >= 15000) flushBadgeMs();
+            }
             // Audio-ad clock: only while a playlist is armed and no ad is mid-
             // play. Crossing the threshold fires one ad (fire-and-forget; it
             // guards its own re-entry via adPlayingRef).

@@ -10,7 +10,7 @@ import { supabase } from '../lib/supabase';
 import {
   SPOTLIGHT_PACKAGES, fmtPrice, packageFor, effectiveStatus, timeLeftLabel, rampHoursFor,
   purchaseCampaign, activateCampaign, cancelPendingCampaign, endCampaign,
-  fetchMyCampaigns, setPendingSpotlight, clearPendingSpotlight,
+  fetchMyCampaigns, setPendingSpotlight, clearPendingSpotlight, spotlightDurationPhrase,
   type SpotlightPackage, type SpotlightCampaign, type SpotlightStatus,
 } from '../lib/spotlight';
 import { isAudioPost } from '../lib/genres';
@@ -200,7 +200,7 @@ export default function SpotlightScreen() {
             clearPendingSpotlight();
             setFlowOpen(false);
             load();
-            Alert.alert('Your post is in the Spotlight! ✨', `It launches as the #3 post in the Home feed for the next ${pkg.label.toLowerCase()} — and can climb to #1 if it takes off.`);
+            Alert.alert('Your post is in the Spotlight! ✨', `It launches as the #3 post in the Home feed for the next ${spotlightDurationPhrase(pkg.label)} — and can climb to #1 if it takes off.`);
           },
         },
       ],

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useSegments, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, Platform, Alert } from 'react-native';
@@ -19,6 +20,7 @@ import { ListenModeProvider } from '../contexts/ListenModeContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
+import WelcomeTour, { WELCOME_TOUR_FLAG } from '../components/WelcomeTour';
 import { useNotifications } from '../hooks/useNotifications';
 
 function AppContent() {
@@ -33,6 +35,23 @@ function AppContent() {
   // as a simplified side chip so the viewfinder stays clear.
   const tab = segments[0] === '(tabs)' ? (segments as string[])[1] : undefined;
   const playerVariant = tab === 'post' ? 'compact' as const : tab === 'story-camera' ? 'side' as const : 'bar' as const;
+
+  // One-time welcome tour: onboarding arms a flag then drops the user onto the
+  // tabs, so the live app is already mounted. The first time we land on the tabs
+  // with the flag set we read-and-clear it (shown exactly once) and float the
+  // tour card over the app — dismiss leaves the user right where they are.
+  const [showTour, setShowTour] = useState(false);
+  useEffect(() => {
+    if (segments[0] !== '(tabs)') return;
+    let active = true;
+    AsyncStorage.getItem(WELCOME_TOUR_FLAG).then((v) => {
+      if (active && v === '1') {
+        setShowTour(true);
+        AsyncStorage.removeItem(WELCOME_TOUR_FLAG).catch(() => {});
+      }
+    });
+    return () => { active = false; };
+  }, [segments]);
 
   const overlays = (
     <>
@@ -54,6 +73,11 @@ function AppContent() {
           contentStyle: { backgroundColor: colors.background },
         }}
       >
+        {/* Auth group: the root Stack enables a full-screen back-swipe globally, so
+            after logout the login page could be swiped back to the previous (signed-
+            out) user's screen still behind it. Disable the gesture for this group so
+            the login pages can't be swiped away at all. */}
+        <Stack.Screen name="(auth)" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
         {/* The story viewer expands out of the tapped ring (Instagram shared-element
             style): transparent modal so the feed stays visible behind the growing
             post, no native animation/gesture — the in-screen rect animation drives it. */}
@@ -121,6 +145,11 @@ function AppContent() {
             </GestureHandlerRootView>
           </FullWindowOverlay>
         ) : overlays}
+
+        {/* Floats over the live tabs after onboarding (absolute-fill card with
+            the app visible around its borders). Rendered last so it paints on
+            top of the tab content. */}
+        {showTour && <WelcomeTour onDone={() => setShowTour(false)} />}
       </View>
     </PostOptionsProvider>
   );
@@ -218,6 +247,15 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
     <ThemeProvider>
+    {/* Remount the entire per-user tree (every provider + the screens) whenever the
+        signed-in user changes. The providers live ABOVE routing, so on a same-device
+        account switch they'd otherwise keep serving the previous user's cached
+        profile/stories/now-playing for the moment before the new data loads — the
+        "snips of the other user's page" flash. Keying here gives each new session a
+        clean slate. It sits BELOW ThemeProvider so the device theme never reloads,
+        and the key is the user id (not the whole session) so a token refresh — same
+        id — never triggers a remount. */}
+    <View style={{ flex: 1 }} key={session?.user?.id ?? 'signed-out'}>
     <AudioProvider>
       <PostMusicProvider>
         <ProfileProvider>
@@ -234,6 +272,7 @@ export default function RootLayout() {
         </ProfileProvider>
       </PostMusicProvider>
     </AudioProvider>
+    </View>
     </ThemeProvider>
     </GestureHandlerRootView>
   );

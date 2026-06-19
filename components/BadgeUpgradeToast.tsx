@@ -27,7 +27,8 @@ export default function BadgeUpgradeToast() {
     y.setValue(-200);
     Animated.spring(y, { toValue: 0, useNativeDriver: true, friction: 8, tension: 55 }).start();
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(dismiss, 5000);
+    // Stays up for 12s so the celebration is easy to notice and tap before it goes.
+    hideTimer.current = setTimeout(dismiss, 12000);
     return () => { if (hideTimer.current) clearTimeout(hideTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tier]);

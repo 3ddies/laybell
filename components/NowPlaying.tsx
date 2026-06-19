@@ -19,6 +19,7 @@ import { createNotification } from '../lib/createNotification';
 import Scrubber from './Scrubber';
 import Comments from './Comments';
 import { recordAdClick, AD_SKIP_MS } from '../lib/ads';
+import { isPostSpotlighted } from '../lib/spotlight';
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 // Full-width art (capped at 300): at rest the header fills the screen down to
@@ -113,6 +114,8 @@ export default function NowPlaying() {
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [ownerName, setOwnerName] = useState<string | undefined>();
   const [ownerBadge, setOwnerBadge] = useState<{ badge_tier?: string | null; badge_show?: boolean | null } | null>(null);
+  // True when this song has a live spotlight → a subtle sparkle by the artist name.
+  const [spotlighted, setSpotlighted] = useState(false);
   const [streams, setStreams] = useState(0);
   const [saves, setSaves] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
@@ -148,6 +151,9 @@ export default function NowPlaying() {
     const pid = currentTrack?.id;
     if (!pid || !expanded) return;
     let cancelled = false;
+    // Reset per track, then promote if this song is currently spotlighted.
+    setSpotlighted(false);
+    isPostSpotlighted(pid).then((s) => { if (!cancelled && s) setSpotlighted(true); });
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (cancelled) return;
@@ -322,6 +328,7 @@ export default function NowPlaying() {
                         {currentTrack.artist || (ownerName ? `@${ownerName}` : '')}
                       </Text>
                       <BadgeEmblem profile={ownerBadge} ownerId={ownerId} size={13} />
+                      {spotlighted && <Ionicons name="sparkles" size={13} color={colors.primaryLight} />}
                     </View>
                   </TouchableOpacity>
                 </View>

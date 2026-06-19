@@ -16,10 +16,13 @@ import { isSwipeTap } from '../contexts/PagerContext';
 import { isAudioPost } from '../lib/genres';
 import { trackVideoProgress } from '../lib/viewTracker';
 import ThumbStat from './ThumbStat';
+import VideoThumb from './VideoThumb';
+import { isSlideshow, slideshowThumb } from '../lib/slideshow';
 
 type GridPost = {
   id: string; type: string; media_url: string; caption: string;
   thumbnail_url?: string | null; aspect_ratio?: string | null; cover_url?: string | null;
+  slides?: any; // slideshow media list (drives the still cover via slideshowThumb)
   stream_count?: number; view_count?: number; user_id?: string;
   profiles?: { username: string; display_name: string } | null;
 };
@@ -130,13 +133,14 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       return { cols: [[], []] as Cell[][], playableSet: new Set<string>() };
     }
 
-    const images = posts.filter(p => p.type === 'image');
     const videos = posts.filter(p => p.type === 'video');
-    // In genre view, songs render as 1:1 cover tiles (alongside images); in "All"
-    // they stay grouped into Trending Songs stacks.
+    // Images + slideshows render as 1:1 STILL tiles — a slideshow is never a video,
+    // so it never live-loops (always a static cover). In genre view songs join them
+    // as cover tiles; in "All" they stay grouped into Trending Songs stacks.
+    const stillTiles = posts.filter(p => p.type === 'image' || isSlideshow(p.type));
     const tileMedia = songTiles
-      ? posts.filter(p => p.type === 'image' || isAudioPost(p.type))
-      : images;
+      ? posts.filter(p => p.type === 'image' || isSlideshow(p.type) || isAudioPost(p.type))
+      : stillTiles;
     // Genre clusters (when provided) supersede the grouped-from-feed stacks.
     const musicGroups: { title: string; songs: GridPost[] }[] = songTiles
       ? []
@@ -223,13 +227,9 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           activeOpacity={0.9}
           onPress={(e: any) => openMedia(p, e)}
         >
-          {p.thumbnail_url ? (
-            <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
-          ) : (
-            <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
-              <Ionicons name="videocam" size={28} color={colors.primary} />
-            </LinearGradient>
-          )}
+          {/* VideoThumb generates a frame when thumbnail_url is missing, so still
+              (non-autoplaying) videos always show a preview — not a placeholder. */}
+          <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
           <View style={styles.playBadge}><Ionicons name="play" size={12} color={colors.text} /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
@@ -262,12 +262,8 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
                 if (st?.isLoaded) trackVideoProgress(p.id, st.positionMillis ?? 0, st.durationMillis ?? 0);
               }}
             />
-          ) : p.thumbnail_url ? (
-            <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
           ) : (
-            <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
-              <Ionicons name="videocam" size={28} color={colors.primary} />
-            </LinearGradient>
+            <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
           )}
           <View style={styles.playBadge}><Ionicons name="play" size={12} color={colors.text} /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
@@ -298,6 +294,31 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           <View style={styles.playBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={12} color={colors.text} /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>{p.caption || `@${p.profiles?.username}`}</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      );
+    }
+    if (isSlideshow(p.type)) {
+      // Slideshow: ALWAYS a still cover (slide 1's image / video poster), never a
+      // live loop. Tap opens the post detail (carousel) like any image post.
+      const thumb = slideshowThumb(p);
+      return (
+        <TouchableOpacity
+          key={cell.key}
+          style={[styles.mediaCard, { height: cell.height }]}
+          activeOpacity={0.9}
+          onPress={(e: any) => openMedia(p, e)}
+        >
+          {thumb ? (
+            <Image source={{ uri: thumb }} style={styles.mediaImage} resizeMode="cover" />
+          ) : (
+            <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
+              <Ionicons name="copy" size={28} color={colors.primary} />
+            </LinearGradient>
+          )}
+          <View style={styles.playBadge}><Ionicons name="copy" size={12} color={colors.text} /></View>
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
+            <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
           </LinearGradient>
         </TouchableOpacity>
       );
@@ -397,14 +418,23 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     if (p.type === 'video') {
       return (
         <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
-          {p.thumbnail_url ? (
-            <Image source={{ uri: p.thumbnail_url }} style={styles.mediaImage} resizeMode="cover" />
+          <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
+          <View style={styles.squareBadge}><Ionicons name="play" size={11} color={colors.text} /></View>
+        </TouchableOpacity>
+      );
+    }
+    if (isSlideshow(p.type)) {
+      const thumb = slideshowThumb(p);
+      return (
+        <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
+          {thumb ? (
+            <Image source={{ uri: thumb }} style={styles.mediaImage} resizeMode="cover" />
           ) : (
             <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
-              <Ionicons name="videocam" size={24} color={colors.primary} />
+              <Ionicons name="copy" size={24} color={colors.primary} />
             </LinearGradient>
           )}
-          <View style={styles.squareBadge}><Ionicons name="play" size={11} color={colors.text} /></View>
+          <View style={styles.squareBadge}><Ionicons name="copy" size={11} color={colors.text} /></View>
         </TouchableOpacity>
       );
     }

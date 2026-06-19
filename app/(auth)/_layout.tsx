@@ -9,6 +9,11 @@ export default function AuthLayout() {
         headerShown: false,
         contentStyle: { backgroundColor: colors.background },
         animation: 'none',
+        // No swipe-back anywhere on the auth screens: after logging out you must
+        // not be able to swipe back to the previous (now signed-out) user's pages,
+        // and login/signup themselves aren't swipeable either.
+        gestureEnabled: false,
+        fullScreenGestureEnabled: false,
       }}
     />
   );

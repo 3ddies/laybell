@@ -1,18 +1,33 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList, Dimensions,
+  View, Text, StyleSheet, TouchableOpacity, FlatList, Dimensions, Pressable, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-// One-time "what you can do on Laybell" tour, shown right after onboarding
-// completes (see app/onboarding.tsx step 5). It's gated by profiles.onboarded —
-// once that's true the user routes straight to the tabs, so this never reappears.
+// One-shot AsyncStorage flag. Onboarding sets it on finish; the root layout
+// reads-and-clears it the first time the user lands on the tabs, then mounts
+// this card. Cleared on first show, so the tour is shown exactly once.
+export const WELCOME_TOUR_FLAG = 'laybell:welcome_tour';
+
+// Border gap so the live app shows through AROUND the card. Keeping this
+// generous is what makes the tour read as a floating, dismissible card the user
+// can tap out of — rather than a full-screen wall they're forced to swipe past.
+const CARD_MARGIN = 24;
+const CARD_W = SCREEN_W - CARD_MARGIN * 2;
+const CARD_PAD = SPACING.lg;
+const SLIDE_W = CARD_W - CARD_PAD * 2; // each pager page == card inner width
+const SLIDE_H = 260;
+
+// One-time "what you can do on Laybell" tour. It floats as a miniaturized card
+// OVER the live app (mounted from app/_layout.tsx right after onboarding), so
+// the real app is visible around its borders. Tapping the × or anywhere outside
+// the card calls onDone — which just dismisses the card and leaves the user in
+// the app. It's gated by a one-shot flag, so it never reappears.
 type Slide = { icon: any; title: string; body: string };
 
 const SLIDES: Slide[] = [
@@ -46,73 +61,123 @@ const SLIDES: Slide[] = [
 export default function WelcomeTour({ onDone }: { onDone: () => void }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList>(null);
   const [index, setIndex] = useState(0);
   const isLast = index === SLIDES.length - 1;
 
+  // Fade the scrim up and lift the card in, so the tour floats up over the live
+  // app instead of snapping in — reinforces that it's a card, not a wall.
+  const enter = useRef(new Animated.Value(0)).current;
+  const closingRef = useRef(false);
+  useEffect(() => {
+    Animated.timing(enter, { toValue: 1, duration: 240, useNativeDriver: true }).start();
+  }, [enter]);
+
+  // Reverse the entrance (fade the scrim out + sink the card) BEFORE unmounting,
+  // so closing feels as polished as opening instead of snapping away. The ref
+  // guards against a double-tap firing two dismissals mid-animation.
+  function dismiss() {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    Animated.timing(enter, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => onDone());
+  }
+
   function next() {
-    if (isLast) { onDone(); return; }
+    if (isLast) { dismiss(); return; }
     listRef.current?.scrollToIndex({ index: index + 1, animated: true });
     setIndex(index + 1);
   }
 
+  const cardStyle = {
+    opacity: enter,
+    transform: [
+      { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) },
+      { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) },
+    ],
+  };
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + SPACING.lg }]}>
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={onDone} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={styles.skip}>Skip</Text>
+    <View style={styles.overlay}>
+      {/* Tap the visible app border (anywhere outside the card) to dismiss. */}
+      <Animated.View style={[styles.scrim, { opacity: enter }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
+      </Animated.View>
+
+      <Animated.View style={[styles.card, cardStyle]}>
+        <TouchableOpacity
+          style={styles.closeBtn}
+          onPress={dismiss}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Ionicons name="close" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
-      </View>
 
-      <FlatList
-        ref={listRef}
-        data={SLIDES}
-        keyExtractor={(s) => s.title}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        getItemLayout={(_, i) => ({ length: SCREEN_W, offset: SCREEN_W * i, index: i })}
-        onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / SCREEN_W))}
-        renderItem={({ item }) => (
-          <View style={styles.slide}>
-            <LinearGradient colors={GRADIENTS.primary} style={styles.iconCircle}>
-              <Ionicons name={item.icon} size={48} color={colors.text} />
-            </LinearGradient>
-            <Text style={styles.title}>{item.title}</Text>
-            <Text style={styles.body}>{item.body}</Text>
-          </View>
-        )}
-      />
+        <FlatList
+          ref={listRef}
+          data={SLIDES}
+          keyExtractor={(s) => s.title}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          style={styles.list}
+          getItemLayout={(_, i) => ({ length: SLIDE_W, offset: SLIDE_W * i, index: i })}
+          onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / SLIDE_W))}
+          renderItem={({ item }) => (
+            <View style={styles.slide}>
+              <LinearGradient colors={GRADIENTS.primary} style={styles.iconCircle}>
+                <Ionicons name={item.icon} size={40} color={colors.text} />
+              </LinearGradient>
+              <Text style={styles.title}>{item.title}</Text>
+              <Text style={styles.body}>{item.body}</Text>
+            </View>
+          )}
+        />
 
-      <View style={styles.dots}>
-        {SLIDES.map((_, i) => (
-          <View key={i} style={[styles.dot, i === index && styles.dotActive]} />
-        ))}
-      </View>
+        <View style={styles.dots}>
+          {SLIDES.map((_, i) => (
+            <View key={i} style={[styles.dot, i === index && styles.dotActive]} />
+          ))}
+        </View>
 
-      <TouchableOpacity style={styles.primaryBtn} onPress={next} activeOpacity={0.85}>
-        <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
-          <Text style={styles.primaryBtnText}>{isLast ? 'Get Started' : 'Next'}</Text>
-          <Ionicons name={isLast ? 'checkmark' : 'arrow-forward'} size={20} color={colors.text} />
-        </LinearGradient>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.primaryBtn} onPress={next} activeOpacity={0.85}>
+          <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
+            <Text style={styles.primaryBtnText}>{isLast ? 'Get Started' : 'Next'}</Text>
+            <Ionicons name={isLast ? 'checkmark' : 'arrow-forward'} size={18} color={colors.text} />
+          </LinearGradient>
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  topBar: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: SPACING.lg, height: 44, alignItems: 'center' },
-  skip: { color: colors.textSecondary, fontSize: 15, fontWeight: '600' },
-  slide: { width: SCREEN_W, alignItems: 'center', justifyContent: 'center', paddingHorizontal: SPACING.xl, gap: SPACING.lg },
-  iconCircle: { width: 112, height: 112, borderRadius: 56, alignItems: 'center', justifyContent: 'center' },
-  title: { color: colors.text, fontSize: 28, fontWeight: '800', letterSpacing: -0.3 },
-  body: { color: colors.textSecondary, fontSize: 16, lineHeight: 24, textAlign: 'center' },
-  dots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, paddingVertical: SPACING.lg },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
-  dotActive: { width: 24, backgroundColor: colors.primary },
-  primaryBtn: { marginHorizontal: SPACING.lg, borderRadius: RADIUS.full, overflow: 'hidden' },
-  primaryBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, paddingVertical: SPACING.md + 2 },
+  overlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  card: {
+    width: CARD_W,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: CARD_PAD,
+    paddingTop: SPACING.xl,
+    paddingBottom: SPACING.lg,
+    ...SHADOWS.md,
+  },
+  closeBtn: {
+    position: 'absolute', top: SPACING.sm, right: SPACING.sm,
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center', zIndex: 2,
+  },
+  list: { height: SLIDE_H, flexGrow: 0 },
+  slide: { width: SLIDE_W, height: SLIDE_H, alignItems: 'center', justifyContent: 'center', gap: SPACING.md, paddingHorizontal: SPACING.xs },
+  iconCircle: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center' },
+  title: { color: colors.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.3 },
+  body: { color: colors.textSecondary, fontSize: 15, lineHeight: 22, textAlign: 'center' },
+  dots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 7, paddingVertical: SPACING.md },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.border },
+  dotActive: { width: 22, backgroundColor: colors.primary },
+  primaryBtn: { borderRadius: RADIUS.full, overflow: 'hidden' },
+  primaryBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, paddingVertical: SPACING.md },
   primaryBtnText: { color: colors.text, fontSize: 16, fontWeight: '700' },
 });

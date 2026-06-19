@@ -1,21 +1,51 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase, supabaseUrl, supabaseAnonKey } from './supabase';
 
+// Threshold (bytes) above which we transcode before upload. Below it a clip is
+// already small/fast enough that re-encoding only adds latency. 12 MB comfortably
+// covers a short 1080p clip; anything bigger (4K/HEVC iPhone footage, long HD
+// clips) gets shrunk to feed-friendly H.264 first.
+const COMPRESS_FLOOR_BYTES = 12 * 1024 * 1024;
+
+async function fileSizeBytes(uri: string): Promise<number> {
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    return info.exists ? ((info as any).size ?? 0) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 // Compress a video to a 1080p-class H.264 file before upload (4K iPhone clips
-// shrink ~5-10x with no visible loss at feed sizes). react-native-compressor
-// is a NATIVE module — until the dev client is rebuilt with it, the dynamic
-// import throws and we silently fall back to uploading the original, so this
-// ships safely ahead of the rebuild. Files under ~16MB pass through untouched
-// (the library's own floor) — no point re-encoding already-small videos.
+// shrink ~5-10x with no visible loss at feed sizes, and HEVC/H.265 footage is
+// re-encoded to H.264 so it plays everywhere). This is THE reason posting feels
+// instant on the big apps: they never push a raw 200 MB capture up the wire.
+//
+// react-native-compressor is a NATIVE module — until the app binary is rebuilt
+// with it (dev client or store build), the dynamic import throws and we fall
+// back to the original bytes, so this ships safely ahead of that rebuild. When
+// it falls back, large files lean on the raised bucket/global size limit (see
+// supabase/sql/storage_limits.sql) to still go through.
 export async function compressVideoIfPossible(
   uri: string,
   onProgress?: (fraction: number) => void,
 ): Promise<string> {
   try {
+    // Already-small clips: skip the re-encode entirely (keeps posting snappy).
+    const bytes = await fileSizeBytes(uri);
+    if (bytes && bytes < COMPRESS_FLOOR_BYTES) return uri;
+
     const { Video } = await import('react-native-compressor');
     const out = await Video.compress(
       uri,
-      { compressionMethod: 'auto', maxSize: 1920, progressDivider: 4 },
+      {
+        compressionMethod: 'auto',  // adapts bitrate to the source, like the big apps
+        maxSize: 1920,              // cap the long edge at ~1080p
+        // We already gate on size above, so don't let the library skip anything
+        // we decided is worth shrinking.
+        minimumFileSizeForCompress: 0,
+        progressDivider: 4,
+      },
       (p: number) => onProgress?.(Math.min(1, p)),
     );
     return out || uri;

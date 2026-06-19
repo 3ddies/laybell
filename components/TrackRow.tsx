@@ -18,7 +18,7 @@ function formatDuration(seconds?: number | null) {
 
 export default function TrackRow({
   caption, artist, username, duration, streams, cover, avatarUrl, badgeProfile, badgeOwnerId,
-  isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, onOptions, hidePlayButton, highlightQuery,
+  isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, onOptions, hidePlayButton, highlightQuery, spotlighted,
 }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
   cover?: string | null; avatarUrl?: string | null; hidePlayButton?: boolean;
@@ -26,6 +26,9 @@ export default function TrackRow({
   // and tapping your own opens your Badges page.
   badgeProfile?: ProfileBadgeFields | null;
   badgeOwnerId?: string | null;
+  // When true, a subtle yellow sparkle shows by the handle — the track has a live
+  // spotlight (publicly visible to everyone while the campaign runs).
+  spotlighted?: boolean;
   isPlaying: boolean; onPlay: () => void; onCoverPress?: () => void; onAddToPlaylist?: () => void; onAvatarPress?: () => void;
   // When provided (i.e. the track belongs to the current user), long-pressing the
   // row triggers it — used app-wide for "delete my post".
@@ -72,6 +75,7 @@ export default function TrackRow({
         <View style={styles.meta}>
           <HighlightText text={`@${username}`} query={highlightQuery} style={styles.artist} highlightStyle={styles.hl} numberOfLines={1} />
           <BadgeEmblem profile={badgeProfile} ownerId={badgeOwnerId} size={11} />
+          {spotlighted && <Ionicons name="sparkles" size={11} color={colors.primaryLight} />}
           <Ionicons name="play" size={9} color={colors.textTertiary} />
           <Text style={styles.streams}>{formatCount(streams)}</Text>
           {durationLabel && <Text style={styles.artist}>· {durationLabel}</Text>}

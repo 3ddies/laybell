@@ -28,7 +28,7 @@ import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../comp
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
 import { MAX_SLIDES, type Slide } from '../../lib/slideshow';
 import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/upload';
-import { peekPendingSpotlight, clearPendingSpotlight, activateCampaign } from '../../lib/spotlight';
+import { peekPendingSpotlight, clearPendingSpotlight, activateCampaign, spotlightDurationPhrase } from '../../lib/spotlight';
 import {
   loadDrafts, saveDraft, deleteDraft, draftThumb, draftSummary, makeDraftId, type Draft,
 } from '../../lib/drafts';
@@ -67,7 +67,10 @@ function slideshowVideoSecs(list: PickedSlide[]): number {
 function friendlyShareError(err: any): string {
   const raw = String(err?.message ?? err ?? '').toLowerCase();
   if (raw.includes('exceeded the maximum allowed size') || raw.includes('payload too large') || raw.includes('413')) {
-    return 'That file is too large to upload right now. Try a shorter clip or a slideshow with fewer videos.';
+    // Not a duration problem — the file's byte size is over the storage upload
+    // limit (see supabase/sql/storage_limits.sql + the Storage dashboard cap).
+    // Posting on Wi-Fi lets the on-device compressor finish on the full clip.
+    return "This video is over the upload size limit. Try again on Wi-Fi — if it keeps failing, Laybell's storage upload limit needs raising.";
   }
   if (raw.includes('network') || raw.includes('nsurlerror') || raw.includes('timed out') || raw.includes('socket') || raw.includes('connection')) {
     return 'Upload interrupted — check your connection and tap Share to try again.';
@@ -775,7 +778,7 @@ export default function PostScreen() {
       Alert.alert(
         spotLabel ? 'Posted — and in the Spotlight! ✨' : 'Posted! 🎉',
         spotLabel
-          ? `Your post launches as the #3 post in the Home feed for the next ${spotLabel.toLowerCase()} — and can climb to #1 if it takes off.`
+          ? `Your post launches as the #3 post in the Home feed for the next ${spotlightDurationPhrase(spotLabel)} — and can climb to #1 if it takes off.`
           : 'Your post is now live on Laybell',
       );
       resetAll();

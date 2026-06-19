@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { uploadStoryMedia, createStory } from '../../lib/stories';
-import { compressVideoIfPossible } from '../../lib/upload';
+import { compressVideoIfPossible, uploadToStorageWithProgress } from '../../lib/upload';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import StickerLayer, {
@@ -159,6 +159,9 @@ export default function StoryCameraScreen() {
   const [overTrash, setOverTrash] = useState(false);
   const [saved, setSaved] = useState(false);                         // media saved to device
   const [uploading, setUploading] = useState(false);
+  // Live 0–1 progress for the video story path (compress, then upload), so a big
+  // 4K clip shows a moving % instead of a frozen spinner — same feel as posts.
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
 
   // ── Text / emoji stickers ───────────────────────────────────────────────────
   function addStickerAt(xNorm: number, yNorm: number) {
@@ -585,10 +588,13 @@ export default function StoryCameraScreen() {
         mediaUrl = await uploadStoryMedia(user.id, outUri, 'jpg', 'image/jpeg');
       } else {
         // Library picks can be 4K originals — shrink to 1080p when the native
-        // compressor is in the build (pass-through otherwise).
-        const upUri = await compressVideoIfPossible(captured.uri);
+        // compressor is in the build (pass-through otherwise), then stream the
+        // bytes up with live progress so long uploads never look hung.
+        const upUri = await compressVideoIfPossible(captured.uri, setUploadPct);
+        setUploadPct(null);
         const ext = (upUri === captured.uri ? captured.uri.split('.').pop() : 'mp4') || 'mp4';
-        mediaUrl = await uploadStoryMedia(user.id, upUri, ext, 'video/mp4');
+        mediaUrl = await uploadToStorageWithProgress('stories', user.id, upUri, ext, 'video/mp4', setUploadPct);
+        setUploadPct(null);
         try {
           const { uri } = await VideoThumbnails.getThumbnailAsync(captured.uri, { time: 0 });
           thumbnailUrl = await uploadStoryMedia(user.id, uri, 'jpg', 'image/jpeg');
@@ -617,6 +623,7 @@ export default function StoryCameraScreen() {
       Alert.alert('Could not post story', e?.message ?? 'Please try again.');
     } finally {
       setUploading(false);
+      setUploadPct(null);
     }
   }
 
@@ -786,7 +793,9 @@ export default function StoryCameraScreen() {
           ) : null}
           <TouchableOpacity style={styles.shareBtn} onPress={shareStory} disabled={uploading}>
             {uploading ? (
-              <ActivityIndicator color="#fff" />
+              uploadPct != null
+                ? <Text style={styles.shareBtnText}>{Math.round(uploadPct * 100)}%</Text>
+                : <ActivityIndicator color="#fff" />
             ) : (
               <>
                 <Text style={styles.shareBtnText}>Add to story</Text>

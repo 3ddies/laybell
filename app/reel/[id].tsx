@@ -36,6 +36,7 @@ import {
 } from '../../lib/ads';
 import ReelAd from '../../components/ReelAd';
 import { useProfile } from '../../contexts/ProfileContext';
+import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -64,6 +65,9 @@ export default function ReelScreen() {
   const [liked, setLiked] = useState<Set<string>>(new Set());
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [visibleId, setVisibleId] = useState<string | null>(seed?.id ?? null);
+  // Post ids with a LIVE spotlight → the subtle sparkle by the username, no matter
+  // how the reel was opened (the served __spotlight meta only rides the feed tap).
+  const [spotlightIds, setSpotlightIds] = useState<Set<string>>(new Set());
   const [paused, setPaused] = useState(false);
   const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string } | null>(null);
   const videoRefs = useRef<Record<string, any>>({});
@@ -139,6 +143,9 @@ export default function ReelScreen() {
         : ordered,
     );
     setVisibleId(ordered[0]?.id ?? null);
+    // Flag which loaded reels are spotlighted right now (one batched query), so
+    // the sparkle shows globally — not just on a feed-tapped reel.
+    fetchSpotlightedPostIds(ordered.map((p) => p.id)).then(setSpotlightIds);
 
     if (uid) {
       const [{ data: l }, { data: s }] = await Promise.all([
@@ -331,7 +338,7 @@ export default function ReelScreen() {
               />
               <Text style={styles.authorName} numberOfLines={1}>@{item.profiles?.username}</Text>
               <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={12} />
-              {!!item.__spotlight && <Ionicons name="sparkles" size={12} color={colors.primaryLight} style={styles.spotSparkle} />}
+              {(!!item.__spotlight || spotlightIds.has(item.id)) && <Ionicons name="sparkles" size={12} color={colors.primaryLight} style={styles.spotSparkle} />}
               <Text style={styles.dot}>·</Text>
               <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
             </TouchableOpacity>
@@ -436,7 +443,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   authorName: { flexShrink: 1, color: '#fff', fontSize: 15, fontWeight: '700' },
-  spotSparkle: { opacity: 0.9 },
+  spotSparkle: { opacity: 0.9, flexShrink: 0 },
   dot: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
   time: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
   caption: { color: '#fff', fontSize: 14, lineHeight: 19 },

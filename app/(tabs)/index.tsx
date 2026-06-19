@@ -144,7 +144,7 @@ const PostCard = memo(function PostCard({
         />
         <View style={styles.postHeaderInfo}>
           <View style={styles.postNameRow}>
-            <Text style={styles.postDisplayName}>{item.profiles?.display_name}</Text>
+            <Text style={styles.postDisplayName} numberOfLines={1}>{item.profiles?.display_name}</Text>
             <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={13} />
             {!!item.__spotlight && (
               <View style={styles.spotPill}>
@@ -1087,15 +1087,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: { color: colors.text, fontSize: 15, fontWeight: '700' },
-  postHeaderInfo: { flex: 1 },
+  // minWidth:0 lets this flex child shrink below its content width, so a long
+  // name truncates instead of shoving the spotlight pill onto the Follow button.
+  postHeaderInfo: { flex: 1, minWidth: 0 },
   postNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   // Spotlight indicator: plain yellow sparkle + text, no orange pill/circle.
+  // flexShrink:0 keeps it intact; the name (flexShrink:1) yields space instead.
   spotPill: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    marginLeft: 4,
+    marginLeft: 4, flexShrink: 0,
   },
   spotPillText: { color: colors.primaryLight, fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
-  postDisplayName: { color: colors.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.1 },
+  // flexShrink:1 so a long name ellipsizes rather than pushing siblings out.
+  postDisplayName: { color: colors.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.1, flexShrink: 1 },
   postUsername: { color: colors.textMeta, fontSize: 12, marginTop: 1 },
   typeIconWrap: {
     width: 28, height: 28, borderRadius: RADIUS.full,

@@ -65,6 +65,14 @@ export const SPOTLIGHT_PACKAGES: SpotlightPackage[] = [
   { key: '7d', label: '7 Days', days: 7, priceCents: 2499, weight: 3, blurb: 'A full week in the spotlight, with the longest head start.' },
 ];
 
+// Duration as it reads MID-SENTENCE (e.g. "for the next ___"). "1 day" drops the
+// "1" — "for the next day" is cleaner than "for the next 1 day" — while 3/7-day
+// labels stay as-is. The package label itself ("1 Day") is unchanged everywhere.
+export function spotlightDurationPhrase(label: string): string {
+  const lower = label.toLowerCase();
+  return lower === '1 day' ? 'day' : lower;
+}
+
 export function packageFor(key: string | null | undefined): SpotlightPackage | null {
   return SPOTLIGHT_PACKAGES.find(p => p.key === key) ?? null;
 }
@@ -442,6 +450,26 @@ export async function isPostSpotlighted(postId: string): Promise<boolean> {
     return !error && !!data?.length;
   } catch {
     return false;
+  }
+}
+
+// Which of these posts have a LIVE spotlight right now (active + unexpired),
+// returned as a Set for O(1) lookup while rendering a grid. One query for the
+// whole batch; degrades to an empty Set on any error (missing migration / RLS)
+// so a grid never fails to render just because the spotlight check did.
+export async function fetchSpotlightedPostIds(postIds: string[]): Promise<Set<string>> {
+  try {
+    if (!postIds.length) return new Set();
+    const { data, error } = await supabase
+      .from('ad_campaigns')
+      .select('post_id')
+      .in('post_id', postIds)
+      .eq('status', 'active')
+      .gt('ends_at', new Date().toISOString());
+    if (error || !data) return new Set();
+    return new Set((data as any[]).map((r) => r.post_id).filter(Boolean));
+  } catch {
+    return new Set();
   }
 }
 

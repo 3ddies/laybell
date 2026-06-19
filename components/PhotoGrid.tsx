@@ -69,7 +69,19 @@ export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, 
         first: PAGE,
         after,
       });
-      setAssets(prev => (after ? [...prev, ...page.assets] : page.assets));
+      // Dedupe by asset id: expo-media-library can return the SAME asset across
+      // pages (iCloud / edited / shared photos), which would give the numColumns
+      // FlatList two cells with the same key → a React "two children with the same
+      // key" warning. Drop anything already in the list (and intra-page repeats).
+      setAssets(prev => {
+        const base = after ? prev : [];
+        const seen = new Set(base.map(a => a.id));
+        const merged = base.slice();
+        for (const a of page.assets) {
+          if (!seen.has(a.id)) { seen.add(a.id); merged.push(a); }
+        }
+        return merged;
+      });
       setEndCursor(page.endCursor);
       setHasNext(page.hasNextPage);
     } catch {

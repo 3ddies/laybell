@@ -3,7 +3,8 @@
 --
 -- Replaces the direct `streams` insert from the client with a gatekept RPC so the
 -- rules are enforced server-side (a client can't bypass them):
---   * No self-streams: the post owner listening to their own track never counts.
+--   * Self-streams count ONCE: the post owner listening to their own track earns
+--     exactly one stream, ever (a hard lifetime cap of 1 — no farming by replay).
 --   * Age-based per-user cap (per rolling 24h): brand-new accounts (<24h) still
 --     count, but only the standard 1st + 2nd stream (cap 2); accounts older than
 --     24h earn one extra (cap 3). Account age is server-truth (unspoofable), so
@@ -40,7 +41,22 @@ begin
 
   select user_id into v_owner from public.posts where id = p_post_id;
   if v_owner is null then return; end if;
-  if v_owner = auth.uid() then return; end if;            -- no self-streams
+
+  -- Self-streams: the owner listening to their OWN track earns exactly ONE
+  -- stream, EVER (no more than 1). Checked all-time (not the rolling 24h window),
+  -- and this row is never purged below, so it's a hard lifetime cap of 1 — a
+  -- creator can't pad their own count by replaying day after day.
+  if v_owner = auth.uid() then
+    if exists (
+      select 1 from public.streams
+      where user_id = auth.uid() and post_id = p_post_id
+    ) then
+      return;
+    end if;
+    insert into public.streams (user_id, post_id, device_id)
+    values (auth.uid(), p_post_id, p_device_id);
+    return;
+  end if;
 
   -- Age-based per-user cap: new accounts (<24h) still earn the standard 1st + 2nd
   -- stream (cap 2); accounts older than 24h earn one extra (cap 3). Account age is

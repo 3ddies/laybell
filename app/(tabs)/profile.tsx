@@ -1,6 +1,7 @@
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { useAudio } from '../../contexts/AudioContext';
+import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, ActivityIndicator, Image, RefreshControl, Linking, PanResponder,
@@ -19,11 +20,14 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { formatCount } from '../../lib/format';
-import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
+import { normalizeUrl, displayUrl, hasProfileTemplate } from '../../lib/profileOptions';
 import { isAudioPost } from '../../lib/genres';
 import { slideshowThumb } from '../../lib/slideshow';
 import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
+import SpotlightThumbBadge from '../../components/SpotlightThumbBadge';
+import TrackRow from '../../components/TrackRow';
+import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 
@@ -58,13 +62,16 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('posts');
   const [userPosts, setUserPosts] = useState<any[]>([]);
+  // Post ids with a LIVE spotlight → a subtle sparkle on their grid thumbnail.
+  const [spotlightIds, setSpotlightIds] = useState<Set<string>>(new Set());
   const [repostedPosts, setRepostedPosts] = useState<any[]>([]);
   // Active public playlists (over-limit "locked" ones stay hidden, same as in
   // public discovery), faced with their first track's cover.
   const [publicPlaylists, setPublicPlaylists] = useState<any[]>([]);
   const router = useRouter();
   const navigation = useNavigation();
-  const { playQueue } = useAudio();
+  const { playQueue, expand } = useAudio();
+  const { playingId } = useAudioPlayer();
 
   // Per-thumbnail nodes so opening a post/reel can expand out of the tapped cell.
   const gridRefs = useRef<Record<string, any>>({});
@@ -191,7 +198,12 @@ export default function ProfileScreen() {
     setStats({ followers: followersRes.count || 0, following: followingRes.count || 0, posts: postsCountRes.count || 0 });
     // Archived posts (archived_at set) are hidden from the grid but kept in the
     // Archive screen. archived_at is absent pre-migration → harmless no-op.
-    if (postsRes.data) setUserPosts(postsRes.data.filter((p: any) => !p.archived_at));
+    if (postsRes.data) {
+      const visible = postsRes.data.filter((p: any) => !p.archived_at);
+      setUserPosts(visible);
+      // Flag which of these are currently spotlighted (one batched query).
+      fetchSpotlightedPostIds(visible.map((p: any) => p.id)).then(setSpotlightIds);
+    }
     // `reposts` may not be migrated yet — degrade to an empty tab if so.
     setRepostedPosts((repostsRes.data ?? []).map((r: any) => r.posts).filter(Boolean));
     // Public playlists tab: only the ones holding an active badge slot, faced
@@ -235,6 +247,20 @@ export default function ProfileScreen() {
     }
   }
 
+  // Posts tab ordering: float live-spotlighted posts to the TOP (newest-first
+  // among them), everyone else newest-first. When a spotlight expires the post
+  // drops out of spotlightIds → it returns to default placement. Skipped entirely
+  // if the user runs a custom page layout — then their own arrangement wins.
+  function orderPostsForGrid(data: any[]) {
+    if (hasProfileTemplate(profile)) return data;
+    return [...data].sort((a, b) => {
+      const sa = spotlightIds.has(a.id) ? 1 : 0;
+      const sb = spotlightIds.has(b.id) ? 1 : 0;
+      if (sa !== sb) return sb - sa;
+      return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+    });
+  }
+
   // Public playlists as showcase cards: cover art, name, listen count.
   function renderPlaylists() {
     if (publicPlaylists.length === 0) {
@@ -262,6 +288,68 @@ export default function ProfileScreen() {
               <Text style={styles.plMeta}>{formatCount(pl.play_count ?? 0)} {pl.play_count === 1 ? 'listen' : 'listens'}</Text>
             </View>
           </TouchableOpacity>
+        ))}
+      </View>
+    );
+  }
+
+  // Music tab: a scrollable list of "sound cards" (spotify-style TrackRows),
+  // newest at the top — NOT the picture-thumbnail grid the other tabs use. The
+  // main Posts grid still shows audio posts as thumbnails (renderGrid, default).
+  function renderMusicList(data: any[]) {
+    if (data.length === 0) {
+      return (
+        <View style={styles.emptyGrid}>
+          <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
+          <Text style={styles.emptyGridText}>No music yet</Text>
+        </View>
+      );
+    }
+    // Live-spotlighted tracks float to the TOP (newest-first among them); the
+    // rest follow most-recent → least-recent. When a spotlight expires the post
+    // drops out of spotlightIds, so it returns to its default placement.
+    const tracks = [...data].sort((a, b) => {
+      const sa = spotlightIds.has(a.id) ? 1 : 0;
+      const sb = spotlightIds.has(b.id) ? 1 : 0;
+      if (sa !== sb) return sb - sa;
+      return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+    });
+    const queue = tracks.map((t) => ({
+      id: t.id, uri: t.media_url, caption: t.caption,
+      artist: t.profiles?.display_name ?? profile?.display_name ?? '', cover: t.cover_url,
+    }));
+    return (
+      <View style={styles.musicList}>
+        {tracks.map((track, i) => (
+          <TrackRow
+            key={track.id}
+            caption={track.caption}
+            artist={track.profiles?.display_name ?? profile?.display_name ?? ''}
+            username={track.profiles?.username ?? profile?.username ?? ''}
+            duration={track.duration_seconds}
+            streams={track.stream_count ?? 0}
+            cover={track.cover_url}
+            badgeProfile={badgeProfile}
+            badgeOwnerId={profile?.id}
+            spotlighted={spotlightIds.has(track.id)}
+            isPlaying={playingId === track.id}
+            onPlay={() => playQueue(queue, i)}
+            onCoverPress={() => { playQueue(queue, i); expand(); }}
+            onOptions={() => showOptions({
+              postId: track.id,
+              isOwn: true,
+              mediaType: track.type,
+              onEdit: () => router.push(`/edit-post/${track.id}`),
+              onDeleted: () => {
+                setUserPosts(prev => prev.filter(p => p.id !== track.id));
+                setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
+              },
+              onArchived: () => {
+                setUserPosts(prev => prev.filter(p => p.id !== track.id));
+                setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
+              },
+            })}
+          />
         ))}
       </View>
     );
@@ -370,6 +458,8 @@ export default function ProfileScreen() {
                 />
               </LinearGradient>
             )}
+            {/* Subtle yellow sparkle when this post has a live spotlight. */}
+            {spotlightIds.has(post.id) && <SpotlightThumbBadge />}
             {/* View count (video) / listen count (audio) */}
             <ThumbStat type={post.type} viewCount={post.view_count} streamCount={post.stream_count} />
           </TouchableOpacity>
@@ -517,7 +607,7 @@ export default function ProfileScreen() {
                 <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile(); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
             >
-              {key === 'playlists' ? renderPlaylists() : renderGrid(dataForTab(key), key)}
+              {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : renderGrid(key === 'posts' ? orderPostsForGrid(dataForTab('posts')) : dataForTab(key), key)}
             </ScrollView>
           </View>
         ))}
@@ -611,6 +701,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   pageContent: { paddingBottom: SPACING.xxl + 80 },
 
   postsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  musicList: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: SPACING.sm },
   gridItem: { width: '33.33%', aspectRatio: 1, position: 'relative' },
   gridImage: { width: '100%', height: '100%' },
   gridPlaceholder: {

@@ -4,6 +4,7 @@ import {
   Dimensions, TextInput, Keyboard,
 } from 'react-native';
 import { useState, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +18,8 @@ import { fetchSuggestedAccounts, REASON_LABEL } from '../lib/suggestions';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { GENRES as APP_GENRES } from '../lib/genres';
-import WelcomeTour from '../components/WelcomeTour';
+// The one-time welcome tour is the local flag the root layout watches for.
+import { WELCOME_TOUR_FLAG } from '../components/WelcomeTour';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -242,14 +244,13 @@ export default function OnboardingScreen() {
       // the tour (gated by this flag) never reappears.
       await supabase.from('profiles').update({ onboarded: true }).eq('id', user.id);
     }
+    // Arm the one-time welcome tour, then drop STRAIGHT into the live app. The
+    // tour renders as a floating, miniaturized card OVER the tabs (mounted in
+    // app/_layout.tsx), so the real app shows through around its borders — the
+    // user taps outside or × to dismiss instead of being walled off.
+    await AsyncStorage.setItem(WELCOME_TOUR_FLAG, '1');
     setFinishing(false);
-    setStep(5);
-  }
-
-  // Step 5: one-time "what you can do on Laybell" tour, shown once setup is
-  // complete (onboarded already committed in handleFinish), then into the app.
-  if (step === 5) {
-    return <WelcomeTour onDone={() => router.replace('/(tabs)')} />;
+    router.replace('/(tabs)');
   }
 
   // Step 0: Welcome

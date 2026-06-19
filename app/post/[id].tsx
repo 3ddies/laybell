@@ -37,6 +37,7 @@ import SlideshowCarousel from '../../components/SlideshowCarousel';
 import TaggedPeopleButton from '../../components/TaggedPeopleButton';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { processMentions } from '../../lib/mentions';
+import { isPostSpotlighted } from '../../lib/spotlight';
 
 type Post = {
   id: string; type: string; media_url: string; caption: string;
@@ -87,10 +88,12 @@ export default function PostDetailScreen() {
     try { return postParam ? (JSON.parse(postParam) as any) : null; } catch { return null; }
   }, [postParam]);
   const [post, setPost] = useState<Post | null>(seeded);
-  // A spotlight post tapped from the feed carries its served __spotlight meta in
-  // the seed param; the refetch in setup() replaces `post` and drops it, so
-  // capture it once here to drive the subtle sparkle emblem by the username.
-  const isSpotlight = !!seeded?.__spotlight;
+  // Drives the subtle sparkle emblem by the username. A post tapped from the feed
+  // carries its served __spotlight meta in the seed (instant), but the same post
+  // opened from a profile/anywhere else doesn't — so setup() also asks the server
+  // whether it's spotlighted right now and promotes this to true. Only ever turns
+  // ON (the server check degrades to false on error, so it never hides a known one).
+  const [isSpotlight, setIsSpotlight] = useState(!!seeded?.__spotlight);
   const [notFound, setNotFound] = useState(false);
   const [likeCount, setLikeCount] = useState<number>(seeded?.likes?.[0]?.count ?? 0);
   const [commentCount, setCommentCount] = useState<number>(seeded?.comments?.[0]?.count ?? 0);
@@ -122,6 +125,9 @@ export default function PostDetailScreen() {
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) setCurrentUserId(user.id);
+
+    // Global spotlight check — shows the sparkle no matter how this post was opened.
+    isPostSpotlighted(id).then((s) => { if (s) setIsSpotlight(true); });
 
     const [postRes, likesRes] = await Promise.all([
       supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show, profile_theme)').eq('id', id).single(),
@@ -251,7 +257,7 @@ export default function PostDetailScreen() {
               />
               <View style={styles.postHeaderInfo}>
                 <View style={styles.postNameRow}>
-                  <Text style={styles.displayName}>{post.profiles?.display_name}</Text>
+                  <Text style={styles.displayName} numberOfLines={1}>{post.profiles?.display_name}</Text>
                   <BadgeEmblem profile={post.profiles} ownerId={post.user_id} size={14} />
                   {isSpotlight && <Ionicons name="sparkles" size={13} color={colors.primaryLight} style={styles.spotSparkle} />}
                 </View>
@@ -447,10 +453,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   postHeader: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, gap: SPACING.sm },
   avatar: { width: 40, height: 40, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  postHeaderInfo: { flex: 1 },
+  // minWidth:0 lets a long name truncate instead of pushing the sparkle/follow button.
+  postHeaderInfo: { flex: 1, minWidth: 0 },
   postNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  displayName: { color: colors.text, fontSize: 14, fontWeight: '700' },
-  spotSparkle: { opacity: 0.9 },
+  displayName: { color: colors.text, fontSize: 14, fontWeight: '700', flexShrink: 1 },
+  spotSparkle: { opacity: 0.9, flexShrink: 0 },
   username: { color: colors.textMeta, fontSize: 12, marginTop: 1 },
   typeTag: { width: 28, height: 28, borderRadius: RADIUS.full, backgroundColor: colors.primary + '18', alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: 340, backgroundColor: colors.surfaceLight },
