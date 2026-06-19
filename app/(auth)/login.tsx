@@ -35,8 +35,11 @@ export default function LoginScreen() {
           <LinearGradient colors={GRADIENTS.primary} style={styles.logoMark}>
             <Ionicons name="musical-notes" size={32} color={colors.text} />
           </LinearGradient>
-          <Text style={styles.logo}>Laybell™</Text>
-          <Text style={styles.tagline}>Your music. Your label.</Text>
+          <View style={styles.logoWrap}>
+            <Text style={styles.logo}>Laybell</Text>
+            <Text style={styles.tm}>™</Text>
+          </View>
+          <Text style={styles.tagline}>The Place for Creatives</Text>
         </View>
 
         {/* Form */}
@@ -105,6 +108,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   logoSection: { alignItems: 'center', marginBottom: SPACING.xxl, gap: SPACING.sm },
   logoMark: { width: 72, height: 72, borderRadius: RADIUS.xl, alignItems: 'center', justifyContent: 'center' },
   logo: { fontSize: 40, fontWeight: '800', color: colors.text, letterSpacing: 1 },
+  // Wordmark + ™ tucked into the bottom-right corner — matches the home header
+  // (app/(tabs)/index.tsx), scaled up to sit beside the larger login logo.
+  logoWrap: { flexDirection: 'row', alignItems: 'flex-end' },
+  tm: { fontSize: 14, fontWeight: '700', color: colors.primaryLight, marginLeft: 1, marginBottom: 4 },
   tagline: { fontSize: 14, color: colors.textSecondary },
 
   form: { gap: SPACING.md },

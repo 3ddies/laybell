@@ -130,7 +130,14 @@ export default function ReelScreen() {
       start = one;
     }
     const ordered = start ? [start, ...list] : list;
-    setPosts(ordered);
+    // Preserve the served spotlight flag on the tapped reel — the refetched DB
+    // rows don't carry the __spotlight meta the feed attached, so re-tag it so
+    // the subtle sparkle emblem stays by the username.
+    setPosts(
+      seed?.__spotlight
+        ? ordered.map((p) => (p.id === seed.id ? { ...p, __spotlight: seed.__spotlight } : p))
+        : ordered,
+    );
     setVisibleId(ordered[0]?.id ?? null);
 
     if (uid) {
@@ -324,6 +331,7 @@ export default function ReelScreen() {
               />
               <Text style={styles.authorName} numberOfLines={1}>@{item.profiles?.username}</Text>
               <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={12} />
+              {!!item.__spotlight && <Ionicons name="sparkles" size={12} color={colors.primaryLight} style={styles.spotSparkle} />}
               <Text style={styles.dot}>·</Text>
               <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
             </TouchableOpacity>
@@ -428,6 +436,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   authorName: { flexShrink: 1, color: '#fff', fontSize: 15, fontWeight: '700' },
+  spotSparkle: { opacity: 0.9 },
   dot: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
   time: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
   caption: { color: '#fff', fontSize: 14, lineHeight: 19 },

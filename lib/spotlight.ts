@@ -425,6 +425,26 @@ export async function endCampaign(campaignId: string): Promise<boolean> {
   }
 }
 
+// True when the post has a LIVE spotlight right now (active + unexpired). Used
+// to warn before deleting it: the ad_campaigns.post_id FK is ON DELETE CASCADE,
+// so deleting the post wipes the paid campaign immediately with no refund.
+// Degrades to false on any error (missing migration / RLS) so it never blocks a
+// normal delete — it only ever ADDS a warning.
+export async function isPostSpotlighted(postId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('ad_campaigns')
+      .select('id')
+      .eq('post_id', postId)
+      .eq('status', 'active')
+      .gt('ends_at', new Date().toISOString())
+      .limit(1);
+    return !error && !!data?.length;
+  } catch {
+    return false;
+  }
+}
+
 // All of the caller's campaigns with their promoted post + live like count,
 // newest first. Expired actives are lazily settled to `ended` first so the
 // list always agrees with what the feed is actually serving.

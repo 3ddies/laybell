@@ -18,7 +18,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import {
   fetchStoriesForUsers, recordStoryView, deleteStory, fetchStoryViewerCount, fetchStoryViewers,
   fetchStoryLiked, setStoryLike,
-  type StoryGroup, type SourceRect, type StoryViewer,
+  type Story, type StoryProfile, type StoryGroup, type SourceRect, type StoryViewer,
 } from '../../lib/stories';
 import { reportUser } from '../../lib/postActions';
 import { storyReplyBody } from '../../lib/postLinks';
@@ -47,7 +47,16 @@ export default function StoryViewerScreen() {
   const { refresh: refreshStories, markSeen } = useStories();
   const { profile: myProfile } = useProfile();
   const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
-  const { userId, users, src } = useLocalSearchParams<{ userId: string; users?: string; src?: string }>();
+  const { userId, users, src, story: storyParam, archived: archivedParam } = useLocalSearchParams<{ userId: string; users?: string; src?: string; story?: string; archived?: string }>();
+
+  // Archived replay (from Settings → Archive): play ONE expired story back like
+  // the original, but read-only — the viewer COUNT shows, the per-viewer list
+  // does not, and replaying doesn't record a fresh view. The story is seeded in
+  // via param because fetchStoriesForUsers only ever returns LIVE stories.
+  const archived = archivedParam === '1';
+  const seedStory = useMemo<Story | null>(() => {
+    try { return storyParam ? (JSON.parse(storyParam) as Story) : null; } catch { return null; }
+  }, [storyParam]);
 
   const orderedIds = useMemo<string[]>(() => {
     try {
@@ -131,6 +140,26 @@ export default function StoryViewerScreen() {
       setCurrentUserId(viewerId);
       if (!viewerId) { setLoading(false); return; }
 
+      if (archived && seedStory) {
+        // The owner is always the current user here (own archive), so build the
+        // header profile from myProfile; fall back to a minimal one if it hasn't
+        // loaded. One group, one story — the full original playback, read-only.
+        const mp: any = myProfile;
+        const owner: StoryProfile = {
+          id: viewerId,
+          username: mp?.username ?? '',
+          display_name: mp?.display_name ?? '',
+          avatar_url: mp?.avatar_url ?? null,
+          badge_tier: mp?.badge_tier ?? null,
+          badge_show: mp?.badge_show ?? null,
+        };
+        setGroups([{ user: owner, stories: [seedStory], hasUnseen: false }]);
+        setUserIndex(0);
+        setStoryIndex(0);
+        setLoading(false);
+        return;
+      }
+
       const fetched = await fetchStoriesForUsers(orderedIds, viewerId);
       setGroups(fetched);
       const startIdx = Math.max(0, fetched.findIndex((g) => g.user.id === userId));
@@ -167,7 +196,7 @@ export default function StoryViewerScreen() {
     setPaused(false);
     stopProgressAnim();
     progressAnim.setValue(0);
-    if (currentUserId) recordStoryView(story.id, currentUserId).catch(() => {});
+    if (currentUserId && !archived) recordStoryView(story.id, currentUserId).catch(() => {});
 
     // Once every story from this author has been watched (this session or earlier),
     // turn their ring back to normal immediately — no wait on the close-time refetch.
@@ -620,9 +649,13 @@ export default function StoryViewerScreen() {
                   </TouchableOpacity>
                 )}
                 {isOwn ? (
-                  <TouchableOpacity style={styles.headerBtn} onPress={onDelete} hitSlop={8}>
-                    <Ionicons name="trash-outline" size={22} color="#fff" />
-                  </TouchableOpacity>
+                  // Archived replay is read-only — manage (restore/delete) from the
+                  // Archive screen, so no trash button here.
+                  archived ? null : (
+                    <TouchableOpacity style={styles.headerBtn} onPress={onDelete} hitSlop={8}>
+                      <Ionicons name="trash-outline" size={22} color="#fff" />
+                    </TouchableOpacity>
+                  )
                 ) : (
                   <TouchableOpacity style={styles.headerBtn} onPress={onReport} hitSlop={8}>
                     <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
@@ -686,18 +719,26 @@ export default function StoryViewerScreen() {
               </Animated.View>
             )}
 
-            {/* Own-story footer: viewer count — tap to see WHO watched */}
+            {/* Own-story footer: viewer count. Live → tap to see WHO watched.
+                Archived replay → count only, read-only (no per-viewer list). */}
             {isOwn && (
-              <TouchableOpacity
-                style={[styles.seenRow, { bottom: insets.bottom + 18 }]}
-                onPress={openViewers}
-                activeOpacity={0.7}
-                hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
-              >
-                <Ionicons name="eye-outline" size={18} color="#fff" />
-                <Text style={styles.seenText}>{viewerCount ?? 0}</Text>
-                <Ionicons name="chevron-up" size={14} color="rgba(255,255,255,0.7)" />
-              </TouchableOpacity>
+              archived ? (
+                <View style={[styles.seenRow, { bottom: insets.bottom + 18 }]}>
+                  <Ionicons name="eye-outline" size={18} color="#fff" />
+                  <Text style={styles.seenText}>{viewerCount ?? 0}</Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.seenRow, { bottom: insets.bottom + 18 }]}
+                  onPress={openViewers}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
+                >
+                  <Ionicons name="eye-outline" size={18} color="#fff" />
+                  <Text style={styles.seenText}>{viewerCount ?? 0}</Text>
+                  <Ionicons name="chevron-up" size={14} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
+              )
             )}
 
             {/* Someone else's story: reply pill + heart */}

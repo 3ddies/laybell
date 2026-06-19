@@ -642,6 +642,12 @@ export default function CreateAdScreen() {
                     deceptive, or age-inappropriate content — and I have the rights to the creative.
                   </Text>
                 </TouchableOpacity>
+                <Text
+                  onPress={() => router.push('/advertiser-terms')}
+                  style={{ color: colors.primary, fontWeight: '700', fontSize: 12, marginTop: 6, marginLeft: 34 }}
+                >
+                  Read the Advertiser Terms & Ad Policy
+                </Text>
 
                 <Text style={styles.simNote}>
                   Simulated checkout — no real charge is made while Laybell payments are in preview.

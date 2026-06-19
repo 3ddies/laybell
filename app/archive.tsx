@@ -101,6 +101,17 @@ export default function ArchiveScreen() {
     );
   }
 
+  // Tap an archived story → replay it like the original (read-only: the viewer
+  // count shows, but not the individual viewers). Restore/delete moves to a
+  // long-press (onStoryPress). The owner is the current user, so the story
+  // viewer builds its header from myProfile and skips recording a fresh view.
+  function playArchivedStory(story: Story) {
+    router.push({
+      pathname: '/story/[userId]',
+      params: { userId: story.user_id, archived: '1', story: JSON.stringify(story) },
+    });
+  }
+
   const isEmpty = tab === 'posts' ? posts.length === 0 : stories.length === 0;
 
   return (
@@ -146,7 +157,7 @@ export default function ArchiveScreen() {
           <Text style={styles.hint}>
             {tab === 'posts'
               ? 'Posts you archived are hidden from your profile, feed and explore. Tap one to restore or permanently delete it.'
-              : 'Stories that expired after 24 hours. Tap one to re-share it for another 24 hours or permanently delete it.'}
+              : 'Stories that expired after 24 hours. Tap to replay one; press and hold to re-share it for another 24 hours or permanently delete it.'}
           </Text>
 
           {isEmpty ? (
@@ -187,7 +198,7 @@ export default function ArchiveScreen() {
                     </TouchableOpacity>
                   ))
                 : stories.map(story => (
-                    <TouchableOpacity key={story.id} style={styles.cell} onPress={() => onStoryPress(story)} activeOpacity={0.85}>
+                    <TouchableOpacity key={story.id} style={styles.cell} onPress={() => playArchivedStory(story)} onLongPress={() => onStoryPress(story)} activeOpacity={0.85}>
                       {story.media_type === 'video' && !story.thumbnail_url ? (
                         <VideoThumb thumbnailUrl={story.thumbnail_url} mediaUrl={story.media_url} style={styles.cellMedia} />
                       ) : (

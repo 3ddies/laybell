@@ -180,7 +180,8 @@ export default function ProfileScreen() {
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
-      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
+      // Exclude archived posts so the count matches the grid (which filters them too).
+      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id).is('archived_at', null),
       supabase.from('posts').select('*').eq('user_id', user.id).eq('is_public', true).order('created_at', { ascending: false }),
       supabase.from('reposts').select('posts(*, profiles!posts_user_id_fkey(display_name))').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('playlists').select('*').eq('user_id', user.id).eq('is_public', true).order('play_count', { ascending: false }),
@@ -455,7 +456,7 @@ export default function ProfileScreen() {
             activeOpacity={0.8}
             onPress={() => router.push('/spotlight')}
           >
-            <Ionicons name="sparkles" size={15} color={colors.primary} />
+            <Ionicons name="sparkles" size={15} color="#fff" />
             <Text style={styles.spotlightBtnText}>Spotlight</Text>
           </TouchableOpacity>
         </View>
@@ -559,14 +560,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   infoLeft: { flex: 1, gap: 4 },
+  // Solid orange button with white text/icon (profile page only).
   spotlightBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    borderWidth: 1, borderColor: colors.primary + '66',
-    backgroundColor: colors.primary + '14',
+    backgroundColor: colors.primary,
     borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
   },
-  spotlightBtnText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  spotlightBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   displayName: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
   badgeOutline: {

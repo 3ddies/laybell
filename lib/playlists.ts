@@ -28,11 +28,14 @@ export async function fetchFirstTrackCovers(playlistIds: string[]): Promise<Reco
   if (!playlistIds.length) return {};
   const { data } = await supabase
     .from('playlist_tracks')
-    .select('playlist_id, position, posts(cover_url, thumbnail_url)')
+    .select('playlist_id, position, posts(cover_url, thumbnail_url, archived_at)')
     .in('playlist_id', playlistIds)
     .order('position', { ascending: true });
   const out: Record<string, string | null> = {};
   for (const t of (data ?? []) as any[]) {
+    // Skip deleted/hidden/archived songs so a playlist whose first track is gone
+    // still faces with the next track that actually exists (not a blank cover).
+    if (!t.posts || t.posts.archived_at) continue;
     if (!(t.playlist_id in out)) out[t.playlist_id] = t.posts?.cover_url ?? t.posts?.thumbnail_url ?? null;
   }
   return out;

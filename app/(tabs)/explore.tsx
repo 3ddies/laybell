@@ -246,6 +246,29 @@ export default function ExploreScreen() {
   // ness vs the seen-set) times a modest creator-badge trust boost. The user's
   // most-interacted genres lead, then the order CYCLES — each reappearance of
   // a genre carries its next-best 4 songs — until the pool runs dry.
+  // A cached cluster can hold songs that were deleted (or whose author hid their
+  // account) since it was built — they'd otherwise stay visible/clickable in the
+  // grid for the whole 24h TTL. Cheaply verify the cached ids against live posts
+  // (one query) and drop any that are gone, keeping the ≥2-song stack rule.
+  async function pruneDeletedClusters(key: string, cached: any) {
+    try {
+      const clusters: SongCluster[] = cached.clusters ?? [];
+      const ids = [...new Set(clusters.flatMap((c: any) => c.songs.map((s: any) => s.id)))];
+      if (!ids.length) return;
+      const { data } = await supabase
+        .from('posts').select('id')
+        .in('id', ids).eq('is_public', true).is('archived_at', null);
+      if (!data) return;
+      const alive = new Set((data as any[]).map((r) => r.id));
+      if (ids.every((id) => alive.has(id))) return; // nothing removed — leave the cache as-is
+      const pruned = clusters
+        .map((c: any) => ({ ...c, songs: c.songs.filter((s: any) => alive.has(s.id)) }))
+        .filter((c: any) => c.songs.length >= 2);
+      setSongClusters(pruned);
+      AsyncStorage.setItem(key, JSON.stringify({ ...cached, clusters: pruned })).catch(() => {});
+    } catch {}
+  }
+
   async function loadGenreClusters(userId: string | null, overrideSeen?: Set<string>) {
     const key = `${CLUSTERS_KEY}_${userId ?? 'anon'}`;
     clustersKeyRef.current = key;
@@ -255,7 +278,8 @@ export default function ExploreScreen() {
         const cached = JSON.parse(raw);
         const ttl = (cached.plays ?? 0) >= CLUSTERS_ACTIVE_PLAYS ? CLUSTERS_TTL_ACTIVE_MS : CLUSTERS_TTL_IDLE_MS;
         if (Date.now() - (cached.refreshedAt ?? 0) < ttl && Array.isArray(cached.clusters) && cached.clusters.length) {
-          setSongClusters(cached.clusters);
+          setSongClusters(cached.clusters);          // instant render
+          pruneDeletedClusters(key, cached);         // then drop any since-deleted/hidden songs
           return;
         }
       }
@@ -265,6 +289,7 @@ export default function ExploreScreen() {
       .from('posts')
       .select('id, type, media_url, caption, cover_url, stream_count, genre, created_at, user_id, profiles!posts_user_id_fkey(id, username, display_name, badge_tier), likes(count), comments(count)')
       .eq('is_public', true)
+      .is('archived_at', null) // archived songs are hidden from browse/stream (visiblePosts can't catch it — archived_at isn't in this select)
       .eq('type', 'audio')
       .order('stream_count', { ascending: false })
       .limit(160);

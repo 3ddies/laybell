@@ -43,9 +43,19 @@ security definer
 set search_path = public, storage
 as $$
 begin
-  delete from storage.objects
-  where bucket_id in ('posts', 'avatars', 'stories')
-    and (storage.foldername(name))[1] = old.id::text;
+  -- Supabase now BLOCKS direct DELETE from storage.objects (a protect_delete
+  -- trigger raises 42501 — "use the Storage API instead"). Because this trigger
+  -- runs inside the profile/account-delete cascade, that block was aborting ALL
+  -- account deletion. Attempt the cleanup, but NEVER let it block the delete;
+  -- objects that can't be removed here are cleaned up via the Storage API
+  -- (a separate orphan-cleanup job) instead.
+  begin
+    delete from storage.objects
+    where bucket_id in ('posts', 'avatars', 'stories')
+      and (storage.foldername(name))[1] = old.id::text;
+  exception when others then
+    null;  -- storage delete blocked/failed → still proceed with the account delete
+  end;
   return old;
 end;
 $$;

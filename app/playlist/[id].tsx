@@ -48,13 +48,16 @@ export default function PlaylistScreen() {
           .select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme')
           .eq('id', pl.user_id).maybeSingle(),
         supabase.from('playlist_tracks')
-          .select('post_id, position, posts(id, type, media_url, caption, stream_count, cover_url, user_id, profiles!posts_user_id_fkey(id, username, display_name, avatar_url))')
+          .select('post_id, position, posts(id, type, archived_at, media_url, caption, stream_count, cover_url, user_id, profiles!posts_user_id_fkey(id, username, display_name, avatar_url))')
           .eq('playlist_id', pl.id)
           .order('position', { ascending: true }),
       ]);
       setPlaylist(pl);
       setCreator(profRes.data ?? null);
-      setTracks(tracksRes.data ?? []);
+      // Drop tracks whose song is gone (deleted/hidden → null embed) or archived
+      // by its owner, so they never render or play. Restoring the song brings it
+      // back (the playlist_tracks row is untouched — only the display filters).
+      setTracks((tracksRes.data ?? []).filter((t: any) => t.posts && !t.posts.archived_at));
       setLoading(false);
     })();
   }, [id]);

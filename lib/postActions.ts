@@ -1,6 +1,7 @@
 import { Alert } from 'react-native';
 import { supabase } from './supabase';
 import { collectPostMediaUrls, removePublicUrls } from './storageCleanup';
+import { isPostSpotlighted } from './spotlight';
 
 export async function deletePostById(postId: string): Promise<boolean> {
   // Capture media URLs BEFORE deleting the row so we can also clean up the
@@ -16,37 +17,56 @@ export async function deletePostById(postId: string): Promise<boolean> {
       .single();
     if (data) media = collectPostMediaUrls(data);
   } catch {}
-  const { error } = await supabase.from('posts').delete().eq('id', postId);
-  if (error) return false;
+  // `.select('id')` so we can tell a real delete from a no-op: an RLS-blocked
+  // delete (e.g. the posts DELETE policy is missing — supabase/sql/posts_delete_policy.sql)
+  // removes 0 rows with NO error. Without this check we'd report phantom success
+  // AND wipe the post's Storage media while its row survived in the DB.
+  const { data, error } = await supabase.from('posts').delete().eq('id', postId).select('id');
+  if (error || !data?.length) return false;
   if (media.length) await removePublicUrls(media);
   return true;
 }
 
 // Archiving hides a post from your profile/feed/explore without deleting it.
 // `archived_at` is set to now (archive) or cleared to null (restore). Requires
-// the posts.archived_at column (supabase/sql/post_archive.sql); if it isn't
-// migrated yet the write errors and we report failure so the caller can alert.
+// the posts.archived_at column (supabase/sql/post_archive.sql) AND the owner
+// UPDATE policy (supabase/sql/posts_update_policy.sql).
+//
+// We `.select('id')` and require a returned row, NOT just `!error`: an UPDATE
+// that RLS blocks (e.g. the posts UPDATE policy is missing) comes back with no
+// error and ZERO rows. Without this check that phantom success would hide the
+// post optimistically only for it to reappear on the next refresh.
 export async function archivePostById(postId: string): Promise<boolean> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('posts')
     .update({ archived_at: new Date().toISOString() })
-    .eq('id', postId);
-  return !error;
+    .eq('id', postId)
+    .select('id');
+  return !error && (data?.length ?? 0) > 0;
 }
 
 export async function restorePostById(postId: string): Promise<boolean> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('posts')
     .update({ archived_at: null })
-    .eq('id', postId);
-  return !error;
+    .eq('id', postId)
+    .select('id');
+  return !error && (data?.length ?? 0) > 0;
 }
 
 // Confirm, archive, then fire onArchived so the caller can drop it from view.
-export function confirmArchivePost(postId: string, onArchived?: () => void) {
+// If the post has a LIVE spotlight, the confirm escalates: archiving only hides
+// the post (sets archived_at) — it does NOT touch the campaign, whose ends_at is
+// fixed wall-clock, so the timer keeps running while the post is hidden from the
+// feed. The owner burns paid promotion time with no pause and no refund, so they
+// are warned before committing. The spotlight check degrades to the normal copy.
+export async function confirmArchivePost(postId: string, onArchived?: () => void) {
+  const spotlighted = await isPostSpotlighted(postId);
   Alert.alert(
-    'Archive post?',
-    'This hides the post from your profile, the feed and explore. You can restore it anytime from Settings → Archive.',
+    spotlighted ? 'Archive spotlighted post?' : 'Archive post?',
+    spotlighted
+      ? "This post is currently being promoted with Spotlight. Archiving hides it from your profile, the feed and explore — but the campaign keeps running: the timer won't pause and there's no refund, so you'll lose the promotion time while it's hidden. Restore it from Settings → Archive before the campaign ends to use what's left."
+      : 'This hides the post from your profile, the feed and explore. You can restore it anytime from Settings → Archive.',
     [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -61,12 +81,18 @@ export function confirmArchivePost(postId: string, onArchived?: () => void) {
   );
 }
 
-// Two-step destructive confirm, then delete, then fire onDeleted so the caller
-// can drop it from local state. Also used directly for long-press affordances.
-export function confirmDeletePost(postId: string, onDeleted?: () => void) {
+// Destructive confirm, then delete, then fire onDeleted so the caller can drop
+// it from local state. Also used directly for long-press affordances. If the
+// post has a LIVE spotlight, the confirm escalates: deleting cascades the paid
+// campaign away with no refund (see isPostSpotlighted), so the user is told
+// before they commit. The spotlight check degrades to the normal copy on error.
+export async function confirmDeletePost(postId: string, onDeleted?: () => void) {
+  const spotlighted = await isPostSpotlighted(postId);
   Alert.alert(
-    'Delete post?',
-    "This permanently deletes the post and can't be undone.",
+    spotlighted ? 'Delete spotlighted post?' : 'Delete post?',
+    spotlighted
+      ? "This post is currently being promoted with Spotlight. Deleting it will immediately end the active campaign with no refund — and permanently delete the post. This can't be undone."
+      : "This permanently deletes the post and can't be undone.",
     [
       { text: 'Cancel', style: 'cancel' },
       {

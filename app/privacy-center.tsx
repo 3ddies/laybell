@@ -169,7 +169,10 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 2,
+    // Clear the status bar / notch (matches settings/analytics chrome) so the
+    // back chevron isn't cut off at the top.
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm + 2,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.borderSubtle,
   },
   backBtn: { width: 40, height: 40, alignItems: 'flex-start', justifyContent: 'center' },

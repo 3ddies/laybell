@@ -85,7 +85,10 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
+    // Clear the status bar / notch (matches settings/analytics chrome) so the
+    // back chevron isn't cut off at the top.
+    paddingTop: SPACING.xxl + SPACING.sm,
+    paddingBottom: SPACING.sm + 2,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: c.borderSubtle,
   },

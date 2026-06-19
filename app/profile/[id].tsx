@@ -138,7 +138,8 @@ export default function PublicProfileScreen() {
       supabase.from('profiles').select('*').eq('id', id).single(),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id),
       supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', id),
-      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', id),
+      // Exclude archived posts so the count matches the grid (which filters them too).
+      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', id).is('archived_at', null),
       supabase.from('posts').select('*').eq('user_id', id).order('created_at', { ascending: false }),
       currentUser
         ? supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', id).maybeSingle()

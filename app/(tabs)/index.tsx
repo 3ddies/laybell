@@ -148,7 +148,7 @@ const PostCard = memo(function PostCard({
             <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={13} />
             {!!item.__spotlight && (
               <View style={styles.spotPill}>
-                <Ionicons name="sparkles" size={9} color={colors.primaryLight} />
+                <Ionicons name="sparkles" size={12} color={colors.primaryLight} />
                 <Text style={styles.spotPillText}>Spotlight</Text>
               </View>
             )}
@@ -617,11 +617,21 @@ export default function HomeScreen() {
         (profile.typeScores[p.type] ?? 0) * 0.6,
         followingSet.has(p.user_id) ? 0.6 : 0,
       );
+      // A spotlight buys a fresh shot at reach, so score its base (organic)
+      // score as if the post were created the moment the spotlight started.
+      // Otherwise a years-old post is crushed by recency-decay to ≈0 BEFORE the
+      // multiplier applies — burying it AND pinning perf≈0 (max-speed decay, no
+      // climb), so its fresh engagement never counts. The campaign clock already
+      // runs from startsAt, so this makes the WHOLE model treat it like a new
+      // post: it competes near the top at launch and fades over the campaign.
+      // Non-destructive — the real created_at (profile age, organic feed once the
+      // campaign ends) is untouched.
+      const freshForSpotlight = (p: any) => ({ ...p, created_at: p.__spotlight?.startsAt ?? p.created_at });
       const spotPairs = await Promise.all(spots.map(async (s) => ({
         item: s,
         score: await rankSpotlight({
           campaignId: s.__spotlight?.campaignId ?? s.id,
-          organicPf: scorePost(s, profile, followingSet, neverSeen, now),
+          organicPf: scorePost(freshForSpotlight(s), profile, followingSet, neverSeen, now),
           topPf: topScore,
           anchors,
           startsAt: s.__spotlight?.startsAt ?? null,
@@ -1079,15 +1089,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   avatarText: { color: colors.text, fontSize: 15, fontWeight: '700' },
   postHeaderInfo: { flex: 1 },
   postNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  // Spotlight indicator: plain yellow sparkle + text, no orange pill/circle.
   spotPill: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    marginLeft: 2,
-    paddingHorizontal: 6, paddingVertical: 1,
-    borderRadius: RADIUS.full,
-    backgroundColor: colors.primary + '22',
-    borderWidth: 1, borderColor: colors.primary + '66',
+    marginLeft: 4,
   },
-  spotPillText: { color: colors.primaryLight, fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
+  spotPillText: { color: colors.primaryLight, fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
   postDisplayName: { color: colors.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.1 },
   postUsername: { color: colors.textMeta, fontSize: 12, marginTop: 1 },
   typeIconWrap: {

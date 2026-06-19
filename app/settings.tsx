@@ -199,7 +199,19 @@ export default function SettingsScreen() {
                   text: 'Delete', style: 'destructive',
                   onPress: async () => {
                     const ok = await setHidden(true, { delete_requested_at: new Date().toISOString(), delete_immediately: true });
-                    if (ok) await supabase.auth.signOut();
+                    if (ok) {
+                      // Flag now — access stops immediately via sign-out + the _layout
+                      // login guard — and the account is HARD-DELETED 48h later by the
+                      // sweep, which frees the email for reuse. Reported accounts are
+                      // excluded (handled manually), so DON'T promise them the 48h email
+                      // reuse — it would be misleading. Check before signOut (RPC needs auth).
+                      let reported = false;
+                      try { const { data } = await supabase.rpc('current_account_has_reports'); reported = data === true; } catch {}
+                      await supabase.auth.signOut();
+                      Alert.alert('Account deleted', reported
+                        ? 'Your account has been deleted and you have been signed out.'
+                        : 'Your account has been deleted and you have been signed out. It is permanently removed after 48 hours — after that, you can use this email to create a new account.');
+                    }
                   },
                 },
               ],
@@ -401,6 +413,16 @@ export default function SettingsScreen() {
       icon: 'shield-outline',
       label: 'Terms of Service',
       onPress: () => router.push('/terms-of-service'),
+    },
+    {
+      icon: 'people-outline',
+      label: 'Community Guidelines',
+      onPress: () => router.push('/community-guidelines'),
+    },
+    {
+      icon: 'megaphone-outline',
+      label: 'Advertiser Terms',
+      onPress: () => router.push('/advertiser-terms'),
     },
   ];
 

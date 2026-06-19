@@ -2,7 +2,7 @@
 
 Everything needed to take the legal/privacy work live. Things marked **[code done]** are already implemented in this repo; the rest need your accounts/credentials. Work top to bottom.
 
-**Progress:** domain ✅ · contact inboxes ✅ · DMCA agent ✅ · mailing address filled ✅ · SQL migrations run ✅ · app wiring + web pages built ✅
+**Progress:** domain ✅ · contact inboxes ✅ · DMCA agent ✅ · mailing address filled ✅ · SQL migrations run ✅ · trademark spec ready ✅ · Privacy + Terms + Community Guidelines + Advertiser Terms built & wired ✅
 **Remaining — all at/around app‑store submission:** host the web pages (step 7) · store privacy forms (step 8) · one‑time attorney review (step 9). Optional: parent‑consent email (step 2), EU/UK reps (step 6), trademark.
 
 ---
@@ -12,6 +12,8 @@ In the **Supabase dashboard → SQL Editor**, paste & run each file:
 - `supabase/sql/storage_cleanup.sql` — lets the app delete media files; auto‑purges a user's storage on account deletion.
 - `supabase/sql/minor_consent.sql` — columns for the 13–17 parental‑consent step.
 - `supabase/sql/parent_consent_verification.sql` — token table for the parent‑email confirmation (run after `minor_consent.sql`).
+- `supabase/sql/posts_update_policy.sql` + `supabase/sql/posts_delete_policy.sql` — owner can edit/delete own posts (without these, archive/edit/delete silently no‑op).
+- `supabase/sql/moderation_preservation.sql` — **content moderation safety.** Reports now survive deletion of the post/account (so a user can't delete away the evidence), every report stores a tamper‑proof content snapshot (DB trigger), and a `legal_hold` flag blocks deletion of content under investigation. Run after `post_reports.sql` + `user_reports.sql`; it also (re)creates the posts‑DELETE policy, superseding `posts_delete_policy.sql`.
 
 Also confirm your **other** feature migrations are applied (badges, spotlight, ad_ecosystem, account_hidden, profile_fields, public_playlists, etc.) and that the **`ads` storage bucket** exists.
 
@@ -68,6 +70,9 @@ Have a tech/IP attorney review `terms.json` + `privacy.json` — especially the 
 - **13–17 parental‑consent step** in onboarding (+ optional email verification, step 2).
 - Paid features (**Spotlight, Ad Manager**) gated to **18+**.
 - **Storage cleanup**: deleting a post/story/avatar removes the underlying file; deleting an account purges all of the user's files.
+- **Moderation evidence survives deletion**: reports are no longer cascade‑deleted with the post/account, each report keeps a tamper‑proof content snapshot, and a `legal_hold` flag blocks deletion of content under investigation — so a user can't post something illegal and then delete their way out of the moderation/legal trail. *(Still TODO and needing counsel/infra: NCMEC CSAM reporting workflow, copying flagged media into a locked retention bucket, an admin review queue, and counsel‑set retention periods.)*
+- **Account deletion = 48‑hour deferred hard delete**: "Delete now" flags the account and signs the user out; a client login guard (`app/_layout.tsx`) blocks any further sign‑in / session‑restore; then the **sweep hard‑deletes it 48 hours later** (which frees the email for a new account). The deletion message tells the user they can reuse the email after 48h. (The `delete-account` Edge Function is now OPTIONAL — kept only as an admin/force‑delete utility; the sweep is the real mechanism, so deletion no longer depends on deploying the function.)
+- **Automated deletion sweep** (`supabase/sql/account_deletion_sweep.sql`) — **REQUIRED for deletion to actually happen**: an HOURLY pg_cron job (`sweep_deletable_accounts()`) hard‑deletes deliberate deletions once they're 48h old (and "hide for 3 months" accounts after 3 months inactive), **only if they have ZERO reports** (post/user/ad) and no legal hold. Anything with a report — a reported post, song, video, story, page, or ad — is **left for MANUAL deletion** (a review query is included in the file). Run the SQL after the migrations above + `ad_ecosystem.sql`; it enables pg_cron itself.
 
 ## Ongoing obligations (don't skip)
 - Honor **DMCA takedowns** promptly and enforce the **repeat‑infringer** termination policy.

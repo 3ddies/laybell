@@ -297,6 +297,7 @@ export default function MusicScreen() {
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (username, display_name, avatar_url)')
       .eq('is_public', true)
+      .is('archived_at', null) // archived songs are hidden everywhere but the Archive screen
       .in('type', ['audio', 'podcast', 'audiobook'])
       .limit(40);
     query = authorIds.length > 0
@@ -359,29 +360,33 @@ export default function MusicScreen() {
   async function fetchSavedTracks(userId: string) {
     const { data } = await supabase
       .from('saves')
-      .select('id, posts(id,media_url,caption,type,duration_seconds,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
+      .select('id, posts(id,media_url,caption,type,archived_at,duration_seconds,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
-    if (data) setSavedTracks(data.filter((s: any) => isAudioPost(s.posts?.type)));
+    // Hide archived songs (and deleted ones — embed is null) from the saved list.
+    if (data) setSavedTracks(data.filter((s: any) => isAudioPost(s.posts?.type) && !s.posts?.archived_at));
   }
 
   async function fetchLikedTracks(userId: string) {
     const { data } = await supabase
       .from('likes')
-      .select('post_id, posts(id,media_url,caption,type,duration_seconds,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
+      .select('post_id, posts(id,media_url,caption,type,archived_at,duration_seconds,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
-    if (data) setLikedTracks(data.filter((l: any) => isAudioPost(l.posts?.type)));
+    // Hide archived songs (and deleted ones — embed is null) from the liked list.
+    if (data) setLikedTracks(data.filter((l: any) => isAudioPost(l.posts?.type) && !l.posts?.archived_at));
   }
 
   async function fetchPlaylistTracks(playlistId: string) {
     setTracksLoading(true);
     const { data } = await supabase
       .from('playlist_tracks')
-      .select('post_id,position,posts(id,media_url,caption,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
+      .select('post_id,position,posts(id,archived_at,media_url,caption,stream_count,cover_url,user_id,profiles!posts_user_id_fkey(id,username,display_name,avatar_url))')
       .eq('playlist_id', playlistId)
       .order('position', { ascending: true });
-    if (data) setTracks(data as any);
+    // Drop tracks whose song is gone (deleted/hidden → null embed) or archived by
+    // its owner so they never render or play; restoring the song brings it back.
+    if (data) setTracks((data as any[]).filter((t: any) => t.posts && !t.posts.archived_at));
     setTracksLoading(false);
   }
 
@@ -406,7 +411,7 @@ export default function MusicScreen() {
 
       const [tracksRes, profsRes] = await Promise.all([
         supabase.from('playlist_tracks')
-          .select('playlist_id, position, posts(cover_url, thumbnail_url)')
+          .select('playlist_id, position, posts(cover_url, thumbnail_url, archived_at)')
           .in('playlist_id', list.map((p: any) => p.id))
           .order('position', { ascending: true }),
         supabase.from('profiles')
@@ -417,6 +422,7 @@ export default function MusicScreen() {
       const coverOf: Record<string, string | null> = {};
       const countOf: Record<string, number> = {};
       for (const t of (tracksRes.data ?? []) as any[]) {
+        if (!t.posts || t.posts.archived_at) continue; // skip deleted/hidden/archived songs so the cover + count stay accurate
         countOf[t.playlist_id] = (countOf[t.playlist_id] || 0) + 1;
         if (!(t.playlist_id in coverOf)) {
           coverOf[t.playlist_id] = t.posts?.cover_url ?? t.posts?.thumbnail_url ?? null;
@@ -669,6 +675,7 @@ export default function MusicScreen() {
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
       .eq('is_public', true)
+      .is('archived_at', null) // hide archived songs from the music section
       .order('stream_count', { ascending: false })
       .limit(30);
 
@@ -701,6 +708,7 @@ export default function MusicScreen() {
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url)')
       .eq('is_public', true)
+      .is('archived_at', null) // hide archived songs from the Top 20
       .eq('type', 'audio')
       .order('stream_count', { ascending: false })
       .limit(20);
@@ -727,6 +735,7 @@ export default function MusicScreen() {
         .from('posts')
         .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
         .eq('is_public', true)
+        .is('archived_at', null) // never queue an archived song into the listen mix
         .eq('type', 'audio')
         .order('stream_count', { ascending: false })
         .limit(120);
@@ -760,6 +769,7 @@ export default function MusicScreen() {
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
       .eq('is_public', true)
+      .is('archived_at', null) // hide archived songs from For You
       .eq('type', 'audio')
       .order('created_at', { ascending: false })
       .limit(80);
@@ -787,9 +797,15 @@ export default function MusicScreen() {
       const raw = await AsyncStorage.getItem(cacheKey);
       if (raw) {
         const { postData, pickedAt } = JSON.parse(raw);
-        if (Date.now() - pickedAt < TODAYS_PICK_TTL_MS) {
-          setTodaysPick(postData);
-          return;
+        if (postData?.id && Date.now() - pickedAt < TODAYS_PICK_TTL_MS) {
+          // Verify the cached pick still exists and is visible — a deleted,
+          // archived, or hidden-author song must never linger as a clickable
+          // "pick of the day". If it's gone, fall through and recompute a fresh one.
+          const { data: stillThere } = await supabase
+            .from('posts').select('id')
+            .eq('id', postData.id).eq('is_public', true).is('archived_at', null)
+            .maybeSingle();
+          if (stillThere) { setTodaysPick(postData); return; }
         }
       }
     } catch {}
@@ -810,7 +826,7 @@ export default function MusicScreen() {
     const { data: pool } = await supabase
       .from('posts')
       .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
-      .eq('is_public', true).eq('type', 'audio')
+      .eq('is_public', true).eq('type', 'audio').is('archived_at', null)
       .gte('created_at', weekAgo)
       .order('stream_count', { ascending: false })
       .limit(30);
@@ -819,7 +835,7 @@ export default function MusicScreen() {
       const { data: fb } = await supabase
         .from('posts')
         .select('*, profiles!posts_user_id_fkey (id, username, display_name, avatar_url), likes(count), comments(count)')
-        .eq('is_public', true).eq('type', 'audio')
+        .eq('is_public', true).eq('type', 'audio').is('archived_at', null)
         .order('stream_count', { ascending: false })
         .limit(30);
       return fb ?? [];

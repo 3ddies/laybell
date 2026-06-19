@@ -17,6 +17,7 @@ import { fetchSuggestedAccounts, REASON_LABEL } from '../lib/suggestions';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { GENRES as APP_GENRES } from '../lib/genres';
+import WelcomeTour from '../components/WelcomeTour';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -235,9 +236,20 @@ export default function OnboardingScreen() {
     setFinishing(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
+      // Commit onboarding now (data is saved) THEN show the one-time feature
+      // tour. Because `onboarded` is already true, closing the app mid-tour just
+      // drops the user into the app next launch — they never re-do setup, and
+      // the tour (gated by this flag) never reappears.
       await supabase.from('profiles').update({ onboarded: true }).eq('id', user.id);
     }
-    router.replace('/(tabs)');
+    setFinishing(false);
+    setStep(5);
+  }
+
+  // Step 5: one-time "what you can do on Laybell" tour, shown once setup is
+  // complete (onboarded already committed in handleFinish), then into the app.
+  if (step === 5) {
+    return <WelcomeTour onDone={() => router.replace('/(tabs)')} />;
   }
 
   // Step 0: Welcome

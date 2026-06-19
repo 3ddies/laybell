@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Stack, useSegments, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, Platform } from 'react-native';
+import { View, Platform, Alert } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../lib/supabase';
@@ -93,7 +93,7 @@ function AppContent() {
             the route itself must not animate (iOS ignores slide_from_right on
             modal presentations and would slide up from the bottom instead). The
             stack's own back gesture stays off — the pager owns the swipe. */}
-        {['messages/index', 'notifications', 'settings', 'analytics', 'spotlight', 'ad-manager/index', 'ad-manager/create', 'ad-manager/[id]', 'badges', 'permissions', 'playlists', 'playlist/[id]', 'privacy-policy', 'terms-of-service', 'privacy-center'].map((name) => (
+        {['messages/index', 'notifications', 'settings', 'analytics', 'spotlight', 'ad-manager/index', 'ad-manager/create', 'ad-manager/[id]', 'badges', 'permissions', 'playlists', 'playlist/[id]', 'privacy-policy', 'terms-of-service', 'community-guidelines', 'advertiser-terms', 'privacy-center'].map((name) => (
           <Stack.Screen
             key={name}
             name={name}
@@ -182,7 +182,27 @@ export default function RootLayout() {
     if (!user) return;
 
     const { data: profile } = await supabase
-      .from('profiles').select('onboarded').eq('id', user.id).single();
+      .from('profiles').select('*').eq('id', user.id).single();
+
+    // A permanently-deleted account ("Delete now" → delete_immediately) is signed
+    // out and blocked from entering the app. The auth user itself is removed
+    // server-side by the delete-account Edge Function; this is the client backstop
+    // so a flagged account can never be used even if that removal is deferred (or
+    // the account was preserved under a legal hold). The reversible 3-month "hide"
+    // path (delete_immediately false) is intentionally NOT blocked — the user can
+    // come back, unhide, and cancel the deletion.
+    if (profile && (profile as any).delete_immediately === true) {
+      // Reported accounts aren't auto-deleted after 48h (they're handled manually),
+      // so only promise the email-reuse timeline to accounts with no reports — else
+      // it's misleading. Checked while still signed in (the RPC needs auth.uid()).
+      let reported = false;
+      try { const { data } = await supabase.rpc('current_account_has_reports'); reported = data === true; } catch {}
+      await supabase.auth.signOut();
+      Alert.alert('Account deleted', reported
+        ? 'This account has been deleted and can no longer be accessed.'
+        : 'This account has been deleted and can no longer be accessed. You can use this email to create a new account 48 hours after deletion.');
+      return;
+    }
 
     if (profile && profile.onboarded === false) {
       router.replace('/onboarding');

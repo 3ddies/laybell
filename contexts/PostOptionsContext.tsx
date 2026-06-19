@@ -208,7 +208,15 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
     o.onSaveChanged?.(next);
   }
 
-  const isOwn = opts?.isOwn ?? false;
+  // Ownership is authoritative from the app-wide ProfileContext. A caller may
+  // pass isOwn:false only because ITS locally-fetched currentUserId hadn't
+  // loaded yet — the seed-rendered post/reel screens render your tapped post
+  // instantly but resolve the user id a beat later, which made your OWN post's
+  // 3-dot show another user's menu (Repost/Report/Block). profile.id is loaded
+  // once at app start, so whenever the post's authorId matches it, it's yours —
+  // no false positives (authorId is always the post's owner).
+  const isOwn = (opts?.isOwn ?? false) ||
+    (!!opts?.authorId && !!profile?.id && opts.authorId === profile.id);
   const hasPost = !!opts?.postId;
   const isAudio = isAudioPost(opts?.mediaType);
   const targetSuffix = opts?.authorName ? ` @${opts.authorName}` : ' user';
