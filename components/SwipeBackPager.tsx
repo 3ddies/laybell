@@ -50,6 +50,13 @@ export default function SwipeBackPager({ children, scrollEnabled = true, animate
   // page-0 position report when entering (so it isn't mistaken for a dismiss).
   const armed = useRef(!animateIn);
   const requestedEntry = useRef(false);
+  // Live fractional scroll position (0 = dismiss page, 1 = content). Tracked so
+  // that if the pager ever comes to rest BETWEEN the two pages, we can snap it to
+  // the nearest one. This is the "stuck/bounced halfway" glitch: a near-diagonal
+  // swipe gets partly claimed by the screen's vertical ScrollView, which freezes
+  // the pager mid-drag and lets it settle at a fractional offset — leaving the
+  // view half on the previous screen and half on this one.
+  const fraction = useRef(animateIn ? 0 : 1);
   // Set when we initiate the pop ourselves (or a back press is mid-slide-out)
   // so the beforeRemove interception lets the actual removal through.
   const closing = useRef(false);
@@ -83,8 +90,23 @@ export default function SwipeBackPager({ children, scrollEnabled = true, animate
         requestedEntry.current = true;
         requestAnimationFrame(() => pagerRef.current?.setPage(1));
       }}
+      // Keep the live fractional position up to date for the idle re-snap below.
+      onPageScroll={(e) => {
+        const { position, offset } = e.nativeEvent;
+        fraction.current = position + offset;
+      }}
+      // When the gesture ends and the pager goes idle, it should be sitting exactly
+      // on a page. If it stranded between the two (the half-and-half glitch), snap
+      // it to the nearest one so it always completes the swipe or cancels cleanly —
+      // landing on 0 then runs the normal dismiss path via onPageSelected.
+      onPageScrollStateChanged={(e) => {
+        if (e.nativeEvent.pageScrollState !== 'idle') return;
+        const f = fraction.current;
+        if (f > 0.02 && f < 0.98) pagerRef.current?.setPage(f >= 0.5 ? 1 : 0);
+      }}
       onPageSelected={(e) => {
         const pos = e.nativeEvent.position;
+        fraction.current = pos; // exact at every settle, so the idle re-snap can't false-fire
         if (pos === 1) {
           // Content settled: future page-0 landings are real dismissals. Also
           // treat an interrupted slide-out (grabbed mid-animation) as cancelled.

@@ -20,7 +20,9 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { formatCount } from '../../lib/format';
-import { normalizeUrl, displayUrl, hasProfileTemplate } from '../../lib/profileOptions';
+import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
+import { activeLayout, usedPostIds } from '../../lib/pageLayout';
+import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { isAudioPost } from '../../lib/genres';
 import { slideshowThumb } from '../../lib/slideshow';
 import VideoThumb from '../../components/VideoThumb';
@@ -233,6 +235,9 @@ export default function ProfileScreen() {
   // Active sub-tab pill + glow take the user's emblem-theme color (orange default
   // when they have no badge). Visible on public profiles too (owner's tier).
   const tabAccent = myTier ? ringColors[0] : colors.primary;
+  // The custom Posts-grid layout, if the user has one AND still qualifies for its
+  // tier (activeLayout re-checks earned tier + resolves blocks against live posts).
+  const pageLayout = activeLayout(badgeProfile, userPosts);
   const activeTabDyn = {
     backgroundColor: tabAccent + '1F', borderColor: tabAccent + '4D',
     shadowColor: tabAccent, shadowOpacity: 0.28, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 2,
@@ -252,7 +257,7 @@ export default function ProfileScreen() {
   // drops out of spotlightIds → it returns to default placement. Skipped entirely
   // if the user runs a custom page layout — then their own arrangement wins.
   function orderPostsForGrid(data: any[]) {
-    if (hasProfileTemplate(profile)) return data;
+    if (pageLayout) return data;
     return [...data].sort((a, b) => {
       const sa = spotlightIds.has(a.id) ? 1 : 0;
       const sb = spotlightIds.has(b.id) ? 1 : 0;
@@ -355,6 +360,57 @@ export default function ProfileScreen() {
     );
   }
 
+  // Open an image/slideshow post or a reel, expanding out of the tapped cell
+  // (shared by the normal grid and the custom layout blocks).
+  function openVisual(post: any, node?: any) {
+    const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
+    const seed = JSON.stringify(post);
+    if (node?.measureInWindow) {
+      node.measureInWindow((x: number, y: number, width: number, height: number) =>
+        router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
+    } else {
+      router.push({ pathname, params: { id: post.id, post: seed } });
+    }
+  }
+
+  // Own-post options sheet (edit / delete / archive) — used by long-press in both
+  // the normal grid and the custom layout blocks.
+  function showPostOptions(post: any) {
+    showOptions({
+      postId: post.id,
+      isOwn: true,
+      mediaType: post.type,
+      onEdit: () => router.push(`/edit-post/${post.id}`),
+      onDeleted: () => { setUserPosts(prev => prev.filter(p => p.id !== post.id)); setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) })); },
+      onArchived: () => { setUserPosts(prev => prev.filter(p => p.id !== post.id)); setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) })); },
+    });
+  }
+
+  // The Posts tab: a custom feature layout (when active) above the normal grid of
+  // any leftover posts, or just the normal grid.
+  function renderPostsTab() {
+    const data = dataForTab('posts');
+    if (!pageLayout) return renderGrid(orderPostsForGrid(data), 'posts');
+    const used = usedPostIds(pageLayout.blocks);
+    const leftovers = data.filter(p => !used.has(p.id));
+    return (
+      <>
+        <ProfileLayoutGrid
+          layout={pageLayout}
+          posts={userPosts}
+          ownerTier={rawTier(badgeProfile)}
+          spotlightIds={spotlightIds}
+          playingId={playingId}
+          artistName={profile?.display_name}
+          onOpenVisual={openVisual}
+          onPlaySongs={(queue, idx) => playQueue(queue, idx)}
+          onLongPressPost={showPostOptions}
+        />
+        {leftovers.length > 0 && renderGrid(leftovers, 'posts')}
+      </>
+    );
+  }
+
   function renderGrid(data: any[], tabKey: string) {
     if (data.length === 0) {
       return (
@@ -431,14 +487,14 @@ export default function ProfileScreen() {
                 {/* Slide 1's screenshot (video) or slide 1 itself (image) */}
                 <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} resizeMode="cover" />
                 <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="copy" size={13} color={colors.text} />
+                  <Ionicons name="copy" size={13} color="#fff" />
                 </View>
               </>
             ) : post.type === 'video' ? (
               <>
                 <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.gridImage} />
                 <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="play" size={14} color={colors.text} />
+                  <Ionicons name="play" size={14} color="#fff" />
                 </View>
               </>
             ) : post.type === 'image' ? (
@@ -447,7 +503,7 @@ export default function ProfileScreen() {
               <>
                 <Image source={{ uri: post.cover_url }} style={styles.gridImage} resizeMode="cover" />
                 <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="musical-notes" size={13} color={colors.text} />
+                  <Ionicons name="musical-notes" size={13} color="#fff" />
                 </View>
               </>
             ) : (
@@ -607,7 +663,7 @@ export default function ProfileScreen() {
                 <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile(); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
             >
-              {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : renderGrid(key === 'posts' ? orderPostsForGrid(dataForTab('posts')) : dataForTab(key), key)}
+              {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : key === 'posts' ? renderPostsTab() : renderGrid(dataForTab(key), key)}
             </ScrollView>
           </View>
         ))}
@@ -662,7 +718,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   displayName: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
   badgeOutline: {
     width: 19, height: 19, borderRadius: RADIUS.full,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', borderStyle: 'dashed',
+    borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed',
     alignItems: 'center', justifyContent: 'center',
   },
   bio: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },

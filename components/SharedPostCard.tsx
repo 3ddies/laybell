@@ -166,7 +166,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: colors.border,
   },
   stateCard: { height: 96, alignItems: 'center', justifyContent: 'center', gap: SPACING.xs },
   unavailable: { color: colors.textTertiary, fontSize: 13 },

@@ -100,16 +100,16 @@ export default function TaggedScreen() {
   function gridThumb(post: any) {
     if (isSlideshow(post.type)) return (
       <><Image source={{ uri: post.thumbnail_url || post.media_url }} style={styles.gridImage} resizeMode="cover" />
-        <View style={styles.gridBadge}><Ionicons name="copy" size={12} color={colors.text} /></View></>
+        <View style={styles.gridBadge}><Ionicons name="copy" size={12} color="#fff" /></View></>
     );
     if (post.type === 'video') return (
       <><VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.gridImage} />
-        <View style={styles.gridBadge}><Ionicons name="play" size={13} color={colors.text} /></View></>
+        <View style={styles.gridBadge}><Ionicons name="play" size={13} color="#fff" /></View></>
     );
     if (post.type === 'image') return <Image source={{ uri: post.media_url }} style={styles.gridImage} resizeMode="cover" />;
     if (post.cover_url) return (
       <><Image source={{ uri: post.cover_url }} style={styles.gridImage} resizeMode="cover" />
-        <View style={styles.gridBadge}><Ionicons name="musical-notes" size={12} color={colors.text} /></View></>
+        <View style={styles.gridBadge}><Ionicons name="musical-notes" size={12} color="#fff" /></View></>
     );
     return (
       <LinearGradient colors={['#1C0E06', '#120A04']} style={[styles.gridImage, styles.gridPlaceholder]}>
@@ -122,7 +122,7 @@ export default function TaggedScreen() {
     const e = EMPTY[tab];
     return (
       <View style={styles.empty}>
-        <LinearGradient colors={['#1C0A04', colors.background]} style={styles.emptyIcon}>
+        <LinearGradient colors={[colors.primary + '24', colors.background]} style={styles.emptyIcon}>
           <Ionicons name={e.icon} size={36} color={colors.primary} />
         </LinearGradient>
         <Text style={styles.emptyText}>{e.text}</Text>

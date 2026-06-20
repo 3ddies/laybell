@@ -45,9 +45,15 @@ export default function TrackRow({
   const safeCover = guardPress(onCoverPress ?? onPlay)!;
   const safeAdd = guardPress(onAddToPlaylist);
   const safeAvatar = guardPress(onAvatarPress);
+  // Card background derived from the active theme so the sound cards fit every
+  // mode (grey card in Grey, white card in Light, dark card in Dark) instead of
+  // a fixed near-black. Playing rows get a warm primary wash over the surface.
+  const cardColors = (isPlaying
+    ? [colors.primary + '26', colors.surfaceLight]
+    : [colors.surfaceLight, colors.surface]) as readonly [string, string];
   return (
     <LinearGradient
-      colors={isPlaying ? GRADIENTS.primarySoft : GRADIENTS.card}
+      colors={cardColors}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={[styles.row, isPlaying && styles.rowActive]}
@@ -122,7 +128,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   rowActive: { borderColor: colors.primary + '55' },
   coverWrap: {
     width: 50, height: 50, borderRadius: RADIUS.md, overflow: 'hidden',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1, borderColor: colors.borderSubtle,
   },
   cover: { width: 50, height: 50, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center' },
   coverOverlayActive: {

@@ -433,7 +433,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.07)',
+    borderBottomWidth: 0.5, borderBottomColor: colors.borderSubtle,
   },
   backBtn: { padding: SPACING.sm },
   headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
@@ -475,7 +475,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   card: {
     backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: SPACING.md,
+    borderWidth: 1, borderColor: colors.borderSubtle, padding: SPACING.md,
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
@@ -495,7 +495,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flex: 1,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.full,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1, borderColor: colors.border,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md - 2,
   },
   // Diamond — taller to emphasize the peak reward; tighter gap pulls the swatch
@@ -513,19 +513,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     color: '#CFF6FF', fontSize: 18.5, fontWeight: '900',
     textTransform: 'uppercase', letterSpacing: 0.3,
   },
-  themeDot: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
-  innerDivider: { height: 0.5, backgroundColor: 'rgba(255,255,255,0.07)', marginVertical: SPACING.md },
+  themeDot: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
+  innerDivider: { height: 0.5, backgroundColor: colors.borderSubtle, marginVertical: SPACING.md },
 
   catCard: {
     backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: SPACING.md, gap: SPACING.sm,
+    borderWidth: 1, borderColor: colors.borderSubtle, padding: SPACING.md, gap: SPACING.sm,
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
   catHead: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 2, marginBottom: SPACING.xs },
   catEmblemEmpty: {
     width: 50, height: 50, borderRadius: RADIUS.full,
-    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.borderSubtle,
     alignItems: 'center', justifyContent: 'center',
   },
   catTitle: { color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
@@ -553,7 +553,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   previewPageBtn: {
     marginTop: SPACING.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: SPACING.sm + 2, borderRadius: RADIUS.full,
-    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border,
   },
   previewPageBtnText: { color: colors.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
 
@@ -568,7 +568,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   ppCard: {
     borderRadius: RADIUS.xl, overflow: 'hidden',
-    backgroundColor: colors.background, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
   },
   ppBanner: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.lg,

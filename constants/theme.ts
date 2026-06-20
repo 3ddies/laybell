@@ -31,27 +31,38 @@ const DARK = {
   ...BRAND,
 };
 
+// A near-black graphite (but not the pure black of Dark), now with a faint WARM
+// bias instead of a cold pure-neutral so the surfaces read matte rather than
+// glossy. Same darkness as before — crisp whites + lighter borders keep surfaces
+// and text separating sharply. Still sits clearly above Dark's #090909.
 const GREY = {
-  background: '#2B2B2F',
-  surface: '#343439',
-  surfaceLight: '#3B3B41',
-  surfaceElevated: '#45454B',
-  border: '#54545C',
-  borderSubtle: '#3B3B41',
-  text: '#F6F6F7',
-  textSecondary: '#C2C2CA',
-  textMeta: '#9A9AA2',
-  textTertiary: '#74747C',
+  background: '#161514',
+  surface: '#1F1E1C',
+  surfaceLight: '#292826',
+  surfaceElevated: '#322F2D',
+  border: '#413F3B',
+  borderSubtle: '#2C2A28',
+  text: '#FFFFFF',
+  textSecondary: '#CECECE',
+  textMeta: '#999999',
+  textTertiary: '#6A6A6A',
   ...BRAND,
 };
 
+// Matte off-white. The old palette was cool-blue-tinted with PURE-white cards,
+// which read shiny/clinical; this drops the blue for a faint warm-neutral cast
+// and softens the brightest surfaces to an off-white (no pure #FFFFFF) so it
+// looks like flat paper rather than a glossy screen.
 const LIGHT = {
-  background: '#F2F2F6',
-  surface: '#EAEAEF',
-  surfaceLight: '#FFFFFF',
-  surfaceElevated: '#FFFFFF',
-  border: '#DCDCE2',
-  borderSubtle: '#E8E8EE',
+  background: '#F2F1ED',
+  surface: '#EAE8E3',
+  surfaceLight: '#F9F8F4',
+  surfaceElevated: '#FCFBF7',
+  // Crisp, clean hairlines: defined enough to read clearly against the off-white
+  // surfaces without going heavy. `border` is the standard visible edge; the
+  // subtle one is for quiet dividers.
+  border: '#D4D1C9',
+  borderSubtle: '#E2DFD7',
   text: '#16161A',
   textSecondary: '#5E5E66',
   textMeta: '#8A8A92',

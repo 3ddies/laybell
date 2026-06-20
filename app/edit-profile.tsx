@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
 import { resolveRingColors, chosenTier } from '../lib/badges';
+import { TEMPLATE_META, isLayoutTemplate } from '../lib/pageLayout';
 import { GENDER_OPTIONS, ageFromDob } from '../lib/profileOptions';
 import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
@@ -26,6 +27,10 @@ export default function EditProfileScreen() {
   const accentTier = chosenTier(liveProfile);
   const accentGrad = accentTier ? resolveRingColors(liveProfile, accentTier) : GRADIENTS.primary;
   const accent = accentGrad[0]; // single color for the glow
+  // Sub-label on the Page Layout button — the active template, or the default grid.
+  const pageLayoutLabel = isLayoutTemplate(liveProfile?.page_layout)
+    ? TEMPLATE_META[liveProfile!.page_layout as keyof typeof TEMPLATE_META].label
+    : 'Standard grid';
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -246,13 +251,13 @@ export default function EditProfileScreen() {
           <TouchableOpacity
             style={styles.squareBtn}
             activeOpacity={0.85}
-            onPress={() => Alert.alert('Page Layout', 'Custom page layouts are coming soon — unlock different profile configurations as you earn higher badge tiers.')}
+            onPress={() => router.push('/page-layout')}
           >
-            <LinearGradient colors={['#3A3A3A', '#222222']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.squareIcon}>
-              <Ionicons name="color-palette" size={28} color={colors.textSecondary} />
+            <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.squareIcon}>
+              <Ionicons name="color-palette" size={28} color="#fff" />
             </LinearGradient>
             <Text style={styles.squareLabel}>Page Layout</Text>
-            <View style={styles.soonPill}><Text style={styles.soonText}>COMING SOON</Text></View>
+            <Text style={styles.squareSub}>{pageLayoutLabel}</Text>
           </TouchableOpacity>
         </View>
 
@@ -297,7 +302,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.md,
-    borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.07)',
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   cancelBtn: { color: colors.textSecondary, fontSize: 15, fontWeight: '500' },
   headerTitle: { color: colors.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
@@ -309,7 +314,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 14, shadowOffset: { width: 0, height: 0 },
     elevation: 8,
   },
-  avatarImage: { width: 100, height: 100, borderRadius: RADIUS.full, borderWidth: 2, borderColor: 'rgba(255,255,255,0.10)' },
+  avatarImage: { width: 100, height: 100, borderRadius: RADIUS.full, borderWidth: 2, borderColor: colors.border },
   avatarPlaceholder: { width: 100, height: 100, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.text, fontSize: 40, fontWeight: '800' },
   cameraOverlay: {
@@ -324,19 +329,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   field: { gap: 8 },
   fieldLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
   input: {
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: 14,
     color: colors.text, fontSize: 16,
   },
   usernameRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md,
   },
   atSign: { color: colors.textSecondary, fontSize: 16, fontWeight: '600' },
   usernameInput: { flex: 1, paddingVertical: 14, color: colors.text, fontSize: 16 },
   bioInput: {
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md,
     paddingTop: SPACING.md, paddingBottom: SPACING.lg,
     color: colors.text, fontSize: 16, lineHeight: 22, minHeight: 110, textAlignVertical: 'top',
@@ -348,7 +353,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Read-only display box (e.g. Age) — dimmer surface + muted text so it reads
   // as non-editable next to the real inputs.
   readonlyBox: {
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSubtle,
     borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: 14,
   },
   readonlyValue: { color: colors.textSecondary, fontSize: 16 },
@@ -356,7 +361,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   genderRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   genderChip: {
     paddingVertical: SPACING.sm + 1, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border,
     backgroundColor: colors.surfaceLight,
   },
   genderChipActive: { borderColor: colors.primary, backgroundColor: colors.primary + '1A' },
@@ -367,7 +372,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   squareBtn: {
     flex: 1, aspectRatio: 1,
     backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, padding: SPACING.md,
   },
   squareIcon: {

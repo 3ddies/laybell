@@ -192,7 +192,7 @@ export default function ArchiveScreen() {
                       <View style={styles.typeBadge}>
                         <Ionicons
                           name={post.type === 'slideshow' ? 'copy' : post.type === 'video' ? 'videocam' : isAudioPost(post.type) ? 'musical-notes' : 'image'}
-                          size={11} color={colors.text}
+                          size={11} color="#fff"
                         />
                       </View>
                     </TouchableOpacity>
@@ -205,7 +205,7 @@ export default function ArchiveScreen() {
                         <Image source={{ uri: story.thumbnail_url ?? story.media_url }} style={styles.cellMedia} resizeMode="cover" />
                       )}
                       {story.media_type === 'video' && (
-                        <View style={styles.typeBadge}><Ionicons name="play" size={11} color={colors.text} /></View>
+                        <View style={styles.typeBadge}><Ionicons name="play" size={11} color="#fff" /></View>
                       )}
                     </TouchableOpacity>
                   ))}

@@ -104,7 +104,7 @@ export default function RepostsScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <LinearGradient colors={['#1C0A04', colors.background]} style={styles.emptyIcon}>
+            <LinearGradient colors={[colors.primary + '24', colors.background]} style={styles.emptyIcon}>
               <Ionicons name="repeat" size={36} color={colors.primary} />
             </LinearGradient>
             <Text style={styles.emptyTitle}>No reposts yet</Text>

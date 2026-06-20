@@ -230,7 +230,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           {/* VideoThumb generates a frame when thumbnail_url is missing, so still
               (non-autoplaying) videos always show a preview — not a placeholder. */}
           <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
-          <View style={styles.playBadge}><Ionicons name="play" size={12} color={colors.text} /></View>
+          <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
           </LinearGradient>
@@ -265,7 +265,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           ) : (
             <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
           )}
-          <View style={styles.playBadge}><Ionicons name="play" size={12} color={colors.text} /></View>
+          <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
           </LinearGradient>
@@ -291,7 +291,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
               <Ionicons name="musical-notes" size={28} color={colors.primary} />
             </LinearGradient>
           )}
-          <View style={styles.playBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={12} color={colors.text} /></View>
+          <View style={styles.playBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={12} color="#fff" /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>{p.caption || `@${p.profiles?.username}`}</Text>
           </LinearGradient>
@@ -316,7 +316,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
               <Ionicons name="copy" size={28} color={colors.primary} />
             </LinearGradient>
           )}
-          <View style={styles.playBadge}><Ionicons name="copy" size={12} color={colors.text} /></View>
+          <View style={styles.playBadge}><Ionicons name="copy" size={12} color="#fff" /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
           </LinearGradient>
@@ -408,7 +408,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
               <Ionicons name="musical-notes" size={24} color={colors.primary} />
             </LinearGradient>
           )}
-          <View style={styles.squareBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={11} color={colors.text} /></View>
+          <View style={styles.squareBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={11} color="#fff" /></View>
           <View style={styles.squareTitleBar}>
             <Text style={styles.squareTitleText} numberOfLines={1}>{p.caption || 'Audio Track'}</Text>
           </View>
@@ -419,7 +419,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       return (
         <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
           <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
-          <View style={styles.squareBadge}><Ionicons name="play" size={11} color={colors.text} /></View>
+          <View style={styles.squareBadge}><Ionicons name="play" size={11} color="#fff" /></View>
         </TouchableOpacity>
       );
     }
@@ -434,7 +434,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
               <Ionicons name="copy" size={24} color={colors.primary} />
             </LinearGradient>
           )}
-          <View style={styles.squareBadge}><Ionicons name="copy" size={11} color={colors.text} /></View>
+          <View style={styles.squareBadge}><Ionicons name="copy" size={11} color="#fff" /></View>
         </TouchableOpacity>
       );
     }

@@ -268,7 +268,7 @@ export default function MessagesScreen() {
         ListEmptyComponent={
           q ? (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
+              <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
                 <Ionicons name="search-outline" size={32} color={colors.primary} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>No chats found</Text>
@@ -276,7 +276,7 @@ export default function MessagesScreen() {
             </View>
           ) : tab === 'friends' ? (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
+              <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
                 <Ionicons name="people-outline" size={34} color={colors.primary} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>No chats with friends</Text>
@@ -284,7 +284,7 @@ export default function MessagesScreen() {
             </View>
           ) : tab === 'followers' ? (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
+              <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
                 <Ionicons name="person-outline" size={34} color={colors.primary} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>No chats from followers</Text>
@@ -292,7 +292,7 @@ export default function MessagesScreen() {
             </View>
           ) : (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.emptyIcon}>
+              <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
                 <Ionicons name="chatbubbles-outline" size={36} color={colors.primary} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>No messages yet</Text>

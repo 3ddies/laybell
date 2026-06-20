@@ -1,17 +1,6 @@
 // Shared profile option lists, used by onboarding and Edit Profile.
-
-// Forward-compatible check for a custom profile page layout/"template". The "Page
-// Layout" feature (see edit-profile.tsx) is coming soon and has no column yet, so
-// this reads a future `page_layout` field and treats anything other than
-// null/'default' as an active template. While the feature is unbuilt it returns
-// false for everyone — so callers that vary behavior by template (e.g. floating
-// spotlighted posts to the top of the profile Posts grid) just apply their default
-// for now, and automatically defer to the user's own arrangement once Page Layout
-// ships and sets this field.
-export function hasProfileTemplate(profile?: any): boolean {
-  const layout = profile?.page_layout;
-  return !!layout && layout !== 'default';
-}
+// (The Page Layout / profile-template logic now lives in lib/pageLayout.ts —
+// see activeLayout / hasActiveLayout.)
 
 // Gender presets. Collected (required) at onboarding and editable later from
 // Edit Profile. Stored privately on the profile — never shown publicly.

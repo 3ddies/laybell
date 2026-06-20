@@ -22,7 +22,9 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { formatCount } from '../../lib/format';
-import { normalizeUrl, displayUrl, hasProfileTemplate } from '../../lib/profileOptions';
+import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
+import { activeLayout, usedPostIds } from '../../lib/pageLayout';
+import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { slideshowThumb } from '../../lib/slideshow';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
@@ -236,6 +238,9 @@ export default function PublicProfileScreen() {
   // Active tab underline + text + glow take the owner's emblem-theme color, so
   // visitors see the owner's tier color on their profile too.
   const tabAccent = ownerTier ? ringColors[0] : colors.primary;
+  // The owner's custom Posts-grid layout, if they have one and still qualify for
+  // its tier (activeLayout re-checks their earned tier + resolves blocks).
+  const pageLayout = activeLayout(profile, posts);
   const activeTabDyn = {
     borderBottomColor: tabAccent,
     shadowColor: tabAccent, shadowOpacity: 0.3, shadowRadius: 2.5, shadowOffset: { width: 0, height: 1 }, elevation: 1,
@@ -255,7 +260,7 @@ export default function PublicProfileScreen() {
   // spotlightIds → revert to default. Skipped if the user runs a custom page
   // layout — then their own arrangement wins.
   function orderPostsForGrid(data: any[]) {
-    if (hasProfileTemplate(profile)) return data;
+    if (pageLayout) return data;
     return [...data].sort((a, b) => {
       const sa = spotlightIds.has(a.id) ? 1 : 0;
       const sb = spotlightIds.has(b.id) ? 1 : 0;
@@ -342,6 +347,43 @@ export default function PublicProfileScreen() {
     );
   }
 
+  // Open an image/slideshow post or a reel, expanding out of the tapped cell
+  // (shared by the normal grid and the custom layout blocks).
+  function openVisual(post: any, node?: any) {
+    const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
+    const seed = JSON.stringify(post);
+    if (node?.measureInWindow) {
+      node.measureInWindow((x: number, y: number, width: number, height: number) =>
+        router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
+    } else {
+      router.push({ pathname, params: { id: post.id, post: seed } });
+    }
+  }
+
+  // The Posts tab: the owner's custom feature layout (when active) above the
+  // normal grid of any leftover posts, or just the normal grid.
+  function renderPostsTab() {
+    const data = dataForTab('posts');
+    if (!pageLayout) return renderGrid(orderPostsForGrid(data), 'posts');
+    const used = usedPostIds(pageLayout.blocks);
+    const leftovers = data.filter(p => !used.has(p.id));
+    return (
+      <>
+        <ProfileLayoutGrid
+          layout={pageLayout}
+          posts={posts}
+          ownerTier={rawTier(profile)}
+          spotlightIds={spotlightIds}
+          playingId={playingId}
+          artistName={profile?.display_name}
+          onOpenVisual={openVisual}
+          onPlaySongs={(queue, idx) => playQueue(queue, idx)}
+        />
+        {leftovers.length > 0 && renderGrid(leftovers, 'posts')}
+      </>
+    );
+  }
+
   function renderGrid(data: any[], tabKey: string) {
     if (data.length === 0) {
       return (
@@ -384,14 +426,14 @@ export default function PublicProfileScreen() {
                 {/* Slide 1's screenshot (video) or slide 1 itself (image) */}
                 <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} resizeMode="cover" />
                 <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="copy" size={13} color={colors.text} />
+                  <Ionicons name="copy" size={13} color="#fff" />
                 </View>
               </>
             ) : post.type === 'video' ? (
               <>
                 <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.gridImage} />
                 <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="play" size={14} color={colors.text} />
+                  <Ionicons name="play" size={14} color="#fff" />
                 </View>
               </>
             ) : post.type === 'image' ? (
@@ -400,7 +442,7 @@ export default function PublicProfileScreen() {
               <>
                 <Image source={{ uri: post.cover_url }} style={styles.gridImage} resizeMode="cover" />
                 <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="musical-notes" size={13} color={colors.text} />
+                  <Ionicons name="musical-notes" size={13} color="#fff" />
                 </View>
               </>
             ) : (
@@ -545,7 +587,7 @@ export default function PublicProfileScreen() {
                 <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setup(); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
             >
-              {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : renderGrid(key === 'posts' ? orderPostsForGrid(dataForTab('posts')) : dataForTab(key), key)}
+              {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : key === 'posts' ? renderPostsTab() : renderGrid(dataForTab(key), key)}
             </ScrollView>
           </View>
         ))}

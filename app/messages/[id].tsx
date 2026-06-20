@@ -379,7 +379,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   bubbleOther: {
     backgroundColor: colors.surfaceElevated, borderBottomLeftRadius: 7,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1, borderColor: colors.border,
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },

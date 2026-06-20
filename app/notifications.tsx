@@ -250,7 +250,7 @@ export default function NotificationsScreen() {
             )}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <LinearGradient colors={['#1C0A04', colors.background]} style={styles.emptyIconWrap}>
+                <LinearGradient colors={[colors.primary + '24', colors.background]} style={styles.emptyIconWrap}>
                   <Ionicons name="notifications-outline" size={40} color={colors.primary} />
                 </LinearGradient>
                 <Text style={styles.emptyTitle}>No notifications yet</Text>

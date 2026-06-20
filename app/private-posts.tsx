@@ -73,7 +73,7 @@ export default function PrivatePostsScreen() {
                   </LinearGradient>
                 )}
                 <View style={styles.gridBadge}>
-                  <Ionicons name="lock-closed" size={10} color={colors.text} />
+                  <Ionicons name="lock-closed" size={10} color="#fff" />
                 </View>
               </TouchableOpacity>
             ))}
