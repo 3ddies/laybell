@@ -204,7 +204,7 @@ export default function PostDetailScreen() {
     return (
       // onClose (not the default back) so this pager never intercepts
       // beforeRemove — the expand hook already listens for that.
-      <SwipeBackPager onClose={popInstant}>
+      <SwipeBackPager onClose={popInstant} fastExit>
         <View style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -226,7 +226,7 @@ export default function PostDetailScreen() {
           onClose skips the shrink-to-thumbnail close (the page is already
           off-screen); the back button still uses the shrink via dismiss().
           animateIn off — the grow-from-thumbnail expand IS the entrance. */}
-      <SwipeBackPager onClose={popInstant} scrollEnabled={pageSwipeOn} animateIn={false}>
+      <SwipeBackPager onClose={popInstant} scrollEnabled={pageSwipeOn} animateIn={false} fastExit>
       <TabSwipeContext.Provider value={setPageSwipeOn}>
       {/* Darkening backdrop — fades as the post grows out of / shrinks into the thumb. */}
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]} />

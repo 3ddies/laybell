@@ -101,7 +101,7 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   wrap: { alignItems: 'center', gap: SPACING.sm },
-  previewBox: { backgroundColor: '#000', borderRadius: RADIUS.md, overflow: 'hidden', alignSelf: 'center', alignItems: 'center', justifyContent: 'center' },
+  previewBox: { backgroundColor: colors.background, borderRadius: RADIUS.md, overflow: 'hidden', alignSelf: 'center', alignItems: 'center', justifyContent: 'center' },
   track: {
     height: 52, borderRadius: RADIUS.sm, overflow: 'hidden', justifyContent: 'center',
     marginTop: SPACING.sm, backgroundColor: colors.surfaceElevated, width: '100%',

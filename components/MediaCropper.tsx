@@ -161,5 +161,5 @@ const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper
 export default MediaCropper;
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  frame: { overflow: 'hidden', backgroundColor: '#000', alignSelf: 'center' },
+  frame: { overflow: 'hidden', backgroundColor: colors.background, alignSelf: 'center' },
 });

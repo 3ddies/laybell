@@ -620,10 +620,17 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   avatarPlaceholder: { width: 82, height: 82, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.text, fontSize: 32, fontWeight: '700' },
 
-  statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
-  statItem: { alignItems: 'center', gap: 2 },
-  statNumber: { color: colors.primaryLight, fontSize: 22, fontWeight: '800' },
-  statLabel: { color: colors.textSecondary, fontSize: 12 },
+  // A dark translucent pill (matching the own-profile stats) so the counts and
+  // labels stay crisp and readable on ANY tier banner — they used to blend into
+  // the bronze/gold/default banner with no container behind them.
+  statsRow: {
+    flex: 1, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.28)', borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', paddingVertical: SPACING.sm,
+  },
+  statItem: { flex: 1, alignItems: 'center', gap: 3 },
+  statNumber: { color: '#FFFFFF', fontSize: 21, fontWeight: '800', letterSpacing: -0.3 },
+  statLabel: { color: 'rgba(245,245,245,0.7)', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
 
   infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

@@ -22,7 +22,7 @@ function formatMs(ms: number): string {
 //             only) so the viewfinder stays clear while the song rides along.
 type PlayerVariant = 'bar' | 'compact' | 'side';
 
-export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVariant }) {
+export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { variant?: PlayerVariant; bottomDock?: boolean }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { currentTrack, isPlaying, isBuffering, pause, resume, stop, seekTo, expanded, expand, adState, skipAudioAd } = useAudio();
@@ -41,6 +41,20 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
       useNativeDriver: true,
     }).start();
   }, [listenMode, listenSlide]);
+
+  // Routes WITHOUT the bottom tab bar (another user's profile, pushed screens):
+  // the bar drops by the tab-bar height (68) so it rests at the true bottom of
+  // the screen instead of floating where the absent tab bar would be. Native-
+  // driven translate, mirroring listenSlide; initialized so a song that starts
+  // while already on such a screen appears docked (no first-frame jump).
+  const dockSlide = useRef(new Animated.Value(bottomDock ? 68 : 0)).current;
+  useEffect(() => {
+    Animated.timing(dockSlide, {
+      toValue: bottomDock ? 68 : 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [bottomDock, dockSlide]);
 
   // Overlay variants (Create tab card / camera side chip): the player waits
   // out a short dwell on the tab before fading in — a quick swipe-through
@@ -109,7 +123,7 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
     const bottomOffset = 68 + insets.bottom + 6;
     const secsLeft = Math.max(1, Math.ceil((AD_SKIP_MS - adState.elapsedMs) / 1000));
     return (
-      <Animated.View style={[styles.container, { bottom: bottomOffset, transform: [{ translateY: listenSlide }] }]}>
+      <Animated.View style={[styles.container, { bottom: bottomOffset, transform: [{ translateY: Animated.add(listenSlide, dockSlide) }] }]}>
         <View style={styles.adBar}>
           <View style={styles.adCover}>
             <Ionicons name="megaphone" size={16} color={colors.primary} />
@@ -220,7 +234,7 @@ export default function MiniPlayer({ variant = 'bar' }: { variant?: PlayerVarian
       style={[styles.container, {
         bottom: bottomOffset,
         opacity: Animated.multiply(barFade, appearAnim),
-        transform: [{ translateY: Animated.add(listenSlide, appearRise) }],
+        transform: [{ translateY: Animated.add(Animated.add(listenSlide, dockSlide), appearRise) }],
       }]}
     >
       <View style={styles.scrubWrap}>

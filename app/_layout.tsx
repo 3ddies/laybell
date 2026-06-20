@@ -35,6 +35,13 @@ function AppContent() {
   // as a simplified side chip so the viewfinder stays clear.
   const tab = segments[0] === '(tabs)' ? (segments as string[])[1] : undefined;
   const playerVariant = tab === 'post' ? 'compact' as const : tab === 'story-camera' ? 'side' as const : 'bar' as const;
+  // The bottom tab bar only exists on the main (tabs) routes. On pushed screens
+  // (another user's profile, settings, etc.) the player should sit at the true
+  // bottom — so it docks down there, except the DM chat which has its own input
+  // bar to clear.
+  const onTabs = segments[0] === '(tabs)';
+  const inChat = segments[0] === 'messages' && (segments as string[]).length > 1;
+  const bottomDock = !onTabs && !inChat;
 
   // One-time welcome tour: onboarding arms a flag then drops the user onto the
   // tabs, so the live app is already mounted. The first time we land on the tabs
@@ -55,7 +62,7 @@ function AppContent() {
 
   const overlays = (
     <>
-      {!immersive && <MiniPlayer variant={playerVariant} />}
+      {!immersive && <MiniPlayer variant={playerVariant} bottomDock={bottomDock} />}
       <NowPlaying />
       <BadgeUpgradeToast />
     </>

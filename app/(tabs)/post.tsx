@@ -25,7 +25,7 @@ import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from
 import { GENRES } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
-import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
+import PhotoGrid, { type PickedMedia, type PhotoGridHandle } from '../../components/PhotoGrid';
 import { MAX_SLIDES, type Slide } from '../../lib/slideshow';
 import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/upload';
 import { peekPendingSpotlight, clearPendingSpotlight, activateCampaign, spotlightDurationPhrase } from '../../lib/spotlight';
@@ -139,6 +139,14 @@ export default function PostScreen() {
   const cropperRef = useRef<MediaCropperHandle>(null);
   const cropRef = useRef<CropRect | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
+  // Lets a pick scroll the camera-roll grid back to the top so the collapsing
+  // preview re-expands and shows the media that was just tapped.
+  const photoGridRef = useRef<PhotoGridHandle>(null);
+  // True once the gallery has been scrolled enough that the preview is collapsed.
+  // While collapsed, a tap on the preview area scrolls the grid back to the top
+  // (re-expanding it) — the cropper isn't usable at that size, so capturing the
+  // tap there is safe.
+  const [previewCollapsed, setPreviewCollapsed] = useState(false);
 
   // audio selection
   const [audioFile, setAudioFile] = useState<any>(null);
@@ -247,6 +255,17 @@ export default function PostScreen() {
     outputRange: [fullPreviewH, collapsedPreviewH],
     extrapolate: 'clamp',
   });
+
+  // Flip previewCollapsed once the user has scrolled the gallery down a bit, so
+  // the tap-to-expand overlay only exists when the preview is actually shrunk
+  // (and never blocks the cropper at the top). Only toggles on threshold crossings.
+  useEffect(() => {
+    const id = scrollY.addListener(({ value }) => {
+      const collapsed = value > 50;
+      setPreviewCollapsed(prev => (prev === collapsed ? prev : collapsed));
+    });
+    return () => scrollY.removeListener(id);
+  }, [scrollY]);
 
   const showGenre = postType !== 'audio' || audioKind === 'audio';
   const hasMedia = postType === 'audio' ? !!audioFile : postType === 'slideshow' ? slides.length > 0 : !!media;
@@ -362,6 +381,9 @@ export default function PostScreen() {
   }
 
   async function onPickMedia(m: PickedMedia) {
+    // Tapping a thumbnail (even far down the grid) snaps back to the top so the
+    // collapsing preview re-expands and shows the media that was just picked.
+    photoGridRef.current?.scrollToTop();
     // Long videos are never rejected — the edit step's trimmer picks a
     // 3-minute window out of them instead.
     if (m.type !== postType) setFormat(defaultFormatFor(m.type as any)); // image↔video
@@ -1215,6 +1237,16 @@ export default function PostScreen() {
                 <Ionicons name="close" size={18} color="#fff" />
               </TouchableOpacity>
             )}
+            {/* While scrolled down, tapping the shrunken preview snaps the gallery
+                back to the top and re-expands it (cropper is unusable at this size,
+                so capturing the tap here is safe). */}
+            {previewCollapsed && (
+              <TouchableOpacity
+                style={StyleSheet.absoluteFill}
+                activeOpacity={1}
+                onPress={() => photoGridRef.current?.scrollToTop()}
+              />
+            )}
           </Animated.View>
 
           {/* Single / Slideshow toggle + hint */}
@@ -1236,6 +1268,7 @@ export default function PostScreen() {
           <View style={{ flex: 1 }}>
             <ErrorBoundary label="Couldn't open your photos">
               <PhotoGrid
+                ref={photoGridRef}
                 selectedIds={slideshowMode
                   ? slides.map(s => s.id).filter((x): x is string => x != null)
                   : (pickedId ? [pickedId] : [])}
@@ -1335,7 +1368,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   uploadBarTrack: { height: 3, backgroundColor: colors.surfaceLight, overflow: 'hidden' },
   uploadBarFill: { height: 3, backgroundColor: colors.primary },
 
-  previewArea: { backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.xs, overflow: 'hidden' },
+  previewArea: { backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.xs, overflow: 'hidden' },
   previewPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, gap: SPACING.sm, alignSelf: 'center' },
   previewPlaceholderText: { color: colors.textTertiary, fontSize: 14 },
   aspectBtn: {

@@ -54,21 +54,21 @@ export default function FollowersScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={colors.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.primaryLight} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Followers</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {loading ? (
-        <View style={styles.centered}><ActivityIndicator color={colors.primary} size="large" /></View>
+        <View style={styles.centered}><ActivityIndicator color={colors.primaryLight} size="large" /></View>
       ) : (
         <FlatList
           data={users}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryLight} />
           }
           ListEmptyComponent={
             <View style={styles.empty}>

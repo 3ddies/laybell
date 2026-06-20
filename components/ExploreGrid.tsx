@@ -497,7 +497,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     position: 'absolute', left: 0, right: 0, bottom: 0,
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.lg, paddingBottom: 6,
   },
-  mediaUser: { color: colors.text, fontSize: 11, fontWeight: '600' },
+  // Always white — it sits on a dark gradient overlay over the media in every
+  // theme, so the themed (black-in-light) text color would be unreadable there.
+  mediaUser: { color: '#fff', fontSize: 11, fontWeight: '600' },
 
   musicCard: {
     width: COL_W, borderRadius: RADIUS.md, overflow: 'hidden',

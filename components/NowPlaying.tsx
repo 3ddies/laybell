@@ -91,7 +91,7 @@ function Controls() {
 }
 
 export default function NowPlaying() {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { currentTrack, expanded, collapse, setCommentComposing, noteCommentEngagement, clearCommentEngagement, adState, skipAudioAd } = useAudio();
   const { show: showOptions } = usePostOptions();
@@ -214,6 +214,16 @@ export default function NowPlaying() {
 
   if (!render || !currentTrack) return null;
   const pid = currentTrack.id;
+  // Opaque backdrop — no see-through (the earlier translucent stop looked glitchy
+  // in Light mode). Dark themes keep the rich warm gradient; Light mode gets a
+  // subtle, OPAQUE lift only at the very top that fades quickly to the solid page
+  // background, so it reads clean and matches the theme.
+  const sheetGradient = (mode === 'light'
+    ? [colors.surfaceLight, colors.background, colors.background]
+    : ['#2A1206', '#150A04', colors.background]) as readonly [string, string, string];
+  const sheetLocations = (mode === 'light' ? [0, 0.18, 1] : [0, 0.5, 1]) as readonly [number, number, number];
+  // Drag handle: light on the dark sheet, dark on the light sheet.
+  const handleColor = mode === 'light' ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.3)';
 
   const goProfile = () => { if (ownerId) { collapse(); router.push(`/profile/${ownerId}`); } };
 
@@ -245,7 +255,7 @@ export default function NowPlaying() {
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, styles.layer, { transform: [{ translateY: sheetY }] }]}>
-      <LinearGradient colors={['#2A1206', '#150A04', colors.background]} style={styles.container}>
+      <LinearGradient colors={sheetGradient} locations={sheetLocations as any} style={styles.container}>
         {/* Top drag zone — swipe down to close (native gesture: activates on a
             6px downward move; clearly horizontal or upward moves fail fast so
             the header buttons stay tappable). */}
@@ -257,7 +267,7 @@ export default function NowPlaying() {
           failOffsetX={[-16, 16]}
         >
         <Animated.View>
-          <View style={styles.handle} />
+          <View style={[styles.handle, { backgroundColor: handleColor }]} />
           <View style={styles.header}>
             <TouchableOpacity style={styles.headerBtn} onPress={collapse}>
               <Ionicons name="chevron-down" size={26} color={colors.text} />
@@ -436,7 +446,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
   },
   tapStatActiveLike: { borderColor: colors.like, backgroundColor: colors.like + '1A' },
-  tapStatActiveSave: { borderColor: 'rgba(255,255,255,0.45)', backgroundColor: 'rgba(255,255,255,0.10)' },
+  tapStatActiveSave: { borderColor: colors.text + '66', backgroundColor: colors.text + '14' },
   tapStatNum: { color: colors.text, fontSize: 16, fontWeight: '700' },
   centerStat: { flex: 1, alignItems: 'center' },
   centerStatNum: { color: colors.text, fontSize: 18, fontWeight: '800' },

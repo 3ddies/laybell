@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, ActivityIndicator,
 } from 'react-native';
@@ -31,12 +31,11 @@ function formatDur(s: number) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-// Device camera-roll grid (Instagram-style) showing photos AND videos together.
-// Thumbnails render the asset's ph:// URI via expo-image (fast, poster frames for
-// videos); the chosen asset is resolved to a file:// path only on tap. Selected
-// items show a check (single) or an order number (slideshow), and tapping a
-// selected item removes it (onRemove).
-export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, selectedIds = [], numbered = false }: {
+// Imperative handle: lets the host scroll the grid back to the top (e.g. after a
+// pick, so the collapsing preview re-expands and shows the chosen media).
+export type PhotoGridHandle = { scrollToTop: () => void };
+
+type PhotoGridProps = {
   onPick: (m: PickedMedia) => void;
   onRemove?: (id: string) => void;
   onScroll?: (e: any) => void;
@@ -47,7 +46,17 @@ export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, 
   selectedIds?: string[];
   // Show the selection order (slideshow) instead of a plain check (single).
   numbered?: boolean;
-}) {
+};
+
+// Device camera-roll grid (Instagram-style) showing photos AND videos together.
+// Thumbnails render the asset's ph:// URI via expo-image (fast, poster frames for
+// videos); the chosen asset is resolved to a file:// path only on tap. Selected
+// items show a check (single) or an order number (slideshow), and tapping a
+// selected item removes it (onRemove).
+const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid(
+  { onPick, onRemove, onScroll, onScrollActive, selectedIds = [], numbered = false },
+  ref,
+) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [permission, requestPermission] = MediaLibrary.usePermissions();
@@ -57,6 +66,11 @@ export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, 
   const [loading, setLoading] = useState(false);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const loadingRef = useRef(false);
+  const flatListRef = useRef<FlatList>(null);
+
+  useImperativeHandle(ref, () => ({
+    scrollToTop: () => flatListRef.current?.scrollToOffset({ offset: 0, animated: true }),
+  }), []);
 
   const loadPage = useCallback(async (after?: string) => {
     if (loadingRef.current) return;
@@ -150,6 +164,7 @@ export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, 
 
   return (
     <FlatList
+      ref={flatListRef}
       data={data}
       keyExtractor={(item) => item.id}
       numColumns={NUM_COLS}
@@ -206,7 +221,9 @@ export default function PhotoGrid({ onPick, onRemove, onScroll, onScrollActive, 
       }}
     />
   );
-}
+});
+
+export default PhotoGrid;
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   cell: { width: CELL, height: CELL, backgroundColor: colors.surfaceLight },

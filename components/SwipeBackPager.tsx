@@ -40,9 +40,14 @@ type Props = {
   // with an onClose also keep their own beforeRemove choreography, so the
   // back-press interception above is skipped for them.
   onClose?: () => void;
+  // Post/reel viewers: the instant a swipe is committed past halfway, jump the
+  // content the rest of the way off and pop — instead of riding the slow native
+  // settle, which is long enough that the user could accidentally re-grab the
+  // content as it exits.
+  fastExit?: boolean;
 };
 
-export default function SwipeBackPager({ children, scrollEnabled = true, animateIn = true, onClose }: Props) {
+export default function SwipeBackPager({ children, scrollEnabled = true, animateIn = true, onClose, fastExit = false }: Props) {
   const router = useRouter();
   const navigation = useNavigation<any>();
   const pagerRef = useRef<PagerView>(null);
@@ -100,7 +105,17 @@ export default function SwipeBackPager({ children, scrollEnabled = true, animate
       // it to the nearest one so it always completes the swipe or cancels cleanly —
       // landing on 0 then runs the normal dismiss path via onPageSelected.
       onPageScrollStateChanged={(e) => {
-        if (e.nativeEvent.pageScrollState !== 'idle') return;
+        const state = e.nativeEvent.pageScrollState;
+        // fastExit (post viewer): the moment a committed swipe is released (settling
+        // toward the dismiss page 0), jump the content the rest of the way off and
+        // let onPageSelected(0) pop — skipping the slow native settle so the exit is
+        // snappy and can't be re-grabbed mid-slide. Guards exclude the entry slide
+        // (armed), a snap-back to content (fraction < 0.5), and the back-button path.
+        if (state === 'settling' && fastExit && armed.current && !closing.current && !pendingBack.current && fraction.current < 0.5) {
+          pagerRef.current?.setPageWithoutAnimation(0);
+          return;
+        }
+        if (state !== 'idle') return;
         const f = fraction.current;
         if (f > 0.02 && f < 0.98) pagerRef.current?.setPage(f >= 0.5 ? 1 : 0);
       }}

@@ -201,7 +201,7 @@ export default function MessagesScreen() {
     // reveal the screen underneath — one motion, same feel as the tab pager.
     <SwipeBackPager>
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + SPACING.sm + 4 }]}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, SPACING.md) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
         </TouchableOpacity>
@@ -419,11 +419,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   tabRow: {
     flexDirection: 'row',
     marginHorizontal: SPACING.md, marginBottom: SPACING.sm + 4,
-    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.full, padding: 3, gap: 3,
+    // Recessed track (a touch darker than the raised selected pill) so the
+    // segmented control reads correctly in every theme.
+    backgroundColor: colors.surface, borderRadius: RADIUS.full, padding: 3, gap: 3,
   },
   tab: { flex: 1, paddingVertical: 9, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  // Neutral raised "selected segment" (iOS-style), not a colored highlight.
-  tabActive: { backgroundColor: '#2C2C2E', ...SHADOWS.sm },
+  // Neutral raised "selected segment" (iOS-style), themed so the active pill +
+  // its text stay legible on light backgrounds (was a hardcoded near-black that
+  // went black-on-black in white mode).
+  tabActive: { backgroundColor: colors.surfaceElevated, borderWidth: 0.5, borderColor: colors.border, ...SHADOWS.sm },
   tabText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   tabTextActive: { color: colors.text, fontWeight: '700' },
   searchClear: { padding: 2 },

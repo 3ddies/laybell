@@ -22,12 +22,20 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 
 export default function ChatScreen() {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const { profile: myProfile } = useProfile();
   const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // The floating input bar is a frosted-glass strip; in Light mode it must use a
+  // light blur + light fills (it was hardcoded dark → a dark bar on a white app).
+  const light = mode === 'light';
+  const barTint = light ? 'light' : 'dark';
+  const barBg = light ? 'rgba(255,255,255,0.6)' : 'rgba(9,9,9,0.55)';
+  const barSeam = light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)';
+  const inputFill = light ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)';
+  const inputBorder = light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.18)';
   const flatListRef = useRef<FlatList>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -167,7 +175,7 @@ export default function ChatScreen() {
   function renderBody(body: string, isOwn: boolean, time: string) {
     const parts = body.split(/(laybell:\/\/\S+|https?:\/\/\S+)/g);
     return (
-      <Text style={styles.bubbleText}>
+      <Text style={[styles.bubbleText, isOwn && styles.bubbleTextOwn]}>
         {parts.map((part, i) => {
           if (!part) return null;
           if (part.startsWith('laybell://') || /^https?:\/\//.test(part)) {
@@ -198,7 +206,7 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: SPACING.lg }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
         </TouchableOpacity>
@@ -305,14 +313,14 @@ export default function ChatScreen() {
       <Animated.View style={[styles.inputBarWrap, { transform: [{ translateY: kbShift }] }]}>
       <BlurView
         intensity={70}
-        tint="dark"
+        tint={barTint}
         experimentalBlurMethod="dimezisBlurView"
         // Above the keyboard the home-indicator inset is irrelevant — use the
         // slim padding so the bar hugs the keyboard like iMessage.
-        style={[styles.inputBar, { paddingBottom: kbUp ? SPACING.sm + 2 : Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}
+        style={[styles.inputBar, { backgroundColor: barBg, borderTopColor: barSeam, paddingBottom: kbUp ? SPACING.sm + 2 : Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}
       >
         <TextInput
-          style={styles.input}
+          style={[styles.input, { backgroundColor: inputFill, borderColor: inputBorder }]}
           placeholder="Message..."
           placeholderTextColor={colors.textTertiary}
           value={newMessage}
@@ -383,7 +391,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  bubbleText: { color: colors.text, fontSize: 16, lineHeight: 22, letterSpacing: 0.1 },
+  bubbleText: { color: colors.text, fontSize: 16, lineHeight: 22, letterSpacing: -0.3, fontWeight: '500' },
+  // Sent bubbles are the orange gradient → keep their text white in every theme
+  // (the themed color went dark-on-orange in Light mode).
+  bubbleTextOwn: { color: '#fff' },
   link: { textDecorationLine: 'underline', fontWeight: '700' },
   linkOwn: { color: '#fff' },
   linkOther: { color: colors.primaryLight },
