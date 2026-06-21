@@ -1034,7 +1034,7 @@ export default function PostScreen() {
           <View style={styles.visibilityRow}>
             <View style={styles.visibilityLeft}>
               <Ionicons name={isPublic ? 'globe-outline' : 'people-outline'} size={20} color={colors.primary} />
-              <View>
+              <View style={styles.visibilityText}>
                 <Text style={styles.visibilityLabel}>{isPublic ? 'Public' : 'Friends only'}</Text>
                 <Text style={styles.visibilitySub}>{isPublic ? 'Anyone on Laybell can see this' : 'Only your friends (mutual follows) can see this'}</Text>
               </View>
@@ -1509,11 +1509,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   songChangeText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
 
   visibilityRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SPACING.sm,
     backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, padding: SPACING.md,
   },
   visibilityLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
+  // Constrains the label/sub text to the available width so the longer "Friends
+  // only" subtitle wraps instead of running underneath the Switch.
+  visibilityText: { flex: 1 },
   visibilityLabel: { color: colors.text, fontSize: 15, fontWeight: '600' },
   visibilitySub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
 

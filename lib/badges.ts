@@ -587,7 +587,16 @@ export async function evaluateBadges(opts: { silent?: boolean } = {}): Promise<E
 
     const prevTier = asTier(profileRes.data?.badge_tier);
     if (tier !== prevTier) {
-      await supabase.from('profiles').update({ badge_tier: tier }).eq('id', user.id);
+      // The DISPLAYED badge tracks the earned tier: on any upgrade/downgrade, snap
+      // the profile theme (which doubles as the shown emblem — see chosenTier) to
+      // the tier they just earned/lost, so a user always presents their CURRENT
+      // status rather than a stale choice. `default` = no badge (tier dropped to
+      // none). Between tier changes the theme is left alone, so a deliberate
+      // lower-badge pick still sticks until the next real change.
+      await supabase
+        .from('profiles')
+        .update({ badge_tier: tier, profile_theme: tier ?? 'default' })
+        .eq('id', user.id);
       emitTier(tier);
       // Only fire the upgrade notification when the tier actually went UP.
       if (tier && tierRank(tier) > tierRank(prevTier)) emitTierUpgrade(tier);

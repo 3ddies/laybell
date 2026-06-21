@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   Alert, Image, TextInput, Linking, Dimensions, Pressable, KeyboardAvoidingView,
@@ -34,6 +34,7 @@ import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 
 const VIDEO_MAX_SEC = 60;
+const HOLD_MS = 240;            // hold the photo shutter longer than this → record video
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 // Text-size slider range (editor): top of the track = biggest type.
@@ -89,13 +90,20 @@ export default function StoryCameraScreen() {
   const focusAnim = useRef(new Animated.Value(0)).current;
   const [screenFlash, setScreenFlash] = useState(false);         // front-camera "flash"
   const [libThumb, setLibThumb] = useState<string | null>(null); // last library asset preview
-  const holdRef = useRef<null | 'starting' | 'recording'>(null); // hold-shutter-to-record
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null); // tap-vs-hold decision timer
+  const pressActiveRef = useRef(false);                           // finger is currently down on the shutter
+  const photoHoldRef = useRef(false);                             // this recording came from holding in PHOTO mode (→ restore PHOTO on stop)
 
   const [recording, setRecording] = useState(false);
   const [recSecs, setRecSecs] = useState(0);
   const recSecsRef = useRef(0);
   const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const recProgress = useRef(new Animated.Value(0)).current;     // top progress bar (0→1 over 60s)
+  // Shutter button animations (all JS-driven so colour + transform can share a
+  // view): press feedback, photo↔video tint, and the idle→recording morph.
+  const pressScale = useRef(new Animated.Value(1)).current;      // tactile press scale
+  const modeAnim = useRef(new Animated.Value(0)).current;        // 0 photo · 1 video (inner colour)
+  const recAnim = useRef(new Animated.Value(0)).current;         // 0 idle · 1 recording (ring + dot morph)
 
   const [stage, setStage] = useState<'capture' | 'preview'>('capture');
   // Pager-swipe locking:
@@ -211,13 +219,32 @@ export default function StoryCameraScreen() {
     }
   }
 
-  // Ask for camera access the first time you actually open the camera.
+  // Ask for camera (then mic) access the first time you actually open the
+  // camera. Granting the mic up-front matters: requesting it mid-gesture (when
+  // you first hold to record) pops a dialog that derails that first recording —
+  // which is exactly why the very first hold used to fail.
   useEffect(() => {
-    if (isFocused && camPermission && !camPermission.granted && camPermission.canAskAgain) {
+    if (!isFocused) return;
+    if (camPermission && !camPermission.granted && camPermission.canAskAgain) {
       requestCamPermission();
+    } else if (camPermission?.granted && micPermission && !micPermission.granted && micPermission.canAskAgain) {
+      requestMicPermission();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFocused, camPermission]);
+  }, [isFocused, camPermission, micPermission]);
+
+  // Animate the shutter between photo/video tint and idle/recording shape so the
+  // button morphs smoothly instead of snapping between styles.
+  useEffect(() => {
+    Animated.timing(modeAnim, {
+      toValue: mode === 'video' ? 1 : 0, duration: 200, easing: Easing.out(Easing.quad), useNativeDriver: false,
+    }).start();
+  }, [mode, modeAnim]);
+  useEffect(() => {
+    Animated.spring(recAnim, {
+      toValue: recording ? 1 : 0, friction: 7, tension: 90, useNativeDriver: false,
+    }).start();
+  }, [recording, recAnim]);
 
   // Gallery button preview: the most recent library asset — only if the library
   // permission was already granted elsewhere (never prompts from here).
@@ -255,8 +282,10 @@ export default function StoryCameraScreen() {
         if (recTimer.current) { clearInterval(recTimer.current); recTimer.current = null; }
         if (countdownTimer.current) { clearInterval(countdownTimer.current); countdownTimer.current = null; }
         if (afTimer.current) { clearTimeout(afTimer.current); afTimer.current = null; }
+        if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
         if (recordingRef.current) cameraRef.current?.stopRecording();
-        holdRef.current = null;
+        pressActiveRef.current = false;
+        photoHoldRef.current = false;
         setRecording(false);
         setRecSecs(0);
         recProgress.setValue(0);
@@ -295,6 +324,27 @@ export default function StoryCameraScreen() {
   const recordingRef = useRef(false); recordingRef.current = recording;
   const facingRef = useRef(facing); facingRef.current = facing;
   const countdownRef = useRef<number | null>(null); countdownRef.current = countdown;
+
+  // Dedicated shutter responder. A PanResponder (not Pressable) so a hold ends
+  // only on a true finger-lift; drifting off the button — or a parent pager/
+  // viewfinder trying to grab the touch — can't cancel a recording mid-way
+  // (that was the glitchy/unpredictable behaviour). It delegates to refs holding
+  // the latest handlers so the once-created responder always sees current state.
+  const shutterHandlers = useRef<{ down: () => void; move: (g: any) => void; up: () => void }>({
+    down: () => {}, move: () => {}, up: () => {},
+  });
+  const shutterZoomBase = useRef(0);
+  const shutterPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => shutterHandlers.current.down(),
+      onPanResponderMove: (_e, g) => shutterHandlers.current.move(g),
+      onPanResponderRelease: () => shutterHandlers.current.up(),
+      onPanResponderTerminate: () => shutterHandlers.current.up(),
+    }),
+  ).current;
 
   function showZoomHud() {
     setZoomHudVisible(true);
@@ -425,8 +475,14 @@ export default function StoryCameraScreen() {
     }
   }
 
-  async function startRecording(fromHold = false) {
-    if (recording) return;
+  // The camera lives in video mode permanently (CameraView mode="video"), so the
+  // video pipeline is always ready — recording starts instantly, no mode switch,
+  // no retry. Photos still work because iOS keeps the photo output alive in video
+  // mode. `photoHold` just remembers to flip the UI label back to PHOTO after a
+  // hold-to-record that started from photo mode.
+  function beginRecording() {
+    if (recordingRef.current) return;
+    recordingRef.current = true;
     setRecording(true);
     setRecSecs(0);
     recSecsRef.current = 0;
@@ -435,25 +491,23 @@ export default function StoryCameraScreen() {
     Animated.timing(recProgress, {
       toValue: 1, duration: VIDEO_MAX_SEC * 1000, easing: Easing.linear, useNativeDriver: false,
     }).start();
-    try {
-      const video = await cameraRef.current?.recordAsync({ maxDuration: VIDEO_MAX_SEC });
-      if (video?.uri) {
-        setCapturedMedia({ uri: video.uri, type: 'video', durationSec: recSecsRef.current || undefined });
-      }
-    } catch (e: any) {
-      Alert.alert('Could not record video', e?.message ?? 'Please try again.');
-    } finally {
-      if (recTimer.current) { clearInterval(recTimer.current); recTimer.current = null; }
-      recProgress.stopAnimation();
-      recProgress.setValue(0);
-      setRecording(false);
-      if (fromHold || holdRef.current) { holdRef.current = null; setMode('picture'); }
-    }
+    cameraRef.current?.recordAsync({ maxDuration: VIDEO_MAX_SEC })
+      .then((video) => {
+        if (video?.uri) setCapturedMedia({ uri: video.uri, type: 'video', durationSec: recSecsRef.current || undefined });
+      })
+      .catch((e: any) => { Alert.alert('Could not record video', e?.message ?? 'Please try again.'); })
+      .finally(() => {
+        if (recTimer.current) { clearInterval(recTimer.current); recTimer.current = null; }
+        recProgress.stopAnimation();
+        recProgress.setValue(0);
+        recordingRef.current = false;
+        setRecording(false);
+        if (photoHoldRef.current) { photoHoldRef.current = false; setMode('picture'); }
+      });
   }
 
-  function stopRecording() {
-    if (!recording) return;
-    cameraRef.current?.stopRecording();
+  function endRecording() {
+    cameraRef.current?.stopRecording();   // safe no-op if nothing is recording
   }
 
   function setCapturedMedia(c: Captured) {
@@ -483,43 +537,68 @@ export default function StoryCameraScreen() {
     }, 1000);
   }
 
-  function capture() {
+  function animatePress(down: boolean) {
+    Animated.spring(pressScale, {
+      toValue: down ? 0.9 : 1, friction: 6, tension: 160, useNativeDriver: true,
+    }).start();
+  }
+
+  // One shutter, three intents: tap = photo, hold = video, tap-while-recording =
+  // stop. A PanResponder (see shutterPan) so the gesture only ends on a real
+  // finger-lift — drift or a parent grab can't cancel a hold mid-recording.
+  function onShutterDown() {
+    animatePress(true);
+    if (recordingRef.current || countdown != null) return;
+    pressActiveRef.current = true;
+    shutterZoomBase.current = zoomRef.current;
+    if (mode !== 'picture') return;          // VIDEO mode records on release (tap)
+    // Arm the hold→video timer. Releasing before it fires is a photo tap.
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      if (!pressActiveRef.current) return;             // already released → it was a tap
+      animatePress(false);                              // hand the button to the recording UI
+      photoHoldRef.current = true;                      // restore PHOTO label when it stops
+      setMode('video');                                 // UI label only (camera is already video)
+      beginRecording();                                 // instant — pipeline is always ready
+    }, HOLD_MS);
+  }
+  // Slide up while holding to zoom in, once recording is live (IG-style). The
+  // threshold ignores the small finger jitter of just holding still.
+  function onShutterMove(g: { dy: number }) {
+    if (!recordingRef.current || Math.abs(g.dy) < 12) return;
+    applyZoom(shutterZoomBase.current - (g.dy + (g.dy < 0 ? 12 : -12)) / 600);
+  }
+  function onShutterUp() {
+    animatePress(false);
+    const active = pressActiveRef.current;
+    pressActiveRef.current = false;
+    if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
+
+    if (countdown != null) { cancelCountdown(); return; }   // any tap cancels the self-timer
+    if (recordingRef.current) { endRecording(); return; }   // recording (hold or video-tap) → stop
+    if (!active) return;                                    // not our press
+
+    // A quick release with nothing recording → it's a TAP.
     if (mode === 'video') {
-      recording ? stopRecording() : startRecording();
+      timerMode > 0 ? startCountdown(beginRecording) : beginRecording();
     } else {
-      takePhoto();
+      timerMode > 0 ? startCountdown(takePhoto) : takePhoto();
     }
   }
+  shutterHandlers.current.down = onShutterDown;
+  shutterHandlers.current.move = onShutterMove;
+  shutterHandlers.current.up = onShutterUp;
 
-  function onShutterPress() {
-    if (countdown != null) { cancelCountdown(); return; }
-    if (timerMode > 0 && !recording) startCountdown(capture);
-    else capture();
-  }
-
-  // Hold the shutter in PHOTO mode to record a video; release to stop.
-  async function onShutterLongPress() {
-    if (mode !== 'picture' || recording || countdown != null) return;
-    if (micPermission && !micPermission.granted && micPermission.canAskAgain) {
-      await requestMicPermission();
-    }
-    holdRef.current = 'starting';
-    setMode('video'); // the pipeline needs a beat to reconfigure before recording
-    setTimeout(() => {
-      if (holdRef.current === 'starting') {
-        holdRef.current = 'recording';
-        startRecording(true);
-      }
-    }, 420);
-  }
-  function onShutterPressOut() {
-    if (holdRef.current === 'starting') {
-      holdRef.current = null;
-      setMode('picture');
-    } else if (holdRef.current === 'recording') {
-      stopRecording();
-    }
-  }
+  // Stable (memoized) interpolations so the 1s timer re-render during recording
+  // doesn't rebuild the animated styles and cause flicker.
+  const shutterStyle = useMemo(() => ({
+    ringBorder: recAnim.interpolate({ inputRange: [0, 1], outputRange: ['#FFFFFF', colors.error] }),
+    ringScale: recAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.05] }),
+    dotSize: recAnim.interpolate({ inputRange: [0, 1], outputRange: [SHUTTER - 16, 28], extrapolate: 'clamp' }),
+    dotRadius: recAnim.interpolate({ inputRange: [0, 1], outputRange: [(SHUTTER - 16) / 2, 9], extrapolate: 'clamp' }),
+    dotColor: modeAnim.interpolate({ inputRange: [0, 1], outputRange: ['#FFFFFF', colors.error] }),
+    controlsFade: recAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+  }), [recAnim, modeAnim, colors.error]);
 
   async function pickFromLibrary() {
     const ImagePicker = await import('expo-image-picker');
@@ -924,8 +1003,10 @@ export default function StoryCameraScreen() {
           style={StyleSheet.absoluteFill}
           facing={facing}
           flash={flash}
-          enableTorch={facing === 'back' && mode === 'video' && torchOn}
-          mode={mode}
+          enableTorch={facing === 'back' && torchOn && (mode === 'video' || recording)}
+          // Permanent video mode: no photo↔video reconfiguration race. Photos
+          // still work via takePictureAsync (iOS keeps the photo output alive).
+          mode="video"
           zoom={zoom}
           // Output matches the mirrored selfie preview without a re-encode pass.
           mirror={facing === 'front'}
@@ -1053,9 +1134,10 @@ export default function StoryCameraScreen() {
 
       {/* Bottom controls */}
       <View style={[styles.bottom, { paddingBottom: insets.bottom + SPACING.md }]}>
-        {/* iOS lens presets (real ultra-wide, not a digital crop) */}
-        {!recording && hasUltraWide && facing === 'back' && (
-          <View style={styles.lensRow}>
+        {/* iOS lens presets (real ultra-wide, not a digital crop). Kept mounted
+            and faded during recording so the controls don't pop in/out. */}
+        {hasUltraWide && facing === 'back' && (
+          <Animated.View style={[styles.lensRow, { opacity: shutterStyle.controlsFade }]} pointerEvents={recording ? 'none' : 'auto'}>
             {([true, false] as const).map((uw) => (
               <TouchableOpacity
                 key={String(uw)}
@@ -1065,23 +1147,22 @@ export default function StoryCameraScreen() {
                 <Text style={[styles.lensText, ultraWide === uw && styles.lensTextActive]}>{uw ? '.5' : '1×'}</Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </Animated.View>
         )}
 
-        {!recording && (
-          <View style={styles.modeRow}>
-            {(['picture', 'video'] as Mode[]).map((m) => (
-              <TouchableOpacity key={m} onPress={() => m !== mode && toggleMode()} style={[styles.modePill, mode === m && styles.modePillActive]}>
-                <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
-                  {m === 'picture' ? 'PHOTO' : 'VIDEO'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
+        <Animated.View style={[styles.modeRow, { opacity: shutterStyle.controlsFade }]} pointerEvents={recording ? 'none' : 'auto'}>
+          {(['picture', 'video'] as Mode[]).map((m) => (
+            <TouchableOpacity key={m} onPress={() => m !== mode && toggleMode()} style={[styles.modePill, mode === m && styles.modePillActive]}>
+              <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
+                {m === 'picture' ? 'PHOTO' : 'VIDEO'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </Animated.View>
 
         <View style={styles.shutterRow}>
-          {!recording ? (
+          {/* Faded out (not unmounted) while recording so it doesn't pop. */}
+          <Animated.View style={{ opacity: shutterStyle.controlsFade }} pointerEvents={recording ? 'none' : 'auto'}>
             <TouchableOpacity style={styles.galleryBtn} onPress={pickFromLibrary}>
               {libThumb ? (
                 <ExpoImage source={{ uri: libThumb }} style={styles.galleryThumb} contentFit="cover" />
@@ -1089,37 +1170,42 @@ export default function StoryCameraScreen() {
                 <Ionicons name="images-outline" size={26} color="#fff" />
               )}
             </TouchableOpacity>
-          ) : <View style={styles.galleryBtn} />}
+          </Animated.View>
 
-          <Pressable
-            onPress={onShutterPress}
-            onLongPress={onShutterLongPress}
-            onPressOut={onShutterPressOut}
-            delayLongPress={260}
-            style={({ pressed }) => [styles.shutterOuter, recording && styles.shutterOuterRec, pressed && !recording && { transform: [{ scale: 0.92 }] }]}
-          >
-            <View
-              style={[
-                styles.shutterInner,
-                mode === 'video' && styles.shutterInnerVideo,
-                recording && styles.shutterInnerRecording,
-              ]}
-            />
-          </Pressable>
+          <Animated.View {...shutterPan.panHandlers} style={styles.shutterHit}>
+            <Animated.View style={{ transform: [{ scale: pressScale }] }}>
+              <Animated.View
+                style={[styles.shutterOuter, {
+                  borderColor: shutterStyle.ringBorder,
+                  transform: [{ scale: shutterStyle.ringScale }],
+                }]}
+              >
+                <Animated.View
+                  style={{
+                    width: shutterStyle.dotSize,
+                    height: shutterStyle.dotSize,
+                    borderRadius: shutterStyle.dotRadius,
+                    backgroundColor: shutterStyle.dotColor,
+                  }}
+                />
+              </Animated.View>
+            </Animated.View>
+          </Animated.View>
 
-          {!recording ? (
+          <Animated.View style={{ opacity: shutterStyle.controlsFade }} pointerEvents={recording ? 'none' : 'auto'}>
             <TouchableOpacity style={styles.galleryBtn} onPress={flipCamera}>
               <Ionicons name="camera-reverse-outline" size={28} color="#fff" />
             </TouchableOpacity>
-          ) : <View style={styles.galleryBtn} />}
+          </Animated.View>
         </View>
 
-        {!recording && mode === 'picture' && (
-          <Text style={styles.holdHint}>Hold for video</Text>
-        )}
-        {recording && (
-          <Text style={styles.holdHint}>Slide up to zoom</Text>
-        )}
+        {/* Fixed-height row: the label changes but the height never does, so the
+            shutter above it stays put instead of jumping as mode/recording flip. */}
+        <View style={styles.hintRow}>
+          <Text style={styles.holdHint}>
+            {recording ? 'Slide up to zoom' : mode === 'picture' ? 'Hold for video' : 'Tap to record'}
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -1246,19 +1332,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.85)',
   },
 
+  // Wraps the 78px ring at its natural size (hitSlop extends the touch area
+  // without changing layout, so the row keeps its original height).
+  shutterHit: { alignItems: 'center', justifyContent: 'center' },
   shutterOuter: {
     width: SHUTTER, height: SHUTTER, borderRadius: SHUTTER / 2,
     borderWidth: 4, borderColor: '#fff',
     alignItems: 'center', justifyContent: 'center',
   },
-  shutterOuterRec: { borderColor: colors.error },
-  shutterInner: {
-    width: SHUTTER - 16, height: SHUTTER - 16, borderRadius: (SHUTTER - 16) / 2,
-    backgroundColor: '#fff',
-  },
-  shutterInnerVideo: { backgroundColor: colors.error },
-  shutterInnerRecording: { width: 30, height: 30, borderRadius: 8, backgroundColor: colors.error },
 
+  hintRow: { height: 16, justifyContent: 'center' },
   holdHint: { color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: '600', letterSpacing: 0.4 },
 
   // ── Preview / editor ─────────────────────────────────────────────────────

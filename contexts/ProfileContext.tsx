@@ -76,7 +76,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     // emblem, theme banner, ring, and accent buttons — updates together instead of
     // half-updating and looking buggy.
     const unsubscribeTier = onBadgeTierChange((tier: Tier | null) => {
-      setProfile(prev => (prev ? { ...prev, badge_tier: tier } : prev));
+      // The displayed badge now follows the earned tier (evaluateBadges snaps
+      // profile_theme on a tier change), so patch BOTH optimistically — otherwise
+      // the emblem flashes the old badge until the refetch lands.
+      setProfile(prev => (prev ? { ...prev, badge_tier: tier, profile_theme: tier ?? 'default' } : prev));
       refresh();
     });
     return () => { subscription.unsubscribe(); unsubscribeTier(); };
