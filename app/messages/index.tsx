@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { sharedPostId, parseStoryReply } from '../../lib/postLinks';
 import { fetchBlockedIds } from '../../lib/blocks';
@@ -22,11 +23,7 @@ import { useStories } from '../../contexts/StoriesContext';
 import { useFollow } from '../../contexts/FollowContext';
 
 type MsgTab = 'main' | 'friends' | 'followers';
-const MSG_TABS: { key: MsgTab; label: string }[] = [
-  { key: 'main', label: 'Main' },
-  { key: 'friends', label: 'Friends' },
-  { key: 'followers', label: 'Followers' },
-];
+const MSG_TABS: MsgTab[] = ['main', 'friends', 'followers'];
 
 type Conversation = {
   id: string;
@@ -52,6 +49,7 @@ function matchingCaption(c: Conversation, q: string): string | null {
 
 export default function MessagesScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -205,7 +203,7 @@ export default function MessagesScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Messages</Text>
+        <Text style={styles.headerTitle}>{t('messages.title')}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -215,7 +213,7 @@ export default function MessagesScreen() {
           <Ionicons name="search-outline" size={18} color={colors.textTertiary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search names or messages"
+            placeholder={t('messages.searchPlaceholder')}
             placeholderTextColor={colors.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -239,7 +237,7 @@ export default function MessagesScreen() {
 
       {/* Filter conversations by relationship */}
       <View style={styles.tabRow}>
-        {MSG_TABS.map(({ key, label }) => {
+        {MSG_TABS.map((key) => {
           const active = tab === key;
           return (
             <TouchableOpacity
@@ -248,7 +246,7 @@ export default function MessagesScreen() {
               onPress={() => setTab(key)}
               activeOpacity={0.85}
             >
-              <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>{t(`messages.tab.${key}`)}</Text>
             </TouchableOpacity>
           );
         })}
@@ -271,32 +269,32 @@ export default function MessagesScreen() {
               <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
                 <Ionicons name="search-outline" size={32} color={colors.primary} />
               </LinearGradient>
-              <Text style={styles.emptyTitle}>No chats found</Text>
-              <Text style={styles.emptySubtitle}>No names or messages match "{searchQuery.trim()}"</Text>
+              <Text style={styles.emptyTitle}>{t('messages.empty.noChatsFound')}</Text>
+              <Text style={styles.emptySubtitle}>{t('messages.empty.noChatsFoundSub', { query: searchQuery.trim() })}</Text>
             </View>
           ) : tab === 'friends' ? (
             <View style={styles.emptyContainer}>
               <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
                 <Ionicons name="people-outline" size={34} color={colors.primary} />
               </LinearGradient>
-              <Text style={styles.emptyTitle}>No chats with friends</Text>
-              <Text style={styles.emptySubtitle}>Conversations with people you both follow show up here</Text>
+              <Text style={styles.emptyTitle}>{t('messages.empty.friendsTitle')}</Text>
+              <Text style={styles.emptySubtitle}>{t('messages.empty.friendsSub')}</Text>
             </View>
           ) : tab === 'followers' ? (
             <View style={styles.emptyContainer}>
               <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
                 <Ionicons name="person-outline" size={34} color={colors.primary} />
               </LinearGradient>
-              <Text style={styles.emptyTitle}>No chats from followers</Text>
-              <Text style={styles.emptySubtitle}>Conversations with people who follow you (but you don't follow back) show up here</Text>
+              <Text style={styles.emptyTitle}>{t('messages.empty.followersTitle')}</Text>
+              <Text style={styles.emptySubtitle}>{t('messages.empty.followersSub')}</Text>
             </View>
           ) : (
             <View style={styles.emptyContainer}>
               <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
                 <Ionicons name="chatbubbles-outline" size={36} color={colors.primary} />
               </LinearGradient>
-              <Text style={styles.emptyTitle}>No messages yet</Text>
-              <Text style={styles.emptySubtitle}>Visit someone's profile and tap Message to start a conversation</Text>
+              <Text style={styles.emptyTitle}>{t('messages.empty.title')}</Text>
+              <Text style={styles.emptySubtitle}>{t('messages.empty.sub')}</Text>
             </View>
           )
         }
@@ -362,9 +360,9 @@ export default function MessagesScreen() {
                   numberOfLines={1}
                 />
               ) : storyReply ? (
-                <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>Replied to a story</Text>
+                <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>{t('messages.preview.storyReply')}</Text>
               ) : showShared ? (
-                <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>Shared a post</Text>
+                <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>{t('messages.preview.sharedPost')}</Text>
               ) : (
                 <HighlightText
                   text={preview}

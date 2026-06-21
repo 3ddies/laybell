@@ -11,15 +11,17 @@ import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
 import { resolveRingColors, chosenTier } from '../lib/badges';
 import { TEMPLATE_META, isLayoutTemplate } from '../lib/pageLayout';
-import { GENDER_OPTIONS, ageFromDob } from '../lib/profileOptions';
+import { GENDER_OPTIONS, genderLabel, ageFromDob } from '../lib/profileOptions';
 import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { removePublicUrls } from '../lib/storageCleanup';
 
 export default function EditProfileScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const { profile: liveProfile, update } = useProfile();
   // The avatar glow + camera button take the user's emblem-theme color (their
@@ -30,7 +32,7 @@ export default function EditProfileScreen() {
   // Sub-label on the Page Layout button — the active template, or the default grid.
   const pageLayoutLabel = isLayoutTemplate(liveProfile?.page_layout)
     ? TEMPLATE_META[liveProfile!.page_layout as keyof typeof TEMPLATE_META].label
-    : 'Standard grid';
+    : t('editProfile.standardGrid');
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -84,7 +86,7 @@ export default function EditProfileScreen() {
     formData.append('file', { uri: file.uri, name: `${Date.now()}.${fileExt}`, type: file.mimeType || 'image/jpeg' } as any);
 
     const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, formData, { contentType: file.mimeType || 'image/jpeg', upsert: true });
-    if (uploadError) { Alert.alert('Error', uploadError.message); setUploadingPhoto(false); return; }
+    if (uploadError) { Alert.alert(t('editProfile.error'), uploadError.message); setUploadingPhoto(false); return; }
 
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
     const { error: updateError } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', userId);
@@ -98,15 +100,15 @@ export default function EditProfileScreen() {
   }
 
   async function handleSave() {
-    if (!displayName.trim() || !username.trim()) { Alert.alert('Error', 'Display name and username are required'); return; }
-    if (username.trim().length < 5) { Alert.alert('Error', 'Username must be at least 5 characters'); return; }
-    if (username.trim().length > 30) { Alert.alert('Error', 'Username must be 30 characters or less'); return; }
-    if (!/^[a-zA-Z0-9_]+$/.test(username)) { Alert.alert('Error', 'Username can only contain letters, numbers, and underscores'); return; }
+    if (!displayName.trim() || !username.trim()) { Alert.alert(t('editProfile.error'), t('editProfile.errRequired')); return; }
+    if (username.trim().length < 5) { Alert.alert(t('editProfile.error'), t('editProfile.errUsernameMin')); return; }
+    if (username.trim().length > 30) { Alert.alert(t('editProfile.error'), t('editProfile.errUsernameMax')); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) { Alert.alert(t('editProfile.error'), t('editProfile.errUsernameChars')); return; }
     setSaving(true);
     const core = { display_name: displayName.trim(), username: username.trim().toLowerCase(), bio: bio.trim() };
     const { error } = await supabase.from('profiles').update(core).eq('id', userId);
     if (error) {
-      Alert.alert('Error', error.message.includes('unique') ? 'Username is already taken' : error.message);
+      Alert.alert(t('editProfile.error'), error.message.includes('unique') ? t('editProfile.errUsernameTaken') : error.message);
       setSaving(false); return;
     }
     // Link + gender go in a separate update so a pre-migration column gap can't
@@ -118,7 +120,7 @@ export default function EditProfileScreen() {
     // contacts who have this number can discover the account. '' clears the hash.
     await saveOwnPhone(phone);
     upsertOwnIdentifiers(userId!, userEmail, phone.trim() ? phone : '');
-    Alert.alert('Saved!', 'Your profile has been updated', [{ text: 'OK', onPress: () => router.back() }]);
+    Alert.alert(t('editProfile.savedTitle'), t('editProfile.savedBody'), [{ text: t('editProfile.ok'), onPress: () => router.back() }]);
     setSaving(false);
   }
 
@@ -131,11 +133,11 @@ export default function EditProfileScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.cancelBtn}>Cancel</Text>
+          <Text style={styles.cancelBtn}>{t('common.cancel')}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Profile</Text>
+        <Text style={styles.headerTitle}>{t('profile.editProfile')}</Text>
         <TouchableOpacity onPress={handleSave} disabled={saving}>
-          {saving ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={styles.saveBtn}>Save</Text>}
+          {saving ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={styles.saveBtn}>{t('editProfile.save')}</Text>}
         </TouchableOpacity>
       </View>
 
@@ -161,7 +163,7 @@ export default function EditProfileScreen() {
           {/* Tinted by the user's displayed badge tier (same accent as the glow
               + camera button); brand orange before any badge is shown. */}
           <Text style={[styles.changePhotoText, { color: accent }]}>
-            {uploadingPhoto ? 'Uploading...' : 'Change Profile Photo'}
+            {uploadingPhoto ? t('editProfile.uploading') : t('editProfile.changePhoto')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -169,25 +171,25 @@ export default function EditProfileScreen() {
       {/* Form */}
       <View style={styles.form}>
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>Display Name</Text>
+          <Text style={styles.fieldLabel}>{t('editProfile.displayName')}</Text>
           <TextInput
             style={styles.input}
             value={displayName}
             onChangeText={setDisplayName}
-            placeholder="Your display name"
+            placeholder={t('editProfile.displayNamePlaceholder')}
             placeholderTextColor={colors.textTertiary}
           />
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>Username</Text>
+          <Text style={styles.fieldLabel}>{t('editProfile.username')}</Text>
           <View style={styles.usernameRow}>
             <Text style={styles.atSign}>@</Text>
             <TextInput
               style={styles.usernameInput}
               value={username}
               onChangeText={setUsername}
-              placeholder="username"
+              placeholder={t('editProfile.usernamePlaceholder')}
               placeholderTextColor={colors.textTertiary}
               autoCapitalize="none"
               maxLength={30}
@@ -196,12 +198,12 @@ export default function EditProfileScreen() {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>Bio</Text>
+          <Text style={styles.fieldLabel}>{t('editProfile.bio')}</Text>
           <TextInput
             style={styles.bioInput}
             value={bio}
             onChangeText={setBio}
-            placeholder="Tell the world about yourself..."
+            placeholder={t('editProfile.bioPlaceholder')}
             placeholderTextColor={colors.textTertiary}
             multiline
             maxLength={150}
@@ -210,32 +212,32 @@ export default function EditProfileScreen() {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>Link</Text>
+          <Text style={styles.fieldLabel}>{t('editProfile.link')}</Text>
           <TextInput
             style={styles.input}
             value={link}
             onChangeText={setLink}
-            placeholder="yourwebsite.com"
+            placeholder={t('editProfile.linkPlaceholder')}
             placeholderTextColor={colors.textTertiary}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
           />
-          <Text style={styles.fieldHint}>Shown as a tappable link under your bio.</Text>
+          <Text style={styles.fieldHint}>{t('editProfile.linkHint')}</Text>
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>Phone</Text>
+          <Text style={styles.fieldLabel}>{t('editProfile.phone')}</Text>
           <TextInput
             style={styles.input}
             value={phone}
             onChangeText={setPhone}
-            placeholder="Add your number"
+            placeholder={t('editProfile.phonePlaceholder')}
             placeholderTextColor={colors.textTertiary}
             keyboardType="phone-pad"
             autoCorrect={false}
           />
-          <Text style={styles.fieldHint}>Private — never shown publicly. Lets contacts who have your number find you on Laybell.</Text>
+          <Text style={styles.fieldHint}>{t('editProfile.phoneHint')}</Text>
         </View>
 
         {/* Badges + Page Layout — square buttons side by side, above Gender */}
@@ -244,8 +246,8 @@ export default function EditProfileScreen() {
             <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.squareIcon}>
               <Ionicons name="ribbon" size={28} color="#fff" />
             </LinearGradient>
-            <Text style={styles.squareLabel}>Badges</Text>
-            <Text style={styles.squareSub}>Emblem & rewards</Text>
+            <Text style={styles.squareLabel}>{t('editProfile.badges')}</Text>
+            <Text style={styles.squareSub}>{t('editProfile.badgesSub')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -256,13 +258,13 @@ export default function EditProfileScreen() {
             <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.squareIcon}>
               <Ionicons name="color-palette" size={28} color="#fff" />
             </LinearGradient>
-            <Text style={styles.squareLabel}>Page Layout</Text>
+            <Text style={styles.squareLabel}>{t('editProfile.pageLayout')}</Text>
             <Text style={styles.squareSub}>{pageLayoutLabel}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>Gender</Text>
+          <Text style={styles.fieldLabel}>{t('onboarding.gender')}</Text>
           <View style={styles.genderRow}>
             {GENDER_OPTIONS.map(opt => {
               const active = gender === opt;
@@ -272,20 +274,20 @@ export default function EditProfileScreen() {
                   style={[styles.genderChip, active && styles.genderChipActive]}
                   onPress={() => setGender(active ? null : opt)}
                 >
-                  <Text style={[styles.genderChipText, active && styles.genderChipTextActive]}>{opt}</Text>
+                  <Text style={[styles.genderChipText, active && styles.genderChipTextActive]}>{genderLabel(opt)}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
-          <Text style={styles.fieldHint}>Private — never shown on your public profile.</Text>
+          <Text style={styles.fieldHint}>{t('editProfile.genderHint')}</Text>
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>Age</Text>
+          <Text style={styles.fieldLabel}>{t('editProfile.age')}</Text>
           <View style={styles.readonlyBox}>
-            <Text style={styles.readonlyValue}>{age != null ? `${age}` : 'Not set'}</Text>
+            <Text style={styles.readonlyValue}>{age != null ? `${age}` : t('editProfile.notSet')}</Text>
           </View>
-          <Text style={styles.fieldHint}>Calculated from your date of birth. Private — never shown publicly.</Text>
+          <Text style={styles.fieldHint}>{t('editProfile.ageHint')}</Text>
         </View>
       </View>
     </ScrollView>

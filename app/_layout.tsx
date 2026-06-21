@@ -13,6 +13,7 @@ import { PostMusicProvider } from '../contexts/PostMusicContext';
 import { PostOptionsProvider } from '../contexts/PostOptionsContext';
 import { ProfileProvider } from '../contexts/ProfileContext';
 import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
+import { LanguageProvider } from '../contexts/LanguageContext';
 import { ShareProvider } from '../contexts/ShareContext';
 import { FollowProvider } from '../contexts/FollowContext';
 import { StoriesProvider } from '../contexts/StoriesContext';
@@ -254,6 +255,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
     <ThemeProvider>
+    {/* Language sits beside Theme — both are DEVICE preferences (persisted locally),
+        so they live above the per-user remount and survive account switches. */}
+    <LanguageProvider>
     {/* Remount the entire per-user tree (every provider + the screens) whenever the
         signed-in user changes. The providers live ABOVE routing, so on a same-device
         account switch they'd otherwise keep serving the previous user's cached
@@ -280,6 +284,7 @@ export default function RootLayout() {
       </PostMusicProvider>
     </AudioProvider>
     </View>
+    </LanguageProvider>
     </ThemeProvider>
     </GestureHandlerRootView>
   );

@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { rawTier, publicPlaylistLimit, tierLabel } from '../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../lib/playlists';
@@ -28,6 +29,7 @@ export default function PlaylistsScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
+  const { t } = useTranslation();
   const { profile } = useProfile();
   const [playlists, setPlaylists] = useState<Pl[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,23 +61,25 @@ export default function PlaylistsScreen() {
   async function setVisibility(pl: Pl, makePublic: boolean) {
     if (makePublic && publicCount >= limit) {
       Alert.alert(
-        'No free public slots',
+        t('playlists.noSlotsTitle'),
         limit === 0
-          ? 'Public playlists need a badge. Earn Bronze for 1 slot, Silver for 2, Gold for 3, Diamond for 6.'
-          : `Your ${tierLabel(tier)} badge allows ${limit} public ${limit === 1 ? 'playlist' : 'playlists'}. Make one private first to free a slot.`,
+          ? t('playlists.noSlotsNoBadge')
+          : limit === 1
+            ? t('playlists.noSlotsTieredOne', { tier: tierLabel(tier) })
+            : t('playlists.noSlotsTiered', { tier: tierLabel(tier), limit }),
       );
       return;
     }
     const { error } = await supabase.from('playlists').update({ is_public: makePublic }).eq('id', pl.id);
-    if (error) { Alert.alert('Error', error.message); return; }
+    if (error) { Alert.alert(t('playlists.errorTitle'), error.message); return; }
     load();
   }
 
   function confirmDelete(pl: Pl) {
-    Alert.alert('Delete Playlist', `Delete “${pl.name}”? This cannot be undone.`, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('playlists.deleteTitle'), t('playlists.deleteBody', { name: pl.name }), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete', style: 'destructive',
+        text: t('common.delete'), style: 'destructive',
         onPress: async () => {
           await supabase.from('playlists').delete().eq('id', pl.id);
           load();
@@ -105,8 +109,8 @@ export default function PlaylistsScreen() {
           <Text style={styles.rowName} numberOfLines={1}>{pl.name}</Text>
           <Text style={styles.rowMeta} numberOfLines={1}>
             {state === 'private'
-              ? 'Private — just for you'
-              : `${formatCount(pl.play_count ?? 0)} ${pl.play_count === 1 ? 'listen' : 'listens'}${state === 'locked' ? ' · hidden from discovery' : ''}`}
+              ? t('playlists.privateMeta')
+              : `${formatCount(pl.play_count ?? 0)} ${pl.play_count === 1 ? 'listen' : 'listens'}${state === 'locked' ? t('playlists.hiddenSuffix') : ''}`}
           </Text>
         </View>
         <TouchableOpacity
@@ -114,7 +118,7 @@ export default function PlaylistsScreen() {
           onPress={() => setVisibility(pl, !pl.is_public)}
           hitSlop={6}
         >
-          <Text style={styles.visBtnText}>{pl.is_public ? 'Make Private' : 'Make Public'}</Text>
+          <Text style={styles.visBtnText}>{pl.is_public ? t('playlists.makePrivate') : t('playlists.makePublic')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.deleteBtn} onPress={() => confirmDelete(pl)} hitSlop={6}>
           <Ionicons name="trash-outline" size={18} color={colors.textTertiary} />
@@ -132,7 +136,7 @@ export default function PlaylistsScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Playlists</Text>
+        <Text style={styles.headerTitle}>{t('account.playlists')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -151,37 +155,35 @@ export default function PlaylistsScreen() {
             <Ionicons name="globe-outline" size={18} color={colors.primary} />
             <Text style={styles.summaryText}>
               {limit === 0
-                ? 'Public playlists need a badge — earn Bronze to unlock your first slot.'
-                : `${publicCount} of ${limit} public ${limit === 1 ? 'slot' : 'slots'} used · ${tierLabel(tier)} badge`}
+                ? t('playlists.summaryNoBadge')
+                : limit === 1
+                  ? t('playlists.summaryOne', { count: publicCount, tier: tierLabel(tier) })
+                  : t('playlists.summary', { count: publicCount, limit, tier: tierLabel(tier) })}
             </Text>
           </View>
 
           {playlists.length === 0 && (
-            <Text style={styles.emptyText}>No playlists yet — create one from the Music tab.</Text>
+            <Text style={styles.emptyText}>{t('playlists.empty')}</Text>
           )}
 
           {active.length > 0 && (
             <>
-              <Text style={styles.sectionLabel}>Public</Text>
+              <Text style={styles.sectionLabel}>{t('post.public')}</Text>
               {active.map(p => renderRow(p, 'public'))}
             </>
           )}
 
           {locked.length > 0 && (
             <>
-              <Text style={styles.sectionLabel}>Locked</Text>
-              <Text style={styles.sectionHint}>
-                These were public, but your current badge has fewer slots. They're hidden from
-                discovery (you can still listen) until you earn the badge back — or free a slot
-                by making an active public playlist private.
-              </Text>
+              <Text style={styles.sectionLabel}>{t('playlists.locked')}</Text>
+              <Text style={styles.sectionHint}>{t('playlists.lockedHint')}</Text>
               {locked.map(p => renderRow(p, 'locked'))}
             </>
           )}
 
           {priv.length > 0 && (
             <>
-              <Text style={styles.sectionLabel}>Private</Text>
+              <Text style={styles.sectionLabel}>{t('playlists.private')}</Text>
               {priv.map(p => renderRow(p, 'private'))}
             </>
           )}

@@ -18,6 +18,7 @@ import VideoThumb from '../components/VideoThumb';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 // Spotlight manager (reached from the profile's Spotlight button and Settings).
 // Pay (simulated) → the campaign is born `pending` → attach a post (an
@@ -29,12 +30,14 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 type FlowStep = 'package' | 'pay' | 'choose' | 'grid';
 
-const STATUS_LABEL: Record<SpotlightStatus, string> = {
-  pending: 'Needs a post',
-  active: 'Live',
-  ended: 'Ended',
-  canceled: 'Canceled',
-};
+function statusLabel(s: SpotlightStatus, t: (k: string) => string): string {
+  switch (s) {
+    case 'pending': return t('spotlight.statusPending');
+    case 'active': return t('spotlight.statusLive');
+    case 'ended': return t('spotlight.statusEnded');
+    case 'canceled': return t('spotlight.statusCanceled');
+  }
+}
 
 function thumbFor(post: any): { uri: string | null; video: boolean } {
   if (!post) return { uri: null, video: false };
@@ -47,6 +50,7 @@ function thumbFor(post: any): { uri: string | null; video: boolean } {
 export default function SpotlightScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
 
   const [campaigns, setCampaigns] = useState<SpotlightCampaign[]>([]);
@@ -112,7 +116,7 @@ export default function SpotlightScreen() {
       await new Promise(r => setTimeout(r, 900));
       const campaign = await purchaseCampaign(pkg);
       if (!campaign) {
-        Alert.alert('Payment failed', 'Could not complete the purchase. Please try again.');
+        Alert.alert(t('spotlight.payFailedTitle'), t('spotlight.payFailedBody'));
         return;
       }
       setFlowCampaign(campaign);
@@ -181,18 +185,18 @@ export default function SpotlightScreen() {
   function handlePickPost(post: any) {
     if (!flowCampaign || !pkg || attachingId) return;
     Alert.alert(
-      'Spotlight this post?',
-      `It launches as the #3 post in the Home feed and stays spotlighted for ${pkg.label.toLowerCase()}, marked with a Spotlight tag.`,
+      t('spotlight.confirmPickTitle'),
+      t('spotlight.confirmPickBody', { label: pkg.label }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Spotlight',
+          text: t('spotlight.confirmPickAction'),
           onPress: async () => {
             setAttachingId(post.id);
             const ok = await activateCampaign(flowCampaign.id, post.id, pkg.days);
             setAttachingId(null);
             if (!ok) {
-              Alert.alert('Error', 'Could not start the spotlight. Please try again.');
+              Alert.alert(t('spotlight.errorTitle'), t('spotlight.startFailedBody'));
               return;
             }
             // Any parked "create a new post" handoff is stale now that the
@@ -200,7 +204,7 @@ export default function SpotlightScreen() {
             clearPendingSpotlight();
             setFlowOpen(false);
             load();
-            Alert.alert('Your post is in the Spotlight! ✨', `It launches as the #3 post in the Home feed for the next ${spotlightDurationPhrase(pkg.label)} — and can climb to #1 if it takes off.`);
+            Alert.alert(t('spotlight.liveTitle'), t('spotlight.liveBody', { duration: spotlightDurationPhrase(pkg.label) }));
           },
         },
       ],
@@ -211,17 +215,17 @@ export default function SpotlightScreen() {
 
   function confirmCancelPending(c: SpotlightCampaign) {
     Alert.alert(
-      'Cancel this spotlight?',
-      'This purchase has no post attached yet. Canceling refunds the (simulated) payment.',
+      t('spotlight.cancelTitle'),
+      t('spotlight.cancelBody'),
       [
-        { text: 'Keep it', style: 'cancel' },
+        { text: t('spotlight.keepIt'), style: 'cancel' },
         {
-          text: 'Cancel spotlight',
+          text: t('spotlight.cancelAction'),
           style: 'destructive',
           onPress: async () => {
             const ok = await cancelPendingCampaign(c.id);
             if (ok) load();
-            else Alert.alert('Error', 'Could not cancel the spotlight. Please try again.');
+            else Alert.alert(t('spotlight.errorTitle'), t('spotlight.cancelFailedBody'));
           },
         },
       ],
@@ -230,17 +234,17 @@ export default function SpotlightScreen() {
 
   function confirmEndEarly(c: SpotlightCampaign) {
     Alert.alert(
-      'End this spotlight early?',
-      'Your post drops back to normal ranking right away. The remaining time is not refunded.',
+      t('spotlight.endTitle'),
+      t('spotlight.endBody'),
       [
-        { text: 'Keep running', style: 'cancel' },
+        { text: t('spotlight.keepRunning'), style: 'cancel' },
         {
-          text: 'End spotlight',
+          text: t('spotlight.endAction'),
           style: 'destructive',
           onPress: async () => {
             const ok = await endCampaign(c.id);
             if (ok) load();
-            else Alert.alert('Error', 'Could not end the spotlight. Please try again.');
+            else Alert.alert(t('spotlight.errorTitle'), t('spotlight.endFailedBody'));
           },
         },
       ],
@@ -276,16 +280,16 @@ export default function SpotlightScreen() {
             <View style={styles.cardTitleRow}>
               <Text style={styles.cardTitle}>{pack?.label ?? c.package_key} · {fmtPrice(c.price_cents)}</Text>
               <View style={[styles.statusChip, { borderColor: statusColor(status) }]}>
-                <Text style={[styles.statusChipText, { color: statusColor(status) }]}>{STATUS_LABEL[status]}</Text>
+                <Text style={[styles.statusChipText, { color: statusColor(status) }]}>{statusLabel(status, t)}</Text>
               </View>
             </View>
             <Text style={styles.cardCaption} numberOfLines={1}>
-              {c.posts?.caption || (status === 'pending' ? 'No post attached yet' : 'Post unavailable')}
+              {c.posts?.caption || (status === 'pending' ? t('spotlight.noPostAttached') : t('spotlight.postUnavailable'))}
             </Text>
             <Text style={styles.cardMeta}>
               {status === 'active'
                 ? timeLeftLabel(c.ends_at)
-                : `Purchased ${new Date(c.created_at).toLocaleDateString()}`}
+                : t('spotlight.purchasedOn', { date: new Date(c.created_at).toLocaleDateString() })}
             </Text>
           </View>
         </View>
@@ -311,17 +315,17 @@ export default function SpotlightScreen() {
           <View style={styles.cardActions}>
             <TouchableOpacity style={styles.cardActionPrimary} onPress={() => resumeFlow(c)}>
               <Ionicons name="albums-outline" size={15} color={colors.text} />
-              <Text style={styles.cardActionPrimaryText}>Choose a post</Text>
+              <Text style={styles.cardActionPrimaryText}>{t('spotlight.chooseAPost')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.cardActionGhost} onPress={() => confirmCancelPending(c)}>
-              <Text style={styles.cardActionGhostText}>Cancel</Text>
+              <Text style={styles.cardActionGhostText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
           </View>
         )}
         {status === 'active' && (
           <View style={styles.cardActions}>
             <TouchableOpacity style={styles.cardActionGhost} onPress={() => confirmEndEarly(c)}>
-              <Text style={styles.cardActionGhostText}>End early</Text>
+              <Text style={styles.cardActionGhostText}>{t('spotlight.endEarly')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -329,10 +333,10 @@ export default function SpotlightScreen() {
     );
   }
 
-  const flowTitle = flowStep === 'package' ? 'Choose a package'
-    : flowStep === 'pay' ? 'Checkout'
-    : flowStep === 'grid' ? 'Pick a post'
-    : 'Almost there';
+  const flowTitle = flowStep === 'package' ? t('spotlight.stepPackageTitle')
+    : flowStep === 'pay' ? t('spotlight.stepPayTitle')
+    : flowStep === 'grid' ? t('spotlight.stepGridTitle')
+    : t('spotlight.stepChooseTitle');
 
   return (
     <SwipeBackPager>
@@ -356,27 +360,25 @@ export default function SpotlightScreen() {
           }
         >
           <Text style={styles.hint}>
-            Put a post in the Spotlight: it launches as the #3 post in the Home feed — and can climb
-            all the way to #1 if it takes off. Strong engagement keeps it up there; slow engagement
-            lets it drift down, but a spotlighted post is always seen. Any media type works.
+            {t('spotlight.hint')}
           </Text>
 
           <TouchableOpacity style={styles.createBtn} onPress={startFlow} activeOpacity={0.85}>
             <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
               <Ionicons name="sparkles" size={18} color={colors.text} />
-              <Text style={styles.createBtnText}>Spotlight a Post</Text>
+              <Text style={styles.createBtnText}>{t('spotlight.createBtn')}</Text>
             </LinearGradient>
           </TouchableOpacity>
 
           {campaigns.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="sparkles-outline" size={44} color={colors.textTertiary} />
-              <Text style={styles.emptyTitle}>No spotlights yet</Text>
-              <Text style={styles.emptySub}>Your spotlighted posts and their stats will show up here.</Text>
+              <Text style={styles.emptyTitle}>{t('spotlight.emptyTitle')}</Text>
+              <Text style={styles.emptySub}>{t('spotlight.emptySub')}</Text>
             </View>
           ) : (
             <View style={styles.cards}>
-              <Text style={styles.sectionTitle}>Your spotlights</Text>
+              <Text style={styles.sectionTitle}>{t('spotlight.yourSpotlights')}</Text>
               {campaigns.map(renderCampaign)}
             </View>
           )}
@@ -404,9 +406,7 @@ export default function SpotlightScreen() {
           {flowStep === 'package' && (
             <ScrollView contentContainerStyle={styles.flowScroll}>
               <Text style={styles.flowLead}>
-                Every package launches your post at the #3 spot in the feed. Bigger packages hold
-                that placement longer before engagement takes over — and engagement itself extends
-                it further.
+                {t('spotlight.packageLead')}
               </Text>
               {SPOTLIGHT_PACKAGES.map(p => {
                 const on = pkg?.key === p.key;
@@ -424,7 +424,7 @@ export default function SpotlightScreen() {
                     <Text style={styles.pkgBlurb}>{p.blurb}</Text>
                     <View style={styles.pkgMetaRow}>
                       <Ionicons name="trending-up-outline" size={13} color={colors.textTertiary} />
-                      <Text style={styles.pkgMeta}>~{rampHoursFor(p.weight)}h guaranteed placement — engagement extends it</Text>
+                      <Text style={styles.pkgMeta}>{t('spotlight.pkgPlacement', { hours: rampHoursFor(p.weight) })}</Text>
                     </View>
                   </TouchableOpacity>
                 );
@@ -434,7 +434,7 @@ export default function SpotlightScreen() {
                 disabled={!pkg}
                 onPress={() => setFlowStep('pay')}
               >
-                <Text style={styles.primaryBtnText}>Continue</Text>
+                <Text style={styles.primaryBtnText}>{t('spotlight.continue')}</Text>
               </TouchableOpacity>
             </ScrollView>
           )}
@@ -442,28 +442,28 @@ export default function SpotlightScreen() {
           {flowStep === 'pay' && pkg && (
             <ScrollView contentContainerStyle={styles.flowScroll}>
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryTitle}>Order summary</Text>
+                <Text style={styles.summaryTitle}>{t('spotlight.orderSummary')}</Text>
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryKey}>Package</Text>
-                  <Text style={styles.summaryVal}>{pkg.label} in the Spotlight</Text>
+                  <Text style={styles.summaryKey}>{t('spotlight.summaryPackage')}</Text>
+                  <Text style={styles.summaryVal}>{t('spotlight.summaryPackageVal', { label: pkg.label })}</Text>
                 </View>
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryKey}>Launch placement</Text>
-                  <Text style={styles.summaryVal}>~{rampHoursFor(pkg.weight)}h at #3 or higher</Text>
+                  <Text style={styles.summaryKey}>{t('spotlight.summaryPlacement')}</Text>
+                  <Text style={styles.summaryVal}>{t('spotlight.summaryPlacementVal', { hours: rampHoursFor(pkg.weight) })}</Text>
                 </View>
                 <View style={styles.summaryDivider} />
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryTotalKey}>Total</Text>
+                  <Text style={styles.summaryTotalKey}>{t('spotlight.summaryTotal')}</Text>
                   <Text style={styles.summaryTotalVal}>{fmtPrice(pkg.priceCents)}</Text>
                 </View>
               </View>
               <Text style={styles.simNote}>
-                Simulated checkout — no real charge is made while Laybell payments are in preview.
+                {t('spotlight.simCheckout')}
               </Text>
               <TouchableOpacity style={styles.primaryBtn} onPress={handlePay} disabled={paying}>
                 {paying
                   ? <ActivityIndicator color={colors.text} size="small" />
-                  : <Text style={styles.primaryBtnText}>Pay {fmtPrice(pkg.priceCents)}</Text>}
+                  : <Text style={styles.primaryBtnText}>{t('spotlight.payAmount', { price: fmtPrice(pkg.priceCents) })}</Text>}
               </TouchableOpacity>
             </ScrollView>
           )}
@@ -471,27 +471,26 @@ export default function SpotlightScreen() {
           {flowStep === 'choose' && (
             <ScrollView contentContainerStyle={styles.flowScroll}>
               <Text style={styles.flowLead}>
-                Payment confirmed. Your spotlight starts the moment a post is attached — pick one of
-                yours or make something new.
+                {t('spotlight.chooseLead')}
               </Text>
               <TouchableOpacity style={styles.chooseCard} onPress={openPostGrid} activeOpacity={0.8}>
                 <View style={styles.chooseIcon}><Ionicons name="albums-outline" size={24} color={colors.primary} /></View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.chooseTitle}>Spotlight an existing post</Text>
-                  <Text style={styles.chooseSub}>Pick one of your public posts to boost</Text>
+                  <Text style={styles.chooseTitle}>{t('spotlight.chooseExistingTitle')}</Text>
+                  <Text style={styles.chooseSub}>{t('spotlight.chooseExistingSub')}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.chooseCard} onPress={handleNewPost} activeOpacity={0.8}>
                 <View style={styles.chooseIcon}><Ionicons name="add-circle-outline" size={24} color={colors.primary} /></View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.chooseTitle}>Create a new post</Text>
-                  <Text style={styles.chooseSub}>Make a fresh post — it launches in the Spotlight</Text>
+                  <Text style={styles.chooseTitle}>{t('spotlight.chooseNewTitle')}</Text>
+                  <Text style={styles.chooseSub}>{t('spotlight.chooseNewSub')}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
               <Text style={styles.simNote}>
-                Not ready? Close this — your purchase is saved and you can attach a post here anytime.
+                {t('spotlight.chooseNote')}
               </Text>
             </ScrollView>
           )}
@@ -502,14 +501,14 @@ export default function SpotlightScreen() {
             ) : myPosts.length === 0 ? (
               <View style={styles.empty}>
                 <Ionicons name="images-outline" size={44} color={colors.textTertiary} />
-                <Text style={styles.emptyTitle}>No posts to spotlight</Text>
+                <Text style={styles.emptyTitle}>{t('spotlight.gridEmptyTitle')}</Text>
                 <Text style={styles.emptySub}>
-                  Only your public posts can be spotlighted — and a post carries one spotlight at a time.
+                  {t('spotlight.gridEmptySub')}
                 </Text>
               </View>
             ) : (
               <ScrollView contentContainerStyle={styles.gridScroll}>
-                <Text style={[styles.hint, { paddingHorizontal: SPACING.md }]}>Public posts only. Tap one to spotlight it.</Text>
+                <Text style={[styles.hint, { paddingHorizontal: SPACING.md }]}>{t('spotlight.gridHint')}</Text>
                 <View style={styles.grid}>
                   {myPosts.map(post => {
                     const { uri, video } = thumbFor(post);

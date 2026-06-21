@@ -14,11 +14,14 @@ import {
   AD_DEFAULT_CPM_CENTS, AD_CREATIVE_BUCKET,
   type AdPlacement, type AdObjective, type AdMediaType, type NewCreativeInput,
 } from '../../lib/ads';
-import { GENRES } from '../../lib/genres';
+import { GENRES, genreLabel } from '../../lib/genres';
 import { useProfile } from '../../contexts/ProfileContext';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
 // Self-serve ad campaign creation: objective → placements → creative upload per
 // placement → optional targeting → budget/schedule → review (with required ad
@@ -29,24 +32,29 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 type Step = 'basics' | 'placements' | 'creatives' | 'targeting' | 'budget' | 'review';
 const STEPS: Step[] = ['basics', 'placements', 'creatives', 'targeting', 'budget', 'review'];
 
-const OBJECTIVES: { key: AdObjective; label: string; blurb: string; icon: any }[] = [
-  { key: 'awareness', label: 'Awareness', blurb: 'Get seen by as many people as possible.', icon: 'eye-outline' },
-  { key: 'traffic', label: 'Traffic', blurb: 'Send people to your link.', icon: 'open-outline' },
-  { key: 'engagement', label: 'Engagement', blurb: 'Drive taps and interest.', icon: 'flame-outline' },
+const OBJECTIVES: { key: AdObjective; icon: any }[] = [
+  { key: 'awareness', icon: 'eye-outline' },
+  { key: 'traffic', icon: 'open-outline' },
+  { key: 'engagement', icon: 'flame-outline' },
 ];
 
-const PLACEMENTS: { key: AdPlacement; label: string; blurb: string; icon: any; media: string }[] = [
-  { key: 'feed', label: 'Home Feed', blurb: 'A sponsored post (photo, video, or slideshow).', icon: 'home-outline', media: 'Photos or a video' },
-  { key: 'reels', label: 'Reels', blurb: 'A full-screen video between reels.', icon: 'film-outline', media: 'A video' },
-  { key: 'audio', label: 'Music Breaks', blurb: 'An audio spot while people listen.', icon: 'musical-notes-outline', media: 'An audio clip' },
+const PLACEMENTS: { key: AdPlacement; icon: any }[] = [
+  { key: 'feed', icon: 'home-outline' },
+  { key: 'reels', icon: 'film-outline' },
+  { key: 'audio', icon: 'musical-notes-outline' },
 ];
 
-const GENDERS = ['Any', 'Male', 'Female', 'Other'];
+const GENDERS: { key: string; label: string }[] = [
+  { key: 'Any', label: 'adCreate.genderAny' },
+  { key: 'Male', label: 'adCreate.genderMale' },
+  { key: 'Female', label: 'adCreate.genderFemale' },
+  { key: 'Other', label: 'adCreate.genderOther' },
+];
 
 type Pick = { uri: string; width?: number; height?: number; kind: 'image' | 'video' | 'audio'; durationSec?: number | null; name?: string; mime?: string };
 type CreativeDraft = { picks: Pick[]; headline: string; body: string; ctaLabel: string; ctaUrl: string };
 
-const emptyDraft = (): CreativeDraft => ({ picks: [], headline: '', body: '', ctaLabel: 'Learn more', ctaUrl: '' });
+const emptyDraft = (t: TFn): CreativeDraft => ({ picks: [], headline: '', body: '', ctaLabel: t('adCreate.ctaDefault'), ctaUrl: '' });
 
 function extOf(uri: string, fallback: string): string {
   const m = uri.split('?')[0].match(/\.([a-zA-Z0-9]+)$/);
@@ -65,6 +73,7 @@ export default function CreateAdScreen() {
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { profile } = useProfile();
+  const { t } = useTranslation();
 
   const [step, setStep] = useState<Step>('basics');
 
@@ -101,14 +110,14 @@ export default function CreateAdScreen() {
   const hasLocation = profile?.latitude != null && profile?.longitude != null;
 
   function patchDraft(p: AdPlacement, patch: Partial<CreativeDraft>) {
-    setDrafts((prev) => ({ ...prev, [p]: { ...(prev[p] ?? emptyDraft()), ...patch } }));
+    setDrafts((prev) => ({ ...prev, [p]: { ...(prev[p] ?? emptyDraft(t)), ...patch } }));
   }
 
   function togglePlacement(p: AdPlacement) {
     setPlacements((prev) => {
       const has = prev.includes(p);
       if (has) return prev.filter((x) => x !== p);
-      setDrafts((d) => (d[p] ? d : { ...d, [p]: emptyDraft() }));
+      setDrafts((d) => (d[p] ? d : { ...d, [p]: emptyDraft(t) }));
       return [...prev, p];
     });
   }
@@ -121,7 +130,7 @@ export default function CreateAdScreen() {
   async function pickPhotos(p: AdPlacement) {
     const ImagePicker = await import('expo-image-picker');
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Photos needed', 'Enable photo access to add a creative.'); return; }
+    if (!perm.granted) { Alert.alert(t('adCreate.photosNeededTitle'), t('adCreate.photosNeededBody')); return; }
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
@@ -136,7 +145,7 @@ export default function CreateAdScreen() {
   async function pickVideo(p: AdPlacement) {
     const ImagePicker = await import('expo-image-picker');
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Photos needed', 'Enable photo access to add a creative.'); return; }
+    if (!perm.granted) { Alert.alert(t('adCreate.photosNeededTitle'), t('adCreate.photosNeededBody')); return; }
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
       quality: 0.85,
@@ -164,29 +173,29 @@ export default function CreateAdScreen() {
 
   // ── Validation ───────────────────────────────────────────────────────────────
   function validateStep(s: Step): string | null {
-    if (s === 'basics' && !advertiserName.trim()) return 'Add a brand or advertiser name.';
-    if (s === 'placements' && placements.length === 0) return 'Pick at least one placement.';
+    if (s === 'basics' && !advertiserName.trim()) return t('adCreate.errAdvertiserName');
+    if (s === 'placements' && placements.length === 0) return t('adCreate.errPlacement');
     if (s === 'creatives') {
       for (const p of placements) {
         const d = drafts[p];
-        if (!d || d.picks.length === 0) return `Add a creative for ${labelFor(p)}.`;
-        if (!d.headline.trim()) return `Add a headline for ${labelFor(p)}.`;
-        if (!d.ctaUrl.trim()) return `Add a destination link for ${labelFor(p)}.`;
+        if (!d || d.picks.length === 0) return t('adCreate.errCreative', { placement: labelFor(p) });
+        if (!d.headline.trim()) return t('adCreate.errHeadline', { placement: labelFor(p) });
+        if (!d.ctaUrl.trim()) return t('adCreate.errLink', { placement: labelFor(p) });
       }
     }
     if (s === 'budget') {
-      if (!(parseFloat(budget) > 0)) return 'Set a total budget.';
-      if (!(parseFloat(cpm) > 0)) return 'Set a CPM bid.';
-      if (!(parseInt(days, 10) > 0)) return 'Set a run length in days.';
+      if (!(parseFloat(budget) > 0)) return t('adCreate.errBudget');
+      if (!(parseFloat(cpm) > 0)) return t('adCreate.errCpm');
+      if (!(parseInt(days, 10) > 0)) return t('adCreate.errDays');
     }
     return null;
   }
 
-  function labelFor(p: AdPlacement) { return PLACEMENTS.find((x) => x.key === p)?.label ?? p; }
+  function labelFor(p: AdPlacement) { return t(`adCreate.placement.${p}.label`); }
 
   function next() {
     const err = validateStep(step);
-    if (err) { Alert.alert('Almost there', err); return; }
+    if (err) { Alert.alert(t('adCreate.almostTitle'), err); return; }
     const i = STEPS.indexOf(step);
     if (i < STEPS.length - 1) setStep(STEPS[i + 1]);
   }
@@ -232,14 +241,14 @@ export default function CreateAdScreen() {
       media_type: mt,
       headline: d.headline.trim() || null,
       body: d.body.trim() || null,
-      cta_label: d.ctaLabel.trim() || 'Learn more',
+      cta_label: d.ctaLabel.trim() || t('adCreate.ctaDefault'),
       cta_url: d.ctaUrl.trim() || null,
     };
 
     if (mt === 'slideshow') {
       const slides: any[] = [];
       for (let i = 0; i < d.picks.length; i++) {
-        setUploadLabel(`Uploading ${labelFor(p)} photo ${i + 1}/${d.picks.length}…`);
+        setUploadLabel(t('adCreate.uploadingPhoto', { placement: labelFor(p), index: i + 1, total: d.picks.length }));
         const { url } = await uploadOne(uid, d.picks[i]);
         slides.push({ type: 'image', url, aspect_ratio: aspectOf(d.picks[i]) });
       }
@@ -252,7 +261,7 @@ export default function CreateAdScreen() {
       };
     }
 
-    setUploadLabel(`Uploading ${labelFor(p)} creative…`);
+    setUploadLabel(t('adCreate.uploadingCreative', { placement: labelFor(p) }));
     const { url, thumb } = await uploadOne(uid, d.picks[0]);
     return {
       ...base,
@@ -265,21 +274,21 @@ export default function CreateAdScreen() {
   }
 
   async function publish() {
-    if (!terms) { Alert.alert('Accept the ad policy', 'Please confirm your ad meets the policy to continue.'); return; }
+    if (!terms) { Alert.alert(t('adCreate.acceptPolicyTitle'), t('adCreate.acceptPolicyBody')); return; }
     if (publishingRef.current) return;
     publishingRef.current = true;
     setPublishing(true);
-    setUploadLabel('Preparing…');
+    setUploadLabel(t('adCreate.preparing'));
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { Alert.alert('Sign in required', 'Please sign in again.'); return; }
+      if (!user) { Alert.alert(t('adCreate.signInTitle'), t('adCreate.signInBody')); return; }
 
       const creatives: NewCreativeInput[] = [];
       for (const p of placements) {
         creatives.push(await buildCreative(user.id, p, drafts[p]));
       }
 
-      setUploadLabel('Launching campaign…');
+      setUploadLabel(t('adCreate.launchingCampaign'));
       const endsAt = new Date(Date.now() + Math.max(1, parseInt(days, 10) || 1) * 86_400_000).toISOString();
       const id = await purchaseAdCampaign({
         objective,
@@ -304,14 +313,14 @@ export default function CreateAdScreen() {
       });
 
       if (!id) {
-        Alert.alert('Could not launch', 'Something went wrong creating the campaign. Make sure the ad_ecosystem.sql migration has been run in Supabase, then try again.');
+        Alert.alert(t('adCreate.couldNotLaunchTitle'), t('adCreate.couldNotLaunchBody'));
         return;
       }
       const r = router as any;
       if (typeof r.replace === 'function') r.replace(`/ad-manager/${id}`);
       else r.back();
     } catch (e: any) {
-      Alert.alert('Upload failed', e?.message ?? 'Could not upload the creative. Please try again.');
+      Alert.alert(t('adCreate.uploadFailedTitle'), e?.message ?? t('adCreate.uploadFailedBody'));
     } finally {
       publishingRef.current = false;
       setPublishing(false);
@@ -324,23 +333,23 @@ export default function CreateAdScreen() {
   const estImps = estimatedImpressions(budgetCents, cpmCents);
 
   const stepTitle: Record<Step, string> = {
-    basics: 'Campaign',
-    placements: 'Placements',
-    creatives: 'Creatives',
-    targeting: 'Audience',
-    budget: 'Budget & schedule',
-    review: 'Review & launch',
+    basics: t('adCreate.stepBasics'),
+    placements: t('adCreate.stepPlacements'),
+    creatives: t('adCreate.stepCreatives'),
+    targeting: t('adCreate.stepTargeting'),
+    budget: t('adCreate.stepBudget'),
+    review: t('adCreate.stepReview'),
   };
 
   function renderCreativeCard(p: AdPlacement) {
-    const d = drafts[p] ?? emptyDraft();
+    const d = drafts[p] ?? emptyDraft(t);
     const cfg = PLACEMENTS.find((x) => x.key === p)!;
     const firstImg = d.picks.find((x) => x.kind === 'image');
     return (
       <View key={p} style={styles.card}>
         <View style={styles.creativeHead}>
           <Ionicons name={cfg.icon} size={16} color={colors.primary} />
-          <Text style={styles.creativeTitle}>{cfg.label}</Text>
+          <Text style={styles.creativeTitle}>{t(`adCreate.placement.${p}.label`)}</Text>
         </View>
 
         {/* Media */}
@@ -349,12 +358,12 @@ export default function CreateAdScreen() {
             {d.picks[0].kind === 'audio' ? (
               <View style={styles.audioPreview}>
                 <Ionicons name="musical-notes" size={22} color={colors.primary} />
-                <Text style={styles.audioPreviewText} numberOfLines={1}>{d.picks[0].name || 'Audio clip'}</Text>
+                <Text style={styles.audioPreviewText} numberOfLines={1}>{d.picks[0].name || t('adCreate.audioClip')}</Text>
               </View>
             ) : firstImg ? (
               <>
                 <Image source={{ uri: d.picks[0].uri }} style={styles.preview} />
-                {d.picks.length > 1 && <Text style={styles.previewCount}>+{d.picks.length - 1} more (slideshow)</Text>}
+                {d.picks.length > 1 && <Text style={styles.previewCount}>{t('adCreate.moreSlideshow', { count: d.picks.length - 1 })}</Text>}
               </>
             ) : (
               <View style={styles.preview}>
@@ -369,61 +378,61 @@ export default function CreateAdScreen() {
             <>
               <TouchableOpacity style={styles.pickBtn} onPress={() => pickPhotos(p)}>
                 <Ionicons name="images-outline" size={16} color={colors.text} />
-                <Text style={styles.pickBtnText}>{d.picks.length ? 'Change photos' : 'Add photo(s)'}</Text>
+                <Text style={styles.pickBtnText}>{d.picks.length ? t('adCreate.changePhotos') : t('adCreate.addPhotos')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.pickBtn} onPress={() => pickVideo(p)}>
                 <Ionicons name="videocam-outline" size={16} color={colors.text} />
-                <Text style={styles.pickBtnText}>Video</Text>
+                <Text style={styles.pickBtnText}>{t('adCreate.video')}</Text>
               </TouchableOpacity>
             </>
           )}
           {p === 'reels' && (
             <TouchableOpacity style={styles.pickBtn} onPress={() => pickVideo(p)}>
               <Ionicons name="videocam-outline" size={16} color={colors.text} />
-              <Text style={styles.pickBtnText}>{d.picks.length ? 'Change video' : 'Add video'}</Text>
+              <Text style={styles.pickBtnText}>{d.picks.length ? t('adCreate.changeVideo') : t('adCreate.addVideo')}</Text>
             </TouchableOpacity>
           )}
           {p === 'audio' && (
             <TouchableOpacity style={styles.pickBtn} onPress={() => pickAudio(p)}>
               <Ionicons name="cloud-upload-outline" size={16} color={colors.text} />
-              <Text style={styles.pickBtnText}>{d.picks.length ? 'Change audio' : 'Add audio'}</Text>
+              <Text style={styles.pickBtnText}>{d.picks.length ? t('adCreate.changeAudio') : t('adCreate.addAudio')}</Text>
             </TouchableOpacity>
           )}
         </View>
 
         <TextInput
           style={styles.input}
-          placeholder="Headline"
+          placeholder={t('adCreate.headlinePlaceholder')}
           placeholderTextColor={colors.textTertiary}
           value={d.headline}
-          onChangeText={(t) => patchDraft(p, { headline: t })}
+          onChangeText={(text) => patchDraft(p, { headline: text })}
           maxLength={60}
         />
         <TextInput
           style={[styles.input, styles.inputMulti]}
-          placeholder="Body text (optional)"
+          placeholder={t('adCreate.bodyPlaceholder')}
           placeholderTextColor={colors.textTertiary}
           value={d.body}
-          onChangeText={(t) => patchDraft(p, { body: t })}
+          onChangeText={(text) => patchDraft(p, { body: text })}
           multiline
           maxLength={140}
         />
         <View style={styles.ctaRow}>
           <TextInput
             style={[styles.input, { flex: 1 }]}
-            placeholder="Button label"
+            placeholder={t('adCreate.buttonLabelPlaceholder')}
             placeholderTextColor={colors.textTertiary}
             value={d.ctaLabel}
-            onChangeText={(t) => patchDraft(p, { ctaLabel: t })}
+            onChangeText={(text) => patchDraft(p, { ctaLabel: text })}
             maxLength={20}
           />
         </View>
         <TextInput
           style={styles.input}
-          placeholder="Destination link (https://…)"
+          placeholder={t('adCreate.linkPlaceholder')}
           placeholderTextColor={colors.textTertiary}
           value={d.ctaUrl}
-          onChangeText={(t) => patchDraft(p, { ctaUrl: t })}
+          onChangeText={(text) => patchDraft(p, { ctaUrl: text })}
           autoCapitalize="none"
           keyboardType="url"
         />
@@ -453,24 +462,24 @@ export default function CreateAdScreen() {
           <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {step === 'basics' && (
               <>
-                <Text style={styles.lead}>What's the goal of this campaign?</Text>
+                <Text style={styles.lead}>{t('adCreate.basicsLead')}</Text>
                 {OBJECTIVES.map((o) => {
                   const on = objective === o.key;
                   return (
                     <TouchableOpacity key={o.key} style={[styles.selectCard, on && styles.selectCardOn]} onPress={() => setObjective(o.key)} activeOpacity={0.8}>
                       <Ionicons name={o.icon} size={20} color={on ? colors.primary : colors.textSecondary} />
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.selectTitle, on && { color: colors.primary }]}>{o.label}</Text>
-                        <Text style={styles.selectSub}>{o.blurb}</Text>
+                        <Text style={[styles.selectTitle, on && { color: colors.primary }]}>{t(`adCreate.objective.${o.key}.label`)}</Text>
+                        <Text style={styles.selectSub}>{t(`adCreate.objective.${o.key}.blurb`)}</Text>
                       </View>
                       {on && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
                     </TouchableOpacity>
                   );
                 })}
-                <Text style={[styles.label, { marginTop: SPACING.md }]}>Brand / advertiser name</Text>
+                <Text style={[styles.label, { marginTop: SPACING.md }]}>{t('adCreate.advertiserNameLabel')}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Shown on every ad as the advertiser"
+                  placeholder={t('adCreate.advertiserNamePlaceholder')}
                   placeholderTextColor={colors.textTertiary}
                   value={advertiserName}
                   onChangeText={setAdvertiserName}
@@ -478,8 +487,8 @@ export default function CreateAdScreen() {
                 />
                 <View style={styles.switchRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.switchLabel}>This is a business</Text>
-                    <Text style={styles.switchSub}>Advertising on behalf of a company or brand</Text>
+                    <Text style={styles.switchLabel}>{t('adCreate.isBusinessLabel')}</Text>
+                    <Text style={styles.switchSub}>{t('adCreate.isBusinessSub')}</Text>
                   </View>
                   <Switch
                     value={isBusiness}
@@ -493,16 +502,16 @@ export default function CreateAdScreen() {
 
             {step === 'placements' && (
               <>
-                <Text style={styles.lead}>Where should your ad appear? Pick one or more.</Text>
+                <Text style={styles.lead}>{t('adCreate.placementsLead')}</Text>
                 {PLACEMENTS.map((p) => {
                   const on = placements.includes(p.key);
                   return (
                     <TouchableOpacity key={p.key} style={[styles.selectCard, on && styles.selectCardOn]} onPress={() => togglePlacement(p.key)} activeOpacity={0.8}>
                       <Ionicons name={p.icon} size={20} color={on ? colors.primary : colors.textSecondary} />
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.selectTitle, on && { color: colors.primary }]}>{p.label}</Text>
-                        <Text style={styles.selectSub}>{p.blurb}</Text>
-                        <Text style={styles.selectMeta}>Needs: {p.media}</Text>
+                        <Text style={[styles.selectTitle, on && { color: colors.primary }]}>{t(`adCreate.placement.${p.key}.label`)}</Text>
+                        <Text style={styles.selectSub}>{t(`adCreate.placement.${p.key}.blurb`)}</Text>
+                        <Text style={styles.selectMeta}>{t('adCreate.needs', { media: t(`adCreate.placement.${p.key}.media`) })}</Text>
                       </View>
                       <Ionicons name={on ? 'checkbox' : 'square-outline'} size={20} color={on ? colors.primary : colors.textTertiary} />
                     </TouchableOpacity>
@@ -513,55 +522,55 @@ export default function CreateAdScreen() {
 
             {step === 'creatives' && (
               placements.length === 0
-                ? <Text style={styles.lead}>Go back and pick a placement first.</Text>
+                ? <Text style={styles.lead}>{t('adCreate.creativesEmpty')}</Text>
                 : (<>
-                    <Text style={styles.lead}>Build a creative for each placement. Every ad shows a "Sponsored" label and your brand name.</Text>
+                    <Text style={styles.lead}>{t('adCreate.creativesLead')}</Text>
                     {placements.map(renderCreativeCard)}
                   </>)
             )}
 
             {step === 'targeting' && (
               <>
-                <Text style={styles.lead}>All optional — leave blank to reach everyone.</Text>
+                <Text style={styles.lead}>{t('adCreate.targetingLead')}</Text>
 
-                <Text style={styles.label}>Age range</Text>
+                <Text style={styles.label}>{t('adCreate.ageRange')}</Text>
                 <View style={styles.ageRow}>
-                  <TextInput style={[styles.input, styles.ageInput]} placeholder="Min" placeholderTextColor={colors.textTertiary} value={ageMin} onChangeText={setAgeMin} keyboardType="number-pad" maxLength={2} />
+                  <TextInput style={[styles.input, styles.ageInput]} placeholder={t('adCreate.min')} placeholderTextColor={colors.textTertiary} value={ageMin} onChangeText={setAgeMin} keyboardType="number-pad" maxLength={2} />
                   <Text style={styles.ageDash}>–</Text>
-                  <TextInput style={[styles.input, styles.ageInput]} placeholder="Max" placeholderTextColor={colors.textTertiary} value={ageMax} onChangeText={setAgeMax} keyboardType="number-pad" maxLength={2} />
+                  <TextInput style={[styles.input, styles.ageInput]} placeholder={t('adCreate.max')} placeholderTextColor={colors.textTertiary} value={ageMax} onChangeText={setAgeMax} keyboardType="number-pad" maxLength={2} />
                 </View>
 
-                <Text style={styles.label}>Gender</Text>
+                <Text style={styles.label}>{t('adCreate.gender')}</Text>
                 <View style={styles.chipWrap}>
                   {GENDERS.map((g) => {
-                    const on = gender === g;
+                    const on = gender === g.key;
                     return (
-                      <TouchableOpacity key={g} style={[styles.chip, on && styles.chipOn]} onPress={() => setGender(g)}>
-                        <Text style={[styles.chipText, on && styles.chipTextOn]}>{g}</Text>
+                      <TouchableOpacity key={g.key} style={[styles.chip, on && styles.chipOn]} onPress={() => setGender(g.key)}>
+                        <Text style={[styles.chipText, on && styles.chipTextOn]}>{t(g.label)}</Text>
                       </TouchableOpacity>
                     );
                   })}
                 </View>
 
-                <Text style={styles.label}>Interests / genres</Text>
+                <Text style={styles.label}>{t('adCreate.interests')}</Text>
                 <View style={styles.chipWrap}>
                   {GENRES.map((g) => {
                     const on = genres.includes(g);
                     return (
                       <TouchableOpacity key={g} style={[styles.chip, on && styles.chipOn]} onPress={() => toggleGenre(g)}>
-                        <Text style={[styles.chipText, on && styles.chipTextOn]}>{g}</Text>
+                        <Text style={[styles.chipText, on && styles.chipTextOn]}>{genreLabel(g)}</Text>
                       </TouchableOpacity>
                     );
                   })}
                 </View>
 
-                <Text style={styles.label}>Location</Text>
+                <Text style={styles.label}>{t('adCreate.location')}</Text>
                 {hasLocation ? (
                   <>
                     <View style={styles.switchRow}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.switchLabel}>Target near my area</Text>
-                        <Text style={styles.switchSub}>Reach people within a radius of your saved location</Text>
+                        <Text style={styles.switchLabel}>{t('adCreate.targetNearLabel')}</Text>
+                        <Text style={styles.switchSub}>{t('adCreate.targetNearSub')}</Text>
                       </View>
                       <Switch
                         value={useLocation}
@@ -573,36 +582,36 @@ export default function CreateAdScreen() {
                     {useLocation && (
                       <View style={styles.ageRow}>
                         <TextInput style={[styles.input, styles.ageInput]} placeholder="50" placeholderTextColor={colors.textTertiary} value={radiusKm} onChangeText={setRadiusKm} keyboardType="number-pad" maxLength={4} />
-                        <Text style={styles.ageDash}>km radius</Text>
+                        <Text style={styles.ageDash}>{t('adCreate.kmRadius')}</Text>
                       </View>
                     )}
                   </>
                 ) : (
-                  <Text style={styles.note}>Add your location in Settings → Permissions to target by area.</Text>
+                  <Text style={styles.note}>{t('adCreate.locationNote')}</Text>
                 )}
               </>
             )}
 
             {step === 'budget' && (
               <>
-                <Text style={styles.lead}>Set how much to spend and how long to run. Payments are simulated for now.</Text>
+                <Text style={styles.lead}>{t('adCreate.budgetLead')}</Text>
 
-                <Text style={styles.label}>Total budget (USD)</Text>
+                <Text style={styles.label}>{t('adCreate.totalBudgetLabel')}</Text>
                 <TextInput style={styles.input} placeholder="20" placeholderTextColor={colors.textTertiary} value={budget} onChangeText={setBudget} keyboardType="decimal-pad" />
 
-                <Text style={styles.label}>Daily cap (optional)</Text>
-                <TextInput style={styles.input} placeholder="No cap" placeholderTextColor={colors.textTertiary} value={dailyCap} onChangeText={setDailyCap} keyboardType="decimal-pad" />
+                <Text style={styles.label}>{t('adCreate.dailyCapLabel')}</Text>
+                <TextInput style={styles.input} placeholder={t('adCreate.noCap')} placeholderTextColor={colors.textTertiary} value={dailyCap} onChangeText={setDailyCap} keyboardType="decimal-pad" />
 
-                <Text style={styles.label}>CPM bid — cost per 1,000 views (USD)</Text>
+                <Text style={styles.label}>{t('adCreate.cpmLabel')}</Text>
                 <TextInput style={styles.input} placeholder="5.00" placeholderTextColor={colors.textTertiary} value={cpm} onChangeText={setCpm} keyboardType="decimal-pad" />
 
-                <Text style={styles.label}>Run length (days)</Text>
+                <Text style={styles.label}>{t('adCreate.runLengthLabel')}</Text>
                 <TextInput style={styles.input} placeholder="7" placeholderTextColor={colors.textTertiary} value={days} onChangeText={setDays} keyboardType="number-pad" maxLength={3} />
 
                 <View style={styles.estimateCard}>
                   <Ionicons name="bar-chart-outline" size={18} color={colors.primary} />
                   <Text style={styles.estimateText}>
-                    Est. ~{estImps.toLocaleString()} views over {parseInt(days, 10) || 0} day{(parseInt(days, 10) || 0) === 1 ? '' : 's'}
+                    {t('adCreate.estimate', { views: estImps.toLocaleString(), days: parseInt(days, 10) || 0 })}
                   </Text>
                 </View>
               </>
@@ -611,46 +620,45 @@ export default function CreateAdScreen() {
             {step === 'review' && (
               <>
                 <View style={styles.card}>
-                  <Text style={styles.reviewTitle}>{advertiserName || 'Untitled'}</Text>
-                  <ReviewRow k="Objective" v={objective} styles={styles} />
-                  <ReviewRow k="Placements" v={placements.map(labelFor).join(', ') || '—'} styles={styles} />
-                  <ReviewRow k="Budget" v={fmtPrice(budgetCents)} styles={styles} />
-                  {!!dailyCap && <ReviewRow k="Daily cap" v={fmtPrice(Math.round(parseFloat(dailyCap) * 100))} styles={styles} />}
-                  <ReviewRow k="CPM" v={fmtPrice(cpmCents)} styles={styles} />
-                  <ReviewRow k="Run length" v={`${parseInt(days, 10) || 0} days`} styles={styles} />
-                  <ReviewRow k="Est. views" v={`~${estImps.toLocaleString()}`} styles={styles} />
+                  <Text style={styles.reviewTitle}>{advertiserName || t('adCreate.untitled')}</Text>
+                  <ReviewRow k={t('adCreate.reviewObjective')} v={t(`adCreate.objective.${objective}.label`)} styles={styles} />
+                  <ReviewRow k={t('adCreate.reviewPlacements')} v={placements.map(labelFor).join(', ') || '—'} styles={styles} />
+                  <ReviewRow k={t('adCreate.reviewBudget')} v={fmtPrice(budgetCents)} styles={styles} />
+                  {!!dailyCap && <ReviewRow k={t('adCreate.reviewDailyCap')} v={fmtPrice(Math.round(parseFloat(dailyCap) * 100))} styles={styles} />}
+                  <ReviewRow k={t('adCreate.reviewCpm')} v={fmtPrice(cpmCents)} styles={styles} />
+                  <ReviewRow k={t('adCreate.reviewRunLength')} v={`${parseInt(days, 10) || 0} ${t('adCreate.daysUnit')}`} styles={styles} />
+                  <ReviewRow k={t('adCreate.reviewEstViews')} v={`~${estImps.toLocaleString()}`} styles={styles} />
                   {(ageMin || ageMax || gender !== 'Any' || genres.length > 0 || (useLocation && hasLocation)) ? (
                     <ReviewRow
-                      k="Targeting"
+                      k={t('adCreate.reviewTargeting')}
                       v={[
-                        (ageMin || ageMax) ? `Age ${ageMin || '0'}–${ageMax || '∞'}` : null,
-                        gender !== 'Any' ? gender : null,
-                        genres.length ? `${genres.length} genre${genres.length === 1 ? '' : 's'}` : null,
+                        (ageMin || ageMax) ? t('adCreate.ageValue', { min: ageMin || '0', max: ageMax || '∞' }) : null,
+                        gender !== 'Any' ? t(GENDERS.find((x) => x.key === gender)?.label ?? 'adCreate.genderAny') : null,
+                        genres.length ? t('adCreate.genresValue', { count: genres.length }) : null,
                         useLocation && hasLocation ? `${parseFloat(radiusKm) || 50}km` : null,
                       ].filter(Boolean).join(' · ')}
                       styles={styles}
                     />
                   ) : (
-                    <ReviewRow k="Targeting" v="Everyone" styles={styles} />
+                    <ReviewRow k={t('adCreate.reviewTargeting')} v={t('adCreate.everyone')} styles={styles} />
                   )}
                 </View>
 
-                <TouchableOpacity style={styles.termsRow} onPress={() => setTerms((t) => !t)} activeOpacity={0.8}>
+                <TouchableOpacity style={styles.termsRow} onPress={() => setTerms((prev) => !prev)} activeOpacity={0.8}>
                   <Ionicons name={terms ? 'checkbox' : 'square-outline'} size={22} color={terms ? colors.primary : colors.textTertiary} />
                   <Text style={styles.termsText}>
-                    I confirm this ad and its destination comply with Laybell's ad policy — no illegal,
-                    deceptive, or age-inappropriate content — and I have the rights to the creative.
+                    {t('adCreate.termsText')}
                   </Text>
                 </TouchableOpacity>
                 <Text
                   onPress={() => router.push('/advertiser-terms')}
                   style={{ color: colors.primary, fontWeight: '700', fontSize: 12, marginTop: 6, marginLeft: 34 }}
                 >
-                  Read the Advertiser Terms & Ad Policy
+                  {t('adCreate.readTerms')}
                 </Text>
 
                 <Text style={styles.simNote}>
-                  Simulated checkout — no real charge is made while Laybell payments are in preview.
+                  {t('adCreate.simNote')}
                 </Text>
               </>
             )}
@@ -660,11 +668,11 @@ export default function CreateAdScreen() {
           <View style={styles.footer}>
             {step === 'review' ? (
               <TouchableOpacity style={[styles.primaryBtn, (!terms || publishing) && styles.primaryBtnDisabled]} onPress={publish} disabled={!terms || publishing}>
-                {publishing ? <ActivityIndicator color={colors.text} size="small" /> : <Text style={styles.primaryBtnText}>Launch campaign · {fmtPrice(budgetCents)}</Text>}
+                {publishing ? <ActivityIndicator color={colors.text} size="small" /> : <Text style={styles.primaryBtnText}>{t('adCreate.launchBtn', { price: fmtPrice(budgetCents) })}</Text>}
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={styles.primaryBtn} onPress={next}>
-                <Text style={styles.primaryBtnText}>Continue</Text>
+                <Text style={styles.primaryBtnText}>{t('adCreate.continue')}</Text>
               </TouchableOpacity>
             )}
           </View>

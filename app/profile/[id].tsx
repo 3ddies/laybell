@@ -12,6 +12,7 @@ import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import SpotlightThumbBadge from '../../components/SpotlightThumbBadge';
@@ -49,6 +50,7 @@ const SCREEN_W = Dimensions.get('window').width;
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { playQueue, expand } = useAudio();
@@ -221,9 +223,9 @@ export default function PublicProfileScreen() {
     return (
       <View style={[styles.loadingContainer, { gap: SPACING.sm, padding: SPACING.xl }]}>
         <Ionicons name="eye-off-outline" size={44} color={colors.textTertiary} />
-        <Text style={{ color: colors.text, fontSize: 17, fontWeight: '700' }}>This account is unavailable</Text>
+        <Text style={{ color: colors.text, fontSize: 17, fontWeight: '700' }}>{t('profile.unavailable')}</Text>
         <TouchableOpacity onPress={() => router.back()} style={{ padding: SPACING.sm }}>
-          <Text style={{ color: colors.primary, fontSize: 15, fontWeight: '600' }}>Go back</Text>
+          <Text style={{ color: colors.primary, fontSize: 15, fontWeight: '600' }}>{t('profile.goBack')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -231,7 +233,7 @@ export default function PublicProfileScreen() {
 
   const isOwnProfile = currentUserId === id;
   const isFriend = isFollowing && followsMe;
-  const followLabel = isFriend ? 'Friends' : isFollowing ? 'Following' : followsMe ? 'Follow back' : 'Follow';
+  const followLabel = isFriend ? t('profile.friends') : isFollowing ? t('profile.followingBtn') : followsMe ? t('profile.followBack') : t('profile.follow');
   const ownerTier = chosenTier(profile);
   const ringColors = resolveRingColors(profile, ownerTier);
   const bannerColors = resolveBannerColors(ownerTier, colors.background);
@@ -274,7 +276,7 @@ export default function PublicProfileScreen() {
       return (
         <View style={styles.emptyGrid}>
           <Ionicons name="albums-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyGridText}>No public playlists yet</Text>
+          <Text style={styles.emptyGridText}>{t('profile.noPlaylists')}</Text>
         </View>
       );
     }
@@ -307,7 +309,7 @@ export default function PublicProfileScreen() {
       return (
         <View style={styles.emptyGrid}>
           <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyGridText}>No music yet</Text>
+          <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
         </View>
       );
     }
@@ -389,7 +391,7 @@ export default function PublicProfileScreen() {
       return (
         <View style={styles.emptyGrid}>
           <Ionicons name="images-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyGridText}>No {tabKey} yet</Text>
+          <Text style={styles.emptyGridText}>{t(`profile.empty.${tabKey}`)}</Text>
         </View>
       );
     }
@@ -505,9 +507,9 @@ export default function PublicProfileScreen() {
 
         <View style={styles.statsRow}>
           {[
-            { label: 'Posts', val: stats.posts, onPress: undefined },
-            { label: 'Followers', val: stats.followers, onPress: () => router.push(`/followers/${id}`) },
-            { label: 'Following', val: stats.following, onPress: () => router.push(`/following/${id}`) },
+            { label: t('profile.tab.posts'), val: stats.posts, onPress: undefined },
+            { label: t('profile.followers'), val: stats.followers, onPress: () => router.push(`/followers/${id}`) },
+            { label: t('profile.following'), val: stats.following, onPress: () => router.push(`/following/${id}`) },
           ].map(({ label, val, onPress }) => (
             <TouchableOpacity key={label} style={styles.statItem} onPress={onPress} disabled={!onPress}>
               <Text style={styles.statNumber}>{val}</Text>
@@ -525,7 +527,7 @@ export default function PublicProfileScreen() {
         </View>
         {profile?.bio
           ? <Text style={styles.bio}>{profile.bio}</Text>
-          : <Text style={styles.bioEmpty}>No bio yet</Text>
+          : <Text style={styles.bioEmpty}>{t('profile.noBio')}</Text>
         }
         {profile?.link ? (
           <TouchableOpacity style={styles.linkRow} onPress={() => Linking.openURL(normalizeUrl(profile.link!)).catch(() => {})}>
@@ -555,7 +557,7 @@ export default function PublicProfileScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.messageButton} onPress={() => router.push(`/messages/${id}`)}>
             <Ionicons name="chatbubble-outline" size={18} color={colors.text} />
-            <Text style={styles.messageButtonText}>Message</Text>
+            <Text style={styles.messageButtonText}>{t('profile.message')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -568,7 +570,7 @@ export default function PublicProfileScreen() {
             style={[styles.tab, activeTab === tab.key && styles.activeTab, activeTab === tab.key && activeTabDyn]}
             onPress={() => setActiveTab(tab.key)}
           >
-            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText, activeTab === tab.key && { color: tabAccent }]}>{tab.label}</Text>
+            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText, activeTab === tab.key && { color: tabAccent }]}>{t(`profile.tab.${tab.key}`)}</Text>
           </TouchableOpacity>
         ))}
       </View>

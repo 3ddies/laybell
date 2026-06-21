@@ -2,6 +2,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { formatCount } from '../lib/format';
 
 type Datum = { label: string; value: number };
@@ -14,11 +15,12 @@ export function BarChart({
   const max = Math.max(1, ...data.map((d) => d.value));
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const peakIdx = data.reduce((mi, d, i) => (d.value > data[mi].value ? i : mi), 0);
   const labelStep = Math.ceil(data.length / 8); // show ~8 labels max
 
   if (data.every((d) => d.value === 0)) {
-    return <View style={[styles.emptyChart, { height: height + 20 }]}><Text style={styles.emptyText}>No data yet for this range</Text></View>;
+    return <View style={[styles.emptyChart, { height: height + 20 }]}><Text style={styles.emptyText}>{t('analyticsCharts.noData')}</Text></View>;
   }
 
   return (

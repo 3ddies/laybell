@@ -8,6 +8,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { useProfile } from '../contexts/ProfileContext';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { isAdPersonalizationEnabled, setAdPersonalization } from '../lib/adPrefs';
 import { buildDataExport } from '../lib/dataExport';
@@ -65,6 +66,7 @@ function ToggleRow({ icon, label, subtitle, value, onValueChange }: {
 export default function PrivacyCenterScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const { profile } = useProfile();
   const [adsOn, setAdsOn] = useState(false);
@@ -80,7 +82,7 @@ export default function PrivacyCenterScreen() {
       // iOS shares the file; Android shares the JSON text (no extra native dep).
       await Share.share(Platform.OS === 'ios' ? { url: fileUri } : { message: json });
     } catch (e: any) {
-      Alert.alert('Export failed', e?.message ?? 'Please try again.');
+      Alert.alert(t('privacyCenter.exportFailed'), e?.message ?? t('privacyCenter.tryAgain'));
     } finally {
       setExporting(false);
     }
@@ -96,35 +98,35 @@ export default function PrivacyCenterScreen() {
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color={colors.primary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Privacy & Data</Text>
+          <Text style={styles.headerTitle}>{t('account.privacy')}</Text>
           <View style={{ width: 40 }} />
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.intro}>
-            Manage your privacy, control how your data is used, get a copy of it, or delete your account.
+            {t('privacyCenter.intro')}
           </Text>
 
           <View style={styles.card}>
-            <Row icon="document-text-outline" label="Privacy Policy" onPress={() => router.push('/privacy-policy')} />
+            <Row icon="document-text-outline" label={t('about.privacyPolicy')} onPress={() => router.push('/privacy-policy')} />
             <Sep />
-            <Row icon="shield-outline" label="Terms of Service" onPress={() => router.push('/terms-of-service')} />
+            <Row icon="shield-outline" label={t('about.terms')} onPress={() => router.push('/terms-of-service')} />
           </View>
 
-          <Text style={styles.section}>Your data & rights</Text>
+          <Text style={styles.section}>{t('privacyCenter.dataRights')}</Text>
           <View style={styles.card}>
             <ToggleRow
               icon="sparkles-outline"
-              label="Personalized ads"
-              subtitle="Use my profile & activity to tailor ads. Off by default."
+              label={t('privacyCenter.personalizedAds')}
+              subtitle={t('privacyCenter.personalizedAdsSub')}
               value={adsOn}
               onValueChange={(v) => { setAdsOn(v); setAdPersonalization(v); }}
             />
             <Sep />
             <Row
               icon="download-outline"
-              label="Download your data"
-              subtitle="Export a copy of your account data"
+              label={t('privacyCenter.downloadData')}
+              subtitle={t('privacyCenter.downloadDataSub')}
               onPress={handleExport}
               loading={exporting}
             />
@@ -140,25 +142,25 @@ export default function PrivacyCenterScreen() {
                 />
                 <Text style={styles.statusText}>
                   {consentVerified
-                    ? 'Parent/guardian consent confirmed.'
-                    : 'Parent/guardian consent recorded — awaiting email confirmation.'}
+                    ? t('privacyCenter.consentConfirmed')
+                    : t('privacyCenter.consentPending')}
                 </Text>
               </View>
             </View>
           )}
 
-          <Text style={styles.section}>Danger zone</Text>
+          <Text style={styles.section}>{t('privacyCenter.dangerZone')}</Text>
           <View style={styles.card}>
             <Row
               icon="trash-outline"
-              label="Delete your account"
-              subtitle="Hide for 3 months or delete now"
+              label={t('privacyCenter.deleteAccount')}
+              subtitle={t('privacyCenter.deleteAccountSub')}
               destructive
               onPress={() => confirmDeleteAccount()}
             />
           </View>
 
-          <Text style={styles.foot}>Questions about your data? Contact privacy@laybell.app</Text>
+          <Text style={styles.foot}>{t('privacyCenter.foot')}</Text>
         </ScrollView>
       </View>
     </SwipeBackPager>

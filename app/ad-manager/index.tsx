@@ -14,19 +14,22 @@ import {
 import SwipeBackPager from '../../components/SwipeBackPager';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
 // Ad Manager — create and manage dedicated-creative ad campaigns across the
 // feed, reels and audio. Separate from Spotlight (which promotes an existing
 // post). Reached from Settings → Ad Manager. Each card doubles as a quick
 // performance read; tapping opens the full analytics detail.
 
-const STATUS_LABEL: Record<AdStatus, string> = {
-  pending: 'Draft',
-  active: 'Live',
-  paused: 'Paused',
-  ended: 'Ended',
-  canceled: 'Canceled',
-};
+const statusLabel = (t: TFn): Record<AdStatus, string> => ({
+  pending: t('adManager.statusPending'),
+  active: t('adManager.statusActive'),
+  paused: t('adManager.statusPaused'),
+  ended: t('adManager.statusEnded'),
+  canceled: t('adManager.statusCanceled'),
+});
 
 const PLACEMENT_ICON: Record<AdPlacement, any> = {
   feed: 'home-outline',
@@ -38,6 +41,8 @@ export default function AdManagerScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
+  const { t } = useTranslation();
+  const STATUS_LABEL = statusLabel(t);
 
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,16 +70,16 @@ export default function AdManagerScreen() {
     const ok = await fn(id);
     setBusyId(null);
     if (ok) load();
-    else Alert.alert('Error', failMsg);
+    else Alert.alert(t('adManager.errorTitle'), failMsg);
   }
 
   function confirmEnd(c: AdCampaign) {
     Alert.alert(
-      'End this campaign?',
-      'It stops serving right away. Spent budget is not refunded.',
+      t('adManager.endTitle'),
+      t('adManager.endBody'),
       [
-        { text: 'Keep running', style: 'cancel' },
-        { text: 'End campaign', style: 'destructive', onPress: () => doAction(c.id, endAdCampaign, 'Could not end the campaign.') },
+        { text: t('adManager.keepRunning'), style: 'cancel' },
+        { text: t('adManager.endConfirm'), style: 'destructive', onPress: () => doAction(c.id, endAdCampaign, t('adManager.errEnd')) },
       ],
     );
   }
@@ -97,7 +102,7 @@ export default function AdManagerScreen() {
         onPress={() => router.push(`/ad-manager/${c.id}`)}
       >
         <View style={styles.cardTitleRow}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{c.advertiser_name || 'Untitled campaign'}</Text>
+          <Text style={styles.cardTitle} numberOfLines={1}>{c.advertiser_name || t('adManager.untitled')}</Text>
           <View style={[styles.statusChip, { borderColor: statusColor(status) }]}>
             <Text style={[styles.statusChipText, { color: statusColor(status) }]}>{STATUS_LABEL[status]}</Text>
           </View>
@@ -114,7 +119,7 @@ export default function AdManagerScreen() {
 
         {/* Spend / budget */}
         <View style={styles.budgetRow}>
-          <Text style={styles.budgetText}>{fmtPrice(spent)} of {fmtPrice(budget)}</Text>
+          <Text style={styles.budgetText}>{t('adManager.spendOf', { spent: fmtPrice(spent), budget: fmtPrice(budget) })}</Text>
           <Text style={styles.budgetPct}>{Math.round(pct * 100)}%</Text>
         </View>
         <View style={styles.budgetTrack}>
@@ -124,32 +129,32 @@ export default function AdManagerScreen() {
         <View style={styles.statsRow}>
           <View style={styles.stat}>
             <Ionicons name="eye-outline" size={15} color={colors.textSecondary} />
-            <Text style={styles.statText}>{impressions} views</Text>
+            <Text style={styles.statText}>{t('adManager.views', { count: impressions })}</Text>
           </View>
           <View style={styles.stat}>
             <Ionicons name="open-outline" size={15} color={colors.textSecondary} />
-            <Text style={styles.statText}>{clicks} clicks</Text>
+            <Text style={styles.statText}>{t('adManager.clicks', { count: clicks })}</Text>
           </View>
           <View style={styles.stat}>
             <Ionicons name="trending-up-outline" size={15} color={colors.textSecondary} />
-            <Text style={styles.statText}>{ctr.toFixed(1)}% CTR</Text>
+            <Text style={styles.statText}>{t('adManager.ctr', { pct: ctr.toFixed(1) })}</Text>
           </View>
         </View>
 
         {(status === 'active' || status === 'paused') && (
           <View style={styles.cardActions}>
             {status === 'active' ? (
-              <TouchableOpacity style={styles.cardActionGhost} disabled={busyId === c.id} onPress={() => doAction(c.id, pauseAdCampaign, 'Could not pause.')}>
-                <Text style={styles.cardActionGhostText}>Pause</Text>
+              <TouchableOpacity style={styles.cardActionGhost} disabled={busyId === c.id} onPress={() => doAction(c.id, pauseAdCampaign, t('adManager.errPause'))}>
+                <Text style={styles.cardActionGhostText}>{t('adManager.pause')}</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.cardActionPrimary} disabled={busyId === c.id} onPress={() => doAction(c.id, resumeAdCampaign, 'Could not resume.')}>
+              <TouchableOpacity style={styles.cardActionPrimary} disabled={busyId === c.id} onPress={() => doAction(c.id, resumeAdCampaign, t('adManager.errResume'))}>
                 <Ionicons name="play" size={14} color={colors.text} />
-                <Text style={styles.cardActionPrimaryText}>Resume</Text>
+                <Text style={styles.cardActionPrimaryText}>{t('adManager.resume')}</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity style={styles.cardActionGhost} disabled={busyId === c.id} onPress={() => confirmEnd(c)}>
-              <Text style={styles.cardActionGhostText}>End</Text>
+              <Text style={styles.cardActionGhostText}>{t('adManager.end')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -164,7 +169,7 @@ export default function AdManagerScreen() {
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color={colors.primary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Ad Manager</Text>
+          <Text style={styles.headerTitle}>{t('account.adManager')}</Text>
           <View style={{ width: 40 }} />
         </View>
 
@@ -178,27 +183,24 @@ export default function AdManagerScreen() {
               <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
             }
           >
-            <Text style={styles.hint}>
-              Run ads across the Home feed, Reels and music breaks. Upload a creative, set a budget,
-              optionally target an audience, and track performance — all here.
-            </Text>
+            <Text style={styles.hint}>{t('adManager.hint')}</Text>
 
             <TouchableOpacity style={styles.createBtn} onPress={() => router.push('/ad-manager/create')} activeOpacity={0.85}>
               <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
                 <Ionicons name="megaphone" size={18} color={colors.text} />
-                <Text style={styles.createBtnText}>Create an Ad</Text>
+                <Text style={styles.createBtnText}>{t('adManager.create')}</Text>
               </LinearGradient>
             </TouchableOpacity>
 
             {campaigns.length === 0 ? (
               <View style={styles.empty}>
                 <Ionicons name="megaphone-outline" size={44} color={colors.textTertiary} />
-                <Text style={styles.emptyTitle}>No campaigns yet</Text>
-                <Text style={styles.emptySub}>Your ad campaigns and their performance will show up here.</Text>
+                <Text style={styles.emptyTitle}>{t('adManager.emptyTitle')}</Text>
+                <Text style={styles.emptySub}>{t('adManager.emptySub')}</Text>
               </View>
             ) : (
               <View style={styles.cards}>
-                <Text style={styles.sectionTitle}>Your campaigns</Text>
+                <Text style={styles.sectionTitle}>{t('adManager.sectionCampaigns')}</Text>
                 {campaigns.map(renderCampaign)}
               </View>
             )}

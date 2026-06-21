@@ -21,6 +21,7 @@ import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
 import { SPACING, RADIUS, SHADOWS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
@@ -305,6 +306,7 @@ const PostCard = memo(function PostCard({
 export default function HomeScreen() {
   const { show: showOptions } = usePostOptions();
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const { share: openShare } = useShare();
   const [posts, setPosts] = useState<Post[]>([]);
@@ -345,8 +347,8 @@ export default function HomeScreen() {
   // Latest values for the stable card callbacks below. Updating a ref (instead of
   // putting these in useCallback deps) lets the callbacks keep a constant identity
   // — so memoized PostCards don't re-render — while still acting on current state.
-  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare });
-  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare };
+  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare, t });
+  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare, t };
 
   // Track which video is on-screen so it auto-plays while others pause.
   // FlatList requires these references to be stable across renders.
@@ -766,18 +768,19 @@ export default function HomeScreen() {
   const onAdOptions = useCallback((item: any) => {
     const ad = item.__ad;
     if (!ad) return;
-    Alert.alert(ad.advertiserName || 'Sponsored ad', 'Sponsored', [
+    const tr = live.current.t;
+    Alert.alert(ad.advertiserName || tr('ad.sponsoredAd'), tr('ad.sponsored'), [
       {
-        text: 'Report ad',
+        text: tr('ad.report'),
         onPress: () => reportAd(ad.campaignId, ad.creativeId).then((ok) =>
-          Alert.alert(ok ? 'Thanks for the report' : 'Could not report', ok ? "We'll review this ad." : 'Please try again later.')),
+          Alert.alert(ok ? tr('ad.reportThanksTitle') : tr('ad.reportFailTitle'), ok ? tr('ad.reportThanksBody') : tr('ad.reportFailBody'))),
       },
       {
-        text: 'Why am I seeing this?',
-        onPress: () => Alert.alert('Why this ad?', 'You\'re seeing this because it matched its audience and ran in your feed. Manage ad personalization in Settings → Ads.'),
+        text: tr('ad.why'),
+        onPress: () => Alert.alert(tr('ad.whyTitle'), tr('ad.whyBody')),
       },
-      { text: 'Ad settings', onPress: () => live.current.router.push('/settings') },
-      { text: 'Cancel', style: 'cancel' },
+      { text: tr('ad.settings'), onPress: () => live.current.router.push('/settings') },
+      { text: tr('common.cancel'), style: 'cancel' },
     ]);
   }, []);
 
@@ -912,7 +915,7 @@ export default function HomeScreen() {
                     size={20}
                     color={active ? colors.primaryLight : colors.textSecondary}
                   />
-                  <Text style={[styles.menuItemText, active && styles.menuItemTextActive]}>{opt.label}</Text>
+                  <Text style={[styles.menuItemText, active && styles.menuItemTextActive]}>{t(`feed.filter.${opt.key}`)}</Text>
                   {active && (
                     <Ionicons name="checkmark" size={18} color={colors.primaryLight} style={styles.menuCheck} />
                   )}
@@ -959,21 +962,21 @@ export default function HomeScreen() {
             <Ionicons name="musical-notes" size={48} color={colors.textTertiary} />
             <Text style={styles.emptyTitle}>
               {feedMode === 'following'
-                ? 'No posts from people you follow'
+                ? t('feed.emptyFollowingTitle')
                 : feedMode === 'friends'
-                ? 'No posts from your friends'
-                : 'No posts yet'}
+                ? t('feed.emptyFriendsTitle')
+                : t('feed.emptyTitle')}
             </Text>
             <Text style={styles.emptySubtitle}>
               {feedMode === 'following'
-                ? 'Follow some artists to see their posts here'
+                ? t('feed.emptyFollowingSub')
                 : feedMode === 'friends'
-                ? 'When you and someone follow each other you become friends — their posts show up here'
-                : 'Be the first to post on Laybell'}
+                ? t('feed.emptyFriendsSub')
+                : t('feed.emptySub')}
             </Text>
             {feedMode !== 'all' && (
               <TouchableOpacity style={styles.exploreBtn} onPress={() => router.push('/(tabs)/explore')}>
-                <Text style={styles.exploreBtnText}>Discover Artists</Text>
+                <Text style={styles.exploreBtnText}>{t('feed.discoverArtists')}</Text>
                 <Ionicons name="arrow-forward" size={16} color={colors.text} />
               </TouchableOpacity>
             )}

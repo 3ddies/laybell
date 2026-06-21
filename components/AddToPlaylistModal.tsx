@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 type Playlist = { id: string; name: string; is_public: boolean };
 
@@ -23,6 +24,7 @@ type Props = {
 
 export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay }: Props) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
         .eq('playlist_id', playlistId)
         .eq('post_id', postId);
       if (error) {
-        Alert.alert('Error', error.message);
+        Alert.alert(t('addToPlaylist.errorTitle'), error.message);
       } else {
         setAdded(prev => { const next = new Set(prev); next.delete(playlistId); return next; });
       }
@@ -78,7 +80,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
       });
 
       if (error) {
-        Alert.alert('Error', error.message);
+        Alert.alert(t('addToPlaylist.errorTitle'), error.message);
       } else {
         setAdded(prev => new Set([...prev, playlistId]));
       }
@@ -93,7 +95,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
           <View style={styles.handle} />
 
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Add to Playlist</Text>
+            <Text style={styles.sheetTitle}>{t('addToPlaylist.title')}</Text>
             <TouchableOpacity onPress={onClose}>
               <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -106,8 +108,8 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
           ) : playlists.length === 0 ? (
             <View style={styles.emptyWrap}>
               <Ionicons name="musical-notes-outline" size={36} color={colors.textTertiary} />
-              <Text style={styles.emptyText}>No playlists yet</Text>
-              <Text style={styles.emptySubtext}>Create a playlist in the Music tab first</Text>
+              <Text style={styles.emptyText}>{t('addToPlaylist.empty')}</Text>
+              <Text style={styles.emptySubtext}>{t('addToPlaylist.emptyHint')}</Text>
             </View>
           ) : (
             <FlatList
@@ -135,12 +137,12 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
                     </LinearGradient>
                     <View style={styles.playlistInfo}>
                       <Text style={styles.playlistName}>{item.name}</Text>
-                      <Text style={styles.playlistMeta}>{item.is_public ? 'Public' : 'Private'}</Text>
+                      <Text style={styles.playlistMeta}>{item.is_public ? t('post.public') : t('music.private')}</Text>
                     </View>
                     {isAdding ? (
                       <ActivityIndicator size="small" color={colors.primary} />
                     ) : isAdded ? (
-                      <Text style={styles.addedText}>Added</Text>
+                      <Text style={styles.addedText}>{t('addToPlaylist.added')}</Text>
                     ) : (
                       <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
                     )}

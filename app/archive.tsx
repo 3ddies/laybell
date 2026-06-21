@@ -13,12 +13,14 @@ import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 type Tab = 'posts' | 'stories';
 
 export default function ArchiveScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('posts');
   const [posts, setPosts] = useState<any[]>([]);
@@ -50,25 +52,25 @@ export default function ArchiveScreen() {
 
   function onPostPress(post: any) {
     Alert.alert(
-      'Archived post',
-      'Restore this post to your profile, or delete it permanently.',
+      t('archive.postTitle'),
+      t('archive.postBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Restore',
+          text: t('archive.restore'),
           onPress: async () => {
             const ok = await restorePostById(post.id);
             if (ok) setPosts(prev => prev.filter(p => p.id !== post.id));
-            else Alert.alert('Error', 'Could not restore the post. Please try again.');
+            else Alert.alert(t('archive.errorTitle'), t('archive.restorePostError'));
           },
         },
         {
-          text: 'Delete permanently',
+          text: t('archive.deletePermanently'),
           style: 'destructive',
           onPress: async () => {
             const ok = await deletePostById(post.id);
             if (ok) setPosts(prev => prev.filter(p => p.id !== post.id));
-            else Alert.alert('Error', 'Could not delete the post. Please try again.');
+            else Alert.alert(t('archive.errorTitle'), t('archive.deletePostError'));
           },
         },
       ],
@@ -77,20 +79,20 @@ export default function ArchiveScreen() {
 
   function onStoryPress(story: Story) {
     Alert.alert(
-      'Archived story',
-      'Restore this story to share it again for 24 hours, or delete it permanently.',
+      t('archive.storyTitle'),
+      t('archive.storyBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Restore',
+          text: t('archive.restore'),
           onPress: async () => {
             const ok = await restoreStory(story.id);
             if (ok) setStories(prev => prev.filter(s => s.id !== story.id));
-            else Alert.alert('Error', 'Could not restore the story. Please try again.');
+            else Alert.alert(t('archive.errorTitle'), t('archive.restoreStoryError'));
           },
         },
         {
-          text: 'Delete permanently',
+          text: t('archive.deletePermanently'),
           style: 'destructive',
           onPress: async () => {
             await deleteStory(story.id);
@@ -120,25 +122,25 @@ export default function ArchiveScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Archive</Text>
+        <Text style={styles.headerTitle}>{t('account.archive')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {/* Posts / Stories segments */}
       <View style={styles.segments}>
-        {(['posts', 'stories'] as const).map(t => (
+        {(['posts', 'stories'] as const).map(seg => (
           <TouchableOpacity
-            key={t}
-            style={[styles.segment, tab === t && styles.segmentActive]}
-            onPress={() => setTab(t)}
+            key={seg}
+            style={[styles.segment, tab === seg && styles.segmentActive]}
+            onPress={() => setTab(seg)}
           >
             <Ionicons
-              name={t === 'posts' ? 'grid-outline' : 'aperture-outline'}
+              name={seg === 'posts' ? 'grid-outline' : 'aperture-outline'}
               size={15}
-              color={tab === t ? colors.text : colors.textSecondary}
+              color={tab === seg ? colors.text : colors.textSecondary}
             />
-            <Text style={[styles.segmentText, tab === t && styles.segmentTextActive]}>
-              {t === 'posts' ? 'Posts' : 'Stories'}
+            <Text style={[styles.segmentText, tab === seg && styles.segmentTextActive]}>
+              {seg === 'posts' ? t('archive.tabPosts') : t('archive.tabStories')}
             </Text>
           </TouchableOpacity>
         ))}
@@ -155,9 +157,7 @@ export default function ArchiveScreen() {
           }
         >
           <Text style={styles.hint}>
-            {tab === 'posts'
-              ? 'Posts you archived are hidden from your profile, feed and explore. Tap one to restore or permanently delete it.'
-              : 'Stories that expired after 24 hours. Tap to replay one; press and hold to re-share it for another 24 hours or permanently delete it.'}
+            {tab === 'posts' ? t('archive.hintPosts') : t('archive.hintStories')}
           </Text>
 
           {isEmpty ? (
@@ -168,7 +168,7 @@ export default function ArchiveScreen() {
                 color={colors.textTertiary}
               />
               <Text style={styles.emptyTitle}>
-                {tab === 'posts' ? 'No archived posts' : 'No archived stories'}
+                {tab === 'posts' ? t('archive.emptyPosts') : t('archive.emptyStories')}
               </Text>
             </View>
           ) : (

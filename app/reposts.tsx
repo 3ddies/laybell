@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { timeAgo } from '../lib/timeAgo';
 import { isAudioPost } from '../lib/genres';
 import { maskHiddenProfile, HIDDEN_NAME } from '../lib/hiddenProfile';
@@ -27,6 +28,7 @@ type RepostRow = {
 export default function RepostsScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const [items, setItems] = useState<RepostRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,7 +92,7 @@ export default function RepostsScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Reposts</Text>
+        <Text style={styles.headerTitle}>{t('account.reposts')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -107,8 +109,8 @@ export default function RepostsScreen() {
             <LinearGradient colors={[colors.primary + '24', colors.background]} style={styles.emptyIcon}>
               <Ionicons name="repeat" size={36} color={colors.primary} />
             </LinearGradient>
-            <Text style={styles.emptyTitle}>No reposts yet</Text>
-            <Text style={styles.emptySubtitle}>When someone reposts your post, you'll see them here</Text>
+            <Text style={styles.emptyTitle}>{t('reposts.emptyTitle')}</Text>
+            <Text style={styles.emptySubtitle}>{t('reposts.emptySubtitle')}</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -126,9 +128,9 @@ export default function RepostsScreen() {
                 </LinearGradient>
               )}
               <View style={styles.userInfo}>
-                <Text style={styles.name} numberOfLines={1}>{item.reposter?.display_name ?? 'Someone'}</Text>
+                <Text style={styles.name} numberOfLines={1}>{item.reposter?.display_name ?? t('reposts.someone')}</Text>
                 <Text style={styles.sub} numberOfLines={1}>
-                  reposted your post · {timeAgo(item.created_at)}
+                  {t('reposts.repostedYourPost')} · {timeAgo(item.created_at)}
                 </Text>
               </View>
             </TouchableOpacity>

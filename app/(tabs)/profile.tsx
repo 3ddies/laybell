@@ -32,6 +32,7 @@ import TrackRow from '../../components/TrackRow';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 
 type Profile = {
   id: string; username: string; display_name: string;
@@ -57,6 +58,7 @@ export default function ProfileScreen() {
   const { profile: liveProfile } = useProfile();
   const { openCamera } = useStories();
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
@@ -272,7 +274,7 @@ export default function ProfileScreen() {
       return (
         <View style={styles.emptyGrid}>
           <Ionicons name="albums-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyGridText}>No public playlists yet</Text>
+          <Text style={styles.emptyGridText}>{t('profile.noPlaylists')}</Text>
         </View>
       );
     }
@@ -306,7 +308,7 @@ export default function ProfileScreen() {
       return (
         <View style={styles.emptyGrid}>
           <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyGridText}>No music yet</Text>
+          <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
         </View>
       );
     }
@@ -421,7 +423,7 @@ export default function ProfileScreen() {
             color={colors.textTertiary}
           />
           <Text style={styles.emptyGridText}>
-            {tabKey === 'reposts' ? 'No reposts yet' : `No ${tabKey} yet`}
+            {t(`profile.empty.${tabKey}`)}
           </Text>
         </View>
       );
@@ -553,9 +555,9 @@ export default function ProfileScreen() {
         </View>
         <View style={styles.statsRow}>
           {[
-            { label: 'Posts', val: stats.posts, onPress: undefined },
-            { label: 'Followers', val: stats.followers, onPress: () => router.push(`/followers/${profile?.id}`) },
-            { label: 'Following', val: stats.following, onPress: () => router.push(`/following/${profile?.id}`) },
+            { label: t('profile.tab.posts'), val: stats.posts, onPress: undefined },
+            { label: t('profile.followers'), val: stats.followers, onPress: () => router.push(`/followers/${profile?.id}`) },
+            { label: t('profile.following'), val: stats.following, onPress: () => router.push(`/following/${profile?.id}`) },
           ].map(({ label, val, onPress }) => (
             <TouchableOpacity key={label} style={styles.statItem} onPress={onPress} disabled={!onPress}>
               <Text style={styles.statNumber}>{val}</Text>
@@ -588,7 +590,7 @@ export default function ProfileScreen() {
             </View>
             {profile?.bio
               ? <Text style={styles.bio}>{profile.bio}</Text>
-              : <Text style={styles.bioEmpty}>No bio yet</Text>
+              : <Text style={styles.bioEmpty}>{t('profile.noBio')}</Text>
             }
             {badgeProfile?.link ? (
               <TouchableOpacity style={styles.linkRow} onPress={() => Linking.openURL(normalizeUrl(badgeProfile.link!)).catch(() => {})}>
@@ -611,7 +613,7 @@ export default function ProfileScreen() {
       {/* Action buttons */}
       <View style={styles.actionButtons}>
         <TouchableOpacity style={styles.editButton} onPress={() => router.push('/edit-profile')}>
-          <Text style={styles.editButtonText}>Edit Profile</Text>
+          <Text style={styles.editButtonText}>{t('profile.editProfile')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/friends')}>
           <Ionicons name="people-outline" size={18} color={colors.text} />
@@ -641,7 +643,7 @@ export default function ProfileScreen() {
                 color={activeTab === tab.key ? tabAccent : colors.textTertiary}
               />
               <Text style={[styles.tabText, activeTab === tab.key && { color: tabAccent, fontWeight: '700' }]}>
-                {tab.label}
+                {t(`profile.tab.${tab.key}`)}
               </Text>
             </TouchableOpacity>
           ))}

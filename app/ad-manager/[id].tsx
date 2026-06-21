@@ -13,19 +13,28 @@ import { BarChart, HBars } from '../../components/AnalyticsCharts';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 
 // Campaign detail + analytics. Reuses the Creator Analytics chart components
 // (BarChart / HBars) and reads ad_events (owner-readable) via fetchAdAnalytics.
 
-const STATUS_LABEL: Record<AdStatus, string> = {
-  pending: 'Draft', active: 'Live', paused: 'Paused', ended: 'Ended', canceled: 'Canceled',
-};
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
+
+const statusLabel = (t: TFn): Record<AdStatus, string> => ({
+  pending: t('adDetail.statusDraft'),
+  active: t('adDetail.statusLive'),
+  paused: t('adDetail.statusPaused'),
+  ended: t('adDetail.statusEnded'),
+  canceled: t('adDetail.statusCanceled'),
+});
 
 export default function AdDetailScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const STATUS_LABEL = statusLabel(t);
 
   const [campaign, setCampaign] = useState<AdCampaign | null>(null);
   const [analytics, setAnalytics] = useState<AdAnalytics | null>(null);
@@ -50,13 +59,13 @@ export default function AdDetailScreen() {
     const ok = await fn(id);
     setBusy(false);
     if (ok) load();
-    else Alert.alert('Error', failMsg);
+    else Alert.alert(t('adDetail.errorTitle'), failMsg);
   }
 
   function confirmEnd() {
-    Alert.alert('End this campaign?', 'It stops serving right away. Spent budget is not refunded.', [
-      { text: 'Keep running', style: 'cancel' },
-      { text: 'End campaign', style: 'destructive', onPress: () => doAction(endAdCampaign, 'Could not end the campaign.') },
+    Alert.alert(t('adDetail.endConfirmTitle'), t('adDetail.endConfirmBody'), [
+      { text: t('adDetail.keepRunning'), style: 'cancel' },
+      { text: t('adDetail.endCampaign'), style: 'destructive', onPress: () => doAction(endAdCampaign, t('adDetail.endFailed')) },
     ]);
   }
 
@@ -72,14 +81,14 @@ export default function AdDetailScreen() {
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color={colors.primary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>{campaign?.advertiser_name || 'Campaign'}</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>{campaign?.advertiser_name || t('adDetail.headerFallback')}</Text>
           <View style={{ width: 40 }} />
         </View>
 
         {loading ? (
           <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
         ) : !campaign ? (
-          <View style={styles.center}><Text style={styles.empty}>Campaign not found</Text></View>
+          <View style={styles.center}><Text style={styles.empty}>{t('adDetail.notFound')}</Text></View>
         ) : (
           <ScrollView
             contentContainerStyle={styles.scroll}
@@ -89,14 +98,14 @@ export default function AdDetailScreen() {
             {/* Status + spend */}
             <View style={styles.card}>
               <View style={styles.titleRow}>
-                <Text style={styles.cardTitle} numberOfLines={1}>{campaign.advertiser_name || 'Untitled'}</Text>
+                <Text style={styles.cardTitle} numberOfLines={1}>{campaign.advertiser_name || t('adDetail.untitled')}</Text>
                 <View style={[styles.statusChip, { borderColor: statusColor(status, colors) }]}>
                   <Text style={[styles.statusChipText, { color: statusColor(status, colors) }]}>{STATUS_LABEL[status]}</Text>
                 </View>
               </View>
-              <Text style={styles.sub}>{(campaign.placements ?? []).join(' · ') || 'no placements'} · {campaign.objective ?? 'awareness'}</Text>
+              <Text style={styles.sub}>{(campaign.placements ?? []).join(' · ') || t('adDetail.noPlacements')} · {campaign.objective ?? 'awareness'}</Text>
               <View style={styles.budgetRow}>
-                <Text style={styles.budgetText}>{fmtPrice(spent)} spent of {fmtPrice(budget)}</Text>
+                <Text style={styles.budgetText}>{t('adDetail.spentOf', { spent: fmtPrice(spent), total: fmtPrice(budget) })}</Text>
                 <Text style={styles.budgetPct}>{Math.round(pct * 100)}%</Text>
               </View>
               <View style={styles.budgetTrack}><View style={[styles.budgetFill, { width: `${pct * 100}%` }]} /></View>
@@ -104,16 +113,16 @@ export default function AdDetailScreen() {
 
             {/* Headline stats */}
             <View style={styles.statsGrid}>
-              <Stat label="Views" value={fmt(analytics?.impressions ?? 0)} styles={styles} />
-              <Stat label="Reach" value={fmt(analytics?.reach ?? 0)} styles={styles} />
-              <Stat label="Clicks" value={fmt(analytics?.clicks ?? 0)} styles={styles} />
-              <Stat label="CTR" value={`${((analytics?.ctr ?? 0) * 100).toFixed(1)}%`} styles={styles} />
-              <Stat label="Spent" value={fmtPrice(spent)} styles={styles} />
-              <Stat label="Skips" value={fmt(analytics?.skips ?? 0)} styles={styles} />
+              <Stat label={t('adDetail.statViews')} value={fmt(analytics?.impressions ?? 0)} styles={styles} />
+              <Stat label={t('adDetail.statReach')} value={fmt(analytics?.reach ?? 0)} styles={styles} />
+              <Stat label={t('adDetail.statClicks')} value={fmt(analytics?.clicks ?? 0)} styles={styles} />
+              <Stat label={t('adDetail.statCtr')} value={`${((analytics?.ctr ?? 0) * 100).toFixed(1)}%`} styles={styles} />
+              <Stat label={t('adDetail.statSpent')} value={fmtPrice(spent)} styles={styles} />
+              <Stat label={t('adDetail.statSkips')} value={fmt(analytics?.skips ?? 0)} styles={styles} />
             </View>
 
             {/* Views per day */}
-            <Text style={styles.sectionTitle}>Views over time</Text>
+            <Text style={styles.sectionTitle}>{t('adDetail.viewsOverTime')}</Text>
             <View style={styles.card}>
               <BarChart data={(analytics?.series ?? []).map((s) => ({ label: s.label.slice(5), value: s.impressions }))} />
             </View>
@@ -121,14 +130,14 @@ export default function AdDetailScreen() {
             {/* By placement */}
             {analytics && analytics.byPlacement.length > 0 && (
               <>
-                <Text style={styles.sectionTitle}>By placement</Text>
+                <Text style={styles.sectionTitle}>{t('adDetail.byPlacement')}</Text>
                 <View style={styles.card}>
                   <HBars
                     accentTop
                     data={analytics.byPlacement.map((p) => ({
                       label: p.placement,
                       value: p.impressions,
-                      caption: `${p.impressions} views · ${p.clicks} clicks`,
+                      caption: t('adDetail.placementCaption', { views: p.impressions, clicks: p.clicks }),
                     }))}
                   />
                 </View>
@@ -136,27 +145,27 @@ export default function AdDetailScreen() {
             )}
 
             {/* Targeting summary */}
-            <Text style={styles.sectionTitle}>Audience</Text>
+            <Text style={styles.sectionTitle}>{t('adDetail.audience')}</Text>
             <View style={styles.card}>
-              <Text style={styles.targetText}>{targetingSummary(campaign)}</Text>
+              <Text style={styles.targetText}>{targetingSummary(campaign, t)}</Text>
             </View>
 
             {/* Controls */}
             {(status === 'active' || status === 'paused') && (
               <View style={styles.actions}>
                 {status === 'active' ? (
-                  <TouchableOpacity style={styles.ghostBtn} disabled={busy} onPress={() => doAction(pauseAdCampaign, 'Could not pause.')}>
+                  <TouchableOpacity style={styles.ghostBtn} disabled={busy} onPress={() => doAction(pauseAdCampaign, t('adDetail.pauseFailed'))}>
                     <Ionicons name="pause" size={16} color={colors.text} />
-                    <Text style={styles.ghostBtnText}>Pause</Text>
+                    <Text style={styles.ghostBtnText}>{t('adDetail.pause')}</Text>
                   </TouchableOpacity>
                 ) : (
-                  <TouchableOpacity style={styles.primaryBtn} disabled={busy} onPress={() => doAction(resumeAdCampaign, 'Could not resume.')}>
+                  <TouchableOpacity style={styles.primaryBtn} disabled={busy} onPress={() => doAction(resumeAdCampaign, t('adDetail.resumeFailed'))}>
                     <Ionicons name="play" size={16} color={colors.text} />
-                    <Text style={styles.primaryBtnText}>Resume</Text>
+                    <Text style={styles.primaryBtnText}>{t('adDetail.resume')}</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity style={[styles.ghostBtn, { borderColor: colors.error }]} disabled={busy} onPress={confirmEnd}>
-                  <Text style={[styles.ghostBtnText, { color: colors.error }]}>End</Text>
+                  <Text style={[styles.ghostBtnText, { color: colors.error }]}>{t('adDetail.end')}</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -178,13 +187,13 @@ function fmt(n: number): string {
   return String(n);
 }
 
-function targetingSummary(c: AdCampaign): string {
+function targetingSummary(c: AdCampaign, t: TFn): string {
   const parts: string[] = [];
-  if (c.target_age_min != null || c.target_age_max != null) parts.push(`Age ${c.target_age_min ?? 0}–${c.target_age_max ?? '∞'}`);
+  if (c.target_age_min != null || c.target_age_max != null) parts.push(t('adDetail.ageRange', { min: c.target_age_min ?? 0, max: c.target_age_max ?? '∞' }));
   if (c.target_gender) parts.push(c.target_gender);
   if (c.target_genres?.length) parts.push(c.target_genres.join(', '));
-  if (c.target_radius_km != null) parts.push(`within ${c.target_radius_km}km`);
-  return parts.length ? parts.join(' · ') : 'Reaching everyone (no targeting)';
+  if (c.target_radius_km != null) parts.push(t('adDetail.withinRadius', { km: c.target_radius_km }));
+  return parts.length ? parts.join(' · ') : t('adDetail.reachingEveryone');
 }
 
 function Stat({ label, value, styles }: { label: string; value: string; styles: any }) {

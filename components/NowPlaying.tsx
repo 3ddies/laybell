@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
 import { bumpBadge } from '../lib/badges';
 import BadgeEmblem from './BadgeEmblem';
@@ -93,6 +94,7 @@ function Controls() {
 export default function NowPlaying() {
   const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const { currentTrack, expanded, collapse, setCommentComposing, noteCommentEngagement, clearCommentEngagement, adState, skipAudioAd } = useAudio();
   const { show: showOptions } = usePostOptions();
   const router = useRouter();
@@ -272,7 +274,7 @@ export default function NowPlaying() {
             <TouchableOpacity style={styles.headerBtn} onPress={collapse}>
               <Ionicons name="chevron-down" size={26} color={colors.text} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Now Playing</Text>
+            <Text style={styles.headerTitle}>{t('nowPlaying.title')}</Text>
             <TouchableOpacity
               style={styles.headerBtn}
               onPress={() => showOptions({
@@ -331,7 +333,7 @@ export default function NowPlaying() {
                 </View>
 
                 <View style={styles.meta}>
-                  <Text style={styles.title} numberOfLines={1}>{currentTrack.caption || 'Audio Track'}</Text>
+                  <Text style={styles.title} numberOfLines={1}>{currentTrack.caption || t('player.audioTrack')}</Text>
                   <TouchableOpacity disabled={!ownerId} onPress={goProfile}>
                     <View style={styles.artistRow}>
                       <Text style={styles.artist} numberOfLines={1}>
@@ -354,7 +356,7 @@ export default function NowPlaying() {
                   </TouchableOpacity>
                   <View style={styles.centerStat}>
                     <Text style={styles.centerStatNum}>{formatCount(streams)}</Text>
-                    <Text style={styles.centerStatLbl}>streams</Text>
+                    <Text style={styles.centerStatLbl}>{t('nowPlaying.streams')}</Text>
                   </View>
                   <TouchableOpacity style={[styles.tapStat, isSaved && styles.tapStatActiveSave]} onPress={handleSave} activeOpacity={0.8}>
                     <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color={colors.text} />
@@ -371,7 +373,7 @@ export default function NowPlaying() {
         {adState && (
           <View style={styles.adOverlay}>
             <View style={styles.adIcon}><Ionicons name="megaphone" size={36} color={colors.primary} /></View>
-            <Text style={styles.adSponsored}>SPONSORED</Text>
+            <Text style={styles.adSponsored}>{t('nowPlaying.sponsored')}</Text>
             <Text style={styles.adBrand} numberOfLines={1}>{adState.advertiserName}</Text>
             {!!adState.headline && <Text style={styles.adHeadline}>{adState.headline}</Text>}
             {!!adState.ctaUrl && (
@@ -390,7 +392,7 @@ export default function NowPlaying() {
               onPress={skipAudioAd}
             >
               <Text style={styles.adSkipText}>
-                {adState.canSkip ? 'Skip ad' : `Skip in ${Math.max(1, Math.ceil((AD_SKIP_MS - adState.elapsedMs) / 1000))}s`}
+                {adState.canSkip ? t('nowPlaying.skipAd') : t('nowPlaying.skipIn', { secs: Math.max(1, Math.ceil((AD_SKIP_MS - adState.elapsedMs) / 1000)) })}
               </Text>
             </TouchableOpacity>
           </View>

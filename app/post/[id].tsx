@@ -38,6 +38,7 @@ import TaggedPeopleButton from '../../components/TaggedPeopleButton';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { processMentions } from '../../lib/mentions';
 import { isPostSpotlighted } from '../../lib/spotlight';
+import { useTranslation } from '../../contexts/LanguageContext';
 
 type Post = {
   id: string; type: string; media_url: string; caption: string;
@@ -64,6 +65,7 @@ type Comment = {
 
 export default function PostDetailScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   // Hosted locally (not via the root context) so the sheets present over this
   // transparentModal route on iOS — see usePostActionSheets.
@@ -210,10 +212,10 @@ export default function PostDetailScreen() {
             <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
               <Ionicons name="chevron-back" size={24} color={colors.primary} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Post</Text>
+            <Text style={styles.headerTitle}>{t('postView.title')}</Text>
             <View style={{ width: 40 }} />
           </View>
-          <View style={styles.loadingContainer}><Text style={{ color: colors.textSecondary }}>Post not found</Text></View>
+          <View style={styles.loadingContainer}><Text style={{ color: colors.textSecondary }}>{t('postView.notFound')}</Text></View>
         </View>
       </SwipeBackPager>
     );
@@ -236,7 +238,7 @@ export default function PostDetailScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={dismiss}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Post</Text>
+        <Text style={styles.headerTitle}>{t('postView.title')}</Text>
         <View style={{ width: 40 }} />
       </View>
       {post ? (
@@ -381,7 +383,7 @@ export default function PostDetailScreen() {
                     <Ionicons name={audioPlaying ? 'stop-circle' : 'play-circle'} size={48} color={audioPlaying ? '#fff' : colors.primary} />
                   )}
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.audioTitle} numberOfLines={1}>{post.caption || 'Audio Track'}</Text>
+                    <Text style={styles.audioTitle} numberOfLines={1}>{post.caption || t('postView.audioTrack')}</Text>
                     <Text style={styles.audioArtist}>
                       @{post.profiles?.username} · {(post.stream_count || 0).toLocaleString()} {(post.stream_count === 1) ? 'play' : 'plays'}
                     </Text>

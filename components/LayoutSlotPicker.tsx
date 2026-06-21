@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { slideshowThumb } from '../lib/slideshow';
 import { isSongPost } from '../lib/pageLayout';
 import VideoThumb from './VideoThumb';
@@ -23,6 +24,7 @@ export default function LayoutSlotPicker({
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -41,7 +43,7 @@ export default function LayoutSlotPicker({
           {posts.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="albums-outline" size={36} color={colors.textTertiary} />
-              <Text style={styles.emptyText}>No eligible posts. Post more media of this type to fill the slot.</Text>
+              <Text style={styles.emptyText}>{t('slotPicker.empty')}</Text>
             </View>
           ) : (
             <ScrollView contentContainerStyle={styles.grid} showsVerticalScrollIndicator={false}>

@@ -8,13 +8,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
-import { GENRES } from '../../lib/genres';
+import { useTranslation } from '../../contexts/LanguageContext';
+import { GENRES, genreLabel } from '../../lib/genres';
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import MentionSuggestions from '../../components/MentionSuggestions';
 
 export default function EditPostScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
@@ -34,9 +36,9 @@ export default function EditPostScreen() {
       .select('user_id, type, caption, is_public, genre')
       .eq('id', id).single();
 
-    if (!post) { Alert.alert('Not found', 'This post no longer exists.'); router.back(); return; }
+    if (!post) { Alert.alert(t('editPost.notFoundTitle'), t('editPost.notFoundBody')); router.back(); return; }
     if (!user || post.user_id !== user.id) {
-      Alert.alert('Not allowed', 'You can only edit your own posts.'); router.back(); return;
+      Alert.alert(t('editPost.notAllowedTitle'), t('editPost.notAllowedBody')); router.back(); return;
     }
 
     setType(post.type);
@@ -59,7 +61,7 @@ export default function EditPostScreen() {
       })
       .eq('id', id);
     setSaving(false);
-    if (error) { Alert.alert('Error', error.message); return; }
+    if (error) { Alert.alert(t('editPost.errorTitle'), error.message); return; }
     router.back();
   }
 
@@ -74,22 +76,22 @@ export default function EditPostScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="close" size={24} color={colors.textSecondary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit post</Text>
+        <Text style={styles.headerTitle}>{t('editPost.title')}</Text>
         <TouchableOpacity style={styles.saveBtn} onPress={save} disabled={saving}>
           {saving
             ? <ActivityIndicator color={colors.text} size="small" />
-            : <Text style={styles.saveBtnText}>Save</Text>}
+            : <Text style={styles.saveBtnText}>{t('editProfile.save')}</Text>}
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Caption */}
-        <Text style={styles.label}>Caption</Text>
+        <Text style={styles.label}>{t('editPost.caption')}</Text>
         <TextInput
           style={styles.captionInput}
           value={caption}
           onChangeText={setCaption}
-          placeholder="Write a caption…"
+          placeholder={t('post.captionPlaceholder')}
           placeholderTextColor={colors.textTertiary}
           multiline
           maxLength={500}
@@ -101,16 +103,16 @@ export default function EditPostScreen() {
         />
 
         {/* Visibility */}
-        <Text style={styles.label}>Visibility</Text>
+        <Text style={styles.label}>{t('editPost.visibility')}</Text>
         <View style={styles.row}>
           {([
-            { val: true,  label: 'Public',       icon: 'earth' },
-            { val: false, label: 'Friends only', icon: 'people' },
+            { val: true,  label: t('post.public'),       icon: 'earth' },
+            { val: false, label: t('post.friendsOnly'),  icon: 'people' },
           ] as const).map(({ val, label, icon }) => {
             const on = isPublic === val;
             return (
               <TouchableOpacity
-                key={label}
+                key={String(val)}
                 style={[styles.choice, on && styles.choiceActive]}
                 onPress={() => setIsPublic(val)}
               >
@@ -124,7 +126,7 @@ export default function EditPostScreen() {
         {/* Genre (audio only) */}
         {type === 'audio' && (
           <>
-            <Text style={styles.label}>Genre</Text>
+            <Text style={styles.label}>{t('post.genre')}</Text>
             <View style={styles.pillsWrap}>
               {GENRES.map(g => {
                 const on = genre === g;
@@ -134,7 +136,7 @@ export default function EditPostScreen() {
                     style={[styles.pill, on && styles.pillActive]}
                     onPress={() => setGenre(on ? null : g)}
                   >
-                    <Text style={[styles.pillText, on && styles.pillTextActive]}>{g}</Text>
+                    <Text style={[styles.pillText, on && styles.pillTextActive]}>{genreLabel(g)}</Text>
                   </TouchableOpacity>
                 );
               })}

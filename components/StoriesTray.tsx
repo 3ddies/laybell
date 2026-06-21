@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { useStories } from '../contexts/StoriesContext';
 import { chosenTier, badgeRingColors } from '../lib/badges';
@@ -15,6 +16,7 @@ import StoryAvatar from './StoryAvatar';
 export default function StoriesTray() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const { profile } = useProfile();
   const { groups, openCamera, refresh } = useStories();
   const currentUserId = profile?.id ?? null;
@@ -47,7 +49,7 @@ export default function StoriesTray() {
           addColors={addColors}
           onPressAdd={openCamera}
         />
-        <Text style={styles.label} numberOfLines={1}>Your story</Text>
+        <Text style={styles.label} numberOfLines={1}>{t('storiesTray.yourStory')}</Text>
       </View>
 
       {/* Followed users with active stories */}

@@ -12,25 +12,27 @@ import { maskHiddenProfile, HIDDEN_NAME } from '../lib/hiddenProfile';
 import VideoThumb from '../components/VideoThumb';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 type TabKey = 'posts' | 'audio' | 'comments' | 'stories';
-const TABS: { key: TabKey; label: string; icon: any }[] = [
-  { key: 'posts', label: 'Posts', icon: 'at-outline' },
-  { key: 'audio', label: 'Audio', icon: 'musical-notes-outline' },
-  { key: 'comments', label: 'Comments', icon: 'chatbubble-outline' },
-  { key: 'stories', label: 'Stories', icon: 'ellipse-outline' },
+const TABS: { key: TabKey; labelKey: string; icon: any }[] = [
+  { key: 'posts', labelKey: 'profile.tab.posts', icon: 'at-outline' },
+  { key: 'audio', labelKey: 'tagged.tabAudio', icon: 'musical-notes-outline' },
+  { key: 'comments', labelKey: 'tagged.tabComments', icon: 'chatbubble-outline' },
+  { key: 'stories', labelKey: 'tagged.tabStories', icon: 'ellipse-outline' },
 ];
 
-const EMPTY: Record<TabKey, { icon: any; text: string }> = {
-  posts: { icon: 'at-outline', text: 'No posts have mentioned you yet' },
-  audio: { icon: 'musical-notes-outline', text: 'No one has used your audio in a post yet' },
-  comments: { icon: 'chatbubble-outline', text: 'No comments have mentioned you yet' },
-  stories: { icon: 'ellipse-outline', text: 'No active stories are using your audio' },
+const EMPTY: Record<TabKey, { icon: any; textKey: string }> = {
+  posts: { icon: 'at-outline', textKey: 'tagged.emptyPosts' },
+  audio: { icon: 'musical-notes-outline', textKey: 'tagged.emptyAudio' },
+  comments: { icon: 'chatbubble-outline', textKey: 'tagged.emptyComments' },
+  stories: { icon: 'ellipse-outline', textKey: 'tagged.emptyStories' },
 };
 
 export default function TaggedScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const [tab, setTab] = useState<TabKey>('posts');
   const [loading, setLoading] = useState(true);
@@ -125,7 +127,7 @@ export default function TaggedScreen() {
         <LinearGradient colors={[colors.primary + '24', colors.background]} style={styles.emptyIcon}>
           <Ionicons name={e.icon} size={36} color={colors.primary} />
         </LinearGradient>
-        <Text style={styles.emptyText}>{e.text}</Text>
+        <Text style={styles.emptyText}>{t(e.textKey)}</Text>
       </View>
     );
   }
@@ -165,10 +167,10 @@ export default function TaggedScreen() {
               <Avatar profile={item.profiles} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowText} numberOfLines={3}>
-                  <Text style={styles.rowName}>{item.profiles?.display_name ?? 'Someone'}</Text>
+                  <Text style={styles.rowName}>{item.profiles?.display_name ?? t('tagged.someone')}</Text>
                   {' '}{item.body}
                 </Text>
-                <Text style={styles.rowTime}>{timeAgo(item.created_at)} · tap to view</Text>
+                <Text style={styles.rowTime}>{timeAgo(item.created_at)} · {t('tagged.tapToView')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
             </TouchableOpacity>
@@ -195,10 +197,10 @@ export default function TaggedScreen() {
             )}
             <View style={{ flex: 1 }}>
               <Text style={styles.rowText} numberOfLines={2}>
-                <Text style={styles.rowName}>{item.profile?.display_name ?? 'Someone'}</Text>
-                {' '}used your audio in their story
+                <Text style={styles.rowName}>{item.profile?.display_name ?? t('tagged.someone')}</Text>
+                {' '}{t('tagged.usedYourAudioStory')}
               </Text>
-              <Text style={styles.rowTime}>{timeAgo(item.created_at)} · up for 24h</Text>
+              <Text style={styles.rowTime}>{timeAgo(item.created_at)} · {t('tagged.upFor24h')}</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
           </TouchableOpacity>
@@ -214,17 +216,17 @@ export default function TaggedScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Tagged</Text>
+        <Text style={styles.headerTitle}>{t('account.tagged')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <View style={styles.tabsRow}>
-        {TABS.map((t) => {
-          const on = tab === t.key;
+        {TABS.map((tabItem) => {
+          const on = tab === tabItem.key;
           return (
-            <TouchableOpacity key={t.key} style={[styles.tab, on && styles.tabActive]} onPress={() => setTab(t.key)}>
-              <Ionicons name={t.icon} size={16} color={on ? colors.primary : colors.textTertiary} />
-              <Text style={[styles.tabText, on && styles.tabTextActive]}>{t.label}</Text>
+            <TouchableOpacity key={tabItem.key} style={[styles.tab, on && styles.tabActive]} onPress={() => setTab(tabItem.key)}>
+              <Ionicons name={tabItem.icon} size={16} color={on ? colors.primary : colors.textTertiary} />
+              <Text style={[styles.tabText, on && styles.tabTextActive]}>{t(tabItem.labelKey)}</Text>
             </TouchableOpacity>
           );
         })}

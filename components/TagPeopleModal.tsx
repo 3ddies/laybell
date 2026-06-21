@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 export type TaggedPerson = { id: string; username: string; display_name: string; avatar_url: string | null };
 
@@ -23,6 +24,7 @@ export default function TagPeopleModal({
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TaggedPerson[]>([]);
   const [selected, setSelected] = useState<TaggedPerson[]>(initial);
@@ -65,11 +67,11 @@ export default function TagPeopleModal({
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={onClose}><Text style={styles.cancel}>Cancel</Text></TouchableOpacity>
-            <Text style={styles.title}>Tag people</Text>
-            <TouchableOpacity onPress={() => { onDone(selected); onClose(); }}><Text style={styles.done}>Done</Text></TouchableOpacity>
+            <TouchableOpacity onPress={onClose}><Text style={styles.cancel}>{t('common.cancel')}</Text></TouchableOpacity>
+            <Text style={styles.title}>{t('post.tagPeople')}</Text>
+            <TouchableOpacity onPress={() => { onDone(selected); onClose(); }}><Text style={styles.done}>{t('music.done')}</Text></TouchableOpacity>
           </View>
-          <Text style={styles.count}>{selected.length}/{MAX_TAGS} tagged</Text>
+          <Text style={styles.count}>{t('tagPeopleModal.tagged', { count: selected.length, max: MAX_TAGS })}</Text>
 
           {selected.length > 0 && (
             <View style={styles.chips}>
@@ -86,7 +88,7 @@ export default function TagPeopleModal({
             <Ionicons name="search" size={16} color={colors.textTertiary} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search accounts"
+              placeholder={t('tagPeopleModal.searchPlaceholder')}
               placeholderTextColor={colors.textTertiary}
               value={query}
               onChangeText={setQuery}
@@ -103,7 +105,7 @@ export default function TagPeopleModal({
             ListEmptyComponent={
               loading
                 ? <ActivityIndicator color={colors.primary} style={{ marginTop: SPACING.lg }} />
-                : (query.trim() ? <Text style={styles.empty}>No accounts found</Text> : null)
+                : (query.trim() ? <Text style={styles.empty}>{t('tagPeopleModal.empty')}</Text> : null)
             }
             renderItem={({ item }) => {
               const on = selected.some((x) => x.id === item.id);

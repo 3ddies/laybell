@@ -17,6 +17,7 @@ import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import PlaylistEditor from '../../components/PlaylistEditor';
 import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 import { useTabSwipeControl } from '../../contexts/PagerContext';
 import { useListenMode } from '../../contexts/ListenModeContext';
 import { useProfile } from '../../contexts/ProfileContext';
@@ -25,7 +26,7 @@ import { formatCount } from '../../lib/format';
 import { rawTier, publicPlaylistLimit, tierLabel, tierRank } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GENRES, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
+import { GENRES, CONTENT_TAGS, isAudioPost, genreLabel } from '../../lib/genres';
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import StoryAvatar from '../../components/StoryAvatar';
 import FollowButton from '../../components/FollowButton';
@@ -97,6 +98,7 @@ type Track = {
 
 export default function MusicScreen() {
   const { show: showOptions } = usePostOptions();
+  const { t } = useTranslation();
   const { listenMode, setListenMode } = useListenMode();
   // Ref mirror for the dwell-swipe responder (created once) — Listen mode must
   // also seal ITS edge fall-throughs to other app pages, not just the pager's.
@@ -496,17 +498,17 @@ export default function MusicScreen() {
     // badge tier. Private playlists are unlimited.
     if (newPlaylistPublic && myPublicCount >= myPublicLimit) {
       Alert.alert(
-        'Public playlist limit',
+        t('music.publicLimitTitle'),
         myPublicLimit === 0
-          ? 'Public playlists need a badge. Earn Bronze for 1 slot, Silver for 2, Gold for 3, Diamond for 6 — you can still make private playlists anytime.'
-          : `Your ${tierLabel(rawTier(profile))} badge allows ${myPublicLimit} public ${myPublicLimit === 1 ? 'playlist' : 'playlists'}. Delete one or earn a higher badge to add more.`,
+          ? t('music.publicLimitNoBadge')
+          : t('music.publicLimitTiered', { tier: tierLabel(rawTier(profile)), count: myPublicLimit }),
       );
       return;
     }
     const { data, error } = await supabase.from('playlists')
       .insert({ user_id: currentUserId, name: newPlaylistName.trim(), is_public: newPlaylistPublic })
       .select().single();
-    if (error) { Alert.alert('Error', error.message); return; }
+    if (error) { Alert.alert(t('music.errorTitle'), error.message); return; }
     if (data) {
       setPlaylists(prev => [data, ...prev]);
       setNewPlaylistName('');
@@ -521,15 +523,15 @@ export default function MusicScreen() {
   async function setPlaylistVisibility(pl: Playlist, makePublic: boolean) {
     if (makePublic && myPublicCount >= myPublicLimit) {
       Alert.alert(
-        'No free public slots',
+        t('music.noFreeSlotsTitle'),
         myPublicLimit === 0
-          ? 'Public playlists need a badge. Earn Bronze for 1 slot, Silver for 2, Gold for 3, Diamond for 6.'
-          : `Your ${tierLabel(rawTier(profile))} badge allows ${myPublicLimit} public ${myPublicLimit === 1 ? 'playlist' : 'playlists'}. Make one private first to free a slot.`,
+          ? t('music.noFreeSlotsNoBadge')
+          : t('music.noFreeSlotsTiered', { tier: tierLabel(rawTier(profile)), count: myPublicLimit }),
       );
       return;
     }
     const { error } = await supabase.from('playlists').update({ is_public: makePublic }).eq('id', pl.id);
-    if (error) { Alert.alert('Error', error.message); return; }
+    if (error) { Alert.alert(t('music.errorTitle'), error.message); return; }
     if (currentUserId) fetchPlaylists(currentUserId);
   }
 
@@ -554,7 +556,7 @@ export default function MusicScreen() {
       .from('playlist_tracks').delete()
       .eq('playlist_id', selectedPlaylist.id)
       .in('post_id', postIds);
-    if (error) { Alert.alert('Error', error.message); return; }
+    if (error) { Alert.alert(t('music.errorTitle'), error.message); return; }
     await persistTrackOrder(next);
   }
 
@@ -564,7 +566,7 @@ export default function MusicScreen() {
     const { error } = await supabase
       .from('playlist_tracks').delete()
       .eq('playlist_id', playlistId).eq('post_id', postId);
-    if (error) { Alert.alert('Error', error.message); return; }
+    if (error) { Alert.alert(t('music.errorTitle'), error.message); return; }
     setTracks(prev => prev.filter((t: any) => t.post_id !== postId));
     // The playlist's face is its first track — refresh covers in case it changed.
     if (currentUserId) fetchPlaylists(currentUserId);
@@ -572,17 +574,17 @@ export default function MusicScreen() {
 
   // Long-press menu for one of the user's own playlists.
   function playlistOptions(pl: Playlist) {
-    Alert.alert(pl.name, pl.is_public ? 'Public playlist' : 'Private playlist', [
-      { text: pl.is_public ? 'Make Private' : 'Make Public', onPress: () => setPlaylistVisibility(pl, !pl.is_public) },
-      { text: 'Delete Playlist', style: 'destructive', onPress: () => deletePlaylist(pl.id) },
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(pl.name, pl.is_public ? t('music.publicPlaylist') : t('music.privatePlaylist'), [
+      { text: pl.is_public ? t('music.makePrivate') : t('music.makePublic'), onPress: () => setPlaylistVisibility(pl, !pl.is_public) },
+      { text: t('music.deletePlaylist'), style: 'destructive', onPress: () => deletePlaylist(pl.id) },
+      { text: t('common.cancel'), style: 'cancel' },
     ]);
   }
 
   async function deletePlaylist(playlistId: string) {
-    Alert.alert('Delete Playlist', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
+    Alert.alert(t('music.deletePlaylist'), t('music.deleteConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: async () => {
         await supabase.from('playlists').delete().eq('id', playlistId);
         setPlaylists(prev => prev.filter(p => p.id !== playlistId));
         if (selectedPlaylist?.id === playlistId) setSelectedPlaylist(null);
@@ -950,7 +952,7 @@ export default function MusicScreen() {
       </View>
       <Text style={styles.pubName} numberOfLines={1}>{p.name}</Text>
       <Text style={styles.pubMeta} numberOfLines={1}>
-        @{p.creator?.username ?? 'unknown'} · {formatCount(p.play_count ?? 0)} {p.play_count === 1 ? 'listen' : 'listens'}
+        @{p.creator?.username ?? t('music.unknownUser')} · {formatCount(p.play_count ?? 0)} {p.play_count === 1 ? 'listen' : 'listens'}
       </Text>
     </TouchableOpacity>
   );
@@ -989,12 +991,12 @@ export default function MusicScreen() {
     <View style={styles.container} {...viewSwipePan.panHandlers}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Music</Text>
+        <Text style={styles.headerTitle}>{t('music.title')}</Text>
         <View style={styles.headerActions}>
           {activeView === 'playlists' && (
             <TouchableOpacity style={styles.newBtn} onPress={() => setShowNewPlaylist(true)}>
               <Ionicons name="add" size={18} color={colors.text} />
-              <Text style={styles.newBtnText}>Playlist</Text>
+              <Text style={styles.newBtnText}>{t('music.playlist')}</Text>
             </TouchableOpacity>
           )}
           {/* Listen mode — logo-gradient pill. Fades the tab bar away, locks tab
@@ -1003,7 +1005,7 @@ export default function MusicScreen() {
           <TouchableOpacity onPress={() => setListenMode(!listenMode)} activeOpacity={0.85}>
             <View style={styles.listenBtn}>
               <Ionicons name={listenMode ? 'close' : 'headset'} size={16} color="#1C0E06" />
-              <Text style={styles.listenBtnText}>{listenMode ? 'Exit' : 'Listen'}</Text>
+              <Text style={styles.listenBtnText}>{listenMode ? t('music.exit') : t('music.listen')}</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -1015,7 +1017,7 @@ export default function MusicScreen() {
           <Ionicons name="search-outline" size={18} color={colors.textTertiary} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search songs, artists..."
+            placeholder={t('music.searchPlaceholder')}
             placeholderTextColor={colors.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -1065,7 +1067,7 @@ export default function MusicScreen() {
               </View>
             ) : null
           }
-          ListEmptyComponent={searching || searchProfiles.length > 0 ? null : <Text style={styles.searchEmpty}>No results found</Text>}
+          ListEmptyComponent={searching || searchProfiles.length > 0 ? null : <Text style={styles.searchEmpty}>{t('music.noResults')}</Text>}
           renderItem={({ item }) => (
             <TrackRow
               caption={item.caption}
@@ -1111,7 +1113,7 @@ export default function MusicScreen() {
             liked: ['heart', 'heart-outline'],
           };
           const labels: Record<typeof view, string> = {
-            discover: 'Discover', playlists: 'Playlists', saved: 'Saved', liked: 'Liked',
+            discover: t('music.tabDiscover'), playlists: t('music.tabPlaylists'), saved: t('music.tabSaved'), liked: t('music.tabLiked'),
           };
           const on = activeView === view;
           return (
@@ -1160,13 +1162,13 @@ export default function MusicScreen() {
           >
 
             {/* — Genres label (the major genre tabs live directly below) — */}
-            <Text style={styles.discoverSectionTitleLg}>Genres</Text>
+            <Text style={styles.discoverSectionTitleLg}>{t('music.genres')}</Text>
 
             {/* — Genre + content-type pills (All · genres · Podcasts · Audiobooks) — */}
             <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.genrePills}>
               {(['All', ...orderedGenreList]).map(genre => {
                 const active = discoverGenre === genre;
-                const label  = genre === 'All' ? 'All genres' : genre;
+                const label  = genre === 'All' ? t('music.allGenres') : genreLabel(genre);
                 return (
                   <TouchableOpacity
                     key={genre}
@@ -1190,10 +1192,10 @@ export default function MusicScreen() {
             {/* — Trending: top songs for the selected genre — */}
             <Text style={styles.discoverSectionTitle}>
               {discoverGenre === 'Podcasts'
-                ? 'Trending podcasts'
+                ? t('music.trendingPodcasts')
                 : discoverGenre === 'Audiobooks'
-                ? 'Top audiobooks'
-                : 'Trending'}
+                ? t('music.topAudiobooks')
+                : t('music.trending')}
             </Text>
 
             {trendingLoading ? (
@@ -1201,10 +1203,10 @@ export default function MusicScreen() {
             ) : trendingTracks.length === 0 ? (
               <Text style={[styles.discoverEmpty, { paddingHorizontal: SPACING.md }]}>
                 {discoverGenre === 'Podcasts'
-                  ? 'No podcasts yet'
+                  ? t('music.noPodcasts')
                   : discoverGenre === 'Audiobooks'
-                  ? 'No audiobooks yet'
-                  : 'No tracks in this genre yet'}
+                  ? t('music.noAudiobooks')
+                  : t('music.noTracksGenre')}
               </Text>
             ) : (
               <View style={styles.trendingList}>
@@ -1250,8 +1252,8 @@ export default function MusicScreen() {
                   >
                     <Text style={styles.showMoreText}>
                       {trendingExpanded
-                        ? 'Show less'
-                        : `Show ${trendingTracks.length - 4} more`}
+                        ? t('music.showLess')
+                        : t('music.showMore', { count: trendingTracks.length - 4 })}
                     </Text>
                     <Ionicons
                       name={trendingExpanded ? 'chevron-up' : 'chevron-down'}
@@ -1266,7 +1268,7 @@ export default function MusicScreen() {
             {/* — Popular Playlists (music only): most-listened public playlists — */}
             {!isContentTag && popularPlaylists.length > 0 && (
               <>
-                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>Popular Playlists</Text>
+                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>{t('music.popularPlaylists')}</Text>
                 <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.playlistRail}>
                   {popularPlaylists.slice(0, 10).map(renderPlaylistCard)}
                 </GuardedRail>
@@ -1277,7 +1279,7 @@ export default function MusicScreen() {
                 same layout as Trending — */}
             {!isContentTag && top20Tracks.length > 0 && (
               <>
-                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>Top 20</Text>
+                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>{t('music.top20')}</Text>
                 <View style={styles.trendingList}>
                   {top20Tracks.slice(0, top20Expanded ? 20 : 4).map((track, i) => (
                     <TrackRow
@@ -1311,7 +1313,7 @@ export default function MusicScreen() {
                       onPress={() => setTop20Expanded(prev => !prev)}
                     >
                       <Text style={styles.showMoreText}>
-                        {top20Expanded ? 'Show less' : `Show ${top20Tracks.length - 4} more`}
+                        {top20Expanded ? t('music.showLess') : t('music.showMore', { count: top20Tracks.length - 4 })}
                       </Text>
                       <Ionicons
                         name={top20Expanded ? 'chevron-up' : 'chevron-down'}
@@ -1327,7 +1329,7 @@ export default function MusicScreen() {
             {/* — Upcoming Playlists (music only): fresh playlists with momentum — */}
             {!isContentTag && upcomingPlaylists.length > 0 && (
               <>
-                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>Upcoming Playlists</Text>
+                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>{t('music.upcomingPlaylists')}</Text>
                 <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.playlistRail}>
                   {upcomingPlaylists.map(renderPlaylistCard)}
                 </GuardedRail>
@@ -1337,7 +1339,7 @@ export default function MusicScreen() {
             {/* — More of what you like (music only) — */}
             {!isContentTag && forYouTracks.length > 0 && (
               <>
-                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>More of what you like</Text>
+                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>{t('music.moreYouLike')}</Text>
 
                 {/* Relevant artists — tap a circle to open that profile */}
                 {relevantArtists.length > 0 && (
@@ -1403,7 +1405,7 @@ export default function MusicScreen() {
             {/* — Today's Pick (music only) — */}
             {!isContentTag && todaysPick && (
               <>
-                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>Today's Pick</Text>
+                <Text style={[styles.discoverSectionTitleLg, { marginTop: SPACING.xl }]}>{t('music.todaysPick')}</Text>
                 <View style={styles.todaysPickSection}>
                   <TouchableOpacity
                     style={styles.todaysPickRow}
@@ -1458,7 +1460,7 @@ export default function MusicScreen() {
           ListHeaderComponent={
             playlists.some(p => p.is_public) ? (
               <View>
-                <Text style={styles.sectionTitle}>Your public playlists</Text>
+                <Text style={styles.sectionTitle}>{t('music.yourPublicPlaylists')}</Text>
                 <GuardedRail onGuardStart={railGuardStart} onGuardEnd={railGuardEnd} contentContainerStyle={styles.pubRail}>
                   {playlists.filter(p => p.is_public).map(p => {
                     const locked = !myActivePublicIds.has(p.id);
@@ -1487,13 +1489,13 @@ export default function MusicScreen() {
                         )}
                         <Text style={[styles.pubName, locked && styles.pubNameLocked]} numberOfLines={1}>{p.name}</Text>
                         <Text style={styles.pubMeta} numberOfLines={1}>
-                          {locked ? 'Locked — needs a badge slot' : `${formatCount(p.play_count ?? 0)} ${p.play_count === 1 ? 'listen' : 'listens'}`}
+                          {locked ? t('music.lockedBadgeSlot') : `${formatCount(p.play_count ?? 0)} ${p.play_count === 1 ? 'listen' : 'listens'}`}
                         </Text>
                       </TouchableOpacity>
                     );
                   })}
                 </GuardedRail>
-                {playlists.some(p => !p.is_public) && <Text style={styles.sectionTitle}>Your private playlists</Text>}
+                {playlists.some(p => !p.is_public) && <Text style={styles.sectionTitle}>{t('music.yourPrivatePlaylists')}</Text>}
               </View>
             ) : undefined
           }
@@ -1501,9 +1503,9 @@ export default function MusicScreen() {
             playlists.length === 0
               ? renderEmpty(
                   'musical-notes-outline',
-                  'No playlists yet',
-                  'Group the tracks you love into mixes that are all yours.',
-                  { label: 'Create a Playlist', onPress: () => setShowNewPlaylist(true) },
+                  t('music.emptyPlaylistsTitle'),
+                  t('music.emptyPlaylistsSub'),
+                  { label: t('music.createPlaylist'), onPress: () => setShowNewPlaylist(true) },
                 )
               : null
           }
@@ -1523,7 +1525,7 @@ export default function MusicScreen() {
               )}
               <View style={styles.playlistInfo}>
                 <Text style={styles.playlistName}>{item.name}</Text>
-                <Text style={styles.playlistMeta}>Private · Long press for options</Text>
+                <Text style={styles.playlistMeta}>{t('music.privateLongPress')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </TouchableOpacity>
@@ -1537,12 +1539,12 @@ export default function MusicScreen() {
           <View style={styles.detailTopRow}>
             <TouchableOpacity style={styles.backBtn} onPress={() => { setSelectedPlaylist(null); setTracks([]); setEditingPlaylist(false); }}>
               <Ionicons name="chevron-back" size={22} color={colors.primaryLight} />
-              <Text style={styles.backText}>Playlists</Text>
+              <Text style={styles.backText}>{t('music.tabPlaylists')}</Text>
             </TouchableOpacity>
             {/* Keep Done visible even if every track was just removed */}
             {(tracks.length > 0 || editingPlaylist) && (
               <TouchableOpacity onPress={() => setEditingPlaylist(e => !e)} hitSlop={8}>
-                <Text style={styles.editBtnText}>{editingPlaylist ? 'Done' : 'Edit'}</Text>
+                <Text style={styles.editBtnText}>{editingPlaylist ? t('music.done') : t('music.edit')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1559,7 +1561,7 @@ export default function MusicScreen() {
             <View style={styles.detailInfo}>
               <Text style={styles.playlistTitle} numberOfLines={2}>{selectedPlaylist.name}</Text>
               <Text style={styles.detailMeta} numberOfLines={1}>
-                {selectedPlaylist.is_public ? 'Public' : 'Private'}
+                {selectedPlaylist.is_public ? t('post.public') : t('music.private')}
                 {` · ${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'}`}
                 {selectedPlaylist.is_public ? ` · ${formatCount(selectedPlaylist.play_count ?? 0)} ${selectedPlaylist.play_count === 1 ? 'listen' : 'listens'}` : ''}
               </Text>
@@ -1581,9 +1583,9 @@ export default function MusicScreen() {
               contentContainerStyle={styles.listContent}
               ListEmptyComponent={renderEmpty(
                 'add-circle-outline',
-                'Nothing in here yet',
-                'Add tracks from your Saved or Liked songs, or find something new.',
-                { label: 'Find Music', onPress: () => { setSelectedPlaylist(null); setActiveView('discover'); } },
+                t('music.emptyTracksTitle'),
+                t('music.emptyTracksSub'),
+                { label: t('music.findMusic'), onPress: () => { setSelectedPlaylist(null); setActiveView('discover'); } },
               )}
               renderItem={({ item, index }) => (
                 <TrackRow
@@ -1623,7 +1625,7 @@ export default function MusicScreen() {
           keyExtractor={item => item.id}
           style={styles.list}
           contentContainerStyle={styles.listContent}
-          ListHeaderComponent={<Text style={styles.sectionTitle}>Your saved songs</Text>}
+          ListHeaderComponent={<Text style={styles.sectionTitle}>{t('music.yourSavedSongs')}</Text>}
           refreshControl={
             <RefreshControl
               refreshing={savedRefreshing}
@@ -1638,9 +1640,9 @@ export default function MusicScreen() {
           }
           ListEmptyComponent={renderEmpty(
             'bookmark-outline',
-            'Nothing saved yet',
-            'Tracks you save are kept here so you can come back to them anytime.',
-            { label: 'Discover Music', onPress: () => setActiveView('discover') },
+            t('music.emptySavedTitle'),
+            t('music.emptySavedSub'),
+            { label: t('music.discoverMusic'), onPress: () => setActiveView('discover') },
           )}
           renderItem={({ item }) => (
             <TrackRow
@@ -1680,7 +1682,7 @@ export default function MusicScreen() {
           keyExtractor={item => item.post_id}
           style={styles.list}
           contentContainerStyle={styles.listContent}
-          ListHeaderComponent={<Text style={styles.sectionTitle}>Your liked songs</Text>}
+          ListHeaderComponent={<Text style={styles.sectionTitle}>{t('music.yourLikedSongs')}</Text>}
           refreshControl={
             <RefreshControl
               refreshing={likedRefreshing}
@@ -1695,9 +1697,9 @@ export default function MusicScreen() {
           }
           ListEmptyComponent={renderEmpty(
             'heart-outline',
-            'No liked songs yet',
-            'Tap the heart on any track and it’ll land here automatically.',
-            { label: 'Discover Music', onPress: () => setActiveView('discover') },
+            t('music.emptyLikedTitle'),
+            t('music.emptyLikedSub'),
+            { label: t('music.discoverMusic'), onPress: () => setActiveView('discover') },
           )}
           renderItem={({ item, index }) => (
             <TrackRow
@@ -1739,7 +1741,7 @@ export default function MusicScreen() {
         <View style={{ flex: 1 }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => { setSelectedCommunity(null); setTracks([]); setActiveView('discover'); }}>
             <Ionicons name="chevron-back" size={22} color={colors.primaryLight} />
-            <Text style={styles.backText}>Discover</Text>
+            <Text style={styles.backText}>{t('music.tabDiscover')}</Text>
           </TouchableOpacity>
           <View style={styles.detailDivider} />
           {/* Header: cover art + prominent title + tappable creator line */}
@@ -1755,7 +1757,7 @@ export default function MusicScreen() {
               <Text style={styles.playlistTitle} numberOfLines={2}>{selectedCommunity.name}</Text>
               <TouchableOpacity onPress={() => router.push(`/profile/${selectedCommunity.user_id}`)} hitSlop={6}>
                 <Text style={styles.detailMeta} numberOfLines={1}>
-                  by <Text style={styles.detailMetaAccent}>@{selectedCommunity.creator?.username ?? 'unknown'}</Text>
+                  {t('music.byPrefix')} <Text style={styles.detailMetaAccent}>@{selectedCommunity.creator?.username ?? t('music.unknownUser')}</Text>
                   {` · ${formatCount(selectedCommunity.play_count ?? 0)} ${selectedCommunity.play_count === 1 ? 'listen' : 'listens'}`}
                 </Text>
               </TouchableOpacity>
@@ -1771,8 +1773,8 @@ export default function MusicScreen() {
               contentContainerStyle={styles.listContent}
               ListEmptyComponent={renderEmpty(
                 'musical-notes-outline',
-                'Nothing in here yet',
-                'This playlist has no tracks at the moment.',
+                t('music.emptyTracksTitle'),
+                t('music.communityEmptySub'),
               )}
               renderItem={({ item, index }) => (
                 <TrackRow
@@ -1828,10 +1830,10 @@ export default function MusicScreen() {
           <View style={styles.modalOverlayInner}>
           <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>New Playlist</Text>
+            <Text style={styles.modalTitle}>{t('music.newPlaylist')}</Text>
             <TextInput
               style={styles.modalInput}
-              placeholder="Playlist name..."
+              placeholder={t('music.playlistNamePlaceholder')}
               placeholderTextColor={colors.textTertiary}
               value={newPlaylistName}
               onChangeText={setNewPlaylistName}
@@ -1842,8 +1844,8 @@ export default function MusicScreen() {
                 the User Playlists tab; slots gated by earned badge tier). */}
             <View style={styles.visRow}>
               {([
-                { pub: false, icon: 'lock-closed', label: 'Private', sub: 'Only you can listen' },
-                { pub: true, icon: 'globe-outline', label: 'Public', sub: 'Anyone can discover it' },
+                { pub: false, icon: 'lock-closed', label: t('music.private'), sub: t('music.privateSub') },
+                { pub: true, icon: 'globe-outline', label: t('post.public'), sub: t('music.publicSub') },
               ] as const).map(opt => {
                 const on = newPlaylistPublic === opt.pub;
                 return (
@@ -1866,17 +1868,17 @@ export default function MusicScreen() {
             {newPlaylistPublic && (
               <Text style={[styles.visHint, myPublicCount >= myPublicLimit && { color: colors.error }]}>
                 {myPublicLimit === 0
-                  ? 'Public playlists need a badge — earn Bronze to unlock your first slot.'
-                  : `${myPublicCount} of ${myPublicLimit} public ${myPublicLimit === 1 ? 'slot' : 'slots'} used (${tierLabel(rawTier(profile))} badge)`}
+                  ? t('music.visHintNoBadge')
+                  : t('music.visHintTiered', { count: myPublicCount, limit: myPublicLimit, tier: tierLabel(rawTier(profile)) })}
               </Text>
             )}
 
             <View style={styles.modalBtns}>
               <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowNewPlaylist(false); setNewPlaylistName(''); setNewPlaylistPublic(false); }}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalCreate} onPress={createPlaylist}>
-                <Text style={styles.modalCreateText}>Create</Text>
+                <Text style={styles.modalCreateText}>{t('music.create')}</Text>
               </TouchableOpacity>
             </View>
           </View>

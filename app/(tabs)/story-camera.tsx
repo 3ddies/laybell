@@ -32,6 +32,7 @@ import { usePostMusic } from '../../contexts/PostMusicContext';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 
 const VIDEO_MAX_SEC = 60;
 const HOLD_MS = 240;            // hold the photo shutter longer than this → record video
@@ -51,6 +52,7 @@ type Mode = 'picture' | 'video';
 // froze the app before, so we never unmount it; we just pause it.
 export default function StoryCameraScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
@@ -471,7 +473,7 @@ export default function StoryCameraScreen() {
       setCapturedMedia({ uri, type: 'image', processed: true });
     } catch (e: any) {
       setScreenFlash(false);
-      Alert.alert('Could not take photo', e?.message ?? 'Please try again.');
+      Alert.alert(t('storyCamera.photoFailTitle'), e?.message ?? t('post.tryAgain'));
     }
   }
 
@@ -495,7 +497,7 @@ export default function StoryCameraScreen() {
       .then((video) => {
         if (video?.uri) setCapturedMedia({ uri: video.uri, type: 'video', durationSec: recSecsRef.current || undefined });
       })
-      .catch((e: any) => { Alert.alert('Could not record video', e?.message ?? 'Please try again.'); })
+      .catch((e: any) => { Alert.alert(t('storyCamera.videoFailTitle'), e?.message ?? t('post.tryAgain')); })
       .finally(() => {
         if (recTimer.current) { clearInterval(recTimer.current); recTimer.current = null; }
         recProgress.stopAnimation();
@@ -630,14 +632,14 @@ export default function StoryCameraScreen() {
     try {
       const perm = await MediaLibrary.requestPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Photos access needed', 'Allow access to save to your library.');
+        Alert.alert(t('storyCamera.photosNeededTitle'), t('storyCamera.photosNeededBody'));
         return;
       }
       await MediaLibrary.saveToLibraryAsync(captured.uri);
       setSaved(true);
       setTimeout(() => setSaved(false), 2200);
     } catch (e: any) {
-      Alert.alert('Could not save', e?.message ?? 'Saving may need the latest app build.');
+      Alert.alert(t('storyCamera.saveFailTitle'), e?.message ?? t('storyCamera.saveFailBody'));
     }
   }
 
@@ -647,7 +649,7 @@ export default function StoryCameraScreen() {
     setUploading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      if (!user) throw new Error(t('storyCamera.notAuthenticated'));
 
       let mediaUrl: string;
       let thumbnailUrl: string | null = null;
@@ -699,7 +701,7 @@ export default function StoryCameraScreen() {
       refreshStories();
       navigation.navigate('index');
     } catch (e: any) {
-      Alert.alert('Could not post story', e?.message ?? 'Please try again.');
+      Alert.alert(t('storyCamera.postFailTitle'), e?.message ?? t('post.tryAgain'));
     } finally {
       setUploading(false);
       setUploadPct(null);
@@ -711,18 +713,18 @@ export default function StoryCameraScreen() {
     return (
       <View style={[styles.container, styles.center]}>
         <Ionicons name="camera-outline" size={48} color={colors.textTertiary} />
-        <Text style={styles.permTitle}>Camera access needed</Text>
-        <Text style={styles.permSub}>Allow camera access to capture stories.</Text>
+        <Text style={styles.permTitle}>{t('storyCamera.camNeededTitle')}</Text>
+        <Text style={styles.permSub}>{t('storyCamera.camNeededBody')}</Text>
         <TouchableOpacity
           style={styles.permBtn}
           onPress={() => (camPermission.canAskAgain ? requestCamPermission() : Linking.openSettings())}
         >
           <Text style={styles.permBtnText}>
-            {camPermission.canAskAgain ? 'Allow camera' : 'Open settings'}
+            {camPermission.canAskAgain ? t('storyCamera.allowCamera') : t('permissions.openSettings')}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.permClose} onPress={close}>
-          <Text style={styles.permCloseText}>Back to feed</Text>
+          <Text style={styles.permCloseText}>{t('storyCamera.backToFeed')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -856,7 +858,7 @@ export default function StoryCameraScreen() {
               />
               <TextInput
                 style={styles.captionInput}
-                placeholder="Add a caption…"
+                placeholder={t('storyCamera.captionPlaceholder')}
                 placeholderTextColor="rgba(255,255,255,0.7)"
                 value={caption}
                 onChangeText={setCaption}
@@ -877,7 +879,7 @@ export default function StoryCameraScreen() {
                 : <ActivityIndicator color="#fff" />
             ) : (
               <>
-                <Text style={styles.shareBtnText}>Add to story</Text>
+                <Text style={styles.shareBtnText}>{t('storyCamera.addToStory')}</Text>
                 <Ionicons name="arrow-forward-circle" size={22} color="#fff" />
               </>
             )}
@@ -894,7 +896,7 @@ export default function StoryCameraScreen() {
             <Pressable style={StyleSheet.absoluteFill} onPress={finishEditing} />
             <View style={[styles.stickerDoneRow, { top: insets.top + 8 }]} pointerEvents="box-none">
               <TouchableOpacity style={styles.stickerDoneBtn} onPress={finishEditing} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                <Text style={styles.stickerDoneText}>Done</Text>
+                <Text style={styles.stickerDoneText}>{t('storyCamera.done')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -922,7 +924,7 @@ export default function StoryCameraScreen() {
                   }]}
                   value={editingText}
                   onChangeText={setEditingText}
-                  placeholder="Type something…"
+                  placeholder={t('storyCamera.typeSomething')}
                   placeholderTextColor="rgba(255,255,255,0.55)"
                   selectionColor="#FAB525"
                   cursorColor="#FAB525"
@@ -1128,7 +1130,7 @@ export default function StoryCameraScreen() {
       {countdown != null && (
         <Pressable style={[StyleSheet.absoluteFill, styles.countdownWrap]} onPress={cancelCountdown}>
           <Text style={styles.countdownText}>{countdown}</Text>
-          <Text style={styles.countdownHint}>Tap to cancel</Text>
+          <Text style={styles.countdownHint}>{t('storyCamera.tapToCancel')}</Text>
         </Pressable>
       )}
 
@@ -1154,7 +1156,7 @@ export default function StoryCameraScreen() {
           {(['picture', 'video'] as Mode[]).map((m) => (
             <TouchableOpacity key={m} onPress={() => m !== mode && toggleMode()} style={[styles.modePill, mode === m && styles.modePillActive]}>
               <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
-                {m === 'picture' ? 'PHOTO' : 'VIDEO'}
+                {m === 'picture' ? t('storyCamera.modePhoto') : t('storyCamera.modeVideo')}
               </Text>
             </TouchableOpacity>
           ))}
@@ -1203,7 +1205,7 @@ export default function StoryCameraScreen() {
             shutter above it stays put instead of jumping as mode/recording flip. */}
         <View style={styles.hintRow}>
           <Text style={styles.holdHint}>
-            {recording ? 'Slide up to zoom' : mode === 'picture' ? 'Hold for video' : 'Tap to record'}
+            {recording ? t('storyCamera.slideToZoom') : mode === 'picture' ? t('storyCamera.holdForVideo') : t('storyCamera.tapToRecord')}
           </Text>
         </View>
       </View>

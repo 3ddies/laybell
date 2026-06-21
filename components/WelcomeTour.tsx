@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -28,39 +29,50 @@ const SLIDE_H = 260;
 // the real app is visible around its borders. Tapping the × or anywhere outside
 // the card calls onDone — which just dismisses the card and leaves the user in
 // the app. It's gated by a one-shot flag, so it never reappears.
-type Slide = { icon: any; title: string; body: string };
+type T = (key: string, vars?: Record<string, string | number>) => string;
+type Slide = { key: string; icon: any; title: string; body: string };
 
-const SLIDES: Slide[] = [
+// Built per-render so the slide copy follows the active language. `key` stays
+// stable (English-independent) so the pager/keyExtractor don't churn on switch.
+const buildSlides = (t: T): Slide[] => [
   {
+    key: 'post',
     icon: 'add-circle-outline',
-    title: 'Post',
-    body: 'Share photos, videos, audio, and slideshows. Tag songs and people — your posts reach the feed and Explore.',
+    title: t('welcomeTour.postTitle'),
+    body: t('welcomeTour.postBody'),
   },
   {
+    key: 'listen',
     icon: 'musical-notes-outline',
-    title: 'Listen',
-    body: 'Stream tracks from creators, build playlists, like and save songs, and tap Listen mode for a focused music flow.',
+    title: t('welcomeTour.listenTitle'),
+    body: t('welcomeTour.listenBody'),
   },
   {
+    key: 'message',
     icon: 'chatbubble-ellipses-outline',
-    title: 'Message',
-    body: 'Send direct messages, reply to stories, and share posts privately with friends.',
+    title: t('welcomeTour.messageTitle'),
+    body: t('welcomeTour.messageBody'),
   },
   {
+    key: 'badges',
     icon: 'sparkles-outline',
-    title: 'Badges',
-    body: 'Earn tiered badges — Bronze to Diamond — by posting, listening, and engaging. Your badge shows on your profile.',
+    title: t('welcomeTour.badgesTitle'),
+    // Tier names stay English (interpolated) per brand rules.
+    body: t('welcomeTour.badgesBody', { from: 'Bronze', to: 'Diamond' }),
   },
   {
+    key: 'promotion',
     icon: 'megaphone-outline',
-    title: 'Promotion',
-    body: 'Get seen. Spotlight pushes one of your posts up into the feed, and the Ad Manager runs ads across the feed, reels, and audio.',
+    title: t('welcomeTour.promotionTitle'),
+    body: t('welcomeTour.promotionBody'),
   },
 ];
 
 export default function WelcomeTour({ onDone }: { onDone: () => void }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
+  const SLIDES = buildSlides(t);
   const listRef = useRef<FlatList>(null);
   const [index, setIndex] = useState(0);
   const isLast = index === SLIDES.length - 1;
@@ -115,7 +127,7 @@ export default function WelcomeTour({ onDone }: { onDone: () => void }) {
         <FlatList
           ref={listRef}
           data={SLIDES}
-          keyExtractor={(s) => s.title}
+          keyExtractor={(s) => s.key}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
@@ -141,7 +153,7 @@ export default function WelcomeTour({ onDone }: { onDone: () => void }) {
 
         <TouchableOpacity style={styles.primaryBtn} onPress={next} activeOpacity={0.85}>
           <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
-            <Text style={styles.primaryBtnText}>{isLast ? 'Get Started' : 'Next'}</Text>
+            <Text style={styles.primaryBtnText}>{isLast ? t('welcomeTour.getStarted') : t('welcomeTour.next')}</Text>
             <Ionicons name={isLast ? 'checkmark' : 'arrow-forward'} size={18} color={colors.text} />
           </LinearGradient>
         </TouchableOpacity>

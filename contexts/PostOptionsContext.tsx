@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 import { bumpBadge } from '../lib/badges';
 import { createNotification } from '../lib/createNotification';
 import { useProfile } from './ProfileContext';
+import { useTranslation } from './LanguageContext';
 import { isReposted, addRepost, removeRepost } from '../lib/reposts';
 import AddToPlaylistModal from '../components/AddToPlaylistModal';
 
@@ -119,6 +120,7 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { profile } = useProfile();
+  const { t } = useTranslation();
   const translateY = useRef(new Animated.Value(DISMISS_DIST)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
   const closeRef = useRef(onClose); closeRef.current = onClose;
@@ -219,12 +221,12 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
     (!!opts?.authorId && !!profile?.id && opts.authorId === profile.id);
   const hasPost = !!opts?.postId;
   const isAudio = isAudioPost(opts?.mediaType);
-  const targetSuffix = opts?.authorName ? ` @${opts.authorName}` : ' user';
+  const target = opts?.authorName ? `@${opts.authorName}` : t('postOptions.user');
 
   const blockOpt: Opt = blocked
-    ? { key: 'unblock', label: `Unblock${targetSuffix}`, icon: 'person-add-outline',
+    ? { key: 'unblock', label: t('postOptions.unblockTarget', { target }), icon: 'person-add-outline',
         onPress: () => { const o = optsRef.current; dismissThen(async () => { if (o?.authorId) { await unblockUser(o.authorId); o.onBlocked?.(); } }); } }
-    : { key: 'block', label: `Block${targetSuffix}`, icon: 'ban-outline', destructive: true,
+    : { key: 'block', label: t('postOptions.blockTarget', { target }), icon: 'ban-outline', destructive: true,
         onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.authorId) confirmBlockUser(o.authorId, o.authorName, o.onBlocked); }); } };
 
   const options: Opt[] = [];
@@ -234,39 +236,39 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
     if (opts?.onRemoveFromPlaylist) {
       // Opened from inside one of the user's playlists — the playlist slot
       // removes the song from THAT playlist instead of adding to one.
-      options.push({ key: 'playlist', label: 'Remove from playlist', icon: 'remove-circle-outline',
+      options.push({ key: 'playlist', label: t('postOptions.removeFromPlaylist'), icon: 'remove-circle-outline',
         onPress: () => { const o = optsRef.current; dismissThen(() => o?.onRemoveFromPlaylist?.()); } });
     } else {
-      options.push({ key: 'playlist', label: 'Add to playlist', icon: 'add-circle-outline',
+      options.push({ key: 'playlist', label: t('postOptions.addToPlaylist'), icon: 'add-circle-outline',
         onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) onAddToPlaylist(o.postId); }); } });
     }
-    options.push({ key: 'like', label: liked ? 'Unlike' : 'Like', icon: liked ? 'heart' : 'heart-outline',
+    options.push({ key: 'like', label: liked ? t('postOptions.unlike') : t('postOptions.like'), icon: liked ? 'heart' : 'heart-outline',
       active: liked, activeColor: COLORS.like, onPress: toggleLike });
-    options.push({ key: 'save', label: saved ? 'Unsave' : 'Save', icon: saved ? 'bookmark' : 'bookmark-outline',
+    options.push({ key: 'save', label: saved ? t('postOptions.unsave') : t('postOptions.save'), icon: saved ? 'bookmark' : 'bookmark-outline',
       active: saved, activeColor: COLORS.primary, onPress: toggleSave });
     if (opts?.authorId && !isOwn) {
-      options.push({ key: 'artist', label: 'Artist', icon: 'person-outline',
+      options.push({ key: 'artist', label: t('postOptions.artist'), icon: 'person-outline',
         onPress: () => { const o = optsRef.current; dismissThen(() => { o?.onNavigate?.(); if (o?.authorId) router.push(`/profile/${o.authorId}`); }); } });
     }
   }
 
   // ── Ownership / general actions ────────────────────────────────────────────
   if (hasPost && isOwn) {
-    options.push({ key: 'edit', label: 'Edit post', icon: 'pencil-outline',
+    options.push({ key: 'edit', label: t('postOptions.editPost'), icon: 'pencil-outline',
       onPress: () => dismissThen(() => optsRef.current?.onEdit?.()) });
-    options.push({ key: 'archive', label: 'Archive post', icon: 'archive-outline',
+    options.push({ key: 'archive', label: t('postOptions.archivePost'), icon: 'archive-outline',
       onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) confirmArchivePost(o.postId, o.onArchived); }); } });
-    options.push({ key: 'delete', label: 'Delete post', icon: 'trash-outline', destructive: true,
+    options.push({ key: 'delete', label: t('postOptions.deletePost'), icon: 'trash-outline', destructive: true,
       onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) confirmDeletePost(o.postId, o.onDeleted); }); } });
   } else if (hasPost && !isOwn) {
-    options.push({ key: 'repost', label: reposted ? 'Remove from reposts' : 'Repost',
+    options.push({ key: 'repost', label: reposted ? t('postOptions.removeFromReposts') : t('postOptions.repost'),
       icon: reposted ? 'repeat' : 'repeat-outline', onPress: toggleRepost });
-    options.push({ key: 'report', label: 'Report post', icon: 'flag-outline', destructive: true,
+    options.push({ key: 'report', label: t('postOptions.reportPost'), icon: 'flag-outline', destructive: true,
       onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) reportPost(o.postId); }); } });
     if (opts?.authorId) options.push(blockOpt);
   } else if (!hasPost && opts?.authorId && !isOwn) {
     // Profile-only menu (no specific post): report + block the user.
-    options.push({ key: 'report-user', label: 'Report user', icon: 'flag-outline', destructive: true,
+    options.push({ key: 'report-user', label: t('postOptions.reportUser'), icon: 'flag-outline', destructive: true,
       onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.authorId) reportUser(o.authorId); }); } });
     options.push(blockOpt);
   }

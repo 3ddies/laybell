@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
+import { LANGUAGES } from '../lib/i18n';
 import BadgeEmblem from '../components/BadgeEmblem';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { displayedTier } from '../lib/badges';
@@ -99,6 +101,7 @@ export default function SettingsScreen() {
   const [hiddenOn, setHiddenOn] = useState(false);
   useEffect(() => { setHiddenOn(!!(profile as any)?.hidden); }, [profile]);
   const { colors, mode, setMode } = useTheme();
+  const { t, lang, setLang } = useTranslation();
   const styles = useThemedStyles(makeStyles);
 
   // Per-category notification toggles (persisted locally). The "All" row is
@@ -128,9 +131,9 @@ export default function SettingsScreen() {
   }
 
   async function handleLogout() {
-    Alert.alert('Log Out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: () => supabase.auth.signOut() },
+    Alert.alert(t('logout.title'), t('logout.body'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('danger.logout'), style: 'destructive', onPress: () => supabase.auth.signOut() },
     ]);
   }
 
@@ -146,7 +149,7 @@ export default function SettingsScreen() {
       // Unhiding also CANCELS any pending deletion (the 3-month grace path).
       : { hidden: false, delete_requested_at: null, delete_immediately: false };
     const { error } = await supabase.from('profiles').update(patch).eq('id', user.id);
-    if (error) { Alert.alert('Could not update', error.message); return false; }
+    if (error) { Alert.alert(t('hide.couldNotUpdate'), error.message); return false; }
     setHiddenOn(on);
     return true;
   }
@@ -154,49 +157,46 @@ export default function SettingsScreen() {
   function toggleHidden(next: boolean) {
     if (next) {
       Alert.alert(
-        'Hide your profile?',
-        'Your account becomes invisible to everyone — profile, posts, stories and playlists disappear from Laybell. You can still browse and listen, and unhide here anytime.',
+        t('hide.confirmTitle'),
+        t('hide.confirmBody'),
         [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Hide Profile', onPress: () => setHidden(true) },
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('account.hideProfile'), onPress: () => setHidden(true) },
         ],
       );
     } else {
       setHidden(false).then((ok) => {
-        if (ok) Alert.alert('Welcome back', 'Your profile is visible again. Any scheduled deletion has been cancelled.');
+        if (ok) Alert.alert(t('hide.welcomeBackTitle'), t('hide.welcomeBackBody'));
       });
     }
   }
 
   async function handleDeleteAccount() {
     Alert.alert(
-      'Delete Account',
-      'Before you go — you can hide your account instead. It disappears from Laybell, and if you stay away for 3 months it gets deleted permanently. Coming back and unhiding cancels everything.',
+      t('danger.deleteAccount'),
+      t('delete.body'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Hide for 3 months',
+          text: t('delete.hide3mo'),
           onPress: async () => {
             const ok = await setHidden(true, { delete_requested_at: new Date().toISOString(), delete_immediately: false });
             if (ok) {
-              Alert.alert(
-                'Profile hidden',
-                'Your account is now invisible. If you stay away for 3 months it will be permanently deleted — unhide in Settings anytime to cancel.',
-              );
+              Alert.alert(t('delete.hiddenTitle'), t('delete.hiddenBody'));
             }
           },
         },
         {
-          text: 'Delete now',
+          text: t('delete.deleteNow'),
           style: 'destructive',
           onPress: () => {
             Alert.alert(
-              'Delete permanently?',
-              'This cannot be undone. Your account and everything you posted will be removed.',
+              t('delete.permTitle'),
+              t('delete.permBody'),
               [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('common.cancel'), style: 'cancel' },
                 {
-                  text: 'Delete', style: 'destructive',
+                  text: t('common.delete'), style: 'destructive',
                   onPress: async () => {
                     const ok = await setHidden(true, { delete_requested_at: new Date().toISOString(), delete_immediately: true });
                     if (ok) {
@@ -208,9 +208,9 @@ export default function SettingsScreen() {
                       let reported = false;
                       try { const { data } = await supabase.rpc('current_account_has_reports'); reported = data === true; } catch {}
                       await supabase.auth.signOut();
-                      Alert.alert('Account deleted', reported
-                        ? 'Your account has been deleted and you have been signed out.'
-                        : 'Your account has been deleted and you have been signed out. It is permanently removed after 48 hours — after that, you can use this email to create a new account.');
+                      Alert.alert(t('delete.doneTitle'), reported
+                        ? t('delete.doneReported')
+                        : t('delete.doneClean'));
                     }
                   },
                 },
@@ -228,7 +228,7 @@ export default function SettingsScreen() {
   function requireAdult(action: () => void) {
     const age = (profile as any)?.age;
     if (typeof age === 'number' && age < 18) {
-      Alert.alert('18+ only', 'Spotlight and the Ad Manager are available only to users who are at least 18 years old.');
+      Alert.alert(t('adult.title'), t('adult.body'));
       return;
     }
     action();
@@ -237,104 +237,104 @@ export default function SettingsScreen() {
   const accountItems: SectionItem[] = [
     {
       icon: 'person-outline',
-      label: 'Edit Profile',
+      label: t('account.editProfile'),
       subtitle: profile ? `@${profile.username}` : undefined,
       onPress: () => router.push('/edit-profile'),
     },
     {
       icon: 'people-outline',
-      label: 'Friends',
-      subtitle: 'People you both follow + discover more',
+      label: t('account.friends'),
+      subtitle: t('account.friendsSub'),
       onPress: () => router.push('/friends'),
     },
     {
       icon: 'stats-chart-outline',
-      label: 'Creator Analytics',
-      subtitle: 'Stats & charts about your content',
+      label: t('account.analytics'),
+      subtitle: t('account.analyticsSub'),
       onPress: () => router.push('/analytics'),
     },
     {
       icon: 'sparkles-outline',
       label: 'Spotlight',
-      subtitle: 'Launch a post at #3 in the Home feed',
+      subtitle: t('account.spotlightSub'),
       onPress: () => requireAdult(() => router.push('/spotlight')),
     },
     {
       icon: 'megaphone-outline',
-      label: 'Ad Manager',
-      subtitle: 'Create and manage ad campaigns',
+      label: t('account.adManager'),
+      subtitle: t('account.adManagerSub'),
       onPress: () => requireAdult(() => router.push('/ad-manager')),
     },
     {
       icon: 'ribbon-outline',
-      label: 'Badges',
-      subtitle: 'Your emblem, rewards & progress',
+      label: t('account.badges'),
+      subtitle: t('account.badgesSub'),
       onPress: () => router.push('/badges'),
     },
     {
       icon: 'albums-outline',
-      label: 'Playlists',
-      subtitle: 'Public, private & locked playlists',
+      label: t('account.playlists'),
+      subtitle: t('account.playlistsSub'),
       onPress: () => router.push('/playlists'),
     },
     {
       icon: 'at-outline',
-      label: 'Tagged',
-      subtitle: 'Mentions, your audio used & more',
+      label: t('account.tagged'),
+      subtitle: t('account.taggedSub'),
       onPress: () => router.push('/tagged'),
     },
     {
       icon: 'repeat-outline',
-      label: 'Reposts',
-      subtitle: 'See who reposted your posts',
+      label: t('account.reposts'),
+      subtitle: t('account.repostsSub'),
       onPress: () => router.push('/reposts'),
     },
     {
       icon: 'lock-closed-outline',
-      label: 'Private Posts',
-      subtitle: 'Posts only your friends can see',
+      label: t('account.privatePosts'),
+      subtitle: t('account.privatePostsSub'),
       onPress: () => router.push('/private-posts'),
     },
     {
       icon: 'eye-off-outline',
-      label: 'Hide Profile',
-      subtitle: 'Make your account invisible to others',
+      label: t('account.hideProfile'),
+      subtitle: t('account.hideProfileSub'),
       value: hiddenOn,
       onValueChange: toggleHidden,
     },
     {
       icon: 'archive-outline',
-      label: 'Archive',
-      subtitle: 'Posts and stories you archived',
+      label: t('account.archive'),
+      subtitle: t('account.archiveSub'),
       onPress: () => router.push('/archive'),
     },
     {
       icon: 'ban-outline',
-      label: 'Blocked',
-      subtitle: 'Accounts you blocked',
+      label: t('account.blocked'),
+      subtitle: t('account.blockedSub'),
       onPress: () => router.push('/blocked'),
     },
     {
       icon: 'options-outline',
-      label: 'Permissions',
-      subtitle: 'Camera, photos, location, contacts & more',
+      label: t('account.permissions'),
+      subtitle: t('account.permissionsSub'),
       onPress: () => router.push('/permissions'),
     },
     {
       icon: 'shield-checkmark-outline',
-      label: 'Privacy & data',
-      subtitle: 'Download your data, ad settings & your rights',
+      label: t('account.privacy'),
+      subtitle: t('account.privacySub'),
       onPress: () => router.push('/privacy-center'),
     },
     {
       icon: 'lock-closed-outline',
-      label: 'Change Password',
-      onPress: () => Alert.alert('Change Password', 'A password reset email will be sent to your registered address.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Send Email', onPress: async () => {
+      label: t('account.changePassword'),
+      onPress: () => Alert.alert(t('account.changePassword'), t('cpw.body'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('cpw.send'), onPress: async () => {
           const { data: { user } } = await supabase.auth.getUser();
           if (user?.email) await supabase.auth.resetPasswordForEmail(user.email);
-          Alert.alert('Email Sent', 'Check your inbox for a password reset link.');
+          Alert.alert(t('cpw.sentTitle'), t('cpw.sentBody'));
         }},
       ]),
     },
@@ -343,36 +343,36 @@ export default function SettingsScreen() {
   const notifItems: SectionItem[] = [
     {
       icon: 'notifications-outline',
-      label: 'All notifications',
-      subtitle: 'Turn every alert on or off',
+      label: t('notif.all'),
+      subtitle: t('notif.allSub'),
       value: allNotifsOn,
       onValueChange: setAllNotifs,
       chevron: false,
     },
     {
       icon: 'heart-outline',
-      label: 'Likes',
+      label: t('notif.likes'),
       value: notifPrefs.likes,
       onValueChange: (v) => setNotifPref('likes', v),
       chevron: false,
     },
     {
       icon: 'chatbubble-outline',
-      label: 'Comments',
+      label: t('notif.comments'),
       value: notifPrefs.comments,
       onValueChange: (v) => setNotifPref('comments', v),
       chevron: false,
     },
     {
       icon: 'person-add-outline',
-      label: 'New Followers',
+      label: t('notif.newFollowers'),
       value: notifPrefs.follows,
       onValueChange: (v) => setNotifPref('follows', v),
       chevron: false,
     },
     {
       icon: 'mail-outline',
-      label: 'Messages',
+      label: t('notif.messages'),
       value: notifPrefs.messages,
       onValueChange: (v) => setNotifPref('messages', v),
       chevron: false,
@@ -382,8 +382,8 @@ export default function SettingsScreen() {
   const adItems: SectionItem[] = [
     {
       icon: 'shield-checkmark-outline',
-      label: 'Limit ad targeting',
-      subtitle: "Don't use my activity to personalize ads",
+      label: t('ads.limit'),
+      subtitle: t('ads.limitSub'),
       value: limitAds,
       onValueChange: toggleLimitAds,
       chevron: false,
@@ -393,35 +393,35 @@ export default function SettingsScreen() {
   const aboutItems: SectionItem[] = [
     {
       icon: 'information-circle-outline',
-      label: 'Version',
+      label: t('about.version'),
       subtitle: APP_VERSION,
       chevron: false,
       onPress: undefined,
     },
     {
       icon: 'help-circle-outline',
-      label: 'Help',
-      subtitle: 'Help center — coming soon',
-      onPress: () => Alert.alert('Help', 'The help center is coming soon.'),
+      label: t('about.help'),
+      subtitle: t('about.helpSub'),
+      onPress: () => Alert.alert(t('about.help'), t('help.body')),
     },
     {
       icon: 'document-text-outline',
-      label: 'Privacy Policy',
+      label: t('about.privacyPolicy'),
       onPress: () => router.push('/privacy-policy'),
     },
     {
       icon: 'shield-outline',
-      label: 'Terms of Service',
+      label: t('about.terms'),
       onPress: () => router.push('/terms-of-service'),
     },
     {
       icon: 'people-outline',
-      label: 'Community Guidelines',
+      label: t('about.community'),
       onPress: () => router.push('/community-guidelines'),
     },
     {
       icon: 'megaphone-outline',
-      label: 'Advertiser Terms',
+      label: t('about.advertiserTerms'),
       onPress: () => router.push('/advertiser-terms'),
     },
   ];
@@ -429,14 +429,14 @@ export default function SettingsScreen() {
   const dangerItems: SectionItem[] = [
     {
       icon: 'log-out-outline',
-      label: 'Log Out',
+      label: t('danger.logout'),
       onPress: handleLogout,
       destructive: true,
       chevron: false,
     },
     {
       icon: 'trash-outline',
-      label: 'Delete Account',
+      label: t('danger.deleteAccount'),
       onPress: handleDeleteAccount,
       destructive: true,
       chevron: false,
@@ -452,7 +452,7 @@ export default function SettingsScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settings</Text>
+        <Text style={styles.headerTitle}>{t('settings.title')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -475,7 +475,7 @@ export default function SettingsScreen() {
                 <BadgeEmblem tier={displayedTier(profile)} size={16} />
               </View>
               <Text style={styles.profileUsername} numberOfLines={1}>@{profile.username}</Text>
-              <Text style={styles.profileEdit}>View and edit profile</Text>
+              <Text style={styles.profileEdit}>{t('settings.viewEditProfile')}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </TouchableOpacity>
@@ -483,15 +483,15 @@ export default function SettingsScreen() {
 
         {/* Display — choose the app's color scheme (applies live). */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Display</Text>
+          <Text style={styles.sectionTitle}>{t('settings.section.display')}</Text>
           <View style={styles.sectionCard}>
             {DISPLAY_MODES.map((m, i) => (
               <View key={m.key}>
                 <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => setMode(m.key)}>
                   <View style={[styles.swatch, { backgroundColor: m.swatch, borderColor: m.ring }]} />
                   <View style={styles.rowContent}>
-                    <Text style={styles.rowLabel}>{m.label}</Text>
-                    <Text style={styles.rowSubtitle}>{m.sub}</Text>
+                    <Text style={styles.rowLabel}>{t(`display.${m.key}`)}</Text>
+                    <Text style={styles.rowSubtitle}>{t(`display.${m.key}Sub`)}</Text>
                   </View>
                   {mode === m.key
                     ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
@@ -503,13 +503,38 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <Section title="Account" items={accountItems} />
-        <Section title="Notifications" items={notifItems} />
-        <Section title="Ads" items={adItems} />
-        <Section title="About" items={aboutItems} />
+        {/* Language — choose the app's language (applies live, persisted). Each row
+            shows the language's own name with its English name underneath. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings.section.language')}</Text>
+          <View style={styles.sectionCard}>
+            {LANGUAGES.map((l, i) => (
+              <View key={l.code}>
+                <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => setLang(l.code)}>
+                  <View style={styles.rowIcon}>
+                    <Ionicons name="language-outline" size={22} color={colors.text} />
+                  </View>
+                  <View style={styles.rowContent}>
+                    <Text style={styles.rowLabel}>{l.native}</Text>
+                    <Text style={styles.rowSubtitle}>{l.label}</Text>
+                  </View>
+                  {lang === l.code
+                    ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                    : <View style={styles.radioOff} />}
+                </TouchableOpacity>
+                {i < LANGUAGES.length - 1 && <View style={styles.separator} />}
+              </View>
+            ))}
+          </View>
+        </View>
+
+        <Section title={t('settings.section.account')} items={accountItems} />
+        <Section title={t('settings.section.notifications')} items={notifItems} />
+        <Section title={t('settings.section.ads')} items={adItems} />
+        <Section title={t('settings.section.about')} items={aboutItems} />
         <Section title="" items={dangerItems} />
 
-        <Text style={styles.madeWith}>Made with 🧡 for artists everywhere</Text>
+        <Text style={styles.madeWith}>{t('settings.madeWith')}</Text>
       </ScrollView>
     </View>
     </SwipeBackPager>

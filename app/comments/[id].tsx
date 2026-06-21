@@ -12,6 +12,7 @@ import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/t
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
+import { useTranslation } from '../../contexts/LanguageContext';
 
 type Comment = {
   id: string; body: string; created_at: string; user_id: string;
@@ -20,6 +21,7 @@ type Comment = {
 
 export default function CommentsScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -110,7 +112,7 @@ export default function CommentsScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Comments</Text>
+        <Text style={styles.headerTitle}>{t('comments.title')}</Text>
         <View style={styles.countBadge}>
           <Text style={styles.countText}>{comments.length}</Text>
         </View>
@@ -124,8 +126,8 @@ export default function CommentsScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="chatbubbles-outline" size={44} color={colors.textTertiary} />
-            <Text style={styles.emptyTitle}>No comments yet</Text>
-            <Text style={styles.emptySubtitle}>Be the first to comment!</Text>
+            <Text style={styles.emptyTitle}>{t('comments.emptyTitle')}</Text>
+            <Text style={styles.emptySubtitle}>{t('comments.emptySub')}</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -150,7 +152,7 @@ export default function CommentsScreen() {
         </LinearGradient>
         <TextInput
           style={styles.input}
-          placeholder="Add a comment..."
+          placeholder={t('comments.addPlaceholder')}
           placeholderTextColor={colors.textTertiary}
           value={newComment}
           onChangeText={setNewComment}

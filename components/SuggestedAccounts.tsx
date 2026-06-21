@@ -3,12 +3,13 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { fetchSuggestedAccounts, loadContactHashesIfEnabled, REASON_LABEL, type SuggestedAccount } from '../lib/suggestions';
+import { fetchSuggestedAccounts, loadContactHashesIfEnabled, reasonLabel, type SuggestedAccount } from '../lib/suggestions';
 import { useFollow } from '../contexts/FollowContext';
 import FollowButton from './FollowButton';
 import StoryAvatar from './StoryAvatar';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 // When the user dismisses the rail we stamp the time here; it stays hidden until
 // 24h have elapsed, then resurfaces on the next Explore visit.
@@ -23,6 +24,7 @@ export default function SuggestedAccounts({ currentUserId }: { currentUserId: st
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const { following } = useFollow();
   const [items, setItems] = useState<SuggestedAccount[]>([]);
   // `null` while we read storage (avoids a flash), then true/false once known.
@@ -65,7 +67,7 @@ export default function SuggestedAccounts({ currentUserId }: { currentUserId: st
   return (
     <View style={styles.wrap}>
       <View style={styles.titleRow}>
-        <Text style={styles.title}>Suggested for you</Text>
+        <Text style={styles.title}>{t('friends.suggested')}</Text>
         <TouchableOpacity onPress={handleDismiss} style={styles.dismissBtn} hitSlop={10} activeOpacity={0.6}>
           <Ionicons name="close" size={18} color={colors.textSecondary} />
         </TouchableOpacity>
@@ -87,7 +89,7 @@ export default function SuggestedAccounts({ currentUserId }: { currentUserId: st
             />
             <TouchableOpacity style={styles.cardText} activeOpacity={0.85} onPress={() => router.push(`/profile/${item.id}`)}>
               <Text style={styles.name} numberOfLines={1}>{item.display_name}</Text>
-              <Text style={styles.reason} numberOfLines={2}>{REASON_LABEL[item.reason]}</Text>
+              <Text style={styles.reason} numberOfLines={2}>{reasonLabel(item.reason)}</Text>
             </TouchableOpacity>
             <FollowButton userId={item.id} style={styles.followBtn} />
           </View>

@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 export type EditableTrack = { post_id: string; posts: any };
 
@@ -25,6 +26,8 @@ export default function PlaylistEditor({ tracks, onCommitOrder, onRemove }: {
   onRemove: (postIds: string[], next: EditableTrack[]) => void;
 }) {
   const { colors } = useTheme();
+  // Aliased to `tr` because the track-list .map() below binds `t` to each track.
+  const { t: tr } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [order, setOrder] = useState<EditableTrack[]>(tracks);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -88,12 +91,12 @@ export default function PlaylistEditor({ tracks, onCommitOrder, onRemove }: {
     const ids = [...selected];
     if (!ids.length) return;
     Alert.alert(
-      'Remove tracks',
-      `Remove ${ids.length} ${ids.length === 1 ? 'track' : 'tracks'} from this playlist?`,
+      tr('playlistEditor.removeTitle'),
+      tr('playlistEditor.removeConfirm', { n: ids.length }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: tr('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove', style: 'destructive',
+          text: tr('playlistEditor.remove'), style: 'destructive',
           onPress: () => {
             const next = orderRef.current.filter(t => !selected.has(t.post_id));
             setSelected(new Set());
@@ -136,7 +139,7 @@ export default function PlaylistEditor({ tracks, onCommitOrder, onRemove }: {
                   </LinearGradient>
                 )}
                 <View style={styles.info}>
-                  <Text style={styles.title} numberOfLines={1}>{t.posts?.caption || 'Audio Track'}</Text>
+                  <Text style={styles.title} numberOfLines={1}>{t.posts?.caption || tr('playlistEditor.audioTrack')}</Text>
                   <Text style={styles.artist} numberOfLines={1}>@{t.posts?.profiles?.username}</Text>
                 </View>
               </TouchableOpacity>
@@ -154,7 +157,7 @@ export default function PlaylistEditor({ tracks, onCommitOrder, onRemove }: {
         <TouchableOpacity style={styles.removeBar} onPress={confirmRemove} activeOpacity={0.85}>
           <Ionicons name="trash-outline" size={18} color="#fff" />
           <Text style={styles.removeBarText}>
-            Remove {selected.size} {selected.size === 1 ? 'track' : 'tracks'}
+            {tr('playlistEditor.removeBar', { n: selected.size })}
           </Text>
         </TouchableOpacity>
       )}

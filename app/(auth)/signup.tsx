@@ -9,11 +9,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 
 type Field = { icon: any; placeholder: string; value: string; onChange: (v: string) => void; secure?: boolean; keyboard?: any; capitalize?: any; maxLength?: number };
 
 export default function SignupScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -32,13 +34,13 @@ export default function SignupScreen() {
     // never trips the length checks or the letters/numbers/underscores-only rule —
     // validate and submit the trimmed value.
     const uname = username.trim();
-    if (!email || !password || !confirmPassword || !uname || !displayName) { setError('Please fill in all fields'); return; }
-    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
-    if (uname.length < 5) { setError('Username must be at least 5 characters'); return; }
-    if (uname.length > 30) { setError('Username must be 30 characters or less'); return; }
-    if (!/^[a-zA-Z0-9_]+$/.test(uname)) { setError('Username can only contain letters, numbers, and underscores'); return; }
-    if (!agreed) { setError('Please accept the Terms of Service and Privacy Policy to continue'); return; }
+    if (!email || !password || !confirmPassword || !uname || !displayName) { setError(t('auth.fillAllFields')); return; }
+    if (password !== confirmPassword) { setError(t('auth.passwordsNoMatch')); return; }
+    if (password.length < 6) { setError(t('auth.passwordMin')); return; }
+    if (uname.length < 5) { setError(t('auth.usernameMin')); return; }
+    if (uname.length > 30) { setError(t('auth.usernameMax')); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(uname)) { setError(t('auth.usernameChars')); return; }
+    if (!agreed) { setError(t('auth.acceptTerms')); return; }
 
     setLoading(true); setError('');
     const { error: signUpError } = await supabase.auth.signUp({
@@ -50,11 +52,11 @@ export default function SignupScreen() {
   }
 
   const fields: Field[] = [
-    { icon: 'person-outline', placeholder: 'Display Name', value: displayName, onChange: setDisplayName },
-    { icon: 'at-outline', placeholder: 'Username', value: username, onChange: setUsername, capitalize: 'none', maxLength: 30 },
-    { icon: 'mail-outline', placeholder: 'Email', value: email, onChange: setEmail, capitalize: 'none', keyboard: 'email-address' },
-    { icon: 'lock-closed-outline', placeholder: 'Password', value: password, onChange: setPassword, secure: true },
-    { icon: 'lock-closed-outline', placeholder: 'Confirm Password', value: confirmPassword, onChange: setConfirmPassword, secure: true },
+    { icon: 'person-outline', placeholder: t('auth.displayName'), value: displayName, onChange: setDisplayName },
+    { icon: 'at-outline', placeholder: t('auth.username'), value: username, onChange: setUsername, capitalize: 'none', maxLength: 30 },
+    { icon: 'mail-outline', placeholder: t('auth.email'), value: email, onChange: setEmail, capitalize: 'none', keyboard: 'email-address' },
+    { icon: 'lock-closed-outline', placeholder: t('auth.password'), value: password, onChange: setPassword, secure: true },
+    { icon: 'lock-closed-outline', placeholder: t('auth.confirmPassword'), value: confirmPassword, onChange: setConfirmPassword, secure: true },
   ];
 
   return (
@@ -66,7 +68,7 @@ export default function SignupScreen() {
             <Ionicons name="musical-notes" size={32} color={colors.text} />
           </LinearGradient>
           <Text style={styles.logo}>Laybell™</Text>
-          <Text style={styles.tagline}>Join the movement.</Text>
+          <Text style={styles.tagline}>{t('auth.signupTagline')}</Text>
         </View>
 
         <View style={styles.form}>
@@ -110,10 +112,17 @@ export default function SignupScreen() {
               {agreed && <Ionicons name="checkmark" size={15} color={colors.text} />}
             </TouchableOpacity>
             <Text style={styles.consent}>
-              I confirm I'm at least 13 years old and agree to Laybell's{' '}
-              <Text style={styles.consentLink} onPress={() => router.push('/terms-of-service')}>Terms of Service</Text>
-              {' '}and{' '}
-              <Text style={styles.consentLink} onPress={() => router.push('/privacy-policy')}>Privacy Policy</Text>.
+              {/* Split the localized template on {terms}/{privacy} so each language
+                  can place the two tappable links wherever its grammar needs. */}
+              {t('auth.consent').split(/(\{terms\}|\{privacy\})/).map((part, i) => {
+                if (part === '{terms}') {
+                  return <Text key={i} style={styles.consentLink} onPress={() => router.push('/terms-of-service')}>{t('about.terms')}</Text>;
+                }
+                if (part === '{privacy}') {
+                  return <Text key={i} style={styles.consentLink} onPress={() => router.push('/privacy-policy')}>{t('about.privacyPolicy')}</Text>;
+                }
+                return part;
+              })}
             </Text>
           </View>
 
@@ -122,14 +131,14 @@ export default function SignupScreen() {
             onPress={handleSignup}
             disabled={loading || !agreed}
           >
-            {loading ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>Create Account</Text>}
+            {loading ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>{t('auth.createAccount')}</Text>}
           </TouchableOpacity>
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Already have an account? </Text>
+          <Text style={styles.footerText}>{t('auth.haveAccount')}</Text>
           <Link href="/(auth)/login" asChild>
-            <TouchableOpacity><Text style={styles.linkText}>Log In</Text></TouchableOpacity>
+            <TouchableOpacity><Text style={styles.linkText}>{t('auth.login')}</Text></TouchableOpacity>
           </Link>
         </View>
       </ScrollView>

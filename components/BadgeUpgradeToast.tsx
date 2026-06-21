@@ -7,6 +7,7 @@ import { onBadgeTierUpgrade, tierLabel, badgeRingColors, type Tier } from '../li
 import BadgeEmblem from './BadgeEmblem';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 // A celebratory banner that slides down from the top whenever the user levels up
 // to a higher badge tier mid-session. Auto-dismisses; tap to open the Badges page.
@@ -16,6 +17,7 @@ export default function BadgeUpgradeToast() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const [tier, setTier] = useState<Tier | null>(null);
   const y = useRef(new Animated.Value(-200)).current;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -39,6 +41,14 @@ export default function BadgeUpgradeToast() {
 
   if (!tier) return null;
   const accent = badgeRingColors(tier)[0];
+  // Keep the tier name (English, e.g. "Gold") inline-accented while letting the
+  // surrounding sentence follow each language's word order: interpolate a unique
+  // sentinel into the {tier} slot, split on it, and render the tier as a styled
+  // child between the two fragments.
+  const SUB_SLOT = '\u0000';
+  const subParts = t('badgeToast.reached', { tier: SUB_SLOT }).split(SUB_SLOT);
+  const subBefore = subParts[0] ?? '';
+  const subAfter = subParts[1] ?? '';
 
   return (
     <Animated.View
@@ -52,8 +62,8 @@ export default function BadgeUpgradeToast() {
       >
         <BadgeEmblem tier={tier} size={36} />
         <View style={styles.body}>
-          <Text style={styles.title}>Badge upgraded!</Text>
-          <Text style={styles.sub} numberOfLines={1}>You reached <Text style={{ color: accent, fontWeight: '800' }}>{tierLabel(tier)}</Text> status — tap to view</Text>
+          <Text style={styles.title}>{t('badgeToast.upgraded')}</Text>
+          <Text style={styles.sub} numberOfLines={1}>{subBefore}<Text style={{ color: accent, fontWeight: '800' }}>{tierLabel(tier)}</Text>{subAfter}</Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
       </TouchableOpacity>

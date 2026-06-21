@@ -29,6 +29,7 @@ import { captionStickerTextStyle, resolveSticker } from '../../components/Sticke
 import { useStories } from '../../contexts/StoriesContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const IMAGE_DURATION_MS = 10000;
@@ -41,6 +42,7 @@ const SWIPE_DIST = SCREEN_W * 0.25;
 export default function StoryViewerScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
@@ -402,10 +404,10 @@ export default function StoryViewerScreen() {
 
   async function onDelete() {
     if (!story) return;
-    Alert.alert('Delete story?', 'This will remove it for everyone.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('story.deleteTitle'), t('story.deleteBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete', style: 'destructive',
+        text: t('common.delete'), style: 'destructive',
         onPress: async () => {
           const deletedId = story.id;
           await deleteStory(deletedId);
@@ -484,7 +486,7 @@ export default function StoryViewerScreen() {
     if (!story || !group || !currentUserId || !replyText.trim() || sendingReply) return;
     // Hidden accounts browse/listen only — story replies are DMs.
     if ((myProfile as any)?.hidden) {
-      Alert.alert('Profile hidden', 'Unhide your profile in Settings to send messages.');
+      Alert.alert(t('messages.hiddenTitle'), t('messages.hiddenBody'));
       return;
     }
     setSendingReply(true);
@@ -503,7 +505,7 @@ export default function StoryViewerScreen() {
       setTimeout(() => setSentFlash(false), 1500);
       resume();
     } catch (e: any) {
-      Alert.alert('Could not send reply', e?.message ?? 'Please try again.');
+      Alert.alert(t('story.sendFailedTitle'), e?.message ?? t('story.tryAgain'));
     } finally {
       setSendingReply(false);
     }
@@ -571,8 +573,8 @@ export default function StoryViewerScreen() {
           <ActivityIndicator style={StyleSheet.absoluteFill} color="#fff" />
         ) : !group || !story ? (
           <View style={[StyleSheet.absoluteFill, styles.center]}>
-            <Text style={styles.empty}>No stories to show</Text>
-            <TouchableOpacity onPress={dismiss} style={styles.emptyBtn}><Text style={styles.emptyBtnText}>Close</Text></TouchableOpacity>
+            <Text style={styles.empty}>{t('story.empty')}</Text>
+            <TouchableOpacity onPress={dismiss} style={styles.emptyBtn}><Text style={styles.emptyBtnText}>{t('story.close')}</Text></TouchableOpacity>
           </View>
         ) : (
           <>
@@ -745,7 +747,7 @@ export default function StoryViewerScreen() {
             {!isOwn && !!currentUserId && (
               <View style={[styles.replyRow, { bottom: insets.bottom }]}>
                 <TouchableOpacity style={styles.replyPill} activeOpacity={0.8} onPress={openReply}>
-                  <Text style={styles.replyPillText}>Reply to {group?.user.display_name || group?.user.username || 'story'}…</Text>
+                  <Text style={styles.replyPillText}>{t('story.replyTo', { name: group?.user.display_name || group?.user.username || t('story.fallbackName') })}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={toggleStoryLike}
@@ -761,7 +763,7 @@ export default function StoryViewerScreen() {
             {sentFlash && (
               <View style={[styles.sentFlash, { bottom: insets.bottom + 60 }]} pointerEvents="none">
                 <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                <Text style={styles.sentFlashText}>Sent</Text>
+                <Text style={styles.sentFlashText}>{t('story.sent')}</Text>
               </View>
             )}
 
@@ -805,7 +807,7 @@ export default function StoryViewerScreen() {
               style={styles.replyInput}
               value={replyText}
               onChangeText={setReplyText}
-              placeholder={`Reply to ${group?.user.display_name || group?.user.username || 'story'}…`}
+              placeholder={t('story.replyTo', { name: group?.user.display_name || group?.user.username || t('story.fallbackName') })}
               placeholderTextColor="rgba(255,255,255,0.55)"
               selectionColor="#FAB525"
               cursorColor="#FAB525"
@@ -851,7 +853,7 @@ export default function StoryViewerScreen() {
             <View {...sheetPan.panHandlers}>
               <View style={styles.viewersHandle} />
               <View style={styles.viewersHeader}>
-                <Text style={styles.viewersTitle}>Viewers</Text>
+                <Text style={styles.viewersTitle}>{t('story.viewers')}</Text>
                 <View style={styles.viewersCountChip}>
                   <Ionicons name="eye-outline" size={13} color="rgba(255,255,255,0.8)" />
                   <Text style={styles.viewersCountText}>{viewerCount ?? viewers.length}</Text>
@@ -864,8 +866,8 @@ export default function StoryViewerScreen() {
             ) : viewers.length === 0 ? (
               <View style={styles.viewersEmptyWrap}>
                 <Ionicons name="eye-outline" size={34} color="rgba(255,255,255,0.35)" />
-                <Text style={styles.viewersEmpty}>No views yet</Text>
-                <Text style={styles.viewersEmptySub}>Check back soon</Text>
+                <Text style={styles.viewersEmpty}>{t('story.noViewsYet')}</Text>
+                <Text style={styles.viewersEmptySub}>{t('story.checkBackSoon')}</Text>
               </View>
             ) : (
               <FlatList

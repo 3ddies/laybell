@@ -21,8 +21,9 @@ import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleMod
 import { useAudio } from '../../contexts/AudioContext';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
-import { GENRES } from '../../lib/genres';
+import { GENRES, genreLabel } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia, type PhotoGridHandle } from '../../components/PhotoGrid';
@@ -64,33 +65,33 @@ function slideshowVideoSecs(list: PickedSlide[]): number {
 
 // Translate raw upload/database failures into messages a person can act on.
 // Anything unrecognized falls back to the raw message so real bugs stay visible.
-function friendlyShareError(err: any): string {
+function friendlyShareError(err: any, t: (key: string) => string): string {
   const raw = String(err?.message ?? err ?? '').toLowerCase();
   if (raw.includes('exceeded the maximum allowed size') || raw.includes('payload too large') || raw.includes('413')) {
     // Not a duration problem — the file's byte size is over the storage upload
     // limit (see supabase/sql/storage_limits.sql + the Storage dashboard cap).
     // Posting on Wi-Fi lets the on-device compressor finish on the full clip.
-    return "This video is over the upload size limit. Try again on Wi-Fi — if it keeps failing, Laybell's storage upload limit needs raising.";
+    return t('post.errSize');
   }
   if (raw.includes('network') || raw.includes('nsurlerror') || raw.includes('timed out') || raw.includes('socket') || raw.includes('connection')) {
-    return 'Upload interrupted — check your connection and tap Share to try again.';
+    return t('post.errNetwork');
   }
   if (raw.includes('not authenticated') || raw.includes('jwt') || raw.includes('token')) {
-    return 'Your session expired. Log in again, then tap Share.';
+    return t('post.errSession');
   }
   if (raw.includes('row-level security') || raw.includes('policy')) {
-    return "Laybell couldn't save this post. Update the app and try again.";
+    return t('post.errSave');
   }
   if (raw.includes('storage') && raw.includes('bucket')) {
-    return 'Upload storage is unavailable right now. Try again in a moment.';
+    return t('post.errStorage');
   }
   // A resumed draft whose on-device media was deleted/evicted since it was saved.
   if (raw.includes('no such file') || raw.includes('file not found') || raw.includes('does not exist')
       || raw.includes('cannot find') || raw.includes("couldn't be opened") || raw.includes('could not be opened')
       || raw.includes('unable to open') || raw.includes('no such') ) {
-    return "The photo, video, or audio for this post is no longer on your device, so it can't be posted. If this is a draft, open Drafts and delete it.";
+    return t('post.errMissingFile');
   }
-  return err?.message || 'Something went wrong. Please try again.';
+  return err?.message || t('post.errGeneric');
 }
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -121,6 +122,7 @@ function fmtClock(sec: number) {
 
 export default function PostScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [step, setStep] = useState<Step>('pick');
   const [postType, setPostType] = useState<PostType>('image');
@@ -296,9 +298,9 @@ export default function PostScreen() {
   // updates it in place. Media stays on-device and is uploaded only on Share.
   async function handleSaveDraft() {
     if (!hasMedia) {
-      setError(postType === 'audio' ? 'Select an audio file first'
-        : postType === 'slideshow' ? 'Add at least one photo or video'
-        : `Select a ${postType} first`);
+      setError(postType === 'audio' ? t('post.selectAudioFirst')
+        : postType === 'slideshow' ? t('post.addSlideFirst')
+        : t(postType === 'image' ? 'post.selectImageFirst' : 'post.selectVideoFirst'));
       return;
     }
     // Capture the live crop the cropper holds while it's still mounted (pick
@@ -321,7 +323,7 @@ export default function PostScreen() {
     const next = await saveDraft(draft);
     setDrafts(next);
     resetAll(); // clears the composer + the editing link
-    Alert.alert('Saved to Drafts', 'Find it under “Drafts” on the New post screen to finish later.');
+    Alert.alert(t('post.savedDraftTitle'), t('post.savedDraftBody'));
   }
 
   // Load a saved draft back into the composer and jump to the details step.
@@ -352,10 +354,10 @@ export default function PostScreen() {
   }
 
   function confirmDeleteDraft(d: Draft) {
-    Alert.alert('Delete draft?', 'This removes the saved draft from this device.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('post.deleteDraftTitle'), t('post.deleteDraftBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete', style: 'destructive',
+        text: t('common.delete'), style: 'destructive',
         onPress: async () => {
           const next = await deleteDraft(d.id);
           setDrafts(next);
@@ -442,20 +444,20 @@ export default function PostScreen() {
   // Add the tapped grid item (already resolved to a file uri) as the next slide.
   async function addSlideFromGrid(m: PickedMedia) {
     captureLastSlideCrop(); // preserve the crop set on the current last slide first
-    if (slides.length >= MAX_SLIDES) { Alert.alert('Limit reached', `A slideshow can have up to ${MAX_SLIDES} items.`); return; }
+    if (slides.length >= MAX_SLIDES) { Alert.alert(t('post.limitReachedTitle'), t('post.slideshowMaxBody', { max: MAX_SLIDES })); return; }
     // Slides have no trim editor, so slideshows keep hard duration gates: one
     // clip can't exceed the video budget, and neither can all clips combined.
     if (m.type === 'video' && m.duration != null && m.duration > SLIDESHOW_VIDEO_BUDGET_SEC) {
       Alert.alert(
-        'Clip too long for a slideshow',
-        'Slideshow clips must be under 1 minute each. To share a longer video, post it on its own (up to 3 minutes).',
+        t('post.clipTooLongTitle'),
+        t('post.clipTooLongBody'),
       );
       return;
     }
     if (m.type === 'video' && slideshowVideoSecs(slides) + (m.duration ?? 0) > SLIDESHOW_VIDEO_BUDGET_SEC) {
       Alert.alert(
-        'Slideshow video limit',
-        'Total video in a slideshow must be under 1 minute. Remove a clip to make room for this one.',
+        t('post.slideshowVideoLimitTitle'),
+        t('post.slideshowVideoLimitBody1'),
       );
       return;
     }
@@ -478,7 +480,7 @@ export default function PostScreen() {
     try {
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Microphone needed', 'Enable microphone access in Settings to record audio.');
+        Alert.alert(t('post.micNeededTitle'), t('post.micNeededBody'));
         return;
       }
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
@@ -493,7 +495,7 @@ export default function PostScreen() {
       setRecSecs(0);
       setIsRecording(true);
     } catch (e: any) {
-      Alert.alert('Could not start recording', e?.message ?? 'Please try again.');
+      Alert.alert(t('post.recordStartFailTitle'), e?.message ?? t('post.tryAgain'));
     }
   }
 
@@ -510,7 +512,7 @@ export default function PostScreen() {
     recordingRef.current = null;
     if (!uri) return;
     if (dur > SPOKEN_MAX_SEC) {
-      Alert.alert('Recording too long', `Audio must be ${fmtMins(SPOKEN_MAX_SEC)} or shorter.`);
+      Alert.alert(t('post.recordingTooLongTitle'), t('post.audioMaxBody', { duration: fmtMins(SPOKEN_MAX_SEC) }));
       return;
     }
     setAudioFile({ uri, name: uri.split('/').pop() || `recording-${Date.now()}.m4a`, mimeType: 'audio/m4a' });
@@ -541,7 +543,7 @@ export default function PostScreen() {
         if (s.isLoaded && s.didJustFinish) { setIsPreviewPlaying(false); sound.setPositionAsync(0); }
       });
     } catch (e: any) {
-      Alert.alert('Playback failed', e?.message ?? 'Could not play this audio.');
+      Alert.alert(t('post.playbackFailTitle'), e?.message ?? t('post.playbackFailBody'));
     }
   }
 
@@ -561,11 +563,11 @@ export default function PostScreen() {
     // Absolute ceiling (podcasts/audiobooks). The tighter 6-min music limit is
     // enforced on Share, since the category is chosen on the next step.
     if (dur != null && dur > SPOKEN_MAX_SEC) {
-      Alert.alert('Audio too long', `Audio must be ${fmtMins(SPOKEN_MAX_SEC)} or shorter.`);
+      Alert.alert(t('post.audioTooLongTitle'), t('post.audioMaxBody', { duration: fmtMins(SPOKEN_MAX_SEC) }));
       return;
     }
     if (asset.size != null && asset.size > AUDIO_MAX_BYTES) {
-      Alert.alert('Audio too large', 'Please choose an audio file under 100 MB.');
+      Alert.alert(t('post.audioTooLargeTitle'), t('post.audioTooLargeBody'));
       return;
     }
     setAudioFile(asset);
@@ -583,9 +585,9 @@ export default function PostScreen() {
 
   function goNext() {
     if (!hasMedia) {
-      setError(postType === 'audio' ? 'Select an audio file first'
-        : postType === 'slideshow' ? 'Add at least one photo or video'
-        : `Select a ${postType} first`);
+      setError(postType === 'audio' ? t('post.selectAudioFirst')
+        : postType === 'slideshow' ? t('post.addSlideFirst')
+        : t(postType === 'image' ? 'post.selectImageFirst' : 'post.selectVideoFirst'));
       return;
     }
     setError('');
@@ -606,13 +608,13 @@ export default function PostScreen() {
   }
 
   async function handleShare() {
-    if (!caption.trim()) { setError('Please add a caption'); return; }
+    if (!caption.trim()) { setError(t('post.errCaption')); return; }
     // Spotlights only serve public posts — a friends-only spotlight would buy
     // invisible reach.
     if (pendingSpot && !isPublic) {
       Alert.alert(
-        'Spotlighted posts must be public',
-        'This post is attached to your paid spotlight. Switch it to Public, or remove the spotlight from it (the purchase stays available on your Spotlight page).',
+        t('post.spotlightPublicTitle'),
+        t('post.spotlightPublicBody'),
       );
       return;
     }
@@ -620,23 +622,23 @@ export default function PostScreen() {
     // added/removed after the add-time gate) — BEFORE any upload work starts.
     if (postType === 'slideshow' && slideshowVideoSecs(slides) > SLIDESHOW_VIDEO_BUDGET_SEC) {
       Alert.alert(
-        'Slideshow video limit',
-        'Total video in the slideshow must be under 1 minute. Trim it down by removing a clip and try again.',
+        t('post.slideshowVideoLimitTitle'),
+        t('post.slideshowVideoLimitBody2'),
       );
       return;
     }
     if (postType === 'audio' && audioDuration != null) {
       if (audioDuration < AUDIO_MIN_SEC) {
-        Alert.alert('Audio too short', `Audio must be at least ${AUDIO_MIN_SEC} seconds long.`);
+        Alert.alert(t('post.audioTooShortTitle'), t('post.audioTooShortBody', { seconds: AUDIO_MIN_SEC }));
         return;
       }
       const limit = audioKind === 'audio' ? MUSIC_MAX_SEC : SPOKEN_MAX_SEC;
       if (audioDuration > limit) {
         Alert.alert(
-          'Track too long',
+          t('post.trackTooLongTitle'),
           audioKind === 'audio'
-            ? `Music must be ${fmtMins(MUSIC_MAX_SEC)} or shorter. Choose Podcast or Audiobook for longer audio.`
-            : `${audioKind === 'podcast' ? 'Podcasts' : 'Audiobooks'} must be ${fmtMins(SPOKEN_MAX_SEC)} or shorter.`,
+            ? t('post.musicMaxBody', { duration: fmtMins(MUSIC_MAX_SEC) })
+            : t(audioKind === 'podcast' ? 'post.podcastsMaxBody' : 'post.audiobooksMaxBody', { duration: fmtMins(SPOKEN_MAX_SEC) }),
         );
         return;
       }
@@ -660,10 +662,10 @@ export default function PostScreen() {
           setLoading(false);
           const tier = rawTier(profile);
           Alert.alert(
-            'Public post limit reached',
+            t('post.publicLimitTitle'),
             tier
-              ? `Your ${tierLabel(tier)} badge allows ${myPostLimit} public posts at a time. Delete or archive one, switch this to Friends only, or earn a higher badge (Silver 12 · Gold 24 · Diamond unlimited).`
-              : `You can have 6 public posts at a time. Delete or archive one, switch this to Friends only, or earn badges for more slots (Silver 12 · Gold 24 · Diamond unlimited).`,
+              ? t('post.publicLimitTieredBody', { tier: tierLabel(tier), limit: myPostLimit })
+              : t('post.publicLimitFreeBody'),
           );
           return;
         }
@@ -798,14 +800,14 @@ export default function PostScreen() {
       if (editingDraftId.current) deleteDraft(editingDraftId.current).then(setDrafts);
 
       Alert.alert(
-        spotLabel ? 'Posted — and in the Spotlight! ✨' : 'Posted! 🎉',
+        spotLabel ? t('post.postedSpotlightTitle') : t('post.postedTitle'),
         spotLabel
-          ? `Your post launches as the #3 post in the Home feed for the next ${spotlightDurationPhrase(spotLabel)} — and can climb to #1 if it takes off.`
-          : 'Your post is now live on Laybell',
+          ? t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) })
+          : t('post.postedBody'),
       );
       resetAll();
     } catch (err: any) {
-      setError(friendlyShareError(err));
+      setError(friendlyShareError(err, t));
     }
     setUploadPct(null);
     setLoading(false);
@@ -819,7 +821,7 @@ export default function PostScreen() {
           <TouchableOpacity style={styles.headerBtn} onPress={() => setStep('pick')}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Trim</Text>
+          <Text style={styles.headerTitle}>{t('post.trim')}</Text>
           <TouchableOpacity style={styles.headerAction} onPress={() => setStep('details')}>
             <Ionicons name="arrow-forward" size={24} color={colors.primary} />
           </TouchableOpacity>
@@ -855,13 +857,13 @@ export default function PostScreen() {
           <TouchableOpacity style={styles.headerBtn} onPress={() => setStep('pick')}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New post</Text>
+          <Text style={styles.headerTitle}>{t('post.newPost')}</Text>
           <TouchableOpacity style={styles.headerAction} onPress={handleShare} disabled={loading}>
             {loading
               ? uploadPct != null
                 ? <Text style={styles.headerActionText}>{Math.round(uploadPct * 100)}%</Text>
                 : <ActivityIndicator color={colors.primary} size="small" />
-              : <Text style={styles.headerActionText}>Share</Text>}
+              : <Text style={styles.headerActionText}>{t('post.share')}</Text>}
           </TouchableOpacity>
         </View>
 
@@ -878,8 +880,8 @@ export default function PostScreen() {
             <View style={styles.adPendingRow}>
               <Ionicons name="sparkles" size={18} color={colors.primary} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.adPendingTitle}>In the Spotlight · {pendingSpot.label}</Text>
-                <Text style={styles.adPendingSub}>Your paid spotlight starts when you share this post</Text>
+                <Text style={styles.adPendingTitle}>{t('post.inSpotlight')} · {pendingSpot.label}</Text>
+                <Text style={styles.adPendingSub}>{t('post.spotlightStartsOnShare')}</Text>
               </View>
               <TouchableOpacity
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -908,7 +910,7 @@ export default function PostScreen() {
             )}
             <TextInput
               style={styles.captionInput}
-              placeholder="Write a caption..."
+              placeholder={t('post.captionPlaceholder')}
               placeholderTextColor={colors.textTertiary}
               value={caption}
               onChangeText={setCaption}
@@ -926,18 +928,18 @@ export default function PostScreen() {
           {/* Audio category */}
           {postType === 'audio' && (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Category</Text>
+              <Text style={styles.sectionLabel}>{t('post.category')}</Text>
               <View style={styles.row}>
                 {([
-                  { val: 'audio', label: 'Music', icon: 'musical-notes' },
-                  { val: 'podcast', label: 'Podcast', icon: 'mic' },
-                  { val: 'audiobook', label: 'Audiobook', icon: 'book' },
-                ] as const).map(({ val, label, icon }) => {
+                  { val: 'audio', icon: 'musical-notes' },
+                  { val: 'podcast', icon: 'mic' },
+                  { val: 'audiobook', icon: 'book' },
+                ] as const).map(({ val, icon }) => {
                   const on = audioKind === val;
                   return (
                     <TouchableOpacity key={val} style={[styles.choice, on && styles.choiceActive]} onPress={() => setAudioKind(val)}>
                       <Ionicons name={icon as any} size={15} color={on ? colors.primary : colors.textSecondary} />
-                      <Text style={[styles.choiceText, on && styles.choiceTextActive]}>{label}</Text>
+                      <Text style={[styles.choiceText, on && styles.choiceTextActive]}>{t(`post.cat.${val}`)}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -948,7 +950,7 @@ export default function PostScreen() {
           {/* Cover art (audio) */}
           {postType === 'audio' && (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Cover Art</Text>
+              <Text style={styles.sectionLabel}>{t('post.coverArt')}</Text>
               <TouchableOpacity style={styles.coverPicker} onPress={pickCover}>
                 {coverUri ? (
                   <Image source={{ uri: coverUri }} style={styles.coverPreview} />
@@ -956,8 +958,8 @@ export default function PostScreen() {
                   <View style={styles.coverPlaceholder}><Ionicons name="image-outline" size={24} color={colors.textTertiary} /></View>
                 )}
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.coverTitle}>{coverUri ? 'Cover selected' : 'Add cover art'}</Text>
-                  <Text style={styles.coverSub}>{coverUri ? 'Tap to change or re-crop' : 'Square image shown next to your track'}</Text>
+                  <Text style={styles.coverTitle}>{coverUri ? t('post.coverSelected') : t('post.addCoverArt')}</Text>
+                  <Text style={styles.coverSub}>{coverUri ? t('post.coverChangeHint') : t('post.coverHint')}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
@@ -967,14 +969,14 @@ export default function PostScreen() {
           {/* Genre */}
           {showGenre && (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Genre</Text>
+              <Text style={styles.sectionLabel}>{t('post.genre')}</Text>
               <View style={styles.genreWrap}>
                 {GENRES.map(g => {
                   const value = g.toLowerCase();
                   const active = genre === value;
                   return (
                     <TouchableOpacity key={g} style={[styles.genreChip, active && styles.genreChipActive]} onPress={() => setGenre(active ? '' : value)}>
-                      <Text style={[styles.genreChipText, active && styles.genreChipTextActive]}>{g}</Text>
+                      <Text style={[styles.genreChipText, active && styles.genreChipTextActive]}>{genreLabel(g)}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -985,7 +987,7 @@ export default function PostScreen() {
           {/* Music — attach another creator's song to an image/video post */}
           {postType !== 'audio' && (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Music</Text>
+              <Text style={styles.sectionLabel}>{t('post.musicLabel')}</Text>
               {song ? (
                 <View style={styles.songRow}>
                   <Ionicons name="musical-notes" size={18} color={colors.primary} />
@@ -994,7 +996,7 @@ export default function PostScreen() {
                     <Text style={styles.songRowArtist} numberOfLines={1}>{song.artist}</Text>
                   </View>
                   <TouchableOpacity onPress={() => setShowSongPicker(true)} style={styles.songChange}>
-                    <Text style={styles.songChangeText}>Change</Text>
+                    <Text style={styles.songChangeText}>{t('post.change')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                     <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
@@ -1003,7 +1005,7 @@ export default function PostScreen() {
               ) : (
                 <TouchableOpacity style={styles.addSongBtn} onPress={() => setShowSongPicker(true)}>
                   <Ionicons name="musical-notes-outline" size={18} color={colors.primary} />
-                  <Text style={styles.addSongText}>Add music</Text>
+                  <Text style={styles.addSongText}>{t('post.addMusic')}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -1012,19 +1014,19 @@ export default function PostScreen() {
           {/* Tag people — deliberate account tags (≤10), shown as a button on the post */}
           {postType !== 'audio' && (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Tag people</Text>
+              <Text style={styles.sectionLabel}>{t('post.tagPeople')}</Text>
               {tagged.length > 0 ? (
                 <TouchableOpacity style={styles.songRow} onPress={() => setShowTagModal(true)}>
                   <Ionicons name="people" size={18} color={colors.primary} />
                   <Text style={styles.songRowTitle} numberOfLines={1}>
                     {tagged.map((t) => `@${t.username}`).join(', ')}
                   </Text>
-                  <View style={styles.songChange}><Text style={styles.songChangeText}>Edit</Text></View>
+                  <View style={styles.songChange}><Text style={styles.songChangeText}>{t('post.edit')}</Text></View>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity style={styles.addSongBtn} onPress={() => setShowTagModal(true)}>
                   <Ionicons name="person-add-outline" size={18} color={colors.primary} />
-                  <Text style={styles.addSongText}>Tag people</Text>
+                  <Text style={styles.addSongText}>{t('post.tagPeople')}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -1035,8 +1037,8 @@ export default function PostScreen() {
             <View style={styles.visibilityLeft}>
               <Ionicons name={isPublic ? 'globe-outline' : 'people-outline'} size={20} color={colors.primary} />
               <View style={styles.visibilityText}>
-                <Text style={styles.visibilityLabel}>{isPublic ? 'Public' : 'Friends only'}</Text>
-                <Text style={styles.visibilitySub}>{isPublic ? 'Anyone on Laybell can see this' : 'Only your friends (mutual follows) can see this'}</Text>
+                <Text style={styles.visibilityLabel}>{isPublic ? t('post.public') : t('post.friendsOnly')}</Text>
+                <Text style={styles.visibilitySub}>{isPublic ? t('post.publicSub') : t('post.friendsOnlySub')}</Text>
               </View>
             </View>
             <Switch
@@ -1051,8 +1053,10 @@ export default function PostScreen() {
           {isPublic && publicCount != null && (
             <Text style={[styles.slotHint, Number.isFinite(myPostLimit) && publicCount >= myPostLimit && { color: colors.error }]}>
               {Number.isFinite(myPostLimit)
-                ? `${publicCount} of ${myPostLimit} public post ${myPostLimit === 1 ? 'slot' : 'slots'} used${rawTier(profile) ? ` · ${tierLabel(rawTier(profile))} badge` : ''}`
-                : 'Unlimited public posts · Diamond badge'}
+                ? (rawTier(profile)
+                    ? t('post.slotHintTiered', { count: publicCount, limit: myPostLimit, tier: tierLabel(rawTier(profile)) })
+                    : t('post.slotHint', { count: publicCount, limit: myPostLimit }))
+                : t('post.slotHintUnlimited')}
             </Text>
           )}
 
@@ -1072,7 +1076,7 @@ export default function PostScreen() {
           >
             <Ionicons name="document-text-outline" size={18} color={colors.primary} />
             <Text style={styles.draftSaveText}>
-              {editingDraftId.current ? 'Update draft' : 'Save as draft'}
+              {editingDraftId.current ? t('post.updateDraft') : t('post.saveDraft')}
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -1089,7 +1093,7 @@ export default function PostScreen() {
         <TouchableOpacity style={styles.headerBtn} onPress={exitToExplore}>
           <Ionicons name="close" size={26} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>New post</Text>
+        <Text style={styles.headerTitle}>{t('post.newPost')}</Text>
         <TouchableOpacity style={styles.headerAction} onPress={goNext} disabled={!hasMedia}>
           <Ionicons name="arrow-forward" size={24} color={hasMedia ? colors.primary : colors.textTertiary} />
         </TouchableOpacity>
@@ -1100,7 +1104,7 @@ export default function PostScreen() {
         <TouchableOpacity style={styles.draftsBar} onPress={() => setDraftsOpen(true)} activeOpacity={0.7}>
           <Ionicons name="document-text-outline" size={16} color={colors.primary} />
           <Text style={styles.draftsBarText}>
-            Drafts <Text style={styles.draftsBarCount}>({drafts.length})</Text>
+            {t('post.drafts')} <Text style={styles.draftsBarCount}>({drafts.length})</Text>
           </Text>
           <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} style={{ marginLeft: 'auto' }} />
         </TouchableOpacity>
@@ -1112,10 +1116,10 @@ export default function PostScreen() {
             <View style={styles.recordBox}>
               <View style={styles.recDot} />
               <Text style={styles.recTime}>{fmtClock(recSecs)}</Text>
-              <Text style={styles.audioPickSub}>Recording…</Text>
+              <Text style={styles.audioPickSub}>{t('post.recording')}</Text>
               <TouchableOpacity style={styles.stopBtn} onPress={stopRecording}>
                 <Ionicons name="stop" size={24} color={colors.text} />
-                <Text style={styles.stopBtnText}>Stop</Text>
+                <Text style={styles.stopBtnText}>{t('post.stop')}</Text>
               </TouchableOpacity>
             </View>
           ) : audioFile ? (
@@ -1124,18 +1128,18 @@ export default function PostScreen() {
               <TouchableOpacity onPress={togglePreview} activeOpacity={0.8} hitSlop={6}>
                 <Ionicons name={isPreviewPlaying ? 'pause-circle' : 'play-circle'} size={64} color={colors.primary} />
               </TouchableOpacity>
-              <Text style={styles.audioPickTitle} numberOfLines={1}>{audioFile.name || 'Audio selected'}</Text>
+              <Text style={styles.audioPickTitle} numberOfLines={1}>{audioFile.name || t('post.audioSelected')}</Text>
               <Text style={styles.audioPickSub}>
-                {audioDuration != null ? `${fmtClock(audioDuration)} · ` : ''}{isPreviewPlaying ? 'Playing…' : 'Tap ▶ to preview'}
+                {audioDuration != null ? `${fmtClock(audioDuration)} · ` : ''}{isPreviewPlaying ? t('post.playing') : t('post.tapToPreview')}
               </Text>
               <View style={styles.audioSelBtns}>
                 <TouchableOpacity style={styles.audioSelBtn} onPress={pickAudio}>
                   <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />
-                  <Text style={styles.audioSelBtnText}>Replace</Text>
+                  <Text style={styles.audioSelBtnText}>{t('post.replace')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.audioSelBtn} onPress={() => { setAudioFile(null); setAudioDuration(null); startRecording(); }}>
                   <Ionicons name="mic" size={16} color={colors.primary} />
-                  <Text style={styles.audioSelBtnText}>Record new</Text>
+                  <Text style={styles.audioSelBtnText}>{t('post.recordNew')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1145,20 +1149,20 @@ export default function PostScreen() {
                 <LinearGradient colors={GRADIENTS.primary} style={styles.audioChoiceIcon}>
                   <Ionicons name="mic" size={28} color={colors.text} />
                 </LinearGradient>
-                <Text style={styles.audioChoiceTitle}>Record</Text>
-                <Text style={styles.audioChoiceSub}>Talk into the mic</Text>
+                <Text style={styles.audioChoiceTitle}>{t('post.record')}</Text>
+                <Text style={styles.audioChoiceSub}>{t('post.recordSub')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.audioChoice} onPress={pickAudio}>
                 <View style={[styles.audioChoiceIcon, styles.audioChoiceIconAlt]}>
                   <Ionicons name="cloud-upload-outline" size={28} color={colors.primary} />
                 </View>
-                <Text style={styles.audioChoiceTitle}>Upload</Text>
+                <Text style={styles.audioChoiceTitle}>{t('post.upload')}</Text>
                 <Text style={styles.audioChoiceSub}>MP3 · WAV · M4A</Text>
               </TouchableOpacity>
             </View>
           )}
           <Text style={[styles.audioPickSub, { marginTop: SPACING.lg, textAlign: 'center' }]}>
-            Music up to 6 min · Podcasts & Audiobooks up to 35 min
+            {t('post.audioLimitsHint', { music: fmtMins(MUSIC_MAX_SEC), spoken: fmtMins(SPOKEN_MAX_SEC) })}
           </Text>
         </View>
       ) : (
@@ -1168,7 +1172,7 @@ export default function PostScreen() {
             {slideshowMode ? (
               lastSlide ? (
                 lastSlide.type === 'image' ? (
-                  <ErrorBoundary label="Couldn't open this photo">
+                  <ErrorBoundary label={t('post.cantOpenPhoto')}>
                     <MediaCropper
                       key={`${lastSlide.uri}-${previewAspect}`}
                       ref={cropperRef}
@@ -1191,7 +1195,7 @@ export default function PostScreen() {
               ) : (
                 <View style={[styles.previewPlaceholder, { width: frameW, height: frameH }]}>
                   <Ionicons name="images-outline" size={40} color={colors.textTertiary} />
-                  <Text style={styles.previewPlaceholderText}>Tap items below to build a slideshow</Text>
+                  <Text style={styles.previewPlaceholderText}>{t('post.slideshowPlaceholder')}</Text>
                 </View>
               )
             ) : media ? (
@@ -1204,7 +1208,7 @@ export default function PostScreen() {
                   contentFit="cover"
                 />
               ) : (
-                <ErrorBoundary label="Couldn't open this photo">
+                <ErrorBoundary label={t('post.cantOpenPhoto')}>
                   <MediaCropper
                     key={`${media.uri}-${previewAspect}`}
                     ref={cropperRef}
@@ -1221,7 +1225,7 @@ export default function PostScreen() {
             ) : (
               <View style={[styles.previewPlaceholder, { width: frameW, height: frameH }]}>
                 <Ionicons name="image-outline" size={40} color={colors.textTertiary} />
-                <Text style={styles.previewPlaceholderText}>Pick a photo or video below</Text>
+                <Text style={styles.previewPlaceholderText}>{t('post.pickPlaceholder')}</Text>
               </View>
             )}
             {/* Aspect toggle — single images + slideshows (videos use native ratio) */}
@@ -1253,20 +1257,20 @@ export default function PostScreen() {
           <View style={styles.recentsRow}>
             <View style={styles.modeToggle}>
               <TouchableOpacity onPress={enterSingle} style={[styles.modePill, !slideshowMode && styles.modePillActive]}>
-                <Text style={[styles.modePillText, !slideshowMode && styles.modePillTextActive]}>Single</Text>
+                <Text style={[styles.modePillText, !slideshowMode && styles.modePillTextActive]}>{t('post.single')}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={enterSlideshow} style={[styles.modePill, slideshowMode && styles.modePillActive]}>
-                <Text style={[styles.modePillText, slideshowMode && styles.modePillTextActive]}>Slideshow</Text>
+                <Text style={[styles.modePillText, slideshowMode && styles.modePillTextActive]}>{t('post.slideshow')}</Text>
               </TouchableOpacity>
             </View>
             <Text style={styles.recentsHint}>
-              {slideshowMode ? `${slides.length}/${MAX_SLIDES} · tap in order` : 'Tap a photo or video'}
+              {slideshowMode ? t('post.slideshowCountHint', { count: slides.length, max: MAX_SLIDES }) : t('post.tapPhotoVideo')}
             </Text>
           </View>
 
           {/* One grid for all camera media (photos + videos) */}
           <View style={{ flex: 1 }}>
-            <ErrorBoundary label="Couldn't open your photos">
+            <ErrorBoundary label={t('post.cantOpenPhotos')}>
               <PhotoGrid
                 ref={photoGridRef}
                 selectedIds={slideshowMode
@@ -1288,10 +1292,10 @@ export default function PostScreen() {
       {/* Bottom strip — Posts (photo / video / slideshow) vs Music */}
       <View style={styles.typeStrip}>
         <TouchableOpacity onPress={selectPostsTab} style={styles.typeStripBtn}>
-          <Text style={[styles.typeStripText, postType !== 'audio' && styles.typeStripTextActive]}>POSTS</Text>
+          <Text style={[styles.typeStripText, postType !== 'audio' && styles.typeStripTextActive]}>{t('post.tabPosts')}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => switchType('audio')} style={styles.typeStripBtn}>
-          <Text style={[styles.typeStripText, postType === 'audio' && styles.typeStripTextActive]}>MUSIC</Text>
+          <Text style={[styles.typeStripText, postType === 'audio' && styles.typeStripTextActive]}>{t('post.tabMusic')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -1302,18 +1306,18 @@ export default function PostScreen() {
             <TouchableOpacity style={styles.headerBtn} onPress={() => setDraftsOpen(false)}>
               <Ionicons name="close" size={26} color={colors.text} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Drafts</Text>
+            <Text style={styles.headerTitle}>{t('post.drafts')}</Text>
             <View style={{ width: 64 }} />
           </View>
           {drafts.length === 0 ? (
             <View style={styles.draftsEmpty}>
               <Ionicons name="document-text-outline" size={44} color={colors.textTertiary} />
-              <Text style={styles.draftsEmptyTitle}>No drafts</Text>
-              <Text style={styles.draftsEmptySub}>Saved drafts live on this device until you publish them.</Text>
+              <Text style={styles.draftsEmptyTitle}>{t('post.noDrafts')}</Text>
+              <Text style={styles.draftsEmptySub}>{t('post.noDraftsSub')}</Text>
             </View>
           ) : (
             <ScrollView contentContainerStyle={styles.draftsList}>
-              <Text style={styles.draftsHint}>Saved on this device · tap to continue</Text>
+              <Text style={styles.draftsHint}>{t('post.draftsHint')}</Text>
               {drafts.map((d) => {
                 const thumb = draftThumb(d);
                 return (
@@ -1328,10 +1332,10 @@ export default function PostScreen() {
                     <View style={styles.draftInfo}>
                       <Text style={styles.draftCaption} numberOfLines={1}>{draftSummary(d)}</Text>
                       <Text style={styles.draftMeta}>
-                        {d.postType === 'audio' ? (d.audioKind === 'audio' ? 'Music' : d.audioKind === 'podcast' ? 'Podcast' : 'Audiobook')
-                          : d.postType.charAt(0).toUpperCase() + d.postType.slice(1)}
+                        {d.postType === 'audio' ? t(`post.cat.${d.audioKind}`)
+                          : t(`post.type.${d.postType}`)}
                         {' · '}{new Date(d.updatedAt).toLocaleDateString()}
-                        {!d.isPublic ? ' · Friends only' : ''}
+                        {!d.isPublic ? ` · ${t('post.friendsOnly')}` : ''}
                       </Text>
                     </View>
                     <TouchableOpacity

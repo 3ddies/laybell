@@ -18,6 +18,7 @@ import {
 } from '../lib/badges';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 // Points needed for each emblem tier (mirrors computeEmblemTier).
 const TIER_THRESH: [Tier, number][] = [['bronze', 2], ['silver', 4], ['gold', 8], ['diamond', 16]];
@@ -80,6 +81,7 @@ function badgeStatus(def: BadgeDef, m: BadgeMetrics | null, held: Set<string>): 
 export default function BadgesScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const { profile, update } = useProfile();
   const [state, setState] = useState<BadgeState | null>(null);
@@ -200,7 +202,7 @@ export default function BadgesScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Badges</Text>
+        <Text style={styles.headerTitle}>{t('account.badges')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -234,15 +236,15 @@ export default function BadgesScreen() {
                 {previewTier ? (
                   <View style={styles.heroTitleWrap}>
                     <Text style={styles.heroTierName}>{tierLabel(previewTier)}</Text>
-                    <Text style={styles.heroTierWord}>{isPreviewing ? 'Preview' : 'Badge'}</Text>
+                    <Text style={styles.heroTierWord}>{isPreviewing ? t('badges.preview') : t('badges.badge')}</Text>
                   </View>
                 ) : (
-                  <Text style={styles.heroTier}>{emblemTier ? 'No badge shown' : 'No badge yet'}</Text>
+                  <Text style={styles.heroTier}>{emblemTier ? t('badges.noBadgeShown') : t('badges.noBadgeYet')}</Text>
                 )}
                 <Text style={styles.heroSub}>
                   {emblemTier
-                    ? `${points} ${points === 1 ? 'point' : 'points'}${next ? ` · ${next[1] - points} to ${tierLabel(next[0])}` : ' · top tier!'}`
-                    : 'Earn badges below to unlock your status emblem.'}
+                    ? `${points === 1 ? t('badges.pointOne', { points }) : t('badges.points', { points })}${next ? ` · ${t('badges.toNextTier', { n: next[1] - points, tier: tierLabel(next[0]) })}` : ` · ${t('badges.topTier')}`}`
+                    : t('badges.earnToUnlock')}
                 </Text>
                 {/* Progress toward the next tier — a slim gradient meter. */}
                 {next && (
@@ -258,10 +260,10 @@ export default function BadgesScreen() {
               </LinearGradient>
 
               {/* Customization — profile theme (banner + matching story ring), gated by tier */}
-              <Text style={styles.sectionTitle}>Customization</Text>
-              <Text style={styles.sectionHint}>Tap a theme to preview its banner + story ring on your emblem above. Unlock by reaching its tier.</Text>
+              <Text style={styles.sectionTitle}>{t('badges.customization')}</Text>
+              <Text style={styles.sectionHint}>{t('badges.customizationHint')}</Text>
               <View style={styles.card}>
-                <Text style={styles.pickerLabel}>Badges</Text>
+                <Text style={styles.pickerLabel}>{t('account.badges')}</Text>
                 {/* Rows reflect the importance hierarchy: Default/Bronze/Silver
                     together, then Gold alone, then Diamond alone. */}
                 <View style={styles.chipRows}>
@@ -279,28 +281,24 @@ export default function BadgesScreen() {
                 {/* See the previewed theme applied to a mock of your profile page. */}
                 <TouchableOpacity style={styles.previewPageBtn} activeOpacity={0.85} onPress={() => setShowPreview(true)}>
                   <Ionicons name="eye-outline" size={18} color={colors.text} />
-                  <Text style={styles.previewPageBtnText}>Preview page</Text>
+                  <Text style={styles.previewPageBtnText}>{t('badges.previewPage')}</Text>
                 </TouchableOpacity>
               </View>
 
               {/* Catalog grouped by category — most recently earned categories first. */}
-              <Text style={styles.sectionTitle}>All badges</Text>
+              <Text style={styles.sectionTitle}>{t('badges.allBadges')}</Text>
               {orderedCats.map((cat) => (
-                <CategoryCard key={cat} category={cat} metrics={metrics} held={held} />
+                <CategoryCard key={cat} category={cat} metrics={metrics} held={held} t={t} />
               ))}
 
-              <Text style={styles.footnote}>
-                Each badge is worth Bronze=1, Silver=2, Gold=4, Diamond=8 points (highest tier per category). Your emblem
-                unlocks at 2 / 4 / 8 / 16 total points for Bronze / Silver / Gold / Diamond. Streak badges revert if you break
-                the streak; permanent ones stay. Community and App Sharing are coming soon.
-              </Text>
+              <Text style={styles.footnote}>{t('badges.footnote')}</Text>
 
               {/* Show / hide emblem — moved to the bottom. */}
               <View style={styles.card}>
                 <View style={styles.toggleRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.toggleLabel}>Show badge emblem</Text>
-                    <Text style={styles.toggleSub}>Display your status next to your name. Off hides it from everyone.</Text>
+                    <Text style={styles.toggleLabel}>{t('badges.showEmblem')}</Text>
+                    <Text style={styles.toggleSub}>{t('badges.showEmblemSub')}</Text>
                   </View>
                   <Switch
                     value={badgeShow}
@@ -320,13 +318,13 @@ export default function BadgesScreen() {
       <Modal visible={showPreview} animationType="slide" transparent onRequestClose={() => setShowPreview(false)}>
         <View style={styles.modalRoot}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Page preview</Text>
+            <Text style={styles.modalTitle}>{t('badges.pagePreview')}</Text>
             <TouchableOpacity onPress={() => setShowPreview(false)} hitSlop={10}>
               <Ionicons name="close" size={26} color={colors.text} />
             </TouchableOpacity>
           </View>
           <Text style={styles.modalSub}>
-            How your profile looks with the {themeOpt?.label ?? 'Default'} theme — what other people see.
+            {t('badges.pagePreviewSub', { theme: themeOpt?.label ?? 'Default' })}
           </Text>
 
           <View style={styles.ppCard}>
@@ -348,20 +346,24 @@ export default function BadgesScreen() {
                 )}
               </View>
               <View style={styles.ppStats}>
-                {['Posts', 'Followers', 'Following'].map((l) => (
-                  <View key={l} style={styles.ppStatItem}>
+                {[
+                  { key: 'posts', label: t('profile.tab.posts') },
+                  { key: 'followers', label: t('profile.followers') },
+                  { key: 'following', label: t('profile.following') },
+                ].map((s) => (
+                  <View key={s.key} style={styles.ppStatItem}>
                     <View style={styles.ppStatBar} />
-                    <Text style={styles.ppStatLabel}>{l}</Text>
+                    <Text style={styles.ppStatLabel}>{s.label}</Text>
                   </View>
                 ))}
               </View>
             </LinearGradient>
             <View style={styles.ppInfo}>
               <View style={styles.ppNameRow}>
-                <Text style={styles.ppName} numberOfLines={1}>{profile?.display_name ?? 'Your name'}</Text>
+                <Text style={styles.ppName} numberOfLines={1}>{profile?.display_name ?? t('badges.yourName')}</Text>
                 {badgeShow && previewTier && <BadgeEmblem tier={previewTier} size={17} />}
               </View>
-              <Text style={styles.ppUsername} numberOfLines={1}>@{profile?.username ?? 'username'}</Text>
+              <Text style={styles.ppUsername} numberOfLines={1}>@{profile?.username ?? t('badges.username')}</Text>
               {!!profile?.bio && <Text style={styles.ppBio} numberOfLines={2}>{profile.bio}</Text>}
             </View>
           </View>
@@ -372,7 +374,7 @@ export default function BadgesScreen() {
   );
 }
 
-function CategoryCard({ category, metrics, held }: { category: BadgeCategory; metrics: BadgeMetrics | null; held: Set<string> }) {
+function CategoryCard({ category, metrics, held, t }: { category: BadgeCategory; metrics: BadgeMetrics | null; held: Set<string>; t: (key: string, vars?: Record<string, string | number>) => string }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const meta = CATEGORY_META[category];
@@ -391,7 +393,7 @@ function CategoryCard({ category, metrics, held }: { category: BadgeCategory; me
             <Ionicons name={meta.icon as any} size={24} color={colors.textTertiary} />
           </View>
         )}
-        <Text style={styles.catTitle}>{meta.label}</Text>
+        <Text style={styles.catTitle}>{t('badges.cat.' + category)}</Text>
       </View>
       {defs.map((def) => {
         const st = badgeStatus(def, metrics, held);
@@ -402,9 +404,9 @@ function CategoryCard({ category, metrics, held }: { category: BadgeCategory; me
               <Text style={[styles.badgeTitle, st.kind !== 'earned' && styles.badgeTitleMuted]}>
                 {tierLabel(def.tier)}
                 {/* Permanent badges never revert once earned — flag them. */}
-                {def.permanent && <Text style={styles.permanentTag}> (Permanent)</Text>}
+                {def.permanent && <Text style={styles.permanentTag}> {t('badges.permanentTag')}</Text>}
               </Text>
-              <Text style={styles.badgeCriteria}>{def.criteria}</Text>
+              <Text style={styles.badgeCriteria}>{t('badges.criteria.' + def.key)}</Text>
             </View>
             <View style={styles.badgeStatus}>
               {st.kind === 'earned' ? (
@@ -412,7 +414,7 @@ function CategoryCard({ category, metrics, held }: { category: BadgeCategory; me
                   <Ionicons name="checkmark-sharp" size={16} color="#fff" />
                 </View>
               ) : st.kind === 'locked' ? (
-                <Text style={styles.lockedText}>Coming soon</Text>
+                <Text style={styles.lockedText}>{t('badges.comingSoon')}</Text>
               ) : (
                 <Text style={styles.progressText}>{def.key === 'daily_like_bronze' ? st.cur : `${st.cur}/${st.target}`}</Text>
               )}

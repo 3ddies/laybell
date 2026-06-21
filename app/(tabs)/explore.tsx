@@ -26,7 +26,8 @@ import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { fetchBlockedIds } from '../../lib/blocks';
 import { useAudio } from '../../contexts/AudioContext';
-import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost } from '../../lib/genres';
+import { useTranslation } from '../../contexts/LanguageContext';
+import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost, genreLabel } from '../../lib/genres';
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
   sortRailByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
@@ -63,6 +64,7 @@ type Profile = {
 
 export default function ExploreScreen() {
   const { show: showOptions } = usePostOptions();
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
@@ -236,9 +238,9 @@ export default function ExploreScreen() {
   // Display name for a stored (lowercase) genre tag; untagged songs pool
   // under the generic trending title.
   function displayGenre(g?: string | null): string {
-    if (!g) return 'Trending Songs';
+    if (!g) return t('explore.trendingSongs');
     const hit = [...MUSIC_GENRES, ...CONTENT_TAGS].find(x => x.toLowerCase() === g.toLowerCase());
-    return hit ?? g.charAt(0).toUpperCase() + g.slice(1);
+    return hit ? genreLabel(hit) : g.charAt(0).toUpperCase() + g.slice(1);
   }
 
   // Build (or load from cache) the genre clusters for the All grid.
@@ -505,7 +507,7 @@ export default function ExploreScreen() {
     <View style={styles.container} {...genreSwipePan.panHandlers}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Explore</Text>
+        <Text style={styles.headerTitle}>{t('explore.title')}</Text>
       </View>
 
       {/* Search */}
@@ -514,7 +516,7 @@ export default function ExploreScreen() {
           <Ionicons name="search-outline" size={18} color={colors.textTertiary} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Artists, songs, captions..."
+            placeholder={t('explore.searchPlaceholder')}
             placeholderTextColor={colors.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -551,7 +553,11 @@ export default function ExploreScreen() {
               onPress={() => setSearchTab(tab)}
             >
               <Text style={[styles.toggleText, searchTab === tab && styles.toggleTextActive]}>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'posts' ? t('profile.tab.posts')
+                  : tab === 'music' ? t('profile.tab.music')
+                  : tab === 'videos' ? t('profile.tab.videos')
+                  : tab === 'accounts' ? t('explore.tab.accounts')
+                  : t('explore.tab.relevancy')}
               </Text>
             </TouchableOpacity>
           ))}
@@ -572,7 +578,7 @@ export default function ExploreScreen() {
             return active ? (
               <TouchableOpacity onPress={() => fetchByGenre(item)} style={styles.genrePillWrap}>
                 <LinearGradient colors={GRADIENTS.primaryWarm} style={styles.genrePillGradient}>
-                  <Text style={styles.genreTextActive}>{item}</Text>
+                  <Text style={styles.genreTextActive}>{genreLabel(item)}</Text>
                 </LinearGradient>
               </TouchableOpacity>
             ) : (
@@ -580,7 +586,7 @@ export default function ExploreScreen() {
                 style={[styles.genrePillWrap, styles.genrePill]}
                 onPress={() => fetchByGenre(item)}
               >
-                <Text style={styles.genreText}>{item}</Text>
+                <Text style={styles.genreText}>{genreLabel(item)}</Text>
               </TouchableOpacity>
             );
           }}
@@ -602,7 +608,7 @@ export default function ExploreScreen() {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             contentContainerStyle={styles.listContent}
-            ListEmptyComponent={<Text style={styles.emptyText}>No accounts found</Text>}
+            ListEmptyComponent={<Text style={styles.emptyText}>{t('explore.noAccountsFound')}</Text>}
             renderItem={({ item }) => renderAccount(item, false)}
           />
         ) : (
@@ -629,10 +635,10 @@ export default function ExploreScreen() {
           }
           ListEmptyComponent={
             <Text style={styles.emptyText}>
-              {searchTab === 'posts' ? 'No image posts found'
-                : searchTab === 'music' ? 'No music found'
-                : searchTab === 'videos' ? 'No videos found'
-                : 'No results found'}
+              {searchTab === 'posts' ? t('explore.noImagePosts')
+                : searchTab === 'music' ? t('explore.noMusicFound')
+                : searchTab === 'videos' ? t('explore.noVideosFound')
+                : t('explore.noResults')}
             </Text>
           }
           renderItem={({ item }) => {
@@ -700,7 +706,7 @@ export default function ExploreScreen() {
                 </LinearGradient>
               )}
               <View style={styles.postInfo}>
-                <HighlightText text={item.caption || 'Audio Track'} query={hq} style={styles.postCaption} highlightStyle={styles.searchHl} numberOfLines={2} />
+                <HighlightText text={item.caption || t('explore.audioTrack')} query={hq} style={styles.postCaption} highlightStyle={styles.searchHl} numberOfLines={2} />
                 <View style={styles.postMeta}>
                   <HighlightText text={`@${item.profiles?.username}`} query={hq} style={styles.postUser} highlightStyle={styles.searchHl} numberOfLines={1} />
                   <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={11} />

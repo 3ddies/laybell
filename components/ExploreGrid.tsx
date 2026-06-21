@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { aspectToNumber } from '../lib/aspectRatio';
 import { useAudio } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
@@ -68,6 +69,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const { play: playRaw, currentTrack, isPlaying } = useAudio();
   // Swipe-tap guard: a tab swipe gliding over the grid must not start audio.
   const play: typeof playRaw = (t) => (isSwipeTap() ? Promise.resolve() : playRaw(t));
@@ -146,7 +148,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       ? []
       : songClusters && songClusters.length > 0
       ? songClusters
-      : groupSongs(posts.filter(p => isAudioPost(p.type))).map(g => ({ title: 'Trending Songs', songs: g }));
+      : groupSongs(posts.filter(p => isAudioPost(p.type))).map(g => ({ title: t('explore.trendingSongs'), songs: g }));
 
     // Only ~1 in every 4 videos auto-plays; the rest stay as still thumbnails so the
     // grid isn't overstimulating. Prefer vertical (portrait) clips for the play
@@ -201,7 +203,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     while (vi < videos.length) placeVideo();
 
     return { cols, playableSet };
-  }, [posts, songTiles, songClusters]);
+  }, [posts, songTiles, songClusters, t]);
 
   if (!posts || posts.length === 0) {
     return (
@@ -211,7 +213,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
         refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined}
       >
         {header}
-        <View style={styles.empty}><Text style={styles.emptyText}>No posts in this genre yet</Text></View>
+        <View style={styles.empty}><Text style={styles.emptyText}>{t('exploreGrid.noPosts')}</Text></View>
       </ScrollView>
     );
   }
@@ -373,7 +375,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
                   </LinearGradient>
                 )}
                 <View style={styles.songInfo}>
-                  <Text style={styles.songTitle} numberOfLines={1}>{s.caption || 'Audio Track'}</Text>
+                  <Text style={styles.songTitle} numberOfLines={1}>{s.caption || t('explore.audioTrack')}</Text>
                   <View style={styles.songMeta}>
                     <Text style={styles.songArtist} numberOfLines={1}>@{s.profiles?.username}</Text>
                     <Ionicons name="play" size={9} color={colors.textTertiary} />
@@ -410,7 +412,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           )}
           <View style={styles.squareBadge}><Ionicons name={active ? 'pause' : 'musical-notes'} size={11} color="#fff" /></View>
           <View style={styles.squareTitleBar}>
-            <Text style={styles.squareTitleText} numberOfLines={1}>{p.caption || 'Audio Track'}</Text>
+            <Text style={styles.squareTitleText} numberOfLines={1}>{p.caption || t('explore.audioTrack')}</Text>
           </View>
         </TouchableOpacity>
       );

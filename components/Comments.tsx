@@ -11,6 +11,7 @@ import StoryAvatar from './StoryAvatar';
 import BadgeEmblem from './BadgeEmblem';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { timeAgo } from '../lib/timeAgo';
 import { formatCount } from '../lib/format';
 import { createNotification } from '../lib/createNotification';
@@ -62,6 +63,7 @@ export default function Comments({
   const listRef = useRef<FlatList>(null);
   const atTopRef = useRef(true); // list starts at the top; tracks top-edge crossings
   const router = useRouter();
+  const { t } = useTranslation();
   const { profile: myProfile } = useProfile();
 
   // Open a commenter's profile. Closes the host sheet/overlay first (if any).
@@ -162,7 +164,7 @@ export default function Comments({
     if (!text.trim() || !userId || sending) return;
     // Hidden accounts browse/listen only — no commenting while invisible.
     if ((myProfile as any)?.hidden) {
-      Alert.alert('Profile hidden', 'Unhide your profile in Settings to comment.');
+      Alert.alert(t('comments.hiddenTitle'), t('comments.hiddenBody'));
       return;
     }
     setSending(true);
@@ -243,7 +245,7 @@ export default function Comments({
             hitSlop={{ top: 6, bottom: 8, left: 4, right: 8 }}
           >
             <Ionicons name="arrow-undo-outline" size={15} color={colors.textTertiary} />
-            <Text style={styles.metaText}>Reply</Text>
+            <Text style={styles.metaText}>{t('comments.reply')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -283,7 +285,7 @@ export default function Comments({
               : ListHeaderComponent}
             <View style={styles.divider} />
             <View style={[styles.labelRow, minHeaderHeight != null && styles.labelRowFold]}>
-              <Text style={styles.label}>Comments</Text>
+              <Text style={styles.label}>{t('comments.title')}</Text>
               {rows.length > 0 && (
                 <View style={styles.countChip}>
                   <Text style={styles.countChipText}>{formatCount(rows.length)}</Text>
@@ -295,8 +297,8 @@ export default function Comments({
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="chatbubble-ellipses-outline" size={26} color={colors.textTertiary} />
-            <Text style={styles.emptyTitle}>No comments yet</Text>
-            <Text style={styles.emptySub}>Be the first to say something</Text>
+            <Text style={styles.emptyTitle}>{t('comments.emptyTitle')}</Text>
+            <Text style={styles.emptySub}>{t('comments.emptySub')}</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -326,7 +328,7 @@ export default function Comments({
           <View style={styles.replyingBar}>
             <Ionicons name="arrow-undo" size={13} color={colors.primary} />
             <Text style={styles.replyingText} numberOfLines={1}>
-              Replying to <Text style={styles.replyingName}>@{replyTo.name}</Text>
+              {t('comments.replyingTo')} <Text style={styles.replyingName}>@{replyTo.name}</Text>
             </Text>
             <TouchableOpacity
               onPress={() => {
@@ -354,7 +356,7 @@ export default function Comments({
         <View style={styles.inputBar}>
           <TextInput
             style={styles.input}
-            placeholder={replyTo ? 'Add a reply...' : 'Add a comment...'}
+            placeholder={replyTo ? t('comments.replyPlaceholder') : t('comments.addPlaceholder')}
             placeholderTextColor={colors.textTertiary}
             value={text} onChangeText={(t) => { setText(t); onEngage?.(); }}
             onFocus={() => { setInputFocused(true); onEngage?.(); }}

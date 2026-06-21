@@ -16,6 +16,7 @@ import ProfileLayoutGrid from '../components/ProfileLayoutGrid';
 import LayoutSlotPicker from '../components/LayoutSlotPicker';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 type PickerState = { blockIndex: number; field: string; subIndex?: number } | null;
 
@@ -24,6 +25,7 @@ export default function PageLayoutScreen() {
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { profile, update } = useProfile();
+  const { t } = useTranslation();
 
   const [loading, setLoading] = useState(true);
   const [posts, setPosts] = useState<any[]>([]);
@@ -143,7 +145,7 @@ export default function PageLayoutScreen() {
   async function handleSave() {
     if (!template) return;
     const complete = blocks.filter(blockComplete);
-    if (!complete.length) { Alert.alert('Incomplete', 'Fill in at least one full block before saving.'); return; }
+    if (!complete.length) { Alert.alert(t('pageLayout.incompleteTitle'), t('pageLayout.incompleteBody')); return; }
     setSaving(true);
     const byId = new Map(posts.map(p => [p.id, p]));
     const clean = complete.map((b) => {
@@ -161,16 +163,16 @@ export default function PageLayoutScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase.from('profiles').update({ page_layout: template, layout_blocks: clean }).eq('id', user!.id);
     setSaving(false);
-    if (error) { Alert.alert('Could not save', error.message); return; }
+    if (error) { Alert.alert(t('pageLayout.saveErrorTitle'), error.message); return; }
     update({ page_layout: template, layout_blocks: clean });
-    Alert.alert('Layout saved', 'Your profile now uses this layout.', [{ text: 'OK', onPress: () => router.back() }]);
+    Alert.alert(t('pageLayout.savedTitle'), t('pageLayout.savedBody'), [{ text: t('pageLayout.ok'), onPress: () => router.back() }]);
   }
 
   async function handleReset() {
-    Alert.alert('Reset layout', 'Switch your profile back to the standard grid? Your media stays — only the arrangement is cleared.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('pageLayout.resetTitle'), t('pageLayout.resetBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Reset', style: 'destructive', onPress: async () => {
+        text: t('pageLayout.resetConfirm'), style: 'destructive', onPress: async () => {
           setSaving(true);
           const { data: { user } } = await supabase.auth.getUser();
           await supabase.from('profiles').update({ page_layout: 'default', layout_blocks: [] }).eq('id', user!.id);
@@ -188,10 +190,10 @@ export default function PageLayoutScreen() {
   }
 
   const pickerTitle = picker
-    ? picker.field === 'song' ? 'Choose a song'
-      : picker.field === 'regular' ? 'Choose any media'
-        : picker.field === 'big' ? 'Choose your hero media'
-          : 'Choose a photo or video'
+    ? picker.field === 'song' ? t('pageLayout.pickSong')
+      : picker.field === 'regular' ? t('pageLayout.pickAny')
+        : picker.field === 'big' ? t('pageLayout.pickHero')
+          : t('pageLayout.pickPhotoVideo')
     : '';
 
   if (loading) {
@@ -202,35 +204,35 @@ export default function PageLayoutScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}><Text style={styles.cancel}>Cancel</Text></TouchableOpacity>
-        <Text style={styles.headerTitle}>Page Layout</Text>
+        <TouchableOpacity onPress={() => router.back()}><Text style={styles.cancel}>{t('common.cancel')}</Text></TouchableOpacity>
+        <Text style={styles.headerTitle}>{t('editProfile.pageLayout')}</Text>
         <TouchableOpacity onPress={handleSave} disabled={!canSave || saving}>
-          {saving ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={[styles.save, !canSave && styles.saveOff]}>Save</Text>}
+          {saving ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={[styles.save, !canSave && styles.saveOff]}>{t('editProfile.save')}</Text>}
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <Text style={styles.intro}>
-          Rearrange your <Text style={{ fontWeight: '800', color: colors.text }}>Posts</Text> grid into featured layouts unlocked by your badge status. Templates revert to the standard grid if you drop below the required tier.
+          {t('pageLayout.introPre')}<Text style={{ fontWeight: '800', color: colors.text }}>{t('pageLayout.postsWord')}</Text>{t('pageLayout.introPost')}
         </Text>
         <View style={styles.countsRow}>
-          <Counts icon="image" n={counts.visual} label="photos/videos" colors={colors} />
-          <Counts icon="musical-notes" n={counts.audio} label="songs" colors={colors} />
+          <Counts icon="image" n={counts.visual} label={t('pageLayout.photosVideos')} colors={colors} />
+          <Counts icon="musical-notes" n={counts.audio} label={t('pageLayout.songs')} colors={colors} />
         </View>
 
         {/* Template picker */}
-        <Text style={styles.sectionLabel}>TEMPLATE</Text>
+        <Text style={styles.sectionLabel}>{t('pageLayout.templateLabel')}</Text>
         <View style={styles.templateList}>
-          {TEMPLATE_ORDER.map((t) => {
-            const meta = TEMPLATE_META[t];
-            const unlock = templateUnlock(t, tier, counts);
-            const active = template === t;
+          {TEMPLATE_ORDER.map((tpl) => {
+            const meta = TEMPLATE_META[tpl];
+            const unlock = templateUnlock(tpl, tier, counts);
+            const active = template === tpl;
             return (
               <TouchableOpacity
-                key={t}
+                key={tpl}
                 activeOpacity={0.85}
                 disabled={!unlock.unlocked}
-                onPress={() => selectTemplate(t)}
+                onPress={() => selectTemplate(tpl)}
                 style={[styles.tplCard, active && styles.tplCardActive, !unlock.unlocked && styles.tplCardLocked]}
               >
                 <View style={[styles.tplIcon, active && { backgroundColor: colors.primary }]}>
@@ -257,8 +259,8 @@ export default function PageLayoutScreen() {
         {/* Builder */}
         {template && (
           <>
-            <Text style={styles.sectionLabel}>BUILD YOUR LAYOUT</Text>
-            <Text style={styles.builderHint}>Tap a slot to choose a post. {TEMPLATE_META[template].multi ? 'Add as many blocks as you like.' : 'This template uses a single block.'}</Text>
+            <Text style={styles.sectionLabel}>{t('pageLayout.buildLabel')}</Text>
+            <Text style={styles.builderHint}>{t('pageLayout.builderHint')} {TEMPLATE_META[template].multi ? t('pageLayout.builderHintMulti') : t('pageLayout.builderHintSingle')}</Text>
 
             <View style={styles.preview}>
               <ProfileLayoutGrid
@@ -278,7 +280,7 @@ export default function PageLayoutScreen() {
                 {TEMPLATE_META[template].kinds.map((k) => (
                   <TouchableOpacity key={k} style={styles.addBtn} onPress={() => addBlock(k)}>
                     <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-                    <Text style={styles.addText}>Add {k === 'media_star' ? 'Media Star' : 'Big Picture'}</Text>
+                    <Text style={styles.addText}>{t('pageLayout.addBlock', { name: k === 'media_star' ? TEMPLATE_META.media_star.label : TEMPLATE_META.big_picture.label })}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -286,8 +288,8 @@ export default function PageLayoutScreen() {
 
             <Text style={styles.footNote}>
               {completeCount > 0
-                ? `${completeCount} block${completeCount > 1 ? 's' : ''} ready. Unused posts show below in the normal grid.`
-                : 'Fill every slot in a block to feature it.'}
+                ? t(completeCount === 1 ? 'pageLayout.footNoteOne' : 'pageLayout.footNoteMany', { n: completeCount })
+                : t('pageLayout.footNoteEmpty')}
             </Text>
           </>
         )}
@@ -295,7 +297,7 @@ export default function PageLayoutScreen() {
         {(hasActiveSaved || template) && (
           <TouchableOpacity style={styles.resetBtn} onPress={handleReset}>
             <Ionicons name="grid-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.resetText}>Reset to standard grid</Text>
+            <Text style={styles.resetText}>{t('pageLayout.resetToGrid')}</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -303,7 +305,7 @@ export default function PageLayoutScreen() {
       <LayoutSlotPicker
         visible={!!picker}
         title={pickerTitle}
-        subtitle={picker?.field === 'regular' ? 'Photos, videos, or songs' : undefined}
+        subtitle={picker?.field === 'regular' ? t('pageLayout.pickAnySub') : undefined}
         posts={pickerPosts}
         selectedId={currentSlotValue(picker)}
         onPick={assignPost}

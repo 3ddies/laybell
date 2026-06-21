@@ -10,6 +10,7 @@ import { formatCount } from '../lib/format';
 import { usePostMusic } from '../contexts/PostMusicContext';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 export type PickedSong = {
   id: string;
@@ -33,6 +34,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const { playSong, stop: stopSong } = usePostMusic();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
@@ -97,8 +99,8 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
     stopPreview();
     onSelect({
       id: item.id,
-      title: item.caption || 'Audio track',
-      artist: item.profiles?.display_name || item.profiles?.username || 'Unknown artist',
+      title: item.caption || t('songPicker.audioTrack'),
+      artist: item.profiles?.display_name || item.profiles?.username || t('songPicker.unknownArtist'),
       artistId: item.profiles?.id || item.user_id,
       cover: item.cover_url ?? null,
     });
@@ -116,7 +118,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
         <TouchableOpacity style={styles.sheet} activeOpacity={1}>
           <View style={styles.handle} />
           <View style={styles.head}>
-            <Text style={styles.title}>Add music</Text>
+            <Text style={styles.title}>{t('songPicker.title')}</Text>
             <TouchableOpacity onPress={close} hitSlop={8}><Ionicons name="close" size={22} color={colors.textSecondary} /></TouchableOpacity>
           </View>
 
@@ -126,7 +128,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
             <Ionicons name="search-outline" size={18} color={colors.textTertiary} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search songs or artists..."
+              placeholder={t('songPicker.searchPlaceholder')}
               placeholderTextColor={colors.textTertiary}
               selectionColor={colors.primary}
               cursorColor={colors.primary}
@@ -149,7 +151,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
           {loading ? (
             <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
           ) : results.length === 0 ? (
-            <View style={styles.center}><Text style={styles.empty}>No songs found</Text></View>
+            <View style={styles.center}><Text style={styles.empty}>{t('songPicker.empty')}</Text></View>
           ) : (
             <FlatList
               data={results}
@@ -170,11 +172,11 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
                     )}
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.rowTitle, previewing && { color: colors.primary }]} numberOfLines={1}>
-                        {item.caption || 'Audio track'}
+                        {item.caption || t('songPicker.audioTrack')}
                       </Text>
                       <Text style={styles.rowArtist} numberOfLines={1}>
                         {item.profiles?.display_name || item.profiles?.username}
-                        {item.stream_count ? ` · ${formatCount(item.stream_count)} plays` : ''}
+                        {item.stream_count ? ` · ${t('songPicker.plays', { count: formatCount(item.stream_count) })}` : ''}
                       </Text>
                     </View>
                     {/* Preview + select, side by side, matched size */}

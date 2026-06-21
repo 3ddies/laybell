@@ -9,9 +9,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 
 export default function LoginScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,7 +22,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
 
   async function handleLogin() {
-    if (!email || !password) { setError('Please fill in all fields'); return; }
+    if (!email || !password) { setError(t('auth.fillAllFields')); return; }
     setLoading(true); setError('');
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     if (error) setError(error.message);
@@ -39,7 +41,7 @@ export default function LoginScreen() {
             <Text style={styles.logo}>Laybell</Text>
             <Text style={styles.tm}>™</Text>
           </View>
-          <Text style={styles.tagline}>The Place for Creatives</Text>
+          <Text style={styles.tagline}>{t('auth.tagline')}</Text>
         </View>
 
         {/* Form */}
@@ -55,7 +57,7 @@ export default function LoginScreen() {
             <Ionicons name="mail-outline" size={18} color={colors.textTertiary} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Email"
+              placeholder={t('auth.email')}
               placeholderTextColor={colors.textTertiary}
               value={email}
               onChangeText={setEmail}
@@ -68,7 +70,7 @@ export default function LoginScreen() {
             <Ionicons name="lock-closed-outline" size={18} color={colors.textTertiary} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Password"
+              placeholder={t('auth.password')}
               placeholderTextColor={colors.textTertiary}
               value={password}
               onChangeText={setPassword}
@@ -84,15 +86,15 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={loading}
           >
-            {loading ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>Log In</Text>}
+            {loading ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>{t('auth.login')}</Text>}
           </TouchableOpacity>
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account? </Text>
+          <Text style={styles.footerText}>{t('auth.noAccount')}</Text>
           <Link href="/(auth)/signup" asChild>
             <TouchableOpacity>
-              <Text style={styles.linkText}>Sign Up</Text>
+              <Text style={styles.linkText}>{t('auth.signUp')}</Text>
             </TouchableOpacity>
           </Link>
         </View>

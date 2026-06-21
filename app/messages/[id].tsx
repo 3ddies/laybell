@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 import { createNotification } from '../../lib/createNotification';
 import { useProfile } from '../../contexts/ProfileContext';
 import { sharedPostId, internalPathFromUrl, parseStoryReply, type StoryReplyRef } from '../../lib/postLinks';
@@ -23,6 +24,7 @@ type Message = { id: string; body: string; sender_id: string; receiver_id: strin
 
 export default function ChatScreen() {
   const { colors, mode } = useTheme();
+  const { t } = useTranslation();
   const { profile: myProfile } = useProfile();
   const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -122,7 +124,7 @@ export default function ChatScreen() {
     if (!newMessage.trim() || !currentUserId || sending) return;
     // Hidden accounts browse/listen only — no DMs while invisible.
     if ((myProfile as any)?.hidden) {
-      Alert.alert('Profile hidden', 'Unhide your profile in Settings to send messages.');
+      Alert.alert(t('messages.hiddenTitle'), t('messages.hiddenBody'));
       return;
     }
     setSending(true);
@@ -153,12 +155,12 @@ export default function ChatScreen() {
       const { data } = await supabase
         .from('stories').select('id, expires_at').eq('id', ref.storyId).maybeSingle();
       if (!data || new Date(data.expires_at).getTime() <= Date.now()) {
-        Alert.alert('Story unavailable', 'Stories disappear after 24 hours.');
+        Alert.alert(t('messages.storyUnavailableTitle'), t('messages.storyUnavailableBody'));
         return;
       }
       router.push(`/story/${ref.ownerId}`);
     } catch {
-      Alert.alert('Story unavailable', 'Stories disappear after 24 hours.');
+      Alert.alert(t('messages.storyUnavailableTitle'), t('messages.storyUnavailableBody'));
     }
   }
 
@@ -180,7 +182,7 @@ export default function ChatScreen() {
           if (!part) return null;
           if (part.startsWith('laybell://') || /^https?:\/\//.test(part)) {
             const path = internalPathFromUrl(part);
-            const label = path?.startsWith('/post/') ? 'View post' : part;
+            const label = path?.startsWith('/post/') ? t('messages.viewPost') : part;
             return (
               <Text
                 key={i}
@@ -236,7 +238,7 @@ export default function ChatScreen() {
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>Start a conversation with {otherUser?.display_name}</Text>
+            <Text style={styles.emptyText}>{t('messages.startConversation', { name: otherUser?.display_name ?? '' })}</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -247,7 +249,7 @@ export default function ChatScreen() {
             return (
               <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
                 <Text style={styles.storyReplyLabel}>
-                  {isOwn ? 'You replied to their story' : 'Replied to your story'}
+                  {isOwn ? t('messages.youRepliedStory') : t('messages.repliedYourStory')}
                 </Text>
                 <TouchableOpacity activeOpacity={0.85} onPress={() => openStoryReply(storyRef)}>
                   {storyRef.thumb ? (
@@ -321,7 +323,7 @@ export default function ChatScreen() {
       >
         <TextInput
           style={[styles.input, { backgroundColor: inputFill, borderColor: inputBorder }]}
-          placeholder="Message..."
+          placeholder={t('messages.inputPlaceholder')}
           placeholderTextColor={colors.textTertiary}
           value={newMessage}
           onChangeText={setNewMessage}

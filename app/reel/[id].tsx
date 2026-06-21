@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 import { createNotification } from '../../lib/createNotification';
 import { usePostActionSheets } from '../../hooks/usePostActionSheets';
 import { formatCount } from '../../lib/format';
@@ -43,6 +44,7 @@ const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 export default function ReelScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   // Hosted locally (not via the root context) so the sheets present over this
   // transparentModal route on iOS — see usePostActionSheets.
   const { share: openShare, showOptions, sheets } = usePostActionSheets();
@@ -229,12 +231,12 @@ export default function ReelScreen() {
           }}
           onOptions={() => {
             const ad = item.__ad;
-            Alert.alert(ad?.advertiserName || 'Sponsored ad', 'Sponsored', [
-              { text: 'Report ad', onPress: () => reportAd(ad.campaignId, ad.creativeId).then((ok) =>
-                Alert.alert(ok ? 'Thanks for the report' : 'Could not report', ok ? "We'll review this ad." : 'Please try again later.')) },
-              { text: 'Why am I seeing this?', onPress: () => Alert.alert('Why this ad?', 'You\'re seeing this because it matched its audience. Manage ad personalization in Settings → Ads.') },
-              { text: 'Ad settings', onPress: () => router.push('/settings') },
-              { text: 'Cancel', style: 'cancel' },
+            Alert.alert(ad?.advertiserName || t('reel.sponsoredAd'), t('reel.sponsored'), [
+              { text: t('reel.reportAd'), onPress: () => reportAd(ad.campaignId, ad.creativeId).then((ok) =>
+                Alert.alert(ok ? t('reel.reportThanksTitle') : t('reel.reportFailTitle'), ok ? t('reel.reportThanksBody') : t('reel.reportFailBody'))) },
+              { text: t('reel.whyThisAd'), onPress: () => Alert.alert(t('reel.whyThisAdTitle'), t('reel.whyThisAdBody')) },
+              { text: t('reel.adSettings'), onPress: () => router.push('/settings') },
+              { text: t('common.cancel'), style: 'cancel' },
             ]);
           }}
         />
@@ -388,7 +390,7 @@ export default function ReelScreen() {
           ) : loading ? (
             <View style={styles.center} />
           ) : (
-            <View style={styles.center}><Text style={styles.empty}>No videos to show</Text></View>
+            <View style={styles.center}><Text style={styles.empty}>{t('reel.noVideos')}</Text></View>
           )}
 
           {/* Back button */}

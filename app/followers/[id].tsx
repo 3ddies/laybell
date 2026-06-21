@@ -14,10 +14,12 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import FollowButton from '../../components/FollowButton';
 import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import { useStories } from '../../contexts/StoriesContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 
 type User = { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 
 export default function FollowersScreen() {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -56,7 +58,7 @@ export default function FollowersScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primaryLight} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Followers</Text>
+        <Text style={styles.headerTitle}>{t('profile.followers')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -73,7 +75,7 @@ export default function FollowersScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="people-outline" size={40} color={colors.textTertiary} />
-              <Text style={styles.emptyText}>No followers yet</Text>
+              <Text style={styles.emptyText}>{t('followersList.empty')}</Text>
             </View>
           }
           renderItem={({ item }) => (

@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 const NUM_COLS = 4;
 const GAP = 2;
@@ -59,6 +60,7 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
 ) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const [permission, requestPermission] = MediaLibrary.usePermissions();
   const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
   const [endCursor, setEndCursor] = useState<string | undefined>(undefined);
@@ -152,9 +154,9 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     return (
       <View style={styles.center}>
         <Ionicons name="images-outline" size={36} color={colors.textTertiary} />
-        <Text style={styles.permText}>Allow photo access to pick from your library</Text>
+        <Text style={styles.permText}>{t('photoGrid.permText')}</Text>
         <TouchableOpacity style={styles.permBtn} onPress={() => requestPermission()}>
-          <Text style={styles.permBtnText}>Grant access</Text>
+          <Text style={styles.permBtnText}>{t('photoGrid.grantAccess')}</Text>
         </TouchableOpacity>
       </View>
     );

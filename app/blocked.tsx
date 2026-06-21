@@ -9,11 +9,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { fetchBlockedUsers, unblockUser, type BlockedUser } from '../lib/blocks';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 export default function BlockedScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
+  const { t } = useTranslation();
   const [blocked, setBlocked] = useState<BlockedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -27,19 +29,19 @@ export default function BlockedScreen() {
   useEffect(() => { load(); }, [load]);
 
   function confirmUnblock(u: BlockedUser) {
-    const handle = u.profile?.username ? `@${u.profile.username}` : 'this user';
+    const handle = u.profile?.username ? `@${u.profile.username}` : t('blocked.thisUser');
     Alert.alert(
-      `Unblock ${handle}?`,
-      `${handle}'s posts can appear in your feed and explore again.`,
+      t('blocked.confirmTitle', { handle }),
+      t('blocked.confirmBody', { handle }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Unblock',
+          text: t('blocked.unblock'),
           onPress: async () => {
             setBusy(u.blocked_id);
             const ok = await unblockUser(u.blocked_id);
             if (ok) setBlocked(prev => prev.filter(b => b.blocked_id !== u.blocked_id));
-            else Alert.alert('Error', 'Could not unblock. Please try again.');
+            else Alert.alert(t('blocked.errorTitle'), t('blocked.errorBody'));
             setBusy(null);
           },
         },
@@ -53,7 +55,7 @@ export default function BlockedScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Blocked</Text>
+        <Text style={styles.headerTitle}>{t('account.blocked')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -67,11 +69,8 @@ export default function BlockedScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="ban-outline" size={44} color={colors.textTertiary} />
-              <Text style={styles.emptyTitle}>No blocked users</Text>
-              <Text style={styles.emptySub}>
-                People you block won't show up in your feed or explore. You can block
-                someone from their profile or from any of their posts.
-              </Text>
+              <Text style={styles.emptyTitle}>{t('blocked.emptyTitle')}</Text>
+              <Text style={styles.emptySub}>{t('blocked.emptySub')}</Text>
             </View>
           }
           renderItem={({ item }) => {
@@ -95,7 +94,7 @@ export default function BlockedScreen() {
                   )}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name} numberOfLines={1}>
-                      {p?.display_name || p?.username || 'Unknown user'}
+                      {p?.display_name || p?.username || t('blocked.unknownUser')}
                     </Text>
                     {!!p?.username && <Text style={styles.handle} numberOfLines={1}>@{p.username}</Text>}
                   </View>
@@ -107,7 +106,7 @@ export default function BlockedScreen() {
                 >
                   {busy === item.blocked_id
                     ? <ActivityIndicator size="small" color={colors.text} />
-                    : <Text style={styles.unblockText}>Unblock</Text>}
+                    : <Text style={styles.unblockText}>{t('blocked.unblock')}</Text>}
                 </TouchableOpacity>
               </View>
             );

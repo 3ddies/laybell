@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Comments from './Comments';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 const SCREEN_H = Dimensions.get('window').height;
 
@@ -32,6 +33,7 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose, onPos
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const FULL_H = SCREEN_H - insets.top;
   const DEFAULT_H = Math.min(Math.round(SCREEN_H * 0.78), FULL_H);
@@ -148,7 +150,7 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose, onPos
           {/* Drag grip — handle + title. Claims the gesture on touch. */}
           <View style={styles.grab} {...pan.panHandlers}>
             <View style={styles.handle} />
-            <Text style={styles.title}>Comments</Text>
+            <Text style={styles.title}>{t('comments.title')}</Text>
           </View>
           <TouchableOpacity style={styles.closeBtn} onPress={dismiss} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
             <Ionicons name="close" size={22} color={colors.textSecondary} />

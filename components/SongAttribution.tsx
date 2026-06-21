@@ -9,6 +9,7 @@ import { usePostOptions } from '../contexts/PostOptionsContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 // Bottom-right "this post uses <song>" credit on image/video posts and stories.
 // Artist (bold) → artist profile · song name → plays the track · ⋮ → the song's
@@ -36,6 +37,7 @@ export default function SongAttribution({
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const { play, expand, currentTrack } = useAudio();
   const { stop: stopPostMusic } = usePostMusic();
   const { show } = usePostOptions();
@@ -98,10 +100,10 @@ export default function SongAttribution({
       <Ionicons name="musical-notes" size={13} color="#fff" style={styles.note} />
       <View style={[styles.textCol, inline && styles.textColInline]}>
         <TouchableOpacity onPress={openArtist} hitSlop={{ top: 6, bottom: 2, left: 6, right: 6 }} disabled={!artistId}>
-          <Text style={styles.artist} numberOfLines={1}>{artist || 'Unknown artist'}</Text>
+          <Text style={styles.artist} numberOfLines={1}>{artist || t('songAttr.unknownArtist')}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={playSong} hitSlop={{ top: 2, bottom: 6, left: 6, right: 6 }}>
-          <Text style={styles.song} numberOfLines={1}>{title || 'Audio track'}</Text>
+          <Text style={styles.song} numberOfLines={1}>{title || t('songAttr.audioTrack')}</Text>
         </TouchableOpacity>
       </View>
       <TouchableOpacity onPress={openOptions} style={styles.dots} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>

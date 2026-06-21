@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRef, useState } from 'react';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { aspectToNumber } from '../lib/aspectRatio';
 import { AD_SKIP_MS, type AdMeta } from '../lib/ads';
 
@@ -29,6 +30,7 @@ type Props = {
 export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, onOptions }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const ad: AdMeta = item.__ad;
   const landscape = aspectToNumber(item.aspect_ratio, 9 / 16) >= 1;
   const poster = item.thumbnail_url ?? item.cover_url ?? null;
@@ -67,7 +69,7 @@ export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, o
       {/* Sponsored label (top-left, below the back button area) */}
       <View style={[styles.sponsoredTag, { top: insets.top + 12 }]}>
         <Ionicons name="megaphone" size={11} color="#fff" />
-        <Text style={styles.sponsoredText}>Sponsored</Text>
+        <Text style={styles.sponsoredText}>{t('ad.sponsored')}</Text>
       </View>
 
       {/* Skip (top-right) */}
@@ -77,7 +79,7 @@ export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, o
         disabled={!canSkip}
         activeOpacity={0.8}
       >
-        <Text style={styles.skipText}>{canSkip ? 'Skip' : `Skip in ${secsLeft}`}</Text>
+        <Text style={styles.skipText}>{canSkip ? t('reelAd.skip') : t('reelAd.skipIn', { n: secsLeft })}</Text>
         {canSkip && <Ionicons name="play-skip-forward" size={14} color="#fff" />}
       </TouchableOpacity>
 
@@ -87,7 +89,7 @@ export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, o
       <View style={[styles.meta, { bottom: insets.bottom + 28 }]}>
         <View style={styles.brandRow}>
           <View style={styles.brandAvatar}><Text style={styles.brandInitial}>{(ad?.advertiserName || 'S').charAt(0).toUpperCase()}</Text></View>
-          <Text style={styles.brandName} numberOfLines={1}>{ad?.advertiserName || 'Sponsored'}</Text>
+          <Text style={styles.brandName} numberOfLines={1}>{ad?.advertiserName || t('ad.sponsored')}</Text>
           <TouchableOpacity style={styles.optionsBtn} onPress={onOptions} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
           </TouchableOpacity>
@@ -95,7 +97,7 @@ export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, o
         {!!ad?.headline && <Text style={styles.headline} numberOfLines={2}>{ad.headline}</Text>}
         {!!ad?.body && <Text style={styles.body} numberOfLines={2}>{ad.body}</Text>}
         <TouchableOpacity style={styles.cta} onPress={onCta} activeOpacity={0.85}>
-          <Text style={styles.ctaText}>{ad?.ctaLabel || 'Learn more'}</Text>
+          <Text style={styles.ctaText}>{ad?.ctaLabel || t('reelAd.learnMore')}</Text>
           <Ionicons name="arrow-forward" size={15} color={colors.text} />
         </TouchableOpacity>
       </View>

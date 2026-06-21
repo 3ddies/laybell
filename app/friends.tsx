@@ -12,11 +12,12 @@ import StoryAvatar from '../components/StoryAvatar';
 import BadgeEmblem from '../components/BadgeEmblem';
 import FollowButton from '../components/FollowButton';
 import {
-  getRotatingSuggestions, loadContactHashesIfEnabled, REASON_LABEL, type SuggestedAccount,
+  getRotatingSuggestions, loadContactHashesIfEnabled, reasonLabel, type SuggestedAccount,
 } from '../lib/suggestions';
 import { maskHiddenProfile } from '../lib/hiddenProfile';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 type Profile = { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 
@@ -27,6 +28,7 @@ type Profile = { id: string; username: string; display_name: string; avatar_url:
 export default function FriendsScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const { following } = useFollow();
   const [friends, setFriends] = useState<Profile[]>([]);
@@ -95,9 +97,9 @@ export default function FriendsScreen() {
 
   const footer = liveSuggestions.length ? (
     <View style={styles.suggestSection}>
-      <Text style={styles.sectionTitle}>Suggested for you</Text>
+      <Text style={styles.sectionTitle}>{t('friends.suggested')}</Text>
       {liveSuggestions.map(s => (
-        <View key={s.id}>{renderRow(s, REASON_LABEL[s.reason])}</View>
+        <View key={s.id}>{renderRow(s, reasonLabel(s.reason))}</View>
       ))}
     </View>
   ) : null;
@@ -108,7 +110,7 @@ export default function FriendsScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Friends</Text>
+        <Text style={styles.headerTitle}>{t('account.friends')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -120,12 +122,12 @@ export default function FriendsScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-          ListHeaderComponent={friends.length ? <Text style={styles.sectionTitle}>Your friends</Text> : null}
+          ListHeaderComponent={friends.length ? <Text style={styles.sectionTitle}>{t('friends.yourFriends')}</Text> : null}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="people-outline" size={40} color={colors.textTertiary} />
-              <Text style={styles.emptyText}>No friends yet</Text>
-              <Text style={styles.emptySub}>When you and someone follow each other you become friends — they'll show up here.</Text>
+              <Text style={styles.emptyText}>{t('friends.emptyTitle')}</Text>
+              <Text style={styles.emptySub}>{t('friends.emptySub')}</Text>
             </View>
           }
           renderItem={({ item }) => renderRow(item)}

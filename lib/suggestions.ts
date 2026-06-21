@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { fetchBlockedIds } from './blocks';
 import { readContactHashes } from './contacts';
+import { tg } from './i18n';
 
 // "Suggested for you" account recommendations. Three blind signals are merged,
 // de-duped, and ranked: contacts (you have each other's number/email) > mutual
@@ -22,12 +23,19 @@ export type SuggestedAccount = {
   score: number; // higher = more strongly recommended (drives ordering + rotation)
 };
 
+// English fallback labels. UI should call reasonLabel() for the localized text;
+// this map is kept for any non-localized/legacy reads.
 export const REASON_LABEL: Record<SuggestionReason, string> = {
   contacts: 'From your contacts',
   mutual: 'Followed by people you follow',
   nearby: 'In your area',
   popular: 'Popular on Laybell',
 };
+
+// Localized suggestion-reason label (e.g. "From your contacts").
+export function reasonLabel(reason: SuggestionReason): string {
+  return tg(`reason.${reason}`);
+}
 
 const PROFILE_COLS = 'id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden';
 const HASH_BATCH = 500;

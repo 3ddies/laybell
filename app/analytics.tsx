@@ -16,24 +16,30 @@ import { BarChart, HBars } from '../components/AnalyticsCharts';
 import { formatCount } from '../lib/format';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
-const RANGES: { key: RangeMode; label: string }[] = [
-  { key: '7d', label: '7D' },
-  { key: '30d', label: '30D' },
-  { key: '90d', label: '90D' },
-  { key: 'all', label: 'All' },
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+const RANGES: { key: RangeMode; labelKey: string }[] = [
+  { key: '7d', labelKey: 'analytics.range7d' },
+  { key: '30d', labelKey: 'analytics.range30d' },
+  { key: '90d', labelKey: 'analytics.range90d' },
+  { key: 'all', labelKey: 'analytics.rangeAll' },
 ];
 
-const WD_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WD_KEYS = [
+  'analytics.wdSun', 'analytics.wdMon', 'analytics.wdTue', 'analytics.wdWed',
+  'analytics.wdThu', 'analytics.wdFri', 'analytics.wdSat',
+];
 
-function typeLabel(t: string): string {
-  switch (t) {
-    case 'image': return 'Photos';
-    case 'video': return 'Videos';
-    case 'audio': return 'Music';
-    case 'podcast': return 'Podcasts';
-    case 'audiobook': return 'Audiobooks';
-    default: return t.charAt(0).toUpperCase() + t.slice(1);
+function typeLabel(t: Translate, type: string): string {
+  switch (type) {
+    case 'image': return t('analytics.typePhotos');
+    case 'video': return t('analytics.typeVideos');
+    case 'audio': return t('analytics.typeMusic');
+    case 'podcast': return t('analytics.typePodcasts');
+    case 'audiobook': return t('analytics.typeAudiobooks');
+    default: return type.charAt(0).toUpperCase() + type.slice(1);
   }
 }
 function shortHour(i: number): string {
@@ -67,6 +73,7 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
 export default function AnalyticsScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const [data, setData] = useState<CreatorAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,7 +102,7 @@ export default function AnalyticsScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Creator Analytics</Text>
+        <Text style={styles.headerTitle}>{t('account.analytics')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -104,8 +111,8 @@ export default function AnalyticsScreen() {
           ) : !data || data.totals.posts === 0 ? (
             <View style={styles.center}>
               <Ionicons name="bar-chart-outline" size={44} color={colors.textTertiary} />
-              <Text style={styles.emptyTitle}>No analytics yet</Text>
-              <Text style={styles.emptySub}>Post some content and grow your audience — your stats and charts will show up here.</Text>
+              <Text style={styles.emptyTitle}>{t('analytics.emptyTitle')}</Text>
+              <Text style={styles.emptySub}>{t('analytics.emptySub')}</Text>
             </View>
           ) : (
             <Analytics data={data} range={range} setRange={setRange} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
@@ -123,21 +130,25 @@ function Analytics({
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const { totals } = data;
   const followerSeries = buildSeries(data.followerTs, range);
   const engagementSeries = buildSeries(data.engagementTs, range);
   const newFollowers = countInRange(data.followerTs, range);
   const engagementInRange = countInRange(data.engagementTs, range);
 
-  const dayData = data.byDay.map((v, i) => ({ label: WD_SHORT[i], value: v }));
+  const dayData = data.byDay.map((v, i) => ({ label: t(WD_KEYS[i]), value: v }));
   const hourData = data.byHour.map((v, i) => ({ label: shortHour(i), value: v }));
 
   const mixData = data.contentMix.map((m) => ({
-    label: typeLabel(m.type), value: m.count, caption: `${m.count} ${m.count === 1 ? 'post' : 'posts'}`,
+    label: typeLabel(t, m.type), value: m.count, caption: `${m.count} ${m.count === 1 ? 'post' : 'posts'}`,
   }));
   const bestType = [...data.contentMix].filter((m) => m.count > 0).sort((a, b) => b.avgEngagement - a.avgEngagement)[0];
 
-  const rangeWord = range === 'all' ? 'this year' : range === '7d' ? 'this week' : range === '30d' ? 'this month' : 'in 90 days';
+  const rangeWord = range === 'all' ? t('analytics.rangeWordYear')
+    : range === '7d' ? t('analytics.rangeWordWeek')
+    : range === '30d' ? t('analytics.rangeWordMonth')
+    : t('analytics.rangeWord90d');
 
   return (
     <ScrollView
@@ -146,21 +157,21 @@ function Analytics({
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
       {/* Lifetime overview */}
-      <Text style={styles.overviewLabel}>Lifetime</Text>
+      <Text style={styles.overviewLabel}>{t('analytics.lifetime')}</Text>
       <View style={styles.statGrid}>
-        <StatCard icon="people" value={formatCount(totals.followers)} label="Followers" />
-        <StatCard icon="grid" value={formatCount(totals.posts)} label="Posts" />
-        <StatCard icon="heart" value={formatCount(totals.likes)} label="Likes" tint={colors.like} />
-        <StatCard icon="chatbubble" value={formatCount(totals.comments)} label="Comments" />
-        <StatCard icon="bookmark" value={formatCount(totals.saves)} label="Saves" />
-        <StatCard icon="play" value={formatCount(totals.views)} label="Views & plays" />
+        <StatCard icon="people" value={formatCount(totals.followers)} label={t('profile.followers')} />
+        <StatCard icon="grid" value={formatCount(totals.posts)} label={t('analytics.posts')} />
+        <StatCard icon="heart" value={formatCount(totals.likes)} label={t('analytics.likes')} tint={colors.like} />
+        <StatCard icon="chatbubble" value={formatCount(totals.comments)} label={t('analytics.comments')} />
+        <StatCard icon="bookmark" value={formatCount(totals.saves)} label={t('analytics.saves')} />
+        <StatCard icon="play" value={formatCount(totals.views)} label={t('analytics.viewsPlays')} />
       </View>
 
       {/* Engagement rate highlight */}
       <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.rateCard}>
         <View style={{ flex: 1 }}>
           <Text style={styles.rateValue}>{data.engagementRate.toFixed(1)}</Text>
-          <Text style={styles.rateLabel}>Avg engagement per post</Text>
+          <Text style={styles.rateLabel}>{t('analytics.avgEngagementPerPost')}</Text>
         </View>
         <View style={styles.rateRight}>
           <Text style={styles.rateSmall}>{formatCount(totals.shares)} shares</Text>
@@ -176,42 +187,51 @@ function Analytics({
             style={[styles.rangeBtn, range === r.key && styles.rangeBtnActive]}
             onPress={() => setRange(r.key)}
           >
-            <Text style={[styles.rangeText, range === r.key && styles.rangeTextActive]}>{r.label}</Text>
+            <Text style={[styles.rangeText, range === r.key && styles.rangeTextActive]}>{t(r.labelKey)}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
       {/* Follower growth */}
-      <Section title="New followers" subtitle={`${newFollowers >= 0 ? '+' : ''}${formatCount(newFollowers)} ${rangeWord}`}>
+      <Section
+        title={t('analytics.newFollowers')}
+        subtitle={t('analytics.newFollowersSub', {
+          change: `${newFollowers >= 0 ? '+' : ''}${formatCount(newFollowers)}`,
+          range: rangeWord,
+        })}
+      >
         <BarChart data={followerSeries} />
       </Section>
 
       {/* Engagement over time */}
-      <Section title="Engagement received" subtitle={`${formatCount(engagementInRange)} likes & comments ${rangeWord}`}>
+      <Section
+        title={t('analytics.engagementReceived')}
+        subtitle={t('analytics.engagementSub', { count: formatCount(engagementInRange), range: rangeWord })}
+      >
         <BarChart data={engagementSeries} />
       </Section>
 
       {/* Best times */}
       <Section
-        title="When your audience is active"
+        title={t('analytics.audienceActive')}
         subtitle={
           data.peakDay != null && data.peakHour != null
-            ? `Most active on ${dayLabel(data.peakDay)}s around ${hourLabel(data.peakHour)} — a good time to post.`
-            : 'Engagement timing will appear as people interact with your posts.'
+            ? t('analytics.peakSub', { day: dayLabel(data.peakDay), hour: hourLabel(data.peakHour) })
+            : t('analytics.peakSubEmpty')
         }
       >
-        <Text style={styles.chartHint}>By day of week</Text>
+        <Text style={styles.chartHint}>{t('analytics.byDayOfWeek')}</Text>
         <BarChart data={dayData} height={110} />
         <View style={styles.innerDivider} />
-        <Text style={styles.chartHint}>By hour of day</Text>
+        <Text style={styles.chartHint}>{t('analytics.byHourOfDay')}</Text>
         <BarChart data={hourData} height={110} />
       </Section>
 
       {/* Content performance */}
       {mixData.length > 0 && (
         <Section
-          title="Content mix"
-          subtitle={bestType ? `Your ${typeLabel(bestType.type).toLowerCase()} get the most engagement (avg ${bestType.avgEngagement.toFixed(1)}/post).` : undefined}
+          title={t('analytics.contentMix')}
+          subtitle={bestType ? t('analytics.mixSub', { type: typeLabel(t, bestType.type).toLowerCase(), avg: bestType.avgEngagement.toFixed(1) }) : undefined}
         >
           <HBars data={mixData} accentTop />
         </Section>
@@ -219,7 +239,7 @@ function Analytics({
 
       {/* Top posts */}
       {data.topPosts.length > 0 && (
-        <Section title="Top posts" subtitle="Your best-performing content by engagement.">
+        <Section title={t('analytics.topPosts')} subtitle={t('analytics.topPostsSub')}>
           <View style={{ gap: SPACING.sm }}>
             {data.topPosts.map((p, i) => (
               <View key={p.id} style={styles.topRow}>
@@ -232,7 +252,7 @@ function Analytics({
                   </LinearGradient>
                 )}
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.topCaption} numberOfLines={1}>{p.caption || typeLabel(p.type)}</Text>
+                  <Text style={styles.topCaption} numberOfLines={1}>{p.caption || typeLabel(t, p.type)}</Text>
                   <View style={styles.topStats}>
                     <Ionicons name="heart" size={11} color={colors.like} />
                     <Text style={styles.topStat}>{formatCount(p.likes)}</Text>
@@ -249,9 +269,7 @@ function Analytics({
         </Section>
       )}
 
-      <Text style={styles.footnote}>
-        Stats are aggregated from your posts, followers and the engagement they receive. Demographic data (age, location) isn't collected, so it isn't shown.
-      </Text>
+      <Text style={styles.footnote}>{t('analytics.footnote')}</Text>
     </ScrollView>
   );
 }

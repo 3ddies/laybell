@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { memo } from 'react';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { aspectToNumber } from '../lib/aspectRatio';
 import SlideshowCarousel from './SlideshowCarousel';
 import { parseSlides, isSlideshow } from '../lib/slideshow';
@@ -28,8 +29,9 @@ type Props = {
 const SponsoredCard = memo(function SponsoredCard({ item, shouldPlayVideo, onCta, onOptions }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const ad: AdMeta = item.__ad;
-  const brand = ad?.advertiserName || 'Sponsored';
+  const brand = ad?.advertiserName || t('ad.sponsored');
 
   return (
     <View style={styles.card}>
@@ -42,10 +44,10 @@ const SponsoredCard = memo(function SponsoredCard({ item, shouldPlayVideo, onCta
           <View style={styles.nameRow}>
             <Text style={styles.brandName} numberOfLines={1}>{brand}</Text>
             <View style={styles.sponsoredPill}>
-              <Text style={styles.sponsoredText}>Sponsored</Text>
+              <Text style={styles.sponsoredText}>{t('ad.sponsored')}</Text>
             </View>
           </View>
-          <Text style={styles.subline}>Ad</Text>
+          <Text style={styles.subline}>{t('sponsoredCard.ad')}</Text>
         </View>
         <TouchableOpacity
           style={styles.optionsBtn}
@@ -99,7 +101,7 @@ const SponsoredCard = memo(function SponsoredCard({ item, shouldPlayVideo, onCta
 
       {/* CTA */}
       <TouchableOpacity style={styles.cta} onPress={() => onCta(item)} activeOpacity={0.85}>
-        <Text style={styles.ctaText}>{ad?.ctaLabel || 'Learn more'}</Text>
+        <Text style={styles.ctaText}>{ad?.ctaLabel || t('sponsoredCard.learnMore')}</Text>
         <Ionicons name="arrow-forward" size={15} color={colors.text} />
       </TouchableOpacity>
     </View>

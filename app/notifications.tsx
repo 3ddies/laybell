@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { COLORS, SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { timeAgo } from '../lib/timeAgo';
 import { displayedTier } from '../lib/badges';
 import { maskHiddenProfile } from '../lib/hiddenProfile';
@@ -28,17 +29,20 @@ type Notification = {
 // run (newest-first) so a grouped row can expand to show each individual post.
 type DisplayNotif = Notification & { groupCount?: number; children?: Notification[] };
 
+// The translator from useTranslation(), passed down to module-level helpers.
+type TFunc = (key: string, vars?: Record<string, string | number>) => string;
+
 // Plural phrasing for a grouped run of `count` actions by a single actor.
-function groupedText(type: string, count: number): string {
+function groupedText(t: TFunc, type: string, count: number): string {
   switch (type) {
-    case 'like': return `liked ${count} posts`;
-    case 'comment': return `commented on ${count} posts`;
-    case 'message': return `sent you ${count} messages`;
-    case 'mention': return `mentioned you in ${count} posts`;
-    case 'tag': return `tagged you in ${count} posts`;
-    case 'song_used': return `used your audio in ${count} posts`;
-    case 'song_story': return `used your audio in ${count} stories`;
-    default: return notificationText(type);
+    case 'like': return t('notifications.groupLiked', { count });
+    case 'comment': return t('notifications.groupCommented', { count });
+    case 'message': return t('notifications.groupMessaged', { count });
+    case 'mention': return t('notifications.groupMentioned', { count });
+    case 'tag': return t('notifications.groupTagged', { count });
+    case 'song_used': return t('notifications.groupSongUsed', { count });
+    case 'song_story': return t('notifications.groupSongStory', { count });
+    default: return notificationText(t, type);
   }
 }
 
@@ -74,18 +78,18 @@ function groupByProximity(items: Notification[]): DisplayNotif[] {
   return out;
 }
 
-function notificationText(type: string) {
+function notificationText(t: TFunc, type: string) {
   switch (type) {
-    case 'like': return 'liked your post';
-    case 'comment': return 'commented on your post';
-    case 'follow': return 'started following you';
-    case 'friend': return 'followed you back — you’re now friends';
-    case 'message': return 'sent you a message';
-    case 'mention': return 'mentioned you';
-    case 'tag': return 'tagged you in a post';
-    case 'song_used': return 'used your audio in a post';
-    case 'song_story': return 'used your audio in their story';
-    default: return 'interacted with you';
+    case 'like': return t('notifications.liked');
+    case 'comment': return t('notifications.commented');
+    case 'follow': return t('notifications.followed');
+    case 'friend': return t('notifications.friend');
+    case 'message': return t('notifications.messaged');
+    case 'mention': return t('notifications.mentioned');
+    case 'tag': return t('notifications.tagged');
+    case 'song_used': return t('notifications.songUsed');
+    case 'song_story': return t('notifications.songStory');
+    default: return t('notifications.interacted');
   }
 }
 
@@ -122,10 +126,18 @@ function bucketFor(iso: string, now: number): string {
   return 'Earlier';
 }
 const BUCKET_ORDER = ['Today', 'This Week', 'This Month', 'Earlier'];
+// Stable bucket key → translation key for the section header label.
+const SECTION_KEYS: Record<string, string> = {
+  'Today': 'notifications.today',
+  'This Week': 'notifications.thisWeek',
+  'This Month': 'notifications.thisMonth',
+  'Earlier': 'notifications.earlier',
+};
 
 export default function NotificationsScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [previews, setPreviews] = useState<Record<string, string>>({});
@@ -231,7 +243,7 @@ export default function NotificationsScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notifications</Text>
+        <Text style={styles.headerTitle}>{t('settings.section.notifications')}</Text>
         <View style={{ width: 42 }} />
       </View>
 
@@ -246,15 +258,15 @@ export default function NotificationsScreen() {
               <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications(); }} tintColor={colors.primary} />
             }
             renderSectionHeader={({ section }) => (
-              <Text style={styles.sectionHeader}>{section.title}</Text>
+              <Text style={styles.sectionHeader}>{t(SECTION_KEYS[section.title] ?? 'notifications.earlier')}</Text>
             )}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <LinearGradient colors={[colors.primary + '24', colors.background]} style={styles.emptyIconWrap}>
                   <Ionicons name="notifications-outline" size={40} color={colors.primary} />
                 </LinearGradient>
-                <Text style={styles.emptyTitle}>No notifications yet</Text>
-                <Text style={styles.emptySubtitle}>When someone likes, comments, or follows you — it'll show here</Text>
+                <Text style={styles.emptyTitle}>{t('notifications.emptyTitle')}</Text>
+                <Text style={styles.emptySubtitle}>{t('notifications.emptySub')}</Text>
               </View>
             }
             renderItem={({ item }) => {
@@ -297,8 +309,8 @@ export default function NotificationsScreen() {
 
                     <View style={styles.body}>
                       <Text style={styles.text} numberOfLines={2}>
-                        <Text style={styles.name}>{item.actor?.display_name ?? 'Someone'}</Text>
-                        {' '}{grouped ? groupedText(item.type, count) : notificationText(item.type)}
+                        <Text style={styles.name}>{item.actor?.display_name ?? t('notifications.someone')}</Text>
+                        {' '}{grouped ? groupedText(t, item.type, count) : notificationText(t, item.type)}
                       </Text>
                       <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
                     </View>

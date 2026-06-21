@@ -5,6 +5,7 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -32,6 +33,7 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const win = Math.min(windowSec, duration);
   const trackW = SCREEN_W - SPACING.md * 2;
   const winW = Math.max(40, (win / duration) * trackW);
@@ -94,7 +96,7 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
       </View>
 
       <Text style={styles.label}>{fmt(startSec)} – {fmt(startSec + win)} · {Math.round(win)}s</Text>
-      <Text style={styles.hint}>Drag to choose your {Math.round(windowSec)}s window</Text>
+      <Text style={styles.hint}>{t('videoTrimmer.dragHint', { sec: Math.round(windowSec) })}</Text>
     </View>
   );
 }

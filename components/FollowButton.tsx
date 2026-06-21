@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFollow } from '../contexts/FollowContext';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 // Small connection pill shown next to another user's username across the feeds.
 // Reflects both follow tiers:
@@ -14,6 +15,7 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 export default function FollowButton({ userId, style }: { userId?: string | null; style?: any }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const { currentUserId, following, followers, toggleFollow } = useFollow();
 
   if (!userId || !currentUserId || userId === currentUserId) return null;
@@ -23,7 +25,7 @@ export default function FollowButton({ userId, style }: { userId?: string | null
   const isFriend = isFollowing && followsMe;
 
   const filled = !isFollowing; // Follow / Follow back are the calls-to-action
-  const label = isFriend ? 'Friends' : isFollowing ? 'Following' : followsMe ? 'Follow back' : 'Follow';
+  const label = isFriend ? t('profile.friends') : isFollowing ? t('profile.followingBtn') : followsMe ? t('profile.followBack') : t('profile.follow');
 
   return (
     <TouchableOpacity

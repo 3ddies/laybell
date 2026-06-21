@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import SwipeBackPager from './SwipeBackPager';
 import { SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 // Shape of the legal documents in lib/legal/*.json. The renderer styles each
 // block purely by its `type`, so the source documents carry no markup.
@@ -31,6 +32,7 @@ export default function LegalScreen({ doc }: { doc: LegalDoc }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
+  const { t } = useTranslation();
 
   return (
     <SwipeBackPager>
@@ -45,7 +47,7 @@ export default function LegalScreen({ doc }: { doc: LegalDoc }) {
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {!!doc.effective && (
-            <Text style={styles.effective}>Last Updated: {doc.effective}</Text>
+            <Text style={styles.effective}>{t('legal.lastUpdated', { date: doc.effective })}</Text>
           )}
 
           {doc.sections.map((section, si) => (
@@ -72,7 +74,7 @@ export default function LegalScreen({ doc }: { doc: LegalDoc }) {
             </View>
           ))}
 
-          <Text style={styles.footer}>{'©'} 2026 Laybell LLC. All rights reserved.</Text>
+          <Text style={styles.footer}>{t('legal.copyright', { year: '2026' })}</Text>
         </ScrollView>
       </View>
     </SwipeBackPager>

@@ -18,13 +18,16 @@ import { captureAndSaveLocation, disableLocation } from '../lib/location';
 import { requestContactsPermission } from '../lib/contacts';
 import { COLORS, SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 const UNKNOWN: PermInfo = { granted: false, canAskAgain: true, status: 'undetermined' };
 
-function statusText(s: PermInfo): { label: string; color: string } {
-  if (s.granted) return { label: 'Allowed', color: COLORS.success };
-  if (s.status === 'undetermined') return { label: 'Tap to allow', color: COLORS.primary };
-  return { label: 'Denied', color: COLORS.error };
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+function statusText(s: PermInfo, t: Translate): { label: string; color: string } {
+  if (s.granted) return { label: t('permissions.statusAllowed'), color: COLORS.success };
+  if (s.status === 'undetermined') return { label: t('permissions.statusTapToAllow'), color: COLORS.primary };
+  return { label: t('permissions.statusDenied'), color: COLORS.error };
 }
 
 export default function PermissionsScreen() {
@@ -32,6 +35,7 @@ export default function PermissionsScreen() {
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { profile, update } = useProfile();
+  const { t } = useTranslation();
 
   const [s, setS] = useState<Record<string, PermInfo>>({
     camera: UNKNOWN, microphone: UNKNOWN, photos: UNKNOWN,
@@ -63,9 +67,9 @@ export default function PermissionsScreen() {
 
   function promptOpenSettings() {
     Alert.alert(
-      'Permission needed',
-      'Enable this in your device Settings for Laybell to use it.',
-      [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: openAppSettings }],
+      t('permissions.permNeededTitle'),
+      t('permissions.permNeededBody'),
+      [{ text: t('common.cancel'), style: 'cancel' }, { text: t('permissions.openSettings'), onPress: openAppSettings }],
     );
   }
 
@@ -110,10 +114,10 @@ export default function PermissionsScreen() {
   const contactsOn = !!profile?.contacts_enabled && s.contacts.granted;
 
   const deviceRows: { key: string; icon: any; label: string; sub: string; request: () => Promise<PermInfo> }[] = [
-    { key: 'camera', icon: 'camera-outline', label: 'Camera', sub: 'Capture stories and posts', request: requestCameraPermission },
-    { key: 'photos', icon: 'image-outline', label: 'Photos', sub: 'Choose photos and videos to post', request: requestPhotosPermission },
-    { key: 'microphone', icon: 'mic-outline', label: 'Microphone', sub: 'Record audio and video', request: requestMicrophonePermission },
-    { key: 'notifications', icon: 'notifications-outline', label: 'Notifications', sub: 'Likes, comments, follows & messages', request: requestNotificationsPermission },
+    { key: 'camera', icon: 'camera-outline', label: t('permissions.camera'), sub: t('permissions.cameraSub'), request: requestCameraPermission },
+    { key: 'photos', icon: 'image-outline', label: t('permissions.photos'), sub: t('permissions.photosSub'), request: requestPhotosPermission },
+    { key: 'microphone', icon: 'mic-outline', label: t('permissions.microphone'), sub: t('permissions.microphoneSub'), request: requestMicrophonePermission },
+    { key: 'notifications', icon: 'notifications-outline', label: t('permissions.notifications'), sub: t('permissions.notificationsSub'), request: requestNotificationsPermission },
   ];
 
   return (
@@ -125,25 +129,25 @@ export default function PermissionsScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Permissions</Text>
+        <Text style={styles.headerTitle}>{t('account.permissions')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <Text style={styles.intro}>
-              Control what Laybell can access. Location and contacts are only used to suggest people you may know — never shared on your profile.
+              {t('permissions.intro')}
             </Text>
 
             {/* Recommendation signals — real app-level toggles */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Recommendations</Text>
+              <Text style={styles.sectionTitle}>{t('permissions.recommendations')}</Text>
               <View style={styles.sectionCard}>
                 <View style={styles.row}>
                   <View style={styles.rowIcon}><Ionicons name="location-outline" size={18} color={colors.primary} /></View>
                   <View style={styles.rowContent}>
-                    <Text style={styles.rowLabel}>Location</Text>
+                    <Text style={styles.rowLabel}>{t('onboarding.location')}</Text>
                     <Text style={styles.rowSubtitle}>
-                      Suggest people in your area{profile?.city ? ` · ${profile.city}` : ''}
+                      {t('permissions.locationSub')}{profile?.city ? ` · ${profile.city}` : ''}
                     </Text>
                   </View>
                   <Switch
@@ -158,8 +162,8 @@ export default function PermissionsScreen() {
                 <View style={styles.row}>
                   <View style={styles.rowIcon}><Ionicons name="people-outline" size={18} color={colors.primary} /></View>
                   <View style={styles.rowContent}>
-                    <Text style={styles.rowLabel}>Contacts</Text>
-                    <Text style={styles.rowSubtitle}>Find contacts who are on Laybell</Text>
+                    <Text style={styles.rowLabel}>{t('onboarding.contacts')}</Text>
+                    <Text style={styles.rowSubtitle}>{t('permissions.contactsSub')}</Text>
                   </View>
                   <Switch
                     value={contactsOn}
@@ -174,10 +178,10 @@ export default function PermissionsScreen() {
 
             {/* Device access — status + deep-link to OS settings */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Device access</Text>
+              <Text style={styles.sectionTitle}>{t('permissions.deviceAccess')}</Text>
               <View style={styles.sectionCard}>
                 {deviceRows.map((r, i) => {
-                  const st = statusText(s[r.key]);
+                  const st = statusText(s[r.key], t);
                   return (
                     <View key={r.key}>
                       <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => handleOsRow(r.key, r.request)}>
@@ -194,7 +198,7 @@ export default function PermissionsScreen() {
                   );
                 })}
               </View>
-              <Text style={styles.hint}>Tap a row to allow it, or to open your device Settings if it was previously denied.</Text>
+              <Text style={styles.hint}>{t('permissions.deviceHint')}</Text>
             </View>
           </ScrollView>
     </View>

@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 // Subtle person-avatar button (bottom-left of a post's media) shown when the post
 // has people tagged. Tapping opens a menu listing the tagged accounts; each opens
@@ -16,6 +17,7 @@ type Person = { id: string; username: string; display_name: string; avatar_url: 
 export default function TaggedPeopleButton({ userIds, style }: { userIds?: string[] | null; style?: any }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [people, setPeople] = useState<Person[]>([]);
@@ -44,7 +46,7 @@ export default function TaggedPeopleButton({ userIds, style }: { userIds?: strin
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setOpen(false)}>
           <View style={styles.sheet}>
-            <Text style={styles.title}>Tagged in this post</Text>
+            <Text style={styles.title}>{t('taggedBtn.title')}</Text>
             {loading ? (
               <ActivityIndicator color={colors.primary} style={{ marginVertical: SPACING.lg }} />
             ) : (

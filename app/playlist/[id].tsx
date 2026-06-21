@@ -11,6 +11,7 @@ import { usePostOptions } from '../../contexts/PostOptionsContext';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import TrackRow from '../../components/TrackRow';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useTranslation } from '../../contexts/LanguageContext';
 import { formatCount } from '../../lib/format';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 
@@ -23,6 +24,7 @@ export default function PlaylistScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const { playQueue, expand, currentTrack, isPlaying } = useAudio();
   const { show: showOptions } = usePostOptions();
@@ -89,7 +91,7 @@ export default function PlaylistScreen() {
     <View style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
         <Ionicons name="chevron-back" size={22} color={colors.primaryLight} />
-        <Text style={styles.backText}>Back</Text>
+        <Text style={styles.backText}>{t('playlist.back')}</Text>
       </TouchableOpacity>
       <View style={styles.divider} />
 
@@ -98,7 +100,7 @@ export default function PlaylistScreen() {
       ) : !playlist ? (
         <View style={styles.center}>
           <Ionicons name="albums-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.unavailable}>This playlist isn't available</Text>
+          <Text style={styles.unavailable}>{t('playlist.unavailable')}</Text>
         </View>
       ) : (
         <>
@@ -115,14 +117,14 @@ export default function PlaylistScreen() {
               <Text style={styles.title} numberOfLines={2}>{playlist.name}</Text>
               {isOwn ? (
                 <Text style={styles.meta} numberOfLines={1}>
-                  {playlist.is_public ? 'Public' : 'Private'}
+                  {playlist.is_public ? t('post.public') : t('playlist.private')}
                   {` · ${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'}`}
                   {playlist.is_public ? ` · ${formatCount(playlist.play_count ?? 0)} ${playlist.play_count === 1 ? 'listen' : 'listens'}` : ''}
                 </Text>
               ) : (
                 <TouchableOpacity onPress={() => router.push(`/profile/${playlist.user_id}`)} hitSlop={6}>
                   <Text style={styles.meta} numberOfLines={1}>
-                    by <Text style={styles.metaAccent}>@{creator?.username ?? 'unknown'}</Text>
+                    {t('playlist.by')} <Text style={styles.metaAccent}>@{creator?.username ?? t('playlist.unknownCreator')}</Text>
                     {` · ${formatCount(playlist.play_count ?? 0)} ${playlist.play_count === 1 ? 'listen' : 'listens'}`}
                   </Text>
                 </TouchableOpacity>
@@ -137,7 +139,7 @@ export default function PlaylistScreen() {
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={
               <View style={styles.center}>
-                <Text style={styles.unavailable}>Nothing in here yet</Text>
+                <Text style={styles.unavailable}>{t('playlist.empty')}</Text>
               </View>
             }
             renderItem={({ item, index }: any) => (

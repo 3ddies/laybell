@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 
 type Post = { id: string; type: string; media_url: string; caption: string; thumbnail_url?: string | null };
 
@@ -16,6 +17,7 @@ export default function PrivatePostsScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
+  const { t } = useTranslation();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -41,7 +43,7 @@ export default function PrivatePostsScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Private Posts</Text>
+        <Text style={styles.headerTitle}>{t('account.privatePosts')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -50,8 +52,8 @@ export default function PrivatePostsScreen() {
       ) : posts.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="lock-closed-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyText}>No private posts</Text>
-          <Text style={styles.emptySubtext}>Posts set to "Friends only" show up here</Text>
+          <Text style={styles.emptyText}>{t('privatePosts.empty')}</Text>
+          <Text style={styles.emptySubtext}>{t('privatePosts.emptySub')}</Text>
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>

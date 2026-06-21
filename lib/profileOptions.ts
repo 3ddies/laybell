@@ -1,10 +1,28 @@
 // Shared profile option lists, used by onboarding and Edit Profile.
 // (The Page Layout / profile-template logic now lives in lib/pageLayout.ts —
 // see activeLayout / hasActiveLayout.)
+import { tg } from './i18n';
 
 // Gender presets. Collected (required) at onboarding and editable later from
-// Edit Profile. Stored privately on the profile — never shown publicly.
+// Edit Profile. Stored privately on the profile — never shown publicly. The
+// array values are the CANONICAL stored strings (English); UI renders them via
+// genderLabel() so the displayed text is localized while storage stays stable.
 export const GENDER_OPTIONS = ['Woman', 'Man', 'Non-binary', 'Other', 'Prefer not to say'];
+
+const GENDER_KEYS: Record<string, string> = {
+  'Woman': 'gender.woman',
+  'Man': 'gender.man',
+  'Non-binary': 'gender.nonBinary',
+  'Other': 'gender.other',
+  'Prefer not to say': 'gender.preferNot',
+};
+
+// Localized display label for a stored gender value (falls back to the raw value).
+export function genderLabel(value?: string | null): string {
+  if (!value) return '';
+  const key = GENDER_KEYS[value];
+  return key ? tg(key) : value;
+}
 
 // Minimum age to use the app (collected, required, at onboarding).
 export const MIN_AGE = 13;

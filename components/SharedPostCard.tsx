@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { isAudioPost } from '../lib/genres';
+import { useTranslation } from '../contexts/LanguageContext';
 import { bumpBadge } from '../lib/badges';
 import { createNotification } from '../lib/createNotification';
 import VideoThumb from './VideoThumb';
@@ -33,6 +34,7 @@ const cache = new Map<string, SharedPost | null>();
 export default function SharedPostCard({ postId }: { postId: string }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const router = useRouter();
   const [post, setPost] = useState<SharedPost | null | undefined>(
     cache.has(postId) ? cache.get(postId) : undefined,
@@ -98,7 +100,7 @@ export default function SharedPostCard({ postId }: { postId: string }) {
     return (
       <View style={[styles.card, styles.stateCard]}>
         <Ionicons name="alert-circle-outline" size={22} color={colors.textTertiary} />
-        <Text style={styles.unavailable}>Post unavailable</Text>
+        <Text style={styles.unavailable}>{t('sharedCard.unavailable')}</Text>
       </View>
     );
   }

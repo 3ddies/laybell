@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, FlatList, Image, ActivityIndicator,
-  Dimensions, TextInput, Keyboard,
+  Dimensions, TextInput, Keyboard, Modal, Pressable,
 } from 'react-native';
 import { useState, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,14 +10,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import { GENDER_OPTIONS, MIN_AGE, parseDob, ageFromDob, dobToISO } from '../lib/profileOptions';
+import { GENDER_OPTIONS, genderLabel, MIN_AGE, parseDob, ageFromDob, dobToISO } from '../lib/profileOptions';
 import { captureAndSaveLocation } from '../lib/location';
 import { requestContactsPermission, readContactHashes } from '../lib/contacts';
 import { saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
-import { fetchSuggestedAccounts, REASON_LABEL } from '../lib/suggestions';
+import { fetchSuggestedAccounts, reasonLabel } from '../lib/suggestions';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
-import { GENRES as APP_GENRES } from '../lib/genres';
+import { useTranslation } from '../contexts/LanguageContext';
+import { LANGUAGES } from '../lib/i18n';
+import { GENRES as APP_GENRES, genreLabel } from '../lib/genres';
 // The one-time welcome tour is the local flag the root layout watches for.
 import { WELCOME_TOUR_FLAG } from '../components/WelcomeTour';
 
@@ -44,10 +46,12 @@ const GENRES = APP_GENRES.map(g => ({
 
 export default function OnboardingScreen() {
   const { colors } = useTheme();
+  const { t, lang, setLang } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
+  const [langPickerOpen, setLangPickerOpen] = useState(false);
   const [gender, setGender] = useState<string | null>(null);
   // Parental consent for users aged 13–17 (captured in the About-you step).
   const [parentEmail, setParentEmail] = useState('');
@@ -261,18 +265,23 @@ export default function OnboardingScreen() {
           colors={['#1C0A04', colors.background, colors.background]}
           style={[styles.welcomeBg, { paddingTop: insets.top + SPACING.md, paddingBottom: insets.bottom + SPACING.lg }]}
         >
+          {/* Language picker — choose at account creation (defaults to English). */}
+          <TouchableOpacity style={styles.langBtn} onPress={() => setLangPickerOpen(true)} activeOpacity={0.7}>
+            <Ionicons name="language-outline" size={16} color={colors.text} />
+            <Text style={styles.langBtnText}>{LANGUAGES.find((l) => l.code === lang)?.native ?? 'English'}</Text>
+            <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+          </TouchableOpacity>
+
           <View style={styles.welcomeContent}>
             <Image source={require('../assets/icon.png')} style={styles.logoMark} resizeMode="cover" />
-            <Text style={styles.welcomeTitle}>Welcome to{'\n'}Laybell™</Text>
-            <Text style={styles.welcomeSub}>
-              The social platform built for artists, fans, and everyone in between.
-            </Text>
+            <Text style={styles.welcomeTitle}>{t('onboarding.welcomeTitle', { brand: 'Laybell™' })}</Text>
+            <Text style={styles.welcomeSub}>{t('onboarding.welcomeSub')}</Text>
 
             <View style={styles.featureList}>
               {[
-                { icon: 'musical-notes-outline', text: 'Share your music and videos' },
-                { icon: 'people-outline', text: 'Discover artists in your genre' },
-                { icon: 'heart-outline', text: 'Connect with fans worldwide' },
+                { icon: 'musical-notes-outline', text: t('onboarding.feat1') },
+                { icon: 'people-outline', text: t('onboarding.feat2') },
+                { icon: 'heart-outline', text: t('onboarding.feat3') },
               ].map((f, i) => (
                 <View key={i} style={styles.featureRow}>
                   <View style={styles.featureIcon}>
@@ -286,11 +295,38 @@ export default function OnboardingScreen() {
 
           <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep(1)}>
             <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
-              <Text style={styles.primaryBtnText}>Get Started</Text>
+              <Text style={styles.primaryBtnText}>{t('onboarding.getStarted')}</Text>
               <Ionicons name="arrow-forward" size={20} color={colors.text} />
             </LinearGradient>
           </TouchableOpacity>
         </LinearGradient>
+
+        {/* Language chooser sheet (shared styling with the rest of onboarding). */}
+        <Modal visible={langPickerOpen} transparent animationType="fade" onRequestClose={() => setLangPickerOpen(false)}>
+          <Pressable style={styles.langBackdrop} onPress={() => setLangPickerOpen(false)}>
+            <Pressable style={[styles.langSheet, { paddingBottom: insets.bottom + SPACING.md }]} onPress={() => {}}>
+              <Text style={styles.langSheetTitle}>{t('onboarding.langPickerTitle')}</Text>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {LANGUAGES.map((l) => (
+                  <TouchableOpacity
+                    key={l.code}
+                    style={styles.langRow}
+                    activeOpacity={0.7}
+                    onPress={() => { setLang(l.code); setLangPickerOpen(false); }}
+                  >
+                    <View style={styles.langRowInfo}>
+                      <Text style={styles.langRowNative}>{l.native}</Text>
+                      <Text style={styles.langRowLabel}>{l.label}</Text>
+                    </View>
+                    {lang === l.code
+                      ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                      : <View style={styles.langRadioOff} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </View>
     );
   }
@@ -311,12 +347,12 @@ export default function OnboardingScreen() {
               <View key={i} style={[styles.dot, i === 0 && styles.dotActive]} />
             ))}
           </View>
-          <Text style={styles.stepTitle}>A bit about you</Text>
-          <Text style={styles.stepSub}>This helps tailor Laybell. Your gender and age stay private.</Text>
+          <Text style={styles.stepTitle}>{t('onboarding.aboutTitle')}</Text>
+          <Text style={styles.stepSub}>{t('onboarding.aboutSub')}</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.aboutContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <Text style={styles.aboutLabel}>Gender</Text>
+          <Text style={styles.aboutLabel}>{t('onboarding.gender')}</Text>
           <View style={styles.genderGrid}>
             {GENDER_OPTIONS.map(opt => {
               const active = gender === opt;
@@ -326,13 +362,13 @@ export default function OnboardingScreen() {
                   style={[styles.genderChip, active && styles.genderChipActive]}
                   onPress={() => setGender(opt)}
                 >
-                  <Text style={[styles.genderText, active && styles.genderTextActive]}>{opt}</Text>
+                  <Text style={[styles.genderText, active && styles.genderTextActive]}>{genderLabel(opt)}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          <Text style={[styles.aboutLabel, { marginTop: SPACING.lg }]}>Date of birth</Text>
+          <Text style={[styles.aboutLabel, { marginTop: SPACING.lg }]}>{t('onboarding.dob')}</Text>
           <View style={styles.dobRow}>
             <TextInput
               style={[styles.dobInput, { flex: 1 }]}
@@ -364,22 +400,20 @@ export default function OnboardingScreen() {
               maxLength={4}
             />
           </View>
-          <Text style={styles.aboutHint}>You must be at least {MIN_AGE} to use Laybell.</Text>
+          <Text style={styles.aboutHint}>{t('onboarding.ageHint', { age: MIN_AGE })}</Text>
 
           {isMinor && (
             <View style={styles.minorBox}>
               <View style={styles.minorHeader}>
                 <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} />
-                <Text style={styles.minorTitle}>Parent or guardian consent</Text>
+                <Text style={styles.minorTitle}>{t('onboarding.minorTitle')}</Text>
               </View>
-              <Text style={styles.minorSub}>
-                Because you're under 18, a parent or guardian must agree to Laybell's terms for you. Enter their email and confirm below — we'll email them a link to verify.
-              </Text>
+              <Text style={styles.minorSub}>{t('onboarding.minorSub')}</Text>
               <TextInput
                 style={[styles.ageInput, { marginTop: SPACING.xs }]}
                 value={parentEmail}
                 onChangeText={setParentEmail}
-                placeholder="Parent or guardian email"
+                placeholder={t('onboarding.parentEmail')}
                 placeholderTextColor={colors.textTertiary}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -389,15 +423,14 @@ export default function OnboardingScreen() {
                 <View style={[styles.checkbox, minorConsent && styles.checkboxOn]}>
                   {minorConsent && <Ionicons name="checkmark" size={14} color={colors.text} />}
                 </View>
-                <Text style={styles.consentText}>
-                  My parent or guardian has reviewed and agrees to Laybell's terms on my behalf.
-                </Text>
+                <Text style={styles.consentText}>{t('onboarding.minorConsent')}</Text>
               </TouchableOpacity>
               <Text style={styles.minorLinks}>
-                Read the{' '}
-                <Text style={styles.consentLink} onPress={() => router.push('/terms-of-service')}>Terms of Service</Text>
-                {' '}and{' '}
-                <Text style={styles.consentLink} onPress={() => router.push('/privacy-policy')}>Privacy Policy</Text>.
+                {t('onboarding.minorLinks').split(/(\{terms\}|\{privacy\})/).map((part, i) => {
+                  if (part === '{terms}') return <Text key={i} style={styles.consentLink} onPress={() => router.push('/terms-of-service')}>{t('about.terms')}</Text>;
+                  if (part === '{privacy}') return <Text key={i} style={styles.consentLink} onPress={() => router.push('/privacy-policy')}>{t('about.privacyPolicy')}</Text>;
+                  return part;
+                })}
               </Text>
             </View>
           )}
@@ -414,7 +447,7 @@ export default function OnboardingScreen() {
                 <ActivityIndicator color={colors.text} />
               ) : (
                 <>
-                  <Text style={styles.primaryBtnText}>Continue</Text>
+                  <Text style={styles.primaryBtnText}>{t('onboarding.continue')}</Text>
                   <Ionicons name="arrow-forward" size={20} color={colors.text} />
                 </>
               )}
@@ -435,16 +468,16 @@ export default function OnboardingScreen() {
               <View key={i} style={[styles.dot, i === 1 && styles.dotActive]} />
             ))}
           </View>
-          <Text style={styles.stepTitle}>Find your people</Text>
-          <Text style={styles.stepSub}>Help Laybell suggest accounts you may know. Optional — change it anytime in Settings → Permissions.</Text>
+          <Text style={styles.stepTitle}>{t('onboarding.permTitle')}</Text>
+          <Text style={styles.stepSub}>{t('onboarding.permSub')}</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.aboutContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View style={styles.permCard}>
             <View style={styles.permIcon}><Ionicons name="location-outline" size={22} color={colors.primary} /></View>
             <View style={styles.permInfo}>
-              <Text style={styles.permTitle}>Location</Text>
-              <Text style={styles.permSub}>Suggest people in your area (approximate only)</Text>
+              <Text style={styles.permTitle}>{t('onboarding.location')}</Text>
+              <Text style={styles.permSub}>{t('onboarding.locationSub')}</Text>
             </View>
             <TouchableOpacity
               style={[styles.permBtn, locEnabled && styles.permBtnDone]}
@@ -453,15 +486,15 @@ export default function OnboardingScreen() {
             >
               {permBusy === 'location'
                 ? <ActivityIndicator color={colors.text} size="small" />
-                : <Text style={[styles.permBtnText, locEnabled && styles.permBtnTextDone]}>{locEnabled ? 'Enabled' : 'Enable'}</Text>}
+                : <Text style={[styles.permBtnText, locEnabled && styles.permBtnTextDone]}>{locEnabled ? t('onboarding.enabled') : t('onboarding.enable')}</Text>}
             </TouchableOpacity>
           </View>
 
           <View style={styles.permCard}>
             <View style={styles.permIcon}><Ionicons name="people-outline" size={22} color={colors.primary} /></View>
             <View style={styles.permInfo}>
-              <Text style={styles.permTitle}>Contacts</Text>
-              <Text style={styles.permSub}>Find contacts who are already on Laybell</Text>
+              <Text style={styles.permTitle}>{t('onboarding.contacts')}</Text>
+              <Text style={styles.permSub}>{t('onboarding.contactsSub')}</Text>
             </View>
             <TouchableOpacity
               style={[styles.permBtn, contactsEnabled && styles.permBtnDone]}
@@ -470,21 +503,21 @@ export default function OnboardingScreen() {
             >
               {permBusy === 'contacts'
                 ? <ActivityIndicator color={colors.text} size="small" />
-                : <Text style={[styles.permBtnText, contactsEnabled && styles.permBtnTextDone]}>{contactsEnabled ? 'Enabled' : 'Enable'}</Text>}
+                : <Text style={[styles.permBtnText, contactsEnabled && styles.permBtnTextDone]}>{contactsEnabled ? t('onboarding.enabled') : t('onboarding.enable')}</Text>}
             </TouchableOpacity>
           </View>
 
-          <Text style={[styles.aboutLabel, { marginTop: SPACING.lg }]}>Phone (optional)</Text>
+          <Text style={[styles.aboutLabel, { marginTop: SPACING.lg }]}>{t('onboarding.phoneOptional')}</Text>
           <TextInput
             style={styles.ageInput}
             value={obPhone}
             onChangeText={setObPhone}
-            placeholder="Your number"
+            placeholder={t('onboarding.phonePlaceholder')}
             placeholderTextColor={colors.textTertiary}
             keyboardType="phone-pad"
             autoCorrect={false}
           />
-          <Text style={styles.aboutHint}>Private — never shown publicly. Lets contacts who have your number find you.</Text>
+          <Text style={styles.aboutHint}>{t('onboarding.phoneHint')}</Text>
         </ScrollView>
 
         <View style={styles.bottomBar}>
@@ -495,7 +528,7 @@ export default function OnboardingScreen() {
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity onPress={handlePermissionsContinue}>
-            <Text style={styles.skipText}>Skip for now</Text>
+            <Text style={styles.skipText}>{t('onboarding.skip')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -512,8 +545,8 @@ export default function OnboardingScreen() {
               <View key={i} style={[styles.dot, i === 2 && styles.dotActive]} />
             ))}
           </View>
-          <Text style={styles.stepTitle}>What interests you?</Text>
-          <Text style={styles.stepSub}>Pick the genres you love. We'll find your people.</Text>
+          <Text style={styles.stepTitle}>{t('onboarding.genresTitle')}</Text>
+          <Text style={styles.stepSub}>{t('onboarding.genresSub')}</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.genreGrid} showsVerticalScrollIndicator={false}>
@@ -530,7 +563,7 @@ export default function OnboardingScreen() {
                 )}
                 <Text style={styles.genreEmoji}>{genre.icon}</Text>
                 <Text style={[styles.genreLabel, active && styles.genreLabelActive]}>
-                  {genre.label}
+                  {genreLabel(genre.id)}
                 </Text>
                 {active && (
                   <View style={styles.genreCheck}>
@@ -557,7 +590,7 @@ export default function OnboardingScreen() {
               ) : (
                 <>
                   <Text style={styles.primaryBtnText}>
-                    Continue {selectedGenres.size > 0 ? `(${selectedGenres.size})` : ''}
+                    {t('onboarding.continue')} {selectedGenres.size > 0 ? `(${selectedGenres.size})` : ''}
                   </Text>
                   <Ionicons name="arrow-forward" size={20} color={colors.text} />
                 </>
@@ -565,7 +598,7 @@ export default function OnboardingScreen() {
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleGenresContinue}>
-            <Text style={styles.skipText}>Skip for now</Text>
+            <Text style={styles.skipText}>{t('onboarding.skip')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -581,11 +614,11 @@ export default function OnboardingScreen() {
             <View key={i} style={[styles.dot, i === 3 && styles.dotActive]} />
           ))}
         </View>
-        <Text style={styles.stepTitle}>Follow some artists</Text>
+        <Text style={styles.stepTitle}>{t('onboarding.followTitle')}</Text>
         <Text style={styles.stepSub}>
           {suggestions.length > 0
-            ? 'Based on your taste — follow anyone that catches your eye.'
-            : 'Some artists to get you started.'}
+            ? t('onboarding.followSubTaste')
+            : t('onboarding.followSubGeneric')}
         </Text>
       </View>
 
@@ -596,7 +629,7 @@ export default function OnboardingScreen() {
         ListEmptyComponent={
           <View style={styles.emptySuggestions}>
             <Ionicons name="people-outline" size={40} color={colors.textTertiary} />
-            <Text style={styles.emptySuggestionsText}>No suggestions yet — you'll discover people in the feed!</Text>
+            <Text style={styles.emptySuggestionsText}>{t('onboarding.noSuggestions')}</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -615,14 +648,14 @@ export default function OnboardingScreen() {
               <View style={styles.suggestionInfo}>
                 <Text style={styles.suggestionName}>{item.display_name}</Text>
                 <Text style={styles.suggestionUsername}>@{item.username}</Text>
-                {item.reason ? <Text style={styles.suggestionReason}>{REASON_LABEL[item.reason as keyof typeof REASON_LABEL]}</Text> : null}
+                {item.reason ? <Text style={styles.suggestionReason}>{reasonLabel(item.reason as any)}</Text> : null}
               </View>
               <TouchableOpacity
                 style={[styles.followBtn, isFollowed && styles.followBtnActive]}
                 onPress={() => handleFollow(item.id)}
               >
                 <Text style={[styles.followBtnText, isFollowed && styles.followBtnTextActive]}>
-                  {isFollowed ? 'Following' : 'Follow'}
+                  {isFollowed ? t('onboarding.following') : t('onboarding.follow')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -637,7 +670,7 @@ export default function OnboardingScreen() {
               <ActivityIndicator color={colors.text} />
             ) : (
               <>
-                <Text style={styles.primaryBtnText}>Take me to Laybell</Text>
+                <Text style={styles.primaryBtnText}>{t('onboarding.takeMeIn')}</Text>
                 <Ionicons name="musical-notes" size={20} color={colors.text} />
               </>
             )}
@@ -674,6 +707,31 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   featureText: { color: colors.textSecondary, fontSize: 15, flex: 1 },
+
+  // Language picker (welcome screen)
+  langBtn: {
+    position: 'absolute', top: SPACING.xxl, right: SPACING.lg, zIndex: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.sm + 2,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceLight,
+  },
+  langBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  langBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  langSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.lg, maxHeight: '70%',
+  },
+  langSheetTitle: { color: colors.text, fontSize: 18, fontWeight: '800', marginBottom: SPACING.sm, paddingHorizontal: SPACING.xs },
+  langRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: SPACING.sm + 4, paddingHorizontal: SPACING.xs,
+  },
+  langRowInfo: { flex: 1 },
+  langRowNative: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  langRowLabel: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  langRadioOff: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: colors.border },
 
   // Steps
   stepHeader: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.xxl + SPACING.md, paddingBottom: SPACING.md, gap: SPACING.sm },

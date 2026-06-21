@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
 import { recordAdClick, AD_SKIP_MS } from '../lib/ads';
 import { useListenMode } from '../contexts/ListenModeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +26,7 @@ type PlayerVariant = 'bar' | 'compact' | 'side';
 export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { variant?: PlayerVariant; bottomDock?: boolean }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   const { currentTrack, isPlaying, isBuffering, pause, resume, stop, seekTo, expanded, expand, adState, skipAudioAd } = useAudio();
   const { positionMs, durationMs } = useAudioPosition(); // tick subscription (4×/sec) — small tree, cheap
   const insets = useSafeAreaInsets();
@@ -129,8 +131,8 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
             <Ionicons name="megaphone" size={16} color={colors.primary} />
           </View>
           <View style={styles.body}>
-            <Text style={styles.adSponsored} numberOfLines={1}>Sponsored · {adState.advertiserName}</Text>
-            <Text style={styles.caption} numberOfLines={1}>{adState.headline || 'Advertisement'}</Text>
+            <Text style={styles.adSponsored} numberOfLines={1}>{t('player.sponsoredWith', { name: adState.advertiserName })}</Text>
+            <Text style={styles.caption} numberOfLines={1}>{adState.headline || t('player.advertisement')}</Text>
           </View>
           {!!adState.ctaUrl && (
             <TouchableOpacity
@@ -141,7 +143,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.adSkip} disabled={!adState.canSkip} onPress={skipAudioAd} hitSlop={8}>
-            <Text style={styles.adSkipText}>{adState.canSkip ? 'Skip' : secsLeft}</Text>
+            <Text style={styles.adSkipText}>{adState.canSkip ? t('player.skip') : secsLeft}</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -205,7 +207,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           )}
         </TouchableOpacity>
         <TouchableOpacity style={styles.compactBody} activeOpacity={0.7} onPress={() => expand()}>
-          <Text style={styles.compactTitle} numberOfLines={1}>{track.caption || 'Audio Track'}</Text>
+          <Text style={styles.compactTitle} numberOfLines={1}>{track.caption || t('player.audioTrack')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.compactBtn} onPress={() => (isPlaying ? pause() : resume())} hitSlop={6}>
           <Ionicons
@@ -260,7 +262,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
         {/* Tapping the bar (except the controls) expands the now-playing screen */}
         <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => expand()}>
           <View style={styles.trackInfo}>
-            <Text style={styles.caption} numberOfLines={1}>{track.caption || 'Audio Track'}</Text>
+            <Text style={styles.caption} numberOfLines={1}>{track.caption || t('player.audioTrack')}</Text>
             <Text style={styles.artist} numberOfLines={1}>{track.artist}</Text>
           </View>
           <Text style={styles.timeText}>
