@@ -22,7 +22,7 @@ import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
-import { formatCount } from '../../lib/format';
+import { countLabel } from '../../lib/i18n';
 import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
 import { activeLayout, usedPostIds } from '../../lib/pageLayout';
 import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
@@ -294,7 +294,7 @@ export default function PublicProfileScreen() {
             <Text style={styles.plName} numberOfLines={1}>{pl.name}</Text>
             <View style={styles.plMetaRow}>
               <Ionicons name="headset" size={11} color={colors.textTertiary} />
-              <Text style={styles.plMeta}>{formatCount(pl.play_count ?? 0)} {pl.play_count === 1 ? 'listen' : 'listens'}</Text>
+              <Text style={styles.plMeta}>{countLabel('listen', pl.play_count ?? 0)}</Text>
             </View>
           </TouchableOpacity>
         ))}

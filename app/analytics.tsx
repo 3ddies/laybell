@@ -14,6 +14,7 @@ import {
 } from '../lib/analytics';
 import { BarChart, HBars } from '../components/AnalyticsCharts';
 import { formatCount } from '../lib/format';
+import { countLabel } from '../lib/i18n';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -174,8 +175,8 @@ function Analytics({
           <Text style={styles.rateLabel}>{t('analytics.avgEngagementPerPost')}</Text>
         </View>
         <View style={styles.rateRight}>
-          <Text style={styles.rateSmall}>{formatCount(totals.shares)} shares</Text>
-          <Text style={styles.rateSmall}>{formatCount(totals.following)} following</Text>
+          <Text style={styles.rateSmall}>{countLabel('share', totals.shares)}</Text>
+          <Text style={styles.rateSmall}>{countLabel('following', totals.following)}</Text>
         </View>
       </LinearGradient>
 

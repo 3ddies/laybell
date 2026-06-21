@@ -12,7 +12,7 @@ import SwipeBackPager from '../../components/SwipeBackPager';
 import TrackRow from '../../components/TrackRow';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
-import { formatCount } from '../../lib/format';
+import { countLabel } from '../../lib/i18n';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 
 // Universal playlist viewer — opened from any square playlist cover (profile
@@ -118,14 +118,14 @@ export default function PlaylistScreen() {
               {isOwn ? (
                 <Text style={styles.meta} numberOfLines={1}>
                   {playlist.is_public ? t('post.public') : t('playlist.private')}
-                  {` · ${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'}`}
-                  {playlist.is_public ? ` · ${formatCount(playlist.play_count ?? 0)} ${playlist.play_count === 1 ? 'listen' : 'listens'}` : ''}
+                  {` · ${countLabel('track', tracks.length)}`}
+                  {playlist.is_public ? ` · ${countLabel('listen', playlist.play_count ?? 0)}` : ''}
                 </Text>
               ) : (
                 <TouchableOpacity onPress={() => router.push(`/profile/${playlist.user_id}`)} hitSlop={6}>
                   <Text style={styles.meta} numberOfLines={1}>
                     {t('playlist.by')} <Text style={styles.metaAccent}>@{creator?.username ?? t('playlist.unknownCreator')}</Text>
-                    {` · ${formatCount(playlist.play_count ?? 0)} ${playlist.play_count === 1 ? 'listen' : 'listens'}`}
+                    {` · ${countLabel('listen', playlist.play_count ?? 0)}`}
                   </Text>
                 </TouchableOpacity>
               )}

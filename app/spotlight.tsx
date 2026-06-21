@@ -19,6 +19,7 @@ import SwipeBackPager from '../components/SwipeBackPager';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { countLabel } from '../lib/i18n';
 
 // Spotlight manager (reached from the profile's Spotlight button and Settings).
 // Pay (simulated) → the campaign is born `pending` → attach a post (an
@@ -298,15 +299,15 @@ export default function SpotlightScreen() {
           <View style={styles.statsRow}>
             <View style={styles.stat}>
               <Ionicons name="eye-outline" size={15} color={colors.textSecondary} />
-              <Text style={styles.statText}>{c.impression_count} views</Text>
+              <Text style={styles.statText}>{countLabel('view', c.impression_count)}</Text>
             </View>
             <View style={styles.stat}>
               <Ionicons name="hand-left-outline" size={15} color={colors.textSecondary} />
-              <Text style={styles.statText}>{c.tap_count} taps</Text>
+              <Text style={styles.statText}>{countLabel('tap', c.tap_count)}</Text>
             </View>
             <View style={styles.stat}>
               <Ionicons name="heart-outline" size={15} color={colors.textSecondary} />
-              <Text style={styles.statText}>{likeCount} likes</Text>
+              <Text style={styles.statText}>{countLabel('like', likeCount)}</Text>
             </View>
           </View>
         )}

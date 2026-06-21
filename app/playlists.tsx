@@ -13,7 +13,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { rawTier, publicPlaylistLimit, tierLabel } from '../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../lib/playlists';
-import { formatCount } from '../lib/format';
+import { countLabel } from '../lib/i18n';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 
 type Pl = {
@@ -110,7 +110,7 @@ export default function PlaylistsScreen() {
           <Text style={styles.rowMeta} numberOfLines={1}>
             {state === 'private'
               ? t('playlists.privateMeta')
-              : `${formatCount(pl.play_count ?? 0)} ${pl.play_count === 1 ? 'listen' : 'listens'}${state === 'locked' ? t('playlists.hiddenSuffix') : ''}`}
+              : `${countLabel('listen', pl.play_count ?? 0)}${state === 'locked' ? t('playlists.hiddenSuffix') : ''}`}
           </Text>
         </View>
         <TouchableOpacity

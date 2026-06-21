@@ -22,7 +22,7 @@ import { useTabSwipeControl } from '../../contexts/PagerContext';
 import { useListenMode } from '../../contexts/ListenModeContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchBlockedIds } from '../../lib/blocks';
-import { formatCount } from '../../lib/format';
+import { countLabel } from '../../lib/i18n';
 import { rawTier, publicPlaylistLimit, tierLabel, tierRank } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -952,7 +952,7 @@ export default function MusicScreen() {
       </View>
       <Text style={styles.pubName} numberOfLines={1}>{p.name}</Text>
       <Text style={styles.pubMeta} numberOfLines={1}>
-        @{p.creator?.username ?? t('music.unknownUser')} · {formatCount(p.play_count ?? 0)} {p.play_count === 1 ? 'listen' : 'listens'}
+        @{p.creator?.username ?? t('music.unknownUser')} · {countLabel('listen', p.play_count ?? 0)}
       </Text>
     </TouchableOpacity>
   );
@@ -1489,7 +1489,7 @@ export default function MusicScreen() {
                         )}
                         <Text style={[styles.pubName, locked && styles.pubNameLocked]} numberOfLines={1}>{p.name}</Text>
                         <Text style={styles.pubMeta} numberOfLines={1}>
-                          {locked ? t('music.lockedBadgeSlot') : `${formatCount(p.play_count ?? 0)} ${p.play_count === 1 ? 'listen' : 'listens'}`}
+                          {locked ? t('music.lockedBadgeSlot') : countLabel('listen', p.play_count ?? 0)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1562,8 +1562,8 @@ export default function MusicScreen() {
               <Text style={styles.playlistTitle} numberOfLines={2}>{selectedPlaylist.name}</Text>
               <Text style={styles.detailMeta} numberOfLines={1}>
                 {selectedPlaylist.is_public ? t('post.public') : t('music.private')}
-                {` · ${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'}`}
-                {selectedPlaylist.is_public ? ` · ${formatCount(selectedPlaylist.play_count ?? 0)} ${selectedPlaylist.play_count === 1 ? 'listen' : 'listens'}` : ''}
+                {` · ${countLabel('track', tracks.length)}`}
+                {selectedPlaylist.is_public ? ` · ${countLabel('listen', selectedPlaylist.play_count ?? 0)}` : ''}
               </Text>
             </View>
           </View>
@@ -1758,7 +1758,7 @@ export default function MusicScreen() {
               <TouchableOpacity onPress={() => router.push(`/profile/${selectedCommunity.user_id}`)} hitSlop={6}>
                 <Text style={styles.detailMeta} numberOfLines={1}>
                   {t('music.byPrefix')} <Text style={styles.detailMetaAccent}>@{selectedCommunity.creator?.username ?? t('music.unknownUser')}</Text>
-                  {` · ${formatCount(selectedCommunity.play_count ?? 0)} ${selectedCommunity.play_count === 1 ? 'listen' : 'listens'}`}
+                  {` · ${countLabel('listen', selectedCommunity.play_count ?? 0)}`}
                 </Text>
               </TouchableOpacity>
             </View>

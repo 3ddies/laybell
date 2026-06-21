@@ -1205,6 +1205,23 @@ const en: Record<string, string> = {
   'post.errStorage': 'Upload storage is unavailable right now. Try again in a moment.',
   'post.errMissingFile': "The photo, video, or audio for this post is no longer on your device, so it can't be posted. If this is a draft, open Drafts and delete it.",
   'post.errGeneric': 'Something went wrong. Please try again.',
+  // Count units (one/other plural; {n} = abbreviated count)
+  'count.listen.one': '{n} listen',
+  'count.listen.other': '{n} listens',
+  'count.track.one': '{n} track',
+  'count.track.other': '{n} tracks',
+  'count.play.one': '{n} play',
+  'count.play.other': '{n} plays',
+  'count.view.one': '{n} view',
+  'count.view.other': '{n} views',
+  'count.tap.one': '{n} tap',
+  'count.tap.other': '{n} taps',
+  'count.share.one': '{n} share',
+  'count.share.other': '{n} shares',
+  'count.like.one': '{n} like',
+  'count.like.other': '{n} likes',
+  'count.following.one': '{n} following',
+  'count.following.other': '{n} following',
 };
 
 const es: Record<string, string> = {
@@ -2353,6 +2370,23 @@ const es: Record<string, string> = {
   'post.errStorage': 'El almacenamiento de subida no está disponible ahora. Inténtalo de nuevo en un momento.',
   'post.errMissingFile': 'La foto, el video o el audio de esta publicación ya no está en tu dispositivo, así que no se puede publicar. Si es un borrador, abre Borradores y elimínalo.',
   'post.errGeneric': 'Algo salió mal. Inténtalo de nuevo.',
+  // Count units
+  'count.listen.one': '{n} reproducción',
+  'count.listen.other': '{n} reproducciones',
+  'count.track.one': '{n} pista',
+  'count.track.other': '{n} pistas',
+  'count.play.one': '{n} reproducción',
+  'count.play.other': '{n} reproducciones',
+  'count.view.one': '{n} vista',
+  'count.view.other': '{n} vistas',
+  'count.tap.one': '{n} toque',
+  'count.tap.other': '{n} toques',
+  'count.share.one': '{n} compartido',
+  'count.share.other': '{n} compartidos',
+  'count.like.one': '{n} me gusta',
+  'count.like.other': '{n} me gusta',
+  'count.following.one': '{n} siguiendo',
+  'count.following.other': '{n} siguiendo',
 };
 
 const fr: Record<string, string> = {
@@ -3501,6 +3535,23 @@ const fr: Record<string, string> = {
   'post.errStorage': 'Le stockage d’envoi est indisponible pour le moment. Réessayez dans un instant.',
   'post.errMissingFile': 'La photo, la vidéo ou l’audio de cette publication n’est plus sur votre appareil, elle ne peut donc pas être publiée. S’il s’agit d’un brouillon, ouvrez Brouillons et supprimez-le.',
   'post.errGeneric': 'Une erreur est survenue. Veuillez réessayer.',
+  // Count units
+  'count.listen.one': '{n} écoute',
+  'count.listen.other': '{n} écoutes',
+  'count.track.one': '{n} titre',
+  'count.track.other': '{n} titres',
+  'count.play.one': '{n} lecture',
+  'count.play.other': '{n} lectures',
+  'count.view.one': '{n} vue',
+  'count.view.other': '{n} vues',
+  'count.tap.one': '{n} appui',
+  'count.tap.other': '{n} appuis',
+  'count.share.one': '{n} partage',
+  'count.share.other': '{n} partages',
+  'count.like.one': "{n} j'aime",
+  'count.like.other': "{n} j'aime",
+  'count.following.one': '{n} abonnement',
+  'count.following.other': '{n} abonnements',
 };
 
 const de: Record<string, string> = {
@@ -4649,6 +4700,23 @@ const de: Record<string, string> = {
   'post.errStorage': 'Der Upload-Speicher ist gerade nicht verfügbar. Versuche es gleich noch einmal.',
   'post.errMissingFile': 'Das Foto, Video oder Audio für diesen Beitrag ist nicht mehr auf deinem Gerät, daher kann es nicht gepostet werden. Wenn es ein Entwurf ist, öffne Entwürfe und lösche ihn.',
   'post.errGeneric': 'Etwas ist schiefgelaufen. Bitte versuche es erneut.',
+  // Count units
+  'count.listen.one': '{n} Wiedergabe',
+  'count.listen.other': '{n} Wiedergaben',
+  'count.track.one': '{n} Titel',
+  'count.track.other': '{n} Titel',
+  'count.play.one': '{n} Wiedergabe',
+  'count.play.other': '{n} Wiedergaben',
+  'count.view.one': '{n} Aufruf',
+  'count.view.other': '{n} Aufrufe',
+  'count.tap.one': '{n} Tap',
+  'count.tap.other': '{n} Taps',
+  'count.share.one': '{n} Share',
+  'count.share.other': '{n} Shares',
+  'count.like.one': '{n} Like',
+  'count.like.other': '{n} Likes',
+  'count.following.one': '{n} gefolgt',
+  'count.following.other': '{n} gefolgt',
 };
 
 const pt: Record<string, string> = {
@@ -5797,6 +5865,23 @@ const pt: Record<string, string> = {
   'post.errStorage': 'O armazenamento de envio está indisponível agora. Tente novamente em instantes.',
   'post.errMissingFile': 'A foto, o vídeo ou o áudio desta publicação não está mais no seu dispositivo, então não pode ser publicado. Se for um rascunho, abra Rascunhos e exclua-o.',
   'post.errGeneric': 'Algo deu errado. Tente novamente.',
+  // Count units
+  'count.listen.one': '{n} reprodução',
+  'count.listen.other': '{n} reproduções',
+  'count.track.one': '{n} faixa',
+  'count.track.other': '{n} faixas',
+  'count.play.one': '{n} reprodução',
+  'count.play.other': '{n} reproduções',
+  'count.view.one': '{n} visualização',
+  'count.view.other': '{n} visualizações',
+  'count.tap.one': '{n} toque',
+  'count.tap.other': '{n} toques',
+  'count.share.one': '{n} compartilhamento',
+  'count.share.other': '{n} compartilhamentos',
+  'count.like.one': '{n} curtida',
+  'count.like.other': '{n} curtidas',
+  'count.following.one': '{n} seguindo',
+  'count.following.other': '{n} seguindo',
 };
 
 const it: Record<string, string> = {
@@ -6945,6 +7030,23 @@ const it: Record<string, string> = {
   'post.errStorage': 'Lo spazio di caricamento non è disponibile al momento. Riprova tra poco.',
   'post.errMissingFile': 'La foto, il video o l’audio di questo post non è più sul tuo dispositivo, quindi non può essere pubblicato. Se è una bozza, apri Bozze ed eliminala.',
   'post.errGeneric': 'Qualcosa è andato storto. Riprova.',
+  // Count units
+  'count.listen.one': '{n} ascolto',
+  'count.listen.other': '{n} ascolti',
+  'count.track.one': '{n} brano',
+  'count.track.other': '{n} brani',
+  'count.play.one': '{n} riproduzione',
+  'count.play.other': '{n} riproduzioni',
+  'count.view.one': '{n} visualizzazione',
+  'count.view.other': '{n} visualizzazioni',
+  'count.tap.one': '{n} tocco',
+  'count.tap.other': '{n} tocchi',
+  'count.share.one': '{n} condivisione',
+  'count.share.other': '{n} condivisioni',
+  'count.like.one': '{n} mi piace',
+  'count.like.other': '{n} mi piace',
+  'count.following.one': '{n} seguito',
+  'count.following.other': '{n} seguiti',
 };
 
 const ru: Record<string, string> = {
@@ -8093,6 +8195,23 @@ const ru: Record<string, string> = {
   'post.errStorage': 'Хранилище загрузки сейчас недоступно. Попробуйте через мгновение.',
   'post.errMissingFile': 'Фото, видео или аудио для этой публикации больше нет на вашем устройстве, поэтому её нельзя опубликовать. Если это черновик, откройте «Черновики» и удалите его.',
   'post.errGeneric': 'Что-то пошло не так. Пожалуйста, попробуйте снова.',
+  // Count units (one / genitive-plural other)
+  'count.listen.one': '{n} прослушивание',
+  'count.listen.other': '{n} прослушиваний',
+  'count.track.one': '{n} трек',
+  'count.track.other': '{n} треков',
+  'count.play.one': '{n} прослушивание',
+  'count.play.other': '{n} прослушиваний',
+  'count.view.one': '{n} просмотр',
+  'count.view.other': '{n} просмотров',
+  'count.tap.one': '{n} нажатие',
+  'count.tap.other': '{n} нажатий',
+  'count.share.one': '{n} репост',
+  'count.share.other': '{n} репостов',
+  'count.like.one': '{n} лайк',
+  'count.like.other': '{n} лайков',
+  'count.following.one': '{n} подписка',
+  'count.following.other': '{n} подписок',
 };
 
 const zh: Record<string, string> = {
@@ -9241,6 +9360,23 @@ const zh: Record<string, string> = {
   'post.errStorage': '上传存储暂时不可用。请稍后重试。',
   'post.errMissingFile': '这条帖子的照片、视频或音频已不在你的设备上，因此无法发布。如果这是草稿，请打开草稿并删除它。',
   'post.errGeneric': '出了点问题。请重试。',
+  // Count units
+  'count.listen.one': '{n} 次收听',
+  'count.listen.other': '{n} 次收听',
+  'count.track.one': '{n} 首',
+  'count.track.other': '{n} 首',
+  'count.play.one': '{n} 次播放',
+  'count.play.other': '{n} 次播放',
+  'count.view.one': '{n} 次浏览',
+  'count.view.other': '{n} 次浏览',
+  'count.tap.one': '{n} 次点按',
+  'count.tap.other': '{n} 次点按',
+  'count.share.one': '{n} 次分享',
+  'count.share.other': '{n} 次分享',
+  'count.like.one': '{n} 个赞',
+  'count.like.other': '{n} 个赞',
+  'count.following.one': '{n} 关注',
+  'count.following.other': '{n} 关注',
 };
 
 const ja: Record<string, string> = {
@@ -10389,6 +10525,23 @@ const ja: Record<string, string> = {
   'post.errStorage': 'アップロード用ストレージが現在利用できません。少し待ってから再試行してください。',
   'post.errMissingFile': 'この投稿の写真・動画・音声が端末に見つからないため、投稿できません。下書きの場合は、下書きを開いて削除してください。',
   'post.errGeneric': '問題が発生しました。もう一度お試しください。',
+  // Count units
+  'count.listen.one': '{n} 回再生',
+  'count.listen.other': '{n} 回再生',
+  'count.track.one': '{n} 曲',
+  'count.track.other': '{n} 曲',
+  'count.play.one': '{n} 回再生',
+  'count.play.other': '{n} 回再生',
+  'count.view.one': '{n} 回表示',
+  'count.view.other': '{n} 回表示',
+  'count.tap.one': '{n} 回タップ',
+  'count.tap.other': '{n} 回タップ',
+  'count.share.one': '{n} 回シェア',
+  'count.share.other': '{n} 回シェア',
+  'count.like.one': '{n} いいね',
+  'count.like.other': '{n} いいね',
+  'count.following.one': '{n} フォロー中',
+  'count.following.other': '{n} フォロー中',
 };
 
 const hi: Record<string, string> = {
@@ -11537,6 +11690,23 @@ const hi: Record<string, string> = {
   'post.errStorage': 'अपलोड स्टोरेज अभी उपलब्ध नहीं है। थोड़ी देर में फिर से प्रयास करें।',
   'post.errMissingFile': 'इस पोस्ट की फ़ोटो, वीडियो या ऑडियो अब आपके डिवाइस पर नहीं है, इसलिए इसे पोस्ट नहीं किया जा सकता। अगर यह ड्राफ़्ट है, तो ड्राफ़्ट खोलें और इसे हटाएं।',
   'post.errGeneric': 'कुछ गलत हो गया। कृपया फिर से प्रयास करें।',
+  // Count units
+  'count.listen.one': '{n} प्ले',
+  'count.listen.other': '{n} प्ले',
+  'count.track.one': '{n} ट्रैक',
+  'count.track.other': '{n} ट्रैक',
+  'count.play.one': '{n} प्ले',
+  'count.play.other': '{n} प्ले',
+  'count.view.one': '{n} व्यू',
+  'count.view.other': '{n} व्यू',
+  'count.tap.one': '{n} टैप',
+  'count.tap.other': '{n} टैप',
+  'count.share.one': '{n} शेयर',
+  'count.share.other': '{n} शेयर',
+  'count.like.one': '{n} लाइक',
+  'count.like.other': '{n} लाइक',
+  'count.following.one': '{n} फ़ॉलोइंग',
+  'count.following.other': '{n} फ़ॉलोइंग',
 };
 
 const DICTS: Record<Lang, Record<string, string>> = { en, es, fr, de, pt, it, ru, zh, ja, hi };

@@ -39,6 +39,7 @@ import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { processMentions } from '../../lib/mentions';
 import { isPostSpotlighted } from '../../lib/spotlight';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { countLabel } from '../../lib/i18n';
 
 type Post = {
   id: string; type: string; media_url: string; caption: string;
@@ -385,7 +386,7 @@ export default function PostDetailScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.audioTitle} numberOfLines={1}>{post.caption || t('postView.audioTrack')}</Text>
                     <Text style={styles.audioArtist}>
-                      @{post.profiles?.username} · {(post.stream_count || 0).toLocaleString()} {(post.stream_count === 1) ? 'play' : 'plays'}
+                      @{post.profiles?.username} · {countLabel('play', post.stream_count || 0)}
                     </Text>
                   </View>
                   <Ionicons name="musical-notes" size={28} color={colors.primary + '44'} />
