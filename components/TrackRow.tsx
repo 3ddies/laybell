@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { formatCount } from '../lib/format';
 import { guardPress } from '../contexts/PagerContext';
 import HighlightText from './HighlightText';
@@ -37,6 +38,7 @@ export default function TrackRow({
   highlightQuery?: string;
 }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const durationLabel = formatDuration(duration);
   // Swipe-tap guard: a tab swipe gliding over the row must not start playback
@@ -77,7 +79,7 @@ export default function TrackRow({
 
       {/* Track outline — tap to play/pause, long-press for options (own tracks) */}
       <TouchableOpacity style={styles.info} activeOpacity={0.7} onPress={safePlay} onLongPress={onOptions}>
-        <HighlightText text={caption || 'Audio Track'} query={highlightQuery} style={styles.caption} highlightStyle={styles.hl} numberOfLines={1} />
+        <HighlightText text={caption || t('postView.audioTrack')} query={highlightQuery} style={styles.caption} highlightStyle={styles.hl} numberOfLines={1} />
         <View style={styles.meta}>
           <HighlightText text={`@${username}`} query={highlightQuery} style={styles.artist} highlightStyle={styles.hl} numberOfLines={1} />
           <BadgeEmblem profile={badgeProfile} ownerId={badgeOwnerId} size={11} />

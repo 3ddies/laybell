@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Video, ResizeMode } from 'expo-av';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { slideshowThumb, parseSlides, slideCover } from '../lib/slideshow';
 import VideoThumb from './VideoThumb';
 import ThumbStat from './ThumbStat';
@@ -98,6 +99,7 @@ export default function ProfileLayoutGrid({
   onToggleLoop?: (blockIndex: number) => void;
 }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const byId = new Map(posts.map(p => [p.id, p]));
   const nodes = useRef<Record<string, any>>({});
@@ -163,10 +165,10 @@ export default function ProfileLayoutGrid({
           </LinearGradient>
         )}
         {loop && post.type === 'video' && (
-          <View style={styles.liveTag}><Ionicons name="ellipse" size={7} color="#fff" /><Text style={styles.liveText}>LIVE</Text></View>
+          <View style={styles.liveTag}><Ionicons name="ellipse" size={7} color="#fff" /><Text style={styles.liveText}>{t('profileGrid.live')}</Text></View>
         )}
         {loop && post.type === 'slideshow' && (
-          <View style={styles.liveTag}><Ionicons name="albums" size={9} color="#fff" /><Text style={styles.liveText}>AUTO</Text></View>
+          <View style={styles.liveTag}><Ionicons name="albums" size={9} color="#fff" /><Text style={styles.liveText}>{t('profileGrid.auto')}</Text></View>
         )}
         {spotlightIds?.has(post.id) && <SpotlightThumbBadge />}
         {!editable && <ThumbStat type={post.type} viewCount={post.view_count} streamCount={post.stream_count} />}
@@ -190,7 +192,7 @@ export default function ProfileLayoutGrid({
   // A compact, playable song row (Media Star right column).
   function SongRow({ post, slotStyle, onPress }: { post: any | null; slotStyle: any; onPress?: () => void }) {
     if (!post) {
-      return <EmptySlot style={slotStyle} icon="musical-notes-outline" label="Song" onPress={onPress} />;
+      return <EmptySlot style={slotStyle} icon="musical-notes-outline" label={t('profileGrid.song')} onPress={onPress} />;
     }
     const playing = playingId === post.id;
     return (
@@ -207,7 +209,7 @@ export default function ProfileLayoutGrid({
           </LinearGradient>
         )}
         <View style={styles.songInfo}>
-          <Text style={styles.songTitle} numberOfLines={1}>{post.caption || 'Audio Track'}</Text>
+          <Text style={styles.songTitle} numberOfLines={1}>{post.caption || t('postView.audioTrack')}</Text>
           <View style={styles.songMeta}>
             <Ionicons name="play" size={9} color={colors.textTertiary} />
             <Text style={styles.songStreams} numberOfLines={1}>{post.stream_count ?? 0}</Text>
@@ -224,7 +226,7 @@ export default function ProfileLayoutGrid({
       <View style={styles.starRow}>
         {main
           ? <Thumb post={main} style={styles.starVisual} editPress={editable ? () => onSlotPress?.(i, 'main') : undefined} />
-          : <EmptySlot style={styles.starVisual} icon="image-outline" label="Photo / Video" onPress={editable ? () => onSlotPress?.(i, 'main') : undefined} />}
+          : <EmptySlot style={styles.starVisual} icon="image-outline" label={t('profileGrid.photoVideo')} onPress={editable ? () => onSlotPress?.(i, 'main') : undefined} />}
         <View style={styles.starRight}>
           {[0, 1].map((s) => (
             <SongRow key={s} post={block.songs?.[s] ? byId.get(block.songs[s]) : null} slotStyle={styles.starSong} onPress={editable ? () => onSlotPress?.(i, 'song', s) : undefined} />
@@ -242,13 +244,13 @@ export default function ProfileLayoutGrid({
       <View style={styles.bigRow}>
         {big
           ? <Thumb post={big} style={styles.bigHero} loop={canLoop} editPress={editable ? () => onSlotPress?.(i, 'big') : undefined} />
-          : <EmptySlot style={styles.bigHero} icon="image-outline" label="Hero media" onPress={editable ? () => onSlotPress?.(i, 'big') : undefined} />}
+          : <EmptySlot style={styles.bigHero} icon="image-outline" label={t('profileGrid.heroMedia')} onPress={editable ? () => onSlotPress?.(i, 'big') : undefined} />}
         <View style={styles.bigRight}>
           {[0, 1].map((s) => {
             const rp = block.regulars?.[s] ? byId.get(block.regulars[s]) : null;
             return rp
               ? <Thumb key={s} post={rp} style={styles.bigCell} editPress={editable ? () => onSlotPress?.(i, 'regular', s) : undefined} />
-              : <EmptySlot key={s} style={styles.bigCell} icon="add" label="Regular" onPress={editable ? () => onSlotPress?.(i, 'regular', s) : undefined} />;
+              : <EmptySlot key={s} style={styles.bigCell} icon="add" label={t('profileGrid.regular')} onPress={editable ? () => onSlotPress?.(i, 'regular', s) : undefined} />;
           })}
         </View>
         {editable && (
@@ -256,7 +258,7 @@ export default function ProfileLayoutGrid({
             {onToggleLoop && isLoopMedia(big) && (
               <TouchableOpacity style={[styles.loopBtn, block.loop && styles.loopBtnOn]} onPress={() => onToggleLoop(i)}>
                 <Ionicons name={big.type === 'slideshow' ? 'albums' : 'sync'} size={12} color={block.loop ? '#fff' : colors.textSecondary} />
-                <Text style={[styles.loopText, block.loop && { color: '#fff' }]}>{big.type === 'slideshow' ? 'Auto-slides' : '12s loop'}</Text>
+                <Text style={[styles.loopText, block.loop && { color: '#fff' }]}>{big.type === 'slideshow' ? t('profileGrid.autoSlides') : t('profileGrid.loop12s')}</Text>
               </TouchableOpacity>
             )}
             <RemoveBtn onPress={() => onRemoveBlock?.(i)} />

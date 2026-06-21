@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
+import { tg } from '../lib/i18n';
 import { AudioProvider } from '../contexts/AudioContext';
 import { PostMusicProvider } from '../contexts/PostMusicContext';
 import { PostOptionsProvider } from '../contexts/PostOptionsContext';
@@ -235,9 +236,9 @@ export default function RootLayout() {
       let reported = false;
       try { const { data } = await supabase.rpc('current_account_has_reports'); reported = data === true; } catch {}
       await supabase.auth.signOut();
-      Alert.alert('Account deleted', reported
-        ? 'This account has been deleted and can no longer be accessed.'
-        : 'This account has been deleted and can no longer be accessed. You can use this email to create a new account 48 hours after deletion.');
+      Alert.alert(tg('delete.doneTitle'), reported
+        ? tg('delete.doneReported')
+        : tg('delete.doneClean'));
       return;
     }
 

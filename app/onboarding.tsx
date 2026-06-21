@@ -523,7 +523,7 @@ export default function OnboardingScreen() {
         <View style={styles.bottomBar}>
           <TouchableOpacity style={styles.primaryBtn} onPress={handlePermissionsContinue}>
             <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
-              <Text style={styles.primaryBtnText}>Continue</Text>
+              <Text style={styles.primaryBtnText}>{t('onboarding.continue')}</Text>
               <Ionicons name="arrow-forward" size={20} color={colors.text} />
             </LinearGradient>
           </TouchableOpacity>

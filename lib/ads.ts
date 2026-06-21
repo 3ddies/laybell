@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { tg } from './i18n';
 import { bumpBadge } from './badges';
 import { fetchBlockedIds } from './blocks';
 import { isAdPersonalizationEnabled } from './adPrefs';
@@ -232,10 +233,10 @@ function metaFor(c: AdCampaign, cr: AdCreative, placement: AdPlacement): AdMeta 
     campaignId: c.id,
     creativeId: cr.id,
     ownerId: c.user_id,
-    advertiserName: c.advertiser_name ?? 'Sponsored',
+    advertiserName: c.advertiser_name ?? tg('ad.sponsored'),
     headline: cr.headline ?? '',
     body: cr.body ?? '',
-    ctaLabel: cr.cta_label ?? 'Learn more',
+    ctaLabel: cr.cta_label ?? tg('sponsoredCard.learnMore'),
     ctaUrl: normalizeUrl(cr.cta_url),
     placement,
   };
@@ -256,8 +257,8 @@ function feedItemFor(c: AdCampaign, cr: AdCreative): any {
     cover_url: cr.cover_url ?? null,
     slides: cr.slides ?? null,
     profiles: {
-      username: c.advertiser_name ?? 'Sponsored',
-      display_name: c.advertiser_name ?? 'Sponsored',
+      username: c.advertiser_name ?? tg('ad.sponsored'),
+      display_name: c.advertiser_name ?? tg('ad.sponsored'),
       avatar_url: null,
     },
     likes: [{ count: 0 }],
@@ -378,9 +379,9 @@ export async function pickAudioAd(viewer: AdViewer): Promise<AudioAd | null> {
         campaignId: c.id,
         creativeId: cr.id,
         ownerId: c.user_id,
-        advertiserName: c.advertiser_name ?? 'Sponsored',
+        advertiserName: c.advertiser_name ?? tg('ad.sponsored'),
         headline: cr.headline ?? '',
-        ctaLabel: cr.cta_label ?? 'Learn more',
+        ctaLabel: cr.cta_label ?? tg('sponsoredCard.learnMore'),
         ctaUrl: normalizeUrl(cr.cta_url),
         uri: cr.media_url,
         cover: cr.cover_url ?? cr.thumbnail_url ?? null,

@@ -1,6 +1,7 @@
 import { Component, ReactNode } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { COLORS, SPACING } from '../constants/theme';
+import { tg } from '../lib/i18n';
 
 // Catches render/runtime errors in its subtree and shows the message inline
 // instead of letting the whole screen crash.
@@ -18,7 +19,7 @@ export default class ErrorBoundary extends Component<
     if (this.state.error) {
       return (
         <ScrollView contentContainerStyle={styles.wrap}>
-          <Text style={styles.title}>{this.props.label ?? 'Something went wrong'}</Text>
+          <Text style={styles.title}>{this.props.label ?? tg('errorBoundary.title')}</Text>
           <Text style={styles.msg}>{this.state.error.message}</Text>
         </ScrollView>
       );

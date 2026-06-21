@@ -142,7 +142,7 @@ function Analytics({
   const hourData = data.byHour.map((v, i) => ({ label: shortHour(i), value: v }));
 
   const mixData = data.contentMix.map((m) => ({
-    label: typeLabel(t, m.type), value: m.count, caption: `${m.count} ${m.count === 1 ? 'post' : 'posts'}`,
+    label: typeLabel(t, m.type), value: m.count, caption: countLabel('post', m.count),
   }));
   const bestType = [...data.contentMix].filter((m) => m.count > 0).sort((a, b) => b.avgEngagement - a.avgEngagement)[0];
 

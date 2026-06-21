@@ -1,5 +1,6 @@
 import { Alert } from 'react-native';
 import { supabase } from './supabase';
+import { tg } from './i18n';
 
 // User blocking. Schema + RLS live in supabase/sql/blocks.sql.
 // One row per (blocker, blocked). Blocking is one-directional and enforced
@@ -90,19 +91,19 @@ export function confirmBlockUser(
   username: string | undefined,
   onBlocked?: () => void,
 ) {
-  const handle = username ? `@${username}` : 'this user';
+  const handle = username ? `@${username}` : tg('block.thisUser');
   Alert.alert(
-    `Block ${handle}?`,
-    `You won't see ${handle}'s posts in your feed or explore. You can unblock them anytime from Settings → Blocked.`,
+    tg('block.confirmTitle', { handle }),
+    tg('block.confirmBody', { handle }),
     [
-      { text: 'Cancel', style: 'cancel' },
+      { text: tg('common.cancel'), style: 'cancel' },
       {
-        text: 'Block',
+        text: tg('block.action'),
         style: 'destructive',
         onPress: async () => {
           const ok = await blockUser(userId);
           if (ok) onBlocked?.();
-          else Alert.alert('Error', 'Could not block this user. Please try again.');
+          else Alert.alert(tg('common.error'), tg('block.error'));
         },
       },
     ],

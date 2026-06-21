@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isAudioPost } from './genres';
+import { tg, countLabel } from './i18n';
 
 // Post drafts — saved LOCALLY on the device (AsyncStorage). A draft is a
 // snapshot of the composer's state (post type, media references, caption,
@@ -119,9 +120,11 @@ export function draftThumb(d: Draft): string | null {
 export function draftSummary(d: Draft): string {
   if (d.caption.trim()) return d.caption.trim();
   switch (d.postType) {
-    case 'audio': return d.audioKind === 'audio' ? 'Untitled track' : `Untitled ${d.audioKind}`;
-    case 'slideshow': return `Slideshow · ${d.slides?.length ?? 0} items`;
-    case 'video': return 'Untitled video';
-    default: return 'Untitled post';
+    case 'audio': return d.audioKind === 'audio'
+      ? tg('draft.untitledTrack')
+      : d.audioKind === 'podcast' ? tg('draft.untitledPodcast') : tg('draft.untitledAudiobook');
+    case 'slideshow': return `${tg('post.slideshow')} · ${countLabel('item', d.slides?.length ?? 0)}`;
+    case 'video': return tg('draft.untitledVideo');
+    default: return tg('draft.untitledPost');
   }
 }

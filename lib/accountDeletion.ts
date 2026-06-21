@@ -1,5 +1,6 @@
 import { Alert } from 'react-native';
 import { supabase } from './supabase';
+import { tg } from './i18n';
 
 // Shared account hide / delete flow so screens other than Settings (e.g. the
 // Privacy Center) can offer it without duplicating the wording. Mirrors the
@@ -13,7 +14,7 @@ async function flagDeletion(extra: Record<string, any>, signOut: boolean, okTitl
     .from('profiles')
     .update({ hidden: true, delete_requested_at: new Date().toISOString(), ...extra })
     .eq('id', user.id);
-  if (error) { Alert.alert('Could not update', error.message); return; }
+  if (error) { Alert.alert(tg('hide.couldNotUpdate'), error.message); return; }
   // Permanent ("Delete now") path: the account is flagged now — access stops
   // immediately via sign-out + the _layout login guard — and it is HARD-DELETED
   // 48 hours later by the sweep (supabase/sql/account_deletion_sweep.sql), unless
@@ -29,9 +30,9 @@ async function flagDeletion(extra: Record<string, any>, signOut: boolean, okTitl
     }
     await supabase.auth.signOut();
     if (extra.delete_immediately === true) {
-      Alert.alert('Account deleted', reported
-        ? 'Your account has been deleted and you have been signed out.'
-        : 'Your account has been deleted and you have been signed out. It is permanently removed after 48 hours — after that, you can use this email to create a new account.');
+      Alert.alert(tg('delete.doneTitle'), reported
+        ? tg('delete.doneReported')
+        : tg('delete.doneClean'));
     }
   } else if (okTitle) {
     Alert.alert(okTitle, okMsg ?? '');
@@ -40,27 +41,27 @@ async function flagDeletion(extra: Record<string, any>, signOut: boolean, okTitl
 
 export function confirmDeleteAccount() {
   Alert.alert(
-    'Delete Account',
-    'Before you go — you can hide your account instead. It disappears from Laybell, and if you stay away for 3 months it gets deleted permanently. Coming back and unhiding cancels everything.',
+    tg('danger.deleteAccount'),
+    tg('delete.body'),
     [
-      { text: 'Cancel', style: 'cancel' },
+      { text: tg('common.cancel'), style: 'cancel' },
       {
-        text: 'Hide for 3 months',
+        text: tg('delete.hide3mo'),
         onPress: () => flagDeletion(
           { delete_immediately: false }, false,
-          'Profile hidden',
-          'Your account is now invisible. If you stay away for 3 months it will be permanently deleted — unhide in Settings anytime to cancel.',
+          tg('delete.hiddenTitle'),
+          tg('delete.hiddenBody'),
         ),
       },
       {
-        text: 'Delete now',
+        text: tg('delete.deleteNow'),
         style: 'destructive',
         onPress: () => Alert.alert(
-          'Delete permanently?',
-          'This cannot be undone. Your account and everything you posted will be removed.',
+          tg('delete.permTitle'),
+          tg('delete.permBody'),
           [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete', style: 'destructive', onPress: () => flagDeletion({ delete_immediately: true }, true) },
+            { text: tg('common.cancel'), style: 'cancel' },
+            { text: tg('common.delete'), style: 'destructive', onPress: () => flagDeletion({ delete_immediately: true }, true) },
           ],
         ),
       },

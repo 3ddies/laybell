@@ -2,6 +2,7 @@ import { Alert } from 'react-native';
 import { supabase } from './supabase';
 import { collectPostMediaUrls, removePublicUrls } from './storageCleanup';
 import { isPostSpotlighted } from './spotlight';
+import { tg } from './i18n';
 
 export async function deletePostById(postId: string): Promise<boolean> {
   // Capture media URLs BEFORE deleting the row so we can also clean up the
@@ -63,18 +64,16 @@ export async function restorePostById(postId: string): Promise<boolean> {
 export async function confirmArchivePost(postId: string, onArchived?: () => void) {
   const spotlighted = await isPostSpotlighted(postId);
   Alert.alert(
-    spotlighted ? 'Archive spotlighted post?' : 'Archive post?',
-    spotlighted
-      ? "This post is currently being promoted with Spotlight. Archiving hides it from your profile, the feed and explore — but the campaign keeps running: the timer won't pause and there's no refund, so you'll lose the promotion time while it's hidden. Restore it from Settings → Archive before the campaign ends to use what's left."
-      : 'This hides the post from your profile, the feed and explore. You can restore it anytime from Settings → Archive.',
+    spotlighted ? tg('postAction.archiveTitleSpot') : tg('postAction.archiveTitle'),
+    spotlighted ? tg('postAction.archiveBodySpot') : tg('postAction.archiveBody'),
     [
-      { text: 'Cancel', style: 'cancel' },
+      { text: tg('common.cancel'), style: 'cancel' },
       {
-        text: 'Archive',
+        text: tg('postAction.archiveBtn'),
         onPress: async () => {
           const ok = await archivePostById(postId);
           if (ok) onArchived?.();
-          else Alert.alert('Error', 'Could not archive the post. Please try again.');
+          else Alert.alert(tg('common.error'), tg('postAction.archiveError'));
         },
       },
     ],
@@ -89,19 +88,17 @@ export async function confirmArchivePost(postId: string, onArchived?: () => void
 export async function confirmDeletePost(postId: string, onDeleted?: () => void) {
   const spotlighted = await isPostSpotlighted(postId);
   Alert.alert(
-    spotlighted ? 'Delete spotlighted post?' : 'Delete post?',
-    spotlighted
-      ? "This post is currently being promoted with Spotlight. Deleting it will immediately end the active campaign with no refund — and permanently delete the post. This can't be undone."
-      : "This permanently deletes the post and can't be undone.",
+    spotlighted ? tg('postAction.deleteTitleSpot') : tg('postAction.deleteTitle'),
+    spotlighted ? tg('postAction.deleteBodySpot') : tg('postAction.deleteBody'),
     [
-      { text: 'Cancel', style: 'cancel' },
+      { text: tg('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: tg('common.delete'),
         style: 'destructive',
         onPress: async () => {
           const ok = await deletePostById(postId);
           if (ok) onDeleted?.();
-          else Alert.alert('Error', 'Could not delete the post. Please try again.');
+          else Alert.alert(tg('common.error'), tg('postAction.deleteError'));
         },
       },
     ],
@@ -118,14 +115,14 @@ export async function submitReport(postId: string, reason = 'other') {
 }
 
 export function reportPost(postId: string) {
-  Alert.alert('Report post', 'Report this post for our team to review?', [
-    { text: 'Cancel', style: 'cancel' },
+  Alert.alert(tg('postOptions.reportPost'), tg('postAction.reportPostBody'), [
+    { text: tg('common.cancel'), style: 'cancel' },
     {
-      text: 'Report',
+      text: tg('postAction.reportBtn'),
       style: 'destructive',
       onPress: async () => {
         await submitReport(postId);
-        Alert.alert('Thanks for the report', 'Our team will review this post.');
+        Alert.alert(tg('postAction.reportThanksTitle'), tg('postAction.reportPostThanks'));
       },
     },
   ]);
@@ -142,15 +139,15 @@ export async function submitUserReport(userId: string, reason = 'other') {
 // `onDone` (optional) fires after Cancel or after the report completes — used by
 // the story viewer to resume playback once the dialog is dismissed.
 export function reportUser(userId: string, onDone?: () => void) {
-  Alert.alert('Report user', 'Report this account for our team to review?', [
-    { text: 'Cancel', style: 'cancel', onPress: onDone },
+  Alert.alert(tg('postOptions.reportUser'), tg('postAction.reportUserBody'), [
+    { text: tg('common.cancel'), style: 'cancel', onPress: onDone },
     {
-      text: 'Report',
+      text: tg('postAction.reportBtn'),
       style: 'destructive',
       onPress: async () => {
         await submitUserReport(userId);
         onDone?.();
-        Alert.alert('Thanks for the report', 'Our team will review this account.');
+        Alert.alert(tg('postAction.reportThanksTitle'), tg('postAction.reportUserThanks'));
       },
     },
   ]);

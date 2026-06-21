@@ -10,7 +10,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 import { useProfile } from './ProfileContext';
+import { useTranslation } from './LanguageContext';
 import { createNotification } from '../lib/createNotification';
+import { tg, countLabel } from '../lib/i18n';
 import VideoThumb from '../components/VideoThumb';
 
 // Global share sheet. Any component calls useShare().share(payload) and a bar
@@ -69,10 +71,13 @@ const WEB_BASE = 'https://laybell.app';
 
 function buildShareText(p: SharePayload) {
   const link = `${WEB_BASE}/post/${p.postId}`;
+  const handle = p.username ? `@${p.username}` : '';
   const text = p.caption
-    ? `"${p.caption}" — @${p.username ?? ''} on Laybell`
-    : `Check out ${p.username ? `@${p.username}` : 'this'} on Laybell`;
-  const title = p.caption || (p.username ? `@${p.username} on Laybell` : 'Laybell');
+    ? tg('share.textCaption', { caption: p.caption, handle })
+    : handle
+      ? tg('share.textPlain', { handle })
+      : tg('share.textPlainNoUser');
+  const title = p.caption || (handle ? tg('share.titleUser', { handle }) : 'Laybell');
   return { link, title, message: `${text}\n${link}` };
 }
 
@@ -85,6 +90,7 @@ type ShareCtx = { message: string; link: string; title: string };
 type ExternalApp = {
   key: string;
   label: string;
+  labelKey?: string;   // when set, the label is localized via t(labelKey); brand names keep `label`
   icon: any;
   color: string;
   urls?: (c: ShareCtx) => string[];
@@ -93,7 +99,7 @@ type ExternalApp = {
 
 const EXTERNAL_APPS: ExternalApp[] = [
   {
-    key: 'sms', label: 'Messages', icon: 'chatbubble-ellipses', color: '#34C759',
+    key: 'sms', label: 'Messages', labelKey: 'share.messages', icon: 'chatbubble-ellipses', color: '#34C759',
     urls: ({ message }) => [Platform.OS === 'ios' ? `sms:&body=${enc(message)}` : `sms:?body=${enc(message)}`],
   },
   {
@@ -105,7 +111,7 @@ const EXTERNAL_APPS: ExternalApp[] = [
     urls: ({ link }) => [`https://www.facebook.com/sharer/sharer.php?u=${enc(link)}`],
   },
   {
-    key: 'email', label: 'Email', icon: 'mail', color: '#EA4335',
+    key: 'email', label: 'Email', labelKey: 'share.email', icon: 'mail', color: '#EA4335',
     urls: ({ message, title }) => [`mailto:?subject=${enc(title)}&body=${enc(message)}`],
   },
   {
@@ -121,7 +127,7 @@ const EXTERNAL_APPS: ExternalApp[] = [
     urls: ({ link, title }) => [`https://www.reddit.com/submit?url=${enc(link)}&title=${enc(title)}`],
   },
   {
-    key: 'more', label: 'More', icon: 'ellipsis-horizontal', color: COLORS.surfaceElevated, native: true,
+    key: 'more', label: 'More', labelKey: 'share.more', icon: 'ellipsis-horizontal', color: COLORS.surfaceElevated, native: true,
   },
 ];
 
@@ -132,6 +138,7 @@ export function ShareSheet({ visible, payload, onClose }: {
 }) {
   const insets = useSafeAreaInsets();
   const { profile } = useProfile();
+  const { t } = useTranslation();
   const translateY = useRef(new Animated.Value(DISMISS_DIST)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
   const closeRef = useRef(onClose); closeRef.current = onClose;
@@ -298,7 +305,7 @@ export function ShareSheet({ visible, payload, onClose }: {
         <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md, transform: [{ translateY }] }]}>
           <View style={styles.grab} {...pan.panHandlers}>
             <View style={styles.handle} />
-            <Text style={styles.title}>Share</Text>
+            <Text style={styles.title}>{t('share.title')}</Text>
           </View>
 
           {/* Content preview */}
@@ -314,7 +321,7 @@ export function ShareSheet({ visible, payload, onClose }: {
                 </LinearGradient>
               )}
               <View style={styles.previewInfo}>
-                <Text style={styles.previewCaption} numberOfLines={1}>{payload.caption || 'Post'}</Text>
+                <Text style={styles.previewCaption} numberOfLines={1}>{payload.caption || t('share.previewPost')}</Text>
                 {!!payload.username && <Text style={styles.previewUser} numberOfLines={1}>@{payload.username}</Text>}
               </View>
             </View>
@@ -323,7 +330,7 @@ export function ShareSheet({ visible, payload, onClose }: {
           <View style={styles.divider} />
 
           {/* In-app: send to people */}
-          <Text style={styles.sectionLabel}>Send to</Text>
+          <Text style={styles.sectionLabel}>{t('share.sendTo')}</Text>
           {loadingPeople ? (
             <View style={styles.peopleLoading}><ActivityIndicator color={COLORS.primary} /></View>
           ) : people.length > 0 ? (
@@ -352,7 +359,7 @@ export function ShareSheet({ visible, payload, onClose }: {
               })}
             </ScrollView>
           ) : (
-            <Text style={styles.emptyPeople}>Follow people or start a chat to share with them here.</Text>
+            <Text style={styles.emptyPeople}>{t('share.emptyPeople')}</Text>
           )}
 
           {/* Send button (only when at least one person is selected) */}
@@ -366,9 +373,9 @@ export function ShareSheet({ visible, payload, onClose }: {
               {sending ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : sent ? (
-                <><Ionicons name="checkmark-circle" size={18} color="#fff" /><Text style={styles.sendBtnText}>Sent</Text></>
+                <><Ionicons name="checkmark-circle" size={18} color="#fff" /><Text style={styles.sendBtnText}>{t('share.sent')}</Text></>
               ) : (
-                <Text style={styles.sendBtnText}>Send to {selected.size} {selected.size === 1 ? 'person' : 'people'}</Text>
+                <Text style={styles.sendBtnText}>{t('share.sendToN', { count: countLabel('person', selected.size) })}</Text>
               )}
             </TouchableOpacity>
           )}
@@ -382,7 +389,7 @@ export function ShareSheet({ visible, payload, onClose }: {
                 <View style={[styles.appCircle, { backgroundColor: app.color }]}>
                   <Ionicons name={app.icon} size={26} color={app.key === 'more' ? COLORS.text : '#fff'} />
                 </View>
-                <Text style={styles.personName} numberOfLines={1}>{app.label}</Text>
+                <Text style={styles.personName} numberOfLines={1}>{app.labelKey ? t(app.labelKey) : app.label}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
