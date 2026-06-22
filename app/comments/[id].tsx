@@ -13,6 +13,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { useTranslation } from '../../contexts/LanguageContext';
+import TranslatableText from '../../components/TranslatableText';
 
 type Comment = {
   id: string; body: string; created_at: string; user_id: string;
@@ -140,7 +141,7 @@ export default function CommentsScreen() {
                 <Text style={styles.commentUsername}>{item.profiles?.display_name}</Text>
                 <Text style={styles.commentTime}>{timeAgo(item.created_at)}</Text>
               </View>
-              <Text style={styles.commentBody}>{item.body}</Text>
+              <TranslatableText text={item.body} style={styles.commentBody} />
             </View>
           </TouchableOpacity>
         )}

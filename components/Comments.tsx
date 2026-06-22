@@ -19,6 +19,7 @@ import { processMentions, getActiveMentionQuery, applyMention } from '../lib/men
 import { maskHiddenProfile } from '../lib/hiddenProfile';
 import MentionSuggestions from './MentionSuggestions';
 import MentionText from './MentionText';
+import TranslatableText from './TranslatableText';
 
 type Row = {
   id: string; body: string; created_at: string; user_id: string;
@@ -215,7 +216,7 @@ export default function Comments({
             <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={12} />
             <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
           </View>
-          <MentionText style={styles.text} text={item.body} />
+          <TranslatableText text={item.body} render={(s) => <MentionText style={styles.text} text={s} />} />
         </TouchableOpacity>
         <View style={styles.metaRow}>
           <TouchableOpacity

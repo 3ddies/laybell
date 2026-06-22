@@ -22,6 +22,7 @@ import { usePostMusic } from '../../contexts/PostMusicContext';
 import { useIsFocused } from '@react-navigation/native';
 import Comments from '../../components/Comments';
 import MentionText from '../../components/MentionText';
+import TranslatableText from '../../components/TranslatableText';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { usePostActionSheets } from '../../hooks/usePostActionSheets';
@@ -396,7 +397,7 @@ export default function PostDetailScreen() {
 
             {/* Caption */}
             {!!post.caption && !isAudioPost(post.type) && (
-              <MentionText style={styles.caption} text={post.caption} />
+              <TranslatableText text={post.caption} render={(s) => <MentionText style={styles.caption} text={s} />} />
             )}
 
             {/* Actions */}

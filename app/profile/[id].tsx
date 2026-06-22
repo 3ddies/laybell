@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import TranslatableText from '../../components/TranslatableText';
 import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import SpotlightThumbBadge from '../../components/SpotlightThumbBadge';
@@ -526,7 +527,7 @@ export default function PublicProfileScreen() {
           <BadgeEmblem profile={profile} size={17} />
         </View>
         {profile?.bio
-          ? <Text style={styles.bio}>{profile.bio}</Text>
+          ? <TranslatableText text={profile.bio} style={styles.bio} />
           : <Text style={styles.bioEmpty}>{t('profile.noBio')}</Text>
         }
         {profile?.link ? (

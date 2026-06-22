@@ -101,7 +101,7 @@ export default function SettingsScreen() {
   const [hiddenOn, setHiddenOn] = useState(false);
   useEffect(() => { setHiddenOn(!!(profile as any)?.hidden); }, [profile]);
   const { colors, mode, setMode } = useTheme();
-  const { t, lang, setLang } = useTranslation();
+  const { t, lang, setLang, autoTranslate, setAutoTranslate } = useTranslation();
   const styles = useThemedStyles(makeStyles);
 
   // Per-category notification toggles (persisted locally). The "All" row is
@@ -525,6 +525,24 @@ export default function SettingsScreen() {
                 {i < LANGUAGES.length - 1 && <View style={styles.separator} />}
               </View>
             ))}
+            {/* Auto-translate user content (comments/messages/captions/bios) into
+                the chosen language. Separate from the static-UI language above. */}
+            <View style={styles.separator} />
+            <View style={styles.row}>
+              <View style={styles.rowIcon}>
+                <Ionicons name="globe-outline" size={22} color={colors.text} />
+              </View>
+              <View style={styles.rowContent}>
+                <Text style={styles.rowLabel}>{t('settings.autoTranslate')}</Text>
+                <Text style={styles.rowSubtitle}>{t('settings.autoTranslateSub')}</Text>
+              </View>
+              <Switch
+                value={autoTranslate}
+                onValueChange={setAutoTranslate}
+                trackColor={{ false: colors.border, true: colors.primary + '88' }}
+                thumbColor={autoTranslate ? colors.primary : colors.textTertiary}
+              />
+            </View>
           </View>
         </View>
 

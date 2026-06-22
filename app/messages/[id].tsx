@@ -19,6 +19,7 @@ import { sharedPostId, internalPathFromUrl, parseStoryReply, type StoryReplyRef 
 import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import SharedPostCard from '../../components/SharedPostCard';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import TranslatableText from '../../components/TranslatableText';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 
@@ -268,11 +269,11 @@ export default function ChatScreen() {
                       end={{ x: 1, y: 1 }}
                       style={[styles.bubble, styles.bubbleOwn, styles.storyReplyBubble]}
                     >
-                      {renderBody(storyRef.text, isOwn, formatTime(item.created_at))}
+                      <TranslatableText text={storyRef.text} render={(s) => renderBody(s, isOwn, formatTime(item.created_at))} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
                     </LinearGradient>
                   ) : (
                     <View style={[styles.bubble, styles.bubbleOther, styles.storyReplyBubble]}>
-                      {renderBody(storyRef.text, isOwn, formatTime(item.created_at))}
+                      <TranslatableText text={storyRef.text} render={(s) => renderBody(s, isOwn, formatTime(item.created_at))} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
                     </View>
                   )
                 ) : (
@@ -300,11 +301,11 @@ export default function ChatScreen() {
                   end={{ x: 1, y: 1 }}
                   style={[styles.bubble, styles.bubbleOwn]}
                 >
-                  {renderBody(item.body, isOwn, formatTime(item.created_at))}
+                  <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn, formatTime(item.created_at))} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
                 </LinearGradient>
               ) : (
                 <View style={[styles.bubble, styles.bubbleOther]}>
-                  {renderBody(item.body, isOwn, formatTime(item.created_at))}
+                  <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn, formatTime(item.created_at))} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
                 </View>
               )}
             </View>

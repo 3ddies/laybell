@@ -33,6 +33,7 @@ import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import TranslatableText from '../../components/TranslatableText';
 
 type Profile = {
   id: string; username: string; display_name: string;
@@ -589,7 +590,7 @@ export default function ProfileScreen() {
               )}
             </View>
             {profile?.bio
-              ? <Text style={styles.bio}>{profile.bio}</Text>
+              ? <TranslatableText text={profile.bio} style={styles.bio} />
               : <Text style={styles.bioEmpty}>{t('profile.noBio')}</Text>
             }
             {badgeProfile?.link ? (

@@ -52,6 +52,7 @@ import StoryAvatar from '../../components/StoryAvatar';
 import SongAttribution from '../../components/SongAttribution';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
 import MentionText from '../../components/MentionText';
+import TranslatableText from '../../components/TranslatableText';
 import TaggedPeopleButton from '../../components/TaggedPeopleButton';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { useStories } from '../../contexts/StoriesContext';
@@ -262,7 +263,7 @@ const PostCard = memo(function PostCard({
       {/* Caption */}
       {!!item.caption && !isAudioPost(item.type) && (
         <TouchableOpacity onPress={() => onOpenPost(item)}>
-          <MentionText style={styles.caption} numberOfLines={3} text={item.caption} />
+          <TranslatableText text={item.caption} render={(s) => <MentionText style={styles.caption} numberOfLines={3} text={s} />} />
         </TouchableOpacity>
       )}
 

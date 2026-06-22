@@ -9,18 +9,26 @@ import { translate, isLang, DEFAULT_LANG, setActiveLang, type Lang } from '../li
 // change it in Settings. Mirrors the ThemeContext pattern.
 
 const STORAGE_KEY = 'app_language';
+const AUTO_TRANSLATE_KEY = 'auto_translate';
 
 type LanguageContextValue = {
   lang: Lang;
   setLang: (l: Lang) => void;
   // The translator bound to the current language.
   t: (key: string, vars?: Record<string, string | number>) => string;
+  // Whether USER-typed content (comments, messages, captions, bios) is machine-
+  // translated into `lang` on display. Defaults ON. See lib/translate.ts +
+  // useAutoTranslate. (Separate from `t`, which only does the static UI dict.)
+  autoTranslate: boolean;
+  setAutoTranslate: (on: boolean) => void;
 };
 
 const LanguageContext = createContext<LanguageContextValue>({
   lang: DEFAULT_LANG,
   setLang: () => {},
   t: (key) => key,
+  autoTranslate: true,
+  setAutoTranslate: () => {},
 });
 
 export function useTranslation() {
@@ -30,10 +38,15 @@ export function useTranslation() {
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // Default to English; a stored choice (loaded below) overrides it.
   const [lang, setLangState] = useState<Lang>(DEFAULT_LANG);
+  // Auto-translate user content: default ON, a stored choice overrides.
+  const [autoTranslate, setAutoState] = useState(true);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
       if (isLang(stored)) setLangState(stored);
+    }).catch(() => {});
+    AsyncStorage.getItem(AUTO_TRANSLATE_KEY).then((v) => {
+      if (v != null) setAutoState(v === '1');
     }).catch(() => {});
   }, []);
 
@@ -46,9 +59,14 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem(STORAGE_KEY, l).catch(() => {});
   }, []);
 
+  const setAutoTranslate = useCallback((on: boolean) => {
+    setAutoState(on);
+    AsyncStorage.setItem(AUTO_TRANSLATE_KEY, on ? '1' : '0').catch(() => {});
+  }, []);
+
   const value = useMemo<LanguageContextValue>(
-    () => ({ lang, setLang, t: (key, vars) => translate(lang, key, vars) }),
-    [lang, setLang],
+    () => ({ lang, setLang, t: (key, vars) => translate(lang, key, vars), autoTranslate, setAutoTranslate }),
+    [lang, setLang, autoTranslate, setAutoTranslate],
   );
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
