@@ -85,12 +85,22 @@ export async function fetchBlockedUsers(): Promise<BlockedUser[]> {
   return (blocks as any[]).map((b) => ({ ...b, profile: byId.get(b.blocked_id) }));
 }
 
+// ── Block-confirm sheet bridge ───────────────────────────────────────────────
+// The themed block-confirm dialog (contexts/BlockConfirmContext) registers its
+// opener here, so confirmBlockUser's callers (the 3-dot menu) stay unchanged
+// while the UI is a polished in-app card instead of a system Alert.
+export type BlockRequest = { userId: string; username?: string; onBlocked?: () => void };
+let blockHandler: ((req: BlockRequest) => void) | null = null;
+export function setBlockHandler(fn: ((req: BlockRequest) => void) | null) { blockHandler = fn; }
+
 // Confirm + block, then fire onBlocked so the caller can drop their content.
 export function confirmBlockUser(
   userId: string,
   username: string | undefined,
   onBlocked?: () => void,
 ) {
+  if (blockHandler) { blockHandler({ userId, username, onBlocked }); return; }
+  // Fallback (provider not mounted) — keep blocking functional.
   const handle = username ? `@${username}` : tg('block.thisUser');
   Alert.alert(
     tg('block.confirmTitle', { handle }),

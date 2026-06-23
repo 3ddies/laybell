@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, Modal, FlatList,
-  TouchableOpacity, ActivityIndicator, Alert, Platform,
+  TouchableOpacity, ActivityIndicator, Alert, Platform, TextInput, KeyboardAvoidingView,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,9 +30,14 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState<string | null>(null);
   const [added, setAdded] = useState<Set<string>>(new Set());
+  // Inline "create new playlist" form (so you can make one without leaving the
+  // sheet — especially when you have none yet).
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [savingNew, setSavingNew] = useState(false);
 
   useEffect(() => {
-    if (visible) fetchPlaylists();
+    if (visible) { setCreating(false); setNewName(''); fetchPlaylists(); }
   }, [visible]);
 
   async function fetchPlaylists() {
@@ -49,6 +54,34 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
     if (playlistsRes.data) setPlaylists(playlistsRes.data);
     if (existingRes.data) setAdded(new Set(existingRes.data.map(t => t.playlist_id)));
     setLoading(false);
+  }
+
+  // Create a new playlist AND drop the current song into it (that's the whole
+  // point of being here). New playlists default to PRIVATE — unlimited, so no
+  // tier gate; the user can make it public later in the Music tab.
+  async function createPlaylist() {
+    const name = newName.trim();
+    if (!name || savingNew) return;
+    setSavingNew(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavingNew(false); return; }
+
+    const { data: pl, error } = await supabase.from('playlists')
+      .insert({ user_id: user.id, name, is_public: false })
+      .select('id, name, is_public').single();
+    if (error || !pl) {
+      setSavingNew(false);
+      Alert.alert(t('addToPlaylist.errorTitle'), error?.message ?? '');
+      return;
+    }
+    const { error: trackErr } = await supabase.from('playlist_tracks')
+      .insert({ playlist_id: pl.id, post_id: postId, position: 1 });
+
+    setPlaylists(prev => [pl as Playlist, ...prev]);
+    if (!trackErr) setAdded(prev => new Set([...prev, pl.id]));
+    setNewName('');
+    setCreating(false);
+    setSavingNew(false);
   }
 
   // First tap adds the track; tapping a playlist it's already in removes it.
@@ -89,6 +122,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
   }
 
   const content = (
+    <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <TouchableOpacity style={styles.overlay} onPress={onClose} activeOpacity={1}>
         <TouchableOpacity style={styles.sheet} activeOpacity={1}>
           {/* Handle */}
@@ -101,6 +135,39 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
             </TouchableOpacity>
           </View>
 
+          {/* Create new playlist — a prominent CTA (the way to make one when you
+              have none) that expands into an inline name form and adds this song. */}
+          {creating ? (
+            <View style={styles.createForm}>
+              <TextInput
+                style={styles.createInput}
+                placeholder={t('addToPlaylist.namePlaceholder')}
+                placeholderTextColor={colors.textTertiary}
+                value={newName}
+                onChangeText={setNewName}
+                maxLength={60}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={createPlaylist}
+              />
+              <TouchableOpacity
+                style={[styles.createBtn, !newName.trim() && styles.createBtnDisabled]}
+                onPress={createPlaylist}
+                disabled={!newName.trim() || savingNew}
+              >
+                {savingNew ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.createBtnText}>{t('addToPlaylist.createBtn')}</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setCreating(false); setNewName(''); }} style={styles.createCancel} hitSlop={8}>
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.createRow} onPress={() => setCreating(true)} activeOpacity={0.7}>
+              <View style={styles.createIcon}><Ionicons name="add" size={22} color={colors.primary} /></View>
+              <Text style={styles.createRowText}>{t('addToPlaylist.create')}</Text>
+            </TouchableOpacity>
+          )}
+
           {loading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator color={colors.primary} />
@@ -109,7 +176,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
             <View style={styles.emptyWrap}>
               <Ionicons name="musical-notes-outline" size={36} color={colors.textTertiary} />
               <Text style={styles.emptyText}>{t('addToPlaylist.empty')}</Text>
-              <Text style={styles.emptySubtext}>{t('addToPlaylist.emptyHint')}</Text>
+              <Text style={styles.emptySubtext}>{t('addToPlaylist.emptyCreateHint')}</Text>
             </View>
           ) : (
             <FlatList
@@ -153,6 +220,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
           )}
         </TouchableOpacity>
       </TouchableOpacity>
+    </KeyboardAvoidingView>
   );
 
   if (inOverlay && Platform.OS === 'ios') {
@@ -166,6 +234,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  fill: { flex: 1 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.surface,
@@ -182,6 +251,37 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   sheetTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
+  // Create-new-playlist CTA + inline form.
+  createRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    marginHorizontal: SPACING.md, marginTop: SPACING.md,
+    paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.primary + '55',
+    backgroundColor: colors.primary + '12',
+  },
+  createIcon: {
+    width: 40, height: 40, borderRadius: RADIUS.md,
+    backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center',
+  },
+  createRowText: { color: colors.primary, fontSize: 15, fontWeight: '700', flex: 1 },
+  createForm: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    marginHorizontal: SPACING.md, marginTop: SPACING.md,
+  },
+  createInput: {
+    flex: 1, backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 2,
+    color: colors.text, fontSize: 15,
+  },
+  createBtn: {
+    backgroundColor: colors.primary, borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 4,
+    alignItems: 'center', justifyContent: 'center', minWidth: 72,
+  },
+  createBtnDisabled: { opacity: 0.4 },
+  createBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  createCancel: { padding: SPACING.xs },
+
   loadingWrap: { alignItems: 'center', justifyContent: 'center', padding: SPACING.xxl },
   emptyWrap: { alignItems: 'center', padding: SPACING.xxl, gap: SPACING.sm },
   emptyText: { color: colors.text, fontSize: 16, fontWeight: '700' },

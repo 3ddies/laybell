@@ -9,7 +9,7 @@ import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image, ActivityIndicator,
-  RefreshControl, Dimensions, Alert, Modal, Animated,
+  RefreshControl, Dimensions, Modal, Animated,
 } from 'react-native';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -35,9 +35,10 @@ import {
   recordSpotlightImpression, recordSpotlightTap, type SpotlightMeta,
 } from '../../lib/spotlight';
 import {
-  fetchFeedAds, injectFeedAds, recordAdImpression, recordAdClick, reportAd,
+  fetchFeedAds, injectFeedAds, recordAdImpression, recordAdClick,
   type AdViewer,
 } from '../../lib/ads';
+import { openAdOptions } from '../../contexts/AdOptionsContext';
 import SponsoredCard from '../../components/SponsoredCard';
 import { useProfile } from '../../contexts/ProfileContext';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
@@ -773,24 +774,11 @@ export default function HomeScreen() {
       onProceed: () => recordAdClick(item, 'feed', live.current.currentUserId),
     });
   }, []);
-  // Ad 3-dot: report / why this ad / ad settings.
+  // Ad 3-dot: opens the themed ad-options sheet (report / why this ad / settings).
   const onAdOptions = useCallback((item: any) => {
     const ad = item.__ad;
     if (!ad) return;
-    const tr = live.current.t;
-    Alert.alert(ad.advertiserName || tr('ad.sponsoredAd'), tr('ad.sponsored'), [
-      {
-        text: tr('ad.report'),
-        onPress: () => reportAd(ad.campaignId, ad.creativeId).then((ok) =>
-          Alert.alert(ok ? tr('ad.reportThanksTitle') : tr('ad.reportFailTitle'), ok ? tr('ad.reportThanksBody') : tr('ad.reportFailBody'))),
-      },
-      {
-        text: tr('ad.why'),
-        onPress: () => Alert.alert(tr('ad.whyTitle'), tr('ad.whyBody')),
-      },
-      { text: tr('ad.settings'), onPress: () => live.current.router.push('/settings') },
-      { text: tr('common.cancel'), style: 'cancel' },
-    ]);
+    openAdOptions({ campaignId: ad.campaignId, creativeId: ad.creativeId, advertiserName: ad.advertiserName });
   }, []);
 
   const onOptions = useCallback((item: Post) => {

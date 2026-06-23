@@ -114,17 +114,23 @@ export async function submitReport(postId: string, reason = 'other') {
   });
 }
 
+// ── Report sheet bridge ──────────────────────────────────────────────────────
+// The themed report sheet (contexts/ReportContext) registers its opener here, so
+// the imperative reportPost/reportUser callers (the 3-dot menu, the story viewer)
+// can stay unchanged while the UI is a real in-app sheet instead of an Alert.
+export type ReportRequest = { kind: 'post' | 'user'; targetId: string; onClose?: () => void };
+let reportHandler: ((req: ReportRequest) => void) | null = null;
+export function setReportHandler(fn: ((req: ReportRequest) => void) | null) { reportHandler = fn; }
+
 export function reportPost(postId: string) {
+  if (reportHandler) { reportHandler({ kind: 'post', targetId: postId }); return; }
+  // Fallback (provider not mounted yet) — keep reporting functional.
   Alert.alert(tg('postOptions.reportPost'), tg('postAction.reportPostBody'), [
     { text: tg('common.cancel'), style: 'cancel' },
-    {
-      text: tg('postAction.reportBtn'),
-      style: 'destructive',
-      onPress: async () => {
-        await submitReport(postId);
-        Alert.alert(tg('postAction.reportThanksTitle'), tg('postAction.reportPostThanks'));
-      },
-    },
+    { text: tg('postAction.reportOther'), style: 'destructive', onPress: async () => {
+      await submitReport(postId, 'other');
+      Alert.alert(tg('postAction.reportThanksTitle'), tg('postAction.reportPostThanks'));
+    } },
   ]);
 }
 
@@ -139,17 +145,14 @@ export async function submitUserReport(userId: string, reason = 'other') {
 // `onDone` (optional) fires after Cancel or after the report completes — used by
 // the story viewer to resume playback once the dialog is dismissed.
 export function reportUser(userId: string, onDone?: () => void) {
+  if (reportHandler) { reportHandler({ kind: 'user', targetId: userId, onClose: onDone }); return; }
   Alert.alert(tg('postOptions.reportUser'), tg('postAction.reportUserBody'), [
     { text: tg('common.cancel'), style: 'cancel', onPress: onDone },
-    {
-      text: tg('postAction.reportBtn'),
-      style: 'destructive',
-      onPress: async () => {
-        await submitUserReport(userId);
-        onDone?.();
-        Alert.alert(tg('postAction.reportThanksTitle'), tg('postAction.reportUserThanks'));
-      },
-    },
+    { text: tg('postAction.reportOther'), style: 'destructive', onPress: async () => {
+      await submitUserReport(userId, 'other');
+      onDone?.();
+      Alert.alert(tg('postAction.reportThanksTitle'), tg('postAction.reportUserThanks'));
+    } },
   ]);
 }
 

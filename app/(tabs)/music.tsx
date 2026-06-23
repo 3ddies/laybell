@@ -15,6 +15,7 @@ import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/t
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 import PlaylistEditor from '../../components/PlaylistEditor';
+import PlaylistOptionsSheet from '../../components/PlaylistOptionsSheet';
 import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -108,6 +109,10 @@ export default function MusicScreen() {
   const styles = useThemedStyles(makeStyles);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
+  // Long-press options sheet target.
+  const [optionsPlaylist, setOptionsPlaylist] = useState<Playlist | null>(null);
+  // Drives the slide+fade-in of the playlist detail view (smooth "open playlist").
+  const detailAnim = useRef(new Animated.Value(0)).current;
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const [tracksLoading, setTracksLoading] = useState(false);
@@ -573,23 +578,29 @@ export default function MusicScreen() {
   }
 
   // Long-press menu for one of the user's own playlists.
+  // Open a playlist's detail view with a smooth slide + fade-in. Reset the anim
+  // to 0 BEFORE the view mounts so it animates in instead of flashing.
+  function openPlaylist(p: Playlist) {
+    detailAnim.setValue(0);
+    setSelectedPlaylist(p);
+    fetchPlaylistTracks(p.id);
+  }
+  useEffect(() => {
+    if (selectedPlaylist) {
+      Animated.timing(detailAnim, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    }
+  }, [selectedPlaylist]);
+
+  // Long-press opens the themed options sheet (Make public/private · Delete).
   function playlistOptions(pl: Playlist) {
-    Alert.alert(pl.name, pl.is_public ? t('music.publicPlaylist') : t('music.privatePlaylist'), [
-      { text: pl.is_public ? t('music.makePrivate') : t('music.makePublic'), onPress: () => setPlaylistVisibility(pl, !pl.is_public) },
-      { text: t('music.deletePlaylist'), style: 'destructive', onPress: () => deletePlaylist(pl.id) },
-      { text: t('common.cancel'), style: 'cancel' },
-    ]);
+    setOptionsPlaylist(pl);
   }
 
+  // Delete a playlist (the sheet handles its own confirmation).
   async function deletePlaylist(playlistId: string) {
-    Alert.alert(t('music.deletePlaylist'), t('music.deleteConfirm'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('common.delete'), style: 'destructive', onPress: async () => {
-        await supabase.from('playlists').delete().eq('id', playlistId);
-        setPlaylists(prev => prev.filter(p => p.id !== playlistId));
-        if (selectedPlaylist?.id === playlistId) setSelectedPlaylist(null);
-      }},
-    ]);
+    await supabase.from('playlists').delete().eq('id', playlistId);
+    setPlaylists(prev => prev.filter(p => p.id !== playlistId));
+    if (selectedPlaylist?.id === playlistId) setSelectedPlaylist(null);
   }
 
   // ─── Discover helpers ─────────────────────────────────────────────────────
@@ -1469,7 +1480,7 @@ export default function MusicScreen() {
                         key={p.id}
                         style={styles.pubCard}
                         activeOpacity={0.8}
-                        onPress={() => { setSelectedPlaylist(p); fetchPlaylistTracks(p.id); }}
+                        onPress={() => openPlaylist(p)}
                         onLongPress={() => playlistOptions(p)}
                       >
                         <View style={[styles.pubCoverWrap, locked && styles.pubCoverLocked]}>
@@ -1512,7 +1523,7 @@ export default function MusicScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.playlistRow}
-              onPress={() => { setSelectedPlaylist(item); fetchPlaylistTracks(item.id); }}
+              onPress={() => openPlaylist(item)}
               onLongPress={() => playlistOptions(item)}
             >
               {/* Faced with the first track's cover art, same as public squares */}
@@ -1535,7 +1546,13 @@ export default function MusicScreen() {
 
       {/* Playlist tracks */}
       {activeView === 'playlists' && selectedPlaylist && (
-        <View style={{ flex: 1 }}>
+        <Animated.View
+          style={{
+            flex: 1,
+            opacity: detailAnim,
+            transform: [{ translateX: detailAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
+          }}
+        >
           <View style={styles.detailTopRow}>
             <TouchableOpacity style={styles.backBtn} onPress={() => { setSelectedPlaylist(null); setTracks([]); setEditingPlaylist(false); }}>
               <Ionicons name="chevron-back" size={22} color={colors.primaryLight} />
@@ -1615,7 +1632,7 @@ export default function MusicScreen() {
               )}
             />
           )}
-        </View>
+        </Animated.View>
       )}
 
       {/* Saved songs */}
@@ -1893,6 +1910,14 @@ export default function MusicScreen() {
         visible={!!playlistModalPostId}
         postId={playlistModalPostId ?? ''}
         onClose={() => setPlaylistModalPostId(null)}
+      />
+
+      {/* Playlist long-press options (themed sheet) */}
+      <PlaylistOptionsSheet
+        playlist={optionsPlaylist}
+        onClose={() => setOptionsPlaylist(null)}
+        onToggleVisibility={(pl) => setPlaylistVisibility(pl, !pl.is_public)}
+        onDelete={deletePlaylist}
       />
     </View>
   );

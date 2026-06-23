@@ -244,6 +244,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/edit-profile'),
     },
     {
+      icon: 'language-outline',
+      label: t('settings.section.language'),
+      subtitle: LANGUAGES.find((l) => l.code === lang)?.native,
+      onPress: () => setLangPickerVisible(true),
+    },
+    {
       icon: 'people-outline',
       label: t('account.friends'),
       subtitle: t('account.friendsSub'),
@@ -503,20 +509,6 @@ export default function SettingsScreen() {
               </View>
             ))}
           </View>
-        </View>
-
-        {/* Language — a single button that opens the picker (language list +
-            auto-translate live inside it), keeping Settings compact. No section
-            title: it's just one row, like a regular settings button. */}
-        <View style={styles.sectionCard}>
-          <SettingsRow
-            item={{
-              icon: 'language-outline',
-              label: t('settings.section.language'),
-              subtitle: LANGUAGES.find((l) => l.code === lang)?.native,
-              onPress: () => setLangPickerVisible(true),
-            }}
-          />
         </View>
 
         <Section title={t('settings.section.account')} items={accountItems} />

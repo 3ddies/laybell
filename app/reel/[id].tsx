@@ -1,6 +1,6 @@
 import { Video, ResizeMode } from 'expo-av';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator, Animated, Alert,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator, Animated,
 } from 'react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -35,8 +35,9 @@ import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, EMPTY_PROFILE,
 } from '../../lib/feedScorer';
 import {
-  fetchReelAds, weaveReelAds, recordAdImpression, recordAdClick, recordAdSkip, reportAd, type AdViewer,
+  fetchReelAds, weaveReelAds, recordAdImpression, recordAdClick, recordAdSkip, type AdViewer,
 } from '../../lib/ads';
+import { openAdOptions } from '../../contexts/AdOptionsContext';
 import ReelAd from '../../components/ReelAd';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
@@ -238,13 +239,7 @@ export default function ReelScreen() {
           }}
           onOptions={() => {
             const ad = item.__ad;
-            Alert.alert(ad?.advertiserName || t('reel.sponsoredAd'), t('reel.sponsored'), [
-              { text: t('reel.reportAd'), onPress: () => reportAd(ad.campaignId, ad.creativeId).then((ok) =>
-                Alert.alert(ok ? t('reel.reportThanksTitle') : t('reel.reportFailTitle'), ok ? t('reel.reportThanksBody') : t('reel.reportFailBody'))) },
-              { text: t('reel.whyThisAd'), onPress: () => Alert.alert(t('reel.whyThisAdTitle'), t('reel.whyThisAdBody')) },
-              { text: t('reel.adSettings'), onPress: () => router.push('/settings') },
-              { text: t('common.cancel'), style: 'cancel' },
-            ]);
+            openAdOptions({ campaignId: ad.campaignId, creativeId: ad.creativeId, advertiserName: ad.advertiserName });
           }}
         />
       );

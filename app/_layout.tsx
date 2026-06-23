@@ -20,6 +20,9 @@ import { FollowProvider } from '../contexts/FollowContext';
 import { StoriesProvider } from '../contexts/StoriesContext';
 import { ListenModeProvider } from '../contexts/ListenModeContext';
 import { LinkGuardProvider } from '../contexts/LinkGuardContext';
+import { ReportProvider } from '../contexts/ReportContext';
+import { AdOptionsProvider } from '../contexts/AdOptionsContext';
+import { BlockConfirmProvider } from '../contexts/BlockConfirmContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
@@ -282,7 +285,13 @@ export default function RootLayout() {
               <StoriesProvider>
                 <ListenModeProvider>
                   <LinkGuardProvider>
-                    <AppContent />
+                    <ReportProvider>
+                      <AdOptionsProvider>
+                        <BlockConfirmProvider>
+                          <AppContent />
+                        </BlockConfirmProvider>
+                      </AdOptionsProvider>
+                    </ReportProvider>
                   </LinkGuardProvider>
                 </ListenModeProvider>
               </StoriesProvider>
