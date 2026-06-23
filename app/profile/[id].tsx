@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Image, RefreshControl, Linking, PanResponder,
+  ScrollView, ActivityIndicator, Image, RefreshControl, PanResponder,
   Animated, Easing, Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,7 +24,8 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { countLabel } from '../../lib/i18n';
-import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
+import { displayUrl } from '../../lib/profileOptions';
+import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { activeLayout, usedPostIds } from '../../lib/pageLayout';
 import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { slideshowThumb } from '../../lib/slideshow';
@@ -52,6 +53,7 @@ export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const linkGuard = useLinkGuard();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { playQueue, expand } = useAudio();
@@ -531,7 +533,7 @@ export default function PublicProfileScreen() {
           : <Text style={styles.bioEmpty}>{t('profile.noBio')}</Text>
         }
         {profile?.link ? (
-          <TouchableOpacity style={styles.linkRow} onPress={() => Linking.openURL(normalizeUrl(profile.link!)).catch(() => {})}>
+          <TouchableOpacity style={styles.linkRow} onPress={() => linkGuard.open(profile.link!, { context: 'bio' })}>
             <Ionicons name="link-outline" size={14} color={colors.primary} />
             <Text style={styles.linkText} numberOfLines={1}>{displayUrl(profile.link)}</Text>
           </TouchableOpacity>

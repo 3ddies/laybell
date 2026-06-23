@@ -38,8 +38,12 @@ export const REEL_AD_EVERY = 5;
 export const AUDIO_AD_FIRST_MS = 60_000;
 export const AUDIO_AD_EVERY_MS = 360_000;
 
-// Reel & audio ads become skippable after this much genuine ad playback.
+// Reel ads become skippable after this much genuine ad playback.
 export const AD_SKIP_MS = 5_000;
+
+// Audio (song) ads are un-skippable for longer — they play as a song card
+// between tracks and only become skippable after this much playback.
+export const AUDIO_AD_SKIP_MS = 10_000;
 
 // Storage bucket the Ad Manager uploads creatives to. Reuses the existing
 // public 'posts' bucket (same one the composer uploads to) so no extra bucket

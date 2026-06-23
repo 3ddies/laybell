@@ -12,6 +12,7 @@ import { useProfile } from '../contexts/ProfileContext';
 import { resolveRingColors, chosenTier } from '../lib/badges';
 import { TEMPLATE_META, isLayoutTemplate } from '../lib/pageLayout';
 import { GENDER_OPTIONS, genderLabel, ageFromDob } from '../lib/profileOptions';
+import { analyzeUrl, scanText } from '../lib/linkSafety';
 import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -104,6 +105,10 @@ export default function EditProfileScreen() {
     if (username.trim().length < 5) { Alert.alert(t('editProfile.error'), t('editProfile.errUsernameMin')); return; }
     if (username.trim().length > 30) { Alert.alert(t('editProfile.error'), t('editProfile.errUsernameMax')); return; }
     if (!/^[a-zA-Z0-9_]+$/.test(username)) { Alert.alert(t('editProfile.error'), t('editProfile.errUsernameChars')); return; }
+    // Link safety: refuse to save a dangerous profile link or a blocked link
+    // hidden in the bio (bad scheme, embedded credentials, blocklisted host).
+    if (link.trim() && analyzeUrl(link).verdict === 'block') { Alert.alert(t('editProfile.error'), t('editProfile.errUnsafeLink')); return; }
+    if (scanText(bio).verdict === 'block') { Alert.alert(t('editProfile.error'), t('editProfile.errUnsafeLink')); return; }
     setSaving(true);
     const core = { display_name: displayName.trim(), username: username.trim().toLowerCase(), bio: bio.trim() };
     const { error } = await supabase.from('profiles').update(core).eq('id', userId);

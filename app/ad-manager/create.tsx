@@ -14,6 +14,7 @@ import {
   AD_DEFAULT_CPM_CENTS, AD_CREATIVE_BUCKET,
   type AdPlacement, type AdObjective, type AdMediaType, type NewCreativeInput,
 } from '../../lib/ads';
+import { analyzeUrl, scanText } from '../../lib/linkSafety';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { useProfile } from '../../contexts/ProfileContext';
 import SwipeBackPager from '../../components/SwipeBackPager';
@@ -52,7 +53,9 @@ const GENDERS: { key: string; label: string }[] = [
 ];
 
 type Pick = { uri: string; width?: number; height?: number; kind: 'image' | 'video' | 'audio'; durationSec?: number | null; name?: string; mime?: string };
-type CreativeDraft = { picks: Pick[]; headline: string; body: string; ctaLabel: string; ctaUrl: string };
+// `cover` is an optional image used as the audio ad's "album art" — it plays
+// like a song in the player, so advertisers can upload cover art for it.
+type CreativeDraft = { picks: Pick[]; cover?: Pick | null; headline: string; body: string; ctaLabel: string; ctaUrl: string };
 
 const emptyDraft = (t: TFn): CreativeDraft => ({ picks: [], headline: '', body: '', ctaLabel: t('adCreate.ctaDefault'), ctaUrl: '' });
 
@@ -171,6 +174,22 @@ export default function CreateAdScreen() {
     patchDraft(p, { picks: [{ uri: a.uri, kind: 'audio', name: a.name, mime: a.mimeType ?? undefined, durationSec: dur }] });
   }
 
+  // Cover art for an audio ad (optional) — shown as the "album art" while the ad
+  // plays like a song in the player.
+  async function pickCover(p: AdPlacement) {
+    const ImagePicker = await import('expo-image-picker');
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert(t('adCreate.photosNeededTitle'), t('adCreate.photosNeededBody')); return; }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: false,
+      quality: 0.85,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    patchDraft(p, { cover: { uri: a.uri, width: a.width, height: a.height, kind: 'image' } });
+  }
+
   // ── Validation ───────────────────────────────────────────────────────────────
   function validateStep(s: Step): string | null {
     if (s === 'basics' && !advertiserName.trim()) return t('adCreate.errAdvertiserName');
@@ -181,6 +200,11 @@ export default function CreateAdScreen() {
         if (!d || d.picks.length === 0) return t('adCreate.errCreative', { placement: labelFor(p) });
         if (!d.headline.trim()) return t('adCreate.errHeadline', { placement: labelFor(p) });
         if (!d.ctaUrl.trim()) return t('adCreate.errLink', { placement: labelFor(p) });
+        // Link safety: never let a campaign go live with a dangerous destination
+        // (bad scheme, embedded credentials, blocklisted host) or a blocked link
+        // hidden in the body text.
+        if (analyzeUrl(d.ctaUrl).verdict === 'block') return t('adCreate.errUnsafeLink', { placement: labelFor(p) });
+        if (scanText(d.body).verdict === 'block') return t('adCreate.errUnsafeLink', { placement: labelFor(p) });
       }
     }
     if (s === 'budget') {
@@ -263,11 +287,21 @@ export default function CreateAdScreen() {
 
     setUploadLabel(t('adCreate.uploadingCreative', { placement: labelFor(p) }));
     const { url, thumb } = await uploadOne(uid, d.picks[0]);
+
+    // Audio ads carry an optional uploaded cover image (their "album art"). Upload
+    // it if provided; it becomes both cover_url and thumbnail_url for the ad.
+    let audioCover: string | null = null;
+    if (mt === 'audio' && d.cover) {
+      setUploadLabel(t('adCreate.uploadingCover', { placement: labelFor(p) }));
+      const up = await uploadOne(uid, d.cover);
+      audioCover = up.url;
+    }
+
     return {
       ...base,
       media_url: url,
-      thumbnail_url: thumb ?? null,
-      cover_url: mt === 'audio' ? null : thumb ?? null,
+      thumbnail_url: mt === 'audio' ? audioCover : thumb ?? null,
+      cover_url: mt === 'audio' ? audioCover : thumb ?? null,
       aspect_ratio: aspectOf(d.picks[0]),
       duration_seconds: d.picks[0].durationSec ?? null,
     };
@@ -357,7 +391,13 @@ export default function CreateAdScreen() {
           <View style={styles.previewRow}>
             {d.picks[0].kind === 'audio' ? (
               <View style={styles.audioPreview}>
-                <Ionicons name="musical-notes" size={22} color={colors.primary} />
+                {d.cover ? (
+                  <Image source={{ uri: d.cover.uri }} style={styles.audioCover} />
+                ) : (
+                  <View style={[styles.audioCover, styles.audioCoverEmpty]}>
+                    <Ionicons name="musical-notes" size={20} color={colors.primary} />
+                  </View>
+                )}
                 <Text style={styles.audioPreviewText} numberOfLines={1}>{d.picks[0].name || t('adCreate.audioClip')}</Text>
               </View>
             ) : firstImg ? (
@@ -393,10 +433,16 @@ export default function CreateAdScreen() {
             </TouchableOpacity>
           )}
           {p === 'audio' && (
-            <TouchableOpacity style={styles.pickBtn} onPress={() => pickAudio(p)}>
-              <Ionicons name="cloud-upload-outline" size={16} color={colors.text} />
-              <Text style={styles.pickBtnText}>{d.picks.length ? t('adCreate.changeAudio') : t('adCreate.addAudio')}</Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity style={styles.pickBtn} onPress={() => pickAudio(p)}>
+                <Ionicons name="cloud-upload-outline" size={16} color={colors.text} />
+                <Text style={styles.pickBtnText}>{d.picks.length ? t('adCreate.changeAudio') : t('adCreate.addAudio')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.pickBtn} onPress={() => pickCover(p)}>
+                <Ionicons name="image-outline" size={16} color={colors.text} />
+                <Text style={styles.pickBtnText}>{d.cover ? t('adCreate.changeCover') : t('adCreate.addCover')}</Text>
+              </TouchableOpacity>
+            </>
           )}
         </View>
 
@@ -756,8 +802,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   previewCount: { color: colors.textTertiary, fontSize: 11 },
   audioPreview: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.md, padding: SPACING.md,
+    backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.md, padding: SPACING.sm,
   },
+  audioCover: { width: 44, height: 44, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight },
+  audioCoverEmpty: { alignItems: 'center', justifyContent: 'center' },
   audioPreviewText: { color: colors.text, fontSize: 13, flex: 1 },
   pickRow: { flexDirection: 'row', gap: SPACING.sm },
   pickBtn: {

@@ -1,10 +1,11 @@
-import { View, Text, TouchableOpacity, StyleSheet, Image, Animated, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
-import { recordAdClick, AD_SKIP_MS } from '../lib/ads';
+import { recordAdClick, AUDIO_AD_SKIP_MS } from '../lib/ads';
 import { useListenMode } from '../contexts/ListenModeContext';
+import { useLinkGuard } from '../contexts/LinkGuardContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -31,6 +32,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   const { positionMs, durationMs } = useAudioPosition(); // tick subscription (4×/sec) — small tree, cheap
   const insets = useSafeAreaInsets();
   const { listenMode } = useListenMode();
+  const linkGuard = useLinkGuard();
 
   // Listen mode: the tab bar fades away, so the player glides down into the
   // space it vacated (the 68px bar height), staying flush above the home bar.
@@ -117,27 +119,45 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   const track = currentTrack ?? lastTrackRef.current;
   if ((!currentTrack && !barShown) || !track || expanded) return null;
 
-  // Audio-ad takeover: while a playlist break is playing, the bar becomes a
-  // "Sponsored" strip (brand + CTA + skip-after-5s) instead of the track row.
-  // Shown for every variant — the music is paused, so the normal controls don't
-  // apply. NowPlaying handles the takeover when the full player is expanded.
+  // Audio ad: while a playlist break plays, the bar shows the ad like a song
+  // (cover + sponsored brand + headline + progress), tappable to open the full
+  // ad view — the user moves between mini bar and full player freely. Skip is
+  // locked until AUDIO_AD_SKIP_MS; there's no close (the ad can't be dismissed).
   if (adState) {
     const bottomOffset = 68 + insets.bottom + 6;
-    const secsLeft = Math.max(1, Math.ceil((AD_SKIP_MS - adState.elapsedMs) / 1000));
+    const secsLeft = Math.max(1, Math.ceil((AUDIO_AD_SKIP_MS - adState.elapsedMs) / 1000));
+    const adProgress = adState.durationMs > 0 ? adState.elapsedMs / adState.durationMs : 0;
     return (
       <Animated.View style={[styles.container, { bottom: bottomOffset, transform: [{ translateY: Animated.add(listenSlide, dockSlide) }] }]}>
-        <View style={styles.adBar}>
-          <View style={styles.adCover}>
-            <Ionicons name="megaphone" size={16} color={colors.primary} />
+        {/* Progress fill (non-interactive — ads aren't seekable). */}
+        <View style={styles.scrubWrap}>
+          <View style={styles.adProgressTrack}>
+            <View style={[styles.adProgressFill, { width: `${Math.round(adProgress * 100)}%` }]} />
           </View>
-          <View style={styles.body}>
+        </View>
+        <View style={styles.inner}>
+          {/* Cover — tap to open the full ad view (just like a song). */}
+          <TouchableOpacity style={styles.coverWrap} onPress={() => expand()}>
+            {adState.cover ? (
+              <Image source={{ uri: adState.cover }} style={styles.cover} />
+            ) : (
+              <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
+                <Ionicons name="megaphone" size={16} color={colors.primary} />
+              </LinearGradient>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.adTextCol} activeOpacity={0.7} onPress={() => expand()}>
             <Text style={styles.adSponsored} numberOfLines={1}>{t('player.sponsoredWith', { name: adState.advertiserName })}</Text>
             <Text style={styles.caption} numberOfLines={1}>{adState.headline || t('player.advertisement')}</Text>
-          </View>
+          </TouchableOpacity>
           {!!adState.ctaUrl && (
             <TouchableOpacity
               style={styles.adCta}
-              onPress={() => { recordAdClick(adState, 'audio', adState.viewerId); Linking.openURL(adState.ctaUrl!).catch(() => {}); }}
+              onPress={() => linkGuard.open(adState.ctaUrl!, {
+                context: 'ad',
+                sourceName: adState.advertiserName,
+                onProceed: () => recordAdClick(adState, 'audio', adState.viewerId),
+              })}
             >
               <Text style={styles.adCtaText} numberOfLines={1}>{adState.ctaLabel}</Text>
             </TouchableOpacity>
@@ -315,15 +335,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
   },
 
-  // ── Audio-ad takeover strip ──
-  adBar: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
+  // ── Audio-ad bar (rendered like the song bar) ──
+  adProgressTrack: {
+    height: 4, borderRadius: 2, backgroundColor: colors.border, overflow: 'hidden',
   },
-  adCover: {
-    width: 38, height: 38, borderRadius: RADIUS.sm,
-    backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center',
-  },
+  adProgressFill: { height: '100%', borderRadius: 2, backgroundColor: colors.primary },
+  // Column (stacked) text block. minWidth:0 lets the headline truncate instead of
+  // pushing the CTA/skip buttons off — without it a long headline collides with them.
+  adTextCol: { flex: 1, minWidth: 0, justifyContent: 'center' },
   adSponsored: { color: colors.primaryLight, fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
   adCta: {
     backgroundColor: colors.primary, borderRadius: RADIUS.full,

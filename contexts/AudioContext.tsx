@@ -7,7 +7,7 @@ import { playThresholds } from '../lib/playThresholds';
 import { bumpBadge } from '../lib/badges';
 import {
   pickAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
-  AUDIO_AD_FIRST_MS, AUDIO_AD_EVERY_MS, AD_SKIP_MS,
+  AUDIO_AD_FIRST_MS, AUDIO_AD_EVERY_MS, AUDIO_AD_SKIP_MS,
   type AdViewer, type AudioAd,
 } from '../lib/ads';
 import { buildAffinityProfile, EMPTY_PROFILE } from '../lib/feedScorer';
@@ -186,11 +186,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const adPlayingRef = useRef(false);
   const adMetaRef = useRef<AudioAd | null>(null);
   const adViewerRef = useRef<AdViewer | null>(null);
+  // An ad break came due (a listening threshold was crossed) but ads NEVER
+  // interrupt a song mid-play — instead we set this flag and play the ad once
+  // the current song finishes (handled in the track-finished path). Stays set
+  // across track changes until the ad actually plays.
+  const adDueRef = useRef(false);
 
   function disarmAds() {
     adArmedRef.current = false;
     adListenMsRef.current = 0;
     adNextThresholdRef.current = AUDIO_AD_FIRST_MS;
+    adDueRef.current = false;
   }
 
   // Resolve the viewer (demographics + taste) for ad targeting when a playlist
@@ -219,9 +225,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     let ad: AudioAd | null = null;
     try { ad = await pickAudioAd(viewer); } catch {}
     if (!ad) {
-      // No matching inventory — push the next break out, keep the music playing.
+      // No matching inventory — push the next break out.
       adPlayingRef.current = false;
       adNextThresholdRef.current = adListenMsRef.current + AUDIO_AD_EVERY_MS;
+      // If this break was scheduled BETWEEN songs (the track already finished and
+      // is waiting on the ad), there's nothing to resume — proceed to the next
+      // track. Otherwise the music is still playing and just keeps going.
+      if (pendingFinishRef.current) maybeRunDeferredFinish();
       return;
     }
     adMetaRef.current = ad;
@@ -246,7 +256,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         if (!st.isLoaded) return;
         const pos = st.positionMillis ?? 0;
         const dur = st.durationMillis ?? 0;
-        setAdState((prev) => (prev ? { ...prev, elapsedMs: pos, durationMs: dur, canSkip: pos >= AD_SKIP_MS } : prev));
+        setAdState((prev) => (prev ? { ...prev, elapsedMs: pos, durationMs: dur, canSkip: pos >= AUDIO_AD_SKIP_MS } : prev));
         if (st.didJustFinish) finishAudioAd(false);
       });
     } catch {
@@ -439,11 +449,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (adPlayingRef.current) return; // locked during an audio ad
     const q = queueRef.current;
     const ni = queueIndexRef.current + 1;
-    if (q.length && ni < q.length) {
-      queueIndexRef.current = ni;
-      setQueueIndex(ni);
-      play(q[ni], true, true);
+    if (!(q.length && ni < q.length)) return; // nothing to skip to
+    // An ad is queued up — play it BETWEEN songs first (manual skip counts as
+    // "a song finishing"); proceedToNextTrack fires the ad and its completion
+    // advances to the song being skipped to (queueIndex + 1).
+    if (adDueRef.current && adArmedRef.current) {
+      proceedToNextTrack();
+      return;
     }
+    queueIndexRef.current = ni;
+    setQueueIndex(ni);
+    play(q[ni], true, true);
   }
 
   // Restart the current track from the top — used by the Spotify-style "previous"
@@ -508,6 +524,21 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // The track is done and nothing is holding the player open. If an audio ad came
+  // due during the track, play it BETWEEN songs FIRST — ads never interrupt a song
+  // mid-play. The ad runs on its own sound; finishAudioAd re-enters the deferred
+  // path (pendingFinishRef) to advance once it ends. Otherwise advance/close now.
+  function proceedToNextTrack() {
+    if (adDueRef.current && adArmedRef.current && !adPlayingRef.current) {
+      adDueRef.current = false;
+      pendingFinishRef.current = true; // tells finishAudioAd to advance, not resume
+      setIsPlaying(false);
+      fireAudioAd();
+      return;
+    }
+    advanceOrEnd();
+  }
+
   // A track finished. If the user is composing, or was interacting with the comments
   // past 80%, keep the current track + comments on screen (just stop playback) and
   // defer the advance/close — so a playlist won't skip ahead, and the player won't
@@ -529,12 +560,18 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setIsBuffering(false);
       return;
     }
-    advanceOrEnd();
+    proceedToNextTrack();
   }
 
   // Once nothing holds the player open (not composing, not engaged), run the deferred
-  // finish: advance to the next queued track, or close if it was the last.
+  // finish: play a due ad between songs, then advance to the next queued track (or
+  // close if it was the last).
   function maybeRunDeferredFinish() {
+    // While an audio ad is playing, NEVER advance here — the music is paused
+    // under the ad and finishAudioAd runs the advance when the ad ends. (Collapsing
+    // the player mid-ad calls this; without the guard it would start the next song
+    // on top of the ad.)
+    if (adPlayingRef.current) return;
     if (pendingFinishRef.current && !holdForCommentRef.current && !engagedNearEndRef.current) {
       pendingFinishRef.current = false;
       // Release the finished-but-kept sound before moving on (safe here — we're not
@@ -542,7 +579,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       const s = soundRef.current;
       soundRef.current = null;
       if (s) s.unloadAsync().catch(() => {});
-      advanceOrEnd();
+      proceedToNextTrack();
     }
   }
 
@@ -684,11 +721,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
               if (badgeMsRef.current >= 15000) flushBadgeMs();
             }
             // Audio-ad clock: only while a playlist is armed and no ad is mid-
-            // play. Crossing the threshold fires one ad (fire-and-forget; it
-            // guards its own re-entry via adPlayingRef).
+            // play. Crossing the threshold marks an ad DUE — it does NOT fire
+            // here (ads never interrupt a song mid-play). The track-finished
+            // path plays the due ad between songs.
             if (adArmedRef.current && !adPlayingRef.current) {
               adListenMsRef.current += delta;
-              if (adListenMsRef.current >= adNextThresholdRef.current) fireAudioAd();
+              if (adListenMsRef.current >= adNextThresholdRef.current) adDueRef.current = true;
             }
             const id = track.id;
             // Reset a post's accounting once its 24h window elapses so a genuine

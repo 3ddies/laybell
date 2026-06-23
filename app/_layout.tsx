@@ -19,6 +19,7 @@ import { ShareProvider } from '../contexts/ShareContext';
 import { FollowProvider } from '../contexts/FollowContext';
 import { StoriesProvider } from '../contexts/StoriesContext';
 import { ListenModeProvider } from '../contexts/ListenModeContext';
+import { LinkGuardProvider } from '../contexts/LinkGuardContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
@@ -87,6 +88,10 @@ function AppContent() {
             out) user's screen still behind it. Disable the gesture for this group so
             the login pages can't be swiped away at all. */}
         <Stack.Screen name="(auth)" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
+        {/* Onboarding (the "Welcome to Laybell" first-run flow): a new account must
+            complete it before entering the app, so the global back-swipe is disabled
+            here — the user can't swipe the welcome/setup screens away. */}
+        <Stack.Screen name="onboarding" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
         {/* The story viewer expands out of the tapped ring (Instagram shared-element
             style): transparent modal so the feed stays visible behind the growing
             post, no native animation/gesture — the in-screen rect animation drives it. */}
@@ -276,7 +281,9 @@ export default function RootLayout() {
               <StatusBar style="light" />
               <StoriesProvider>
                 <ListenModeProvider>
-                  <AppContent />
+                  <LinkGuardProvider>
+                    <AppContent />
+                  </LinkGuardProvider>
                 </ListenModeProvider>
               </StoriesProvider>
             </ShareProvider>

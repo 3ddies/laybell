@@ -1,6 +1,6 @@
 import { Video, ResizeMode } from 'expo-av';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator, Animated, Linking, Alert,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator, Animated, Alert,
 } from 'react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -12,6 +12,7 @@ import { bumpBadge } from '../../lib/badges';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { createNotification } from '../../lib/createNotification';
 import { usePostActionSheets } from '../../hooks/usePostActionSheets';
 import { formatCount } from '../../lib/format';
@@ -46,6 +47,7 @@ export default function ReelScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
+  const linkGuard = useLinkGuard();
   // Hosted locally (not via the root context) so the sheets present over this
   // transparentModal route on iOS — see usePostActionSheets.
   const { share: openShare, showOptions, sheets } = usePostActionSheets();
@@ -226,9 +228,13 @@ export default function ReelScreen() {
             listRef.current?.scrollToIndex({ index: index + 1, animated: true });
           }}
           onCta={() => {
-            recordAdClick(item, 'reels', currentUserId);
             const url = item.__ad?.ctaUrl;
-            if (url) Linking.openURL(url).catch(() => {});
+            if (!url) return;
+            linkGuard.open(url, {
+              context: 'ad',
+              sourceName: item.__ad?.advertiserName,
+              onProceed: () => recordAdClick(item, 'reels', currentUserId),
+            });
           }}
           onOptions={() => {
             const ad = item.__ad;

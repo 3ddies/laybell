@@ -13,6 +13,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { LANGUAGES } from '../lib/i18n';
 import BadgeEmblem from '../components/BadgeEmblem';
 import SwipeBackPager from '../components/SwipeBackPager';
+import LanguagePicker from '../components/LanguagePicker';
 import { displayedTier } from '../lib/badges';
 import {
   loadNotifPrefs, saveNotifPrefs, type NotifPrefs,
@@ -101,7 +102,8 @@ export default function SettingsScreen() {
   const [hiddenOn, setHiddenOn] = useState(false);
   useEffect(() => { setHiddenOn(!!(profile as any)?.hidden); }, [profile]);
   const { colors, mode, setMode } = useTheme();
-  const { t, lang, setLang, autoTranslate, setAutoTranslate } = useTranslation();
+  const { t, lang } = useTranslation();
+  const [langPickerVisible, setLangPickerVisible] = useState(false);
   const styles = useThemedStyles(makeStyles);
 
   // Per-category notification toggles (persisted locally). The "All" row is
@@ -503,47 +505,18 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Language — choose the app's language (applies live, persisted). Each row
-            shows the language's own name with its English name underneath. */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.section.language')}</Text>
-          <View style={styles.sectionCard}>
-            {LANGUAGES.map((l, i) => (
-              <View key={l.code}>
-                <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => setLang(l.code)}>
-                  <View style={styles.rowIcon}>
-                    <Ionicons name="language-outline" size={22} color={colors.text} />
-                  </View>
-                  <View style={styles.rowContent}>
-                    <Text style={styles.rowLabel}>{l.native}</Text>
-                    <Text style={styles.rowSubtitle}>{l.label}</Text>
-                  </View>
-                  {lang === l.code
-                    ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
-                    : <View style={styles.radioOff} />}
-                </TouchableOpacity>
-                {i < LANGUAGES.length - 1 && <View style={styles.separator} />}
-              </View>
-            ))}
-            {/* Auto-translate user content (comments/messages/captions/bios) into
-                the chosen language. Separate from the static-UI language above. */}
-            <View style={styles.separator} />
-            <View style={styles.row}>
-              <View style={styles.rowIcon}>
-                <Ionicons name="globe-outline" size={22} color={colors.text} />
-              </View>
-              <View style={styles.rowContent}>
-                <Text style={styles.rowLabel}>{t('settings.autoTranslate')}</Text>
-                <Text style={styles.rowSubtitle}>{t('settings.autoTranslateSub')}</Text>
-              </View>
-              <Switch
-                value={autoTranslate}
-                onValueChange={setAutoTranslate}
-                trackColor={{ false: colors.border, true: colors.primary + '88' }}
-                thumbColor={autoTranslate ? colors.primary : colors.textTertiary}
-              />
-            </View>
-          </View>
+        {/* Language — a single button that opens the picker (language list +
+            auto-translate live inside it), keeping Settings compact. No section
+            title: it's just one row, like a regular settings button. */}
+        <View style={styles.sectionCard}>
+          <SettingsRow
+            item={{
+              icon: 'language-outline',
+              label: t('settings.section.language'),
+              subtitle: LANGUAGES.find((l) => l.code === lang)?.native,
+              onPress: () => setLangPickerVisible(true),
+            }}
+          />
         </View>
 
         <Section title={t('settings.section.account')} items={accountItems} />
@@ -554,6 +527,11 @@ export default function SettingsScreen() {
 
         <Text style={styles.madeWith}>{t('settings.madeWith')}</Text>
       </ScrollView>
+
+      <LanguagePicker
+        visible={langPickerVisible}
+        onClose={() => setLangPickerVisible(false)}
+      />
     </View>
     </SwipeBackPager>
   );

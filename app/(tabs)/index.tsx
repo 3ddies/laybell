@@ -9,7 +9,7 @@ import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image, ActivityIndicator,
-  RefreshControl, Dimensions, Alert, Modal, Animated, Linking,
+  RefreshControl, Dimensions, Alert, Modal, Animated,
 } from 'react-native';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -27,6 +27,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useShare } from '../../contexts/ShareContext';
+import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { isAudioPost } from '../../lib/genres';
 import { fetchBlockedIds } from '../../lib/blocks';
 import {
@@ -310,6 +311,7 @@ export default function HomeScreen() {
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const { share: openShare } = useShare();
+  const linkGuard = useLinkGuard();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -348,8 +350,8 @@ export default function HomeScreen() {
   // Latest values for the stable card callbacks below. Updating a ref (instead of
   // putting these in useCallback deps) lets the callbacks keep a constant identity
   // — so memoized PostCards don't re-render — while still acting on current state.
-  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare, t });
-  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare, t };
+  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare, t, linkGuard });
+  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare, t, linkGuard };
 
   // Track which video is on-screen so it auto-plays while others pause.
   // FlatList requires these references to be stable across renders.
@@ -758,12 +760,18 @@ export default function HomeScreen() {
   const onToggleMuted = useCallback(() => live.current.toggleVideoMuted(), []);
   const onToggleSongMute = useCallback(() => live.current.toggleSongMuted(), []);
 
-  // Ad CTA — record the click and open the destination (https normalized in lib/ads).
+  // Ad CTA — open through the link-safety guard (destination shown, risky links
+  // flagged, dangerous ones blocked); the click is recorded only if the user
+  // actually proceeds.
   const onAdCta = useCallback((item: any) => {
     if (isSwipeTap()) return;
-    recordAdClick(item, 'feed', live.current.currentUserId);
     const url = item.__ad?.ctaUrl;
-    if (url) Linking.openURL(url).catch(() => {});
+    if (!url) return;
+    live.current.linkGuard.open(url, {
+      context: 'ad',
+      sourceName: item.__ad?.advertiserName,
+      onProceed: () => recordAdClick(item, 'feed', live.current.currentUserId),
+    });
   }, []);
   // Ad 3-dot: report / why this ad / ad settings.
   const onAdOptions = useCallback((item: any) => {

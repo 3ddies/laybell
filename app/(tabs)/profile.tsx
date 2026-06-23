@@ -4,7 +4,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Image, RefreshControl, Linking, PanResponder,
+  ScrollView, ActivityIndicator, Image, RefreshControl, PanResponder,
   Animated, Easing, Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,7 +20,8 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { countLabel } from '../../lib/i18n';
-import { normalizeUrl, displayUrl } from '../../lib/profileOptions';
+import { displayUrl } from '../../lib/profileOptions';
+import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { activeLayout, usedPostIds } from '../../lib/pageLayout';
 import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { isAudioPost } from '../../lib/genres';
@@ -60,6 +61,7 @@ export default function ProfileScreen() {
   const { openCamera } = useStories();
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const linkGuard = useLinkGuard();
   const styles = useThemedStyles(makeStyles);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
@@ -594,7 +596,7 @@ export default function ProfileScreen() {
               : <Text style={styles.bioEmpty}>{t('profile.noBio')}</Text>
             }
             {badgeProfile?.link ? (
-              <TouchableOpacity style={styles.linkRow} onPress={() => Linking.openURL(normalizeUrl(badgeProfile.link!)).catch(() => {})}>
+              <TouchableOpacity style={styles.linkRow} onPress={() => linkGuard.open(badgeProfile.link!, { context: 'bio' })}>
                 <Ionicons name="link-outline" size={14} color={colors.primary} />
                 <Text style={styles.linkText} numberOfLines={1}>{displayUrl(badgeProfile.link)}</Text>
               </TouchableOpacity>

@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput, Image,
-  TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
+  TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
   Keyboard, Animated, Alert,
 } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
@@ -13,6 +13,8 @@ import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { useLinkGuard } from '../../contexts/LinkGuardContext';
+import { scanText } from '../../lib/linkSafety';
 import { createNotification } from '../../lib/createNotification';
 import { useProfile } from '../../contexts/ProfileContext';
 import { sharedPostId, internalPathFromUrl, parseStoryReply, type StoryReplyRef } from '../../lib/postLinks';
@@ -27,6 +29,7 @@ export default function ChatScreen() {
   const { colors, mode } = useTheme();
   const { t } = useTranslation();
   const { profile: myProfile } = useProfile();
+  const linkGuard = useLinkGuard();
   const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -128,6 +131,14 @@ export default function ChatScreen() {
       Alert.alert(t('messages.hiddenTitle'), t('messages.hiddenBody'));
       return;
     }
+    // Link safety: refuse to SEND a message containing a dangerous link (bad
+    // scheme, embedded credentials, blocklisted host) — stops malicious links
+    // from propagating, in addition to the open-time guard on the recipient side.
+    const linkScan = scanText(newMessage.trim());
+    if (linkScan.verdict === 'block') {
+      Alert.alert(t('messages.unsafeLinkTitle'), t('messages.unsafeLinkBody'));
+      return;
+    }
     setSending(true);
     const body = newMessage.trim();
     setNewMessage('');
@@ -170,7 +181,9 @@ export default function ChatScreen() {
   function openLink(url: string) {
     const path = internalPathFromUrl(url);
     if (path) router.push(path as any);
-    else Linking.openURL(url).catch(() => {});
+    // External links route through the safety guard (destination shown, risky
+    // links flagged, dangerous ones blocked) instead of opening directly.
+    else linkGuard.open(url, { context: 'message' });
   }
 
   // Render a message body with any URLs as tappable links. Laybell post links

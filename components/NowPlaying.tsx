@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, Easing,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { useEffect, useRef, useState } from 'react';
@@ -19,8 +19,9 @@ import { formatCount } from '../lib/format';
 import { createNotification } from '../lib/createNotification';
 import Scrubber from './Scrubber';
 import Comments from './Comments';
-import { recordAdClick, AD_SKIP_MS } from '../lib/ads';
+import { recordAdClick, AUDIO_AD_SKIP_MS } from '../lib/ads';
 import { isPostSpotlighted } from '../lib/spotlight';
+import { useLinkGuard } from '../contexts/LinkGuardContext';
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 // Full-width art (capped at 300): at rest the header fills the screen down to
@@ -97,6 +98,7 @@ export default function NowPlaying() {
   const { t } = useTranslation();
   const { currentTrack, expanded, collapse, setCommentComposing, noteCommentEngagement, clearCommentEngagement, adState, skipAudioAd } = useAudio();
   const { show: showOptions } = usePostOptions();
+  const linkGuard = useLinkGuard();
   const router = useRouter();
   const [render, setRender] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
@@ -275,29 +277,94 @@ export default function NowPlaying() {
               <Ionicons name="chevron-down" size={26} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{t('nowPlaying.title')}</Text>
-            <TouchableOpacity
-              style={styles.headerBtn}
-              onPress={() => showOptions({
-                postId: pid,
-                isOwn: ownerId === userId,
-                authorId: ownerId ?? undefined,
-                authorName: ownerName,
-                mediaType: 'audio',
-                onEdit: () => { collapse(); router.push(`/edit-post/${pid}`); },
-                onDeleted: () => collapse(),
-                onArchived: () => collapse(),
-                onBlocked: () => collapse(),
-                onNavigate: collapse,
-                onLikeChanged: (l) => { setIsLiked(l); setLikeCount(c => Math.max(0, c + (l ? 1 : -1))); },
-                onSaveChanged: (s) => { setIsSaved(s); setSaves(c => Math.max(0, c + (s ? 1 : -1))); },
-              })}
-            >
-              <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
-            </TouchableOpacity>
+            {adState ? (
+              // Ads aren't posts — no options menu, just keep the header balanced.
+              <View style={styles.headerBtn} />
+            ) : (
+              <TouchableOpacity
+                style={styles.headerBtn}
+                onPress={() => showOptions({
+                  postId: pid,
+                  isOwn: ownerId === userId,
+                  authorId: ownerId ?? undefined,
+                  authorName: ownerName,
+                  mediaType: 'audio',
+                  onEdit: () => { collapse(); router.push(`/edit-post/${pid}`); },
+                  onDeleted: () => collapse(),
+                  onArchived: () => collapse(),
+                  onBlocked: () => collapse(),
+                  onNavigate: collapse,
+                  onLikeChanged: (l) => { setIsLiked(l); setLikeCount(c => Math.max(0, c + (l ? 1 : -1))); },
+                  onSaveChanged: (s) => { setIsSaved(s); setSaves(c => Math.max(0, c + (s ? 1 : -1))); },
+                })}
+              >
+                <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
+              </TouchableOpacity>
+            )}
           </View>
         </Animated.View>
         </PanGestureHandler>
 
+        {adState ? (
+          // Audio ad — rendered with the SAME layout as a song (cover art, title,
+          // artist line, progress) so it plays "like a regular song" in the full
+          // player. The header's collapse still works, so the user can drop to the
+          // mini bar and back without ending the ad. Skip is locked until
+          // AUDIO_AD_SKIP_MS; there are no comments/likes/streams for an ad.
+          <View style={styles.adBody}>
+            <View style={styles.artWrap}>
+              {adState.cover ? (
+                <Image source={{ uri: adState.cover }} style={styles.art} />
+              ) : (
+                <LinearGradient colors={GRADIENTS.primary} style={styles.art}>
+                  <Ionicons name="megaphone" size={64} color={colors.text} />
+                </LinearGradient>
+              )}
+            </View>
+
+            <View style={styles.meta}>
+              <Text style={styles.adSponsoredTag}>{t('nowPlaying.sponsored')}</Text>
+              <Text style={styles.title} numberOfLines={1}>{adState.advertiserName}</Text>
+              {!!adState.headline && <Text style={styles.artist} numberOfLines={2}>{adState.headline}</Text>}
+            </View>
+
+            {/* Ad progress (non-interactive — ads aren't seekable). */}
+            <View style={[styles.progressBlock, { width: '100%' }]}>
+              <View style={styles.adProgressTrack}>
+                <View style={[styles.adProgressFill, { width: `${Math.round((adState.durationMs > 0 ? adState.elapsedMs / adState.durationMs : 0) * 100)}%` }]} />
+              </View>
+              <View style={styles.times}>
+                <Text style={styles.timeText}>{formatMs(adState.elapsedMs)}</Text>
+                <Text style={styles.timeText}>{adState.durationMs > 0 ? formatMs(adState.durationMs) : '--:--'}</Text>
+              </View>
+            </View>
+
+            {!!adState.ctaUrl && (
+              <TouchableOpacity
+                style={styles.adCtaBtn}
+                onPress={() => linkGuard.open(adState.ctaUrl!, {
+                  context: 'ad',
+                  sourceName: adState.advertiserName,
+                  onProceed: () => recordAdClick(adState, 'audio', adState.viewerId),
+                })}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.adCtaText}>{adState.ctaLabel}</Text>
+                <Ionicons name="arrow-forward" size={16} color={colors.text} />
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[styles.adSkipBtn, !adState.canSkip && styles.adSkipDisabled]}
+              disabled={!adState.canSkip}
+              onPress={skipAudioAd}
+            >
+              <Text style={styles.adSkipText}>
+                {adState.canSkip ? t('nowPlaying.skipAd') : t('nowPlaying.skipIn', { secs: Math.max(1, Math.ceil((AUDIO_AD_SKIP_MS - adState.elapsedMs) / 1000)) })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
         <KeyboardAvoidingView
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -367,35 +434,6 @@ export default function NowPlaying() {
             }
           />
         </KeyboardAvoidingView>
-
-        {/* Audio-ad takeover — covers the player while a playlist break plays.
-            The music is paused; only Skip (after 5s) and the CTA are available. */}
-        {adState && (
-          <View style={styles.adOverlay}>
-            <View style={styles.adIcon}><Ionicons name="megaphone" size={36} color={colors.primary} /></View>
-            <Text style={styles.adSponsored}>{t('nowPlaying.sponsored')}</Text>
-            <Text style={styles.adBrand} numberOfLines={1}>{adState.advertiserName}</Text>
-            {!!adState.headline && <Text style={styles.adHeadline}>{adState.headline}</Text>}
-            {!!adState.ctaUrl && (
-              <TouchableOpacity
-                style={styles.adCtaBtn}
-                onPress={() => { recordAdClick(adState, 'audio', adState.viewerId); Linking.openURL(adState.ctaUrl!).catch(() => {}); }}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.adCtaText}>{adState.ctaLabel}</Text>
-                <Ionicons name="arrow-forward" size={16} color={colors.text} />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={[styles.adSkipBtn, !adState.canSkip && styles.adSkipDisabled]}
-              disabled={!adState.canSkip}
-              onPress={skipAudioAd}
-            >
-              <Text style={styles.adSkipText}>
-                {adState.canSkip ? t('nowPlaying.skipAd') : t('nowPlaying.skipIn', { secs: Math.max(1, Math.ceil((AD_SKIP_MS - adState.elapsedMs) / 1000)) })}
-              </Text>
-            </TouchableOpacity>
-          </View>
         )}
       </LinearGradient>
     </Animated.View>
@@ -454,30 +492,27 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   centerStatNum: { color: colors.text, fontSize: 18, fontWeight: '800' },
   centerStatLbl: { color: colors.textSecondary, fontSize: 11, marginTop: 1 },
 
-  // ── Audio-ad takeover overlay ──
-  adOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(10,6,2,0.97)',
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: SPACING.xl, gap: SPACING.sm,
+  // ── Audio ad rendered like a song (cover + meta + progress + CTA + skip) ──
+  adBody: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: SPACING.xl, paddingBottom: SPACING.xxl, gap: SPACING.sm,
   },
-  adIcon: {
-    width: 88, height: 88, borderRadius: 44,
-    backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center',
-    marginBottom: SPACING.sm,
+  adSponsoredTag: { color: colors.primaryLight, fontSize: 12, fontWeight: '800', letterSpacing: 1.5, marginBottom: 2, textAlign: 'center' },
+  adProgressTrack: {
+    width: '100%', height: 5, borderRadius: 3,
+    backgroundColor: colors.border, overflow: 'hidden',
   },
-  adSponsored: { color: colors.primaryLight, fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
-  adBrand: { color: colors.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  adHeadline: { color: colors.textSecondary, fontSize: 15, textAlign: 'center', lineHeight: 21, marginTop: 2 },
+  adProgressFill: { height: '100%', borderRadius: 3, backgroundColor: colors.primary },
   adCtaBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: colors.primary, borderRadius: RADIUS.full,
-    paddingVertical: SPACING.md, paddingHorizontal: SPACING.xl, marginTop: SPACING.lg,
+    paddingVertical: SPACING.md, paddingHorizontal: SPACING.xl, marginTop: SPACING.md,
+    alignSelf: 'stretch',
   },
   adCtaText: { color: colors.text, fontSize: 16, fontWeight: '800' },
   adSkipBtn: {
     borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.full,
-    paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.xl, marginTop: SPACING.sm,
+    paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.xl, marginTop: SPACING.xs,
   },
   adSkipDisabled: { opacity: 0.5 },
   adSkipText: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
