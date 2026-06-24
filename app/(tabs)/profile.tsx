@@ -342,8 +342,6 @@ export default function ProfileScreen() {
             duration={track.duration_seconds}
             streams={track.stream_count ?? 0}
             cover={track.cover_url}
-            postId={track.id}
-            mediaUrl={track.media_url}
             badgeProfile={badgeProfile}
             badgeOwnerId={profile?.id}
             spotlighted={spotlightIds.has(track.id)}

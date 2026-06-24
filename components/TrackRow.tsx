@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
@@ -6,7 +6,6 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { formatCount } from '../lib/format';
 import { guardPress } from '../contexts/PagerContext';
-import { useDownloadAction } from '../hooks/useDownloadAction';
 import HighlightText from './HighlightText';
 import BadgeEmblem from './BadgeEmblem';
 import { type ProfileBadgeFields } from '../lib/badges';
@@ -21,14 +20,9 @@ function formatDuration(seconds?: number | null) {
 export default function TrackRow({
   caption, artist, username, duration, streams, cover, avatarUrl, badgeProfile, badgeOwnerId,
   isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, onOptions, hidePlayButton, highlightQuery, spotlighted,
-  postId, mediaUrl, downloadable,
 }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
   cover?: string | null; avatarUrl?: string | null; hidePlayButton?: boolean;
-  // Offline support (all optional — consumers opt in incrementally without breaking).
-  // postId alone shows the passive "available offline" indicator; postId + mediaUrl
-  // also renders the right-side download/remove button.
-  postId?: string; mediaUrl?: string | null; downloadable?: boolean;
   // The track owner's badge fields + id, so their emblem shows next to the handle
   // and tapping your own opens your Badges page.
   badgeProfile?: ProfileBadgeFields | null;
@@ -47,12 +41,6 @@ export default function TrackRow({
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const durationLabel = formatDuration(duration);
-  // Offline state for this track (passive indicator + optional download button).
-  const { download, confirmRemove, isPinned, isDownloading } = useDownloadAction();
-  const pinned = !!postId && isPinned(postId);
-  const downloading = !!postId && isDownloading(postId);
-  // The download button needs the audio URL; the passive indicator only needs the id.
-  const canDownload = !!postId && !!mediaUrl;
   // Swipe-tap guard: a tab swipe gliding over the row must not start playback
   // or open a profile (presses during/just after a swipe are swallowed).
   const safePlay = guardPress(onPlay)!;
@@ -99,13 +87,6 @@ export default function TrackRow({
           <Ionicons name="play" size={9} color={colors.textTertiary} />
           <Text style={styles.streams}>{formatCount(streams)}</Text>
           {durationLabel && <Text style={styles.artist}>· {durationLabel}</Text>}
-          {/* Subtle "available offline" indicator — shown whenever this track is pinned. */}
-          {pinned && (
-            <View style={styles.offlineTag}>
-              <Ionicons name="cloud-done" size={12} color={colors.textSecondary} />
-              <Text style={styles.offlineText}>{t('offline.offlineBadge')}</Text>
-            </View>
-          )}
         </View>
       </TouchableOpacity>
 
@@ -114,34 +95,6 @@ export default function TrackRow({
         <TouchableOpacity onPress={safePlay} onLongPress={onOptions} activeOpacity={0.8} hitSlop={6}>
           <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={44} color={colors.primary} />
         </TouchableOpacity>
-      )}
-
-      {/* Download / remove — only when the audio URL is available. Spinner while
-          downloading; cloud-done (tap = remove) when pinned; download otherwise. */}
-      {canDownload && (
-        downloading ? (
-          <View style={styles.addBtn}>
-            <ActivityIndicator size="small" color={colors.primary} />
-          </View>
-        ) : pinned ? (
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={() => confirmRemove(postId!, caption)}
-            onLongPress={onOptions}
-            accessibilityLabel={t('offline.remove')}
-          >
-            <Ionicons name="cloud-done" size={22} color={colors.primary} />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={() => download({ id: postId!, uri: mediaUrl!, title: caption, artist, cover, downloadable })}
-            onLongPress={onOptions}
-            accessibilityLabel={t('offline.download')}
-          >
-            <Ionicons name="cloud-download-outline" size={22} color={colors.primary} />
-          </TouchableOpacity>
-        )
       )}
 
       {onAddToPlaylist && (
@@ -190,8 +143,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   artist: { color: colors.textSecondary, fontSize: 12 },
   streams: { color: colors.textTertiary, fontSize: 12 },
-  offlineTag: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  offlineText: { color: colors.textSecondary, fontSize: 12 },
   addBtn: { padding: SPACING.xs },
   avatar: { width: 34, height: 34, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceElevated },
   avatarText: { color: colors.text, fontSize: 14, fontWeight: '700' },

@@ -8,7 +8,6 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
-import { useDownloadAction } from '../hooks/useDownloadAction';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
@@ -99,7 +98,6 @@ export default function NowPlaying() {
   const { t } = useTranslation();
   const { currentTrack, expanded, collapse, setCommentComposing, noteCommentEngagement, clearCommentEngagement, adState, skipAudioAd } = useAudio();
   const { show: showOptions } = usePostOptions();
-  const { download, confirmRemove, isPinned, isDownloading, progress } = useDownloadAction();
   const linkGuard = useLinkGuard();
   const router = useRouter();
   const [render, setRender] = useState(false);
@@ -279,8 +277,6 @@ export default function NowPlaying() {
               <TouchableOpacity style={styles.headerBtn} onPress={collapse}>
                 <Ionicons name="chevron-down" size={26} color={colors.text} />
               </TouchableOpacity>
-              {/* Balances the right slot's extra (download) button so the title stays centered. */}
-              {!adState && <View style={styles.headerBtn} />}
             </View>
             <Text style={styles.headerTitle}>{t('nowPlaying.title')}</Text>
             {adState ? (
@@ -288,26 +284,6 @@ export default function NowPlaying() {
               <View style={styles.headerBtn} />
             ) : (
               <View style={styles.headerActions}>
-                {/* Download for offline — driven by the current track's pin state. */}
-                <TouchableOpacity
-                  style={styles.headerBtn}
-                  onPress={() => {
-                    if (isDownloading(pid)) return;
-                    if (isPinned(pid)) confirmRemove(pid, currentTrack.caption);
-                    else download({ id: pid, uri: currentTrack.uri, title: currentTrack.caption, artist: currentTrack.artist, cover: currentTrack.cover });
-                  }}
-                  accessibilityLabel={isDownloading(pid) ? t('offline.downloading') : isPinned(pid) ? t('offline.remove') : t('offline.download')}
-                >
-                  {isDownloading(pid) ? (
-                    <ActivityIndicator size="small" color={colors.text} />
-                  ) : (
-                    <Ionicons
-                      name={isPinned(pid) ? 'cloud-done' : 'cloud-download-outline'}
-                      size={22}
-                      color={isPinned(pid) ? colors.primary : colors.text}
-                    />
-                  )}
-                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.headerBtn}
                   onPress={() => showOptions({

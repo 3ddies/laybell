@@ -654,8 +654,6 @@ export default function ExploreScreen() {
               avatarUrl={item.profiles?.avatar_url}
               badgeProfile={item.profiles}
               badgeOwnerId={item.user_id}
-              postId={item.id}
-              mediaUrl={item.media_url}
               highlightQuery={hq}
               isPlaying={currentTrack?.id === item.id && isPlaying}
               onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}

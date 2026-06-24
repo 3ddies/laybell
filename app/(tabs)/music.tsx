@@ -1087,8 +1087,6 @@ export default function MusicScreen() {
               streams={item.stream_count}
               cover={item.cover_url}
               avatarUrl={item.profiles?.avatar_url}
-              postId={item.id}
-              mediaUrl={item.media_url}
               highlightQuery={item.id === searchTopId ? searchQuery : undefined}
               isPlaying={playingId === item.id}
               onPlay={() => play(item.id, item.media_url, item.caption, item.profiles?.display_name, item.cover_url)}
@@ -1234,8 +1232,6 @@ export default function MusicScreen() {
                     streams={track.stream_count}
                     cover={track.cover_url}
                     avatarUrl={track.profiles?.avatar_url}
-                    postId={track.id}
-                    mediaUrl={track.media_url}
                     isPlaying={playingId === track.id}
                     onPlay={() => playQueue(trendingQueue(), i)}
                     onCoverPress={() => { playQueue(trendingQueue(), i); openNowPlaying(); }}
@@ -1309,8 +1305,6 @@ export default function MusicScreen() {
                       streams={track.stream_count}
                       cover={track.cover_url}
                       avatarUrl={track.profiles?.avatar_url}
-                      postId={track.id}
-                      mediaUrl={track.media_url}
                       isPlaying={playingId === track.id}
                       onPlay={() => playQueue(top20Queue(), i)}
                       onCoverPress={() => { playQueue(top20Queue(), i); openNowPlaying(); }}
@@ -1628,8 +1622,6 @@ export default function MusicScreen() {
                   streams={item.posts.stream_count}
                   cover={item.posts.cover_url}
                   avatarUrl={item.posts.profiles?.avatar_url}
-                  postId={item.posts.id}
-                  mediaUrl={item.posts.media_url}
                   isPlaying={playingId === item.post_id}
                   onPlay={() => playQueue(playlistQueue(), index)}
                   onCoverPress={() => { playQueue(playlistQueue(), index); openNowPlaying(); }}
@@ -1690,8 +1682,6 @@ export default function MusicScreen() {
               streams={item.posts?.stream_count}
               cover={item.posts?.cover_url}
               avatarUrl={item.posts?.profiles?.avatar_url}
-              postId={item.posts?.id}
-              mediaUrl={item.posts?.media_url}
               isPlaying={playingId === item.posts?.id}
               hidePlayButton
               onPlay={() => play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url)}
@@ -1751,8 +1741,6 @@ export default function MusicScreen() {
               streams={item.posts?.stream_count}
               cover={item.posts?.cover_url}
               avatarUrl={item.posts?.profiles?.avatar_url}
-              postId={item.posts?.id}
-              mediaUrl={item.posts?.media_url}
               isPlaying={playingId === item.posts?.id}
               hidePlayButton
               onPlay={() => playQueue(likedQueue(), index)}
@@ -1829,8 +1817,6 @@ export default function MusicScreen() {
                   streams={item.posts.stream_count}
                   cover={item.posts.cover_url}
                   avatarUrl={item.posts.profiles?.avatar_url}
-                  postId={item.posts.id}
-                  mediaUrl={item.posts.media_url}
                   isPlaying={playingId === item.posts.id}
                   onPlay={() => playCommunityTrack(index)}
                   onCoverPress={() => { playCommunityTrack(index); openNowPlaying(); }}

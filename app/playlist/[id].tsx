@@ -150,8 +150,6 @@ export default function PlaylistScreen() {
                 streams={item.posts?.stream_count}
                 cover={item.posts?.cover_url}
                 avatarUrl={item.posts?.profiles?.avatar_url}
-                postId={item.posts?.id}
-                mediaUrl={item.posts?.media_url}
                 isPlaying={currentTrack?.id === item.posts?.id && isPlaying}
                 onPlay={() => playFrom(index)}
                 onCoverPress={() => { playFrom(index); expand(); }}

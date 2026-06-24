@@ -222,8 +222,6 @@ const PostCard = memo(function PostCard({
             cover={item.cover_url}
             avatarUrl={item.profiles?.avatar_url}
             duration={item.duration_seconds}
-            postId={item.id}
-            mediaUrl={item.media_url}
             isPlaying={audioActive}
             onPlay={() => onPlayTrack(item)}
             onCoverPress={() => onExpandTrack(item)}
