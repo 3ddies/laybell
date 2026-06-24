@@ -17,6 +17,8 @@ import { useProfile } from '../../contexts/ProfileContext';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import SupporterBadge from '../../components/SupporterBadge';
+import { usePremium } from '../../contexts/PremiumContext';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { countLabel } from '../../lib/i18n';
@@ -61,6 +63,7 @@ export default function ProfileScreen() {
   const { openCamera } = useStories();
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const { isPremium } = usePremium();
   const linkGuard = useLinkGuard();
   const styles = useThemedStyles(makeStyles);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -339,6 +342,8 @@ export default function ProfileScreen() {
             duration={track.duration_seconds}
             streams={track.stream_count ?? 0}
             cover={track.cover_url}
+            postId={track.id}
+            mediaUrl={track.media_url}
             badgeProfile={badgeProfile}
             badgeOwnerId={profile?.id}
             spotlighted={spotlightIds.has(track.id)}
@@ -576,6 +581,7 @@ export default function ProfileScreen() {
           <View style={styles.infoLeft}>
             <View style={styles.nameRow}>
               <Text style={styles.displayName}>{profile?.display_name}</Text>
+              <SupporterBadge active={isPremium} premiumUntil={(profile as any)?.premium_until} />
               {myTier ? (
                 <BadgeEmblem profile={badgeProfile} size={17} />
               ) : (

@@ -525,7 +525,7 @@ export default function MusicScreen() {
   // Flip a playlist public/private. Going public needs a free tier slot —
   // the user frees one by making an active public playlist private (or by
   // earning a higher badge). Going private always works.
-  async function setPlaylistVisibility(pl: Playlist, makePublic: boolean) {
+  async function setPlaylistVisibility(pl: Pick<Playlist, 'id'>, makePublic: boolean) {
     if (makePublic && myPublicCount >= myPublicLimit) {
       Alert.alert(
         t('music.noFreeSlotsTitle'),
@@ -1087,6 +1087,8 @@ export default function MusicScreen() {
               streams={item.stream_count}
               cover={item.cover_url}
               avatarUrl={item.profiles?.avatar_url}
+              postId={item.id}
+              mediaUrl={item.media_url}
               highlightQuery={item.id === searchTopId ? searchQuery : undefined}
               isPlaying={playingId === item.id}
               onPlay={() => play(item.id, item.media_url, item.caption, item.profiles?.display_name, item.cover_url)}
@@ -1098,6 +1100,8 @@ export default function MusicScreen() {
                 authorId: item.user_id,
                 authorName: item.profiles?.username,
                 mediaType: item.type ?? 'audio',
+                mediaUrl: item.media_url,
+                cover: item.cover_url,
                 onEdit: () => router.push(`/edit-post/${item.id}`),
                 onDeleted: () => setSearchResults(prev => prev.filter(p => p.id !== item.id)),
                 onArchived: () => setSearchResults(prev => prev.filter(p => p.id !== item.id)),
@@ -1230,6 +1234,8 @@ export default function MusicScreen() {
                     streams={track.stream_count}
                     cover={track.cover_url}
                     avatarUrl={track.profiles?.avatar_url}
+                    postId={track.id}
+                    mediaUrl={track.media_url}
                     isPlaying={playingId === track.id}
                     onPlay={() => playQueue(trendingQueue(), i)}
                     onCoverPress={() => { playQueue(trendingQueue(), i); openNowPlaying(); }}
@@ -1240,6 +1246,8 @@ export default function MusicScreen() {
                       authorId: track.user_id,
                       authorName: track.profiles?.username,
                       mediaType: track.type ?? 'audio',
+                      mediaUrl: track.media_url,
+                      cover: track.cover_url,
                       onEdit: () => router.push(`/edit-post/${track.id}`),
                       onDeleted: () => {
                         setTrendingTracks(prev => prev.filter(t => t.id !== track.id));
@@ -1301,6 +1309,8 @@ export default function MusicScreen() {
                       streams={track.stream_count}
                       cover={track.cover_url}
                       avatarUrl={track.profiles?.avatar_url}
+                      postId={track.id}
+                      mediaUrl={track.media_url}
                       isPlaying={playingId === track.id}
                       onPlay={() => playQueue(top20Queue(), i)}
                       onCoverPress={() => { playQueue(top20Queue(), i); openNowPlaying(); }}
@@ -1311,6 +1321,8 @@ export default function MusicScreen() {
                         authorId: track.user_id,
                         authorName: track.profiles?.username,
                         mediaType: track.type ?? 'audio',
+                        mediaUrl: track.media_url,
+                        cover: track.cover_url,
                         onEdit: () => router.push(`/edit-post/${track.id}`),
                         onDeleted: () => setTop20Tracks(prev => prev.filter(t => t.id !== track.id)),
                         onArchived: () => setTop20Tracks(prev => prev.filter(t => t.id !== track.id)),
@@ -1390,6 +1402,8 @@ export default function MusicScreen() {
                         authorId: track.user_id,
                         authorName: track.profiles?.username,
                         mediaType: track.type ?? 'audio',
+                        mediaUrl: track.media_url,
+                        cover: track.cover_url,
                         onEdit: () => router.push(`/edit-post/${track.id}`),
                         onDeleted: () => setForYouTracks(prev => prev.filter(t => t.id !== track.id)),
                         onArchived: () => setForYouTracks(prev => prev.filter(t => t.id !== track.id)),
@@ -1428,6 +1442,8 @@ export default function MusicScreen() {
                       authorId: todaysPick.user_id,
                       authorName: todaysPick.profiles?.username,
                       mediaType: todaysPick.type ?? 'audio',
+                      mediaUrl: todaysPick.media_url,
+                      cover: todaysPick.cover_url,
                       onEdit: () => router.push(`/edit-post/${todaysPick.id}`),
                       onDeleted: () => setTodaysPick(null),
                       onArchived: () => setTodaysPick(null),
@@ -1612,6 +1628,8 @@ export default function MusicScreen() {
                   streams={item.posts.stream_count}
                   cover={item.posts.cover_url}
                   avatarUrl={item.posts.profiles?.avatar_url}
+                  postId={item.posts.id}
+                  mediaUrl={item.posts.media_url}
                   isPlaying={playingId === item.post_id}
                   onPlay={() => playQueue(playlistQueue(), index)}
                   onCoverPress={() => { playQueue(playlistQueue(), index); openNowPlaying(); }}
@@ -1622,6 +1640,8 @@ export default function MusicScreen() {
                     authorId: item.posts.user_id,
                     authorName: item.posts.profiles?.username,
                     mediaType: 'audio',
+                    mediaUrl: item.posts.media_url,
+                    cover: item.posts.cover_url,
                     onEdit: () => router.push(`/edit-post/${item.post_id}`),
                     onDeleted: () => setTracks(prev => prev.filter(t => t.post_id !== item.post_id)),
                     onArchived: () => setTracks(prev => prev.filter(t => t.post_id !== item.post_id)),
@@ -1670,6 +1690,8 @@ export default function MusicScreen() {
               streams={item.posts?.stream_count}
               cover={item.posts?.cover_url}
               avatarUrl={item.posts?.profiles?.avatar_url}
+              postId={item.posts?.id}
+              mediaUrl={item.posts?.media_url}
               isPlaying={playingId === item.posts?.id}
               hidePlayButton
               onPlay={() => play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url)}
@@ -1682,6 +1704,8 @@ export default function MusicScreen() {
                 authorId: item.posts?.user_id,
                 authorName: item.posts?.profiles?.username,
                 mediaType: item.posts?.type ?? 'audio',
+                mediaUrl: item.posts?.media_url,
+                cover: item.posts?.cover_url,
                 onEdit: () => router.push(`/edit-post/${item.posts?.id}`),
                 onDeleted: () => setSavedTracks(prev => prev.filter((s: any) => s.posts?.id !== item.posts?.id)),
                 onArchived: () => setSavedTracks(prev => prev.filter((s: any) => s.posts?.id !== item.posts?.id)),
@@ -1727,6 +1751,8 @@ export default function MusicScreen() {
               streams={item.posts?.stream_count}
               cover={item.posts?.cover_url}
               avatarUrl={item.posts?.profiles?.avatar_url}
+              postId={item.posts?.id}
+              mediaUrl={item.posts?.media_url}
               isPlaying={playingId === item.posts?.id}
               hidePlayButton
               onPlay={() => playQueue(likedQueue(), index)}
@@ -1739,6 +1765,8 @@ export default function MusicScreen() {
                 authorId: item.posts?.user_id,
                 authorName: item.posts?.profiles?.username,
                 mediaType: item.posts?.type ?? 'audio',
+                mediaUrl: item.posts?.media_url,
+                cover: item.posts?.cover_url,
                 onEdit: () => router.push(`/edit-post/${item.posts?.id}`),
                 onDeleted: () => setLikedTracks(prev => prev.filter((l: any) => l.posts?.id !== item.posts?.id)),
                 onArchived: () => setLikedTracks(prev => prev.filter((l: any) => l.posts?.id !== item.posts?.id)),
@@ -1801,6 +1829,8 @@ export default function MusicScreen() {
                   streams={item.posts.stream_count}
                   cover={item.posts.cover_url}
                   avatarUrl={item.posts.profiles?.avatar_url}
+                  postId={item.posts.id}
+                  mediaUrl={item.posts.media_url}
                   isPlaying={playingId === item.posts.id}
                   onPlay={() => playCommunityTrack(index)}
                   onCoverPress={() => { playCommunityTrack(index); openNowPlaying(); }}

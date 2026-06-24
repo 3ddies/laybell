@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity,
-  Pressable, Animated, PanResponder, Easing, Platform,
+  Pressable, Animated, PanResponder, Easing, Platform, ActivityIndicator,
 } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import { createNotification } from '../lib/createNotification';
 import { useProfile } from './ProfileContext';
 import { useTranslation } from './LanguageContext';
 import { isReposted, addRepost, removeRepost } from '../lib/reposts';
+import { useDownloadAction } from '../hooks/useDownloadAction';
 import AddToPlaylistModal from '../components/AddToPlaylistModal';
 
 export type PostOptionsArgs = {
@@ -29,8 +30,17 @@ export type PostOptionsArgs = {
   authorId?: string;
   authorName?: string;
   // The post's `type`. Audio-family posts (audio/podcast/audiobook) get the music
-  // actions: Add to playlist, Like/Unlike, Save/Unsave, Artist.
+  // actions: Add to playlist, Like/Unlike, Save/Unsave, Artist, and Download.
   mediaType?: string | null;
+  // Offline-download inputs for audio posts. mediaUrl is the remote audio URL
+  // (posts.media_url) we pin; cover is the artwork. downloadable mirrors the
+  // owner's posts.downloadable flag. Any of these may be omitted — the sheet
+  // lazily fetches the missing pieces from `posts` when it opens an audio menu
+  // (most call sites don't select `downloadable`), so callers only need to pass
+  // what's already in scope.
+  mediaUrl?: string | null;
+  cover?: string | null;
+  downloadable?: boolean;
   onEdit?: () => void;
   onDeleted?: () => void;
   onArchived?: () => void;
@@ -108,6 +118,8 @@ type Opt = {
   destructive?: boolean;
   active?: boolean;        // filled state for like/save
   activeColor?: string;
+  loading?: boolean;       // show a spinner in place of the icon (e.g. downloading)
+  accessibilityLabel?: string;
   onPress: () => void;
 };
 
@@ -121,6 +133,7 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
   const router = useRouter();
   const { profile } = useProfile();
   const { t } = useTranslation();
+  const { download, confirmRemove, isPinned, isDownloading } = useDownloadAction();
   const translateY = useRef(new Animated.Value(DISMISS_DIST)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
   const closeRef = useRef(onClose); closeRef.current = onClose;
@@ -129,6 +142,13 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [blocked, setBlocked] = useState(false);
+  // Offline-download inputs for the audio post. Seeded from the args, then
+  // back-filled by a lazy `posts` fetch when the args don't carry them (most
+  // call sites don't select media_url/cover_url/downloadable).
+  const [dlUrl, setDlUrl] = useState<string | null>(null);
+  const [dlCover, setDlCover] = useState<string | null>(null);
+  const [dlTitle, setDlTitle] = useState('');
+  const [downloadable, setDownloadable] = useState(true);
 
   useEffect(() => {
     if (visible) {
@@ -152,6 +172,27 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
           .then(({ data }) => setLiked(!!data));
         supabase.from('saves').select('id').eq('post_id', o.postId).eq('user_id', uid).maybeSingle()
           .then(({ data }) => setSaved(!!data));
+      }
+      // Download inputs: seed from args, then fetch the rest. We always fetch for
+      // audio posts because the song TITLE (caption) is needed for the Downloads
+      // list and is never in the args; the same round-trip back-fills media_url /
+      // cover / downloadable when the caller didn't pass them.
+      if (o?.postId && isAudioPost(o.mediaType)) {
+        setDlUrl(o.mediaUrl ?? null);
+        setDlCover(o.cover ?? null);
+        setDownloadable(o.downloadable ?? true);
+        setDlTitle('');
+        supabase.from('posts').select('media_url, cover_url, downloadable, caption').eq('id', o.postId).maybeSingle()
+          .then(({ data }) => {
+            if (!data) return;
+            const d = data as any;
+            if (!o.mediaUrl) setDlUrl(d.media_url ?? null);
+            if (o.cover == null) setDlCover(d.cover_url ?? null);
+            if (o.downloadable === undefined) setDownloadable(d.downloadable ?? true);
+            setDlTitle(d.caption ?? '');
+          }, () => {});
+      } else {
+        setDlUrl(null); setDlCover(null); setDownloadable(true); setDlTitle('');
       }
     }
   }, [visible]);
@@ -210,6 +251,29 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
     o.onSaveChanged?.(next);
   }
 
+  // Download / remove-download for any viewer. Keeps the sheet OPEN so the
+  // pinned/removing state is reflected (and the spinner shows while pinning).
+  function toggleDownload() {
+    const o = optsRef.current;
+    if (!o?.postId) return;
+    if (isDownloading(o.postId)) return;
+    if (isPinned(o.postId)) {
+      confirmRemove(o.postId, dlTitle || undefined);
+    } else if (dlUrl) {
+      download({ id: o.postId, uri: dlUrl, title: dlTitle || undefined, artist: o.authorName, cover: dlCover, downloadable });
+    }
+  }
+
+  // Owner-only toggle of posts.downloadable. Optimistic + fire-and-forget; keeps
+  // the sheet open so the on/off state is visible.
+  function toggleDownloadable() {
+    const o = optsRef.current;
+    if (!o?.postId) return;
+    const next = !downloadable;
+    setDownloadable(next); // optimistic
+    supabase.from('posts').update({ downloadable: next }).eq('id', o.postId).then(undefined, () => {});
+  }
+
   // Ownership is authoritative from the app-wide ProfileContext. A caller may
   // pass isOwn:false only because ITS locally-fetched currentUserId hadn't
   // loaded yet — the seed-rendered post/reel screens render your tapped post
@@ -246,6 +310,24 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
       active: liked, activeColor: COLORS.like, onPress: toggleLike });
     options.push({ key: 'save', label: saved ? t('postOptions.unsave') : t('postOptions.save'), icon: saved ? 'bookmark' : 'bookmark-outline',
       active: saved, activeColor: COLORS.primary, onPress: toggleSave });
+    // Download for offline (any viewer). Pinned → "Remove download"; otherwise
+    // "Download". useDownloadAction owns all the failure alerts (tier/space/opt-out).
+    {
+      const pinned = !!opts?.postId && isPinned(opts.postId);
+      const downloading = !!opts?.postId && isDownloading(opts.postId);
+      options.push(pinned
+        ? { key: 'download', label: t('offline.remove'), icon: 'trash-outline', loading: downloading,
+            accessibilityLabel: t('offline.remove'), onPress: toggleDownload }
+        : { key: 'download', label: t('offline.download'), icon: 'cloud-download-outline', loading: downloading,
+            accessibilityLabel: t('offline.download'), onPress: toggleDownload });
+    }
+    // Owner-only: toggle whether listeners may download this track.
+    if (isOwn) {
+      options.push({ key: 'downloadable', label: t('offline.downloadableLabel'),
+        icon: downloadable ? 'cloud-done' : 'cloud-offline-outline',
+        active: downloadable, activeColor: COLORS.primary,
+        accessibilityLabel: t('offline.downloadableLabel'), onPress: toggleDownloadable });
+    }
     if (opts?.authorId && !isOwn) {
       options.push({ key: 'artist', label: t('postOptions.artist'), icon: 'person-outline',
         onPress: () => { const o = optsRef.current; dismissThen(() => { o?.onNavigate?.(); if (o?.authorId) router.push(`/profile/${o.authorId}`); }); } });
@@ -317,17 +399,22 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
             style={[styles.option, i < options.length - 1 && styles.optionBorder]}
             onPress={opt.onPress}
             activeOpacity={0.7}
+            accessibilityLabel={opt.accessibilityLabel}
           >
             <View style={[
               styles.iconWrap,
               opt.destructive && styles.iconWrapDestructive,
               opt.active && { backgroundColor: (opt.activeColor ?? COLORS.primary) + '1A' },
             ]}>
-              <Ionicons
-                name={opt.icon}
-                size={20}
-                color={opt.active ? (opt.activeColor ?? COLORS.primary) : opt.destructive ? COLORS.error : COLORS.text}
-              />
+              {opt.loading ? (
+                <ActivityIndicator size="small" color={COLORS.text} />
+              ) : (
+                <Ionicons
+                  name={opt.icon}
+                  size={20}
+                  color={opt.active ? (opt.activeColor ?? COLORS.primary) : opt.destructive ? COLORS.error : COLORS.text}
+                />
+              )}
             </View>
             <Text style={[styles.optionLabel, opt.destructive && styles.destructive]}>{opt.label}</Text>
           </TouchableOpacity>

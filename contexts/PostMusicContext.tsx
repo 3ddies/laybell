@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDeviceId } from '../lib/deviceId';
@@ -40,7 +40,8 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
+  const statusSubRef = useRef<{ remove: () => void } | null>(null);
   const tokenRef = useRef(0);
   const activeIdRef = useRef<string | null>(null);
   const activeSongRef = useRef<string | null>(null);
@@ -132,10 +133,11 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function teardown() {
+  function teardown() {
+    statusSubRef.current?.remove(); statusSubRef.current = null;
     const s = soundRef.current;
     soundRef.current = null;
-    if (s) { try { await s.stopAsync(); await s.unloadAsync(); } catch {} }
+    if (s) { try { s.pause(); } catch {} setTimeout(() => { try { s.remove(); } catch {} }, 0); }
   }
 
   function stop(hostId?: string) {
@@ -165,38 +167,39 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     }
     if (!url || token !== tokenRef.current) return;
 
+    statusSubRef.current?.remove(); statusSubRef.current = null;
     const existing = soundRef.current;
     soundRef.current = null;
-    if (existing) { try { await existing.stopAsync(); await existing.unloadAsync(); } catch {} }
+    if (existing) { try { existing.pause(); } catch {} setTimeout(() => { try { existing.remove(); } catch {} }, 0); }
     if (token !== tokenRef.current) return;
 
     try {
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: url },
-        { shouldPlay: false, isLooping: true, isMuted: mutedRef.current, progressUpdateIntervalMillis: 500 },
-      );
-      if (token !== tokenRef.current) { try { await sound.unloadAsync(); } catch {} return; }
-      soundRef.current = sound;
+      // createAudioPlayer is synchronous (we token-checked above); loop + mute are
+      // native, writable properties in expo-audio.
+      const player = createAudioPlayer({ uri: url }, { updateInterval: 500 });
+      player.loop = true;
+      player.muted = mutedRef.current;
+      soundRef.current = player;
       // Accrue genuine forward listen time for this song toward the 30s → 1 ambient
       // stream. `lastPos` is per-sound, so reloading on a scroll to another post with
       // the same song starts fresh while the PER-SONG tally persists; the loop seam
       // reads as a negative/large jump and is ignored, as is muted/background time.
       let lastPos = 0;
-      sound.setOnPlaybackStatusUpdate((st: any) => {
+      statusSubRef.current = player.addListener('playbackStatusUpdate', (st: any) => {
         if (!st.isLoaded) return;
-        const pos = st.positionMillis ?? 0;
+        const pos = (st.currentTime ?? 0) * 1000;   // expo-audio reports SECONDS
         const delta = pos - lastPos;
         lastPos = pos;
         if (delta > 0 && delta < 1500 && !mutedRef.current && appActiveRef.current) accrueAmbient(songId, delta);
       });
-      sound.playAsync().catch(() => {});
+      player.play();
     } catch {}
   }
 
   function toggleMuted() {
     setMuted((m) => {
       const next = !m;
-      soundRef.current?.setIsMutedAsync(next).catch(() => {});
+      try { if (soundRef.current) soundRef.current.muted = next; } catch {}
       return next;
     });
   }

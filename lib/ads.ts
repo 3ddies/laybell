@@ -3,6 +3,7 @@ import { tg } from './i18n';
 import { bumpBadge } from './badges';
 import { fetchBlockedIds } from './blocks';
 import { isAdPersonalizationEnabled } from './adPrefs';
+import { adFree } from './entitlements';
 import type { UserAffinityProfile } from './feedScorer';
 
 // Ad ecosystem — dedicated-creative ads across Feed, Reels and Audio + the
@@ -350,6 +351,7 @@ function creativeFor(c: AdCampaign, placement: AdPlacement): AdCreative | null {
 
 // Feed ads as post-shaped __ad items (one per campaign).
 export async function fetchFeedAds(viewer: AdViewer): Promise<any[]> {
+  if (adFree()) return [];   // Premium: ad-free feed
   const campaigns = await fetchEligibleCampaigns(viewer);
   const out: any[] = [];
   for (const c of campaigns) {
@@ -361,6 +363,7 @@ export async function fetchFeedAds(viewer: AdViewer): Promise<any[]> {
 
 // A pool of reel ad sources the weaver rotates through across slots.
 export async function fetchReelAds(viewer: AdViewer): Promise<AdSource[]> {
+  if (adFree()) return [];   // Premium: ad-free reels
   const campaigns = await fetchEligibleCampaigns(viewer);
   const out: AdSource[] = [];
   for (const c of campaigns) {
@@ -374,6 +377,7 @@ export async function fetchReelAds(viewer: AdViewer): Promise<AdSource[]> {
 // doesn't always serve the same advertiser).
 let audioRotation = 0;
 export async function pickAudioAd(viewer: AdViewer): Promise<AudioAd | null> {
+  if (adFree()) return null;   // Premium: no audio ads between songs
   const campaigns = await fetchEligibleCampaigns(viewer);
   const pool: AudioAd[] = [];
   for (const c of campaigns) {

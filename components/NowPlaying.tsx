@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
+import { useDownloadAction } from '../hooks/useDownloadAction';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
@@ -98,6 +99,7 @@ export default function NowPlaying() {
   const { t } = useTranslation();
   const { currentTrack, expanded, collapse, setCommentComposing, noteCommentEngagement, clearCommentEngagement, adState, skipAudioAd } = useAudio();
   const { show: showOptions } = usePostOptions();
+  const { download, confirmRemove, isPinned, isDownloading, progress } = useDownloadAction();
   const linkGuard = useLinkGuard();
   const router = useRouter();
   const [render, setRender] = useState(false);
@@ -273,33 +275,61 @@ export default function NowPlaying() {
         <Animated.View>
           <View style={[styles.handle, { backgroundColor: handleColor }]} />
           <View style={styles.header}>
-            <TouchableOpacity style={styles.headerBtn} onPress={collapse}>
-              <Ionicons name="chevron-down" size={26} color={colors.text} />
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity style={styles.headerBtn} onPress={collapse}>
+                <Ionicons name="chevron-down" size={26} color={colors.text} />
+              </TouchableOpacity>
+              {/* Balances the right slot's extra (download) button so the title stays centered. */}
+              {!adState && <View style={styles.headerBtn} />}
+            </View>
             <Text style={styles.headerTitle}>{t('nowPlaying.title')}</Text>
             {adState ? (
               // Ads aren't posts — no options menu, just keep the header balanced.
               <View style={styles.headerBtn} />
             ) : (
-              <TouchableOpacity
-                style={styles.headerBtn}
-                onPress={() => showOptions({
-                  postId: pid,
-                  isOwn: ownerId === userId,
-                  authorId: ownerId ?? undefined,
-                  authorName: ownerName,
-                  mediaType: 'audio',
-                  onEdit: () => { collapse(); router.push(`/edit-post/${pid}`); },
-                  onDeleted: () => collapse(),
-                  onArchived: () => collapse(),
-                  onBlocked: () => collapse(),
-                  onNavigate: collapse,
-                  onLikeChanged: (l) => { setIsLiked(l); setLikeCount(c => Math.max(0, c + (l ? 1 : -1))); },
-                  onSaveChanged: (s) => { setIsSaved(s); setSaves(c => Math.max(0, c + (s ? 1 : -1))); },
-                })}
-              >
-                <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
-              </TouchableOpacity>
+              <View style={styles.headerActions}>
+                {/* Download for offline — driven by the current track's pin state. */}
+                <TouchableOpacity
+                  style={styles.headerBtn}
+                  onPress={() => {
+                    if (isDownloading(pid)) return;
+                    if (isPinned(pid)) confirmRemove(pid, currentTrack.caption);
+                    else download({ id: pid, uri: currentTrack.uri, title: currentTrack.caption, artist: currentTrack.artist, cover: currentTrack.cover });
+                  }}
+                  accessibilityLabel={isDownloading(pid) ? t('offline.downloading') : isPinned(pid) ? t('offline.remove') : t('offline.download')}
+                >
+                  {isDownloading(pid) ? (
+                    <ActivityIndicator size="small" color={colors.text} />
+                  ) : (
+                    <Ionicons
+                      name={isPinned(pid) ? 'cloud-done' : 'cloud-download-outline'}
+                      size={22}
+                      color={isPinned(pid) ? colors.primary : colors.text}
+                    />
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.headerBtn}
+                  onPress={() => showOptions({
+                    postId: pid,
+                    isOwn: ownerId === userId,
+                    authorId: ownerId ?? undefined,
+                    authorName: ownerName,
+                    mediaType: 'audio',
+                    mediaUrl: currentTrack.uri,
+                    cover: currentTrack.cover,
+                    onEdit: () => { collapse(); router.push(`/edit-post/${pid}`); },
+                    onDeleted: () => collapse(),
+                    onArchived: () => collapse(),
+                    onBlocked: () => collapse(),
+                    onNavigate: collapse,
+                    onLikeChanged: (l) => { setIsLiked(l); setLikeCount(c => Math.max(0, c + (l ? 1 : -1))); },
+                    onSaveChanged: (s) => { setIsSaved(s); setSaves(c => Math.max(0, c + (s ? 1 : -1))); },
+                  })}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </Animated.View>
@@ -453,6 +483,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingTop: SPACING.md, marginBottom: SPACING.sm, paddingHorizontal: SPACING.xl,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
   headerTitle: { color: colors.text, fontSize: 14, fontWeight: '700', letterSpacing: 0.5 },
 
   // Vertical rhythm intentionally tight so the Comments header clears the

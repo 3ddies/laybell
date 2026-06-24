@@ -654,6 +654,8 @@ export default function ExploreScreen() {
               avatarUrl={item.profiles?.avatar_url}
               badgeProfile={item.profiles}
               badgeOwnerId={item.user_id}
+              postId={item.id}
+              mediaUrl={item.media_url}
               highlightQuery={hq}
               isPlaying={currentTrack?.id === item.id && isPlaying}
               onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
@@ -665,6 +667,8 @@ export default function ExploreScreen() {
                 authorId: item.user_id,
                 authorName: item.profiles?.username,
                 mediaType: item.type ?? 'audio',
+                mediaUrl: item.media_url,
+                cover: item.cover_url,
                 onEdit: () => router.push(`/edit-post/${item.id}`),
                 onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
                 onArchived: () => setPosts(prev => prev.filter(p => p.id !== item.id)),

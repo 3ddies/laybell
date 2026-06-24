@@ -8,8 +8,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
+import { useOffline } from '../contexts/OfflineContext';
+import { usePremium } from '../contexts/PremiumContext';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { formatBytes } from '../lib/format';
 import { LANGUAGES } from '../lib/i18n';
 import BadgeEmblem from '../components/BadgeEmblem';
 import SwipeBackPager from '../components/SwipeBackPager';
@@ -102,6 +105,8 @@ export default function SettingsScreen() {
   const [hiddenOn, setHiddenOn] = useState(false);
   useEffect(() => { setHiddenOn(!!(profile as any)?.hidden); }, [profile]);
   const { colors, mode, setMode } = useTheme();
+  const { usageBytes, prefs: offlinePrefs, setPref: setOfflinePref } = useOffline();
+  const { isPremium } = usePremium();
   const { t, lang } = useTranslation();
   const [langPickerVisible, setLangPickerVisible] = useState(false);
   const styles = useThemedStyles(makeStyles);
@@ -398,6 +403,37 @@ export default function SettingsScreen() {
     },
   ];
 
+  const premiumItems: SectionItem[] = [
+    {
+      icon: isPremium ? 'star' : 'star-outline',
+      label: t('premium.settingsRow'),
+      subtitle: isPremium ? t('premium.settingsActive') : t('premium.settingsUpgrade'),
+      onPress: () => router.push('/premium'),
+    },
+  ];
+
+  const offlineItems: SectionItem[] = [
+    {
+      icon: 'cloud-download-outline',
+      label: t('offline.manage'),
+      subtitle: t('offline.storageUsed', { size: formatBytes(usageBytes) }),
+      onPress: () => router.push('/downloads'),
+    },
+    {
+      icon: 'sync-outline',
+      label: t('offline.autoCache'),
+      subtitle: t('offline.autoCacheSub'),
+      value: offlinePrefs.autoCache,
+      onValueChange: (v) => setOfflinePref({ autoCache: v }),
+    },
+    {
+      icon: 'wifi-outline',
+      label: t('offline.wifiOnly'),
+      value: offlinePrefs.wifiOnly,
+      onValueChange: (v) => setOfflinePref({ wifiOnly: v }),
+    },
+  ];
+
   const aboutItems: SectionItem[] = [
     {
       icon: 'information-circle-outline',
@@ -511,6 +547,8 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <Section title={t('premium.sectionTitle')} items={premiumItems} />
+        <Section title={t('offline.sectionTitle')} items={offlineItems} />
         <Section title={t('settings.section.account')} items={accountItems} />
         <Section title={t('settings.section.notifications')} items={notifItems} />
         <Section title={t('settings.section.ads')} items={adItems} />

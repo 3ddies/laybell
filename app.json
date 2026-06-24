@@ -15,10 +15,11 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.laybell.app",
-      "associatedDomains": ["applinks:laybell.app"],
+      "associatedDomains": [
+        "applinks:laybell.app"
+      ],
       "infoPlist": {
         "UIBackgroundModes": [
-          "audio",
           "audio"
         ],
         "ITSAppUsesNonExemptEncryption": false
@@ -37,8 +38,17 @@
         {
           "action": "VIEW",
           "autoVerify": true,
-          "data": [{ "scheme": "https", "host": "laybell.app", "pathPrefix": "/post" }],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "data": [
+            {
+              "scheme": "https",
+              "host": "laybell.app",
+              "pathPrefix": "/post"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -85,12 +95,18 @@
         {
           "contactsPermission": "Allow Laybell to access your contacts to find people you may know on Laybell."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "extra": {
       "router": {},
       "eas": {
         "projectId": "83e40be5-3467-49af-898b-1a4c07d3bed4"
+      },
+      "revenuecat": {
+        "iosApiKey": "",
+        "androidApiKey": "",
+        "entitlement": "premium"
       }
     }
   }

@@ -150,6 +150,8 @@ export default function PlaylistScreen() {
                 streams={item.posts?.stream_count}
                 cover={item.posts?.cover_url}
                 avatarUrl={item.posts?.profiles?.avatar_url}
+                postId={item.posts?.id}
+                mediaUrl={item.posts?.media_url}
                 isPlaying={currentTrack?.id === item.posts?.id && isPlaying}
                 onPlay={() => playFrom(index)}
                 onCoverPress={() => { playFrom(index); expand(); }}
@@ -160,6 +162,8 @@ export default function PlaylistScreen() {
                   authorId: item.posts?.user_id,
                   authorName: item.posts?.profiles?.username,
                   mediaType: 'audio',
+                  mediaUrl: item.posts?.media_url,
+                  cover: item.posts?.cover_url,
                   onEdit: () => router.push(`/edit-post/${item.posts?.id}`),
                   onDeleted: () => setTracks(prev => prev.filter((t: any) => t.post_id !== item.post_id)),
                   onArchived: () => setTracks(prev => prev.filter((t: any) => t.post_id !== item.post_id)),

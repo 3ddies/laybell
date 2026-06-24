@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDeviceId } from '../lib/deviceId';
 import { playThresholds } from '../lib/playThresholds';
 import { bumpBadge } from '../lib/badges';
+import { resolveLocalUri, markInUse, clearInUse, autoCache } from '../lib/offline';
+import { recordStream as recordStreamDurable } from '../lib/streamOutbox';
 import {
   pickAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
   AUDIO_AD_FIRST_MS, AUDIO_AD_EVERY_MS, AUDIO_AD_SKIP_MS,
@@ -21,12 +23,14 @@ const STREAM_WINDOW_MS = 24 * 60 * 60 * 1000;
 // Once a song hits the cap it stops counting until a DIFFERENT song is streamed.
 const BADGE_SONG_CAP_MS = 10 * 60 * 1000;
 
+// expo-audio AudioMode (migrated from the old expo-av keys): play through the iOS
+// silent switch, keep playing in the background, and duck other apps' audio.
 const AUDIO_MODE = {
-  allowsRecordingIOS: false,
-  playsInSilentModeIOS: true,
-  staysActiveInBackground: true,
-  shouldDuckAndroid: true,
-  playThroughEarpieceAndroid: false,
+  playsInSilentMode: true,
+  shouldPlayInBackground: true,
+  interruptionMode: 'duckOthers' as const,
+  shouldRouteThroughEarpiece: false,
+  allowsRecording: false,
 };
 
 export type Track = {
@@ -123,7 +127,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   };
   // Feed video audio. ON at app open; auto-muted once a song plays (no overlap).
   const [videoMuted, setVideoMuted] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
+  // Status-listener subscriptions, removed synchronously when we tear a player down
+  // so a stray late 'playbackStatusUpdate' from an abandoned player can't fire.
+  const statusSubRef = useRef<{ remove: () => void } | null>(null);
+  const adStatusSubRef = useRef<{ remove: () => void } | null>(null);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
   const playTokenRef = useRef(0); // guards against overlapping plays (rapid next/prev)
@@ -159,6 +167,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const windowStartRef = useRef<Record<string, number>>({});
   const uidRef = useRef<string | null>(null);
   const deviceIdRef = useRef<string | null>(null); // per-install id for the device cap
+  // The post id of the sound currently loaded — used to release the offline
+  // in-use lock (so removing/evicting an offline file never yanks it out from
+  // under a live player) when we tear it down or switch tracks.
+  const loadedIdRef = useRef<string | null>(null);
   // Genuine forward listen ms accrued toward the daily "music streaming" badge —
   // a SEPARATE accumulator from the per-post stream credit (listenMsRef), so it
   // sums across posts and isn't tied to any 24h per-post window. Flushed as whole
@@ -182,7 +194,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const adArmedRef = useRef(false);
   const adListenMsRef = useRef(0);
   const adNextThresholdRef = useRef(AUDIO_AD_FIRST_MS);
-  const adSoundRef = useRef<Audio.Sound | null>(null);
+  const adSoundRef = useRef<AudioPlayer | null>(null);
   const adPlayingRef = useRef(false);
   const adMetaRef = useRef<AudioAd | null>(null);
   const adViewerRef = useRef<AdViewer | null>(null);
@@ -191,6 +203,21 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // the current song finishes (handled in the track-finished path). Stays set
   // across track changes until the ad actually plays.
   const adDueRef = useRef(false);
+  // Ad load watchdog: expo-audio reports load failures via status (it doesn't throw
+  // like expo-av's createAsync), so if an ad never starts we resume the music after a
+  // timeout instead of hanging the player on a stuck ad.
+  const adProgressedRef = useRef(false);
+  const adWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Release an abandoned expo-audio player safely: pause now (sync — stops audio
+  // immediately, no overlap) and defer remove() to the next tick, so we never call
+  // remove() from inside that player's own 'playbackStatusUpdate' callback (the
+  // didJustFinish → advance path runs there).
+  function releaseSound(p: AudioPlayer | null) {
+    if (!p) return;
+    try { p.pause(); } catch {}
+    setTimeout(() => { try { p.remove(); } catch {} }, 0);
+  }
 
   function disarmAds() {
     adArmedRef.current = false;
@@ -235,15 +262,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     adMetaRef.current = ad;
-    try { await soundRef.current?.pauseAsync(); } catch {}
+    try { soundRef.current?.pause(); } catch {}
     setIsPlaying(false);
     flushBadgeMs();
     try {
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: ad.uri },
-        { shouldPlay: true, progressUpdateIntervalMillis: 250 },
-      );
-      adSoundRef.current = sound;
+      adProgressedRef.current = false;
+      const player = createAudioPlayer({ uri: ad.uri }, { updateInterval: 250 });
+      adSoundRef.current = player;
       setAdState({
         campaignId: ad.campaignId, creativeId: ad.creativeId, ownerId: ad.ownerId,
         advertiserName: ad.advertiserName, headline: ad.headline,
@@ -252,15 +277,21 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         elapsedMs: 0, durationMs: 0, canSkip: false,
       });
       recordAdImpression(ad, 'audio', uidRef.current);
-      sound.setOnPlaybackStatusUpdate((st: any) => {
+      adStatusSubRef.current = player.addListener('playbackStatusUpdate', (st: any) => {
         if (!st.isLoaded) return;
-        const pos = st.positionMillis ?? 0;
-        const dur = st.durationMillis ?? 0;
+        const pos = (st.currentTime ?? 0) * 1000;   // expo-audio reports SECONDS
+        const dur = (st.duration ?? 0) * 1000;
+        if (pos > 0) adProgressedRef.current = true;
         setAdState((prev) => (prev ? { ...prev, elapsedMs: pos, durationMs: dur, canSkip: pos >= AUDIO_AD_SKIP_MS } : prev));
         if (st.didJustFinish) finishAudioAd(false);
       });
+      player.play();
+      // If the ad never starts (load error — no throw in expo-audio), resume music.
+      adWatchdogRef.current = setTimeout(() => {
+        if (!adProgressedRef.current) finishAudioAd(false, true);
+      }, 10000);
     } catch {
-      // Couldn't load the ad — just resume the music and reschedule.
+      // Couldn't even create the ad player — just resume the music and reschedule.
       finishAudioAd(false, true);
     }
   }
@@ -274,8 +305,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       else recordAdComplete(ad, 'audio', uidRef.current);
     }
     adMetaRef.current = null;
-    try { await adSoundRef.current?.stopAsync(); } catch {}
-    try { await adSoundRef.current?.unloadAsync(); } catch {}
+    if (adWatchdogRef.current) { clearTimeout(adWatchdogRef.current); adWatchdogRef.current = null; }
+    adStatusSubRef.current?.remove(); adStatusSubRef.current = null;
+    releaseSound(adSoundRef.current);
     adSoundRef.current = null;
     setAdState(null);
     adPlayingRef.current = false;
@@ -285,7 +317,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // advance/close now instead of resuming a finished track.
       maybeRunDeferredFinish();
     } else if (soundRef.current) {
-      try { await soundRef.current.playAsync(); setIsPlaying(true); } catch {}
+      try { soundRef.current.play(); setIsPlaying(true); } catch {}
     }
   }
 
@@ -293,7 +325,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   // Configure the audio session once up front so the first tap plays immediately
   // (a cold session previously made the first createAsync fail to start).
-  useEffect(() => { Audio.setAudioModeAsync(AUDIO_MODE).catch(() => {}); }, []);
+  useEffect(() => { setAudioModeAsync(AUDIO_MODE).catch(() => {}); }, []);
+
+  // Release native players + listeners on unmount (e.g. same-device account switch,
+  // which remounts the whole per-user tree). expo-audio players are unmanaged.
+  useEffect(() => () => {
+    statusSubRef.current?.remove();
+    adStatusSubRef.current?.remove();
+    if (adWatchdogRef.current) clearTimeout(adWatchdogRef.current);
+    try { soundRef.current?.remove(); } catch {}
+    try { adSoundRef.current?.remove(); } catch {}
+  }, []);
 
   // Resolve the device id once so it's ready to attach to stream records.
   useEffect(() => { getDeviceId().then((id) => { deviceIdRef.current = id; }).catch(() => {}); }, []);
@@ -356,15 +398,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     // Tear down any in-flight audio ad and disarm scheduling.
     adPlayingRef.current = false;
     adMetaRef.current = null;
-    if (adSoundRef.current) { try { await adSoundRef.current.unloadAsync(); } catch {} adSoundRef.current = null; }
+    if (adWatchdogRef.current) { clearTimeout(adWatchdogRef.current); adWatchdogRef.current = null; }
+    adStatusSubRef.current?.remove(); adStatusSubRef.current = null;
+    releaseSound(adSoundRef.current); adSoundRef.current = null;
     setAdState(null);
     disarmAds();
     playTokenRef.current++; // cancel any in-flight load
-    if (soundRef.current) {
-      await soundRef.current.stopAsync();
-      await soundRef.current.unloadAsync();
-      soundRef.current = null;
-    }
+    statusSubRef.current?.remove(); statusSubRef.current = null;
+    releaseSound(soundRef.current);
+    soundRef.current = null;
+    if (loadedIdRef.current) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
     setExpanded(false);
     setIsPlaying(false);
     setIsBuffering(false);
@@ -374,7 +417,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   async function pause() {
     if (soundRef.current) {
-      await soundRef.current.pauseAsync();
+      try { soundRef.current.pause(); } catch {}
       setIsPlaying(false);
       saveProgress();
       flushBadgeMs();
@@ -392,10 +435,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         engagedNearEndRef.current = false;
         progressRef.current = 0;
         positionRef.current = 0;
-        await s.replayAsync().catch(() => {});
+        s.seekTo(0).then(() => s.play()).catch(() => {});   // expo-audio: reset then play
       } else {
         // Mid-track (incl. after the user scrubbed back) — resume from here.
-        await s.playAsync().catch(() => {});
+        try { s.play(); } catch {}
       }
       setIsPlaying(true);
     } else if (currentTrack) {
@@ -426,7 +469,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // and must be re-engaged past 80% to hold the song open.
       engagedNearEndRef.current = false;
       pendingFinishRef.current = false;
-      await soundRef.current.setPositionAsync(ms);
+      soundRef.current.seekTo(ms / 1000).catch(() => {});   // expo-audio uses SECONDS
     }
   }
 
@@ -472,7 +515,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       progressRef.current = 0;
       emitPosition(0, durationRef.current);
       setIsPlaying(true);
-      s.replayAsync().catch(() => {});
+      s.seekTo(0).then(() => s.play()).catch(() => {});   // expo-audio: reset then play
     } else if (currentTrack) {
       play(currentTrack, true, true);
     }
@@ -501,7 +544,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsBuffering(false);
     setCurrentTrack(null);
     emitPosition(0, 0);
+    statusSubRef.current?.remove(); statusSubRef.current = null;
+    releaseSound(soundRef.current);
     soundRef.current = null;
+    if (loadedIdRef.current) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
     queueRef.current = [];
     queueIndexRef.current = 0;
     setQueueLength(0);
@@ -517,6 +563,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (q.length && nextIdx < q.length) {
       queueIndexRef.current = nextIdx;
       setQueueIndex(nextIdx);
+      // Release the just-finished player (we're inside its status callback, so the
+      // listener goes now and the player itself is freed on the next tick).
+      statusSubRef.current?.remove(); statusSubRef.current = null;
+      releaseSound(soundRef.current);
       soundRef.current = null;
       play(q[nextIdx], true, true);
     } else {
@@ -576,9 +626,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       pendingFinishRef.current = false;
       // Release the finished-but-kept sound before moving on (safe here — we're not
       // inside its own playback-status callback).
-      const s = soundRef.current;
+      statusSubRef.current?.remove(); statusSubRef.current = null;
+      releaseSound(soundRef.current);
       soundRef.current = null;
-      if (s) s.unloadAsync().catch(() => {});
       proceedToNextTrack();
     }
   }
@@ -614,7 +664,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (adPlayingRef.current) {
       adPlayingRef.current = false;
       adMetaRef.current = null;
-      if (adSoundRef.current) { try { await adSoundRef.current.unloadAsync(); } catch {} adSoundRef.current = null; }
+      if (adWatchdogRef.current) { clearTimeout(adWatchdogRef.current); adWatchdogRef.current = null; }
+      adStatusSubRef.current?.remove(); adStatusSubRef.current = null;
+      releaseSound(adSoundRef.current); adSoundRef.current = null;
       setAdState(null);
     }
     if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; setQueueLength(0); setQueueIndex(0); disarmAds(); }
@@ -630,12 +682,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     // loading, the older one bails and unloads itself (prevents overlap).
     const token = ++playTokenRef.current;
 
-    // Tear down the existing sound (grab+null first so concurrent calls don't double-unload).
+    // Tear down the existing sound (grab+null first so concurrent calls don't double-release).
+    statusSubRef.current?.remove(); statusSubRef.current = null;
     const existing = soundRef.current;
     soundRef.current = null;
-    if (existing) {
-      try { await existing.stopAsync(); await existing.unloadAsync(); } catch {}
-    }
+    releaseSound(existing);   // pause now (no overlap) + free on next tick
+    // Release the previous track's offline in-use lock (the new track locks below).
+    if (loadedIdRef.current && loadedIdRef.current !== track.id) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
 
     setCurrentTrack(track);
     setIsPlaying(true);
@@ -670,34 +723,45 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         // Resolve this track's owner once; a non-post track (e.g. an ad) returns null
         // and stays ineligible. Per-post stream credit (canCount) is unaffected — the
         // server's record_stream enforces its own self-stream rule.
-        const { data: ownerRow } = await supabase.from('posts').select('user_id').eq('id', track.id).single();
+        const { data: ownerRow } = await supabase.from('posts').select('user_id, downloadable').eq('id', track.id).single();
         badgeEligibleRef.current = !!u && !!ownerRow && ownerRow.user_id !== u.id;
+        // Layer-0 safety net: opportunistically cache this track for offline. The
+        // engine gates on prefs/network/dedupe and never blocks playback; we pass
+        // downloadable from the same row so an opted-out track is never auto-cached.
+        void autoCache(track.id, track.uri, {
+          title: track.caption, artist: track.artist, cover: track.cover,
+          downloadable: (ownerRow as any)?.downloadable !== false,
+        });
       } catch { badgeEligibleRef.current = false; }
     })();
     const recordStream = () => {
-      supabase.rpc('record_stream', { p_post_id: track.id, p_device_id: deviceIdRef.current }).then(undefined, () => {});
+      // Route through the offline outbox: it records now when online, and queues the
+      // event for replay on reconnect when offline (so an offline listen still
+      // credits the creator). Falls back to a direct RPC until the uid resolves.
+      const uid = uidRef.current;
+      if (uid) recordStreamDurable(uid, track.id, deviceIdRef.current);
+      else supabase.rpc('record_stream', { p_post_id: track.id, p_device_id: deviceIdRef.current }).then(undefined, () => {});
     };
     let lastPosMs = 0; // previous reported position, for forward-delta accumulation
 
     try {
-      // Load PAUSED — a superseded sound must never start, so we only call
-      // playAsync() on the one that survives the token check below.
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: track.uri },
-        { shouldPlay: false, progressUpdateIntervalMillis: 250 },
-      );
-      // A newer play started while this was loading → discard this sound, don't overlap.
-      if (token !== playTokenRef.current) {
-        try { await sound.unloadAsync(); } catch {}
-        return;
-      }
-      soundRef.current = sound;
-      sound.playAsync().catch(() => {});
+      // Offline: play the local file when we have a verified, non-stale copy of this
+      // track; otherwise stream the remote URL. A failed remote stream just means the
+      // next play retries — that lazy fallback IS our offline detection.
+      const playUri = (await resolveLocalUri(track.id, track.uri)) ?? track.uri;
+      // A newer play started during the (async) offline-uri resolve → bail before
+      // creating a player, so we never overlap. (createAudioPlayer itself is sync.)
+      if (token !== playTokenRef.current) return;
+      const player = createAudioPlayer({ uri: playUri }, { updateInterval: 250 });
+      soundRef.current = player;
+      loadedIdRef.current = track.id;
+      markInUse(track.id);  // protect this file from removal/eviction while it's loaded
+      player.play();
 
-      sound.setOnPlaybackStatusUpdate((status: any) => {
+      statusSubRef.current = player.addListener('playbackStatusUpdate', (status: any) => {
         if (!status.isLoaded) return;
-        const pos = status.positionMillis ?? 0;
-        const dur = status.durationMillis ?? 0;
+        const pos = (status.currentTime ?? 0) * 1000;   // expo-audio reports SECONDS
+        const dur = (status.duration ?? 0) * 1000;
         emitPosition(pos, dur); // ticks go to useAudioPosition subscribers only
         progressRef.current = dur > 0 ? pos / dur : 0;
         setIsBuffering(status.isBuffering ?? false);

@@ -21,6 +21,7 @@ import TrackRow from '../../components/TrackRow';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import SupporterBadge from '../../components/SupporterBadge';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { countLabel } from '../../lib/i18n';
@@ -340,6 +341,8 @@ export default function PublicProfileScreen() {
             duration={track.duration_seconds}
             streams={track.stream_count ?? 0}
             cover={track.cover_url}
+            postId={track.id}
+            mediaUrl={track.media_url}
             badgeProfile={profile}
             badgeOwnerId={id}
             spotlighted={spotlightIds.has(track.id)}
@@ -526,6 +529,7 @@ export default function PublicProfileScreen() {
       <View style={styles.infoSection}>
         <View style={styles.nameRow}>
           <Text style={styles.displayName}>{profile?.display_name}</Text>
+          <SupporterBadge premiumUntil={(profile as any)?.premium_until} />
           <BadgeEmblem profile={profile} size={17} />
         </View>
         {profile?.bio

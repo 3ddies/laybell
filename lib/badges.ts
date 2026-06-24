@@ -215,6 +215,19 @@ export function publicPostLimit(tier: Tier | null): number {
   return tier ? PUBLIC_POST_LIMIT[tier] : 6;
 }
 
+// How many tracks each tier may keep DOWNLOADED for offline at once (checked at
+// download time; removing one frees a slot). Offline is a quality-of-life feature,
+// not a heavily-gated reward — so everyone gets a baseline even without a badge, and
+// tiers escalate generously. The real scalability guard is the device byte cap in
+// lib/offline.ts (OFFLINE_BYTE_CAP), which overrides the count. A demoted user's
+// over-limit downloads are LOCKED (kept on disk, re-enabled when re-earned), never
+// auto-deleted — see docs/OFFLINE_STREAMING_PLAN.md §3.6.
+export const OFFLINE_PIN_BASELINE = 10;
+export const OFFLINE_PIN_LIMIT: Record<Tier, number> = { bronze: 30, silver: 75, gold: 150, diamond: 300 };
+export function offlinePinLimit(tier: Tier | null): number {
+  return tier ? OFFLINE_PIN_LIMIT[tier] : OFFLINE_PIN_BASELINE;
+}
+
 // The tier the user has CHOSEN to present. Their profile theme doubles as the
 // badge they display: a tier-specific theme shows that tier (so a higher-tier user
 // can deliberately display a lower badge), while Default shows NO badge at all
