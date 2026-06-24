@@ -1,4 +1,4 @@
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from '../../components/AppVideo';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, TextInput, KeyboardAvoidingView,
@@ -79,7 +79,6 @@ export default function PostDetailScreen() {
   const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
   const isFocused = useIsFocused();
   const flatListRef = useRef<any>(null);
-  const videoRef = useRef<any>(null);
   const { dismiss, popInstant, backdropOpacity, contentStyle } = useExpandTransition();
   // The swipe-back pager's gesture, paused while a slideshow carousel inside is
   // being touched (it provides TabSwipeContext below) so swiping between slides
@@ -321,26 +320,19 @@ export default function PostDetailScreen() {
             )}
             {post.type === 'video' && post.media_url && (
               <View>
-              <Video
-                ref={videoRef}
+              <AppVideo
                 source={{ uri: post.media_url }}
                 style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
-                isMuted={!!post.song_id}
-                useNativeControls
-                usePoster={!!(post.thumbnail_url ?? post.cover_url)}
-                posterSource={(post.thumbnail_url ?? post.cover_url) ? { uri: (post.thumbnail_url ?? post.cover_url) as string } : undefined}
-                posterStyle={{ resizeMode: 'cover' }}
-                resizeMode={ResizeMode.COVER}
-                isLooping={post.trim_end == null}
-                shouldPlay
-                onLoad={() => { if (post.trim_start != null) videoRef.current?.setPositionAsync(post.trim_start * 1000); }}
-                onPlaybackStatusUpdate={(st: any) => {
-                  if (!st.isLoaded) return;
-                  trackVideoProgress(id as string, st.positionMillis ?? 0, st.durationMillis ?? 0);
-                  if (post.trim_end != null && st.positionMillis >= post.trim_end * 1000) {
-                    videoRef.current?.setPositionAsync((post.trim_start ?? 0) * 1000);
-                  }
-                }}
+                muted={!!post.song_id}
+                nativeControls
+                poster={post.thumbnail_url ?? post.cover_url}
+                posterContentFit="cover"
+                contentFit="cover"
+                loop={post.trim_end == null}
+                active
+                trimStartSec={post.trim_start}
+                trimEndSec={post.trim_end}
+                onProgress={(pos, dur) => trackVideoProgress(id as string, pos, dur)}
               />
               {!!post.song_id && (
                 <TouchableOpacity style={styles.songMuteBtn} onPress={toggleSongMuted}>

@@ -9,6 +9,7 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../../lib/supabase';
 import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/upload';
+import { probeAudioDurationSec } from '../../lib/audioProbe';
 import {
   purchaseAdCampaign, estimatedImpressions, fmtPrice,
   AD_DEFAULT_CPM_CENTS, AD_CREATIVE_BUCKET,
@@ -164,13 +165,8 @@ export default function CreateAdScreen() {
     const res = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
     if (res.canceled || !res.assets?.[0]) return;
     const a = res.assets[0];
-    let dur: number | null = null;
-    try {
-      const { Audio } = await import('expo-av');
-      const { sound, status } = await Audio.Sound.createAsync({ uri: a.uri });
-      if ((status as any).isLoaded && (status as any).durationMillis) dur = Math.floor((status as any).durationMillis / 1000);
-      await sound.unloadAsync();
-    } catch {}
+    const probed = await probeAudioDurationSec(a.uri);
+    const dur: number | null = probed != null ? Math.floor(probed) : null;
     patchDraft(p, { picks: [{ uri: a.uri, kind: 'audio', name: a.name, mime: a.mimeType ?? undefined, durationSec: dur }] });
   }
 

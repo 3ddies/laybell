@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from './AppVideo';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRef, useState } from 'react';
@@ -39,27 +39,21 @@ export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, o
   // Skip unlock. Sum positive deltas; ignore the negative jump on loop-wrap.
   const [elapsedMs, setElapsedMs] = useState(0);
   const lastPosRef = useRef(0);
-  const vidRef = useRef<any>(null);
 
   const canSkip = elapsedMs >= AD_SKIP_MS;
   const secsLeft = Math.max(1, Math.ceil((AD_SKIP_MS - elapsedMs) / 1000));
 
   return (
     <View style={{ width: SCREEN_W, height: SCREEN_H }}>
-      <Video
-        ref={vidRef}
+      <AppVideo
         source={{ uri: item.media_url }}
         style={StyleSheet.absoluteFill}
-        resizeMode={landscape ? ResizeMode.CONTAIN : ResizeMode.COVER}
-        isLooping
-        shouldPlay={visible && !paused}
-        useNativeControls={false}
-        usePoster={!!poster}
-        posterSource={poster ? { uri: poster } : undefined}
-        posterStyle={{ resizeMode: landscape ? 'contain' : 'cover' }}
-        onPlaybackStatusUpdate={(st: any) => {
-          if (!st?.isLoaded) return;
-          const pos = st.positionMillis ?? 0;
+        contentFit={landscape ? 'contain' : 'cover'}
+        loop
+        active={visible && !paused}
+        poster={poster}
+        posterContentFit={landscape ? 'contain' : 'cover'}
+        onProgress={(pos) => {
           const d = pos - lastPosRef.current;
           lastPosRef.current = pos;
           if (d > 0 && d < 2000) setElapsedMs((e) => e + d);

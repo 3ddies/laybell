@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from './AppVideo';
 import { Ionicons } from '@expo/vector-icons';
 import { memo } from 'react';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
@@ -84,13 +84,13 @@ const SponsoredCard = memo(function SponsoredCard({ item, shouldPlayVideo, onCta
 
       {item.type === 'video' && !!item.media_url && (
         <TouchableOpacity activeOpacity={0.95} onPress={() => onCta(item)}>
-          <Video
+          <AppVideo
             source={{ uri: item.media_url }}
             style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
-            resizeMode={ResizeMode.COVER}
-            isLooping
-            isMuted
-            shouldPlay={shouldPlayVideo}
+            contentFit="cover"
+            loop
+            muted
+            active={shouldPlayVideo}
           />
         </TouchableOpacity>
       )}

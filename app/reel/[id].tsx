@@ -1,4 +1,4 @@
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from '../../components/AppVideo';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator, Animated,
 } from 'react-native';
@@ -76,7 +76,6 @@ export default function ReelScreen() {
   const [spotlightIds, setSpotlightIds] = useState<Set<string>>(new Set());
   const [paused, setPaused] = useState(false);
   const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string } | null>(null);
-  const videoRefs = useRef<Record<string, any>>({});
   const listRef = useRef<FlatList>(null);
   // Read by the frozen onViewableItemsChanged callback (which can't see state).
   const currentUserIdRef = useRef<string | null>(null);
@@ -260,26 +259,18 @@ export default function ReelScreen() {
     return (
       <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }}>
         <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => setPaused((p) => !p)}>
-          <Video
-            ref={(r) => { videoRefs.current[item.id] = r; }}
+          <AppVideo
             source={{ uri: item.media_url }}
             style={StyleSheet.absoluteFill}
-            resizeMode={landscape ? ResizeMode.CONTAIN : ResizeMode.COVER}
-            isLooping={item.trim_end == null}
-            shouldPlay={visibleId === item.id && !paused}
-            isMuted={!!item.song_id}
-            useNativeControls={false}
-            usePoster={!!poster}
-            posterSource={poster ? { uri: poster } : undefined}
-            posterStyle={{ resizeMode: landscape ? 'contain' : 'cover' }}
-            onLoad={() => { if (item.trim_start != null) videoRefs.current[item.id]?.setPositionAsync(item.trim_start * 1000); }}
-            onPlaybackStatusUpdate={(st: any) => {
-              if (!st.isLoaded) return;
-              trackVideoProgress(item.id, st.positionMillis ?? 0, st.durationMillis ?? 0);
-              if (item.trim_end != null && st.positionMillis >= item.trim_end * 1000) {
-                videoRefs.current[item.id]?.setPositionAsync((item.trim_start ?? 0) * 1000);
-              }
-            }}
+            contentFit={landscape ? 'contain' : 'cover'}
+            loop={item.trim_end == null}
+            active={visibleId === item.id && !paused}
+            muted={!!item.song_id}
+            poster={poster}
+            posterContentFit={landscape ? 'contain' : 'cover'}
+            trimStartSec={item.trim_start}
+            trimEndSec={item.trim_end}
+            onProgress={(pos, dur) => trackVideoProgress(item.id, pos, dur)}
           />
         </TouchableOpacity>
 

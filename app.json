@@ -55,12 +55,6 @@
     "plugins": [
       "expo-router",
       [
-        "expo-av",
-        {
-          "microphonePermission": "Allow Laybell to record audio for your posts."
-        }
-      ],
-      [
         "expo-media-library",
         {
           "photosPermission": "Allow Laybell to access your photos so you can choose one to post.",
@@ -96,7 +90,13 @@
           "contactsPermission": "Allow Laybell to access your contacts to find people you may know on Laybell."
         }
       ],
-      "expo-audio"
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Laybell to record audio for your posts."
+        }
+      ],
+      "expo-video"
     ],
     "extra": {
       "router": {},

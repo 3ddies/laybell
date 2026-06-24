@@ -8,7 +8,7 @@ import {
   CameraView, CameraType, FlashMode,
   useCameraPermissions, useMicrophonePermissions,
 } from 'expo-camera';
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from '../../components/AppVideo';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import * as MediaLibrary from 'expo-media-library';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
@@ -739,13 +739,13 @@ export default function StoryCameraScreen() {
         {captured.type === 'image' ? (
           <Image source={{ uri: captured.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
         ) : (
-          <Video
+          <AppVideo
             source={{ uri: captured.uri }}
             style={StyleSheet.absoluteFill}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay
-            isLooping
-            isMuted={false}
+            contentFit="cover"
+            active
+            loop
+            muted={false}
           />
         )}
 

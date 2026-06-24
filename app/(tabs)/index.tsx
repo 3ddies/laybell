@@ -2,7 +2,7 @@ import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
   EMPTY_PROFILE, type UserAffinityProfile,
 } from '../../lib/feedScorer';
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from '../../components/AppVideo';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
@@ -239,19 +239,17 @@ const PostCard = memo(function PostCard({
             activeOpacity={1}
             onPress={() => vidRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenReel(item, { x, y, width: w, height: h }))}
           >
-            <Video
+            <AppVideo
               source={{ uri: item.media_url }}
               style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
-              resizeMode={ResizeMode.COVER}
-              isLooping
-              isMuted={item.song_id ? true : videoMuted}
-              shouldPlay={shouldPlayVideo}
+              contentFit="cover"
+              loop
+              muted={item.song_id ? true : videoMuted}
+              active={shouldPlayVideo}
               // Feed watching counts toward views (muted autoplay included) —
               // the tracker accumulates genuine watch time across surfaces and
               // the server enforces the per-user/device caps.
-              onPlaybackStatusUpdate={(st: any) => {
-                if (st?.isLoaded) trackVideoProgress(item.id, st.positionMillis ?? 0, st.durationMillis ?? 0);
-              }}
+              onProgress={(pos, dur) => trackVideoProgress(item.id, pos, dur)}
             />
           </TouchableOpacity>
           <TouchableOpacity style={styles.videoAudioBtn} onPress={item.song_id ? onToggleSongMute : onToggleMuted}>

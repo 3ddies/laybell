@@ -2,7 +2,7 @@ import {
   View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions, RefreshControl,
 } from 'react-native';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from './AppVideo';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -252,17 +252,16 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           onLayout={e => { videoPos.current[p.id] = { y: e.nativeEvent.layout.y, h: cell.height }; recomputeActive(); }}
         >
           {mounted ? (
-            <Video
+            <AppVideo
               source={{ uri: p.media_url }}
               style={styles.mediaImage}
-              resizeMode={ResizeMode.COVER}
-              isLooping isMuted
-              shouldPlay={playing}
+              contentFit="cover"
+              loop
+              muted
+              active={playing}
               // Muted grid autoplay counts toward views — genuine watch time
               // accumulates app-wide; the server enforces the fairness caps.
-              onPlaybackStatusUpdate={(st: any) => {
-                if (st?.isLoaded) trackVideoProgress(p.id, st.positionMillis ?? 0, st.durationMillis ?? 0);
-              }}
+              onProgress={(pos, dur) => trackVideoProgress(p.id, pos, dur)}
             />
           ) : (
             <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />

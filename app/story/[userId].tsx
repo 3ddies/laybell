@@ -4,7 +4,7 @@ import {
   Pressable, Animated, PanResponder, ActivityIndicator, Alert, Easing, FlatList,
   TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from '../../components/AppVideo';
 import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
@@ -584,25 +584,22 @@ export default function StoryViewerScreen() {
             {story.media_type === 'image' ? (
               <ExpoImage source={{ uri: story.media_url }} style={StyleSheet.absoluteFill} contentFit="contain" />
             ) : (
-              <Video
+              <AppVideo
                 key={story.id}
                 source={{ uri: story.media_url }}
                 style={StyleSheet.absoluteFill}
-                resizeMode={ResizeMode.CONTAIN}
-                shouldPlay={!paused}
-                isLooping={false}
-                isMuted={!!story.song_id}
-                usePoster={!!story.thumbnail_url}
-                posterSource={story.thumbnail_url ? { uri: story.thumbnail_url } : undefined}
-                posterStyle={{ resizeMode: 'contain' }}
-                progressUpdateIntervalMillis={VIDEO_PROGRESS_INTERVAL_MS}
-                onPlaybackStatusUpdate={(st: any) => {
-                  if (!st.isLoaded) return;
-                  if (st.durationMillis && !pausedRef.current) {
-                    animateProgressTo(Math.min(1, (st.positionMillis ?? 0) / st.durationMillis), VIDEO_PROGRESS_INTERVAL_MS);
+                contentFit="contain"
+                active={!paused}
+                muted={!!story.song_id}
+                poster={story.thumbnail_url}
+                posterContentFit="contain"
+                progressIntervalMs={VIDEO_PROGRESS_INTERVAL_MS}
+                onProgress={(pos, dur) => {
+                  if (dur && !pausedRef.current) {
+                    animateProgressTo(Math.min(1, pos / dur), VIDEO_PROGRESS_INTERVAL_MS);
                   }
-                  if (st.didJustFinish) goNext();
                 }}
+                onEnd={goNext}
               />
             )}
 

@@ -3,7 +3,7 @@ import {
   View, ScrollView, Image, TouchableOpacity, StyleSheet, Text,
   type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from './AppVideo';
 import { Ionicons } from '@expo/vector-icons';
 import { RADIUS } from '../constants/theme';
 import { useTabSwipeControl } from '../contexts/PagerContext';
@@ -41,22 +41,22 @@ type Props = {
 };
 
 function SlideVideo({
-  uri, poster, width, height, play, muted, onStatus,
+  uri, poster, width, height, play, muted, onProgress,
 }: {
   uri: string; poster?: string | null; width: number; height: number;
-  play: boolean; muted: boolean; onStatus?: (st: any) => void;
+  play: boolean; muted: boolean; onProgress?: (currentTimeMs: number, durationMs: number) => void;
 }) {
   return (
-    <Video
+    <AppVideo
       source={{ uri }}
       style={{ width, height }}
-      resizeMode={ResizeMode.CONTAIN}
-      shouldPlay={play}
-      isLooping
-      isMuted={muted}
-      usePoster
-      posterSource={poster ? { uri: poster } : undefined}
-      onPlaybackStatusUpdate={onStatus}
+      contentFit="contain"
+      active={play}
+      loop
+      muted={muted}
+      poster={poster}
+      posterContentFit="contain"
+      onProgress={onProgress}
     />
   );
 }
@@ -128,9 +128,7 @@ export default function SlideshowCarousel({
                   // (internal-only) view tally — same tracker + server caps
                   // as regular videos. Paused slides report no forward
                   // progress, so only the playing slide accrues.
-                  onStatus={postId ? (st: any) => {
-                    if (st?.isLoaded) trackVideoProgress(postId, st.positionMillis ?? 0, st.durationMillis ?? 0);
-                  } : undefined}
+                  onProgress={postId ? (pos, dur) => trackVideoProgress(postId, pos, dur) : undefined}
                 />
               ) : (
                 <Image source={{ uri: s.url }} style={{ width, height }} resizeMode="cover" />

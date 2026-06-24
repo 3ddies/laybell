@@ -5,7 +5,8 @@ import {
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
-import { Audio } from 'expo-av';
+import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync, createAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { probeAudioDurationSec } from '../../lib/audioProbe';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import * as DocumentPicker from 'expo-document-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
@@ -157,9 +158,15 @@ export default function PostScreen() {
   const [audioKind, setAudioKind] = useState<'audio' | 'podcast' | 'audiobook'>('audio');
   const [isRecording, setIsRecording] = useState(false);
   const [recSecs, setRecSecs] = useState(0);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  // expo-audio recorder (replaces expo-av Audio.Recording). The hook owns the
+  // native recorder; recActiveRef gates stop/reset and recTimerRef polls elapsed
+  // seconds (expo-audio has no setOnRecordingStatusUpdate cadence callback).
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recActiveRef = useRef(false);
+  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
-  const previewSoundRef = useRef<Audio.Sound | null>(null);
+  const previewSoundRef = useRef<AudioPlayer | null>(null);
+  const previewSubRef = useRef<{ remove: () => void } | null>(null);
 
   // details
   const [caption, setCaption] = useState('');
@@ -275,7 +282,8 @@ export default function PostScreen() {
   const lastSlide = slides.length ? slides[slides.length - 1] : null; // most recent — shown on the square
 
   function resetAll() {
-    if (recordingRef.current) { recordingRef.current.stopAndUnloadAsync().catch(() => {}); recordingRef.current = null; }
+    if (recActiveRef.current) { audioRecorder.stop().catch(() => {}); recActiveRef.current = false; }
+    if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
     unloadPreview();
     setIsRecording(false); setRecSecs(0);
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
@@ -478,38 +486,39 @@ export default function PostScreen() {
     await unloadPreview();
     stop(); // background music would bleed into (and distract from) the recording
     try {
-      const perm = await Audio.requestPermissionsAsync();
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
       if (!perm.granted) {
         Alert.alert(t('post.micNeededTitle'), t('post.micNeededBody'));
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const rec = new Audio.Recording();
-      await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      rec.setProgressUpdateInterval(500);
-      rec.setOnRecordingStatusUpdate((st) => {
-        if (st.isRecording) setRecSecs(Math.floor((st.durationMillis ?? 0) / 1000));
-      });
-      await rec.startAsync();
-      recordingRef.current = rec;
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      recActiveRef.current = true;
       setRecSecs(0);
       setIsRecording(true);
+      // expo-audio has no status-update cadence callback — poll the recorder's
+      // elapsed time (seconds) to drive the on-screen timer.
+      if (recTimerRef.current) clearInterval(recTimerRef.current);
+      recTimerRef.current = setInterval(() => {
+        setRecSecs(Math.floor(audioRecorder.currentTime || 0));
+      }, 500);
     } catch (e: any) {
       Alert.alert(t('post.recordStartFailTitle'), e?.message ?? t('post.tryAgain'));
     }
   }
 
   async function stopRecording() {
-    const rec = recordingRef.current;
-    if (!rec) return;
+    if (!recActiveRef.current) return;
+    recActiveRef.current = false;
     setIsRecording(false);
+    if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
     const dur = recSecs;
     try {
-      await rec.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      await audioRecorder.stop();
+      await setAudioModeAsync({ allowsRecording: false });
     } catch {}
-    const uri = rec.getURI();
-    recordingRef.current = null;
+    const uri = audioRecorder.uri;
     if (!uri) return;
     if (dur > SPOKEN_MAX_SEC) {
       Alert.alert(t('post.recordingTooLongTitle'), t('post.audioMaxBody', { duration: fmtMins(SPOKEN_MAX_SEC) }));
@@ -520,7 +529,8 @@ export default function PostScreen() {
   }
 
   async function unloadPreview() {
-    if (previewSoundRef.current) { await previewSoundRef.current.unloadAsync().catch(() => {}); previewSoundRef.current = null; }
+    if (previewSubRef.current) { previewSubRef.current.remove(); previewSubRef.current = null; }
+    if (previewSoundRef.current) { try { previewSoundRef.current.remove(); } catch {} previewSoundRef.current = null; }
     setIsPreviewPlaying(false);
   }
 
@@ -530,18 +540,19 @@ export default function PostScreen() {
     stop(); // never layer the preview over background music
     try {
       if (previewSoundRef.current) {
-        const st: any = await previewSoundRef.current.getStatusAsync();
-        if (st.isLoaded && st.isPlaying) { await previewSoundRef.current.pauseAsync(); setIsPreviewPlaying(false); }
-        else { await previewSoundRef.current.playAsync(); setIsPreviewPlaying(true); }
+        const p = previewSoundRef.current;
+        if (isPreviewPlaying) { p.pause(); setIsPreviewPlaying(false); }
+        else { p.play(); setIsPreviewPlaying(true); }
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-      const { sound } = await Audio.Sound.createAsync({ uri: audioFile.uri }, { shouldPlay: true });
-      previewSoundRef.current = sound;
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      const player = createAudioPlayer({ uri: audioFile.uri });
+      previewSoundRef.current = player;
       setIsPreviewPlaying(true);
-      sound.setOnPlaybackStatusUpdate((s: any) => {
-        if (s.isLoaded && s.didJustFinish) { setIsPreviewPlaying(false); sound.setPositionAsync(0); }
+      previewSubRef.current = player.addListener('playbackStatusUpdate', (s: any) => {
+        if (s.isLoaded && s.didJustFinish) { setIsPreviewPlaying(false); player.seekTo(0).catch(() => {}); }
       });
+      player.play();
     } catch (e: any) {
       Alert.alert(t('post.playbackFailTitle'), e?.message ?? t('post.playbackFailBody'));
     }
@@ -553,12 +564,8 @@ export default function PostScreen() {
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
 
-    let dur: number | null = null;
-    try {
-      const { sound, status } = await Audio.Sound.createAsync({ uri: asset.uri });
-      if ((status as any).isLoaded && (status as any).durationMillis) dur = Math.floor((status as any).durationMillis / 1000);
-      await sound.unloadAsync();
-    } catch {}
+    const probed = await probeAudioDurationSec(asset.uri);
+    const dur: number | null = probed != null ? Math.floor(probed) : null;
 
     // Absolute ceiling (podcasts/audiobooks). The tighter 6-min music limit is
     // enforced on Share, since the category is chosen on the next step.

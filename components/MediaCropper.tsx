@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import { View, Animated, PanResponder, StyleSheet } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from './AppVideo';
 import { type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
@@ -132,13 +132,13 @@ const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper
       {...(type === 'image' ? responder.panHandlers : {})}
     >
       {type === 'video' ? (
-        <Video
+        <AppVideo
           source={{ uri }}
           style={{ width: frameW, height: frameH }}
-          resizeMode={ResizeMode.COVER}
-          isLooping
-          shouldPlay
-          isMuted
+          contentFit="cover"
+          loop
+          active
+          muted
         />
       ) : (
         <Animated.Image

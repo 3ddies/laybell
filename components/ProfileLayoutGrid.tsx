@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'rea
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Video, ResizeMode } from 'expo-av';
+import AppVideo from './AppVideo';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -28,19 +28,17 @@ function toQueueItem(p: any, artist: string): SongQueueItem {
 // clip; the status callback also snaps back at 12s so longer videos only ever
 // show their first 12 seconds.
 function LoopVideo({ uri, style }: { uri: string; style: any }) {
-  const ref = useRef<Video>(null);
   return (
-    <Video
-      ref={ref}
+    <AppVideo
       source={{ uri }}
       style={style}
-      resizeMode={ResizeMode.COVER}
-      isMuted
-      shouldPlay
-      isLooping
-      onPlaybackStatusUpdate={(s: any) => {
-        if (s?.isLoaded && s.positionMillis >= 12000) ref.current?.setPositionAsync(0).catch(() => {});
-      }}
+      contentFit="cover"
+      muted
+      active
+      loop
+      // Cap the preview at 12s: snap back to the start so longer clips only ever
+      // show their first 12 seconds (shorter clips loop naturally via `loop`).
+      trimEndSec={12}
     />
   );
 }
