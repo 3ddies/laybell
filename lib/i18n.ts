@@ -723,7 +723,7 @@ const en: Record<string, string> = {
   'offline.downloadableHelp': 'Let listeners save this track to play offline. Off means it can only stream in the app.',
   'offline.wifiOnly': 'Download on Wi-Fi only',
   'offline.autoCache': "Auto-download recent songs",
-  'offline.autoCacheSub': "Keep a few recently played songs on your device so they keep playing if you lose connection.",
+  'offline.autoCacheSub': "Keep your most-played and most-recent songs on your device automatically, so they keep playing if you lose connection. These are temporary and only download when allowed.",
   'offline.offlineBadge': 'Offline',
   // Premium (Laybell Premium subscription)
   'premium.sectionTitle': 'Membership',

@@ -6,6 +6,7 @@ import { getDeviceId } from '../lib/deviceId';
 import { playThresholds } from '../lib/playThresholds';
 import { bumpBadge } from '../lib/badges';
 import { resolveLocalUri, markInUse, clearInUse, autoCache } from '../lib/offline';
+import { recordListen } from '../lib/listenHistory';
 import { recordStream as recordStreamDurable } from '../lib/streamOutbox';
 import {
   pickAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
@@ -732,6 +733,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           title: track.caption, artist: track.artist, cover: track.cover,
           downloadable: (ownerRow as any)?.downloadable !== false,
         });
+        // Log this deliberate play to the local listen history that drives the
+        // offline prefetch (top-played + recent). Main-player plays only — the
+        // ambient feed-song player doesn't count.
+        if (u) void recordListen(u.id,
+          { id: track.id, uri: track.uri, title: track.caption, artist: track.artist, cover: track.cover ?? null },
+          (ownerRow as any)?.downloadable !== false);
       } catch { badgeEligibleRef.current = false; }
     })();
     const recordStream = () => {

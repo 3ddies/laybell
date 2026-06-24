@@ -6,6 +6,7 @@ import { rawTier } from '../lib/badges';
 import { effectivePinLimit, subscribePremium } from '../lib/entitlements';
 import { flushStreamOutbox } from '../lib/streamOutbox';
 import { subscribeNetwork, getNetworkState } from '../lib/network';
+import { runOfflinePrefetch } from '../lib/offlinePrefetch';
 import { getPrefs, setPrefs, subscribePrefs, DEFAULT_PREFS, type OfflinePrefs } from '../lib/offlinePrefs';
 import {
   initOffline, subscribe, allEntries, pinnedEntries, isPinned as engineIsPinned,
@@ -86,7 +87,12 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
     const apply = (s: { isConnected: boolean; isInternetReachable: boolean | null }) => {
-      if (active) setIsOffline(!s.isConnected || s.isInternetReachable === false);
+      if (!active) return;
+      setIsOffline(!s.isConnected || s.isInternetReachable === false);
+      // Connectivity returned → top up the offline safety-net set (throttled internally).
+      if (s.isConnected && s.isInternetReachable !== false && uidRef.current) {
+        runOfflinePrefetch(uidRef.current).catch(() => {});
+      }
     };
     getNetworkState().then(apply).catch(() => {});
     const unsub = subscribeNetwork(apply);
@@ -119,6 +125,9 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       await initOffline(user.id);
       flushStreamOutbox(user.id).catch(() => {});
       reconcileOnline().catch(() => {});
+      // Proactively cache the user's top-played + most-recent songs for outage
+      // resilience (force on launch). Temporary, opt-out-aware, prefs-gated.
+      runOfflinePrefetch(user.id, true).catch(() => {});
     })();
     return () => { active = false; };
   }, [reconcileOnline]);
@@ -130,6 +139,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       const uid = uidRef.current;
       if (uid) flushStreamOutbox(uid).catch(() => {});
       reconcileOnline().catch(() => {});
+      if (uid) runOfflinePrefetch(uid).catch(() => {});   // top up the safety-net set (throttled)
     });
     return () => sub.remove();
   }, [reconcileOnline]);

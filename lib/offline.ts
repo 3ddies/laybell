@@ -67,6 +67,11 @@ let manifest = new Map<string, OfflineEntry>();
 let loadedUid: string | null = null;
 let initPromise: Promise<void> | null = null;
 const inUse = new Set<string>();                          // postIds expo-av currently has loaded
+// Prefetch "keep-set": the top/recent songs the offline safety net wants kept on
+// device (lib/offlinePrefetch.ts). These auto-cache entries are exempt from the
+// reactive LRU eviction below, so a frequently-played favourite isn't dropped just
+// because it wasn't the most recent thing played. Bounded by the prefetch itself.
+let keepSet = new Set<string>();
 const listeners = new Set<() => void>();
 let persistChain: Promise<void> = Promise.resolve();
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -140,6 +145,7 @@ export async function initOffline(uid: string): Promise<void> {
   if (loadedUid !== uid) {
     manifest = new Map();
     inUse.clear();
+    keepSet.clear();   // the prefetch set is per-user; don't protect the old user's ids
     if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
     emit();
   }
@@ -370,17 +376,24 @@ export async function autoCache(postId: string, remoteUrl: string, meta: Offline
   }
 }
 
-// LRU eviction for the auto-cache: keep it within AUTO_MAX_TRACKS and AUTO_BYTE_BUDGET,
-// dropping the least-recently-played first. Never evicts pinned tracks or the file the
-// player currently has loaded (in-use lock).
+// Mark the prefetch keep-set (top/recent songs). These auto entries are protected
+// from the reactive LRU eviction below; the remaining "as you play" auto-cache is
+// still bounded by AUTO_MAX_TRACKS / AUTO_BYTE_BUDGET. Called by lib/offlinePrefetch.
+export function setKeepSet(ids: string[]) { keepSet = new Set(ids); }
+
+// LRU eviction for the auto-cache: keep the REACTIVE (non-keep-set) auto entries within
+// AUTO_MAX_TRACKS and AUTO_BYTE_BUDGET, dropping the least-recently-played first. Never
+// evicts pinned tracks, the prefetch keep-set, or the file the player currently has
+// loaded (in-use lock). The keep-set is bounded by the prefetch (top-N + recent-N), so
+// it can sit on top of the reactive budget without being capped here.
 async function evictAuto(): Promise<void> {
-  const autos = allEntries()
-    .filter((e) => e.source === 'auto' && e.state === 'ready')
+  const evictable = allEntries()
+    .filter((e) => e.source === 'auto' && e.state === 'ready' && !keepSet.has(e.postId))
     .sort((a, b) => (a.lastPlayedAt || a.addedAt) - (b.lastPlayedAt || b.addedAt));
-  let count = autos.length;
-  let bytes = autos.reduce((s, e) => s + (e.bytes || 0), 0);
+  let count = evictable.length;
+  let bytes = evictable.reduce((s, e) => s + (e.bytes || 0), 0);
   let changed = false;
-  for (const e of autos) {
+  for (const e of evictable) {
     if (count <= AUTO_MAX_TRACKS && bytes <= AUTO_BYTE_BUDGET) break;
     if (inUse.has(e.postId)) continue;           // never evict the loaded track
     manifest.delete(e.postId);
