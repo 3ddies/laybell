@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { withLayoutContext } from 'expo-router';
-import { TouchableOpacity, View, StyleSheet, Keyboard, Animated, Dimensions, Image, Text } from 'react-native';
+import { View, StyleSheet, Keyboard, Animated, Dimensions, Image, Text, PanResponder, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useProfile } from '../../contexts/ProfileContext';
@@ -43,12 +44,110 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
   profile: ['person', 'person-outline'],
 };
 
+// A single tab slot. Its look (scale, lift, active/inactive blend) is driven
+// CONTINUOUSLY off the pager's `position` so everything glides while you swipe
+// between pages instead of snapping at the end — that's what makes the bar feel
+// animated rather than just stateful. `r` is the slot's index in the FULL route
+// list (so it lines up with `position`, which counts the hidden camera as 0).
+function TabSlot({
+  route, r, hover, dragging, position, profile, colors, styles,
+}: {
+  route: MaterialTopTabBarProps['state']['routes'][number];
+  r: number;
+  hover: Animated.Value;
+  dragging: Animated.Value;
+  position: MaterialTopTabBarProps['position'];
+  profile: ReturnType<typeof useProfile>['profile'];
+  colors: ThemePalette;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  // "Active-ness" of this slot, 0→1, from two sources:
+  //  • near  — pager proximity (1 when centred on this tab), so it glides while
+  //            you swipe between pages instead of snapping at the end;
+  //  • hover  — drag feedback: the tab the finger is over during a bar drag.
+  // While a bar drag is in progress (`dragging`→1) the pager-driven `near`
+  // highlight is suppressed, so the tab you're ON goes dark and ONLY the tab
+  // tracking your finger lights up.
+  const near = position.interpolate({ inputRange: [r - 1, r, r + 1], outputRange: [0, 1, 0], extrapolate: 'clamp' });
+  const active = Animated.add(Animated.multiply(near, Animated.subtract(1, dragging)), hover);
+  const scale = active.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16], extrapolate: 'clamp' });
+  const lift = active.interpolate({ inputRange: [0, 1], outputRange: [0, -4], extrapolate: 'clamp' });
+  const fillOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' });
+  const outlineOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [1, 0], extrapolate: 'clamp' });
+
+  // Center create button: gradient circle that lifts/grows as it becomes active.
+  if (route.name === 'post') {
+    return (
+      <View style={styles.tabItem}>
+        <Animated.View style={[styles.postWrap, { transform: [{ translateY: lift }, { scale }] }]}>
+          <LinearGradient colors={GRADIENTS.primary} style={styles.postBtn}>
+            <Ionicons name="add" size={28} color="#fff" />
+          </LinearGradient>
+        </Animated.View>
+      </View>
+    );
+  }
+
+  // Profile: live avatar; the accent ring fades IN as the tab becomes active
+  // (cross-faded via opacity so there's no hard border snap).
+  if (route.name === 'profile') {
+    return (
+      <View style={styles.tabItem}>
+        <Animated.View style={{ transform: [{ translateY: lift }, { scale }] }}>
+          <View style={styles.avatarRing}>
+            {profile?.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
+            ) : (
+              <LinearGradient colors={GRADIENTS.primary} style={styles.avatarImg}>
+                <Text style={styles.avatarInitial}>
+                  {(profile?.display_name || profile?.username || '?').charAt(0).toUpperCase()}
+                </Text>
+              </LinearGradient>
+            )}
+          </View>
+          <Animated.View pointerEvents="none" style={[styles.avatarRingActive, { opacity: fillOpacity }]} />
+        </Animated.View>
+      </View>
+    );
+  }
+
+  // Icon tabs (Home / Explore / Music): the filled and outline glyphs are stacked
+  // and cross-faded by active-ness, so the icon "fills in" smoothly mid-swipe.
+  const icon = ICONS[route.name];
+  return (
+    <View style={styles.tabItem}>
+      <Animated.View style={[styles.iconWrap, { transform: [{ translateY: lift }, { scale }] }]}>
+        <Animated.View style={{ opacity: outlineOpacity }}>
+          <Ionicons name={icon[1]} size={26} color={colors.textTertiary} />
+        </Animated.View>
+        <Animated.View style={[styles.iconOverlay, { opacity: fillOpacity }]}>
+          <Ionicons name={icon[0]} size={26} color={colors.primary} />
+        </Animated.View>
+      </Animated.View>
+    </View>
+  );
+}
+
 function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   const insets = useSafeAreaInsets();
   const { profile } = useProfile();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { listenMode } = useListenMode();
+
+  // True iOS tab-bar look: the native "chrome material" blur — the exact frosted
+  // translucency UIKit uses for bars — with NO heavy tint on top, so the material
+  // (and whatever shows behind it) reads through like a real iOS bar. On Android
+  // (no system materials) we fall back to a regular blur + a subtle tint wash.
+  const isLight = mode === 'light';
+  const blurTint = isLight ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark';
+  const androidWash = isLight ? 'rgba(234,232,227,0.7)' : mode === 'grey' ? 'rgba(31,30,28,0.7)' : 'rgba(17,17,17,0.7)';
+
+  // The camera lives at route 0 but isn't a button — the visible bar is every
+  // other route, kept paired with its real route index so `position` lines up.
+  const visible = state.routes
+    .map((route, index) => ({ route, index }))
+    .filter((v) => v.route.name !== 'story-camera');
 
   // Listen mode (Music tab): the bar smoothly fades out (with a slight downward
   // drift) and stops catching touches; toggling off fades it right back.
@@ -73,67 +172,149 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
     extrapolate: 'clamp',
   });
 
+  // ----- Drag-and-hold to navigate -----------------------------------------
+  // A single PanResponder owns the whole bar. It captures every touch on press
+  // (deterministic grant→release for taps AND drags — no native gesture state
+  // machine to get stuck, so spamming/mixing taps stays reliable), maps the
+  // finger's pageX to a slot, lights up the hovered tab as you slide, and on
+  // release navigates to whatever tab you lifted off on. A tap is just the
+  // zero-distance case. The bar spans the full width from x=0, so pageX maps
+  // straight to a slot. Persistent refs keep the handlers' data fresh without
+  // ever rebuilding the responder.
+  const barWRef = useRef(SCREEN_W);
+  const dragSlot = useRef(-1);
+  const hoversRef = useRef<Animated.Value[] | null>(null);
+  if (!hoversRef.current) hoversRef.current = visible.map(() => new Animated.Value(0));
+  const hovers = hoversRef.current;
+  // 0 normally, 1 while a bar drag is active — slots multiply their pager-driven
+  // highlight by (1 - dragging), so the current tab goes dark during a drag and
+  // only the hovered tab (driven by `hovers`) shows.
+  const dragging = useRef(new Animated.Value(0)).current;
+  // True between a drag-release that navigated and the new page settling. We
+  // keep the dim + target highlight held until `position` reaches the new tab,
+  // otherwise the old tab flashes back while the pager is still mid-transition.
+  const releasingRef = useRef(false);
+
+  // commit() needs the live route list / focused index / navigation, so it's
+  // kept in a ref the render refreshes — the responder below reads it.
+  // Returns how many tabs the navigation jumped (0 if it didn't navigate), so
+  // the release can hold the dim for as long as the pager takes to slide there.
+  const commitRef = useRef<(slot: number) => number>(() => 0);
+  commitRef.current = (slot: number) => {
+    const target = visible[slot];
+    if (!target) return 0;
+    const focused = state.index === target.index;
+    const event = navigation.emit({ type: 'tabPress', target: target.route.key, canPreventDefault: true });
+    if (!focused && !event.defaultPrevented) {
+      const jump = Math.abs(target.index - state.index);
+      navigation.navigate(target.route.name);
+      return jump;
+    }
+    return 0;
+  };
+
+  const panRef = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false, // never yield mid-drag
+      onPanResponderGrant: (e) => {
+        const slot = slotFromX(e.nativeEvent.pageX);
+        dragSlot.current = slot;
+        releasingRef.current = false; // a new grab cancels any pending release-fade
+        setDragging(1); // dim the current tab; only the hovered one lights up
+        setHover(slot);
+      },
+      onPanResponderMove: (e) => {
+        const slot = slotFromX(e.nativeEvent.pageX);
+        if (slot !== dragSlot.current) {
+          dragSlot.current = slot;
+          setHover(slot);
+        }
+      },
+      onPanResponderRelease: (e) => {
+        const slot = slotFromX(e.nativeEvent.pageX);
+        const jump = commitRef.current(slot);
+        dragSlot.current = -1;
+        if (jump > 0) {
+          // Navigated. Keep ONLY the target lit and the current tab dimmed until
+          // the pager has actually slid onto the new tab — THEN drop the dim so
+          // `near` (pager position) takes over with no flash back to the old tab.
+          // The hold scales with the jump distance (a far jump animates longer);
+          // holding a touch too long is invisible, dropping early is the glitch.
+          setHover(slot);
+          releasingRef.current = true;
+          const holdMs = Math.min(320 + jump * 150, 1000);
+          setTimeout(() => {
+            if (releasingRef.current) { releasingRef.current = false; setDragging(0); clearHover(); }
+          }, holdMs);
+        } else {
+          // Released on the current tab — restore it immediately (position is
+          // already here, so un-dimming is seamless).
+          setDragging(0);
+          clearHover();
+        }
+      },
+      onPanResponderTerminate: () => {
+        dragSlot.current = -1;
+        releasingRef.current = false;
+        setDragging(0);
+        clearHover();
+      },
+    }),
+  );
+
+  // Defined after the responder but hoisted (function declarations), so the
+  // responder's handlers close over them. All read stable refs.
+  function slotFromX(pageX: number) {
+    const n = hovers.length;
+    const iw = (barWRef.current || SCREEN_W) / n;
+    return Math.max(0, Math.min(n - 1, Math.floor(pageX / iw)));
+  }
+  function setHover(slot: number) {
+    hovers.forEach((v, i) =>
+      Animated.spring(v, { toValue: i === slot ? 1 : 0, useNativeDriver: true, speed: 50, bounciness: 0 }).start(),
+    );
+  }
+  function clearHover() {
+    hovers.forEach((v) => Animated.spring(v, { toValue: 0, useNativeDriver: true, speed: 50, bounciness: 0 }).start());
+  }
+  function setDragging(to: number) {
+    Animated.timing(dragging, { toValue: to, duration: to ? 120 : 160, useNativeDriver: true }).start();
+  }
+
   return (
     <Animated.View
       pointerEvents={listenMode ? 'none' : 'auto'}
       style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: listenFade, transform: [{ translateX }, { translateY: listenDrift }] }]}
     >
-      {state.routes.map((route, index) => {
-        if (route.name === 'story-camera') return null;
-        const focused = state.index === index;
-
-        const onPress = () => {
-          const event = navigation.emit({
-            type: 'tabPress',
-            target: route.key,
-            canPreventDefault: true,
-          });
-          if (!focused && !event.defaultPrevented) {
-            navigation.navigate(route.name);
-          }
-        };
-
-        if (route.name === 'post') {
-          return (
-            <TouchableOpacity key={route.key} style={styles.postWrap} onPress={onPress} activeOpacity={0.85}>
-              <LinearGradient colors={GRADIENTS.primary} style={styles.postBtn}>
-                <Ionicons name="add" size={28} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
-          );
-        }
-
-        // Profile tab shows the user's own avatar (live via ProfileContext) instead
-        // of a generic icon — ringed in the accent colour when it's the active tab.
-        if (route.name === 'profile') {
-          return (
-            <TouchableOpacity key={route.key} style={styles.tabItem} onPress={onPress} activeOpacity={0.7}>
-              <View style={[styles.avatarRing, focused && styles.avatarRingActive]}>
-                {profile?.avatar_url ? (
-                  <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
-                ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.avatarImg}>
-                    <Text style={styles.avatarInitial}>
-                      {(profile?.display_name || profile?.username || '?').charAt(0).toUpperCase()}
-                    </Text>
-                  </LinearGradient>
-                )}
-              </View>
-            </TouchableOpacity>
-          );
-        }
-
-        const icon = ICONS[route.name];
-        return (
-          <TouchableOpacity key={route.key} style={styles.tabItem} onPress={onPress} activeOpacity={0.7}>
-            <Ionicons
-              name={focused ? icon[0] : icon[1]}
-              size={26}
-              color={focused ? colors.primary : colors.textTertiary}
-            />
-          </TouchableOpacity>
-        );
-      })}
+      {/* Native iOS chrome-material blur fills the bar (behind the row). The bar
+          stays overflow-visible so the center button can lift above the top edge.
+          Android can't render system materials, so it gets a tint wash instead. */}
+      <BlurView tint={blurTint} intensity={100} style={styles.blurFill} />
+      {Platform.OS === 'android' && (
+        <View pointerEvents="none" style={[styles.blurFill, { backgroundColor: androidWash }]} />
+      )}
+      <Animated.View
+        style={styles.row}
+        onLayout={(e) => { barWRef.current = e.nativeEvent.layout.width; }}
+        {...panRef.current.panHandlers}
+      >
+        {visible.map(({ route, index }, slot) => (
+          <TabSlot
+            key={route.key}
+            route={route}
+            r={index}
+            hover={hovers[slot]}
+            dragging={dragging}
+            position={position}
+            profile={profile}
+            colors={colors}
+            styles={styles}
+          />
+        ))}
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -149,6 +330,14 @@ export default function TabLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
+  // ── Swipe-haptic spy ─────────────────────────────────────────────────────
+  // The pager's `position` is native-driven, so JS never sees the live swipe and
+  // can only learn the new tab at settle (~300ms late). To fire the tick the
+  // instant the finger lifts, we watch the raw touches with a gesture-handler Pan
+  // set to manualActivation that NEVER activates — so it only observes and can't
+  // steal the swipe from the pager. On finger-up, if the navigator was treating
+  // this as a tab swipe (swipingRef, set from swipeStart/swipeEnd) and the
+  // horizontal throw is enough to commit a page change, we tick immediately and
   return (
     <PagerContext.Provider value={swiping}>
      <TabSwipeContext.Provider value={setSwipeEnabled}>
@@ -196,32 +385,43 @@ export default function TabLayout() {
 
 const makeStyles = (c: ThemePalette) => StyleSheet.create({
   bar: {
-    flexDirection: 'row',
-    backgroundColor: c.surface,
+    // Flat, full-width, like a native iOS tab bar: the frosted BlurView child IS
+    // the background (transparent here), with just a hairline top separator — no
+    // rounded corners, no drop shadow. Stays overflow-visible for the center btn.
+    backgroundColor: 'transparent',
     borderTopColor: c.border,
-    borderTopWidth: 0.5,
+    borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 6,
     overflow: 'visible',
-    elevation: 0,
   },
   barOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  // The blur fills the whole bar, flush to the screen edges (square corners).
+  blurFill: { ...StyleSheet.absoluteFillObject },
+  // Holds the slots in a row. onLayout here measures the bar width for slot math.
+  row: { flex: 1, flexDirection: 'row', position: 'relative' },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // 26px avatar inside a 32px ring (transparent when inactive so there's no
-  // layout shift between states), matching the 26px icon footprint of the others.
+  // Stacks the outline + filled glyphs so they can be cross-faded in place.
+  iconWrap: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  iconOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  // 26px avatar inside a 32px footprint, matching the icon tabs.
   avatarRing: {
     width: 32,
     height: 32,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
   },
-  avatarRingActive: { borderColor: c.primary },
+  // Accent ring overlaid and faded in as the profile tab becomes active.
+  avatarRingActive: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: c.primary,
+  },
   avatarImg: {
     width: 26,
     height: 26,
