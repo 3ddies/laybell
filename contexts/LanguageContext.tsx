@@ -17,7 +17,9 @@ type LanguageContextValue = {
   // The translator bound to the current language.
   t: (key: string, vars?: Record<string, string | number>) => string;
   // Whether USER-typed content (comments, messages, captions, bios) is machine-
-  // translated into `lang` on display. Defaults ON. See lib/translate.ts +
+  // translated into `lang` automatically. Defaults OFF — the global default is
+  // "tap to translate" (translations are only fetched when the viewer asks, and
+  // only for content in a different real language). See lib/translate.ts +
   // useAutoTranslate. (Separate from `t`, which only does the static UI dict.)
   autoTranslate: boolean;
   setAutoTranslate: (on: boolean) => void;
@@ -27,7 +29,7 @@ const LanguageContext = createContext<LanguageContextValue>({
   lang: DEFAULT_LANG,
   setLang: () => {},
   t: (key) => key,
-  autoTranslate: true,
+  autoTranslate: false,
   setAutoTranslate: () => {},
 });
 
@@ -38,8 +40,9 @@ export function useTranslation() {
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // Default to English; a stored choice (loaded below) overrides it.
   const [lang, setLangState] = useState<Lang>(DEFAULT_LANG);
-  // Auto-translate user content: default ON, a stored choice overrides.
-  const [autoTranslate, setAutoState] = useState(true);
+  // Auto-translate user content: default OFF (tap-to-translate); a stored choice
+  // overrides.
+  const [autoTranslate, setAutoState] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((stored) => {

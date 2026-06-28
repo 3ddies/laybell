@@ -452,10 +452,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   author: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
   avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  authorName: { flexShrink: 1, color: '#fff', fontSize: 15, fontWeight: '700' },
+  // A dark text-shadow "halo" keeps the white overlay text legible even over
+  // bright/light video frames where the bottom gradient alone isn't enough.
+  authorName: { flexShrink: 1, color: '#fff', fontSize: 15, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.85)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   spotSparkle: { opacity: 0.9, flexShrink: 0 },
-  dot: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
-  time: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
+  dot: { color: 'rgba(255,255,255,0.7)', fontSize: 14, textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
+  time: { color: 'rgba(255,255,255,0.7)', fontSize: 12, textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
   captionRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
-  caption: { color: '#fff', fontSize: 14, lineHeight: 19, flexShrink: 1 },
+  caption: { color: '#fff', fontSize: 14, lineHeight: 19, flexShrink: 1, textShadowColor: 'rgba(0,0,0,0.85)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
 });

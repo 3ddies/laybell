@@ -17,6 +17,8 @@ import { LANGUAGES } from '../lib/i18n';
 import BadgeEmblem from '../components/BadgeEmblem';
 import SwipeBackPager from '../components/SwipeBackPager';
 import LanguagePicker from '../components/LanguagePicker';
+import ConfirmDialog from '../components/ConfirmDialog';
+import Toast from '../components/Toast';
 import { displayedTier } from '../lib/badges';
 import {
   loadNotifPrefs, saveNotifPrefs, type NotifPrefs,
@@ -109,6 +111,10 @@ export default function SettingsScreen() {
   const { isPremium } = usePremium();
   const { t, lang } = useTranslation();
   const [langPickerVisible, setLangPickerVisible] = useState(false);
+  // Polished confirmations (replace the OS Alerts for logout / change password /
+  // delete account) + a toast for the in-place success messages.
+  const [dialog, setDialog] = useState<null | 'logout' | 'password' | 'delete' | 'deleteConfirm'>(null);
+  const [toast, setToast] = useState<{ title: string; message?: string } | null>(null);
   const styles = useThemedStyles(makeStyles);
 
   // Per-category notification toggles (persisted locally). The "All" row is
@@ -137,11 +143,34 @@ export default function SettingsScreen() {
     saveNotifPrefs(next);
   }
 
-  async function handleLogout() {
-    Alert.alert(t('logout.title'), t('logout.body'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('danger.logout'), style: 'destructive', onPress: () => supabase.auth.signOut() },
-    ]);
+  function handleLogout() { setDialog('logout'); }
+
+  // ── Polished-dialog actions ──────────────────────────────────────────────
+  function doLogout() { setDialog(null); supabase.auth.signOut(); }
+
+  async function doSendPasswordReset() {
+    setDialog(null);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.email) await supabase.auth.resetPasswordForEmail(user.email);
+    setToast({ title: t('cpw.sentTitle'), message: t('cpw.sentBody') });
+  }
+
+  async function doHide3mo() {
+    setDialog(null);
+    const ok = await setHidden(true, { delete_requested_at: new Date().toISOString(), delete_immediately: false });
+    if (ok) setToast({ title: t('delete.hiddenTitle'), message: t('delete.hiddenBody') });
+  }
+
+  async function doDeletePermanent() {
+    setDialog(null);
+    const ok = await setHidden(true, { delete_requested_at: new Date().toISOString(), delete_immediately: true });
+    if (!ok) return;
+    // Reported accounts aren't auto-deleted after 48h, so don't promise the email
+    // reuse timeline to them. Check before sign-out (the RPC needs auth.uid()).
+    let reported = false;
+    try { const { data } = await supabase.rpc('current_account_has_reports'); reported = data === true; } catch {}
+    await supabase.auth.signOut();
+    Alert.alert(t('delete.doneTitle'), reported ? t('delete.doneReported') : t('delete.doneClean'));
   }
 
   // ── Hide profile / soft deletion ─────────────────────────────────────────
@@ -178,56 +207,7 @@ export default function SettingsScreen() {
     }
   }
 
-  async function handleDeleteAccount() {
-    Alert.alert(
-      t('danger.deleteAccount'),
-      t('delete.body'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('delete.hide3mo'),
-          onPress: async () => {
-            const ok = await setHidden(true, { delete_requested_at: new Date().toISOString(), delete_immediately: false });
-            if (ok) {
-              Alert.alert(t('delete.hiddenTitle'), t('delete.hiddenBody'));
-            }
-          },
-        },
-        {
-          text: t('delete.deleteNow'),
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              t('delete.permTitle'),
-              t('delete.permBody'),
-              [
-                { text: t('common.cancel'), style: 'cancel' },
-                {
-                  text: t('common.delete'), style: 'destructive',
-                  onPress: async () => {
-                    const ok = await setHidden(true, { delete_requested_at: new Date().toISOString(), delete_immediately: true });
-                    if (ok) {
-                      // Flag now — access stops immediately via sign-out + the _layout
-                      // login guard — and the account is HARD-DELETED 48h later by the
-                      // sweep, which frees the email for reuse. Reported accounts are
-                      // excluded (handled manually), so DON'T promise them the 48h email
-                      // reuse — it would be misleading. Check before signOut (RPC needs auth).
-                      let reported = false;
-                      try { const { data } = await supabase.rpc('current_account_has_reports'); reported = data === true; } catch {}
-                      await supabase.auth.signOut();
-                      Alert.alert(t('delete.doneTitle'), reported
-                        ? t('delete.doneReported')
-                        : t('delete.doneClean'));
-                    }
-                  },
-                },
-              ],
-            );
-          },
-        },
-      ],
-    );
-  }
+  function handleDeleteAccount() { setDialog('delete'); }
 
   // Paid advertising features (Spotlight, Ad Manager) are 18+ per the Terms of
   // Service. Block users we KNOW to be under 18 (age is set during onboarding);
@@ -342,14 +322,7 @@ export default function SettingsScreen() {
     {
       icon: 'lock-closed-outline',
       label: t('account.changePassword'),
-      onPress: () => Alert.alert(t('account.changePassword'), t('cpw.body'), [
-        { text: t('common.cancel'), style: 'cancel' },
-        { text: t('cpw.send'), onPress: async () => {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user?.email) await supabase.auth.resetPasswordForEmail(user.email);
-          Alert.alert(t('cpw.sentTitle'), t('cpw.sentBody'));
-        }},
-      ]),
+      onPress: () => setDialog('password'),
     },
   ];
 
@@ -561,6 +534,58 @@ export default function SettingsScreen() {
       <LanguagePicker
         visible={langPickerVisible}
         onClose={() => setLangPickerVisible(false)}
+      />
+
+      {/* Polished confirmations (replace the default OS alerts) */}
+      <ConfirmDialog
+        visible={dialog === 'logout'}
+        icon="log-out-outline"
+        destructive
+        title={t('logout.title')}
+        message={t('logout.body')}
+        confirmLabel={t('danger.logout')}
+        onConfirm={doLogout}
+        onCancel={() => setDialog(null)}
+      />
+      <ConfirmDialog
+        visible={dialog === 'password'}
+        icon="lock-closed-outline"
+        title={t('account.changePassword')}
+        message={t('cpw.body')}
+        confirmLabel={t('cpw.send')}
+        onConfirm={doSendPasswordReset}
+        onCancel={() => setDialog(null)}
+      />
+      {/* Delete: a soft "hide for 3 months" alternative sits between the
+          destructive delete and cancel. */}
+      <ConfirmDialog
+        visible={dialog === 'delete'}
+        icon="warning"
+        destructive
+        title={t('danger.deleteAccount')}
+        message={t('delete.body')}
+        confirmLabel={t('delete.deleteNow')}
+        secondaryLabel={t('delete.hide3mo')}
+        onSecondary={doHide3mo}
+        onConfirm={() => setDialog('deleteConfirm')}
+        onCancel={() => setDialog(null)}
+      />
+      <ConfirmDialog
+        visible={dialog === 'deleteConfirm'}
+        icon="trash"
+        destructive
+        title={t('delete.permTitle')}
+        message={t('delete.permBody')}
+        confirmLabel={t('common.delete')}
+        onConfirm={doDeletePermanent}
+        onCancel={() => setDialog(null)}
+      />
+      <Toast
+        visible={!!toast}
+        icon="checkmark-circle"
+        title={toast?.title ?? ''}
+        message={toast?.message}
+        onHide={() => setToast(null)}
       />
     </View>
     </SwipeBackPager>

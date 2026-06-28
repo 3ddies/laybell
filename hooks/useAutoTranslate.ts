@@ -1,23 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../contexts/LanguageContext';
 import { translateText } from '../lib/translate';
+import { detectLang } from '../lib/detectLang';
 
 // Per-text translation state for a piece of user-typed content. Drives
 // <TranslatableText> and any bespoke renderer (message bubbles, captions).
 //
-// Auto mode (the global default): translates into the viewer's app language as
-// soon as the text mounts, then shows the translation with a "Show original"
-// toggle. If the text is already in the app language (or translation fails), it
-// silently shows the original — no toggle, no flicker.
+// "Tap to translate" is the global default: text shows in its original language
+// with a translate link, and we only fetch a translation when the viewer taps —
+// so we never burn translations on content they didn't want to read. The link
+// appears ONLY when a cheap, network-free local guess says the text is a real
+// language DIFFERENT from the viewer's (so same-language text and gibberish get
+// no link and never hit the API).
 //
-// Manual mode (auto off): shows the original with a "See translation" link that
-// fetches on tap.
+// Auto mode (opt-in via Settings → Auto-translate): the same gate applies, but a
+// qualifying text is translated on mount and shown with a "Show original" toggle.
 
 type Status = 'idle' | 'loading' | 'done';
 
 export function useAutoTranslate(text?: string | null) {
   const { lang, autoTranslate } = useTranslation();
   const raw = (text ?? '').trim();
+
+  // Network-free language guess. We only offer translation when the text looks
+  // like a different, real language than the viewer's.
+  const detectedLocal = useMemo(() => detectLang(raw), [raw]);
+  const translatable = !!detectedLocal && detectedLocal !== lang;
 
   const [translated, setTranslated] = useState<string | null>(null);
   const [detected, setDetected] = useState<string | null>(null);
@@ -36,16 +44,17 @@ export function useAutoTranslate(text?: string | null) {
     setStatus('done');
   }
 
-  // Reset + (re)translate whenever the text or target language changes.
+  // Reset whenever the text or target language changes. Auto mode (opt-in)
+  // translates eagerly, but only for text the local gate flags as foreign.
   useEffect(() => {
     reqId.current++;
     setTranslated(null);
     setDetected(null);
     setStatus('idle');
     setShowOriginal(false);
-    if (autoTranslate && raw) run();
+    if (autoTranslate && translatable && raw) run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [raw, lang, autoTranslate]);
+  }, [raw, lang, autoTranslate, translatable]);
 
   // A real, useful translation: came back, differs from the original, and the
   // source wasn't already the target language.
@@ -58,17 +67,20 @@ export function useAutoTranslate(text?: string | null) {
 
   const shown = hasTranslation && !showOriginal ? (translated as string) : (text ?? '');
 
+  // Offer the "tap to translate" link only when it's worth it and not done yet.
+  const canTranslate = translatable && status !== 'loading' && !hasTranslation;
+
   function toggle() {
     if (status === 'done') setShowOriginal((v) => !v);
-    else if (status === 'idle') { setShowOriginal(false); run(); } // manual "See translation"
+    else if (status === 'idle' && translatable) { setShowOriginal(false); run(); } // tap to translate
   }
 
   return {
     shown,
     hasTranslation,
+    canTranslate,
     showingOriginal: showOriginal,
     loading: status === 'loading',
-    auto: autoTranslate,
     toggle,
   };
 }

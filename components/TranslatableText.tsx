@@ -37,7 +37,9 @@ export default function TranslatableText({
   let label: string | null = null;
   if (tr.loading) label = t('translate.translating');
   else if (tr.hasTranslation) label = tr.showingOriginal ? t('translate.showTranslation') : t('translate.showOriginal');
-  else if (!tr.auto) label = t('translate.see');
+  // Offer "tap to translate" ONLY when the text is a different real language
+  // than the viewer's (gibberish / same-language text gets no link).
+  else if (tr.canTranslate) label = t('translate.see');
 
   return (
     <>

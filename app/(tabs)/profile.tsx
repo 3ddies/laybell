@@ -580,7 +580,7 @@ export default function ProfileScreen() {
             name={profile?.display_name}
             size={88}
             badgeRing={specialRingTier(myTier) ? ringColors : undefined}
-            onPressProfile={openCamera}
+            onPressProfile={() => router.push('/edit-profile')}
             showAdd
             addColors={myTier ? ringColors : undefined}
             onPressAdd={openCamera}

@@ -14,6 +14,9 @@ type Props = {
   icon?: keyof typeof Ionicons.glyphMap;
   /** Tint the icon + confirm button with the error color (for delete/remove). */
   destructive?: boolean;
+  /** Optional middle action (e.g. a softer alternative) shown between confirm and cancel. */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -29,6 +32,8 @@ export default function ConfirmDialog({
   cancelLabel,
   icon = 'alert-circle',
   destructive = false,
+  secondaryLabel,
+  onSecondary,
   onConfirm,
   onCancel,
 }: Props) {
@@ -79,6 +84,11 @@ export default function ConfirmDialog({
         >
           <Text style={styles.confirmText}>{confirmLabel}</Text>
         </TouchableOpacity>
+        {!!secondaryLabel && !!onSecondary && (
+          <TouchableOpacity style={styles.secondaryBtn} onPress={onSecondary} activeOpacity={0.85}>
+            <Text style={styles.secondaryText}>{secondaryLabel}</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.7}>
           <Text style={styles.cancelText}>{cancelLabel ?? t('common.cancel')}</Text>
         </TouchableOpacity>
@@ -107,6 +117,11 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.md, marginTop: SPACING.md,
   },
   confirmText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  secondaryBtn: {
+    alignSelf: 'stretch', borderRadius: RADIUS.full, borderWidth: 1, borderColor: c.border,
+    alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.md, marginTop: SPACING.sm,
+  },
+  secondaryText: { color: c.text, fontSize: 15, fontWeight: '700' },
   cancelBtn: { alignSelf: 'stretch', alignItems: 'center', paddingVertical: SPACING.sm + 2, marginTop: SPACING.xs },
   cancelText: { color: c.textSecondary, fontSize: 15, fontWeight: '700' },
 });
