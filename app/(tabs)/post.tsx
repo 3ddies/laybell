@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, ActivityIndicator, Alert, Switch, Image, Dimensions, Animated, Modal,
+  ScrollView, ActivityIndicator, Alert, Image, Dimensions, Animated, Modal,
 } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -35,8 +35,12 @@ import {
   loadDrafts, saveDraft, deleteDraft, draftThumb, draftSummary, makeDraftId, type Draft,
 } from '../../lib/drafts';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
+import CommunityPickerModal from '../../components/CommunityPickerModal';
+import { type PostableCommunity } from '../../lib/communities';
 import VideoTrimmer from '../../components/VideoTrimmer';
 import ErrorBoundary from '../../components/ErrorBoundary';
+import Toast from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 type PostType = 'image' | 'video' | 'audio' | 'slideshow';
 type Step = 'pick' | 'edit' | 'details';
@@ -98,6 +102,9 @@ function friendlyShareError(err: any, t: (key: string) => string): string {
 const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
 const PREVIEW_MAX_H = Math.round(SCREEN_H * 0.46);
+// Details-step square preview: scales with the screen but capped so the right
+// column (genre/music dropdowns) always keeps a usable width on big phones.
+const DETAILS_PREVIEW = Math.min(Math.round(SCREEN_W * 0.44), 190);
 
 // Duration limits (seconds). Duration is the ONLY rule for videos — there are
 // deliberately NO file-size caps (an iPhone HD clip can be hundreds of MB and
@@ -171,10 +178,15 @@ export default function PostScreen() {
   // details
   const [caption, setCaption] = useState('');
   const [genre, setGenre] = useState('');
+  const [showGenrePicker, setShowGenrePicker] = useState(false);
   const [song, setSong] = useState<PickedSong | null>(null); // another creator's track on this image/video
   const [showSongPicker, setShowSongPicker] = useState(false);
   const [tagged, setTagged] = useState<TaggedPerson[]>([]); // accounts tagged on this post (≤10)
   const [showTagModal, setShowTagModal] = useState(false);
+  // Communities this post is attributed to (a post can belong to several). Only
+  // communities the user is an active, non-muted member of are postable.
+  const [communities, setCommunities] = useState<PostableCommunity[]>([]);
+  const [showCommunityPicker, setShowCommunityPicker] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
   // Tier-gated public slots: none/bronze 6, silver 12, gold 24, diamond ∞.
   // Friends-only posts are never gated; deleting/archiving frees a slot.
@@ -214,6 +226,11 @@ export default function PostScreen() {
   // it. A ref — it must not trigger re-renders or reset on step changes.
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [draftsOpen, setDraftsOpen] = useState(false);
+  const [savedToast, setSavedToast] = useState(false); // "Saved to Drafts" confirmation
+  // Polished "Posted!" confirmation shown after a successful share (replaces the
+  // default OS alert). Holds the title/body so the spotlight variant can differ.
+  const [postedToast, setPostedToast] = useState<{ title: string; message: string; spotlight: boolean } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Draft | null>(null); // draft pending delete-confirm
   const editingDraftId = useRef<string | null>(null);
   useFocusEffect(useCallback(() => { loadDrafts().then(setDrafts); }, []));
   // Drop the "I'm editing draft X" link. Called whenever the resumed media is
@@ -281,6 +298,18 @@ export default function PostScreen() {
   const slideshowMode = postType === 'slideshow';
   const lastSlide = slides.length ? slides[slides.length - 1] : null; // most recent — shown on the square
 
+  // Apply the picked communities: force Public, and set the genre to the shared
+  // genre if they all agree, else clear it (mixed communities → "no genre").
+  const hasCommunity = communities.length > 0;
+  function applyCommunities(list: PostableCommunity[]) {
+    setCommunities(list);
+    if (list.length > 0) {
+      setIsPublic(true);
+      const genres = new Set(list.map((c) => c.genre));
+      setGenre(genres.size === 1 ? list[0].genre : ''); // one shared genre, else no genre
+    }
+  }
+
   function resetAll() {
     if (recActiveRef.current) { audioRecorder.stop().catch(() => {}); recActiveRef.current = false; }
     if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
@@ -289,7 +318,7 @@ export default function PostScreen() {
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
-    setCaption(''); setGenre(''); setSong(null); setTagged([]); setError(''); setStep('pick');
+    setCaption(''); setGenre(''); setSong(null); setTagged([]); setCommunities([]); setError(''); setStep('pick');
     // Abandoning the compose drops any parked spotlight handoff so it can't
     // silently attach to an unrelated later post — the paid campaign itself
     // stays safe as `pending` on the Spotlight screen. (No-op on the share
@@ -330,8 +359,8 @@ export default function PostScreen() {
     };
     const next = await saveDraft(draft);
     setDrafts(next);
-    resetAll(); // clears the composer + the editing link
-    Alert.alert(t('post.savedDraftTitle'), t('post.savedDraftBody'));
+    resetAll(); // clears the composer + the editing link (lands back on the pick step)
+    setSavedToast(true); // polished in-app confirmation (replaces the default OS alert)
   }
 
   // Load a saved draft back into the composer and jump to the details step.
@@ -361,18 +390,16 @@ export default function PostScreen() {
     setStep('details');
   }
 
-  function confirmDeleteDraft(d: Draft) {
-    Alert.alert(t('post.deleteDraftTitle'), t('post.deleteDraftBody'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.delete'), style: 'destructive',
-        onPress: async () => {
-          const next = await deleteDraft(d.id);
-          setDrafts(next);
-          if (editingDraftId.current === d.id) editingDraftId.current = null;
-        },
-      },
-    ]);
+  // Open the polished confirm dialog (replaces the default OS alert).
+  function confirmDeleteDraft(d: Draft) { setDeleteTarget(d); }
+
+  async function performDeleteDraft() {
+    const d = deleteTarget;
+    if (!d) return;
+    setDeleteTarget(null);
+    const next = await deleteDraft(d.id);
+    setDrafts(next);
+    if (editingDraftId.current === d.id) editingDraftId.current = null;
   }
 
   function switchType(t: PostType) {
@@ -756,7 +783,9 @@ export default function PostScreen() {
         type: postType === 'audio' ? audioKind : postType,
         media_url: mediaUrl,
         caption: caption.trim(),
-        is_public: isPublic,
+        // Posting to a community is always public (the UI locks it; this is the
+        // safety net so a community post can never be saved friends-only).
+        is_public: hasCommunity ? true : isPublic,
         ...(genre && showGenre ? { genre } : {}),
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
         ...(postType === 'video' && videoDurSec > 0 ? { duration_seconds: videoDurSec } : {}),
@@ -770,6 +799,7 @@ export default function PostScreen() {
           ? { song_id: song.id, song_title: song.title, song_artist: song.artist, song_artist_id: song.artistId }
           : {}),
         ...(tagged.length && postType !== 'audio' ? { tagged_user_ids: tagged.map((t) => t.id) } : {}),
+        ...(hasCommunity ? { community_ids: communities.map((c) => c.id) } : {}),
       }).select('id').single();
       if (postError) throw postError;
       if (isPublic) {
@@ -806,12 +836,15 @@ export default function PostScreen() {
       // delete first.)
       if (editingDraftId.current) deleteDraft(editingDraftId.current).then(setDrafts);
 
-      Alert.alert(
-        spotLabel ? t('post.postedSpotlightTitle') : t('post.postedTitle'),
-        spotLabel
+      // Polished in-app confirmation (replaces the default OS alert). Lands on
+      // the pick step after resetAll, where the Toast is rendered.
+      setPostedToast({
+        title: spotLabel ? t('post.postedSpotlightTitle') : t('post.postedTitle'),
+        message: spotLabel
           ? t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) })
           : t('post.postedBody'),
-      );
+        spotlight: !!spotLabel,
+      });
       resetAll();
     } catch (err: any) {
       setError(friendlyShareError(err, t));
@@ -858,6 +891,9 @@ export default function PostScreen() {
       : postType === 'slideshow'
         ? (slides[0] ? (slides[0].type === 'video' ? (slides[0].posterUri || slides[0].thumbnailUri || slides[0].uri) : slides[0].uri) : null)
         : (postType === 'video' ? (thumbnailUri ?? media?.posterUri ?? null) : media?.uri);
+    // The display label for the chosen genre (state stores the lowercase value).
+    const selGenre = GENRES.find((g) => g.toLowerCase() === genre);
+    const selectedGenreLabel = selGenre ? genreLabel(selGenre) : '';
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -904,33 +940,68 @@ export default function PostScreen() {
             </View>
           )}
 
-          {/* Caption row with media thumbnail (Instagram-style) */}
-          <View style={styles.captionRow}>
-            {thumbUri ? (
-              // ExpoImage renders ph:// reliably and degrades to empty (not a
-              // broken-image glyph) if the file is gone — unlike RN core Image.
-              <ExpoImage source={{ uri: thumbUri }} style={styles.captionThumb} contentFit="cover" />
-            ) : (
-              <View style={[styles.captionThumb, styles.captionThumbPlaceholder]}>
-                <Ionicons name="musical-notes" size={20} color={colors.primary} />
+          {/* ── Top: bigger preview + Genre/Music dropdowns (image/video/slideshow) */}
+          {postType !== 'audio' && (
+            <View style={styles.twoCol}>
+              {/* Bigger post preview, with a Tag-people shortcut overlaid on it */}
+              <View style={styles.previewCol}>
+                {thumbUri ? (
+                  // ExpoImage renders ph:// reliably and degrades to empty (not a
+                  // broken-image glyph) if the file is gone — unlike RN core Image.
+                  <ExpoImage source={{ uri: thumbUri }} style={styles.previewBig} contentFit="cover" />
+                ) : (
+                  <View style={[styles.previewBig, styles.previewBigPlaceholder]}>
+                    <Ionicons name="image-outline" size={28} color={colors.textTertiary} />
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={styles.tagOverlay}
+                  onPress={() => setShowTagModal(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('post.tagPeople')}
+                >
+                  <Ionicons name="person-add" size={14} color="#fff" />
+                  <Text style={styles.tagOverlayText} numberOfLines={1}>
+                    {tagged.length > 0 ? String(tagged.length) : t('post.tagPeople')}
+                  </Text>
+                </TouchableOpacity>
               </View>
-            )}
-            <TextInput
-              style={styles.captionInput}
-              placeholder={t('post.captionPlaceholder')}
-              placeholderTextColor={colors.textTertiary}
-              value={caption}
-              onChangeText={setCaption}
-              multiline
-              maxLength={500}
-              editable={!swiping}
-            />
-          </View>
 
-          <MentionSuggestions
-            query={getActiveMentionQuery(caption, caption.length)}
-            onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
-          />
+              {/* Right column: Genre + Music as compact dropdowns */}
+              <View style={styles.rightCol}>
+                {showGenre && (
+                  <View style={styles.field}>
+                    <Text style={styles.fieldLabel}>{t('post.genre')}</Text>
+                    {/* Locked when posting to communities: the post takes their
+                        shared genre, or "no genre" when they differ. */}
+                    <TouchableOpacity style={styles.dropdown} onPress={() => { if (!hasCommunity) setShowGenrePicker(true); }} activeOpacity={hasCommunity ? 1 : 0.8}>
+                      <Text style={[styles.dropdownText, !genre && styles.dropdownPlaceholder]} numberOfLines={1}>
+                        {selectedGenreLabel || (hasCommunity ? t('post.noGenre') : t('post.selectGenre'))}
+                      </Text>
+                      <Ionicons name={hasCommunity ? 'lock-closed' : 'chevron-down'} size={16} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                    {hasCommunity && <Text style={styles.genreLockHint}>{t('post.genreFromCommunity')}</Text>}
+                  </View>
+                )}
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>{t('post.musicLabel')}</Text>
+                  <TouchableOpacity style={styles.dropdown} onPress={() => setShowSongPicker(true)} activeOpacity={0.8}>
+                    <Ionicons name="musical-notes" size={15} color={song ? colors.primary : colors.textTertiary} />
+                    <Text style={[styles.dropdownText, !song && styles.dropdownPlaceholder]} numberOfLines={1}>
+                      {song ? song.title : t('post.addMusic')}
+                    </Text>
+                    {song ? (
+                      <TouchableOpacity onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                      </TouchableOpacity>
+                    ) : (
+                      <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
 
           {/* Audio category */}
           {postType === 'audio' && (
@@ -973,88 +1044,80 @@ export default function PostScreen() {
             </View>
           )}
 
-          {/* Genre */}
-          {showGenre && (
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{t('post.genre')}</Text>
-              <View style={styles.genreWrap}>
-                {GENRES.map(g => {
-                  const value = g.toLowerCase();
-                  const active = genre === value;
-                  return (
-                    <TouchableOpacity key={g} style={[styles.genreChip, active && styles.genreChipActive]} onPress={() => setGenre(active ? '' : value)}>
-                      <Text style={[styles.genreChipText, active && styles.genreChipTextActive]}>{genreLabel(g)}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+          {/* Genre (audio) — same dropdown control as the non-audio column.
+              Locked when posting to communities (shared genre, or "no genre"). */}
+          {postType === 'audio' && showGenre && (
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>{t('post.genre')}</Text>
+              <TouchableOpacity style={styles.dropdown} onPress={() => { if (!hasCommunity) setShowGenrePicker(true); }} activeOpacity={hasCommunity ? 1 : 0.8}>
+                <Text style={[styles.dropdownText, !genre && styles.dropdownPlaceholder]} numberOfLines={1}>
+                  {selectedGenreLabel || (hasCommunity ? t('post.noGenre') : t('post.selectGenre'))}
+                </Text>
+                <Ionicons name={hasCommunity ? 'lock-closed' : 'chevron-down'} size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
+              {hasCommunity && <Text style={styles.genreLockHint}>{t('post.genreFromCommunity')}</Text>}
             </View>
           )}
 
-          {/* Music — attach another creator's song to an image/video post */}
-          {postType !== 'audio' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{t('post.musicLabel')}</Text>
-              {song ? (
-                <View style={styles.songRow}>
-                  <Ionicons name="musical-notes" size={18} color={colors.primary} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.songRowTitle} numberOfLines={1}>{song.title}</Text>
-                    <Text style={styles.songRowArtist} numberOfLines={1}>{song.artist}</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setShowSongPicker(true)} style={styles.songChange}>
-                    <Text style={styles.songChangeText}>{t('post.change')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity style={styles.addSongBtn} onPress={() => setShowSongPicker(true)}>
-                  <Ionicons name="musical-notes-outline" size={18} color={colors.primary} />
-                  <Text style={styles.addSongText}>{t('post.addMusic')}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-
-          {/* Tag people — deliberate account tags (≤10), shown as a button on the post */}
-          {postType !== 'audio' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{t('post.tagPeople')}</Text>
-              {tagged.length > 0 ? (
-                <TouchableOpacity style={styles.songRow} onPress={() => setShowTagModal(true)}>
-                  <Ionicons name="people" size={18} color={colors.primary} />
-                  <Text style={styles.songRowTitle} numberOfLines={1}>
-                    {tagged.map((t) => `@${t.username}`).join(', ')}
-                  </Text>
-                  <View style={styles.songChange}><Text style={styles.songChangeText}>{t('post.edit')}</Text></View>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={styles.addSongBtn} onPress={() => setShowTagModal(true)}>
-                  <Ionicons name="person-add-outline" size={18} color={colors.primary} />
-                  <Text style={styles.addSongText}>{t('post.tagPeople')}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-
-          {/* Visibility */}
-          <View style={styles.visibilityRow}>
-            <View style={styles.visibilityLeft}>
-              <Ionicons name={isPublic ? 'globe-outline' : 'people-outline'} size={20} color={colors.primary} />
-              <View style={styles.visibilityText}>
-                <Text style={styles.visibilityLabel}>{isPublic ? t('post.public') : t('post.friendsOnly')}</Text>
-                <Text style={styles.visibilitySub}>{isPublic ? t('post.publicSub') : t('post.friendsOnlySub')}</Text>
-              </View>
-            </View>
-            <Switch
-              value={isPublic}
-              onValueChange={setIsPublic}
-              trackColor={{ false: colors.border, true: colors.primary + '88' }}
-              thumbColor={isPublic ? colors.primary : colors.textTertiary}
+          {/* Caption — full width */}
+          <View style={styles.field}>
+            <TextInput
+              style={styles.captionBox}
+              placeholder={t('post.captionPlaceholder')}
+              placeholderTextColor={colors.textTertiary}
+              value={caption}
+              onChangeText={setCaption}
+              multiline
+              maxLength={500}
+              editable={!swiping}
+            />
+            <MentionSuggestions
+              query={getActiveMentionQuery(caption, caption.length)}
+              onPick={(u) => setCaption(applyMention(caption, caption.length, u).text)}
             />
           </View>
+
+          {/* Communities — multi-select the communities you want this post in */}
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>{t('communities.postLabel')}</Text>
+            <TouchableOpacity style={styles.dropdown} onPress={() => setShowCommunityPicker(true)} activeOpacity={0.8}>
+              <Ionicons name="people" size={15} color={hasCommunity ? colors.primary : colors.textTertiary} />
+              <Text style={[styles.dropdownText, !hasCommunity && styles.dropdownPlaceholder]} numberOfLines={1}>
+                {communities.length === 0 ? t('communities.addToCommunity')
+                  : communities.length === 1 ? communities[0].name
+                  : t('communities.communityCount', { count: communities.length })}
+              </Text>
+              {hasCommunity ? (
+                <TouchableOpacity onPress={() => setCommunities([])} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                </TouchableOpacity>
+              ) : (
+                <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Public / Private — one button that flips visibility. Posting to a
+              community FORCES Public, so the toggle locks to Public (with a
+              lock icon) while a community is attached. Remove the community to
+              regain the friends-only option. */}
+          <TouchableOpacity
+            style={[styles.visBtn, hasCommunity && styles.visBtnLocked]}
+            onPress={() => { if (hasCommunity) return; setIsPublic((v) => !v); }}
+            disabled={hasCommunity}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={t('post.public')}
+          >
+            <Ionicons name={hasCommunity || isPublic ? 'globe-outline' : 'people-outline'} size={20} color={colors.primary} />
+            <View style={styles.visText}>
+              <Text style={styles.visLabel}>{hasCommunity || isPublic ? t('post.public') : t('post.friendsOnly')}</Text>
+              <Text style={styles.visSub} numberOfLines={1}>
+                {hasCommunity ? t('post.communityPublicLock') : isPublic ? t('post.publicSub') : t('post.friendsOnlySub')}
+              </Text>
+            </View>
+            <Ionicons name={hasCommunity ? 'lock-closed' : 'swap-horizontal'} size={18} color={colors.textTertiary} />
+          </TouchableOpacity>
 
           {/* Badge-tier public slots */}
           {isPublic && publicCount != null && (
@@ -1089,6 +1152,45 @@ export default function PostScreen() {
         </ScrollView>
         <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} />
         <TagPeopleModal visible={showTagModal} initial={tagged} onClose={() => setShowTagModal(false)} onDone={setTagged} />
+        <CommunityPickerModal
+          visible={showCommunityPicker}
+          userId={profile?.id ?? null}
+          selectedIds={communities.map((c) => c.id)}
+          onClose={() => setShowCommunityPicker(false)}
+          onApply={applyCommunities}
+          onBrowse={() => router.push('/communities')}
+        />
+
+        {/* Genre picker — a tap-to-open bottom sheet of genre chips. */}
+        <Modal visible={showGenrePicker} transparent animationType="fade" onRequestClose={() => setShowGenrePicker(false)}>
+          <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setShowGenrePicker(false)}>
+            <View style={styles.sheet}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>{t('post.pickGenre')}</Text>
+              <ScrollView contentContainerStyle={styles.sheetList} keyboardShouldPersistTaps="handled">
+                <TouchableOpacity
+                  style={[styles.genreChip, !genre && styles.genreChipActive]}
+                  onPress={() => { setGenre(''); setShowGenrePicker(false); }}
+                >
+                  <Text style={[styles.genreChipText, !genre && styles.genreChipTextActive]}>{t('post.noGenre')}</Text>
+                </TouchableOpacity>
+                {GENRES.map((g) => {
+                  const value = g.toLowerCase();
+                  const active = genre === value;
+                  return (
+                    <TouchableOpacity
+                      key={g}
+                      style={[styles.genreChip, active && styles.genreChipActive]}
+                      onPress={() => { setGenre(value); setShowGenrePicker(false); }}
+                    >
+                      <Text style={[styles.genreChipText, active && styles.genreChipTextActive]}>{genreLabel(g)}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </View>
     );
   }
@@ -1349,16 +1451,51 @@ export default function PostScreen() {
                       style={styles.draftDelete}
                       onPress={() => confirmDeleteDraft(d)}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('common.delete')}
                     >
-                      <Ionicons name="trash-outline" size={20} color={colors.textTertiary} />
+                      <Ionicons name="trash-outline" size={18} color={colors.textSecondary} />
                     </TouchableOpacity>
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
           )}
+
+          {/* Delete-draft confirmation — overlays the drafts list. */}
+          <ConfirmDialog
+            visible={!!deleteTarget}
+            icon="trash"
+            destructive
+            title={t('post.deleteDraftTitle')}
+            message={t('post.deleteDraftBody')}
+            confirmLabel={t('common.delete')}
+            onConfirm={performDeleteDraft}
+            onCancel={() => setDeleteTarget(null)}
+          />
         </View>
       </Modal>
+
+      {/* Draft-saved confirmation — lands here after handleSaveDraft resets to pick. */}
+      <Toast
+        visible={savedToast}
+        icon="checkmark-circle"
+        title={t('post.savedDraftTitle')}
+        message={t('post.savedDraftBody')}
+        bottomOffset={SPACING.xxl + SPACING.md}
+        onHide={() => setSavedToast(false)}
+      />
+
+      {/* Posted! confirmation — replaces the default OS alert after a share. */}
+      <Toast
+        visible={!!postedToast}
+        icon={postedToast?.spotlight ? 'sparkles' : 'checkmark-circle'}
+        title={postedToast?.title ?? ''}
+        message={postedToast?.message}
+        duration={postedToast?.spotlight ? 3800 : 2800}
+        bottomOffset={SPACING.xxl + SPACING.md}
+        onHide={() => setPostedToast(null)}
+      />
     </View>
   );
 }
@@ -1463,13 +1600,63 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // details
   detailsContent: { padding: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.xxl },
-  captionRow: { flexDirection: 'row', gap: SPACING.sm, alignItems: 'flex-start' },
-  captionThumb: { width: 64, height: 64, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight },
-  captionThumbPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  captionInput: {
-    flex: 1, minHeight: 64, color: colors.text, fontSize: 15,
-    textAlignVertical: 'top', paddingTop: SPACING.xs,
+
+  // Top row of the details step: bigger preview + the genre/music dropdowns.
+  twoCol: { flexDirection: 'row', gap: SPACING.md },
+  previewCol: {
+    width: DETAILS_PREVIEW, height: DETAILS_PREVIEW,
+    borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: colors.surfaceLight,
   },
+  previewBig: { width: '100%', height: '100%' },
+  previewBigPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  tagOverlay: {
+    position: 'absolute', left: SPACING.xs, bottom: SPACING.xs,
+    maxWidth: DETAILS_PREVIEW - SPACING.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: RADIUS.full,
+    paddingVertical: 5, paddingHorizontal: SPACING.sm,
+  },
+  tagOverlayText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  rightCol: { flex: 1, gap: SPACING.sm },
+  field: { gap: 6 },
+  fieldLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  dropdown: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, minHeight: 46,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    borderRadius: RADIUS.md, paddingHorizontal: SPACING.sm + 2, paddingVertical: SPACING.sm,
+  },
+  dropdownText: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' },
+  dropdownPlaceholder: { color: colors.textTertiary, fontWeight: '500' },
+  genreLockHint: { color: colors.textTertiary, fontSize: 11, marginTop: 3 },
+
+  // Full-width caption box.
+  captionBox: {
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    borderRadius: RADIUS.md, padding: SPACING.sm + 2, minHeight: 88,
+    color: colors.text, fontSize: 15, textAlignVertical: 'top',
+  },
+
+  // Public/Private pill button.
+  visBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    borderRadius: RADIUS.full, paddingVertical: SPACING.md, paddingHorizontal: SPACING.lg,
+  },
+  // Visibility locked to Public because a community is attached.
+  visBtnLocked: { opacity: 0.7 },
+  visText: { flex: 1 },
+  visLabel: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  visSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+
+  // Genre picker bottom sheet.
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, paddingBottom: SPACING.xl, maxHeight: '70%',
+  },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: SPACING.sm },
+  sheetTitle: { color: colors.text, fontSize: 16, fontWeight: '800', marginBottom: SPACING.sm },
+  sheetList: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, paddingBottom: SPACING.sm },
 
   section: { gap: 6 },
   sectionLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -1493,7 +1680,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   coverTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
   coverSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
 
-  genreWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  // Genre chips — reused inside the genre picker bottom sheet.
   genreChip: {
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
     borderRadius: RADIUS.full, backgroundColor: colors.surfaceLight,
@@ -1502,34 +1689,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   genreChipActive: { backgroundColor: colors.primary + '22', borderColor: colors.primary },
   genreChipText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   genreChipTextActive: { color: colors.primary },
-
-  addSongBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
-    borderRadius: RADIUS.md, paddingVertical: SPACING.md,
-  },
-  addSongText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
-  songRow: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
-    borderRadius: RADIUS.md, padding: SPACING.sm + 2,
-  },
-  songRowTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
-  songRowArtist: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
-  songChange: { paddingHorizontal: SPACING.sm, paddingVertical: 4, borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border },
-  songChangeText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
-
-  visibilityRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SPACING.sm,
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
-    borderRadius: RADIUS.md, padding: SPACING.md,
-  },
-  visibilityLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
-  // Constrains the label/sub text to the available width so the longer "Friends
-  // only" subtitle wraps instead of running underneath the Switch.
-  visibilityText: { flex: 1 },
-  visibilityLabel: { color: colors.text, fontSize: 15, fontWeight: '600' },
-  visibilitySub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
 
   adPendingRow: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
@@ -1546,7 +1705,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Save-as-draft button (details step)
   draftSaveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.full,
     paddingVertical: SPACING.md, marginTop: SPACING.xs,
   },
   draftSaveBtnDisabled: { opacity: 0.5 },
@@ -1574,7 +1733,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   draftInfo: { flex: 1 },
   draftCaption: { color: colors.text, fontSize: 14, fontWeight: '600' },
   draftMeta: { color: colors.textTertiary, fontSize: 12, marginTop: 2 },
-  draftDelete: { padding: SPACING.xs },
+  draftDelete: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border,
+  },
 
   draftsEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, padding: SPACING.lg },
   draftsEmptyTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },

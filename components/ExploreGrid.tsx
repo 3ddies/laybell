@@ -57,7 +57,7 @@ function mediaHeight(post: GridPost): number {
   return COL_W; // pictures render 1:1
 }
 
-export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, songClusters, onClusterSongPlay, currentUserId, onPostDeleted, header }: {
+export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, songClusters, onClusterSongPlay, currentUserId, onPostDeleted, header, emptyText }: {
   posts: GridPost[]; refreshing?: boolean; onRefresh?: () => void; songTiles?: boolean;
   // Pre-built genre clusters (title + songs) replacing the generic
   // "Trending Songs" stacks in the All view; plays report back for the
@@ -65,6 +65,9 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   songClusters?: { title: string; songs: GridPost[] }[];
   onClusterSongPlay?: () => void;
   currentUserId?: string | null; onPostDeleted?: (id: string) => void; header?: ReactNode;
+  // Override the empty-state line (defaults to the genre wording); callers like
+  // the community grid pass their own so it doesn't duplicate a header message.
+  emptyText?: string;
 }) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -213,7 +216,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
         refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined}
       >
         {header}
-        <View style={styles.empty}><Text style={styles.emptyText}>{t('exploreGrid.noPosts')}</Text></View>
+        <View style={styles.empty}><Text style={styles.emptyText}>{emptyText ?? t('exploreGrid.noPosts')}</Text></View>
       </ScrollView>
     );
   }

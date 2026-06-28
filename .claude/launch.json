@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Expo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start", "--", "--offline", "-p", "8082"],
+      "port": 8082
+    }
+  ]
+}

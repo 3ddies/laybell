@@ -22,6 +22,7 @@ import ElasticSwipeView from '../../components/ElasticSwipeView';
 import FollowButton from '../../components/FollowButton';
 import MentionText from '../../components/MentionText';
 import TranslatableText from '../../components/TranslatableText';
+import CommunityTag from '../../components/CommunityTag';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { trackVideoProgress } from '../../lib/viewTracker';
@@ -339,7 +340,21 @@ export default function ReelScreen() {
             </TouchableOpacity>
             <FollowButton userId={item.user_id} />
           </View>
-          {!!item.caption && <TranslatableText text={item.caption} render={(s) => <MentionText style={styles.caption} numberOfLines={2} text={s} />} />}
+          {/* Caption + community hashtag on the same line (wraps below only when
+              the caption wraps). Taps through to that community. */}
+          {!!item.caption && (
+            <TranslatableText
+              text={item.caption}
+              render={(s) => (
+                <View style={styles.captionRow}>
+                  <MentionText style={styles.caption} numberOfLines={2} text={s} />
+                  {(item.community_tags ?? []).map((ct: { id: string; hashtag: string }) => (
+                    <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} />
+                  ))}
+                </View>
+              )}
+            />
+          )}
           {!!item.song_id && (
             <SongAttribution
               inline
@@ -441,5 +456,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   spotSparkle: { opacity: 0.9, flexShrink: 0 },
   dot: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
   time: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
-  caption: { color: '#fff', fontSize: 14, lineHeight: 19 },
+  captionRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
+  caption: { color: '#fff', fontSize: 14, lineHeight: 19, flexShrink: 1 },
 });

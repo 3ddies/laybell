@@ -21,6 +21,7 @@ import TrackRow from '../../components/TrackRow';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import ProfileQRModal from '../../components/ProfileQRModal';
 import SupporterBadge from '../../components/SupporterBadge';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
@@ -68,6 +69,7 @@ export default function PublicProfileScreen() {
   const [reposts, setReposts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [qrVisible, setQrVisible] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followsMe, setFollowsMe] = useState(false); // does this profile follow me back?
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -493,9 +495,27 @@ export default function PublicProfileScreen() {
             <Ionicons name="ellipsis-horizontal" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
         ) : (
-          <View style={{ width: 40 }} />
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => setQrVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel={t('qr.a11y')}
+          >
+            <Ionicons name="qr-code-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
         )}
       </View>
+
+      {isOwnProfile && !!profile?.id && (
+        <ProfileQRModal
+          visible={qrVisible}
+          onClose={() => setQrVisible(false)}
+          userId={profile.id}
+          username={profile.username}
+          displayName={profile.display_name}
+          avatarUrl={profile.avatar_url}
+        />
+      )}
 
       {/* Banner — tinted by the owner's chosen profile theme (gated by their tier) */}
       <LinearGradient colors={bannerColors} style={styles.banner}>

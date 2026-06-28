@@ -133,6 +133,10 @@ export default function AppVideo({
         player={player}
         contentFit={contentFit}
         nativeControls={nativeControls}
+        // iOS 16+ defaults this to true, which floats a "Live Text" scan button
+        // over any frame where it detects text/subjects (seen on the muted grid
+        // autoplay tiles). We don't use it — turn it off so the grid stays clean.
+        allowsVideoFrameAnalysis={false}
       />
       {/* Poster overlay (expo-video has no built-in poster): the still frame shows
           until the player reports readyToPlay, mirroring expo-av's usePoster.

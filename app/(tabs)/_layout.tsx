@@ -161,6 +161,10 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   }, [listenMode, listenFade]);
   const listenDrift = listenFade.interpolate({ inputRange: [0, 1], outputRange: [24, 0] });
 
+  // The swipe-land haptic now fires NATIVELY from react-native-pager-view (see
+  // patches/react-native-pager-view+*.patch) at the pager's own commit moment —
+  // instant and consistent on every swipe, with no JS prediction needed.
+
   // The bar is an absolute overlay so the pager fills the FULL screen — that's
   // what makes the story camera edge-to-edge with no reserved (gray) slot. While
   // dragging Home(1)→camera(0) it slides off to the right, glued to Home, so the
@@ -330,14 +334,6 @@ export default function TabLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
-  // ── Swipe-haptic spy ─────────────────────────────────────────────────────
-  // The pager's `position` is native-driven, so JS never sees the live swipe and
-  // can only learn the new tab at settle (~300ms late). To fire the tick the
-  // instant the finger lifts, we watch the raw touches with a gesture-handler Pan
-  // set to manualActivation that NEVER activates — so it only observes and can't
-  // steal the swipe from the pager. On finger-up, if the navigator was treating
-  // this as a tab swipe (swipingRef, set from swipeStart/swipeEnd) and the
-  // horizontal throw is enough to commit a page change, we tick immediately and
   return (
     <PagerContext.Provider value={swiping}>
      <TabSwipeContext.Provider value={setSwipeEnabled}>

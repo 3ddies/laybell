@@ -11,12 +11,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { tabTick } from '../../lib/haptics';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTabSwipeControl } from '../../contexts/PagerContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import ProfileQRModal from '../../components/ProfileQRModal';
 import SupporterBadge from '../../components/SupporterBadge';
 import { usePremium } from '../../contexts/PremiumContext';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
@@ -70,6 +72,7 @@ export default function ProfileScreen() {
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [qrVisible, setQrVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('posts');
   const [userPosts, setUserPosts] = useState<any[]>([]);
   // Post ids with a LIVE spotlight → a subtle sparkle on their grid thumbnail.
@@ -140,7 +143,9 @@ export default function ProfileScreen() {
     if (dx < 0) {
       if (idx < TAB_KEYS.length - 1) { swipeFiredRef.current = true; setActiveTab(TAB_KEYS[idx + 1]); }
     } else if (idx === 0) {
-      if (allowExit) { swipeFiredRef.current = true; (navigation as any).navigate('music'); }
+      // Swipe-driven exit to the Music tab (release-time fallback when the outer
+      // pager didn't claim the drag) — tick like any swipe landing on a new tab.
+      if (allowExit) { swipeFiredRef.current = true; tabTick(); (navigation as any).navigate('music'); }
     } else {
       swipeFiredRef.current = true; setActiveTab(TAB_KEYS[idx - 1]);
     }
@@ -539,10 +544,32 @@ export default function ProfileScreen() {
       <View>
       <View style={styles.headerBar}>
         <Text style={styles.usernameHeader}>@{profile?.username}</Text>
-        <TouchableOpacity onPress={() => router.push('/settings')} style={styles.settingsBtn}>
-          <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => setQrVisible(true)}
+            style={styles.settingsBtn}
+            accessibilityRole="button"
+            accessibilityLabel={t('qr.a11y')}
+            disabled={!profile?.id}
+          >
+            <Ionicons name="qr-code-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/settings')} style={styles.settingsBtn}>
+            <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {!!profile?.id && (
+        <ProfileQRModal
+          visible={qrVisible}
+          onClose={() => setQrVisible(false)}
+          userId={profile.id}
+          username={profile.username}
+          displayName={profile.display_name}
+          avatarUrl={avatarUrl}
+        />
+      )}
 
       {/* Banner — tinted by the user's chosen profile theme (gated by tier) */}
       <LinearGradient colors={bannerColors} style={styles.banner}>
@@ -690,6 +717,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
   },
   usernameHeader: { color: colors.text, fontSize: 24, fontWeight: '900' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   settingsBtn: { padding: 4 },
 
   banner: {

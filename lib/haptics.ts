@@ -1,0 +1,35 @@
+// Guarded, fire-and-forget wrapper around expo-haptics.
+//
+// expo-haptics is a NATIVE module. If a JS bundle that calls it ships over OTA
+// before the dev client / build that bundles the native side, importing or
+// calling it directly would throw. We lazy-require it once and swallow every
+// error, so the haptic simply NO-OPS until the next native rebuild includes the
+// module — then it starts working with no JS change (same pass-through spirit as
+// compressVideoIfPossible in lib/upload.ts).
+
+let mod: typeof import('expo-haptics') | null | undefined;
+
+function load(): typeof import('expo-haptics') | null {
+  if (mod !== undefined) return mod;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    mod = require('expo-haptics');
+  } catch {
+    mod = null;
+  }
+  return mod ?? null;
+}
+
+// The tab-swipe landing tick. A MEDIUM impact (iOS UIImpactFeedbackGenerator) —
+// noticeably more powerful than the light "selection" detent, so the swipe-land
+// feedback is felt clearly. Fire-and-forget: never awaited, never throws, no-ops
+// where haptics aren't available (older devices, some Android, or before the
+// native rebuild). To make it stronger/softer, swap Medium for Heavy/Rigid/Light.
+export function tabTick(): void {
+  try {
+    const h = load();
+    h?.impactAsync?.(h.ImpactFeedbackStyle?.Medium)?.catch(() => {});
+  } catch {
+    /* haptics unavailable — ignore */
+  }
+}

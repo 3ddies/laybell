@@ -9,6 +9,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { tabTick } from '../../lib/haptics';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { useAudio } from '../../contexts/AudioContext';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
@@ -226,12 +227,12 @@ export default function MusicScreen() {
         // Finger moved left → forward. Past Saved → next app page — UNLESS
         // Listen mode is on: the user is locked to Music until they exit via
         // the button (the pill steps inside Music stay available).
-        if (idx === VIEW_ORDER.length - 1) { if (!listenModeRef.current) navigation.navigate('profile'); }
+        if (idx === VIEW_ORDER.length - 1) { if (!listenModeRef.current) { tabTick(); navigation.navigate('profile'); } }
         else { setActiveView(VIEW_ORDER[idx + 1]); setSelectedPlaylist(null); setSelectedCommunity(null); }
       } else {
         // Finger moved right → back. Past Discover → previous app page —
         // sealed in Listen mode (same lock as above).
-        if (idx === 0) { if (!listenModeRef.current) navigation.navigate('post'); }
+        if (idx === 0) { if (!listenModeRef.current) { tabTick(); navigation.navigate('post'); } }
         else { setActiveView(VIEW_ORDER[idx - 1]); setSelectedPlaylist(null); setSelectedCommunity(null); }
       }
     },
@@ -1111,20 +1112,10 @@ export default function MusicScreen() {
       ) : (
       <>
 
-      {/* Toggle — horizontally scrollable so all 5 pills keep readable labels */}
-      <GuardedRail
-        onGuardStart={railGuardStart}
-        onGuardEnd={railGuardEnd}
-        style={styles.toggleRow}
-        contentContainerStyle={styles.toggleRowContent}
-      >
+      {/* View toggle — a FIXED (non-scrolling) row; the 4 pills share the full
+          width evenly and fill the row height. */}
+      <View style={styles.toggleRow}>
         {(['discover', 'playlists', 'liked', 'saved'] as const).map(view => {
-          const icons: Record<typeof view, [string, string]> = {
-            discover: ['compass', 'compass-outline'],
-            playlists: ['list', 'list-outline'],
-            saved: ['bookmark', 'bookmark-outline'],
-            liked: ['heart', 'heart-outline'],
-          };
           const labels: Record<typeof view, string> = {
             discover: t('music.tabDiscover'), playlists: t('music.tabPlaylists'), saved: t('music.tabSaved'), liked: t('music.tabLiked'),
           };
@@ -1144,12 +1135,11 @@ export default function MusicScreen() {
                   style={[StyleSheet.absoluteFill, { borderRadius: RADIUS.full }]}
                 />
               )}
-              <Ionicons name={(on ? icons[view][0] : icons[view][1]) as any} size={15} color={on ? colors.text : colors.textSecondary} />
               <Text style={[styles.toggleText, on && styles.toggleTextActive]} numberOfLines={1}>{labels[view]}</Text>
             </TouchableOpacity>
           );
         })}
-      </GuardedRail>
+      </View>
 
       {/* All pill views share this wrapper so switching slides the incoming
           view in from the travel direction */}
@@ -1189,9 +1179,9 @@ export default function MusicScreen() {
                     onPress={() => onGenreChange(genre)}
                   >
                     {active ? (
-                      <LinearGradient colors={GRADIENTS.primary as any} style={styles.genrePillInner}>
+                      <View style={[styles.genrePillInner, styles.genrePillInnerActive]}>
                         <Text style={[styles.genrePillText, styles.genrePillTextActive]}>{label}</Text>
-                      </LinearGradient>
+                      </View>
                     ) : (
                       <View style={styles.genrePillInner}>
                         <Text style={styles.genrePillText}>{label}</Text>
@@ -1988,28 +1978,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // rail was getting vertically COMPRESSED by flex negotiation against the
   // Discover scroll view below it — clipping the bottom half of the pill
   // labels. A hard height takes it out of the negotiation entirely.
+  // Non-scrolling row: each pill is flex:1 so the 4 share the full width evenly.
+  // flexShrink:0 keeps the row out of the flex negotiation with the scroll view
+  // below it.
   toggleRow: {
-    height: 48,
-    flexGrow: 0,
     flexShrink: 0,
-    // Centered between the search bar (8px below it) and the section title
-    // (16px above its text): 8 + marginTop(16) = marginBottom(8) + 16 = 24 each side.
-    marginTop: SPACING.md,
-    marginBottom: SPACING.sm,
-  },
-  // flexGrow on the content + flex on each pill: when the pills fit (they do,
-  // with 4), they stretch to share the full width evenly — no dead space at
-  // the right edge; if a pill is ever added back, the row degrades to
-  // horizontal scrolling instead of clipping.
-  toggleRowContent: {
-    flexGrow: 1, flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     gap: SPACING.sm, paddingHorizontal: SPACING.md,
+    marginTop: SPACING.sm, marginBottom: SPACING.sm,
   },
   toggleBtn: {
     flex: 1,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 5,
-    paddingVertical: SPACING.xs + 4,
+    alignItems: 'center', justifyContent: 'center',
+    paddingVertical: SPACING.sm + 1,   // compact rounded pill
     paddingHorizontal: SPACING.sm,
     borderRadius: RADIUS.full,
     overflow: 'hidden',
@@ -2112,15 +2093,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border,
     overflow: 'hidden',
   },
-  genrePillActive: { borderColor: colors.primary },
+  // Active pill: a high-contrast inverse of the page — white fill + dark text in
+  // dark/grey modes, and a dark fill + light text in light mode (colors.text and
+  // colors.background flip per theme), so the selected genre always reads clearly.
+  genrePillActive: { borderColor: colors.text },
   // One shared inner container — same padding for both active and inactive pills
-  // so their height is always identical regardless of which has the gradient.
+  // so their height is always identical regardless of the fill.
   genrePillInner: {
     paddingVertical: 11, paddingHorizontal: 18,
     alignItems: 'center', justifyContent: 'center',
   },
+  genrePillInnerActive: { backgroundColor: colors.text },
   genrePillText: { color: colors.textSecondary, fontSize: 15, fontWeight: '600' },
-  genrePillTextActive: { color: colors.text, fontWeight: '700' },
+  genrePillTextActive: { color: colors.background, fontWeight: '800' },
 
   trendingList: { paddingHorizontal: SPACING.xs, gap: SPACING.xs },
   showMoreBtn: {

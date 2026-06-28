@@ -1,12 +1,10 @@
 import {
   View, Text, StyleSheet, TextInput,
   FlatList, TouchableOpacity, Image, ActivityIndicator, Keyboard, ScrollView,
-  PanResponder, Animated, Easing, Dimensions,
+  Animated, Easing, Dimensions,
 } from 'react-native';
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { useNavigation } from '@react-navigation/native';
-import { useTabSwipeControl } from '../../contexts/PagerContext';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -101,66 +99,7 @@ export default function ExploreScreen() {
   const visiblePosts = (rows: any[] = []) =>
     rows.filter((p) => !p.archived_at && !blockedIdsRef.current.has(p.user_id));
 
-  // ── Dwell-swipe rule (same as the Music page) ──────────────────────────────
-  // After 4 consecutive seconds on Explore, horizontal swipes step through the
-  // genre pills instead of changing app tabs. Edges fall through to the app
-  // pager (back past the first pill → Home; forward past the last → Post).
-  // EXTRA RULE: two forward swipes within 2.5 seconds jump straight to the
-  // next main screen (the new-post page), regardless of pill position.
-  const navigation = useNavigation<any>();
-  const setTabSwipe = useTabSwipeControl();
-  const dwellArmedRef = useRef(false);
-  const selectedGenreRef = useRef(selectedGenre);
-  selectedGenreRef.current = selectedGenre;
-  const orderedGenresRef = useRef(orderedGenres);
-  orderedGenresRef.current = orderedGenres;
-  const isSearchingRef = useRef(false);
-  const lastForwardTsRef = useRef(0);
-
-  useFocusEffect(useCallback(() => {
-    const t = setTimeout(() => {
-      dwellArmedRef.current = true;
-      setTabSwipe(false);
-    }, 4000);
-    return () => {
-      clearTimeout(t);
-      dwellArmedRef.current = false;
-      lastForwardTsRef.current = 0;
-      setTabSwipe(true);
-    };
-  }, [setTabSwipe]));
-
-  const genreSwipePan = useRef(PanResponder.create({
-    // Forgiving dominance bar (1.25×) so slightly diagonal side-swipes register.
-    onMoveShouldSetPanResponder: (_e, g) =>
-      dwellArmedRef.current && !isSearchingRef.current &&
-      Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.25,
-    // Once claimed, never surrender mid-gesture — a child stealing the responder
-    // meant the release handler never ran and the swipe silently vanished.
-    onPanResponderTerminationRequest: () => false,
-    onPanResponderRelease: (_e, g) => {
-      // Register on distance OR a quick flick — short fast side-swipes count.
-      if (Math.abs(g.dx) < 40 && Math.abs(g.vx) < 0.3) return;
-      const order = orderedGenresRef.current;
-      const idx = order.indexOf(selectedGenreRef.current);
-      if (g.dx < 0) {
-        // Forward. Double-swipe within 2.5s → straight to the new-post page.
-        const now = Date.now();
-        if (now - lastForwardTsRef.current < 2500) {
-          lastForwardTsRef.current = 0;
-          navigation.navigate('post');
-          return;
-        }
-        lastForwardTsRef.current = now;
-        if (idx < 0 || idx >= order.length - 1) navigation.navigate('post');
-        else fetchByGenre(order[idx + 1]);
-      } else {
-        lastForwardTsRef.current = 0;
-        if (idx <= 0) navigation.navigate('index');
-        else fetchByGenre(order[idx - 1]);
-      }
-    },
-  })).current;
+  // Genres change only by tapping a pill — no swipe-to-navigate on Explore.
 
   // Slide the content in from the travel direction when the genre changes
   // (fired by pill taps and the dwell-swipe alike).
@@ -470,7 +409,6 @@ export default function ExploreScreen() {
   }
 
   const isSearching = searchQuery.trim().length > 0;
-  isSearchingRef.current = isSearching; // dwell-swipe stays out of search mode
 
   // Highlight ONLY the single result at the very top of the Relevancy tab — the
   // first matching account if any, otherwise the top-ranked post. Everything else
@@ -502,12 +440,19 @@ export default function ExploreScreen() {
   );
 
   return (
-    // Dwell-swipe detector on the root: after 4s here, horizontal flings step
-    // the genre pills (see genreSwipePan).
-    <View style={styles.container} {...genreSwipePan.panHandlers}>
+    <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>{t('explore.title')}</Text>
+        <TouchableOpacity
+          style={styles.communitiesBtn}
+          onPress={() => router.push('/communities')}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t('explore.communities')}
+        >
+          <Ionicons name="people" size={22} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
       {/* Search */}
@@ -762,8 +707,16 @@ export default function ExploreScreen() {
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   contentWrap: { flex: 1 },
-  header: { paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
+  },
   headerTitle: { color: colors.text, fontSize: 32, fontWeight: '900', letterSpacing: 0.3 },
+  communitiesBtn: {
+    width: 40, height: 40, borderRadius: RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+  },
 
   searchRow: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
   searchBar: {

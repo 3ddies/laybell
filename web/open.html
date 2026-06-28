@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open in Laybell</title>
+<style>
+:root { --bg:#0d0d0f; --card:#16151a; --ink:#f5f4f2; --muted:#a4a3ab; --line:#272630; --brand:#F26522; --brand2:#E8401C; }
+* { box-sizing:border-box; }
+html,body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; display:flex; align-items:center; justify-content:center; padding:24px; }
+main { width:100%; max-width:380px; text-align:center; }
+.logo { width:72px; height:72px; border-radius:18px; margin:0 auto 18px; background:linear-gradient(135deg,var(--brand),var(--brand2)); display:flex; align-items:center; justify-content:center; font-size:34px; font-weight:800; color:#fff; }
+h1 { font-size:23px; margin:0 0 6px; }
+p { color:var(--muted); margin:0 0 24px; }
+.btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:15px 18px; border-radius:14px; text-decoration:none; font-weight:700; font-size:16px; margin:0 0 12px; }
+.btn-primary { background:linear-gradient(90deg,var(--brand),var(--brand2)); color:#fff; }
+.btn-store { background:var(--card); border:1px solid var(--line); color:var(--ink); }
+.hint { font-size:13px; color:var(--muted); margin-top:14px; }
+.stores { margin-top:8px; }
+</style>
+</head><body><main>
+  <div class="logo">L</div>
+  <h1>Opening Laybell…</h1>
+  <p id="sub">If the app doesn't open, get it below.</p>
+
+  <a id="openApp" class="btn btn-primary" href="#">Open in the app</a>
+
+  <div class="stores">
+    <a id="ios" class="btn btn-store" href="#" hidden>Download on the App Store</a>
+    <a id="android" class="btn btn-store" href="#" hidden>Get it on Google Play</a>
+  </div>
+
+  <p class="hint">Laybell — music &amp; social, together.</p>
+</main>
+<script>
+(function () {
+  // Keep these in sync with lib/appLinks.ts (STORE_URLS).
+  // TODO: replace id000000000 with Laybell's real Apple App Store ID once live.
+  var STORE = {
+    ios: 'https://apps.apple.com/app/laybell/id000000000',
+    android: 'https://play.google.com/store/apps/details?id=com.laybell.app'
+  };
+
+  // `p` is the in-app path to open, e.g. "profile/<id>". Sanitised to a safe
+  // relative path so a crafted link can't redirect the scheme elsewhere.
+  var params = new URLSearchParams(location.search);
+  var rawPath = params.get('p') || '';
+  var path = rawPath.replace(/^\/+/, '').replace(/[^A-Za-z0-9/_\-.?=&%]/g, '');
+  var deepLink = 'laybell://' + path;
+
+  var ua = navigator.userAgent || '';
+  var isIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
+  var isAndroid = /Android/.test(ua);
+  var storeUrl = isIOS ? STORE.ios : isAndroid ? STORE.android : null;
+
+  // Wire up the manual buttons.
+  document.getElementById('openApp').setAttribute('href', deepLink);
+  if (isIOS) { var a = document.getElementById('ios'); a.hidden = false; a.href = STORE.ios; }
+  else if (isAndroid) { var b = document.getElementById('android'); b.hidden = false; b.href = STORE.android; }
+  else {
+    // Desktop / unknown: offer both stores, no auto-redirect.
+    var ios = document.getElementById('ios'); ios.hidden = false; ios.href = STORE.ios;
+    var and = document.getElementById('android'); and.hidden = false; and.href = STORE.android;
+    document.getElementById('sub').textContent = 'Scan this page on your phone, or grab the app:';
+    return;
+  }
+
+  // Try to hand off to the app. If we're still here a moment later, the app
+  // isn't installed — send the visitor to the store. visibilitychange catches
+  // the case where the app DID open (page gets hidden), so we don't bounce
+  // returning users to the store.
+  var bounced = false;
+  function toStore() {
+    if (bounced || document.hidden) return;
+    bounced = true;
+    if (storeUrl) location.replace(storeUrl);
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) bounced = true; // app took over — cancel the store bounce
+  });
+  var timer = setTimeout(toStore, 1400);
+  window.addEventListener('pagehide', function () { clearTimeout(timer); });
+
+  // Kick off the app-open attempt.
+  window.location.href = deepLink;
+})();
+</script>
+</body></html>

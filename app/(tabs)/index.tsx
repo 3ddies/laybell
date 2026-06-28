@@ -56,6 +56,7 @@ import SlideshowCarousel from '../../components/SlideshowCarousel';
 import MentionText from '../../components/MentionText';
 import TranslatableText from '../../components/TranslatableText';
 import TaggedPeopleButton from '../../components/TaggedPeopleButton';
+import CommunityTag from '../../components/CommunityTag';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { useStories } from '../../contexts/StoriesContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
@@ -87,6 +88,9 @@ type Post = {
   song_artist?: string | null;
   song_artist_id?: string | null;
   tagged_user_ids?: string[] | null;
+  community_id?: string | null;
+  community_hashtag?: string | null;
+  community_tags?: { id: string; hashtag: string }[] | null;
   // Present only on served spotlight instances (see lib/spotlight.ts) — drives
   // the Spotlight tag and impression/tap reporting. Spotlights rank via
   // computeSpotlightScore (launch boost → performance, floored), not scorePost.
@@ -260,11 +264,22 @@ const PostCard = memo(function PostCard({
         </View>
       )}
 
-      {/* Caption */}
+      {/* Caption + community hashtag on the SAME line (wrapping row): the tag
+          sits right after the caption when it fits on one line and drops to the
+          next line only when the caption itself wraps. The media above opens the
+          post; the tag opens its community. */}
       {!!item.caption && !isAudioPost(item.type) && (
-        <TouchableOpacity onPress={() => onOpenPost(item)}>
-          <TranslatableText text={item.caption} render={(s) => <MentionText style={styles.caption} numberOfLines={3} text={s} />} />
-        </TouchableOpacity>
+        <TranslatableText
+          text={item.caption}
+          render={(s) => (
+            <View style={styles.captionRow}>
+              <MentionText style={styles.caption} numberOfLines={3} text={s} />
+              {(item.community_tags ?? []).map((ct) => (
+                <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} />
+              ))}
+            </View>
+          )}
+        />
       )}
 
       {/* Actions */}
@@ -1156,12 +1171,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   audioArtist: { color: colors.textSecondary, fontSize: 12 },
   audioStreams: { color: colors.textTertiary, fontSize: 12 },
 
+  captionRow: {
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm,
+  },
   caption: {
     color: colors.text,
     fontSize: 14,
     lineHeight: 21,
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.sm,
+    flexShrink: 1,
   },
 
   actions: {

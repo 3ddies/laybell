@@ -1,4 +1,5 @@
 import { Text, type StyleProp, type TextStyle } from 'react-native';
+import { type ReactNode } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { COLORS } from '../constants/theme';
@@ -26,20 +27,28 @@ function parse(text: string): Seg[] {
 }
 
 export default function MentionText({
-  text, style, mentionStyle, numberOfLines,
+  text, style, mentionStyle, numberOfLines, suffix, onPress,
 }: {
   text?: string | null;
   style?: StyleProp<TextStyle>;
   mentionStyle?: StyleProp<TextStyle>;
   numberOfLines?: number;
+  // Optional trailing node rendered INLINE at the end of the text (flows with it
+  // and wraps naturally) — e.g. a post's community hashtag. Must be <Text>-based.
+  suffix?: ReactNode;
+  // Tap handler for the plain (non-mention, non-suffix) text. Putting it HERE
+  // instead of wrapping this in a TouchableOpacity lets the inner tappable spans
+  // (mentions, the community tag) win their own taps — a wrapping touchable
+  // steals them and makes the inline tag almost impossible to hit.
+  onPress?: () => void;
 }) {
   const router = useRouter();
-  if (!text) return null;
+  if (!text) return suffix ? <Text style={style} numberOfLines={numberOfLines}>{suffix}</Text> : null;
 
   const segs = parse(text);
   // No mentions → just a plain Text (avoids the nested-Text overhead).
   if (!segs.some((s) => s.t === 'm')) {
-    return <Text style={style} numberOfLines={numberOfLines}>{text}</Text>;
+    return <Text style={style} numberOfLines={numberOfLines} onPress={onPress} suppressHighlighting>{text}{suffix}</Text>;
   }
 
   async function go(username: string) {
@@ -48,16 +57,17 @@ export default function MentionText({
   }
 
   return (
-    <Text style={style} numberOfLines={numberOfLines}>
+    <Text style={style} numberOfLines={numberOfLines} onPress={onPress} suppressHighlighting>
       {segs.map((s, i) =>
         s.t === 'm' ? (
-          <Text key={i} style={[{ color: COLORS.primary, fontWeight: '600' }, mentionStyle]} onPress={() => go(s.u!)}>
+          <Text key={i} style={[{ color: COLORS.primary, fontWeight: '600' }, mentionStyle]} onPress={() => go(s.u!)} suppressHighlighting>
             {s.v}
           </Text>
         ) : (
           <Text key={i}>{s.v}</Text>
         ),
       )}
+      {suffix}
     </Text>
   );
 }

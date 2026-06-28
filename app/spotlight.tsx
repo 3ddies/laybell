@@ -16,7 +16,7 @@ import {
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
 import SwipeBackPager from '../components/SwipeBackPager';
-import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { countLabel } from '../lib/i18n';
@@ -80,6 +80,10 @@ export default function SpotlightScreen() {
   // Reload whenever the screen gains focus — a campaign may have just gone
   // live through the composer handoff.
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // The attractive landing shows whenever nothing is currently live; once a
+  // spotlight is active the screen switches to the practical management view.
+  const hasActive = campaigns.some((c) => effectiveStatus(c) === 'active');
 
   function statusColor(s: SpotlightStatus): string {
     switch (s) {
@@ -360,28 +364,70 @@ export default function SpotlightScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
           }
         >
-          <Text style={styles.hint}>
-            {t('spotlight.hint')}
-          </Text>
+          {hasActive ? (
+            // ── Active spotlight(s): the practical management screen ──────────────
+            <>
+              <Text style={styles.hint}>{t('spotlight.hint')}</Text>
 
-          <TouchableOpacity style={styles.createBtn} onPress={startFlow} activeOpacity={0.85}>
-            <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
-              <Ionicons name="sparkles" size={18} color={colors.text} />
-              <Text style={styles.createBtnText}>{t('spotlight.createBtn')}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+              <TouchableOpacity style={styles.createBtn} onPress={startFlow} activeOpacity={0.85}>
+                <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
+                  <Ionicons name="sparkles" size={18} color={colors.text} />
+                  <Text style={styles.createBtnText}>{t('spotlight.createBtn')}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
 
-          {campaigns.length === 0 ? (
-            <View style={styles.empty}>
-              <Ionicons name="sparkles-outline" size={44} color={colors.textTertiary} />
-              <Text style={styles.emptyTitle}>{t('spotlight.emptyTitle')}</Text>
-              <Text style={styles.emptySub}>{t('spotlight.emptySub')}</Text>
-            </View>
+              <View style={styles.cards}>
+                <Text style={styles.sectionTitle}>{t('spotlight.yourSpotlights')}</Text>
+                {campaigns.map(renderCampaign)}
+              </View>
+            </>
           ) : (
-            <View style={styles.cards}>
-              <Text style={styles.sectionTitle}>{t('spotlight.yourSpotlights')}</Text>
-              {campaigns.map(renderCampaign)}
-            </View>
+            // ── Nothing live: the attractive "artwork under a spotlight" landing ──
+            <>
+              <View style={styles.hero}>
+                <LinearGradient
+                  colors={['#1C1206', '#0C0805']}
+                  style={styles.heroStage}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                >
+                  {/* the lamp */}
+                  <View style={styles.heroLamp} />
+                  {/* the cone of light spilling down from it */}
+                  <View style={styles.heroBeam} />
+                  {/* the glow pooling on the artwork */}
+                  <View style={styles.heroPool} />
+                  {/* the lit artwork */}
+                  <View style={styles.heroArtwork}>
+                    <Ionicons name="image" size={36} color={colors.primary} />
+                  </View>
+                </LinearGradient>
+
+                <Text style={styles.heroEyebrow}>{t('spotlight.heroEyebrow')}</Text>
+                <Text style={styles.heroTitle}>{t('spotlight.heroTitle')}</Text>
+                <Text style={styles.heroTagline}>{t('spotlight.heroTagline')}</Text>
+
+                <TouchableOpacity style={styles.heroCreateBtn} onPress={startFlow} activeOpacity={0.85}>
+                  <LinearGradient
+                    colors={[colors.primary, colors.primaryDark ?? colors.primary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.heroCreateInner}
+                  >
+                    <Ionicons name="sparkles" size={18} color="#fff" />
+                    <Text style={styles.heroCreateText}>{t('spotlight.heroCreate')}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+
+              {/* Pending / ended campaigns still surface below so nothing is lost. */}
+              {campaigns.length > 0 && (
+                <View style={styles.cards}>
+                  <Text style={styles.sectionTitle}>{t('spotlight.yourSpotlights')}</Text>
+                  {campaigns.map(renderCampaign)}
+                </View>
+              )}
+            </>
           )}
         </ScrollView>
       )}
@@ -562,6 +608,61 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   scroll: { padding: SPACING.md, paddingBottom: SPACING.xxl, gap: SPACING.md },
   hint: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
+
+  // Attractive landing (no live spotlight)
+  hero: { alignItems: 'center', gap: SPACING.xs },
+  heroStage: {
+    width: '100%', height: 230, borderRadius: RADIUS.xl, overflow: 'hidden',
+    alignItems: 'center', marginBottom: SPACING.md,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  heroLamp: {
+    width: 30, height: 9, borderRadius: 5, marginTop: SPACING.md,
+    backgroundColor: colors.primaryLight,
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9, shadowRadius: 12, elevation: 8,
+  },
+  // The cone of light: an upward-apex triangle spreading down from the lamp.
+  heroBeam: {
+    position: 'absolute', top: SPACING.md + 9,
+    width: 0, height: 0,
+    borderLeftWidth: 80, borderRightWidth: 80, borderBottomWidth: 150,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+    borderBottomColor: 'rgba(242,101,34,0.14)',
+  },
+  // Soft pool of light gathered on the artwork.
+  heroPool: {
+    position: 'absolute', bottom: 30,
+    width: 150, height: 80, borderRadius: 75,
+    backgroundColor: 'rgba(250,181,37,0.10)',
+  },
+  heroArtwork: {
+    position: 'absolute', bottom: 36,
+    width: 74, height: 74, borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1, borderColor: 'rgba(242,101,34,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6, shadowRadius: 16, elevation: 8,
+  },
+  heroEyebrow: {
+    color: colors.primary, fontSize: 12, fontWeight: '800',
+    letterSpacing: 2, marginTop: SPACING.xs,
+  },
+  heroTitle: { color: colors.text, fontSize: 24, fontWeight: '900', textAlign: 'center', marginTop: 2 },
+  heroTagline: {
+    color: colors.textSecondary, fontSize: 14, lineHeight: 20,
+    textAlign: 'center', paddingHorizontal: SPACING.md, marginTop: SPACING.xs,
+  },
+  heroCreateBtn: {
+    borderRadius: RADIUS.full, overflow: 'hidden', marginTop: SPACING.lg, alignSelf: 'stretch',
+    ...SHADOWS.glow,
+  },
+  heroCreateInner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
+    paddingVertical: SPACING.md + 2,
+  },
+  heroCreateText: { color: '#fff', fontSize: 16, fontWeight: '800' },
 
   createBtn: { borderRadius: RADIUS.lg, overflow: 'hidden' },
   createBtnInner: {

@@ -4,7 +4,8 @@ Transcribe these answers into **App Store Connect → App Privacy** and **Google
 
 Two global truths to select everywhere they're asked:
 - **We do NOT use data to track you across other companies' apps/websites** → Apple "Tracking": **No**.
-- **We do NOT sell or share data for cross‑context behavioral advertising**, and use **no third‑party ad/analytics/crash SDKs** → Google "Data shared with third parties": **No** (service providers like Supabase/Expo are processors, not third‑party sharing).
+- **We do NOT sell or share data for cross‑context behavioral advertising**, and use **no third‑party ad/analytics/crash SDKs** → Google "Data shared with third parties": **No** (service providers like Supabase, Expo, and RevenueCat are processors, not third‑party sharing).
+- **Laybell Premium is a real auto‑renewing subscription.** Billing is handled by **Apple In‑App Purchase / Google Play Billing**; we never collect payment‑card numbers. Subscription status is managed via **RevenueCat** (a processor). You therefore **must declare "Purchases / Purchase history" data** below. Spotlight & Ad Manager remain simulated/preview (no real charge).
 - **Encrypted in transit: Yes.** **Users can request deletion in‑app: Yes** (Settings → Privacy & data, and Delete Account).
 
 ---
@@ -26,8 +27,9 @@ Two global truths to select everywhere they're asked:
 | Product Interaction / Usage Data | Yes | Yes | No | Analytics (first‑party), App Functionality |
 | Device ID | Yes | Yes | No | App Functionality (fraud prevention) |
 | Customer Support (if you reply to support emails) | Yes | Yes | No | App Functionality |
+| Purchases (subscription status & history) | Yes | Yes | No | App Functionality (Laybell Premium) |
 
-> Notes: We do **not** collect precise location, browsing history, search history (beyond in‑app), health/financial data, or payment info (payments are in preview). If you later add real payments, add **Purchases / Payment Info**.
+> Notes: We do **not** collect precise location, browsing history, search history (beyond in‑app), health data, or payment‑card / banking details (Apple and Google process Premium billing — we never see card numbers). We **do** collect **Purchases** (your Laybell Premium subscription status/history, managed via RevenueCat) — declare it as above. Spotlight and Ad Manager payments remain simulated/preview; if you enable real billing for those features later, revisit this row.
 
 ---
 
@@ -42,9 +44,10 @@ Two global truths to select everywhere they're asked:
 - **Messages** → Other in‑app messages (direct messages). Purpose: App functionality.
 - **Contacts** *(optional)* → Contacts. Purpose: App functionality. *(We upload only salted hashes; raw contacts are never stored.)*
 - **App activity** → App interactions, Other user‑generated content. Purpose: App functionality, Analytics.
+- **Financial info** → Purchase history (Laybell Premium subscription status). Purpose: App functionality, Fraud prevention. *(Apple/Google handle billing; we never collect payment‑card numbers. Subscription status is managed via RevenueCat.)*
 - **Device or other IDs** → Device or other IDs. Purpose: App functionality, Fraud prevention.
 
-**Data shared with third parties:** **None.** (Supabase and Expo are service providers/processors; Apple/Google handle distribution & push. None of these is third‑party "sharing" under Google's definition, and we don't sell data or use ad networks.)
+**Data shared with third parties:** **None.** (Supabase, Expo, and RevenueCat are service providers/processors; Apple/Google handle distribution, push, and Premium billing. None of these is third‑party "sharing" under Google's definition, and we don't sell data or use ad networks.)
 
 **Security practices:** Data is encrypted in transit = **Yes**. You provide a way to request data deletion = **Yes** (in‑app: Settings → Privacy & data → Download/Delete; or email privacy@laybell.app). Committed to Google Play's Families/Designed‑for‑Families policy only if you opt into a child‑directed audience — Laybell is **13+/Teen**, not directed to children.
 

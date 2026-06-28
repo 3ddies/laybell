@@ -529,6 +529,18 @@ function emitTierUpgrade(tier: Tier) {
   for (const f of tierUpgradeListeners) { try { f(tier); } catch {} }
 }
 
+// ── TEMP TESTING OVERRIDE — REMOVE BEFORE RELEASE ────────────────────────────
+// Each listed username is forced to the given tier and skips the normal
+// recompute, so the badge-gated Communities flows (Diamond creates / Gold
+// manages) can be tested on throwaway accounts. To restore normal fairness:
+// empty this map (and run, once, in the SQL editor:
+//   update public.profiles set badge_tier=null, profile_theme='default'
+//   where lower(username) in ('observer','rachaelhall');).
+const TEST_FORCE_TIER: Record<string, Tier> = {
+  observer: 'diamond',
+  rachaelhall: 'gold',
+};
+
 // Recompute which badges the user holds and their emblem tier, reconciling the
 // DB. Idempotent — safe to run on every app open and after every event.
 // Handles daily resets, streak breaks (reversion), and permanence automatically.
@@ -540,8 +552,23 @@ export async function evaluateBadges(opts: { silent?: boolean } = {}): Promise<E
     const [state, existingRes, profileRes] = await Promise.all([
       fetchBadgeState(),
       supabase.from('user_badges').select('badge_key, category, tier, is_permanent').eq('user_id', user.id),
-      supabase.from('profiles').select('badge_tier').eq('id', user.id).maybeSingle(),
+      supabase.from('profiles').select('badge_tier, username').eq('id', user.id).maybeSingle(),
     ]);
+
+    // TEMP TESTING OVERRIDE (see TEST_FORCE_TIER above): force the listed
+    // account(s) to a fixed tier and skip recompute. Only writes/notifies when
+    // the row isn't already that tier, so it can't loop with the ProfileContext
+    // tier-change refresh. Runs before the !state guard so it works even if the
+    // badges SQL is missing.
+    const forcedTier = TEST_FORCE_TIER[(profileRes.data?.username ?? '').toLowerCase()];
+    if (forcedTier) {
+      if (asTier(profileRes.data?.badge_tier) !== forcedTier) {
+        await supabase.from('profiles').update({ badge_tier: forcedTier, profile_theme: forcedTier }).eq('id', user.id);
+        emitTier(forcedTier);
+      }
+      return { tier: forcedTier, points: 999, newlyEarned: [], held: [] };
+    }
+
     if (!state) return NOOP_RESULT; // SQL not applied yet → graceful no-op
 
     const qKeys = qualifyingKeys(state);

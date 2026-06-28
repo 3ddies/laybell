@@ -1,0 +1,131 @@
+diff --git a/node_modules/react-native-pager-view/android/src/fabric/java/com/reactnativepagerview/PagerViewViewManager.kt b/node_modules/react-native-pager-view/android/src/fabric/java/com/reactnativepagerview/PagerViewViewManager.kt
+index 8ec286a..bddcbd0 100644
+--- a/node_modules/react-native-pager-view/android/src/fabric/java/com/reactnativepagerview/PagerViewViewManager.kt
++++ b/node_modules/react-native-pager-view/android/src/fabric/java/com/reactnativepagerview/PagerViewViewManager.kt
+@@ -53,6 +53,10 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>(), RNCViewPa
+ 
+         vp.post {
+             vp.registerOnPageChangeCallback(object : OnPageChangeCallback() {
++                // Laybell: true while the user is finger-dragging, so the swipe-land
++                // haptic fires only on user swipes (not programmatic page changes).
++                private var userDragging = false
++
+                 override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
+                     super.onPageScrolled(position, positionOffset, positionOffsetPixels)
+                     UIManagerHelper.getEventDispatcherForReactTag(reactContext, host.id)?.dispatchEvent(
+@@ -62,6 +66,13 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>(), RNCViewPa
+ 
+                 override fun onPageSelected(position: Int) {
+                     super.onPageSelected(position)
++                    // Laybell: haptic the instant a USER SWIPE commits to a new page.
++                    // onPageSelected fires only on an actual page change (snap-backs
++                    // don't), and userDragging gates out programmatic changes/taps.
++                    if (userDragging) {
++                        vp.isHapticFeedbackEnabled = true
++                        vp.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
++                    }
+                     UIManagerHelper.getEventDispatcherForReactTag(reactContext, host.id)?.dispatchEvent(
+                             PageSelectedEvent(host.id, position)
+                     )
+@@ -69,6 +80,11 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>(), RNCViewPa
+ 
+                 override fun onPageScrollStateChanged(state: Int) {
+                     super.onPageScrollStateChanged(state)
++                    // Laybell: track user-initiated drags for the swipe-land haptic.
++                    when (state) {
++                        ViewPager2.SCROLL_STATE_DRAGGING -> userDragging = true
++                        ViewPager2.SCROLL_STATE_IDLE -> userDragging = false
++                    }
+                     val pageScrollState: String = when (state) {
+                         ViewPager2.SCROLL_STATE_IDLE -> "idle"
+                         ViewPager2.SCROLL_STATE_DRAGGING -> "dragging"
+diff --git a/node_modules/react-native-pager-view/android/src/paper/java/com/reactnativepagerview/PagerViewViewManager.kt b/node_modules/react-native-pager-view/android/src/paper/java/com/reactnativepagerview/PagerViewViewManager.kt
+index 66ad7b6..5e90dfb 100644
+--- a/node_modules/react-native-pager-view/android/src/paper/java/com/reactnativepagerview/PagerViewViewManager.kt
++++ b/node_modules/react-native-pager-view/android/src/paper/java/com/reactnativepagerview/PagerViewViewManager.kt
+@@ -38,6 +38,10 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>() {
+ 
+         vp.post {
+             vp.registerOnPageChangeCallback(object : OnPageChangeCallback() {
++                // Laybell: true while the user is finger-dragging, so the swipe-land
++                // haptic fires only on user swipes (not programmatic page changes).
++                private var userDragging = false
++
+                 override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
+                     super.onPageScrolled(position, positionOffset, positionOffsetPixels)
+                     eventDispatcher.dispatchEvent(
+@@ -46,12 +50,22 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>() {
+ 
+                 override fun onPageSelected(position: Int) {
+                     super.onPageSelected(position)
++                    // Laybell: haptic the instant a USER SWIPE commits to a new page.
++                    if (userDragging) {
++                        vp.isHapticFeedbackEnabled = true
++                        vp.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
++                    }
+                     eventDispatcher.dispatchEvent(
+                             PageSelectedEvent(host.id, position))
+                 }
+ 
+                 override fun onPageScrollStateChanged(state: Int) {
+                     super.onPageScrollStateChanged(state)
++                    // Laybell: track user-initiated drags for the swipe-land haptic.
++                    when (state) {
++                        ViewPager2.SCROLL_STATE_DRAGGING -> userDragging = true
++                        ViewPager2.SCROLL_STATE_IDLE -> userDragging = false
++                    }
+                     val pageScrollState: String = when (state) {
+                         ViewPager2.SCROLL_STATE_IDLE -> "idle"
+                         ViewPager2.SCROLL_STATE_DRAGGING -> "dragging"
+diff --git a/node_modules/react-native-pager-view/ios/RNCPagerView.m b/node_modules/react-native-pager-view/ios/RNCPagerView.m
+index 19552ce..640c11e 100644
+--- a/node_modules/react-native-pager-view/ios/RNCPagerView.m
++++ b/node_modules/react-native-pager-view/ios/RNCPagerView.m
+@@ -20,6 +20,10 @@
+ @property(nonatomic, strong) NSHashTable<UIViewController *> *cachedControllers;
+ @property(nonatomic, assign) CGPoint lastContentOffset;
+ 
++// Laybell: warmed-up generator for the swipe-land haptic (fired natively at the
++// exact commit moment so the tick is instant + consistent on every swipe).
++@property(nonatomic, strong) UIImpactFeedbackGenerator *swipeHaptic;
++
+ - (void)goTo:(NSInteger)index animated:(BOOL)animated;
+ - (void)shouldScroll:(BOOL)scrollEnabled;
+ - (void)shouldDismissKeyboard:(NSString *)dismissKeyboard;
+@@ -372,6 +376,13 @@
+ #pragma mark - UIScrollViewDelegate
+ 
+ - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
++    // Laybell: warm the Taptic engine at drag-start so the landing impact is
++    // instant and at full strength when the swipe commits (a cold generator's
++    // first tap is weak/late).
++    if (!self.swipeHaptic) {
++        self.swipeHaptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
++    }
++    [self.swipeHaptic prepare];
+     [self.eventDispatcher sendEvent:[[RCTOnPageScrollStateChanged alloc] initWithReactTag:self.reactTag state:@"dragging" coalescingKey:_coalescingKey++]];
+ }
+ 
+@@ -392,6 +403,22 @@
+             [self.eventDispatcher sendEvent:[[RCTOnPageScrollStateChanged alloc] initWithReactTag:self.reactTag state:@"idle" coalescingKey:_coalescingKey++]];
+         }
+     }
++
++    // Laybell: fire a MEDIUM impact the instant a USER SWIPE will commit to a NEW
++    // page. willEndDragging runs ONLY for user drags (never programmatic page
++    // changes) at finger-release; targetContentOffset is where the pager will
++    // settle. The current page sits centred at one page-length, so a target that
++    // lands away from centre is a real page change — a snap-back or an edge
++    // overscroll (cropped to centre above) targets centre, so it stays silent.
++    CGFloat centre = [self isHorizontal] ? scrollView.bounds.size.width : scrollView.bounds.size.height;
++    CGFloat settleTarget = [self isHorizontal] ? targetContentOffset->x : targetContentOffset->y;
++    if (centre > 0 && fabs(settleTarget - centre) > centre * 0.5) {
++        if (!self.swipeHaptic) {
++            self.swipeHaptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
++        }
++        [self.swipeHaptic impactOccurred];
++        [self.swipeHaptic prepare]; // ready for the next swipe
++    }
+ }
+ 
+ - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {

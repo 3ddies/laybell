@@ -6,7 +6,7 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { usePremium } from '../contexts/PremiumContext';
 import SwipeBackPager from '../components/SwipeBackPager';
-import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import type { Pkg } from '../lib/purchases';
 
 // Laybell Premium paywall. Reads offerings/status from RevenueCat via PremiumContext;
@@ -22,10 +22,9 @@ export default function PremiumScreen() {
   const { isPremium, packages, configured, loading, purchase, restore } = usePremium();
 
   const perks = [
-    { icon: 'cloud-download-outline' as const, label: t('premium.perkOffline') },
-    { icon: 'musical-notes-outline' as const, label: t('premium.perkAdFree') },
-    { icon: 'sparkles-outline' as const, label: t('premium.perkQuality') },
-    { icon: 'ribbon-outline' as const, label: t('premium.perkBadge') },
+    { icon: 'cloud-download-outline' as const, label: t('premium.perkOffline'), desc: t('premium.perkOfflineDesc') },
+    { icon: 'musical-notes-outline' as const, label: t('premium.perkAdFree'), desc: t('premium.perkAdFreeDesc') },
+    { icon: 'ribbon-outline' as const, label: t('premium.perkBadge'), desc: t('premium.perkBadgeDesc') },
   ];
 
   async function buy(pkg: Pkg) {
@@ -51,17 +50,27 @@ export default function PremiumScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.hero}>
-            <Ionicons name="star" size={34} color={colors.primary} />
+          <LinearGradient colors={GRADIENTS.primary as any} style={styles.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+            <View style={styles.heroGlow} />
+            <View style={styles.heroBadge}>
+              <Ionicons name="star" size={28} color="#fff" />
+            </View>
+            <Text style={styles.heroEyebrow}>{t('premium.heroEyebrow')}</Text>
             <Text style={styles.heroTitle}>{t('premium.title')}</Text>
             <Text style={styles.heroTagline}>{t('premium.tagline')}</Text>
           </LinearGradient>
 
+          <Text style={styles.perksTitle}>{t('premium.perksTitle')}</Text>
           <View style={styles.perks}>
             {perks.map((p) => (
               <View key={p.label} style={styles.perkRow}>
-                <Ionicons name={p.icon} size={20} color={colors.primary} />
-                <Text style={styles.perkText}>{p.label}</Text>
+                <View style={styles.perkIcon}>
+                  <Ionicons name={p.icon} size={20} color={colors.primary} />
+                </View>
+                <View style={styles.perkBody}>
+                  <Text style={styles.perkText}>{p.label}</Text>
+                  <Text style={styles.perkDesc}>{p.desc}</Text>
+                </View>
               </View>
             ))}
           </View>
@@ -83,15 +92,23 @@ export default function PremiumScreen() {
           ) : (
             <View style={styles.buy}>
               {packages.map((pkg) => (
-                <TouchableOpacity key={pkg.identifier} style={styles.subscribeBtn} activeOpacity={0.85} onPress={() => buy(pkg)}>
-                  <Text style={styles.subscribeText}>{t('premium.subscribe')}</Text>
-                  <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
+                <TouchableOpacity key={pkg.identifier} activeOpacity={0.85} onPress={() => buy(pkg)} style={styles.subscribeBtn}>
+                  <LinearGradient colors={GRADIENTS.primary as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
+                    <Text style={styles.subscribeText}>{t('premium.subscribe')}</Text>
+                    <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               ))}
               <TouchableOpacity style={styles.restoreBtn} onPress={onRestore}>
                 <Text style={styles.restoreText}>{t('premium.restore')}</Text>
               </TouchableOpacity>
               <Text style={styles.legal}>{t('premium.legal')}</Text>
+              <Text style={styles.legal}>
+                {t('premium.legalAgree')}{' '}
+                <Text style={styles.legalLink} onPress={() => router.push('/terms-of-service')}>{t('about.terms')}</Text>
+                {' '}{t('premium.legalAnd')}{' '}
+                <Text style={styles.legalLink} onPress={() => router.push('/privacy-policy')}>{t('about.privacyPolicy')}</Text>.
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -113,14 +130,45 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   hero: {
     alignItems: 'center', gap: SPACING.xs, paddingVertical: SPACING.xl, paddingHorizontal: SPACING.lg,
-    borderRadius: RADIUS.lg, marginBottom: SPACING.lg,
+    borderRadius: RADIUS.xl, marginBottom: SPACING.lg, overflow: 'hidden',
+    ...SHADOWS.glow,
   },
-  heroTitle: { color: colors.text, fontSize: 22, fontWeight: '900', marginTop: SPACING.xs },
-  heroTagline: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  heroGlow: {
+    position: 'absolute', top: -60, right: -40,
+    width: 180, height: 180, borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  heroBadge: {
+    width: 64, height: 64, borderRadius: RADIUS.full,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',
+  },
+  heroEyebrow: {
+    color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '800',
+    letterSpacing: 2, marginTop: SPACING.sm,
+  },
+  heroTitle: { color: '#fff', fontSize: 26, fontWeight: '900', marginTop: 2, textAlign: 'center' },
+  heroTagline: { color: 'rgba(255,255,255,0.92)', fontSize: 14, textAlign: 'center', lineHeight: 20 },
 
-  perks: { gap: SPACING.md, marginBottom: SPACING.lg },
-  perkRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
-  perkText: { color: colors.text, fontSize: 15, flex: 1 },
+  perksTitle: {
+    color: colors.textTertiary, fontSize: 11, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: SPACING.md, paddingHorizontal: SPACING.xs,
+  },
+  perks: { gap: SPACING.sm, marginBottom: SPACING.lg },
+  perkRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: colors.border, padding: SPACING.md,
+  },
+  perkIcon: {
+    width: 44, height: 44, borderRadius: RADIUS.full,
+    backgroundColor: colors.primary + '18',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  perkBody: { flex: 1, gap: 2 },
+  perkText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  perkDesc: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
 
   activeCard: {
     alignItems: 'center', gap: SPACING.xs, padding: SPACING.lg,
@@ -130,13 +178,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   activeBody: { color: colors.textTertiary, fontSize: 13, lineHeight: 19, textAlign: 'center' },
 
   buy: { gap: SPACING.md },
-  subscribeBtn: {
+  subscribeBtn: { borderRadius: RADIUS.full, overflow: 'hidden', ...SHADOWS.glow },
+  subscribeInner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    backgroundColor: colors.primary, paddingVertical: SPACING.md, borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.md + 2,
   },
   subscribeText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   subscribePrice: { color: '#fff', fontSize: 14, fontWeight: '700', opacity: 0.9 },
   restoreBtn: { alignItems: 'center', paddingVertical: SPACING.sm },
   restoreText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
   legal: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: SPACING.xs },
+  legalLink: { color: colors.primary, fontWeight: '700' },
 });

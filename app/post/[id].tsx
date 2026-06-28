@@ -23,6 +23,7 @@ import { useIsFocused } from '@react-navigation/native';
 import Comments from '../../components/Comments';
 import MentionText from '../../components/MentionText';
 import TranslatableText from '../../components/TranslatableText';
+import CommunityTag from '../../components/CommunityTag';
 import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { usePostActionSheets } from '../../hooks/usePostActionSheets';
@@ -57,6 +58,9 @@ type Post = {
   song_artist?: string | null;
   song_artist_id?: string | null;
   tagged_user_ids?: string[] | null;
+  community_id?: string | null;
+  community_hashtag?: string | null;
+  community_tags?: { id: string; hashtag: string }[] | null;
   slides?: any;
   profiles: { username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 };
@@ -387,9 +391,20 @@ export default function PostDetailScreen() {
               </TouchableOpacity>
             )}
 
-            {/* Caption */}
+            {/* Caption + community hashtag on the same line (wraps below only
+                when the caption itself wraps). Taps through to that community. */}
             {!!post.caption && !isAudioPost(post.type) && (
-              <TranslatableText text={post.caption} render={(s) => <MentionText style={styles.caption} text={s} />} />
+              <TranslatableText
+                text={post.caption}
+                render={(s) => (
+                  <View style={styles.captionRow}>
+                    <MentionText style={styles.caption} text={s} />
+                    {(post.community_tags ?? []).map((ct) => (
+                      <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} />
+                    ))}
+                  </View>
+                )}
+              />
             )}
 
             {/* Actions */}
@@ -470,7 +485,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   audioCoverOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   audioTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
   audioArtist: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
-  caption: { color: colors.text, fontSize: 15, lineHeight: 22, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
+  captionRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
+  caption: { color: colors.text, fontSize: 15, lineHeight: 22, flexShrink: 1 },
   actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.lg },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionCount: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
