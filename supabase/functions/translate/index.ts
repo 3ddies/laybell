@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // Machine-translation proxy for USER-GENERATED content (comments, messages,
 // captions, bios). The app's own UI strings are handled by the static
@@ -32,6 +33,21 @@ const CORS = {
 type Out = { text: string; detected: string | null };
 
 const PROVIDER = (Deno.env.get('TRANSLATE_PROVIDER') ?? 'libre').toLowerCase();
+
+// ─── Spend guardrail (per-user rolling window + global daily backstop) ─────────
+// Google bills ~$20 per 1,000,000 characters, so 500k chars ≈ $10. Caps are in
+// CHARACTERS and configurable via secrets; set any to 0 to disable that layer.
+// Enforced server-side because the app's per-device cache can be bypassed by
+// calling this function directly — the limit has to live where the spend is.
+const USER_CHAR_CAP = Number(Deno.env.get('TRANSLATE_USER_CHAR_CAP') ?? '250000');      // ≈ $5 per window per user (launch)
+const WINDOW_HOURS = Number(Deno.env.get('TRANSLATE_WINDOW_HOURS') ?? '48');
+const GLOBAL_CHAR_CAP = Number(Deno.env.get('TRANSLATE_GLOBAL_CHAR_CAP') ?? '1000000'); // ≈ $20 per day across all users (launch)
+
+const admin = (() => {
+  const url = Deno.env.get('SUPABASE_URL');
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'); // auto-injected into Edge Functions
+  return url && key ? createClient(url, key) : null;
+})();
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -115,6 +131,43 @@ function translateBatch(texts: string[], target: string): Promise<Out[]> {
   return viaLibre(texts, target);
 }
 
+// The signed-in user's id from the verified JWT. verify_jwt is on, so the token
+// is already validated upstream — we just read the `sub` claim (null for an
+// anon-key call, which then only counts against the global cap).
+function userIdFromJwt(req: Request): string | null {
+  try {
+    const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    let b64 = (token.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/');
+    if (!b64) return null;
+    while (b64.length % 4) b64 += '=';
+    const claims = JSON.parse(atob(b64));
+    return typeof claims.sub === 'string' ? claims.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+// null = allow; a reason string = block (over a cap). Records the spend atomically
+// when allowed. Fails OPEN on a store error: the provider-side budget/quota is the
+// ultimate hard stop, and a transient DB hiccup shouldn't take translation down.
+async function overLimit(userId: string | null, chars: number): Promise<string | null> {
+  if (!admin || (USER_CHAR_CAP <= 0 && GLOBAL_CHAR_CAP <= 0)) return null;
+  try {
+    const { data, error } = await admin.rpc('record_translation_usage', {
+      p_user_id: userId,
+      p_chars: chars,
+      p_user_cap: USER_CHAR_CAP,
+      p_window_hours: WINDOW_HOURS,
+      p_global_cap: GLOBAL_CHAR_CAP,
+    });
+    if (error) { console.error('translate rate-limit rpc:', error.message); return null; }
+    return data?.allowed ? null : (data?.reason ?? 'rate_limited');
+  } catch (e) {
+    console.error('translate rate-limit failed:', String(e));
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   try {
@@ -123,6 +176,15 @@ serve(async (req) => {
     if (!target || texts.length === 0 || texts.some((t) => typeof t !== 'string')) {
       return json({ error: 'q (string|string[]) and target required' }, 400);
     }
+
+    // Spend guardrail: meter this request's characters against the caps before
+    // calling the paid provider. Over the limit → 429; the client treats that
+    // like any failure and shows the original text (uncached, so it retries once
+    // the window resets).
+    const chars = texts.reduce((n, t) => n + t.length, 0);
+    const reason = await overLimit(userIdFromJwt(req), chars);
+    if (reason) return json({ error: 'rate_limited', reason }, 429);
+
     const translations = await translateBatch(texts, target);
     return json({ translations });
   } catch (err) {
