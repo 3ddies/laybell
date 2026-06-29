@@ -1,5 +1,5 @@
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Image,
+  View, Text, StyleSheet, TouchableOpacity, FlatList, Image,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -14,6 +14,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { countLabel } from '../../lib/i18n';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { Skeleton, SkeletonLine, TrackListSkeleton } from '../../components/Skeleton';
 
 // Universal playlist viewer — opened from any square playlist cover (profile
 // showcases, etc.). Mirrors the music tab's playlist detail: header card with
@@ -96,7 +97,19 @@ export default function PlaylistScreen() {
       <View style={styles.divider} />
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+        // Skeleton mirrors the loaded layout: horizontal header card (76x76
+        // cover + title/meta bars), a divider, then a single-column track list.
+        <View style={styles.skeletonBody}>
+          <View style={styles.detailHeader}>
+            <Skeleton width={76} height={76} radius={RADIUS.md} />
+            <View style={styles.detailInfo}>
+              <SkeletonLine w="80%" h={22} />
+              <SkeletonLine w="55%" h={12} style={{ marginTop: 9 }} />
+            </View>
+          </View>
+          <View style={styles.dividerBottom} />
+          <TrackListSkeleton rows={7} />
+        </View>
       ) : !playlist ? (
         <View style={styles.center}>
           <Ionicons name="albums-outline" size={40} color={colors.textTertiary} />
@@ -180,6 +193,7 @@ export default function PlaylistScreen() {
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  skeletonBody: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, paddingVertical: SPACING.xxl },
   unavailable: { color: colors.textTertiary, fontSize: 14 },
 

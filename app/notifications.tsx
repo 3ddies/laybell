@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, SectionList,
-  TouchableOpacity, ActivityIndicator, Image, RefreshControl,
+  TouchableOpacity, Image, RefreshControl,
 } from 'react-native';
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'expo-router';
@@ -17,6 +17,7 @@ import StoryAvatar from '../components/StoryAvatar';
 import BadgeEmblem from '../components/BadgeEmblem';
 import FollowButton from '../components/FollowButton';
 import SwipeBackPager from '../components/SwipeBackPager';
+import { NotificationsSkeleton } from '../components/Skeleton';
 
 type Notification = {
   id: string; type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag';
@@ -226,10 +227,23 @@ export default function NotificationsScreen() {
 
   if (loading) {
     // Same SwipeBackPager root as the loaded tree so the pager instance (and
-    // its slide-in entrance) carries over when the content swaps in.
+    // its slide-in entrance) carries over when the content swaps in. Render the
+    // real header above a grey pulsating skeleton of the notification rows so
+    // the layout doesn't jump when the content swaps in.
     return (
       <SwipeBackPager>
-        <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+              <Ionicons name="chevron-back" size={26} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{t('settings.section.notifications')}</Text>
+            <View style={{ width: 42 }} />
+          </View>
+          <View style={styles.skeletonBody}>
+            <NotificationsSkeleton rows={8} />
+          </View>
+        </View>
       </SwipeBackPager>
     );
   }
@@ -358,7 +372,7 @@ export default function NotificationsScreen() {
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
+  skeletonBody: { flex: 1, paddingHorizontal: SPACING.sm, paddingTop: SPACING.sm },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,

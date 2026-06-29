@@ -9,6 +9,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import BadgeEmblem from './BadgeEmblem';
 import RoleBadge from './RoleBadge';
+import { ListRowsSkeleton } from './Skeleton';
 import {
   fetchCommunityMembers, setMemberRole, moderateMember,
   type CommunityMember, type CommunityRole,
@@ -106,7 +107,9 @@ export default function CommunityMembersModal({
           </View>
 
           {loading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginVertical: SPACING.xl }} />
+            <View style={{ maxHeight: 460, paddingVertical: SPACING.sm }}>
+              <ListRowsSkeleton rows={6} trailing={false} />
+            </View>
           ) : (
             <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ paddingBottom: SPACING.lg }}>
               {members.map((m) => (

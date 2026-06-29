@@ -30,6 +30,7 @@ import { useStories } from '../../contexts/StoriesContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { StorySkeleton, Skeleton } from '../../components/Skeleton';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const IMAGE_DURATION_MS = 10000;
@@ -570,7 +571,13 @@ export default function StoryViewerScreen() {
         {...(group && story ? panResponder.panHandlers : {})}
       >
         {loading ? (
-          <ActivityIndicator style={StyleSheet.absoluteFill} color="#fff" />
+          <View style={StyleSheet.absoluteFill}>
+            <StorySkeleton />
+            {/* Bottom reply/eye-count pill placeholder, mirroring the post-load controls. */}
+            <View style={{ position: 'absolute', left: SPACING.lg, right: SPACING.lg, bottom: insets.bottom + SPACING.lg }}>
+              <Skeleton width="100%" height={44} radius={22} />
+            </View>
+          </View>
         ) : !group || !story ? (
           <View style={[StyleSheet.absoluteFill, styles.center]}>
             <Text style={styles.empty}>{t('story.empty')}</Text>

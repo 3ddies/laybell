@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, ActivityIndicator, Image, RefreshControl,
+  TouchableOpacity, Image, RefreshControl,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -14,6 +14,7 @@ import { timeAgo } from '../lib/timeAgo';
 import { isAudioPost } from '../lib/genres';
 import { maskHiddenProfile, HIDDEN_NAME } from '../lib/hiddenProfile';
 import VideoThumb from '../components/VideoThumb';
+import { NotificationsSkeleton } from '../components/Skeleton';
 
 type RepostRow = {
   user_id: string;
@@ -83,7 +84,20 @@ export default function RepostsScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={24} color={colors.primary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{t('account.reposts')}</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.listContent}>
+          <NotificationsSkeleton rows={7} />
+        </View>
+      </View>
+    );
   }
 
   return (

@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  ActivityIndicator, Image, Alert, RefreshControl,
+  Image, Alert, RefreshControl,
 } from 'react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -14,6 +14,7 @@ import SwipeBackPager from '../components/SwipeBackPager';
 import { rawTier, publicPlaylistLimit, tierLabel } from '../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../lib/playlists';
 import { countLabel } from '../lib/i18n';
+import { Skeleton, SkeletonLine } from '../components/Skeleton';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 
 type Pl = {
@@ -141,7 +142,28 @@ export default function PlaylistsScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+        <View style={styles.content}>
+          {/* Summary card */}
+          <View style={styles.summaryCard}>
+            <Skeleton width={18} height={18} radius={4} />
+            <SkeletonLine w="70%" h={13} />
+          </View>
+          {[0, 1].map(section => (
+            <View key={section}>
+              <SkeletonLine w={90} h={11} style={styles.skelSectionLabel} />
+              {Array.from({ length: section === 0 ? 3 : 2 }).map((_, i) => (
+                <View key={i} style={styles.row}>
+                  <Skeleton width={48} height={48} radius={RADIUS.sm} />
+                  <View style={styles.rowInfo}>
+                    <SkeletonLine w="65%" h={13} />
+                    <SkeletonLine w="40%" h={11} style={{ marginTop: 6 }} />
+                  </View>
+                  <Skeleton width={86} height={30} radius={RADIUS.full} />
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.content}
@@ -220,6 +242,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingTop: SPACING.lg, paddingBottom: SPACING.xs,
   },
   sectionHint: { color: colors.textTertiary, fontSize: 12, lineHeight: 17, paddingBottom: SPACING.sm },
+  skelSectionLabel: { marginTop: SPACING.lg, marginBottom: SPACING.sm },
 
   row: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,

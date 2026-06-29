@@ -14,6 +14,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { useTranslation } from '../../contexts/LanguageContext';
 import TranslatableText from '../../components/TranslatableText';
+import { CommentsSkeleton } from '../../components/Skeleton';
 
 type Comment = {
   id: string; body: string; created_at: string; user_id: string;
@@ -104,7 +105,11 @@ export default function CommentsScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
+    return (
+      <View style={styles.container}>
+        <CommentsSkeleton rows={7} />
+      </View>
+    );
   }
 
   return (

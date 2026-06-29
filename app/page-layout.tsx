@@ -17,6 +17,7 @@ import LayoutSlotPicker from '../components/LayoutSlotPicker';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { Skeleton, SkeletonLine } from '../components/Skeleton';
 
 type PickerState = { blockIndex: number; field: string; subIndex?: number } | null;
 
@@ -197,7 +198,40 @@ export default function PageLayoutScreen() {
     : '';
 
   if (loading) {
-    return <View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /></View>;
+    return (
+      <View style={styles.container}>
+        {/* Header (matches the loaded layout so nothing jumps) */}
+        <View style={styles.header}>
+          <SkeletonLine w={52} h={15} />
+          <SkeletonLine w={110} h={18} />
+          <SkeletonLine w={42} h={15} />
+        </View>
+
+        <View style={styles.body}>
+          {/* Intro line */}
+          <SkeletonLine w={'92%'} h={13.5} />
+          {/* Counts row */}
+          <View style={styles.countsRow}>
+            <SkeletonLine w={90} h={14} />
+            <SkeletonLine w={70} h={14} />
+          </View>
+          {/* Section label */}
+          <SkeletonLine w={88} h={11} style={{ marginTop: SPACING.sm }} />
+          {/* Template-card rows */}
+          <View style={styles.templateList}>
+            {[0, 1, 2, 3].map((i) => (
+              <View key={i} style={styles.tplCard}>
+                <Skeleton width={44} height={44} radius={RADIUS.md} />
+                <View style={{ flex: 1, gap: 8 }}>
+                  <SkeletonLine w={'55%'} h={16} />
+                  <SkeletonLine w={'85%'} h={12.5} />
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+    );
   }
 
   return (

@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TextInput,
-  FlatList, TouchableOpacity, Image, ActivityIndicator, Keyboard, ScrollView,
+  FlatList, TouchableOpacity, Image, Keyboard, ScrollView,
   Animated, Easing, Dimensions,
 } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
@@ -30,6 +30,7 @@ import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
   sortRailByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
 } from '../../lib/feedScorer';
+import { GridSkeleton, ListRowsSkeleton } from '../../components/Skeleton';
 
 // Genre clusters for the All grid: 4-song stacks titled by genre, cached per
 // user. Refreshes every 24h — or every 3h when the user is actively consuming
@@ -541,9 +542,11 @@ export default function ExploreScreen() {
       {/* Content — slides in from the travel direction on genre change */}
       <Animated.View style={[styles.contentWrap, { transform: [{ translateX: genreAnimX }] }]}>
       {loading || searching ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        isSearching ? (
+          <ListRowsSkeleton rows={8} trailing />
+        ) : (
+          <GridSkeleton columns={3} count={12} gap={1.5} padding={0} />
+        )
       ) : isSearching ? (
         searchTab === 'accounts' ? (
           <FlatList

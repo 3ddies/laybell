@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { ListRowsSkeleton } from './Skeleton';
 
 type Playlist = { id: string; name: string; is_public: boolean };
 
@@ -169,8 +170,8 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
           )}
 
           {loading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={colors.primary} />
+            <View style={styles.list}>
+              <ListRowsSkeleton rows={5} trailing={false} />
             </View>
           ) : playlists.length === 0 ? (
             <View style={styles.emptyWrap}>

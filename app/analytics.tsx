@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Image, RefreshControl,
+  ScrollView, Image, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +18,7 @@ import { countLabel } from '../lib/i18n';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { AnalyticsSkeleton } from '../components/Skeleton';
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -108,7 +109,7 @@ export default function AnalyticsScreen() {
       </View>
 
           {loading ? (
-            <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+            <View style={{ flex: 1 }}><AnalyticsSkeleton /></View>
           ) : !data || data.totals.posts === 0 ? (
             <View style={styles.center}>
               <Ionicons name="bar-chart-outline" size={44} color={colors.textTertiary} />

@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, Modal, Image, Dimensions, RefreshControl, Keyboard,
+  Alert, TextInput, Modal, Image, Dimensions, RefreshControl, Keyboard,
   KeyboardAvoidingView, Platform, TouchableWithoutFeedback, PanResponder, Animated, Easing,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -32,6 +32,7 @@ import { GENRES, CONTENT_TAGS, isAudioPost, genreLabel } from '../../lib/genres'
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import StoryAvatar from '../../components/StoryAvatar';
 import FollowButton from '../../components/FollowButton';
+import { MusicScreenSkeleton, DiscoverSkeleton, TrackListSkeleton } from '../../components/Skeleton';
 import {
   buildAffinityProfile, loadSeenPostIds, scorePost,
   sortRailByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
@@ -970,7 +971,11 @@ export default function MusicScreen() {
   );
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <MusicScreenSkeleton />
+      </View>
+    );
   }
 
   // Podcasts / Audiobooks pills show their own trending list and hide the
@@ -1148,8 +1153,8 @@ export default function MusicScreen() {
       {/* ─── Discover ──────────────────────────────────────────────────────── */}
       {activeView === 'discover' && (
         discoverLoading ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-            <ActivityIndicator color={colors.primary} size="large" />
+          <View style={{ flex: 1 }}>
+            <DiscoverSkeleton />
           </View>
         ) : (
           <ScrollView
@@ -1202,7 +1207,9 @@ export default function MusicScreen() {
             </Text>
 
             {trendingLoading ? (
-              <ActivityIndicator color={colors.primary} style={{ marginVertical: SPACING.md }} />
+              <View style={styles.trendingList}>
+                <TrackListSkeleton rows={4} />
+              </View>
             ) : trendingTracks.length === 0 ? (
               <Text style={[styles.discoverEmpty, { paddingHorizontal: SPACING.md }]}>
                 {discoverGenre === 'Podcasts'
@@ -1586,7 +1593,9 @@ export default function MusicScreen() {
           </View>
           <View style={styles.detailDividerBottom} />
           {tracksLoading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: SPACING.xl }} />
+            <View style={{ marginTop: SPACING.sm }}>
+              <TrackListSkeleton rows={6} />
+            </View>
           ) : editingPlaylist ? (
             <PlaylistEditor
               tracks={tracks as any}
@@ -1788,7 +1797,9 @@ export default function MusicScreen() {
           </View>
           <View style={styles.detailDividerBottom} />
           {tracksLoading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: SPACING.xl }} />
+            <View style={{ marginTop: SPACING.sm }}>
+              <TrackListSkeleton rows={6} />
+            </View>
           ) : (
             <FlatList
               data={tracks}

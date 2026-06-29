@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, ActivityIndicator, Image, RefreshControl,
+  TouchableOpacity, Image, RefreshControl,
 } from 'react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,6 +15,7 @@ import FollowButton from '../../components/FollowButton';
 import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import { useStories } from '../../contexts/StoriesContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { ListRowsSkeleton } from '../../components/Skeleton';
 
 type User = { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 
@@ -63,7 +64,9 @@ export default function FollowingScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.centered}><ActivityIndicator color={colors.primary} size="large" /></View>
+        <View style={styles.list}>
+          <ListRowsSkeleton rows={7} trailing />
+        </View>
       ) : (
         <FlatList
           data={users}

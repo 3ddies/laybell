@@ -8,9 +8,10 @@ import { useIsFocused } from '@react-navigation/native';
 import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, Image, ActivityIndicator,
+  TouchableOpacity, Image,
   RefreshControl, Dimensions, Modal, Animated,
 } from 'react-native';
+import { FeedSkeleton } from '../../components/Skeleton';
 
 const SCREEN_W = Dimensions.get('window').width;
 const MAX_VIDEO_H = SCREEN_W * 1.25; // cap feed video at 4:5 so tall (9:16) clips aren't too long
@@ -848,8 +849,8 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator color={colors.primary} size="large" />
+      <View style={styles.container}>
+        <FeedSkeleton posts={2} />
       </View>
     );
   }

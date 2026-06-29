@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, Modal, FlatList, TextInput,
-  TouchableOpacity, ActivityIndicator, Image, Keyboard,
+  TouchableOpacity, Image, Keyboard,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,6 +11,7 @@ import { usePostMusic } from '../contexts/PostMusicContext';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { TrackListSkeleton } from './Skeleton';
 
 export type PickedSong = {
   id: string;
@@ -149,7 +150,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
           </View>
 
           {loading ? (
-            <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+            <View style={styles.skeletonWrap}><TrackListSkeleton rows={8} /></View>
           ) : results.length === 0 ? (
             <View style={styles.center}><Text style={styles.empty}>{t('songPicker.empty')}</Text></View>
           ) : (
@@ -215,6 +216,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // the row's full height made iOS top-align the text against the icon.
   searchInput: { flex: 1, paddingVertical: 0, color: colors.text, fontSize: 15, lineHeight: 20 },
   center: { alignItems: 'center', justifyContent: 'center', padding: SPACING.xxl },
+  skeletonWrap: { flex: 1, padding: SPACING.md },
   empty: { color: colors.textTertiary, fontSize: 14 },
   list: { padding: SPACING.md, gap: SPACING.sm },
   row: {

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import ExploreGrid from '../../components/ExploreGrid';
+import { Skeleton, SkeletonLine, GridSkeleton } from '../../components/Skeleton';
 import CommunityMembersModal from '../../components/CommunityMembersModal';
 import RoleBadge from '../../components/RoleBadge';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
@@ -105,7 +106,33 @@ export default function CommunityDetailScreen() {
   if (loading) {
     return (
       <SwipeBackPager>
-        <View style={[styles.container, styles.centered]}><ActivityIndicator color={colors.primary} /></View>
+        <View style={styles.container}>
+          <View style={styles.skelHeader}>
+            <Skeleton width="100%" height={120} radius={0} style={styles.skelBanner} />
+            <View style={styles.skelInfo}>
+              <View style={styles.titleRow}>
+                <View style={styles.titleCol}>
+                  <SkeletonLine w="70%" h={28} />
+                  <SkeletonLine w="40%" h={13} style={{ marginTop: 8 }} />
+                </View>
+                <Skeleton width={92} height={40} radius={RADIUS.full} />
+              </View>
+              <View style={{ marginTop: SPACING.sm }}>
+                <SkeletonLine w="55%" h={13} />
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.rulesBlock}>
+                <SkeletonLine w="30%" h={16} />
+                <SkeletonLine w="100%" h={14} style={{ marginTop: 4 }} />
+                <SkeletonLine w="80%" h={14} style={{ marginTop: 4 }} />
+              </View>
+              <View style={styles.divider} />
+            </View>
+          </View>
+          <View style={{ flex: 1 }}>
+            <GridSkeleton columns={3} count={12} />
+          </View>
+        </View>
       </SwipeBackPager>
     );
   }
@@ -320,6 +347,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   topBtn: { width: 44, height: 36, alignItems: 'center', justifyContent: 'center' },
   topTitle: { flex: 1, textAlign: 'center', color: colors.text, fontSize: 17, fontWeight: '800' },
+
+  skelHeader: { paddingTop: SPACING.xxl + SPACING.sm },
+  skelBanner: { marginBottom: SPACING.sm },
+  skelInfo: { paddingHorizontal: SPACING.md, gap: SPACING.sm },
 
   banner: { height: 120, padding: SPACING.md, justifyContent: 'space-between', overflow: 'hidden' },
   bannerWithImg: { justifyContent: 'flex-end' },

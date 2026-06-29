@@ -33,6 +33,7 @@ import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { slideshowThumb } from '../../lib/slideshow';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
+import { ProfileSkeleton } from '../../components/Skeleton';
 
 type Profile = {
   id: string; username: string; display_name: string;
@@ -219,7 +220,11 @@ export default function PublicProfileScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <ProfileSkeleton />
+      </View>
+    );
   }
 
   // Hidden accounts are invisible to everyone but themselves (their content is

@@ -12,6 +12,7 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import MentionSuggestions from '../../components/MentionSuggestions';
+import { Skeleton, SkeletonLine } from '../../components/Skeleton';
 
 export default function EditPostScreen() {
   const { colors } = useTheme();
@@ -66,7 +67,39 @@ export default function EditPostScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
+    return (
+      <View style={styles.container}>
+        {/* Header (chrome preserved so layout doesn't jump on load) */}
+        <View style={styles.header}>
+          <View style={styles.backBtn}>
+            <Ionicons name="close" size={24} color={colors.textSecondary} />
+          </View>
+          <Text style={styles.headerTitle}>{t('editPost.title')}</Text>
+          <View style={styles.saveBtn} />
+        </View>
+
+        <View style={styles.content}>
+          {/* Caption label + input */}
+          <SkeletonLine w={80} h={13} style={{ marginTop: SPACING.md }} />
+          <Skeleton width="100%" height={90} radius={RADIUS.md} />
+
+          {/* Visibility label + two equal-width pill toggles */}
+          <SkeletonLine w={90} h={13} style={{ marginTop: SPACING.md }} />
+          <View style={styles.row}>
+            <Skeleton width="100%" height={40} radius={RADIUS.md} style={{ flex: 1 }} />
+            <Skeleton width="100%" height={40} radius={RADIUS.md} style={{ flex: 1 }} />
+          </View>
+
+          {/* Genre label + wrapping pill cluster */}
+          <SkeletonLine w={70} h={13} style={{ marginTop: SPACING.md }} />
+          <View style={styles.pillsWrap}>
+            {[64, 88, 52, 76, 60, 96, 70].map((w, i) => (
+              <Skeleton key={i} width={w} height={30} radius={RADIUS.full} />
+            ))}
+          </View>
+        </View>
+      </View>
+    );
   }
 
   return (

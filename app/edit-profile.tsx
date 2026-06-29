@@ -15,6 +15,7 @@ import { GENDER_OPTIONS, genderLabel, ageFromDob } from '../lib/profileOptions';
 import { analyzeUrl, scanText } from '../lib/linkSafety';
 import { loadOwnPhone, saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { Skeleton, SkeletonCircle, SkeletonLine } from '../components/Skeleton';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { removePublicUrls } from '../lib/storageCleanup';
@@ -130,7 +131,80 @@ export default function EditProfileScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.inner}>
+        {/* Header (real chrome — handlers already declared) */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Text style={styles.cancelBtn}>{t('common.cancel')}</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{t('profile.editProfile')}</Text>
+          <Text style={[styles.saveBtn, { opacity: 0.4 }]}>{t('editProfile.save')}</Text>
+        </View>
+
+        {/* Avatar block: centered circle + camera badge + change-photo line */}
+        <View style={styles.avatarSection}>
+          <View style={{ position: 'relative' }}>
+            <SkeletonCircle size={100} />
+            <Skeleton width={32} height={32} radius={RADIUS.full} style={{ position: 'absolute', bottom: 2, right: 2 }} />
+          </View>
+          <SkeletonLine w={110} h={14} />
+        </View>
+
+        {/* Form: stacked label + input fields, taller bio, square-button row, chips, read-only box */}
+        <View style={styles.form}>
+          {[0, 1].map(i => (
+            <View key={i} style={styles.field}>
+              <SkeletonLine w={90} h={12} />
+              <Skeleton width="100%" height={50} radius={RADIUS.lg} />
+            </View>
+          ))}
+
+          {/* Bio (taller) */}
+          <View style={styles.field}>
+            <SkeletonLine w={60} h={12} />
+            <Skeleton width="100%" height={110} radius={RADIUS.lg} />
+          </View>
+
+          {[2, 3].map(i => (
+            <View key={i} style={styles.field}>
+              <SkeletonLine w={80} h={12} />
+              <Skeleton width="100%" height={50} radius={RADIUS.lg} />
+              <SkeletonLine w="70%" h={10} />
+            </View>
+          ))}
+
+          {/* Badges + Page Layout square buttons */}
+          <View style={styles.squareRow}>
+            {[0, 1].map(i => (
+              <View key={i} style={[styles.squareBtn, { borderWidth: 0 }]}>
+                <Skeleton width={56} height={56} radius={RADIUS.lg} />
+                <SkeletonLine w={70} h={13} style={{ marginTop: SPACING.sm }} />
+                <SkeletonLine w={50} h={10} style={{ marginTop: 6 }} />
+              </View>
+            ))}
+          </View>
+
+          {/* Gender chip row */}
+          <View style={styles.field}>
+            <SkeletonLine w={70} h={12} />
+            <View style={styles.genderRow}>
+              {[64, 80, 70, 90].map((w, i) => (
+                <Skeleton key={i} width={w} height={34} radius={RADIUS.full} />
+              ))}
+            </View>
+            <SkeletonLine w="60%" h={10} />
+          </View>
+
+          {/* Read-only age box */}
+          <View style={styles.field}>
+            <SkeletonLine w={50} h={12} />
+            <Skeleton width="100%" height={50} radius={RADIUS.lg} />
+            <SkeletonLine w="65%" h={10} />
+          </View>
+        </View>
+      </ScrollView>
+    );
   }
 
   return (

@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, ActivityIndicator, RefreshControl,
+  TouchableOpacity, RefreshControl,
 } from 'react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -18,6 +18,7 @@ import { maskHiddenProfile } from '../lib/hiddenProfile';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { ListRowsSkeleton } from '../components/Skeleton';
 
 type Profile = { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 
@@ -115,7 +116,9 @@ export default function FriendsScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.centered}><ActivityIndicator color={colors.primary} size="large" /></View>
+        <View style={styles.list}>
+          <ListRowsSkeleton rows={7} trailing />
+        </View>
       ) : (
         <FlatList
           data={friends}

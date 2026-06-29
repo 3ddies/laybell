@@ -22,6 +22,7 @@ import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import SharedPostCard from '../../components/SharedPostCard';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import TranslatableText from '../../components/TranslatableText';
+import { ChatThreadSkeleton } from '../../components/Skeleton';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 
@@ -217,7 +218,16 @@ export default function ChatScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
+    return (
+      <View style={styles.container}>
+        <View style={[styles.header, { paddingTop: insets.top }]}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={26} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
+        <ChatThreadSkeleton rows={9} />
+      </View>
+    );
   }
 
   return (

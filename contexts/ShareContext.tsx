@@ -14,6 +14,7 @@ import { useTranslation } from './LanguageContext';
 import { createNotification } from '../lib/createNotification';
 import { tg, countLabel } from '../lib/i18n';
 import VideoThumb from '../components/VideoThumb';
+import { AvatarRowSkeleton } from '../components/Skeleton';
 
 // Global share sheet. Any component calls useShare().share(payload) and a bar
 // slides up from the bottom with options to (a) send the content to people
@@ -332,7 +333,7 @@ export function ShareSheet({ visible, payload, onClose }: {
           {/* In-app: send to people */}
           <Text style={styles.sectionLabel}>{t('share.sendTo')}</Text>
           {loadingPeople ? (
-            <View style={styles.peopleLoading}><ActivityIndicator color={COLORS.primary} /></View>
+            <AvatarRowSkeleton count={6} />
           ) : people.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.peopleRow}>
               {people.map((p) => {

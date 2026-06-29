@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import { bumpBadge } from '../lib/badges';
 import { createNotification } from '../lib/createNotification';
 import VideoThumb from './VideoThumb';
 import BadgeEmblem from './BadgeEmblem';
+import { Skeleton, SkeletonCircle, SkeletonLine } from './Skeleton';
 
 type SharedPost = {
   id: string;
@@ -94,7 +95,22 @@ export default function SharedPostCard({ postId }: { postId: string }) {
   }
 
   if (post === undefined) {
-    return <View style={[styles.card, styles.stateCard]}><ActivityIndicator color={colors.primary} /></View>;
+    return (
+      <View style={styles.card}>
+        <Skeleton width={CARD_W} height={154} radius={0} />
+        <View style={styles.body}>
+          <View style={styles.bodyText}>
+            <View style={styles.authorRow}>
+              <SkeletonCircle size={22} />
+              <SkeletonLine w={90} h={11} />
+            </View>
+            <SkeletonLine w="100%" h={10} />
+            <SkeletonLine w="65%" h={10} />
+          </View>
+          <SkeletonCircle size={36} />
+        </View>
+      </View>
+    );
   }
   if (post === null) {
     return (

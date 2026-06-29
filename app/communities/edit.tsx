@@ -16,6 +16,7 @@ import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/t
 import { supabase } from '../../lib/supabase';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { fetchCommunity, updateCommunity, inviteMembers, type Community } from '../../lib/communities';
+import { Skeleton, SkeletonLine, SkeletonCircle } from '../../components/Skeleton';
 
 type Invitee = { id: string; username?: string | null; display_name?: string | null; avatar_url?: string | null; badge_tier?: string | null; badge_show?: boolean | null };
 
@@ -201,7 +202,56 @@ export default function EditCommunityScreen() {
   if (loading) {
     return (
       <SwipeBackPager>
-        <View style={[styles.container, styles.centered]}><ActivityIndicator color={colors.primary} /></View>
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
+              <Ionicons name="chevron-back" size={26} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{t('communities.editTitle')}</Text>
+            <View style={styles.headerBtn} />
+          </View>
+          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            {/* Banner field */}
+            <View style={styles.field}>
+              <SkeletonLine w={70} h={10} />
+              <Skeleton width="100%" height={130} radius={RADIUS.md} />
+            </View>
+            {/* Name field */}
+            <View style={styles.field}>
+              <SkeletonLine w={60} h={10} />
+              <Skeleton width="100%" height={50} radius={RADIUS.md} />
+            </View>
+            {/* Hashtag field */}
+            <View style={styles.field}>
+              <SkeletonLine w={80} h={10} />
+              <Skeleton width="100%" height={50} radius={RADIUS.md} />
+            </View>
+            {/* Genre field */}
+            <View style={styles.field}>
+              <SkeletonLine w={64} h={10} />
+              <Skeleton width="100%" height={50} radius={RADIUS.md} />
+            </View>
+            {/* Guidelines field */}
+            <View style={styles.field}>
+              <SkeletonLine w={90} h={10} />
+              <Skeleton width="100%" height={88} radius={RADIUS.md} />
+            </View>
+            {/* Invite field */}
+            <View style={styles.field}>
+              <SkeletonLine w={110} h={10} />
+              <Skeleton width="100%" height={44} radius={RADIUS.full} />
+              {[0, 1, 2].map((i) => (
+                <View key={i} style={styles.resultRow}>
+                  <SkeletonCircle size={40} />
+                  <View style={styles.resultInfo}>
+                    <SkeletonLine w="55%" h={12} />
+                    <SkeletonLine w="35%" h={10} style={{ marginTop: 4 }} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
       </SwipeBackPager>
     );
   }

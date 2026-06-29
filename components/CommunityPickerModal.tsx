@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Pressable } from 'react-native';
+import { Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ListRowsSkeleton } from './Skeleton';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
@@ -74,7 +75,9 @@ export default function CommunityPickerModal({ visible, userId, selectedIds, onC
           </View>
 
           {loading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginVertical: SPACING.xl }} />
+            <View style={{ maxHeight: 360 }}>
+              <ListRowsSkeleton rows={6} trailing={false} />
+            </View>
           ) : list.length === 0 ? (
             <View style={styles.locked}>
               <Ionicons name="lock-closed-outline" size={36} color={colors.textTertiary} />

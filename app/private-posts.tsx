@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { GridSkeleton } from '../components/Skeleton';
 
 type Post = { id: string; type: string; media_url: string; caption: string; thumbnail_url?: string | null };
 
@@ -48,7 +49,7 @@ export default function PrivatePostsScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.centered}><ActivityIndicator color={colors.primary} size="large" /></View>
+        <GridSkeleton columns={3} count={12} gap={0} padding={0} />
       ) : posts.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="lock-closed-outline" size={40} color={colors.textTertiary} />
@@ -88,7 +89,6 @@ export default function PrivatePostsScreen() {
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.md,

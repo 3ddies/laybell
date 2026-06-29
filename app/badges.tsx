@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, Modal,
-  ScrollView, ActivityIndicator, Switch, RefreshControl,
+  ScrollView, Switch, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +17,7 @@ import {
   type Tier, type BadgeState, type BadgeMetrics, type EvalResult, type BadgeDef, type BadgeCategory,
 } from '../lib/badges';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { Skeleton, SkeletonCircle, SkeletonLine } from '../components/Skeleton';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -207,7 +208,61 @@ export default function BadgesScreen() {
       </View>
 
           {loading ? (
-            <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+            <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+              {/* Hero card: centered avatar ring + corner emblem + title + meter */}
+              <View style={[styles.hero, { alignItems: 'center' }]}>
+                <View style={styles.previewWrap}>
+                  <SkeletonCircle size={94} />
+                  <View style={styles.previewEmblem}><SkeletonCircle size={24} /></View>
+                </View>
+                <SkeletonLine w={160} h={28} style={{ marginTop: 10 }} />
+                <SkeletonLine w={130} h={12} style={{ marginTop: 10 }} />
+                <Skeleton width="70%" height={6} radius={RADIUS.full} style={{ marginTop: SPACING.md }} />
+              </View>
+
+              {/* Customization — theme-chip card */}
+              <SkeletonLine w={120} h={11} style={{ marginHorizontal: SPACING.xs, marginTop: SPACING.xs }} />
+              <View style={styles.card}>
+                <SkeletonLine w={150} h={22} style={{ marginBottom: SPACING.sm }} />
+                <View style={styles.chipRows}>
+                  <View style={styles.chipRow}>
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} height={40} radius={RADIUS.full} style={{ flex: 1 }} />
+                    ))}
+                  </View>
+                  <View style={styles.chipRow}>
+                    <Skeleton height={40} radius={RADIUS.full} style={{ flex: 1 }} />
+                  </View>
+                  <View style={[styles.chipRow, { marginHorizontal: SPACING.lg }]}>
+                    <Skeleton height={56} radius={24} style={{ flex: 1 }} />
+                  </View>
+                </View>
+                <Skeleton height={44} radius={RADIUS.full} style={{ marginTop: SPACING.sm }} />
+              </View>
+
+              {/* All badges — category cards */}
+              <SkeletonLine w={100} h={11} style={{ marginHorizontal: SPACING.xs, marginTop: SPACING.xs }} />
+              {Array.from({ length: 3 }).map((_, ci) => (
+                <View key={ci} style={styles.catCard}>
+                  <View style={styles.catHead}>
+                    <SkeletonCircle size={50} />
+                    <SkeletonLine w={140} h={20} />
+                  </View>
+                  {Array.from({ length: 4 }).map((_, ri) => (
+                    <View key={ri} style={styles.badgeRow}>
+                      <SkeletonCircle size={24} />
+                      <View style={{ flex: 1 }}>
+                        <SkeletonLine w={90} h={12} />
+                        <SkeletonLine w="80%" h={11} style={{ marginTop: 6 }} />
+                      </View>
+                      <View style={styles.badgeStatus}>
+                        <SkeletonCircle size={26} />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
           ) : (
             <ScrollView
               contentContainerStyle={styles.scroll}

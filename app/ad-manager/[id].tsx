@@ -1,5 +1,5 @@
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, RefreshControl,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import {
   type AdCampaign, type AdAnalytics, type AdStatus,
 } from '../../lib/ads';
 import { BarChart, HBars } from '../../components/AnalyticsCharts';
+import { Skeleton, SkeletonLine } from '../../components/Skeleton';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
@@ -86,7 +87,41 @@ export default function AdDetailScreen() {
         </View>
 
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+            {/* Status + spend card */}
+            <View style={styles.card}>
+              <View style={styles.titleRow}>
+                <SkeletonLine w="55%" h={16} />
+                <Skeleton width={64} height={20} radius={RADIUS.full} />
+              </View>
+              <SkeletonLine w="70%" h={12} />
+              <View style={styles.budgetRow}>
+                <SkeletonLine w={120} h={12} />
+                <SkeletonLine w={32} h={12} />
+              </View>
+              <Skeleton width="100%" height={6} radius={RADIUS.full} />
+            </View>
+
+            {/* Stats grid (3x2) */}
+            <View style={styles.statsGrid}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <View key={i} style={styles.statCard}>
+                  <SkeletonLine w={44} h={18} />
+                  <SkeletonLine w={56} h={11} style={{ marginTop: 4 }} />
+                </View>
+              ))}
+            </View>
+
+            {/* Chart / card blocks with section-title bars */}
+            {Array.from({ length: 3 }).map((_, i) => (
+              <View key={i}>
+                <SkeletonLine w={120} h={11} style={{ marginHorizontal: SPACING.xs, marginBottom: SPACING.sm }} />
+                <View style={styles.card}>
+                  <Skeleton width="100%" height={i === 2 ? 18 : 120} radius={RADIUS.md} />
+                </View>
+              </View>
+            ))}
+          </ScrollView>
         ) : !campaign ? (
           <View style={styles.center}><Text style={styles.empty}>{t('adDetail.notFound')}</Text></View>
         ) : (

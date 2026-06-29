@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Modal, View, Text, TextInput, TouchableOpacity, FlatList, Image, StyleSheet, ActivityIndicator,
+  Modal, View, Text, TextInput, TouchableOpacity, FlatList, Image, StyleSheet,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { ListRowsSkeleton } from './Skeleton';
 
 export type TaggedPerson = { id: string; username: string; display_name: string; avatar_url: string | null };
 
@@ -104,7 +105,7 @@ export default function TagPeopleModal({
             contentContainerStyle={{ paddingBottom: SPACING.xl }}
             ListEmptyComponent={
               loading
-                ? <ActivityIndicator color={colors.primary} style={{ marginTop: SPACING.lg }} />
+                ? <ListRowsSkeleton rows={8} trailing={false} />
                 : (query.trim() ? <Text style={styles.empty}>{t('tagPeopleModal.empty')}</Text> : null)
             }
             renderItem={({ item }) => {

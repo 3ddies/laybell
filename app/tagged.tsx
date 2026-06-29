@@ -1,5 +1,5 @@
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Image, RefreshControl,
+  View, Text, StyleSheet, TouchableOpacity, FlatList, Image, RefreshControl,
 } from 'react-native';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, Stack } from 'expo-router';
@@ -13,6 +13,7 @@ import VideoThumb from '../components/VideoThumb';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { GridSkeleton, ListRowsSkeleton } from '../components/Skeleton';
 
 type TabKey = 'posts' | 'audio' | 'comments' | 'stories';
 const TABS: { key: TabKey; labelKey: string; icon: any }[] = [
@@ -233,7 +234,9 @@ export default function TaggedScreen() {
       </View>
 
       {loading
-        ? <View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /></View>
+        ? (tab === 'comments' || tab === 'stories')
+          ? <ListRowsSkeleton rows={8} trailing={false} />
+          : <GridSkeleton columns={3} count={12} gap={0} padding={0} />
         : renderContent()}
     </View>
   );

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, Image, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, Image, StyleSheet, FlatList } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { ListRowsSkeleton } from './Skeleton';
 
 // Subtle person-avatar button (bottom-left of a post's media) shown when the post
 // has people tagged. Tapping opens a menu listing the tagged accounts; each opens
@@ -48,7 +49,9 @@ export default function TaggedPeopleButton({ userIds, style }: { userIds?: strin
           <View style={styles.sheet}>
             <Text style={styles.title}>{t('taggedBtn.title')}</Text>
             {loading ? (
-              <ActivityIndicator color={colors.primary} style={{ marginVertical: SPACING.lg }} />
+              <View style={{ maxHeight: 320 }}>
+                <ListRowsSkeleton rows={4} trailing={false} />
+              </View>
             ) : (
               <FlatList
                 data={people}

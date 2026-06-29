@@ -10,6 +10,7 @@ import { fetchBlockedUsers, unblockUser, type BlockedUser } from '../lib/blocks'
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { ListRowsSkeleton } from '../components/Skeleton';
 
 export default function BlockedScreen() {
   const { colors } = useTheme();
@@ -60,7 +61,7 @@ export default function BlockedScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+        <ListRowsSkeleton rows={6} trailing />
       ) : (
         <FlatList
           data={blocked}

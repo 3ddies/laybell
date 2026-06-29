@@ -1,6 +1,6 @@
 import AppVideo from '../../components/AppVideo';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, ActivityIndicator, Animated,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, Animated,
 } from 'react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -42,6 +42,7 @@ import { openAdOptions } from '../../contexts/AdOptionsContext';
 import ReelAd from '../../components/ReelAd';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
+import { ReelSkeleton } from '../../components/Skeleton';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -396,7 +397,7 @@ export default function ReelScreen() {
               initialNumToRender={1}
             />
           ) : loading ? (
-            <View style={styles.center} />
+            <ReelSkeleton />
           ) : (
             <View style={styles.center}><Text style={styles.empty}>{t('reel.noVideos')}</Text></View>
           )}

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,6 +8,7 @@ import { usePremium } from '../contexts/PremiumContext';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import type { Pkg } from '../lib/purchases';
+import { Skeleton, SkeletonLine } from '../components/Skeleton';
 
 // Laybell Premium paywall. Reads offerings/status from RevenueCat via PremiumContext;
 // perks are wired through lib/entitlements (unlimited offline + ad-free are live; the
@@ -88,7 +89,17 @@ export default function PremiumScreen() {
               <Text style={styles.activeBody}>{t('premium.comingSoonBody')}</Text>
             </View>
           ) : loading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: SPACING.lg }} />
+            <View style={styles.buy}>
+              <Skeleton width="100%" height={50} radius={RADIUS.full} />
+              <Skeleton width="100%" height={50} radius={RADIUS.full} />
+              <View style={{ alignItems: 'center', paddingVertical: SPACING.sm }}>
+                <SkeletonLine w={90} h={14} />
+              </View>
+              <View style={{ alignItems: 'center', gap: SPACING.xs }}>
+                <SkeletonLine w="80%" h={11} />
+                <SkeletonLine w="65%" h={11} />
+              </View>
+            </View>
           ) : (
             <View style={styles.buy}>
               {packages.map((pkg) => (

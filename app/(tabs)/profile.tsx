@@ -4,7 +4,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Image, RefreshControl, PanResponder,
+  ScrollView, Image, RefreshControl, PanResponder,
   Animated, Easing, Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,6 +39,7 @@ import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import TranslatableText from '../../components/TranslatableText';
+import { ProfileSkeleton } from '../../components/Skeleton';
 
 type Profile = {
   id: string; username: string; display_name: string;
@@ -235,7 +236,7 @@ export default function ProfileScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>;
+    return <View style={[styles.loadingContainer, { justifyContent: 'flex-start' }]}><ProfileSkeleton /></View>;
   }
 
   // Prefer the global ProfileContext copy (live tier + avatar, kept in sync after

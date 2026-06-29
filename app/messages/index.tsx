@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput,
-  TouchableOpacity, Pressable, ActivityIndicator, Image, RefreshControl, Keyboard,
+  TouchableOpacity, Pressable, Image, RefreshControl, Keyboard,
 } from 'react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -19,6 +19,7 @@ import HighlightText from '../../components/HighlightText';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import SwipeBackPager from '../../components/SwipeBackPager';
+import { ListRowsSkeleton } from '../../components/Skeleton';
 import { useStories } from '../../contexts/StoriesContext';
 import { useFollow } from '../../contexts/FollowContext';
 
@@ -186,10 +187,47 @@ export default function MessagesScreen() {
 
   if (loading) {
     // Same SwipeBackPager root as the loaded tree so the pager instance (and
-    // its slide-in entrance) carries over when the content swaps in.
+    // its slide-in entrance) carries over when the content swaps in. Render the
+    // static chrome (header + search pill + segmented tabs) so it doesn't jump
+    // when content arrives, then grey pulsating conversation-row placeholders.
     return (
       <SwipeBackPager>
-        <View style={styles.loadingContainer}><ActivityIndicator color={colors.primary} size="large" /></View>
+        <View style={styles.container}>
+          <View style={[styles.header, { paddingTop: Math.max(insets.top, SPACING.md) }]}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="chevron-back" size={26} color={colors.primary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{t('messages.title')}</Text>
+            <View style={styles.headerSpacer} />
+          </View>
+
+          <View style={styles.searchRow}>
+            <View style={styles.searchBar}>
+              <Ionicons name="search-outline" size={18} color={colors.textTertiary} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder={t('messages.searchPlaceholder')}
+                placeholderTextColor={colors.textSecondary}
+                editable={false}
+              />
+            </View>
+          </View>
+
+          <View style={styles.tabRow}>
+            {MSG_TABS.map((key) => {
+              const active = tab === key;
+              return (
+                <View key={key} style={[styles.tab, active && styles.tabActive]}>
+                  <Text style={[styles.tabText, active && styles.tabTextActive]}>{t(`messages.tab.${key}`)}</Text>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.list}>
+            <ListRowsSkeleton rows={8} trailing={false} />
+          </View>
+        </View>
       </SwipeBackPager>
     );
   }

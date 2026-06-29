@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  ActivityIndicator, Alert, RefreshControl,
+  Alert, RefreshControl,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +15,7 @@ import SwipeBackPager from '../../components/SwipeBackPager';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { Skeleton, SkeletonLine } from '../../components/Skeleton';
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -174,7 +175,42 @@ export default function AdManagerScreen() {
         </View>
 
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+            {/* hint line */}
+            <View style={{ gap: 6 }}>
+              <SkeletonLine w="90%" h={10} />
+              <SkeletonLine w="60%" h={10} />
+            </View>
+            {/* gradient create button placeholder */}
+            <Skeleton width="100%" height={52} radius={RADIUS.lg} />
+            {/* section title */}
+            <SkeletonLine w="40%" h={11} />
+            {/* campaign card skeletons */}
+            <View style={styles.cards}>
+              {[0, 1, 2].map((i) => (
+                <View key={i} style={styles.card}>
+                  <View style={styles.cardTitleRow}>
+                    <SkeletonLine w="50%" h={15} />
+                    <Skeleton width={64} height={18} radius={RADIUS.full} />
+                  </View>
+                  <View style={styles.placeRow}>
+                    <Skeleton width={56} height={20} radius={RADIUS.full} />
+                    <Skeleton width={56} height={20} radius={RADIUS.full} />
+                  </View>
+                  <View style={styles.budgetRow}>
+                    <SkeletonLine w="45%" h={12} />
+                    <SkeletonLine w={32} h={12} />
+                  </View>
+                  <Skeleton width="100%" height={6} radius={RADIUS.full} />
+                  <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
+                    <SkeletonLine w={56} h={12} />
+                    <SkeletonLine w={56} h={12} />
+                    <SkeletonLine w={56} h={12} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
         ) : (
           <ScrollView
             contentContainerStyle={styles.scroll}

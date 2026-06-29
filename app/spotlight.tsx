@@ -17,6 +17,7 @@ import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { SPACING, RADIUS, SHADOWS, type ThemePalette } from '../constants/theme';
+import { Skeleton, SkeletonLine, GridSkeleton } from '../components/Skeleton';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { countLabel } from '../lib/i18n';
@@ -355,7 +356,19 @@ export default function SpotlightScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          {/* hero-stage block */}
+          <Skeleton width="100%" height={230} radius={RADIUS.xl} />
+          {/* eyebrow + title + tagline lines */}
+          <View style={{ alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.xs }}>
+            <SkeletonLine w={120} h={11} />
+            <SkeletonLine w={200} h={20} />
+            <SkeletonLine w="80%" h={13} />
+            <SkeletonLine w="60%" h={13} />
+          </View>
+          {/* full-width gradient CTA button */}
+          <Skeleton width="100%" height={52} radius={RADIUS.full} style={{ marginTop: SPACING.md }} />
+        </ScrollView>
       ) : (
         <ScrollView
           contentContainerStyle={styles.scroll}
@@ -544,7 +557,10 @@ export default function SpotlightScreen() {
 
           {flowStep === 'grid' && (
             postsLoading ? (
-              <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+              <View style={styles.gridScroll}>
+                <SkeletonLine w="70%" h={12} style={{ marginHorizontal: SPACING.md, marginBottom: SPACING.sm }} />
+                <GridSkeleton columns={3} count={12} gap={1} padding={0} />
+              </View>
             ) : myPosts.length === 0 ? (
               <View style={styles.empty}>
                 <Ionicons name="images-outline" size={44} color={colors.textTertiary} />

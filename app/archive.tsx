@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Image, Alert, RefreshControl,
+  ScrollView, Image, Alert, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,6 +14,7 @@ import VideoThumb from '../components/VideoThumb';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { GridSkeleton } from '../components/Skeleton';
 
 type Tab = 'posts' | 'stories';
 
@@ -147,7 +148,12 @@ export default function ArchiveScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.hint}>
+            {tab === 'posts' ? t('archive.hintPosts') : t('archive.hintStories')}
+          </Text>
+          <GridSkeleton columns={3} count={12} gap={1} padding={0} />
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.scroll}

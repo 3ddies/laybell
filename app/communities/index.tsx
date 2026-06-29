@@ -11,6 +11,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
+import { CommunitiesSkeleton } from '../../components/Skeleton';
 import { genreLabel } from '../../lib/genres';
 import { formatCount } from '../../lib/format';
 import {
@@ -132,7 +133,7 @@ export default function CommunitiesScreen() {
         </View>
 
         {loading ? (
-          <View style={styles.centered}><ActivityIndicator color={colors.primary} /></View>
+          <CommunitiesSkeleton sections={4} />
         ) : isSearching ? (
           <FlatList
             data={results}
