@@ -424,7 +424,7 @@ export default function NowPlaying() {
                 {/* Like (tap) · Streams (display) · Saves (tap) */}
                 <View style={styles.statBar}>
                   <TouchableOpacity style={styles.tapStat} onPress={handleLike} activeOpacity={0.6} hitSlop={10}>
-                    <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={34} color={isLiked ? colors.like : colors.text} />
+                    <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={37} color={isLiked ? colors.like : colors.text} />
                     <Text style={styles.tapStatNum}>{formatCount(likeCount)}</Text>
                   </TouchableOpacity>
                   <View style={styles.centerStat}>
@@ -432,7 +432,7 @@ export default function NowPlaying() {
                     <Text style={styles.centerStatLbl}>{t('nowPlaying.streams')}</Text>
                   </View>
                   <TouchableOpacity style={styles.tapStat} onPress={handleSave} activeOpacity={0.6} hitSlop={10}>
-                    <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={34} color={isSaved ? colors.primary : colors.text} />
+                    <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={37} color={isSaved ? colors.primary : colors.text} />
                     <Text style={styles.tapStatNum}>{formatCount(saves)}</Text>
                   </TouchableOpacity>
                 </View>
@@ -485,7 +485,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // The play triangle's visual weight leans left — nudge it for optical center.
   playGlyphNudge: { marginLeft: 4 },
 
-  statBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.lg, marginTop: SPACING.md },
+  statBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', marginTop: SPACING.md },
   // Borderless, Spotify-style: just the glyph + count, no chip/outline. Active
   // state reads from the filled icon (red heart / primary bookmark). Generous
   // padding keeps a comfortable tap target.
