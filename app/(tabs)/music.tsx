@@ -1147,7 +1147,11 @@ export default function MusicScreen() {
       </View>
 
       {/* All pill views share this wrapper so switching slides the incoming
-          view in from the travel direction */}
+          view in from the travel direction. Skipped while a community (public)
+          playlist detail is open: that view renders as a sibling below, and a
+          rendered-but-empty flex:1 wrapper here would otherwise eat half the
+          screen and push the detail to the bottom. */}
+      {activeView !== 'community' && (
       <Animated.View style={[styles.viewsWrap, { transform: [{ translateX: viewAnimX }] }]}>
 
       {/* ─── Discover ──────────────────────────────────────────────────────── */}
@@ -1764,6 +1768,7 @@ export default function MusicScreen() {
         />
       )}
       </Animated.View>
+      )}
       </>
       )}
 
