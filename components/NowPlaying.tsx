@@ -102,6 +102,12 @@ export default function NowPlaying() {
   const router = useRouter();
   const [render, setRender] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
+  // Fades the whole sheet out alongside the slide when a song ENDS (a manual
+  // dismiss only slides) so the auto-exit doesn't feel abrupt.
+  const fade = useRef(new Animated.Value(1)).current;
+  // The last non-null track, kept so the sheet can finish its exit animation
+  // after the queue empties (currentTrack → null) instead of vanishing instantly.
+  const lastTrackRef = useRef(currentTrack);
   const closeVel = useRef(0);
   // True while a flick-down close is animating dragY itself — tells the
   // expanded-effect to skip its own close spring (no double animation).
@@ -131,6 +137,7 @@ export default function NowPlaying() {
       setRender(true);
       closingViaDragRef.current = false;
       dragY.setValue(0);             // clear any leftover drag-close offset
+      fade.setValue(1);             // clear any leftover song-end fade
       translateY.setValue(SCREEN_H); // always enter from off-screen
       Animated.timing(translateY, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     } else if (render) {
@@ -149,6 +156,24 @@ export default function NowPlaying() {
       return () => clearTimeout(t);
     }
   }, [expanded, render]);
+
+  // Remember the playing track so an exit animation can keep rendering it after
+  // the queue clears it.
+  useEffect(() => { if (currentTrack) lastTrackRef.current = currentTrack; }, [currentTrack]);
+
+  // Song ended while the full player was open: the queue emptied so currentTrack
+  // is now null, but `expanded` is still true. Slide + fade the sheet out
+  // smoothly (instead of vanishing), then unmount. collapse() syncs the global
+  // expanded flag; closingViaDragRef stops the expanded-effect from also springing.
+  useEffect(() => {
+    if (currentTrack || !render || !expanded || closingViaDragRef.current) return;
+    closingViaDragRef.current = true;
+    Animated.parallel([
+      Animated.timing(translateY, { toValue: SCREEN_H, duration: 340, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(fade, { toValue: 0, duration: 300, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+    ]).start(() => setRender(false));
+    collapse();
+  }, [currentTrack, render, expanded]);
 
   // Load post stats + like state + comments for the current track (when open).
   useEffect(() => {
@@ -216,8 +241,11 @@ export default function NowPlaying() {
     }
   };
 
-  if (!render || !currentTrack) return null;
-  const pid = currentTrack.id;
+  // Use the retained track so the exit animation can keep painting after the
+  // queue clears currentTrack (song ended).
+  const track = currentTrack ?? lastTrackRef.current;
+  if (!render || !track) return null;
+  const pid = track.id;
   // Opaque backdrop — no see-through (the earlier translucent stop looked glitchy
   // in Light mode). Dark themes keep the rich warm gradient; Light mode gets a
   // subtle, OPAQUE lift only at the very top that fades quickly to the solid page
@@ -258,7 +286,7 @@ export default function NowPlaying() {
   }
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, styles.layer, { transform: [{ translateY: sheetY }] }]}>
+    <Animated.View style={[StyleSheet.absoluteFill, styles.layer, { opacity: fade, transform: [{ translateY: sheetY }] }]}>
       <LinearGradient colors={sheetGradient} locations={sheetLocations as any} style={styles.container}>
         {/* Top drag zone — swipe down to close (native gesture: activates on a
             6px downward move; clearly horizontal or upward moves fail fast so
@@ -292,8 +320,8 @@ export default function NowPlaying() {
                     authorId: ownerId ?? undefined,
                     authorName: ownerName,
                     mediaType: 'audio',
-                    mediaUrl: currentTrack.uri,
-                    cover: currentTrack.cover,
+                    mediaUrl: track.uri,
+                    cover: track.cover,
                     onEdit: () => { collapse(); router.push(`/edit-post/${pid}`); },
                     onDeleted: () => collapse(),
                     onArchived: () => collapse(),
@@ -396,8 +424,8 @@ export default function NowPlaying() {
             ListHeaderComponent={
               <>
                 <View style={styles.artWrap}>
-                  {currentTrack.cover ? (
-                    <Image source={{ uri: currentTrack.cover }} style={styles.art} />
+                  {track.cover ? (
+                    <Image source={{ uri: track.cover }} style={styles.art} />
                   ) : (
                     <LinearGradient colors={GRADIENTS.primary} style={styles.art}>
                       <Ionicons name="musical-notes" size={64} color={colors.text} />
@@ -406,11 +434,11 @@ export default function NowPlaying() {
                 </View>
 
                 <View style={styles.meta}>
-                  <Text style={styles.title} numberOfLines={1}>{currentTrack.caption || t('player.audioTrack')}</Text>
+                  <Text style={styles.title} numberOfLines={1}>{track.caption || t('player.audioTrack')}</Text>
                   <TouchableOpacity disabled={!ownerId} onPress={goProfile}>
                     <View style={styles.artistRow}>
                       <Text style={styles.artist} numberOfLines={1}>
-                        {currentTrack.artist || (ownerName ? `@${ownerName}` : '')}
+                        {track.artist || (ownerName ? `@${ownerName}` : '')}
                       </Text>
                       <BadgeEmblem profile={ownerBadge} ownerId={ownerId} size={13} />
                       {spotlighted && <Ionicons name="sparkles" size={13} color={colors.primaryLight} />}

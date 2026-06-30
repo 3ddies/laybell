@@ -216,7 +216,7 @@ export default function Comments({
             <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={12} />
             <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
           </View>
-          <TranslatableText text={item.body} render={(s) => <MentionText style={styles.text} text={s} />} />
+          <TranslatableText text={item.body} render={(s) => <MentionText style={styles.text} text={s} onBeforeNavigate={onNavigate} />} />
         </TouchableOpacity>
         <View style={styles.metaRow}>
           <TouchableOpacity

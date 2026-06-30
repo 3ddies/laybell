@@ -27,7 +27,7 @@ function parse(text: string): Seg[] {
 }
 
 export default function MentionText({
-  text, style, mentionStyle, numberOfLines, suffix, onPress,
+  text, style, mentionStyle, numberOfLines, suffix, onPress, onBeforeNavigate,
 }: {
   text?: string | null;
   style?: StyleProp<TextStyle>;
@@ -41,6 +41,9 @@ export default function MentionText({
   // (mentions, the community tag) win their own taps — a wrapping touchable
   // steals them and makes the inline tag almost impossible to hit.
   onPress?: () => void;
+  // Called right before a mention tap pushes the profile, so a host overlay/sheet
+  // (e.g. Now Playing) can close first — otherwise the profile opens BEHIND it.
+  onBeforeNavigate?: () => void;
 }) {
   const router = useRouter();
   if (!text) return suffix ? <Text style={style} numberOfLines={numberOfLines}>{suffix}</Text> : null;
@@ -53,7 +56,7 @@ export default function MentionText({
 
   async function go(username: string) {
     const { data } = await supabase.from('profiles').select('id').ilike('username', username).maybeSingle();
-    if (data?.id) router.push(`/profile/${data.id}`);
+    if (data?.id) { onBeforeNavigate?.(); router.push(`/profile/${data.id}`); }
   }
 
   return (
