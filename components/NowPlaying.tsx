@@ -102,9 +102,10 @@ export default function NowPlaying() {
   const router = useRouter();
   const [render, setRender] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
-  // Fades the whole sheet out alongside the slide when a song ENDS (a manual
-  // dismiss only slides) so the auto-exit doesn't feel abrupt.
+  // When a song ENDS, the sheet fades + gently scales down in place (a manual
+  // dismiss still slides) so the auto-exit feels clean rather than abrupt.
   const fade = useRef(new Animated.Value(1)).current;
+  const scale = useRef(new Animated.Value(1)).current;
   // The last non-null track, kept so the sheet can finish its exit animation
   // after the queue empties (currentTrack → null) instead of vanishing instantly.
   const lastTrackRef = useRef(currentTrack);
@@ -138,6 +139,7 @@ export default function NowPlaying() {
       closingViaDragRef.current = false;
       dragY.setValue(0);             // clear any leftover drag-close offset
       fade.setValue(1);             // clear any leftover song-end fade
+      scale.setValue(1);            // and scale
       translateY.setValue(SCREEN_H); // always enter from off-screen
       Animated.timing(translateY, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     } else if (render) {
@@ -162,15 +164,16 @@ export default function NowPlaying() {
   useEffect(() => { if (currentTrack) lastTrackRef.current = currentTrack; }, [currentTrack]);
 
   // Song ended while the full player was open: the queue emptied so currentTrack
-  // is now null, but `expanded` is still true. Slide + fade the sheet out
-  // smoothly (instead of vanishing), then unmount. collapse() syncs the global
-  // expanded flag; closingViaDragRef stops the expanded-effect from also springing.
+  // is now null, but `expanded` is still true. Fade + gently scale the sheet out
+  // in place (cleaner than sliding it off), then unmount. collapse() syncs the
+  // global expanded flag; closingViaDragRef stops the expanded-effect from also
+  // springing translateY (which would re-introduce a slide).
   useEffect(() => {
     if (currentTrack || !render || !expanded || closingViaDragRef.current) return;
     closingViaDragRef.current = true;
     Animated.parallel([
-      Animated.timing(translateY, { toValue: SCREEN_H, duration: 340, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(fade, { toValue: 0, duration: 300, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(fade, { toValue: 0, duration: 260, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 0.94, duration: 260, easing: Easing.out(Easing.ease), useNativeDriver: true }),
     ]).start(() => setRender(false));
     collapse();
   }, [currentTrack, render, expanded]);
@@ -286,7 +289,7 @@ export default function NowPlaying() {
   }
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, styles.layer, { opacity: fade, transform: [{ translateY: sheetY }] }]}>
+    <Animated.View style={[StyleSheet.absoluteFill, styles.layer, { opacity: fade, transform: [{ translateY: sheetY }, { scale }] }]}>
       <LinearGradient colors={sheetGradient} locations={sheetLocations as any} style={styles.container}>
         {/* Top drag zone — swipe down to close (native gesture: activates on a
             6px downward move; clearly horizontal or upward moves fail fast so
@@ -460,7 +463,7 @@ export default function NowPlaying() {
                     <Text style={styles.centerStatLbl}>{t('nowPlaying.streams')}</Text>
                   </View>
                   <TouchableOpacity style={styles.tapStat} onPress={handleSave} activeOpacity={0.6} hitSlop={10}>
-                    <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={37} color={isSaved ? colors.primary : colors.text} />
+                    <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={37} color={colors.text} />
                     <Text style={styles.tapStatNum}>{formatCount(saves)}</Text>
                   </TouchableOpacity>
                 </View>
