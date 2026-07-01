@@ -39,6 +39,8 @@ export default function ChatScreen() {
   const light = mode === 'light';
   const inputFill = light ? colors.surface : colors.surfaceElevated;
   const inputBorder = light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.14)';
+  // iMessage-style blue for the user's own (sent) bubbles.
+  const bubbleBlue = ['#1FA0FF', '#0A7CFF'] as const;
   const flatListRef = useRef<FlatList>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -227,7 +229,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
@@ -250,6 +252,10 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Only the message list avoids the keyboard. The compose bar lives OUTSIDE
+          this KAV and slides itself (kbShift) — so the KAV's padding can't also
+          shove the absolute bar, which is what made the pill vanish while typing. */}
+      <KeyboardAvoidingView style={styles.chatBody} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -283,7 +289,7 @@ export default function ChatScreen() {
                 {storyRef.text ? (
                   isOwn ? (
                     <LinearGradient
-                      colors={GRADIENTS.primary}
+                      colors={bubbleBlue}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={[styles.bubble, styles.bubbleOwn, styles.storyReplyBubble]}
@@ -315,7 +321,7 @@ export default function ChatScreen() {
             <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
               {isOwn ? (
                 <LinearGradient
-                  colors={GRADIENTS.primary}
+                  colors={bubbleBlue}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={[styles.bubble, styles.bubbleOwn]}
@@ -331,6 +337,7 @@ export default function ChatScreen() {
           );
         }}
       />
+      </KeyboardAvoidingView>
 
       <Animated.View style={[styles.inputBarWrap, { transform: [{ translateY: kbShift }] }]}>
       <View
@@ -353,21 +360,22 @@ export default function ChatScreen() {
           disabled={!newMessage.trim() || sending}
           style={!newMessage.trim() && styles.sendBtnDisabled}
         >
-          <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.sendBtn}>
+          <View style={[styles.sendBtn, { backgroundColor: colors.text }]}>
             {sending
-              ? <ActivityIndicator color={colors.text} size="small" />
-              : <Ionicons name="arrow-up" size={20} color={colors.text} />
+              ? <ActivityIndicator color={colors.background} size="small" />
+              : <Ionicons name="arrow-up" size={20} color={colors.background} />
             }
-          </LinearGradient>
+          </View>
         </TouchableOpacity>
       </View>
       </Animated.View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  chatBody: { flex: 1 },
   loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 
   // The chat presents as an iOS page sheet (it sits above the messages list's
@@ -401,7 +409,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   bubble: { maxWidth: '80%', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 26 },
   bubbleOwn: {
     borderBottomRightRadius: 9,
-    shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
+    shadowColor: '#0A7CFF', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
   bubbleOther: {
