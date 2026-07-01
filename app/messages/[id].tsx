@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput, Image,
   TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
-  Keyboard, Animated, Alert,
+  Keyboard, Animated, Alert, Modal, Pressable,
 } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,6 +15,7 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { scanText } from '../../lib/linkSafety';
 import { createNotification } from '../../lib/createNotification';
+import { reportUser } from '../../lib/postActions';
 import { useProfile } from '../../contexts/ProfileContext';
 import { sharedPostId, internalPathFromUrl, parseStoryReply, type StoryReplyRef } from '../../lib/postLinks';
 import { maskHiddenProfile } from '../../lib/hiddenProfile';
@@ -22,8 +23,13 @@ import SharedPostCard from '../../components/SharedPostCard';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import TranslatableText from '../../components/TranslatableText';
 import { ChatThreadSkeleton } from '../../components/Skeleton';
+import { tabTick, reactionPop } from '../../lib/haptics';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
+type Reaction = { message_id: string; user_id: string; emoji: string };
+
+// Classic iMessage "tapback" set — press-and-hold a bubble to pick one.
+const TAPBACKS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
 
 export default function ChatScreen() {
   const { colors, mode } = useTheme();
@@ -56,6 +62,15 @@ export default function ChatScreen() {
   };
   const flatListRef = useRef<FlatList>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  // Reactions keyed by message id. Loaded with the thread, kept live via realtime,
+  // and updated optimistically the instant the user taps an emoji.
+  const [reactions, setReactions] = useState<Record<string, Reaction[]>>({});
+  // The message whose reaction picker is open (null = picker closed).
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
+  // The message whose reactor list is open (tap a reaction to see who reacted).
+  const [reactorsFor, setReactorsFor] = useState<string | null>(null);
+  // Header 3-dot chat-options menu (report, and room for more later).
+  const [menuOpen, setMenuOpen] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -131,6 +146,14 @@ export default function ChatScreen() {
           }
         }
       )
+      // RLS scopes reaction events to threads this user is part of, but that still
+      // spans every conversation — reconcile only when the change touches a message
+      // currently on screen. Read live message ids via the setState updater so this
+      // effect needn't re-subscribe as messages arrive.
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'message_reactions' },
+        () => { setMessages(curr => { fetchReactions(curr.map(m => m.id)); return curr; }); }
+      )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId, id]);
@@ -156,7 +179,88 @@ export default function ChatScreen() {
       .from('messages').select('*')
       .or(`and(sender_id.eq.${userId},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${userId})`)
       .order('created_at', { ascending: true });
-    if (data) setMessages(data);
+    if (data) { setMessages(data); fetchReactions(data.map(m => m.id)); }
+  }
+
+  // Pull every reaction for the given messages and group them by message id.
+  async function fetchReactions(ids: string[]) {
+    if (!ids.length) { setReactions({}); return; }
+    const { data } = await supabase
+      .from('message_reactions').select('message_id, user_id, emoji').in('message_id', ids);
+    if (!data) return;
+    const map: Record<string, Reaction[]> = {};
+    for (const r of data as Reaction[]) (map[r.message_id] ||= []).push(r);
+    setReactions(map);
+  }
+
+  // Press-and-hold a bubble → open the tapback picker (with a haptic tick).
+  const openPicker = (msgId: string) => { tabTick(); setPickerFor(msgId); };
+
+  // Apply (or toggle off) a reaction. Optimistic: the emoji lands instantly, then
+  // the DB write follows — realtime later reconciles the other participant's view.
+  async function applyReaction(messageId: string, emoji: string) {
+    if (!currentUserId) return;
+    setPickerFor(null);
+    reactionPop();
+    const mine = (reactions[messageId] || []).find(r => r.user_id === currentUserId);
+    const removing = mine?.emoji === emoji; // tapping your current emoji clears it
+    setReactions(prev => {
+      const rest = (prev[messageId] || []).filter(r => r.user_id !== currentUserId);
+      if (!removing) rest.push({ message_id: messageId, user_id: currentUserId, emoji });
+      return { ...prev, [messageId]: rest };
+    });
+    const { error } = removing
+      ? await supabase.from('message_reactions')
+          .delete().eq('message_id', messageId).eq('user_id', currentUserId)
+      : await supabase.from('message_reactions')
+          .upsert({ message_id: messageId, user_id: currentUserId, emoji }, { onConflict: 'message_id,user_id' });
+    // If the write failed (most commonly: the message_reactions table/policies
+    // haven't been created yet — run supabase/sql/message_reactions.sql), the DB
+    // never changed, so reconcile local state back to the truth instead of
+    // leaving a phantom reaction that would vanish on the next open.
+    if (error) {
+      if (__DEV__) console.warn('[reactions] write failed — did you run message_reactions.sql?', error.message);
+      setMessages(curr => { fetchReactions(curr.map(m => m.id)); return curr; });
+    }
+  }
+
+  // A small pill of reaction chips that hangs off the bubble's outer-bottom edge.
+  function renderReactions(messageId: string, isOwn: boolean) {
+    const list = reactions[messageId];
+    if (!list?.length) return null;
+    const counts: Record<string, number> = {};
+    for (const r of list) counts[r.emoji] = (counts[r.emoji] || 0) + 1;
+    return (
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => setReactorsFor(messageId)}
+        style={[styles.reactions, isOwn ? styles.reactionsOwn : styles.reactionsOther]}
+      >
+        {Object.entries(counts).map(([emoji, count]) => (
+          <View key={emoji} style={styles.reactionChip}>
+            <Text style={[styles.reactionEmoji, emoji === '❤️' && styles.reactionHeart]}>{emoji}</Text>
+            {count > 1 && <Text style={styles.reactionCount}>{count}</Text>}
+          </View>
+        ))}
+      </TouchableOpacity>
+    );
+  }
+
+  // Name/avatar for whoever left a reaction (me, or the person I'm chatting with).
+  function reactorName(userId: string) {
+    if (userId === currentUserId) return t('messages.reactionYou');
+    return otherUser?.display_name || otherUser?.username || '—';
+  }
+  function renderReactorAvatar(userId: string, size: number) {
+    const p = userId === currentUserId ? myProfile : otherUser;
+    if ((p as any)?.avatar_url) return <Image source={{ uri: (p as any).avatar_url }} style={{ width: size, height: size, borderRadius: RADIUS.full }} />;
+    return (
+      <LinearGradient colors={GRADIENTS.primary} style={{ width: size, height: size, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: '#fff', fontSize: size * 0.42, fontWeight: '800' }}>
+          {((p as any)?.display_name || (p as any)?.username || '?').charAt(0).toUpperCase()}
+        </Text>
+      </LinearGradient>
+    );
   }
 
   async function sendMessage() {
@@ -283,6 +387,9 @@ export default function ChatScreen() {
             {!!otherUser?.username && <Text style={styles.headerUsername} numberOfLines={1}>@{otherUser.username}</Text>}
           </View>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.headerMenuBtn} onPress={() => setMenuOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
       {/* Only the message list avoids the keyboard. The compose bar lives OUTSIDE
@@ -311,7 +418,7 @@ export default function ChatScreen() {
                 <Text style={styles.storyReplyLabel}>
                   {isOwn ? t('messages.youRepliedStory') : t('messages.repliedYourStory')}
                 </Text>
-                <TouchableOpacity activeOpacity={0.85} onPress={() => openStoryReply(storyRef)}>
+                <TouchableOpacity activeOpacity={0.85} onPress={() => openStoryReply(storyRef)} onLongPress={() => openPicker(item.id)} delayLongPress={280}>
                   {storyRef.thumb ? (
                     <Image source={{ uri: storyRef.thumb }} style={styles.storyReplyThumb} />
                   ) : (
@@ -337,6 +444,7 @@ export default function ChatScreen() {
                   )
                 ) : null}
                 <Animated.Text style={[styles.cardTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>
+                {renderReactions(item.id, isOwn)}
               </View>
             );
           }
@@ -345,30 +453,39 @@ export default function ChatScreen() {
           if (postId) {
             return (
               <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
-                <SharedPostCard postId={postId} />
+                <TouchableOpacity activeOpacity={0.9} onLongPress={() => openPicker(item.id)} delayLongPress={280}>
+                  <SharedPostCard postId={postId} />
+                </TouchableOpacity>
                 <Animated.Text style={[styles.cardTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>
+                {renderReactions(item.id, isOwn)}
               </View>
             );
           }
           return (
             <View style={[styles.bubbleRow, isOwn ? styles.bubbleRowOwn : styles.bubbleRowOther]}>
+              {/* Time sits OUTSIDE the bubble, vertically centered to its height. */}
               {isOwn && <Animated.Text style={[styles.msgTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>}
-              <TouchableOpacity activeOpacity={1} onPress={() => showTap(item.id)} style={styles.bubbleTouch}>
-                {isOwn ? (
-                  <LinearGradient
-                    colors={bubbleBlue}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[styles.bubble, styles.bubbleFill, styles.bubbleOwn]}
-                  >
-                    <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
-                  </LinearGradient>
-                ) : (
-                  <View style={[styles.bubble, styles.bubbleFill, styles.bubbleOther]}>
-                    <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
-                  </View>
-                )}
-              </TouchableOpacity>
+              {/* Bubble + its reactions stack together, so the reaction anchors to
+                  the bubble's inner-bottom corner regardless of the row's width. */}
+              <View style={[styles.bubbleStack, isOwn ? styles.bubbleStackOwn : styles.bubbleStackOther]}>
+                <TouchableOpacity activeOpacity={1} onPress={() => showTap(item.id)} onLongPress={() => openPicker(item.id)} delayLongPress={280} style={styles.bubbleFill}>
+                  {isOwn ? (
+                    <LinearGradient
+                      colors={bubbleBlue}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={[styles.bubble, styles.bubbleFill, styles.bubbleOwn]}
+                    >
+                      <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
+                    </LinearGradient>
+                  ) : (
+                    <View style={[styles.bubble, styles.bubbleFill, styles.bubbleOther]}>
+                      <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+                {renderReactions(item.id, isOwn)}
+              </View>
               {!isOwn && <Animated.Text style={[styles.msgTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>}
             </View>
           );
@@ -406,6 +523,61 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
       </Animated.View>
+
+      {/* Reaction picker — a floating tapback pill over a dimmed backdrop. */}
+      <Modal visible={pickerFor !== null} transparent animationType="fade" onRequestClose={() => setPickerFor(null)}>
+        <Pressable style={styles.pickerBackdrop} onPress={() => setPickerFor(null)}>
+          <View style={styles.pickerRow}>
+            {TAPBACKS.map((emoji) => (
+              <TouchableOpacity
+                key={emoji}
+                activeOpacity={0.6}
+                onPress={() => pickerFor && applyReaction(pickerFor, emoji)}
+                style={styles.pickerEmojiBtn}
+              >
+                <Text style={styles.pickerEmoji}>{emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Who reacted — tap a reaction to see each person and their emoji. */}
+      <Modal visible={reactorsFor !== null} transparent animationType="fade" onRequestClose={() => setReactorsFor(null)}>
+        <Pressable style={styles.reactorBackdrop} onPress={() => setReactorsFor(null)}>
+          <Pressable style={styles.reactorCard} onPress={() => {}}>
+            <Text style={styles.reactorTitle}>{t('messages.reactionsTitle')}</Text>
+            {(reactorsFor ? reactions[reactorsFor] || [] : []).map((r) => (
+              <TouchableOpacity
+                key={r.user_id + r.emoji}
+                style={styles.reactorRow}
+                activeOpacity={0.7}
+                onPress={() => { setReactorsFor(null); if (r.user_id !== currentUserId) router.push(`/profile/${r.user_id}`); }}
+              >
+                {renderReactorAvatar(r.user_id, 36)}
+                <Text style={styles.reactorName} numberOfLines={1}>{reactorName(r.user_id)}</Text>
+                <Text style={[styles.reactorEmoji, r.emoji === '❤️' && styles.reactionHeart]}>{r.emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Chat options — 3-dot menu (report, and more in the future). */}
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
+          <View style={[styles.menuCard, { top: insets.top + 52 }]}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={() => { setMenuOpen(false); reportUser(String(id)); }}
+            >
+              <Ionicons name="flag-outline" size={18} color={colors.error} />
+              <Text style={[styles.menuItemText, { color: colors.error }]}>{t('chat.report')}</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -437,6 +609,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   headerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   headerName: { color: colors.text, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
   headerUsername: { color: colors.textSecondary, fontSize: 13 },
+  headerMenuBtn: { padding: SPACING.xs, marginLeft: SPACING.xs },
+
+  // 3-dot chat-options menu: a small card dropping from the top-right.
+  menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.15)' },
+  menuCard: {
+    position: 'absolute', right: SPACING.md,
+    minWidth: 180, backgroundColor: colors.surfaceElevated,
+    borderRadius: RADIUS.lg, paddingVertical: SPACING.xs,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 10,
+  },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 2 },
+  menuItemText: { fontSize: 15, fontWeight: '600' },
 
   messagesList: { padding: SPACING.md, gap: 2, flexGrow: 1 },
 
@@ -448,10 +633,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: SPACING.xs, gap: 6 },
   bubbleRowOwn: { justifyContent: 'flex-end' },
   bubbleRowOther: { justifyContent: 'flex-start' },
-  msgTime: { fontSize: 10, color: colors.textTertiary, marginBottom: 3 },
-  // The tap wrapper carries the width cap; the bubble fills it (a %-maxWidth on
-  // the bubble wouldn't resolve inside an auto-width wrapper).
-  bubbleTouch: { maxWidth: '80%' },
+  // Side time, vertically centered to the bubble's mid-height (not the corner).
+  msgTime: { fontSize: 10, color: colors.textTertiary, alignSelf: 'center' },
+  // The stack carries the width cap; the bubble fills it (a %-maxWidth on the
+  // bubble wouldn't resolve inside an auto-width wrapper).
   bubbleFill: { maxWidth: '100%' },
   bubble: { maxWidth: '80%', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 26 },
   bubbleOwn: {
@@ -477,6 +662,53 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   inlineTime: { fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
   inlineTimeOther: { color: colors.textTertiary },
   cardTime: { fontSize: 10, color: colors.textTertiary, marginTop: 3 },
+
+  // Who-reacted list (tap a reaction).
+  reactorBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: SPACING.xl },
+  reactorCard: {
+    width: '100%', maxWidth: 340, backgroundColor: colors.surfaceElevated,
+    borderRadius: RADIUS.xl, paddingVertical: SPACING.md, paddingHorizontal: SPACING.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+  },
+  reactorTitle: { color: colors.text, fontSize: 16, fontWeight: '800', textAlign: 'center', marginBottom: SPACING.sm },
+  reactorRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 2, paddingVertical: 7 },
+  reactorName: { flex: 1, color: colors.text, fontSize: 15, fontWeight: '600' },
+  reactorEmoji: { fontSize: 20 },
+
+  // Bubble + reactions stack: caps the bubble width and holds the tapback pill
+  // directly under it, aligned to the bubble's INNER edge (toward the middle) —
+  // left for your own bubbles, right for received ones.
+  bubbleStack: { maxWidth: '80%' },
+  bubbleStackOwn: { alignItems: 'flex-start' },
+  bubbleStackOther: { alignItems: 'flex-end' },
+  // Rides up the bubble's inner side edge and pokes slightly OUT past the corner
+  // (negative side margin) so it hugs the side edge, not the bottom edge.
+  reactions: { flexDirection: 'row', gap: 3, marginTop: -12, zIndex: 2 },
+  reactionsOwn: { marginLeft: -6 },
+  reactionsOther: { marginRight: -6 },
+  // No chip/border — just the bare emoji (+ count) hanging off the bubble.
+  reactionChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    paddingHorizontal: 2,
+  },
+  reactionEmoji: { fontSize: 13 },
+  // ❤️ (U+2764 + emoji VS) is drawn smaller and lower than the pictographic
+  // tapbacks; bump its size and lift it so it lines up with the rest.
+  reactionHeart: { fontSize: 15, transform: [{ translateY: -1 }] },
+  reactionCount: { fontSize: 11, color: colors.textSecondary, fontWeight: '700' },
+
+  // Reaction picker overlay.
+  pickerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center' },
+  pickerRow: {
+    flexDirection: 'row', gap: 4,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 8, paddingVertical: 8,
+    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
+  },
+  pickerEmojiBtn: { width: 46, height: 46, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
+  pickerEmoji: { fontSize: 28 },
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
   emptyText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center' },

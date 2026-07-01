@@ -18,23 +18,42 @@ import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import HighlightText from '../../components/HighlightText';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import GroupAvatar from '../../components/GroupAvatar';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import { ListRowsSkeleton } from '../../components/Skeleton';
 import { useStories } from '../../contexts/StoriesContext';
 import { useFollow } from '../../contexts/FollowContext';
+import { fetchGroupConversations, groupTitle, parseRenameEvent, type GroupProfile } from '../../lib/groups';
 
 type MsgTab = 'main' | 'friends' | 'followers';
 const MSG_TABS: MsgTab[] = ['main', 'friends', 'followers'];
 
-type Conversation = {
+// A row in the list is either a 1:1 DM or a group. Both carry `bodies` +
+// `sharedCaptions` so the keyword search treats them uniformly.
+type DmConversation = {
+  kind: 'dm';
   id: string;
   other_user: { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
   last_message: string;
   last_message_time: string;
   unread: number;
-  bodies: string[];          // every plain message body in this convo (for keyword search)
-  sharedCaptions: string[];  // captions of posts shared in this convo (for keyword search)
+  bodies: string[];
+  sharedCaptions: string[];
 };
+type GroupConversation = {
+  kind: 'group';
+  id: string;                 // conversation id
+  title: string | null;
+  avatarUrl: string | null;
+  members: GroupProfile[];
+  last_sender_id: string | null;
+  last_message: string;
+  last_message_time: string;
+  unread: number;
+  bodies: string[];
+  sharedCaptions: string[];
+};
+type Conversation = DmConversation | GroupConversation;
 
 // First non-shared-post message in the convo that contains the query, or null.
 function matchingMessage(c: Conversation, q: string): string | null {
@@ -89,24 +108,49 @@ export default function MessagesScreen() {
   }
 
   async function fetchConversations(userId: string) {
-    const [{ data }, blockedIds] = await Promise.all([
+    const [{ data }, blockedIds, groups] = await Promise.all([
       supabase
         .from('messages')
         .select('id, body, created_at, sender_id, receiver_id, read')
         .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
         .order('created_at', { ascending: false }),
       fetchBlockedIds(),
+      // Groups I'm in. Returns [] pre-migration (table absent), so DMs keep working.
+      fetchGroupConversations(userId),
     ]);
 
-    if (!data) return;
+    // Group rows map straight across; they merge with the DM rows below.
+    const groupConvos: Conversation[] = (groups ?? []).map(g => ({
+      kind: 'group' as const,
+      id: g.id,
+      title: g.title,
+      avatarUrl: g.avatar_url,
+      members: g.members,
+      last_sender_id: g.last_sender_id,
+      last_message: g.last_message,
+      last_message_time: g.last_message_time,
+      unread: g.unread,
+      bodies: g.bodies,
+      sharedCaptions: [],
+    }));
 
-    // `data` is newest-first, so the first message seen per partner is the latest.
+    // Merge DMs + groups, newest activity first, and commit.
+    const finish = (dmConvos: Conversation[]) => {
+      const merged = [...dmConvos, ...groupConvos];
+      merged.sort((a, b) => new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime());
+      setConversations(merged);
+    };
+
+    const dmData = data ?? [];
+    // `dmData` is newest-first, so the first message seen per partner is the latest.
     // Blocked partners are skipped entirely (their chats are hidden until unblock).
+    // Group messages surface here too (my own sends), but they have a null
+    // receiver → null partnerId → skipped, so they never pollute the DM list.
     const partnerIds: string[] = [];
     const latestMessages: Record<string, any> = {};
     const unreadCounts: Record<string, number> = {};
     const bodiesByPartner: Record<string, string[]> = {};
-    data.forEach(msg => {
+    dmData.forEach(msg => {
       const partnerId = msg.sender_id === userId ? msg.receiver_id : msg.sender_id;
       if (!partnerId || blockedIds.has(partnerId)) return;
       if (!latestMessages[partnerId]) { partnerIds.push(partnerId); latestMessages[partnerId] = msg; }
@@ -119,7 +163,7 @@ export default function MessagesScreen() {
       }
     });
 
-    if (partnerIds.length === 0) { setConversations([]); return; }
+    if (partnerIds.length === 0) { finish([]); return; }
 
     // Resolve captions of any posts shared in these chats so search can match them.
     const allSharedIds = new Set<string>();
@@ -140,15 +184,16 @@ export default function MessagesScreen() {
 
     const { data: profiles } = await supabase
       .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden').in('id', partnerIds);
-    if (!profiles) return;
+    if (!profiles) { finish([]); return; }
 
     // Partners who have since hidden their account read as "Hidden account".
     const profileMap = Object.fromEntries(profiles.map(p => [p.id, maskHiddenProfile(p as any)]));
-    const convos = partnerIds
+    const dmConvos = partnerIds
       .map(pid => {
         const p = profileMap[pid];
         if (!p) return null;
         return {
+          kind: 'dm' as const,
           id: pid,
           other_user: p,
           last_message: latestMessages[pid]?.body || '',
@@ -160,28 +205,33 @@ export default function MessagesScreen() {
       })
       .filter(Boolean) as Conversation[];
 
-    // Most recently interacted-with conversations first.
-    convos.sort((a, b) => new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime());
-    setConversations(convos);
+    finish(dmConvos);
   }
 
-  // Match conversations by partner name OR any message text in the thread.
+  // Match conversations by partner/group name, member names, OR message text.
   const q = searchQuery.trim().toLowerCase();
   const filtered = useMemo(() => {
     if (!q) return conversations;
-    return conversations.filter(c =>
-      (c.other_user.display_name || '').toLowerCase().includes(q) ||
-      (c.other_user.username || '').toLowerCase().includes(q) ||
-      c.bodies.some(b => !sharedPostId(b) && b.toLowerCase().includes(q)) ||
-      c.sharedCaptions.some(cap => cap.toLowerCase().includes(q))
-    );
-  }, [conversations, q]);
+    return conversations.filter(c => {
+      const bodyHit = c.bodies.some(b => !sharedPostId(b) && b.toLowerCase().includes(q))
+        || c.sharedCaptions.some(cap => cap.toLowerCase().includes(q));
+      if (c.kind === 'group') {
+        return groupTitle(c.members, currentUserId, c.title).toLowerCase().includes(q)
+          || c.members.some(m => (m.display_name || '').toLowerCase().includes(q) || (m.username || '').toLowerCase().includes(q))
+          || bodyHit;
+      }
+      return (c.other_user.display_name || '').toLowerCase().includes(q)
+        || (c.other_user.username || '').toLowerCase().includes(q)
+        || bodyHit;
+    });
+  }, [conversations, q, currentUserId]);
 
-  // Then narrow by the selected tab. Main = all; Friends = mutual follows; Followers
-  // = one-sided (they follow you, you don't follow back) so friends stay separate.
+  // Then narrow by the selected tab. Main = all (incl. groups); Friends = mutual
+  // follows; Followers = one-sided. Groups aren't a single relationship, so they
+  // only appear on Main.
   const tabFiltered = useMemo(() => {
-    if (tab === 'friends') return filtered.filter(c => friends.has(c.other_user.id));
-    if (tab === 'followers') return filtered.filter(c => followers.has(c.other_user.id) && !friends.has(c.other_user.id));
+    if (tab === 'friends') return filtered.filter(c => c.kind === 'dm' && friends.has(c.other_user.id));
+    if (tab === 'followers') return filtered.filter(c => c.kind === 'dm' && followers.has(c.other_user.id) && !friends.has(c.other_user.id));
     return filtered;
   }, [filtered, tab, friends, followers]);
 
@@ -198,7 +248,14 @@ export default function MessagesScreen() {
               <Ionicons name="chevron-back" size={26} color={colors.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{t('messages.title')}</Text>
-            <View style={styles.headerSpacer} />
+            <TouchableOpacity
+              style={styles.newGroupBtn}
+              onPress={() => router.push('/messages/new-group')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel={t('groups.newGroup')}
+            >
+              <Ionicons name="create-outline" size={24} color={colors.text} />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.searchRow}>
@@ -242,7 +299,14 @@ export default function MessagesScreen() {
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('messages.title')}</Text>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity
+          style={styles.newGroupBtn}
+          onPress={() => router.push('/messages/new-group')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel={t('groups.newGroup')}
+        >
+          <Ionicons name="create-outline" size={24} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
       {/* Search chats by username or message text */}
@@ -337,6 +401,52 @@ export default function MessagesScreen() {
           )
         }
         renderItem={({ item }) => {
+          // Group rows: clustered avatar, group name, and a "Sender: message" preview.
+          if (item.kind === 'group') {
+            const gUnread = item.unread > 0;
+            const gTitle = groupTitle(item.members, currentUserId, item.title);
+            const others = item.members.filter(m => m.id !== currentUserId);
+            const sender = item.last_sender_id ? item.members.find(m => m.id === item.last_sender_id) : null;
+            const senderName = item.last_sender_id === currentUserId
+              ? t('groups.preview.you')
+              : (sender?.display_name || sender?.username || '');
+            // A rename system line shows as its own clean preview (no "Sender:").
+            const renameEvt = parseRenameEvent(item.last_message);
+            const previewText = renameEvt !== null
+              ? (renameEvt ? t('groups.preview.renamedTo', { name: renameEvt }) : t('groups.preview.renamedCleared'))
+              : sharedPostId(item.last_message) ? t('messages.preview.sharedPost') : item.last_message;
+            const gPreview = renameEvt === null && senderName && previewText ? `${senderName}: ${previewText}` : previewText;
+            return (
+              <Pressable
+                style={({ pressed }) => [styles.conversationRow, pressed && styles.conversationRowPressed]}
+                onPress={() => router.push(`/messages/group/${item.id}`)}
+              >
+                <View style={styles.unreadGutter}>{gUnread ? <View style={styles.unreadDot} /> : null}</View>
+                <GroupAvatar avatarUrl={item.avatarUrl} members={others} size={56} />
+                <View style={styles.convInfo}>
+                  <View style={styles.convHeader}>
+                    <View style={styles.convNameRow}>
+                      <HighlightText
+                        text={gTitle}
+                        query={searchQuery}
+                        style={[styles.displayName, gUnread && styles.displayNameUnread]}
+                        highlightStyle={styles.highlight}
+                        numberOfLines={1}
+                      />
+                    </View>
+                    <Text style={[styles.timeText, gUnread && styles.timeUnread]}>{timeAgo(item.last_message_time)}</Text>
+                  </View>
+                  <HighlightText
+                    text={gPreview}
+                    query={searchQuery}
+                    style={[styles.lastMessage, gUnread && styles.lastMessageUnread]}
+                    highlightStyle={styles.highlight}
+                    numberOfLines={2}
+                  />
+                </View>
+              </Pressable>
+            );
+          }
           const unread = item.unread > 0;
           // When searching, surface whatever matched so the hit is visible:
           // a message body, then a shared-post caption, then (if only the handle
@@ -435,6 +545,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   backBtn: { width: 42, alignItems: 'flex-start', justifyContent: 'center', paddingVertical: SPACING.xs },
   headerSpacer: { width: 42 }, // matches the back button's footprint → title truly centered
+  newGroupBtn: { width: 42, alignItems: 'flex-end', justifyContent: 'center', paddingVertical: SPACING.xs },
   headerTitle: { color: colors.text, fontSize: 20, fontWeight: '800', letterSpacing: 0.2 },
 
   searchRow: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.sm + 4 },

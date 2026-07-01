@@ -31,6 +31,7 @@ import { useShare } from '../../contexts/ShareContext';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { isAudioPost } from '../../lib/genres';
 import { fetchBlockedIds } from '../../lib/blocks';
+import { countGroupUnread } from '../../lib/groups';
 import {
   fetchFeedSpotlights, mergeSpotlights, rankSpotlight,
   recordSpotlightImpression, recordSpotlightTap, type SpotlightMeta,
@@ -438,22 +439,43 @@ export default function HomeScreen() {
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${currentUserId}` },
         () => { setUnreadCount(prev => prev + 1); }
       )
+      // Recompute (rather than +1) so the badge counts CONVERSATIONS, not
+      // messages — a new message in an already-unread convo doesn't bump it.
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${currentUserId}` },
-        () => { setUnreadMessages(prev => prev + 1); }
+        () => { fetchUnreadMessages(currentUserId); }
+      )
+      // Group messages have a null receiver, so the filter above misses them.
+      // No filter here (RLS only delivers messages I can see); recompute for
+      // group messages from others (DMs have a null conversation_id).
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          const m = payload.new as { conversation_id?: string | null; sender_id?: string };
+          if (m.conversation_id && m.sender_id !== currentUserId) fetchUnreadMessages(currentUserId);
+        }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId]);
 
   // Refresh the unread-message badge and playlist count whenever the feed
   // regains focus (these change on other screens).
   const fetchUnreadMessages = useCallback(async (userId: string) => {
-    const { count } = await supabase
-      .from('messages')
-      .select('*', { count: 'exact', head: true })
-      .eq('receiver_id', userId).eq('read', false);
-    setUnreadMessages(count || 0);
+    // Count CONVERSATIONS with unread content, not individual messages: distinct
+    // DM senders with unread messages + group convos with unread content. So a
+    // convo with 100 new messages counts as 1, and opening it (which marks it
+    // read) clears its 1.
+    const [{ data: dmRows }, groupUnread] = await Promise.all([
+      supabase
+        .from('messages')
+        .select('sender_id')
+        .eq('receiver_id', userId).eq('read', false),
+      countGroupUnread(userId),
+    ]);
+    const dmConvos = new Set((dmRows ?? []).map((r: any) => r.sender_id)).size;
+    setUnreadMessages(dmConvos + groupUnread);
   }, []);
 
   const fetchPlaylistCount = useCallback(async (userId: string) => {

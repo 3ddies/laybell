@@ -118,7 +118,7 @@ export async function submitReport(postId: string, reason = 'other') {
 // The themed report sheet (contexts/ReportContext) registers its opener here, so
 // the imperative reportPost/reportUser callers (the 3-dot menu, the story viewer)
 // can stay unchanged while the UI is a real in-app sheet instead of an Alert.
-export type ReportRequest = { kind: 'post' | 'user'; targetId: string; onClose?: () => void };
+export type ReportRequest = { kind: 'post' | 'user' | 'conversation'; targetId: string; onClose?: () => void };
 let reportHandler: ((req: ReportRequest) => void) | null = null;
 export function setReportHandler(fn: ((req: ReportRequest) => void) | null) { reportHandler = fn; }
 
@@ -140,6 +140,28 @@ export async function submitUserReport(userId: string, reason = 'other') {
   await supabase.from('user_reports').insert({
     reported_id: userId, reporter_id: user?.id ?? null, reason,
   });
+}
+
+// Records a group-conversation report. Silently no-ops if conversation_reports
+// isn't migrated yet.
+export async function submitConversationReport(conversationId: string, reason = 'other') {
+  const { data: { user } } = await supabase.auth.getUser();
+  await supabase.from('conversation_reports').insert({
+    conversation_id: conversationId, reporter_id: user?.id ?? null, reason,
+  });
+}
+
+// Report a group chat through the themed report sheet (same UX as post/user).
+export function reportConversation(conversationId: string, onDone?: () => void) {
+  if (reportHandler) { reportHandler({ kind: 'conversation', targetId: conversationId, onClose: onDone }); return; }
+  Alert.alert(tg('chat.reportChatTitle'), tg('chat.reportChatBody'), [
+    { text: tg('common.cancel'), style: 'cancel', onPress: onDone },
+    { text: tg('chat.report'), style: 'destructive', onPress: async () => {
+      await submitConversationReport(conversationId, 'other');
+      onDone?.();
+      Alert.alert(tg('chat.reportThanksTitle'), tg('chat.reportThanksBody'));
+    } },
+  ]);
 }
 
 // `onDone` (optional) fires after Cancel or after the report completes — used by

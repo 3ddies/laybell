@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme, useThemedStyles } from './ThemeContext';
 import { useTranslation } from './LanguageContext';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
-import { submitReport, submitUserReport, setReportHandler, type ReportRequest } from '../lib/postActions';
+import { submitReport, submitUserReport, submitConversationReport, setReportHandler, type ReportRequest } from '../lib/postActions';
 
 // Themed in-app report sheet. Tapping Report opens a bottom sheet of quick
 // reasons; picking one opens a short, OPTIONAL "add details" step before filing,
@@ -116,6 +116,7 @@ export function ReportProvider({ children }: { children: React.ReactNode }) {
     const req = reqRef.current;
     if (!req) return;
     if (req.kind === 'post') submitReport(req.targetId, reason).catch(() => {});
+    else if (req.kind === 'conversation') submitConversationReport(req.targetId, reason).catch(() => {});
     else submitUserReport(req.targetId, reason).catch(() => {});
     setMode('done');
   }
@@ -136,7 +137,9 @@ export function ReportProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const isUser = reqRef.current?.kind === 'user';
+  const kind = reqRef.current?.kind;
+  const isUser = kind === 'user';
+  const listTitle = kind === 'user' ? t('report.titleUser') : kind === 'conversation' ? t('report.titleChat') : t('report.titlePost');
   const isOther = selected === 'other';
   const submitDisabled = isOther && !detail.trim();
 
@@ -212,7 +215,7 @@ export function ReportProvider({ children }: { children: React.ReactNode }) {
             </>
           ) : (
             <>
-              <Text style={styles.title}>{isUser ? t('report.titleUser') : t('report.titlePost')}</Text>
+              <Text style={styles.title}>{listTitle}</Text>
               <Text style={styles.subtitle}>{t('report.subtitle')}</Text>
               <ScrollView style={styles.list} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 {REASON_CODES.map((code) => (

@@ -33,3 +33,14 @@ export function tabTick(): void {
     /* haptics unavailable — ignore */
   }
 }
+
+// A soft "pop" for landing a message reaction — LIGHT impact, distinct from the
+// heavier tab tick. Same fire-and-forget contract: never awaited, never throws.
+export function reactionPop(): void {
+  try {
+    const h = load();
+    h?.impactAsync?.(h.ImpactFeedbackStyle?.Light)?.catch(() => {});
+  } catch {
+    /* haptics unavailable — ignore */
+  }
+}

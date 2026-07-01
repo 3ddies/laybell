@@ -54,8 +54,8 @@ const TABS = [
   { key: 'posts', label: 'Posts', icon: 'grid-outline' },
   { key: 'music', label: 'Music', icon: 'musical-notes-outline' },
   { key: 'videos', label: 'Videos', icon: 'videocam-outline' },
-  { key: 'reposts', label: 'Reposts', icon: 'repeat-outline' },
   { key: 'playlists', label: 'Playlists', icon: 'albums-outline' },
+  { key: 'reposts', label: 'Reposts', icon: 'repeat-outline' },
 ];
 const TAB_KEYS = TABS.map(t => t.key);
 const SCREEN_W = Dimensions.get('window').width;

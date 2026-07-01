@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -240,6 +240,11 @@ export default function MusicScreen() {
   })).current;
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const router = useRouter();
+  // Deep-link into a specific view (e.g. Saved screen's "Go to playlists").
+  const { view: initialView } = useLocalSearchParams<{ view?: string }>();
+  useEffect(() => {
+    if (initialView === 'playlists' || initialView === 'saved') setActiveView(initialView);
+  }, [initialView]);
 
   // ─── Search state ──────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');

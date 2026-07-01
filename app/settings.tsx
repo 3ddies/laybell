@@ -271,6 +271,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/playlists'),
     },
     {
+      icon: 'bookmark-outline',
+      label: t('account.saved'),
+      subtitle: t('account.savedSub'),
+      onPress: () => router.push('/saved'),
+    },
+    {
       icon: 'at-outline',
       label: t('account.tagged'),
       subtitle: t('account.taggedSub'),
