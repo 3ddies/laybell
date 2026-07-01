@@ -107,6 +107,11 @@ type PostCardProps = {
   videoMuted: boolean;
   songMuted: boolean;
   shouldPlayVideo: boolean;
+  // True only for the single on-screen video. We mount a real (expensive) video
+  // player ONLY for this card and show a static thumbnail for the rest — keeping
+  // one decoder alive instead of one per windowed card, which is what made
+  // scrolling past videos hitch/freeze.
+  isActiveVideo: boolean;
   onProfile: (item: Post) => void;
   onOptions: (item: Post) => void;
   onOpenPost: (item: Post, src?: SourceRect, index?: number) => void;
@@ -128,7 +133,7 @@ type PostCardProps = {
 // from HomeScreen are referentially stable, and `item` keeps its reference for
 // unchanged posts, so React.memo's shallow compare skips them.
 const PostCard = memo(function PostCard({
-  item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted, shouldPlayVideo,
+  item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted, shouldPlayVideo, isActiveVideo,
   onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive,
 }: PostCardProps) {
   const { colors } = useTheme();
@@ -242,18 +247,29 @@ const PostCard = memo(function PostCard({
             activeOpacity={1}
             onPress={() => vidRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenReel(item, { x, y, width: w, height: h }))}
           >
-            <AppVideo
-              source={{ uri: item.media_url }}
-              style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
-              contentFit="cover"
-              loop
-              muted={item.song_id ? true : videoMuted}
-              active={shouldPlayVideo}
-              // Feed watching counts toward views (muted autoplay included) —
-              // the tracker accumulates genuine watch time across surfaces and
-              // the server enforces the per-user/device caps.
-              onProgress={(pos, dur) => trackVideoProgress(item.id, pos, dur)}
-            />
+            {isActiveVideo ? (
+              <AppVideo
+                source={{ uri: item.media_url }}
+                style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
+                contentFit="cover"
+                loop
+                muted={item.song_id ? true : videoMuted}
+                active={shouldPlayVideo}
+                poster={item.thumbnail_url}
+                // Feed watching counts toward views (muted autoplay included) —
+                // the tracker accumulates genuine watch time across surfaces and
+                // the server enforces the per-user/device caps.
+                onProgress={(pos, dur) => trackVideoProgress(item.id, pos, dur)}
+              />
+            ) : (
+              // Off-screen video: a static thumbnail, no player — this is what
+              // keeps only ONE decoder alive so scrolling past videos stays smooth.
+              <Image
+                source={item.thumbnail_url ? { uri: item.thumbnail_url } : undefined}
+                style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
+                resizeMode="cover"
+              />
+            )}
           </TouchableOpacity>
           <TouchableOpacity style={styles.videoAudioBtn} onPress={item.song_id ? onToggleSongMute : onToggleMuted}>
             <Ionicons name={(item.song_id ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color={colors.text} />
@@ -828,6 +844,7 @@ export default function HomeScreen() {
           videoMuted={videoMuted}
           songMuted={songMuted}
           shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
+          isActiveVideo={visibleVideoId === item.id}
           onProfile={onProfile}
           onOptions={onOptions}
           onOpenPost={onOpenPost}
