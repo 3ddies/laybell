@@ -139,6 +139,15 @@ const PostCard = memo(function PostCard({
   const imgRef = useRef<any>(null);
   const vidRef = useRef<any>(null);
   const slideRef = useRef<any>(null);
+  // Simple like pop: a quick scale bounce on the heart when tapped.
+  const likeScale = useRef(new Animated.Value(1)).current;
+  const popLike = () => {
+    likeScale.setValue(1);
+    Animated.sequence([
+      Animated.timing(likeScale, { toValue: 1.3, duration: 110, useNativeDriver: true }),
+      Animated.spring(likeScale, { toValue: 1, friction: 3, useNativeDriver: true }),
+    ]).start();
+  };
 
   return (
     <View style={styles.postCard}>
@@ -285,12 +294,14 @@ const PostCard = memo(function PostCard({
 
       {/* Actions */}
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onLike(item)} activeOpacity={0.6} hitSlop={8}>
-          <Ionicons
-            name={isLiked ? 'heart' : 'heart-outline'}
-            size={23}
-            color={isLiked ? colors.like : colors.textSecondary}
-          />
+        <TouchableOpacity style={styles.actionBtn} onPress={() => { popLike(); onLike(item); }} activeOpacity={0.6} hitSlop={8}>
+          <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+            <Ionicons
+              name={isLiked ? 'heart' : 'heart-outline'}
+              size={23}
+              color={isLiked ? colors.like : colors.textSecondary}
+            />
+          </Animated.View>
           {likeCount > 0 && (
             <Text style={[styles.actionCount, isLiked && { color: colors.like }]}>{likeCount}</Text>
           )}

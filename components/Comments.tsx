@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl, Alert, Animated } from 'react-native';
 import { Fragment, useCallback, useEffect, useRef, useState, ReactElement } from 'react';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -62,7 +62,20 @@ export default function Comments({
   onPosted?: () => void;
 }) {
   const listRef = useRef<FlatList>(null);
+  const inputRef = useRef<TextInput>(null); // so tapping "Reply" can pop the keyboard
   const atTopRef = useRef(true); // list starts at the top; tracks top-edge crossings
+  // Simple like pop: only the last-tapped comment's heart scales (piggybacks on the
+  // re-render toggleLike already triggers, so it adds no extra renders).
+  const likeScale = useRef(new Animated.Value(1)).current;
+  const [poppedId, setPoppedId] = useState<string | null>(null);
+  const popLike = useCallback((id: string) => {
+    setPoppedId(id);
+    likeScale.setValue(1);
+    Animated.sequence([
+      Animated.timing(likeScale, { toValue: 1.35, duration: 110, useNativeDriver: true }),
+      Animated.spring(likeScale, { toValue: 1, friction: 3, useNativeDriver: true }),
+    ]).start();
+  }, [likeScale]);
   const router = useRouter();
   const { t } = useTranslation();
   const { profile: myProfile } = useProfile();
@@ -221,13 +234,15 @@ export default function Comments({
         <View style={styles.metaRow}>
           <TouchableOpacity
             style={styles.metaBtn}
-            onPress={() => toggleLike(item.id)}
+            onPress={() => { popLike(item.id); toggleLike(item.id); }}
             hitSlop={{ top: 6, bottom: 8, left: 8, right: 4 }}
           >
-            <Ionicons
-              name={likedByMe.has(item.id) ? 'heart' : 'heart-outline'}
-              size={16} color={likedByMe.has(item.id) ? colors.like : colors.textTertiary}
-            />
+            <Animated.View style={{ transform: [{ scale: poppedId === item.id ? likeScale : 1 }] }}>
+              <Ionicons
+                name={likedByMe.has(item.id) ? 'heart' : 'heart-outline'}
+                size={16} color={likedByMe.has(item.id) ? colors.like : colors.textTertiary}
+              />
+            </Animated.View>
             {(likes[item.id] || 0) > 0 && <Text style={styles.metaText}>{likes[item.id]}</Text>}
           </TouchableOpacity>
           <TouchableOpacity
@@ -242,6 +257,8 @@ export default function Comments({
               if (item.parent_id != null && item.profiles?.username) {
                 setText(prev => (prev.trim().length ? prev : `@${item.profiles.username} `));
               }
+              // Pop the keyboard so you can type the reply immediately.
+              inputRef.current?.focus();
             }}
             hitSlop={{ top: 6, bottom: 8, left: 4, right: 8 }}
           >
@@ -356,6 +373,7 @@ export default function Comments({
         />
         <View style={styles.inputBar}>
           <TextInput
+            ref={inputRef}
             style={styles.input}
             placeholder={replyTo ? t('comments.replyPlaceholder') : t('comments.addPlaceholder')}
             placeholderTextColor={colors.textTertiary}
