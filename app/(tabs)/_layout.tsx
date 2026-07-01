@@ -211,10 +211,15 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   // highlight by (1 - dragging), so the current tab goes dark during a drag and
   // only the hovered tab (driven by `hovers`) shows.
   const dragging = useRef(new Animated.Value(0)).current;
-  // True between a drag-release that navigated and the new page settling. We
-  // keep the dim + target highlight held until `position` reaches the new tab,
-  // otherwise the old tab flashes back while the pager is still mid-transition.
-  const releasingRef = useRef(false);
+  // A SINGLE, always-reset timer for the post-release "hold": keep the tapped tab
+  // lit until the pager slides onto it, then hand off to `near` (pager position).
+  // Every new interaction cancels the pending one, so spamming tabs can never
+  // leave a stale hold or a stuck `dragging` — which is what let the highlight
+  // desync from the displayed page. When the timer fires it fully resets, so the
+  // highlight always falls back to `near` = the page actually on screen.
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelHold = () => { if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; } };
+  useEffect(() => cancelHold, []); // clear on unmount
 
   // commit() needs the live route list / focused index / navigation, so it's
   // kept in a ref the render refreshes — the responder below reads it.
@@ -243,7 +248,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
       onPanResponderGrant: (e) => {
         const slot = slotFromX(e.nativeEvent.pageX);
         dragSlot.current = slot;
-        releasingRef.current = false; // a new grab cancels any pending release-fade
+        cancelHold(); // a new grab cancels any pending release-hold
         setDragging(1); // dim the current tab; only the hovered one lights up
         setHover(slot);
       },
@@ -258,17 +263,21 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
         const slot = slotFromX(e.nativeEvent.pageX);
         const jump = commitRef.current(slot);
         dragSlot.current = -1;
+        cancelHold(); // supersede any hold still pending from an earlier tap
         if (jump > 0) {
           // Navigated. Keep ONLY the target lit and the current tab dimmed until
           // the pager has actually slid onto the new tab — THEN drop the dim so
           // `near` (pager position) takes over with no flash back to the old tab.
           // The hold scales with the jump distance (a far jump animates longer);
           // holding a touch too long is invisible, dropping early is the glitch.
+          // ONE timer only (rescheduled on every tap) — the previous hold is always
+          // cancelled above, so `dragging`/`hover` can't get stuck out of sync.
           setHover(slot);
-          releasingRef.current = true;
           const holdMs = Math.min(320 + jump * 150, 1000);
-          setTimeout(() => {
-            if (releasingRef.current) { releasingRef.current = false; setDragging(0); clearHover(); }
+          holdTimerRef.current = setTimeout(() => {
+            holdTimerRef.current = null;
+            setDragging(0);
+            clearHover();
           }, holdMs);
         } else {
           // Released on the current tab — restore it immediately (position is
@@ -279,7 +288,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
       },
       onPanResponderTerminate: () => {
         dragSlot.current = -1;
-        releasingRef.current = false;
+        cancelHold();
         setDragging(0);
         clearHover();
       },
