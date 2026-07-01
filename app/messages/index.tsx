@@ -13,6 +13,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { sharedPostId, parseStoryReply } from '../../lib/postLinks';
+import { parseAttachment } from '../../lib/attachments';
 import { fetchBlockedIds } from '../../lib/blocks';
 import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import HighlightText from '../../components/HighlightText';
@@ -412,8 +413,10 @@ export default function MessagesScreen() {
               : (sender?.display_name || sender?.username || '');
             // A rename system line shows as its own clean preview (no "Sender:").
             const renameEvt = parseRenameEvent(item.last_message);
+            const gAtt = parseAttachment(item.last_message);
             const previewText = renameEvt !== null
               ? (renameEvt ? t('groups.preview.renamedTo', { name: renameEvt }) : t('groups.preview.renamedCleared'))
+              : gAtt ? (gAtt.type === 'gif' ? t('messages.preview.gif') : t('messages.preview.photo'))
               : sharedPostId(item.last_message) ? t('messages.preview.sharedPost') : item.last_message;
             const gPreview = renameEvt === null && senderName && previewText ? `${senderName}: ${previewText}` : previewText;
             return (
@@ -459,7 +462,8 @@ export default function MessagesScreen() {
             ? `@${item.other_user.username}` : null;
           const showShared = !matchMsg && !matchCaption && !usernamePreview && sharedPostId(item.last_message);
           const storyReply = !matchMsg && !matchCaption && !usernamePreview && parseStoryReply(item.last_message);
-          const preview = matchMsg ?? item.last_message;
+          const dmAtt = !matchMsg && !matchCaption && !usernamePreview && parseAttachment(item.last_message);
+          const preview = matchMsg ?? (dmAtt ? (dmAtt.type === 'gif' ? t('messages.preview.gif') : t('messages.preview.photo')) : item.last_message);
           return (
           <Pressable
             style={({ pressed }) => [styles.conversationRow, pressed && styles.conversationRowPressed]}

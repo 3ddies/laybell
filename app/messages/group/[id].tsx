@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput, Image,
   TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
-  Keyboard, Animated, Modal, Pressable,
+  Keyboard, Animated, Modal, Pressable, Alert,
 } from 'react-native';
 import { useEffect, useState, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -17,6 +17,10 @@ import { createNotification } from '../../../lib/createNotification';
 import { sharedPostId, internalPathFromUrl } from '../../../lib/postLinks';
 import { groupTitle, markGroupRead, renameGroup, renameEventBody, parseRenameEvent, type GroupProfile } from '../../../lib/groups';
 import { reportConversation } from '../../../lib/postActions';
+import { parseAttachment, attachmentBody, pickImageAttachment, type Attachment } from '../../../lib/attachments';
+import GifPickerModal from '../../../components/GifPickerModal';
+import AttachmentView from '../../../components/AttachmentView';
+import ImageViewerModal from '../../../components/ImageViewerModal';
 import { tabTick, reactionPop } from '../../../lib/haptics';
 import SharedPostCard from '../../../components/SharedPostCard';
 import GroupAvatar from '../../../components/GroupAvatar';
@@ -51,6 +55,10 @@ export default function GroupChatScreen() {
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [reactorsFor, setReactorsFor] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pendingAttachment, setPendingAttachment] = useState<Attachment | null>(null);
+  const [gifOpen, setGifOpen] = useState(false);
+  const [attaching, setAttaching] = useState(false);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -172,11 +180,22 @@ export default function GroupChatScreen() {
     setReactions(map);
   }
 
+  async function attachImage() {
+    if (!currentUserId || attaching) return;
+    setAttaching(true);
+    try {
+      const att = await pickImageAttachment(currentUserId);
+      if (att) setPendingAttachment(att);
+    } catch { Alert.alert(t('attach.uploadFailed')); }
+    setAttaching(false);
+  }
+
   async function sendMessage() {
-    if (!newMessage.trim() || !currentUserId || sending) return;
+    if ((!newMessage.trim() && !pendingAttachment) || !currentUserId || sending) return;
     setSending(true);
-    const body = newMessage.trim();
+    const body = pendingAttachment ? attachmentBody(pendingAttachment, newMessage.trim()) : newMessage.trim();
     setNewMessage('');
+    setPendingAttachment(null);
     const { data, error } = await supabase.from('messages')
       .insert({ sender_id: currentUserId, conversation_id: id, body })
       .select('id, body, sender_id, conversation_id, created_at').single();
@@ -370,6 +389,7 @@ export default function GroupChatScreen() {
             const firstOfRun = !prev || prevIsSystem || gap > RUN_GAP_MS || prev.sender_id !== item.sender_id;
             const sender = membersById[item.sender_id];
             const postId = sharedPostId(item.body);
+            const att = parseAttachment(item.body);
             const timeOpacity = getTimeOpacity(item.id);
             // Time sits OUTSIDE the bubble, vertically centered to its height.
             const sideTime = <Animated.Text style={[styles.msgTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>;
@@ -386,7 +406,20 @@ export default function GroupChatScreen() {
                   {/* Bubble + reactions stack, so the tapback anchors to the
                       bubble's inner-bottom corner (not the sender-name width). */}
                   <View style={isOwn ? styles.bubbleStackOwn : styles.bubbleStackOther}>
-                    {postId ? (
+                    {att ? (
+                      <TouchableOpacity activeOpacity={0.9} onPress={() => setViewerUrl(att.url)} onLongPress={() => openPicker(item.id)} delayLongPress={280}>
+                        <AttachmentView url={att.url} w={att.w} h={att.h} maxWidth={200} />
+                        {att.text ? (
+                          isOwn ? (
+                            <LinearGradient colors={bubbleBlue} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.bubble, styles.bubbleOwn, styles.attachCaption]}>
+                              {renderBody(att.text, true)}
+                            </LinearGradient>
+                          ) : (
+                            <View style={[styles.bubble, styles.bubbleOther, styles.attachCaption]}>{renderBody(att.text, false)}</View>
+                          )
+                        ) : null}
+                      </TouchableOpacity>
+                    ) : postId ? (
                       <TouchableOpacity activeOpacity={0.9} onPress={() => showTap(item.id)} onLongPress={() => openPicker(item.id)} delayLongPress={280}>
                         <SharedPostCard postId={postId} />
                       </TouchableOpacity>
@@ -412,7 +445,23 @@ export default function GroupChatScreen() {
       </KeyboardAvoidingView>
 
       <Animated.View style={[styles.inputBarWrap, { transform: [{ translateY: kbShift }] }]}>
+        {pendingAttachment && (
+          <View style={styles.attachPreviewRow}>
+            <View>
+              <AttachmentView url={pendingAttachment.url} w={pendingAttachment.w} h={pendingAttachment.h} maxWidth={110} radius={12} />
+              <TouchableOpacity style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}>
+                <Ionicons name="close-circle" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
         <View style={[styles.inputBar, { paddingBottom: kbUp ? SPACING.sm + 2 : Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}>
+          <TouchableOpacity style={styles.attachBtn} onPress={attachImage} disabled={attaching} activeOpacity={0.7}>
+            {attaching ? <ActivityIndicator size="small" color={colors.textSecondary} /> : <Ionicons name="image-outline" size={24} color={colors.textSecondary} />}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.gifBtn} onPress={() => setGifOpen(true)} activeOpacity={0.7}>
+            <Text style={styles.gifBtnText}>GIF</Text>
+          </TouchableOpacity>
           <TextInput
             style={[styles.input, { backgroundColor: inputFill, borderColor: inputBorder }]}
             placeholder={t('messages.inputPlaceholder')}
@@ -422,13 +471,16 @@ export default function GroupChatScreen() {
             multiline
             maxLength={500}
           />
-          <TouchableOpacity activeOpacity={0.85} onPress={sendMessage} disabled={!newMessage.trim() || sending} style={!newMessage.trim() && styles.sendBtnDisabled}>
+          <TouchableOpacity activeOpacity={0.85} onPress={sendMessage} disabled={(!newMessage.trim() && !pendingAttachment) || sending} style={(!newMessage.trim() && !pendingAttachment) && styles.sendBtnDisabled}>
             <View style={[styles.sendBtn, { backgroundColor: colors.text }]}>
               {sending ? <ActivityIndicator color={colors.background} size="small" /> : <Ionicons name="arrow-up" size={20} color={colors.background} />}
             </View>
           </TouchableOpacity>
         </View>
       </Animated.View>
+
+      <GifPickerModal visible={gifOpen} userId={currentUserId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h })} />
+      <ImageViewerModal url={viewerUrl} onClose={() => setViewerUrl(null)} />
 
       {/* Reaction picker */}
       <Modal visible={pickerFor !== null} transparent animationType="fade" onRequestClose={() => setPickerFor(null)}>
@@ -631,8 +683,18 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
   emptyText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center' },
 
+  attachCaption: { marginTop: 4 },
+  attachPreviewRow: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingBottom: SPACING.xs },
+  attachRemove: { position: 'absolute', top: -6, right: -6, backgroundColor: colors.background, borderRadius: RADIUS.full },
+  attachBtn: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
+  gifBtn: {
+    height: 44, paddingHorizontal: 8, borderRadius: RADIUS.md,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.textSecondary,
+  },
+  gifBtnText: { color: colors.textSecondary, fontSize: 12, fontWeight: '900', letterSpacing: 0.3 },
+
   inputBarWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-  inputBar: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: SPACING.md, paddingTop: SPACING.sm + 2, gap: SPACING.sm },
+  inputBar: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: SPACING.md, paddingTop: SPACING.sm + 2, gap: SPACING.xs },
   input: {
     flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, minHeight: 44,
     paddingHorizontal: SPACING.md + 2, paddingVertical: 11, color: colors.text, fontSize: 17, lineHeight: 22, maxHeight: 120,

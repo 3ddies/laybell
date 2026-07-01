@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl, Alert, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl, Alert, Animated, Keyboard } from 'react-native';
 import { Fragment, useCallback, useEffect, useRef, useState, ReactElement } from 'react';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,6 +20,10 @@ import { maskHiddenProfile } from '../lib/hiddenProfile';
 import MentionSuggestions from './MentionSuggestions';
 import MentionText from './MentionText';
 import TranslatableText from './TranslatableText';
+import GifPickerModal from './GifPickerModal';
+import AttachmentView from './AttachmentView';
+import ImageViewerModal from './ImageViewerModal';
+import { parseAttachment, attachmentBody, pickImageAttachment, type Attachment } from '../lib/attachments';
 
 type Row = {
   id: string; body: string; created_at: string; user_id: string;
@@ -98,6 +102,11 @@ export default function Comments({
   const [sending, setSending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
+  // Staged image/GIF attachment + GIF picker for comments.
+  const [pendingAttachment, setPendingAttachment] = useState<Attachment | null>(null);
+  const [gifOpen, setGifOpen] = useState(false);
+  const [attaching, setAttaching] = useState(false);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -174,28 +183,51 @@ export default function Comments({
     }
   }
 
+  async function attachImage() {
+    if (!userId || attaching) return;
+    setAttaching(true);
+    try {
+      const att = await pickImageAttachment(userId);
+      if (att) setPendingAttachment(att);
+    } catch { Alert.alert(t('attach.uploadFailed')); }
+    setAttaching(false);
+  }
+
   async function submit() {
-    if (!text.trim() || !userId || sending) return;
+    if ((!text.trim() && !pendingAttachment) || !userId || sending) return;
     // Hidden accounts browse/listen only — no commenting while invisible.
     if ((myProfile as any)?.hidden) {
       Alert.alert(t('comments.hiddenTitle'), t('comments.hiddenBody'));
       return;
     }
     setSending(true);
-    const body = text.trim();
+    const caption = text.trim();
+    const pending = pendingAttachment;
+    // An attachment carries its caption in the body marker; mentions still run
+    // over the human-typed caption only.
+    const body = pending ? attachmentBody(pending, caption) : caption;
     const parent_id = replyTo?.id ?? null;
     setText('');
     setReplyTo(null);
+    setPendingAttachment(null);
     const { data, error } = await supabase
       .from('comments').insert({ user_id: userId, post_id: postId, body, parent_id }).select().single();
-    if (!error && data) {
-      bumpBadge('comments');
-      onPosted?.();
-      setRows(prev => [...prev, { ...(data as any), profiles: myProfile ?? userProfile }]);
-      if (!parent_id) setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-      if (ownerId && ownerId !== userId) createNotification({ userId: ownerId, actorId: userId, type: 'comment', postId });
-      processMentions({ text: body, actorId: userId, postId, commentId: (data as any).id });
+    if (error || !data) {
+      // Restore the draft so nothing is lost, and surface the failure instead of
+      // dropping the comment silently.
+      setText(caption);
+      setPendingAttachment(pending);
+      if (parent_id) setReplyTo(replyTo);
+      Alert.alert(t('comments.postFailedTitle'), error?.message || t('comments.postFailedBody'));
+      setSending(false);
+      return;
     }
+    bumpBadge('comments');
+    onPosted?.();
+    setRows(prev => [...prev, { ...(data as any), profiles: myProfile ?? userProfile }]);
+    if (!parent_id) setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    if (ownerId && ownerId !== userId) createNotification({ userId: ownerId, actorId: userId, type: 'comment', postId });
+    if (caption) processMentions({ text: caption, actorId: userId, postId, commentId: (data as any).id });
     setSending(false);
   }
 
@@ -221,7 +253,7 @@ export default function Comments({
         onBeforeOpenStory={onNavigate}
       />
       <View style={styles.body}>
-        <TouchableOpacity activeOpacity={1} onLongPress={() => remove(item.id, item.user_id)}>
+        <TouchableOpacity activeOpacity={1} onPress={() => Keyboard.dismiss()} onLongPress={() => remove(item.id, item.user_id)}>
           <View style={styles.head}>
             <TouchableOpacity onPress={() => goToProfile(item.user_id)}>
               <Text style={styles.name}>{item.profiles?.display_name}</Text>
@@ -229,7 +261,16 @@ export default function Comments({
             <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={12} />
             <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
           </View>
-          <TranslatableText text={item.body} render={(s) => <MentionText style={styles.text} text={s} onBeforeNavigate={onNavigate} />} />
+          {(() => {
+            const att = parseAttachment(item.body);
+            if (att) return (
+              <View style={styles.commentAttach}>
+                <AttachmentView url={att.url} w={att.w} h={att.h} maxWidth={132} radius={12} onPress={() => setViewerUrl(att.url)} />
+                {att.text ? <MentionText style={styles.text} text={att.text} onBeforeNavigate={onNavigate} /> : null}
+              </View>
+            );
+            return <TranslatableText text={item.body} render={(s) => <MentionText style={styles.text} text={s} onBeforeNavigate={onNavigate} />} />;
+          })()}
         </TouchableOpacity>
         <View style={styles.metaRow}>
           <TouchableOpacity
@@ -278,6 +319,7 @@ export default function Comments({
         data={topLevel}
         keyExtractor={c => c.id}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         // With only a few comments (≤3), a scroll likely just runs to the bottom by
         // accident — don't treat that as engagement that holds the song open. Liking,
         // typing and replying still count regardless (they're deliberate).
@@ -371,7 +413,23 @@ export default function Comments({
           style={{ marginBottom: SPACING.xs }}
           maxHeight={180}
         />
+        {pendingAttachment && (
+          <View style={styles.attachPreviewRow}>
+            <View>
+              <AttachmentView url={pendingAttachment.url} w={pendingAttachment.w} h={pendingAttachment.h} maxWidth={96} radius={10} />
+              <TouchableOpacity style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}>
+                <Ionicons name="close-circle" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
         <View style={styles.inputBar}>
+          <TouchableOpacity style={styles.attachBtn} onPress={attachImage} disabled={attaching} activeOpacity={0.7}>
+            {attaching ? <ActivityIndicator size="small" color={colors.textTertiary} /> : <Ionicons name="image-outline" size={22} color={colors.textTertiary} />}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.gifBtn} onPress={() => setGifOpen(true)} activeOpacity={0.7}>
+            <Text style={styles.gifBtnText}>GIF</Text>
+          </TouchableOpacity>
           <TextInput
             ref={inputRef}
             style={styles.input}
@@ -382,11 +440,14 @@ export default function Comments({
             onBlur={() => setInputFocused(false)}
             multiline maxLength={300}
           />
-          <TouchableOpacity style={[styles.sendBtn, !text.trim() && styles.sendDisabled]} onPress={submit} disabled={!text.trim() || sending}>
+          <TouchableOpacity style={[styles.sendBtn, (!text.trim() && !pendingAttachment) && styles.sendDisabled]} onPress={submit} disabled={(!text.trim() && !pendingAttachment) || sending}>
             {sending ? <ActivityIndicator color={colors.text} size="small" /> : <Ionicons name="arrow-up" size={20} color={colors.text} />}
           </TouchableOpacity>
         </View>
       </View>
+
+      <GifPickerModal visible={gifOpen} userId={userId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h })} />
+      <ImageViewerModal url={viewerUrl} onClose={() => setViewerUrl(null)} />
     </View>
   );
 }
@@ -443,7 +504,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   replyingText: { flex: 1, color: colors.textSecondary, fontSize: 12.5 },
   replyingName: { color: colors.primary, fontWeight: '700' },
-  inputBar: { flexDirection: 'row', alignItems: 'flex-end', gap: SPACING.sm, paddingTop: SPACING.sm + 2, paddingBottom: SPACING.md },
+  inputBar: { flexDirection: 'row', alignItems: 'flex-end', gap: SPACING.xs, paddingTop: SPACING.sm + 2, paddingBottom: SPACING.md },
+  commentAttach: { marginTop: 4, gap: 4 },
+  attachPreviewRow: { flexDirection: 'row', paddingTop: SPACING.sm },
+  attachRemove: { position: 'absolute', top: -5, right: -5, backgroundColor: colors.background, borderRadius: RADIUS.full },
+  attachBtn: { width: 36, height: 44, alignItems: 'center', justifyContent: 'center' },
+  gifBtn: {
+    height: 44, paddingHorizontal: 7, borderRadius: RADIUS.sm,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.textTertiary,
+  },
+  gifBtnText: { color: colors.textTertiary, fontSize: 11, fontWeight: '900', letterSpacing: 0.3 },
   input: {
     flex: 1, backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: 22, paddingHorizontal: SPACING.md + 2, paddingVertical: 11, minHeight: 44,

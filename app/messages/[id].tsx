@@ -16,6 +16,10 @@ import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { scanText } from '../../lib/linkSafety';
 import { createNotification } from '../../lib/createNotification';
 import { reportUser } from '../../lib/postActions';
+import { parseAttachment, attachmentBody, pickImageAttachment, type Attachment } from '../../lib/attachments';
+import GifPickerModal from '../../components/GifPickerModal';
+import AttachmentView from '../../components/AttachmentView';
+import ImageViewerModal from '../../components/ImageViewerModal';
 import { useProfile } from '../../contexts/ProfileContext';
 import { sharedPostId, internalPathFromUrl, parseStoryReply, type StoryReplyRef } from '../../lib/postLinks';
 import { maskHiddenProfile } from '../../lib/hiddenProfile';
@@ -71,6 +75,11 @@ export default function ChatScreen() {
   const [reactorsFor, setReactorsFor] = useState<string | null>(null);
   // Header 3-dot chat-options menu (report, and room for more later).
   const [menuOpen, setMenuOpen] = useState(false);
+  // Staged image/GIF attachment (sent with the next message) + GIF picker.
+  const [pendingAttachment, setPendingAttachment] = useState<Attachment | null>(null);
+  const [gifOpen, setGifOpen] = useState(false);
+  const [attaching, setAttaching] = useState(false);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -263,8 +272,19 @@ export default function ChatScreen() {
     );
   }
 
+  // Pick an image/GIF from the library and stage it as the next message's attachment.
+  async function attachImage() {
+    if (!currentUserId || attaching) return;
+    setAttaching(true);
+    try {
+      const att = await pickImageAttachment(currentUserId);
+      if (att) setPendingAttachment(att);
+    } catch { Alert.alert(t('attach.uploadFailed')); }
+    setAttaching(false);
+  }
+
   async function sendMessage() {
-    if (!newMessage.trim() || !currentUserId || sending) return;
+    if ((!newMessage.trim() && !pendingAttachment) || !currentUserId || sending) return;
     // Hidden accounts browse/listen only — no DMs while invisible.
     if ((myProfile as any)?.hidden) {
       Alert.alert(t('messages.hiddenTitle'), t('messages.hiddenBody'));
@@ -279,8 +299,10 @@ export default function ChatScreen() {
       return;
     }
     setSending(true);
-    const body = newMessage.trim();
+    // An attachment carries an optional caption; otherwise it's plain text.
+    const body = pendingAttachment ? attachmentBody(pendingAttachment, newMessage.trim()) : newMessage.trim();
     setNewMessage('');
+    setPendingAttachment(null);
     const { data, error } = await supabase.from('messages')
       .insert({ sender_id: currentUserId, receiver_id: id, body })
       .select().single();
@@ -448,6 +470,30 @@ export default function ChatScreen() {
               </View>
             );
           }
+          const att = parseAttachment(item.body);
+          // An image/GIF attachment: the media, then an optional caption bubble.
+          if (att) {
+            return (
+              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
+                <TouchableOpacity activeOpacity={0.9} onPress={() => setViewerUrl(att.url)} onLongPress={() => openPicker(item.id)} delayLongPress={280}>
+                  <AttachmentView url={att.url} w={att.w} h={att.h} />
+                </TouchableOpacity>
+                {att.text ? (
+                  isOwn ? (
+                    <LinearGradient colors={bubbleBlue} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.bubble, styles.bubbleOwn, styles.attachCaption]}>
+                      <TranslatableText text={att.text} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: 'rgba(255,255,255,0.85)' }} />
+                    </LinearGradient>
+                  ) : (
+                    <View style={[styles.bubble, styles.bubbleOther, styles.attachCaption]}>
+                      <TranslatableText text={att.text} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: colors.textSecondary }} />
+                    </View>
+                  )
+                ) : null}
+                <Animated.Text style={[styles.cardTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>
+                {renderReactions(item.id, isOwn)}
+              </View>
+            );
+          }
           const postId = sharedPostId(item.body);
           // A shared post renders as a standalone preview card (no chat bubble).
           if (postId) {
@@ -494,11 +540,27 @@ export default function ChatScreen() {
       </KeyboardAvoidingView>
 
       <Animated.View style={[styles.inputBarWrap, { transform: [{ translateY: kbShift }] }]}>
+      {pendingAttachment && (
+        <View style={styles.attachPreviewRow}>
+          <View>
+            <AttachmentView url={pendingAttachment.url} w={pendingAttachment.w} h={pendingAttachment.h} maxWidth={110} radius={12} />
+            <TouchableOpacity style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}>
+              <Ionicons name="close-circle" size={22} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
       <View
         // No solid bar — just the floating input pill + send circle over the
         // messages, for a cleaner look.
         style={[styles.inputBar, { paddingBottom: kbUp ? SPACING.sm + 2 : Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}
       >
+        <TouchableOpacity style={styles.attachBtn} onPress={attachImage} disabled={attaching} activeOpacity={0.7}>
+          {attaching ? <ActivityIndicator size="small" color={colors.textSecondary} /> : <Ionicons name="image-outline" size={24} color={colors.textSecondary} />}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.gifBtn} onPress={() => setGifOpen(true)} activeOpacity={0.7}>
+          <Text style={styles.gifBtnText}>GIF</Text>
+        </TouchableOpacity>
         <TextInput
           style={[styles.input, { backgroundColor: inputFill, borderColor: inputBorder }]}
           placeholder={t('messages.inputPlaceholder')}
@@ -511,8 +573,8 @@ export default function ChatScreen() {
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={sendMessage}
-          disabled={!newMessage.trim() || sending}
-          style={!newMessage.trim() && styles.sendBtnDisabled}
+          disabled={(!newMessage.trim() && !pendingAttachment) || sending}
+          style={(!newMessage.trim() && !pendingAttachment) && styles.sendBtnDisabled}
         >
           <View style={[styles.sendBtn, { backgroundColor: colors.text }]}>
             {sending
@@ -523,6 +585,9 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
       </Animated.View>
+
+      <GifPickerModal visible={gifOpen} userId={currentUserId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h })} />
+      <ImageViewerModal url={viewerUrl} onClose={() => setViewerUrl(null)} />
 
       {/* Reaction picker — a floating tapback pill over a dimmed backdrop. */}
       <Modal visible={pickerFor !== null} transparent animationType="fade" onRequestClose={() => setPickerFor(null)}>
@@ -721,13 +786,26 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   storyReplyThumbEmpty: { alignItems: 'center', justifyContent: 'center' },
   storyReplyBubble: { marginTop: 6 },
+  attachCaption: { marginTop: 4 },
+
+  // Staged attachment preview above the compose bar.
+  attachPreviewRow: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingBottom: SPACING.xs },
+  attachRemove: { position: 'absolute', top: -6, right: -6, backgroundColor: colors.background, borderRadius: RADIUS.full },
+  // Image + GIF buttons on the compose bar.
+  attachBtn: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
+  gifBtn: {
+    height: 44, paddingHorizontal: 8, borderRadius: RADIUS.md,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: colors.textSecondary,
+  },
+  gifBtnText: { color: colors.textSecondary, fontSize: 12, fontWeight: '900', letterSpacing: 0.3 },
 
   // Floating frosted-glass bar (iOS-style): messages scroll under the blur.
   // The Animated wrapper owns the absolute position + keyboard slide.
   inputBarWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end',
-    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm + 2, gap: SPACING.sm,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm + 2, gap: SPACING.xs,
   },
   // Solid rounded pill so it reads cleanly floating over the messages (no bar).
   input: {
