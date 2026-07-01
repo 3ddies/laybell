@@ -460,12 +460,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: RADIUS.full, padding: 3, gap: 3,
   },
   tab: { flex: 1, paddingVertical: 9, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  // Neutral raised "selected segment" (iOS-style), themed so the active pill +
-  // its text stay legible on light backgrounds (was a hardcoded near-black that
-  // went black-on-black in white mode).
-  tabActive: { backgroundColor: colors.surfaceElevated, borderWidth: 0.5, borderColor: colors.border, ...SHADOWS.sm },
+  // Selected segment: a high-contrast pill — white with black text in dark/grey,
+  // black with white text in light (colors.text fill + colors.background text).
+  tabActive: { backgroundColor: colors.text, ...SHADOWS.sm },
   tabText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
-  tabTextActive: { color: colors.text, fontWeight: '700' },
+  tabTextActive: { color: colors.background, fontWeight: '700' },
   searchClear: { padding: 2 },
   // Search match highlight (in usernames and message previews).
   highlight: { color: colors.primary, fontWeight: '800' },

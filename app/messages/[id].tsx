@@ -7,6 +7,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
@@ -25,6 +26,9 @@ import { ChatThreadSkeleton } from '../../components/Skeleton';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 
+// How far the messages slide left to reveal per-row timestamps on a left-drag.
+const TIME_W = 64;
+
 export default function ChatScreen() {
   const { colors, mode } = useTheme();
   const { t } = useTranslation();
@@ -41,6 +45,17 @@ export default function ChatScreen() {
   const inputBorder = light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.14)';
   // iMessage-style blue for the user's own (sent) bubbles.
   const bubbleBlue = ['#1FA0FF', '#0A7CFF'] as const;
+  // Swipe-left to reveal timestamps (iMessage-style). All rows share this value,
+  // clamped so they slide at most TIME_W; released → spring back to 0.
+  const dragX = useRef(new Animated.Value(0)).current;
+  const revealX = dragX.interpolate({ inputRange: [-TIME_W, 0], outputRange: [-TIME_W, 0], extrapolate: 'clamp' });
+  const onTimePan = useRef(Animated.event([{ nativeEvent: { translationX: dragX } }], { useNativeDriver: true })).current;
+  const onTimePanState = (e: any) => {
+    const s = e.nativeEvent.state;
+    if (s === State.END || s === State.CANCELLED || s === State.FAILED) {
+      Animated.spring(dragX, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 20 }).start();
+    }
+  };
   const flatListRef = useRef<FlatList>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -187,7 +202,7 @@ export default function ChatScreen() {
 
   // Render a message body with any URLs as tappable links. Laybell post links
   // show as a friendly "View post" instead of the raw URL.
-  function renderBody(body: string, isOwn: boolean, time: string) {
+  function renderBody(body: string, isOwn: boolean) {
     const parts = body.split(/(laybell:\/\/\S+|https?:\/\/\S+)/g);
     return (
       <Text style={[styles.bubbleText, isOwn && styles.bubbleTextOwn]}>
@@ -208,9 +223,6 @@ export default function ChatScreen() {
           }
           return part;
         })}
-        {/* Time flows inline after the text, hugging the trailing edge — no
-            cramped second line. The spacer keeps it off the last word. */}
-        <Text style={[styles.inlineTime, !isOwn && styles.inlineTimeOther]}>{`   ${time}`}</Text>
       </Text>
     );
   }
@@ -256,6 +268,16 @@ export default function ChatScreen() {
           this KAV and slides itself (kbShift) — so the KAV's padding can't also
           shove the absolute bar, which is what made the pill vanish while typing. */}
       <KeyboardAvoidingView style={styles.chatBody} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* Left-drag reveals timestamps. activeOffsetX only catches leftward drags
+          and failOffsetY yields to vertical scroll, so the list still scrolls
+          normally. */}
+      <PanGestureHandler
+        onGestureEvent={onTimePan}
+        onHandlerStateChange={onTimePanState}
+        activeOffsetX={[-20, 100000]}
+        failOffsetY={[-14, 14]}
+      >
+      <View style={styles.chatBody}>
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -271,8 +293,10 @@ export default function ChatScreen() {
           const isOwn = item.sender_id === currentUserId;
           // A story reply renders as its stillshot + the text underneath.
           const storyRef = parseStoryReply(item.body);
+          const postId = storyRef ? null : sharedPostId(item.body);
+          let inner;
           if (storyRef) {
-            return (
+            inner = (
               <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
                 <Text style={styles.storyReplyLabel}>
                   {isOwn ? t('messages.youRepliedStory') : t('messages.repliedYourStory')}
@@ -294,49 +318,57 @@ export default function ChatScreen() {
                       end={{ x: 1, y: 1 }}
                       style={[styles.bubble, styles.bubbleOwn, styles.storyReplyBubble]}
                     >
-                      <TranslatableText text={storyRef.text} render={(s) => renderBody(s, isOwn, formatTime(item.created_at))} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
+                      <TranslatableText text={storyRef.text} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
                     </LinearGradient>
                   ) : (
                     <View style={[styles.bubble, styles.bubbleOther, styles.storyReplyBubble]}>
-                      <TranslatableText text={storyRef.text} render={(s) => renderBody(s, isOwn, formatTime(item.created_at))} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
+                      <TranslatableText text={storyRef.text} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
                     </View>
                   )
+                ) : null}
+              </View>
+            );
+          } else if (postId) {
+            // A shared post renders as a standalone preview card (no chat bubble).
+            inner = (
+              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
+                <SharedPostCard postId={postId} />
+              </View>
+            );
+          } else {
+            inner = (
+              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
+                {isOwn ? (
+                  <LinearGradient
+                    colors={bubbleBlue}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.bubble, styles.bubbleOwn]}
+                  >
+                    <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
+                  </LinearGradient>
                 ) : (
-                  <Text style={styles.cardTime}>{formatTime(item.created_at)}</Text>
+                  <View style={[styles.bubble, styles.bubbleOther]}>
+                    <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
+                  </View>
                 )}
               </View>
             );
           }
-          const postId = sharedPostId(item.body);
-          // A shared post renders as a standalone preview card (no chat bubble).
-          if (postId) {
-            return (
-              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
-                <SharedPostCard postId={postId} />
-                <Text style={styles.cardTime}>{formatTime(item.created_at)}</Text>
-              </View>
-            );
-          }
+          // Slide the row left with the shared drag; the timestamp sits just off
+          // the right edge and glides into view. Released → springs back hidden.
           return (
-            <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
-              {isOwn ? (
-                <LinearGradient
-                  colors={bubbleBlue}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.bubble, styles.bubbleOwn]}
-                >
-                  <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn, formatTime(item.created_at))} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
-                </LinearGradient>
-              ) : (
-                <View style={[styles.bubble, styles.bubbleOther]}>
-                  <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn, formatTime(item.created_at))} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
-                </View>
-              )}
-            </View>
+            <Animated.View style={{ transform: [{ translateX: revealX }] }}>
+              {inner}
+              <View style={styles.dragTime} pointerEvents="none">
+                <Text style={styles.dragTimeText}>{formatTime(item.created_at)}</Text>
+              </View>
+            </Animated.View>
           );
         }}
       />
+      </View>
+      </PanGestureHandler>
       </KeyboardAvoidingView>
 
       <Animated.View style={[styles.inputBarWrap, { transform: [{ translateY: kbShift }] }]}>
@@ -426,10 +458,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   link: { textDecorationLine: 'underline', fontWeight: '700' },
   linkOwn: { color: '#fff' },
   linkOther: { color: colors.primaryLight },
-  // Inline trailing timestamp — small + faded, baseline-flows after the message.
-  inlineTime: { fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
-  inlineTimeOther: { color: colors.textTertiary },
-  cardTime: { fontSize: 10, color: colors.textTertiary, marginTop: 3 },
+  // Swipe-to-reveal timestamp: parked just off the right edge (revealed as the
+  // row slides left), vertically centered on the row.
+  dragTime: {
+    position: 'absolute', right: -TIME_W, top: 0, bottom: 0, width: TIME_W,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  dragTimeText: { fontSize: 11, color: colors.textTertiary, fontWeight: '500' },
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
   emptyText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center' },
