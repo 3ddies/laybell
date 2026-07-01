@@ -7,7 +7,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import { PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
@@ -241,7 +241,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
@@ -401,7 +401,7 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
       </Animated.View>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -458,10 +458,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   link: { textDecorationLine: 'underline', fontWeight: '700' },
   linkOwn: { color: '#fff' },
   linkOther: { color: colors.primaryLight },
-  // Swipe-to-reveal timestamp: parked just off the right edge (revealed as the
-  // row slides left), vertically centered on the row.
+  // Swipe-to-reveal timestamp: parked fully OFF the screen's right edge (the row
+  // sits SPACING.md inside due to list padding, so offset by that too), revealed
+  // as the row slides left. Vertically centered on the row.
   dragTime: {
-    position: 'absolute', right: -TIME_W, top: 0, bottom: 0, width: TIME_W,
+    position: 'absolute', right: -(TIME_W + SPACING.md), top: 0, bottom: 0, width: TIME_W,
     alignItems: 'center', justifyContent: 'center',
   },
   dragTimeText: { fontSize: 11, color: colors.textTertiary, fontWeight: '500' },
