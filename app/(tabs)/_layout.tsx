@@ -53,13 +53,13 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
 // animated rather than just stateful. `r` is the slot's index in the FULL route
 // list (so it lines up with `position`, which counts the hidden camera as 0).
 function TabSlot({
-  route, r, hover, dragging, activeIndex, profile, colors, styles, postCircleColor,
+  route, r, hover, dragging, position, profile, colors, styles, postCircleColor,
 }: {
   route: MaterialTopTabBarProps['state']['routes'][number];
   r: number;
   hover: Animated.Value;
   dragging: Animated.Value;
-  activeIndex: Animated.Value;
+  position: MaterialTopTabBarProps['position'];
   profile: ReturnType<typeof useProfile>['profile'];
   colors: ThemePalette;
   styles: ReturnType<typeof makeStyles>;
@@ -73,7 +73,7 @@ function TabSlot({
   // While a bar drag is in progress (`dragging`→1) the pager-driven `near`
   // highlight is suppressed, so the tab you're ON goes dark and ONLY the tab
   // tracking your finger lights up.
-  const near = activeIndex.interpolate({ inputRange: [r - 1, r, r + 1], outputRange: [0, 1, 0], extrapolate: 'clamp' });
+  const near = position.interpolate({ inputRange: [r - 1, r, r + 1], outputRange: [0, 1, 0], extrapolate: 'clamp' });
   const active = Animated.add(Animated.multiply(near, Animated.subtract(1, dragging)), hover);
   const scale = active.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16], extrapolate: 'clamp' });
   const lift = active.interpolate({ inputRange: [0, 1], outputRange: [0, -4], extrapolate: 'clamp' });
@@ -147,18 +147,6 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { listenMode } = useListenMode();
-
-  // Highlight anchor. The lit tab follows the COMMITTED focused route
-  // (state.index), gliding to it on every change — NOT the raw pager `position`,
-  // which can lag behind state.index when tabs are TAPPED rapidly (each tap fires
-  // navigate() faster than the pager settles), leaving the highlight on the wrong
-  // tab. Swipes/drags move the pager by gesture and stay in sync, so this only
-  // changes where the tap highlight settles. Kept intentionally minimal (one value
-  // + one timing) so it can't regress performance.
-  const activeIndex = useRef(new Animated.Value(state.index)).current;
-  useEffect(() => {
-    Animated.timing(activeIndex, { toValue: state.index, duration: HANDOFF_MS, useNativeDriver: true }).start();
-  }, [state.index, activeIndex]);
 
   // True iOS tab-bar look: the native "chrome material" blur — the exact frosted
   // translucency UIKit uses for bars — with NO heavy tint on top, so the material
@@ -346,7 +334,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
             r={index}
             hover={hovers[slot]}
             dragging={dragging}
-            activeIndex={activeIndex}
+            position={position}
             profile={profile}
             colors={colors}
             styles={styles}
