@@ -284,6 +284,10 @@ export default function ChatScreen() {
         ref={flatListRef}
         data={messages}
         keyExtractor={item => item.id}
+        // renderItem reads `tappedId` (which time to reveal). It's outside `data`,
+        // so FlatList needs extraData to re-render cells when a tap changes it —
+        // otherwise the tap only takes effect on the next unrelated re-render.
+        extraData={tappedId}
         contentContainerStyle={[styles.messagesList, { paddingBottom: insets.bottom + 76 }]}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={
