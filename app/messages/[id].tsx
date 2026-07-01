@@ -41,6 +41,12 @@ export default function ChatScreen() {
   const inputBorder = light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.14)';
   // iMessage-style blue for the user's own (sent) bubbles.
   const bubbleBlue = ['#1FA0FF', '#0A7CFF'] as const;
+  // Message times: visible for the first 4s after the convo opens, then fade out.
+  // Tapping a message re-reveals just that one's time (fades 4s after the last tap).
+  const globalOpacity = useRef(new Animated.Value(1)).current;
+  const tapOpacity = useRef(new Animated.Value(0)).current;
+  const [tappedId, setTappedId] = useState<string | null>(null);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -75,6 +81,27 @@ export default function ChatScreen() {
   }, []);
 
   useEffect(() => { setup(); }, [id]);
+
+  // Reveal all times on open, then fade them out after 4s.
+  useEffect(() => {
+    if (loading) return;
+    globalOpacity.setValue(1);
+    const timer = setTimeout(() => {
+      Animated.timing(globalOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start();
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
+  // Tap a message → show its time, fading out 4s after the most recent tap.
+  const showTap = (msgId: string) => {
+    setTappedId(msgId);
+    tapOpacity.setValue(1);
+    if (tapTimer.current) clearTimeout(tapTimer.current);
+    tapTimer.current = setTimeout(() => {
+      Animated.timing(tapOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start();
+    }, 4000);
+  };
+  useEffect(() => () => { if (tapTimer.current) clearTimeout(tapTimer.current); }, []);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -266,6 +293,9 @@ export default function ChatScreen() {
         }
         renderItem={({ item }) => {
           const isOwn = item.sender_id === currentUserId;
+          // This message's time follows the tap fade if it was the last tapped,
+          // otherwise the shared open-convo fade.
+          const timeOpacity = tappedId === item.id ? tapOpacity : globalOpacity;
           // A story reply renders as its stillshot + the text underneath.
           const storyRef = parseStoryReply(item.body);
           if (storyRef) {
@@ -299,7 +329,7 @@ export default function ChatScreen() {
                     </View>
                   )
                 ) : null}
-                <Text style={styles.cardTime}>{formatTime(item.created_at)}</Text>
+                <Animated.Text style={[styles.cardTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>
               </View>
             );
           }
@@ -309,28 +339,30 @@ export default function ChatScreen() {
             return (
               <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
                 <SharedPostCard postId={postId} />
-                <Text style={styles.cardTime}>{formatTime(item.created_at)}</Text>
+                <Animated.Text style={[styles.cardTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>
               </View>
             );
           }
           return (
             <View style={[styles.bubbleRow, isOwn ? styles.bubbleRowOwn : styles.bubbleRowOther]}>
-              {isOwn && <Text style={styles.msgTime}>{formatTime(item.created_at)}</Text>}
-              {isOwn ? (
-                <LinearGradient
-                  colors={bubbleBlue}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.bubble, styles.bubbleOwn]}
-                >
-                  <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
-                </LinearGradient>
-              ) : (
-                <View style={[styles.bubble, styles.bubbleOther]}>
-                  <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
-                </View>
-              )}
-              {!isOwn && <Text style={styles.msgTime}>{formatTime(item.created_at)}</Text>}
+              {isOwn && <Animated.Text style={[styles.msgTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>}
+              <TouchableOpacity activeOpacity={1} onPress={() => showTap(item.id)} style={styles.bubbleTouch}>
+                {isOwn ? (
+                  <LinearGradient
+                    colors={bubbleBlue}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.bubble, styles.bubbleFill, styles.bubbleOwn]}
+                  >
+                    <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
+                  </LinearGradient>
+                ) : (
+                  <View style={[styles.bubble, styles.bubbleFill, styles.bubbleOther]}>
+                    <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
+                  </View>
+                )}
+              </TouchableOpacity>
+              {!isOwn && <Animated.Text style={[styles.msgTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>}
             </View>
           );
         }}
@@ -410,6 +442,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   bubbleRowOwn: { justifyContent: 'flex-end' },
   bubbleRowOther: { justifyContent: 'flex-start' },
   msgTime: { fontSize: 10, color: colors.textTertiary, marginBottom: 3 },
+  // The tap wrapper carries the width cap; the bubble fills it (a %-maxWidth on
+  // the bubble wouldn't resolve inside an auto-width wrapper).
+  bubbleTouch: { maxWidth: '80%' },
+  bubbleFill: { maxWidth: '100%' },
   bubble: { maxWidth: '80%', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 26 },
   bubbleOwn: {
     borderBottomRightRadius: 9,
