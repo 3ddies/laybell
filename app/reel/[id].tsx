@@ -266,7 +266,11 @@ export default function ReelScreen() {
             style={StyleSheet.absoluteFill}
             contentFit={landscape ? 'contain' : 'cover'}
             loop={item.trim_end == null}
-            active={visibleId === item.id && !paused}
+            // Gate on isFocused too: a reel is a transparentModal, so pushing
+            // another reel on top (e.g. a GIF's "go to original video") leaves this
+            // one mounted — without the focus check its audio would keep playing
+            // UNDER the new video. Blur pauses it; returning resumes.
+            active={isFocused && visibleId === item.id && !paused}
             muted={!!item.song_id}
             poster={poster}
             posterContentFit={landscape ? 'contain' : 'cover'}

@@ -18,6 +18,7 @@ import { sharedPostId, internalPathFromUrl } from '../../../lib/postLinks';
 import { groupTitle, markGroupRead, renameGroup, renameEventBody, parseRenameEvent, type GroupProfile } from '../../../lib/groups';
 import { reportConversation } from '../../../lib/postActions';
 import { parseAttachment, attachmentBody, pickImageAttachment, type Attachment } from '../../../lib/attachments';
+import { openGifAttachment } from '../../../lib/gifAttachmentActions';
 import GifPickerModal from '../../../components/GifPickerModal';
 import AttachmentView from '../../../components/AttachmentView';
 import ImageViewerModal from '../../../components/ImageViewerModal';
@@ -210,6 +211,13 @@ export default function GroupChatScreen() {
   }
 
   const openPicker = (msgId: string) => { tabTick(); setPickerFor(msgId); };
+
+  // Delete your own message (used by the GIF sheet's "Delete GIF"). Needs the
+  // senders-delete-own RLS policy (supabase/sql/message_delete.sql).
+  async function deleteMessage(msgId: string) {
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+    await supabase.from('messages').delete().eq('id', msgId);
+  }
 
   async function applyReaction(messageId: string, emoji: string) {
     if (!currentUserId) return;
@@ -407,7 +415,16 @@ export default function GroupChatScreen() {
                       bubble's inner-bottom corner (not the sender-name width). */}
                   <View style={isOwn ? styles.bubbleStackOwn : styles.bubbleStackOther}>
                     {att ? (
-                      <TouchableOpacity activeOpacity={0.9} onPress={() => setViewerUrl(att.url)} onLongPress={() => openPicker(item.id)} delayLongPress={280}>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={att.type === 'gif'
+                          ? () => openGifAttachment(att, { userId: currentUserId, onView: () => setViewerUrl(att.url), canDelete: isOwn, onDelete: () => deleteMessage(item.id) })
+                          : () => setViewerUrl(att.url)}
+                        onLongPress={att.type === 'gif'
+                          ? () => openGifAttachment(att, { userId: currentUserId, onView: () => setViewerUrl(att.url), canDelete: isOwn, onDelete: () => deleteMessage(item.id) })
+                          : () => openPicker(item.id)}
+                        delayLongPress={280}
+                      >
                         <AttachmentView url={att.url} w={att.w} h={att.h} maxWidth={200} />
                         {att.text ? (
                           isOwn ? (
@@ -479,7 +496,7 @@ export default function GroupChatScreen() {
         </View>
       </Animated.View>
 
-      <GifPickerModal visible={gifOpen} userId={currentUserId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h })} />
+      <GifPickerModal visible={gifOpen} userId={currentUserId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h, src: g.src })} />
       <ImageViewerModal url={viewerUrl} onClose={() => setViewerUrl(null)} />
 
       {/* Reaction picker */}

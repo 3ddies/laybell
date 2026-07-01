@@ -11,6 +11,7 @@ import { COLORS } from '../constants/theme';
 import { tg } from '../lib/i18n';
 import { AudioProvider } from '../contexts/AudioContext';
 import { PostMusicProvider } from '../contexts/PostMusicContext';
+import { MediaSuspendProvider } from '../contexts/MediaSuspendContext';
 import { PostOptionsProvider } from '../contexts/PostOptionsContext';
 import { ProfileProvider } from '../contexts/ProfileContext';
 import { OfflineProvider } from '../contexts/OfflineContext';
@@ -25,6 +26,8 @@ import { LinkGuardProvider } from '../contexts/LinkGuardContext';
 import { ReportProvider } from '../contexts/ReportContext';
 import { AdOptionsProvider } from '../contexts/AdOptionsContext';
 import { BlockConfirmProvider } from '../contexts/BlockConfirmContext';
+import { GifActionSheetProvider } from '../contexts/GifActionSheetContext';
+import { CommentActionSheetProvider } from '../contexts/CommentActionSheetContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
@@ -136,7 +139,7 @@ function AppContent() {
             the route itself must not animate (iOS ignores slide_from_right on
             modal presentations and would slide up from the bottom instead). The
             stack's own back gesture stays off — the pager owns the swipe. */}
-        {['messages/index', 'notifications', 'settings', 'saved', 'analytics', 'spotlight', 'ad-manager/index', 'ad-manager/create', 'ad-manager/[id]', 'badges', 'permissions', 'playlists', 'playlist/[id]', 'downloads', 'premium', 'communities/index', 'communities/create', 'communities/edit', 'communities/[id]', 'privacy-policy', 'terms-of-service', 'community-guidelines', 'advertiser-terms', 'privacy-center'].map((name) => (
+        {['messages/index', 'notifications', 'settings', 'saved', 'gifs', 'analytics', 'spotlight', 'ad-manager/index', 'ad-manager/create', 'ad-manager/[id]', 'badges', 'permissions', 'playlists', 'playlist/[id]', 'downloads', 'premium', 'communities/index', 'communities/create', 'communities/edit', 'communities/[id]', 'privacy-policy', 'terms-of-service', 'community-guidelines', 'advertiser-terms', 'privacy-center'].map((name) => (
           <Stack.Screen
             key={name}
             name={name}
@@ -278,6 +281,7 @@ export default function RootLayout() {
         and the key is the user id (not the whole session) so a token refresh — same
         id — never triggers a remount. */}
     <View style={{ flex: 1 }} key={session?.user?.id ?? 'signed-out'}>
+    <MediaSuspendProvider>
     <AudioProvider>
       <PostMusicProvider>
         <ProfileProvider>
@@ -292,7 +296,11 @@ export default function RootLayout() {
                     <ReportProvider>
                       <AdOptionsProvider>
                         <BlockConfirmProvider>
-                          <AppContent />
+                          <GifActionSheetProvider>
+                            <CommentActionSheetProvider>
+                              <AppContent />
+                            </CommentActionSheetProvider>
+                          </GifActionSheetProvider>
                         </BlockConfirmProvider>
                       </AdOptionsProvider>
                     </ReportProvider>
@@ -306,6 +314,7 @@ export default function RootLayout() {
         </ProfileProvider>
       </PostMusicProvider>
     </AudioProvider>
+    </MediaSuspendProvider>
     </View>
     </LanguageProvider>
     </ThemeProvider>

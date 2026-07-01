@@ -11,7 +11,9 @@
 
 import { uploadToStorageWithProgress } from './upload';
 
-export type Attachment = { type: 'image' | 'gif'; url: string; w?: number; h?: number };
+// `src` = the id of the ORIGINAL Laybell video a GIF was made from (only set for
+// Laybell-made GIFs) — lets the viewer offer "go to the original video".
+export type Attachment = { type: 'image' | 'gif'; url: string; w?: number; h?: number; src?: string };
 export type ParsedAttachment = Attachment & { text: string };
 
 const PREFIX = 'laybell://attach?';
@@ -20,6 +22,7 @@ export function attachmentBody(a: Attachment, caption?: string): string {
   let qs = `type=${a.type}&url=${encodeURIComponent(a.url)}`;
   if (a.w) qs += `&w=${Math.round(a.w)}`;
   if (a.h) qs += `&h=${Math.round(a.h)}`;
+  if (a.src) qs += `&src=${encodeURIComponent(a.src)}`;
   const cap = (caption ?? '').trim();
   return cap ? `${PREFIX}${qs}\n${cap}` : `${PREFIX}${qs}`;
 }
@@ -41,11 +44,14 @@ export function parseAttachment(body: string): ParsedAttachment | null {
   let url = params.url || '';
   try { url = decodeURIComponent(url); } catch { /* keep raw */ }
   if (!url) return null;
+  let src = params.src || '';
+  try { src = decodeURIComponent(src); } catch { /* keep raw */ }
   return {
     type,
     url,
     w: Number(params.w) || undefined,
     h: Number(params.h) || undefined,
+    src: src || undefined,
     text: nl === -1 ? '' : body.slice(nl + 1).trim(),
   };
 }

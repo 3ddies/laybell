@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, ActivityIndicator, Alert, Image, Dimensions, Animated, Modal,
+  ScrollView, ActivityIndicator, Alert, Image, Dimensions, Animated, Modal, Switch, Pressable, Easing,
 } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -188,6 +188,19 @@ export default function PostScreen() {
   const [communities, setCommunities] = useState<PostableCommunity[]>([]);
   const [showCommunityPicker, setShowCommunityPicker] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
+  // Per-post creator controls — both default ON, so the poster only ever toggles
+  // OFF to opt out. downloads → audio offline pin (posts.downloadable); gifs →
+  // whether others may Make GIF from a video (posts.allow_gifs).
+  const [allowDownloads, setAllowDownloads] = useState(true);
+  const [allowGifs, setAllowGifs] = useState(true);
+  // "Learn more" explanation popup for the creator-control toggles.
+  const [info, setInfo] = useState<{ icon: string; title: string; body: string } | null>(null);
+  const infoAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!info) return;
+    infoAnim.setValue(0);
+    Animated.timing(infoAnim, { toValue: 1, duration: 200, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [info, infoAnim]);
   // Tier-gated public slots: none/bronze 6, silver 12, gold 24, diamond ∞.
   // Friends-only posts are never gated; deleting/archiving frees a slot.
   const { profile } = useProfile();
@@ -319,6 +332,7 @@ export default function PostScreen() {
     setVideoDuration(0); setTrimStart(0);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setGenre(''); setSong(null); setTagged([]); setCommunities([]); setError(''); setStep('pick');
+    setAllowDownloads(true); setAllowGifs(true);
     // Abandoning the compose drops any parked spotlight handoff so it can't
     // silently attach to an unrelated later post — the paid campaign itself
     // stays safe as `pending` on the Spotlight screen. (No-op on the share
@@ -356,6 +370,7 @@ export default function PostScreen() {
       slides,
       audioFile, audioDuration, coverUri, audioKind,
       song, tagged,
+      allowDownloads, allowGifs,
     };
     const next = await saveDraft(draft);
     setDrafts(next);
@@ -385,6 +400,8 @@ export default function PostScreen() {
     setAudioKind(d.audioKind);
     setSong(d.song);
     setTagged(d.tagged ?? []);
+    setAllowDownloads(d.allowDownloads ?? true);
+    setAllowGifs(d.allowGifs ?? true);
     setError('');
     setDraftsOpen(false);
     setStep('details');
@@ -800,6 +817,9 @@ export default function PostScreen() {
           : {}),
         ...(tagged.length && postType !== 'audio' ? { tagged_user_ids: tagged.map((t) => t.id) } : {}),
         ...(hasCommunity ? { community_ids: communities.map((c) => c.id) } : {}),
+        // Creator controls: only send the flag relevant to the media type.
+        ...(postType === 'audio' ? { downloadable: allowDownloads } : {}),
+        ...(postType === 'video' ? { allow_gifs: allowGifs } : {}),
       }).select('id').single();
       if (postError) throw postError;
       if (isPublic) {
@@ -1130,6 +1150,40 @@ export default function PostScreen() {
             </Text>
           )}
 
+          {/* Per-post creator controls (both default ON — flip OFF to opt out).
+              Just a title + switch, with a "Learn more" link that opens a themed
+              explanation popup (cleaner than a bordered card with body copy). */}
+          {postType === 'audio' && (
+            <View style={styles.optRow}>
+              <Text style={styles.optLabel}>{t('offline.downloadableLabel')}</Text>
+              <Switch
+                style={styles.optSwitch}
+                value={allowDownloads}
+                onValueChange={setAllowDownloads}
+                trackColor={{ true: colors.primary, false: colors.surfaceLight }}
+                thumbColor="#fff"
+              />
+              <TouchableOpacity onPress={() => setInfo({ icon: 'cloud-download-outline', title: t('offline.downloadableLabel'), body: t('offline.downloadableHelp') })} hitSlop={8}>
+                <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {postType === 'video' && (
+            <View style={styles.optRow}>
+              <Text style={styles.optLabel}>{t('post.allowGifsLabel')}</Text>
+              <Switch
+                style={styles.optSwitch}
+                value={allowGifs}
+                onValueChange={setAllowGifs}
+                trackColor={{ true: colors.primary, false: colors.surfaceLight }}
+                thumbColor="#fff"
+              />
+              <TouchableOpacity onPress={() => setInfo({ icon: 'film-outline', title: t('post.allowGifsLabel'), body: t('post.allowGifsHelp') })} hitSlop={8}>
+                <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {!!error && (
             <View style={styles.errorRow}>
               <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
@@ -1144,7 +1198,6 @@ export default function PostScreen() {
             onPress={handleSaveDraft}
             disabled={loading}
           >
-            <Ionicons name="document-text-outline" size={18} color={colors.primary} />
             <Text style={styles.draftSaveText}>
               {editingDraftId.current ? t('post.updateDraft') : t('post.saveDraft')}
             </Text>
@@ -1160,6 +1213,22 @@ export default function PostScreen() {
           onApply={applyCommunities}
           onBrowse={() => router.push('/communities')}
         />
+
+        {/* "Learn more" explanation — a themed centered card (cleaner than a system
+            alert), fade + subtle scale in. Tap outside or "Got it" to dismiss. */}
+        <Modal visible={!!info} transparent animationType="fade" onRequestClose={() => setInfo(null)} statusBarTranslucent>
+          <View style={styles.infoRoot}>
+            <Pressable style={styles.infoBackdrop} onPress={() => setInfo(null)} />
+            <Animated.View style={[styles.infoCard, { opacity: infoAnim, transform: [{ scale: infoAnim.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) }] }]}>
+              <View style={styles.infoIcon}><Ionicons name={(info?.icon ?? 'information-circle-outline') as any} size={26} color={colors.primary} /></View>
+              <Text style={styles.infoTitle}>{info?.title}</Text>
+              <Text style={styles.infoBody}>{info?.body}</Text>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setInfo(null)} activeOpacity={0.85}>
+                <Text style={styles.infoBtnText}>{t('post.gotIt')}</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </Modal>
 
         {/* Genre picker — a tap-to-open bottom sheet of genre chips. */}
         <Modal visible={showGenrePicker} transparent animationType="fade" onRequestClose={() => setShowGenrePicker(false)}>
@@ -1647,6 +1716,31 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   visText: { flex: 1 },
   visLabel: { color: colors.text, fontSize: 15, fontWeight: '700' },
   visSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  // Per-post creator controls (Allow downloads / Allow GIFs) — no outline: the
+  // title, the switch left-aligned under it, then a small grey "Learn more" link.
+  optRow: { marginTop: SPACING.lg, alignItems: 'flex-start', gap: SPACING.sm },
+  optLabel: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  optSwitch: { alignSelf: 'flex-start' },
+  learnMore: { color: colors.textTertiary, fontSize: 12, fontWeight: '600' },
+  // "Learn more" explanation popup.
+  infoRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.lg },
+  infoBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  infoCard: {
+    width: '100%', maxWidth: 340, backgroundColor: colors.surfaceElevated,
+    borderRadius: RADIUS.xl, borderWidth: 1, borderColor: colors.border,
+    padding: SPACING.lg, alignItems: 'center',
+  },
+  infoIcon: {
+    width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary + '22',
+    alignItems: 'center', justifyContent: 'center', marginBottom: SPACING.sm,
+  },
+  infoTitle: { color: colors.text, fontSize: 18, fontWeight: '800', textAlign: 'center', letterSpacing: -0.3 },
+  infoBody: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: SPACING.xs },
+  infoBtn: {
+    alignSelf: 'stretch', backgroundColor: colors.primary, borderRadius: RADIUS.full,
+    alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.md, marginTop: SPACING.md,
+  },
+  infoBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
 
   // Genre picker bottom sheet.
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
@@ -1704,12 +1798,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // Save-as-draft button (details step)
   draftSaveBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#000', borderRadius: RADIUS.full,
     paddingVertical: SPACING.md, marginTop: SPACING.xs,
   },
   draftSaveBtnDisabled: { opacity: 0.5 },
-  draftSaveText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
+  draftSaveText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
 
   // Drafts opener bar (pick step)
   draftsBar: {

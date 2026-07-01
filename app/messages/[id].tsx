@@ -17,6 +17,7 @@ import { scanText } from '../../lib/linkSafety';
 import { createNotification } from '../../lib/createNotification';
 import { reportUser } from '../../lib/postActions';
 import { parseAttachment, attachmentBody, pickImageAttachment, type Attachment } from '../../lib/attachments';
+import { openGifAttachment } from '../../lib/gifAttachmentActions';
 import GifPickerModal from '../../components/GifPickerModal';
 import AttachmentView from '../../components/AttachmentView';
 import ImageViewerModal from '../../components/ImageViewerModal';
@@ -204,6 +205,13 @@ export default function ChatScreen() {
 
   // Press-and-hold a bubble → open the tapback picker (with a haptic tick).
   const openPicker = (msgId: string) => { tabTick(); setPickerFor(msgId); };
+
+  // Delete one of your own messages (used by the GIF sheet's "Delete GIF"). Needs
+  // the senders-delete-own RLS policy (supabase/sql/message_delete.sql).
+  async function deleteMessage(msgId: string) {
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+    await supabase.from('messages').delete().eq('id', msgId);
+  }
 
   // Apply (or toggle off) a reaction. Optimistic: the emoji lands instantly, then
   // the DB write follows — realtime later reconciles the other participant's view.
@@ -475,7 +483,16 @@ export default function ChatScreen() {
           if (att) {
             return (
               <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
-                <TouchableOpacity activeOpacity={0.9} onPress={() => setViewerUrl(att.url)} onLongPress={() => openPicker(item.id)} delayLongPress={280}>
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={att.type === 'gif'
+                    ? () => openGifAttachment(att, { userId: currentUserId, onView: () => setViewerUrl(att.url), canDelete: isOwn, onDelete: () => deleteMessage(item.id) })
+                    : () => setViewerUrl(att.url)}
+                  onLongPress={att.type === 'gif'
+                    ? () => openGifAttachment(att, { userId: currentUserId, onView: () => setViewerUrl(att.url), canDelete: isOwn, onDelete: () => deleteMessage(item.id) })
+                    : () => openPicker(item.id)}
+                  delayLongPress={280}
+                >
                   <AttachmentView url={att.url} w={att.w} h={att.h} />
                 </TouchableOpacity>
                 {att.text ? (
@@ -586,7 +603,7 @@ export default function ChatScreen() {
       </View>
       </Animated.View>
 
-      <GifPickerModal visible={gifOpen} userId={currentUserId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h })} />
+      <GifPickerModal visible={gifOpen} userId={currentUserId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h, src: g.src })} />
       <ImageViewerModal url={viewerUrl} onClose={() => setViewerUrl(null)} />
 
       {/* Reaction picker — a floating tapback pill over a dimmed backdrop. */}

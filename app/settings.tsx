@@ -277,6 +277,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/saved'),
     },
     {
+      icon: 'happy-outline',
+      label: t('account.gifs'),
+      subtitle: t('account.gifsSub'),
+      onPress: () => router.push('/gifs'),
+    },
+    {
       icon: 'at-outline',
       label: t('account.tagged'),
       subtitle: t('account.taggedSub'),

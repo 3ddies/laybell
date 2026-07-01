@@ -19,6 +19,7 @@ import { useTranslation } from './LanguageContext';
 import { isReposted, addRepost, removeRepost } from '../lib/reposts';
 import { useDownloadAction } from '../hooks/useDownloadAction';
 import AddToPlaylistModal from '../components/AddToPlaylistModal';
+import GifMakerModal from '../components/GifMakerModal';
 
 export type PostOptionsArgs = {
   // postId is optional: omit it to show a profile-only (user) menu — e.g. the
@@ -70,10 +71,14 @@ export function usePostOptions() {
 }
 
 export function PostOptionsProvider({ children }: { children: React.ReactNode }) {
+  const { profile } = useProfile();
   const [opts, setOpts] = useState<PostOptionsArgs | null>(null);
   const [visible, setVisible] = useState(false);
   // "Add to playlist" opens a modal owned here (so it works from any 3-dot menu).
   const [playlistPostId, setPlaylistPostId] = useState<string | null>(null);
+  // "Make GIF" opens the maker on the tapped video (owned here so it floats above
+  // the sheet's overlay). {url, dur} of the source video, or null when closed.
+  const [gifVideo, setGifVideo] = useState<{ url: string; dur: number; postId: string | null } | null>(null);
 
   const show = (o: PostOptionsArgs) => { setOpts(o); setVisible(true); };
 
@@ -84,11 +89,21 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
         opts={opts}
         onClose={() => { setVisible(false); opts?.onDismiss?.(); }}
         onAddToPlaylist={setPlaylistPostId}
+        onMakeGif={(url, dur, postId) => setGifVideo({ url, dur, postId: postId ?? null })}
       />
       <AddToPlaylistModal
         visible={!!playlistPostId}
         postId={playlistPostId ?? ''}
         onClose={() => setPlaylistPostId(null)}
+        inOverlay
+      />
+      <GifMakerModal
+        visible={!!gifVideo}
+        videoUrl={gifVideo?.url ?? null}
+        durationSec={gifVideo?.dur ?? null}
+        userId={profile?.id ?? null}
+        sourcePostId={gifVideo?.postId ?? null}
+        onClose={() => setGifVideo(null)}
         inOverlay
       />
     </>
@@ -123,11 +138,12 @@ type Opt = {
   onPress: () => void;
 };
 
-export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
+export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMakeGif }: {
   visible: boolean;
   opts: PostOptionsArgs | null;
   onClose: () => void;
   onAddToPlaylist: (postId: string) => void;
+  onMakeGif: (videoUrl: string, durationSec: number, postId?: string | null) => void;
 }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -149,6 +165,13 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
   const [dlCover, setDlCover] = useState<string | null>(null);
   const [dlTitle, setDlTitle] = useState('');
   const [downloadable, setDownloadable] = useState(true);
+  // Source video for "Make GIF" (video posts). Seeded from args, back-filled by a
+  // lazy posts fetch for media_url + duration.
+  const [vidUrl, setVidUrl] = useState<string | null>(null);
+  const [vidDur, setVidDur] = useState(0);
+  // Creator opt-out: when the video's owner turned off "Allow GIFs" at posting,
+  // hide the Make GIF option. Defaults true (opt-out only, safe pre-migration).
+  const [allowGifs, setAllowGifs] = useState(true);
 
   useEffect(() => {
     if (visible) {
@@ -193,6 +216,20 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
           }, () => {});
       } else {
         setDlUrl(null); setDlCover(null); setDownloadable(true); setDlTitle('');
+      }
+      // Video posts: resolve media_url + duration so "Make GIF" can open the maker.
+      if (o?.postId && o.mediaType === 'video') {
+        setVidUrl(o.mediaUrl ?? null); setVidDur(0); setAllowGifs(true);
+        supabase.from('posts').select('media_url, duration_seconds, allow_gifs').eq('id', o.postId).maybeSingle()
+          .then(({ data }) => {
+            const d = data as any;
+            if (!d) return;
+            setVidUrl(d.media_url ?? o.mediaUrl ?? null);
+            setVidDur(Number(d.duration_seconds) || 0);
+            setAllowGifs(d.allow_gifs !== false);
+          }, () => {});
+      } else {
+        setVidUrl(null); setVidDur(0); setAllowGifs(true);
       }
     }
   }, [visible]);
@@ -332,6 +369,16 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist }: {
       options.push({ key: 'artist', label: t('postOptions.artist'), icon: 'person-outline',
         onPress: () => { const o = optsRef.current; dismissThen(() => { o?.onNavigate?.(); if (o?.authorId) router.push(`/profile/${o.authorId}`); }); } });
     }
+  }
+
+  // ── Make GIF (any video, any viewer — unless the creator opted out) ────────
+  if (hasPost && opts?.mediaType === 'video' && allowGifs) {
+    options.push({ key: 'makegif', label: t('postOptions.makeGif'), icon: 'film-outline',
+      onPress: () => {
+        const o = optsRef.current;
+        const url = vidUrl ?? o?.mediaUrl ?? null;
+        dismissThen(() => { if (url) onMakeGif(url, vidDur, o?.postId ?? null); });
+      } });
   }
 
   // ── Ownership / general actions ────────────────────────────────────────────

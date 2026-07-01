@@ -6,7 +6,7 @@ import { useTheme } from '../contexts/ThemeContext';
 // clamped to sensible bounds. expo-image animates GIF/WebP automatically. Pass
 // onPress to make it tappable (e.g. to open the full-screen viewer).
 export default function AttachmentView({
-  url, w, h, maxWidth = 230, radius = 18, onPress,
+  url, w, h, maxWidth = 230, radius = 18, onPress, onLongPress,
 }: {
   url: string;
   w?: number;
@@ -14,6 +14,7 @@ export default function AttachmentView({
   maxWidth?: number;
   radius?: number;
   onPress?: () => void;
+  onLongPress?: () => void;
 }) {
   const { colors } = useTheme();
   const ratio = w && h ? w / h : 1;
@@ -31,8 +32,8 @@ export default function AttachmentView({
       transition={120}
     />
   );
-  if (!onPress) return img;
+  if (!onPress && !onLongPress) return img;
   // alignSelf flex-start so the touch target is JUST the image — not the full
   // width of a stretch-aligned parent (which made taps beside it open the viewer).
-  return <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={{ alignSelf: 'flex-start' }}>{img}</TouchableOpacity>;
+  return <TouchableOpacity activeOpacity={0.9} onPress={onPress} onLongPress={onLongPress} delayLongPress={280} style={{ alignSelf: 'flex-start' }}>{img}</TouchableOpacity>;
 }

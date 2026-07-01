@@ -24,6 +24,9 @@ import GifPickerModal from './GifPickerModal';
 import AttachmentView from './AttachmentView';
 import ImageViewerModal from './ImageViewerModal';
 import { parseAttachment, attachmentBody, pickImageAttachment, type Attachment } from '../lib/attachments';
+import { openGifAttachment } from '../lib/gifAttachmentActions';
+import { openCommentActions } from '../lib/commentActions';
+import { reportUser } from '../lib/postActions';
 
 type Row = {
   id: string; body: string; created_at: string; user_id: string;
@@ -237,6 +240,29 @@ export default function Comments({
     setRows(prev => prev.filter(r => r.id !== id && r.parent_id !== id));
   }
 
+  // Queue a reply to `item` (used by the Reply button AND the long-press sheet):
+  // reply to the thread root, prefill "@username " when replying to a reply, and
+  // pop the keyboard.
+  function beginReply(item: Row) {
+    onEngage?.();
+    setReplyTo({ id: item.parent_id ?? item.id, name: item.profiles?.username || '' });
+    if (item.parent_id != null && item.profiles?.username) {
+      setText(prev => (prev.trim().length ? prev : `@${item.profiles.username} `));
+    }
+    inputRef.current?.focus();
+  }
+
+  // Long-press a comment → themed action sheet (Reply · Delete own · Report other)
+  // instead of the old instant delete.
+  function openCommentSheet(item: Row) {
+    openCommentActions({
+      isOwn: item.user_id === userId,
+      onReply: () => beginReply(item),
+      onDelete: () => remove(item.id, item.user_id),
+      onReport: () => reportUser(item.user_id),
+    });
+  }
+
   // Plain render function (NOT a component) so that on the frequent re-renders
   // caused by audio playback, the avatar <Image> reconciles by position instead
   // of remounting — which is what made avatars flash/pulsate. expo-image also
@@ -253,7 +279,7 @@ export default function Comments({
         onBeforeOpenStory={onNavigate}
       />
       <View style={styles.body}>
-        <TouchableOpacity activeOpacity={1} onPress={() => Keyboard.dismiss()} onLongPress={() => remove(item.id, item.user_id)}>
+        <TouchableOpacity activeOpacity={1} onPress={() => Keyboard.dismiss()} onLongPress={() => openCommentSheet(item)} delayLongPress={280}>
           <View style={styles.head}>
             <TouchableOpacity onPress={() => goToProfile(item.user_id)}>
               <Text style={styles.name}>{item.profiles?.display_name}</Text>
@@ -263,12 +289,29 @@ export default function Comments({
           </View>
           {(() => {
             const att = parseAttachment(item.body);
-            if (att) return (
-              <View style={styles.commentAttach}>
-                <AttachmentView url={att.url} w={att.w} h={att.h} maxWidth={132} radius={12} onPress={() => setViewerUrl(att.url)} />
-                {att.text ? <MentionText style={styles.text} text={att.text} onBeforeNavigate={onNavigate} /> : null}
-              </View>
-            );
+            if (att) {
+              const isGif = att.type === 'gif';
+              const isOwn = item.user_id === userId;
+              // A GIF: tap AND long-press open the GIF sheet (with Delete when it's
+              // your own). A plain image: tap opens the viewer, long-press opens the
+              // comment sheet (so it's still deletable/reportable).
+              const openGif = () => openGifAttachment(att, {
+                userId,
+                onView: () => setViewerUrl(att.url),
+                canDelete: isOwn,
+                onDelete: () => remove(item.id, item.user_id),
+              });
+              return (
+                <View style={styles.commentAttach}>
+                  <AttachmentView
+                    url={att.url} w={att.w} h={att.h} maxWidth={132} radius={12}
+                    onPress={isGif ? openGif : () => setViewerUrl(att.url)}
+                    onLongPress={isGif ? openGif : () => openCommentSheet(item)}
+                  />
+                  {att.text ? <MentionText style={styles.text} text={att.text} onBeforeNavigate={onNavigate} /> : null}
+                </View>
+              );
+            }
             return <TranslatableText text={item.body} render={(s) => <MentionText style={styles.text} text={s} onBeforeNavigate={onNavigate} />} />;
           })()}
         </TouchableOpacity>
@@ -288,19 +331,7 @@ export default function Comments({
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.metaBtn}
-            onPress={() => {
-              onEngage?.();
-              setReplyTo({ id: item.parent_id ?? item.id, name: item.profiles?.username || '' });
-              // Replying to a REPLY: prefill "@username " so the thread shows
-              // who is being addressed. Replying to the original comment needs
-              // no tag (the thread position already makes that clear). Never
-              // clobber a draft the user has already started.
-              if (item.parent_id != null && item.profiles?.username) {
-                setText(prev => (prev.trim().length ? prev : `@${item.profiles.username} `));
-              }
-              // Pop the keyboard so you can type the reply immediately.
-              inputRef.current?.focus();
-            }}
+            onPress={() => beginReply(item)}
             hitSlop={{ top: 6, bottom: 8, left: 4, right: 8 }}
           >
             <Ionicons name="arrow-undo-outline" size={15} color={colors.textTertiary} />
@@ -446,7 +477,7 @@ export default function Comments({
         </View>
       </View>
 
-      <GifPickerModal visible={gifOpen} userId={userId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h })} />
+      <GifPickerModal visible={gifOpen} userId={userId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h, src: g.src })} />
       <ImageViewerModal url={viewerUrl} onClose={() => setViewerUrl(null)} />
     </View>
   );

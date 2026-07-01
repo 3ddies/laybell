@@ -14,7 +14,7 @@ const { GIFEncoder, quantize, applyPalette } = require('gifenc');
 const jpeg = require('jpeg-js');
 
 export type GifResult = { uri: string; width: number; height: number };
-export const GIF_MAX_FRAMES = 24;
+export const GIF_MAX_FRAMES = 48;
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const B64LOOKUP = (() => { const l = new Uint8Array(256); for (let i = 0; i < B64.length; i++) l[B64.charCodeAt(i)] = i; return l; })();
@@ -51,27 +51,34 @@ function bytesToB64(bytes: Uint8Array): string {
   return out;
 }
 
+export type GifCrop = { originX: number; originY: number; width: number; height: number };
+
 export async function makeGifFromVideo(
   videoUri: string,
-  opts: { startMs: number; durationMs: number; fps?: number; width?: number },
+  opts: { startMs: number; durationMs: number; fps?: number; width?: number; crop?: GifCrop | null },
   onProgress?: (fraction: number) => void,
 ): Promise<GifResult> {
-  const fps = opts.fps ?? 8;
-  const width = opts.width ?? 240;
+  const fps = opts.fps ?? 12;      // smoother than the old 8fps
+  const width = opts.width ?? 288;  // sharper than the old 240px
   const frames = Math.max(2, Math.min(GIF_MAX_FRAMES, Math.round((opts.durationMs / 1000) * fps)));
   const delay = Math.round(1000 / fps);
   const span = frames > 1 ? opts.durationMs / (frames - 1) : 0;
+  // Optional crop (zoom/reposition) applied to each source frame before resize.
+  const crop = opts.crop
+    ? { originX: Math.round(opts.crop.originX), originY: Math.round(opts.crop.originY), width: Math.round(opts.crop.width), height: Math.round(opts.crop.height) }
+    : null;
 
   const gif = GIFEncoder();
   let gifW = width, gifH = 0;
 
   for (let i = 0; i < frames; i++) {
     const timeMs = Math.round(opts.startMs + span * i);
-    const thumb = await VideoThumbnails.getThumbnailAsync(videoUri, { time: timeMs, quality: 0.7 });
+    // quality 1.0 frames → less JPEG grain feeding the quantizer.
+    const thumb = await VideoThumbnails.getThumbnailAsync(videoUri, { time: timeMs, quality: 1 });
     const small = await ImageManipulator.manipulateAsync(
       thumb.uri,
-      [{ resize: { width } }],
-      { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      [...(crop ? [{ crop }] : []), { resize: { width } }],
+      { compress: 1, format: ImageManipulator.SaveFormat.JPEG, base64: true },
     );
     const { data, width: fw, height: fh } = jpeg.decode(b64ToBytes(small.base64 as string), { useTArray: true, formatAsRGBA: true });
     gifW = fw; gifH = fh;

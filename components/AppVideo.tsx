@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { useMediaSuspend } from '../contexts/MediaSuspendContext';
 
 // Shared <Video> replacement built on expo-video (expo-av is deprecated in SDK 54
 // and removed in 55). Keeps the familiar prop API the call sites already use so
@@ -44,6 +45,8 @@ export type AppVideoProps = {
   /** currentTimeMs/durationMs (converted from expo-video's seconds). */
   onProgress?: (currentTimeMs: number, durationMs: number) => void;
   onEnd?: () => void;
+  /** Keep playing even when a full-screen UI has globally suspended media. */
+  ignoreSuspend?: boolean;
 };
 
 export default function AppVideo({
@@ -61,8 +64,13 @@ export default function AppVideo({
   progressIntervalMs = 250,
   onProgress,
   onEnd,
+  ignoreSuspend = false,
 }: AppVideoProps) {
   const uri = typeof source === 'string' ? source : source.uri;
+  // A full-screen takeover (e.g. the GIF maker) can globally pause background
+  // videos so their audio doesn't bleed through. Opt out with `ignoreSuspend`.
+  const { suspended } = useMediaSuspend();
+  const shouldPlay = active && !(suspended && !ignoreSuspend);
   // timeUpdate is only needed for progress reporting or trim looping; leave it at
   // 0 (disabled) otherwise so decorative videos don't emit events every frame-tick.
   const needsTime = !!onProgress || trimEndSec != null;
@@ -86,7 +94,7 @@ export default function AppVideo({
     p.loop = loop;
     p.muted = muted;
     p.timeUpdateEventInterval = intervalSec;
-    if (active) p.play();
+    if (shouldPlay) p.play();
   });
 
   // Keep mutable player props in sync with React props.
@@ -94,9 +102,21 @@ export default function AppVideo({
   useEffect(() => { player.loop = loop; }, [loop, player]);
   useEffect(() => { player.timeUpdateEventInterval = intervalSec; }, [intervalSec, player]);
   useEffect(() => {
-    if (active) player.play();
+    if (shouldPlay) player.play();
     else player.pause();
-  }, [active, player]);
+  }, [shouldPlay, player]);
+
+  // When the trim window itself changes (e.g. the GIF maker's scrubber moves the
+  // start/end live), snap to the new start if the playhead is now outside the
+  // window — so the preview loops the new selection immediately. For callers with
+  // a fixed trim window this runs once (redundant with the seed) and is harmless.
+  useEffect(() => {
+    if (trimStartSec == null) return;
+    try {
+      const ct = player.currentTime;
+      if (ct < trimStartSec || (trimEndSec != null && ct > trimEndSec)) player.currentTime = trimStartSec;
+    } catch { /* player not ready */ }
+  }, [trimStartSec, trimEndSec, player]);
 
   // useVideoPlayer recreates (and releases) the player whenever the source uri
   // changes, so a new uri means a new `player` here — this effect re-runs, the
