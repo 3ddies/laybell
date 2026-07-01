@@ -15,7 +15,7 @@ import {
 import type { ParamListBase, TabNavigationState } from '@react-navigation/native';
 import { GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
-import { PagerContext, TabSwipeContext, noteTabSwipe } from '../../contexts/PagerContext';
+import { PagerContext, TabSwipeContext, noteTabSwipe, usePagerSwiping } from '../../contexts/PagerContext';
 import { useListenMode } from '../../contexts/ListenModeContext';
 
 // Land on Home, not the story camera, even though the camera is declared first
@@ -53,13 +53,16 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
 // animated rather than just stateful. `r` is the slot's index in the FULL route
 // list (so it lines up with `position`, which counts the hidden camera as 0).
 function TabSlot({
-  route, r, hover, dragging, position, profile, colors, styles, postCircleColor,
+  route, r, hover, dragging, activeIndex, profile, colors, styles, postCircleColor,
 }: {
   route: MaterialTopTabBarProps['state']['routes'][number];
   r: number;
   hover: Animated.Value;
   dragging: Animated.Value;
-  position: MaterialTopTabBarProps['position'];
+  // Highlight anchor: an Animated.Value that tracks the COMMITTED focused tab
+  // (state.index), not the raw pager position — so the lit tab always matches the
+  // page actually shown, even when the pager drifts under rapid taps.
+  activeIndex: Animated.Value;
   profile: ReturnType<typeof useProfile>['profile'];
   colors: ThemePalette;
   styles: ReturnType<typeof makeStyles>;
@@ -67,13 +70,13 @@ function TabSlot({
   postCircleColor: string;
 }) {
   // "Active-ness" of this slot, 0→1, from two sources:
-  //  • near  — pager proximity (1 when centred on this tab), so it glides while
-  //            you swipe between pages instead of snapping at the end;
+  //  • near  — proximity of the COMMITTED focused tab (activeIndex, which glides
+  //            to state.index) so it settles exactly on the real page and can't
+  //            drift out of sync with it when tabs are spammed;
   //  • hover  — drag feedback: the tab the finger is over during a bar drag.
-  // While a bar drag is in progress (`dragging`→1) the pager-driven `near`
-  // highlight is suppressed, so the tab you're ON goes dark and ONLY the tab
-  // tracking your finger lights up.
-  const near = position.interpolate({ inputRange: [r - 1, r, r + 1], outputRange: [0, 1, 0], extrapolate: 'clamp' });
+  // While a bar drag is in progress (`dragging`→1) `near` is suppressed, so the
+  // tab you're ON goes dark and ONLY the tab tracking your finger lights up.
+  const near = activeIndex.interpolate({ inputRange: [r - 1, r, r + 1], outputRange: [0, 1, 0], extrapolate: 'clamp' });
   const active = Animated.add(Animated.multiply(near, Animated.subtract(1, dragging)), hover);
   const scale = active.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16], extrapolate: 'clamp' });
   const lift = active.interpolate({ inputRange: [0, 1], outputRange: [0, -4], extrapolate: 'clamp' });
@@ -147,6 +150,25 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { listenMode } = useListenMode();
+
+  // The highlight follows the COMMITTED focused tab, not the raw pager position.
+  // On every focus change (a tap, or a swipe that commits) glide activeIndex to
+  // state.index. Re-targeting to the latest committed index on every change means
+  // spamming tabs can't leave the highlight on a tab that isn't the page on screen
+  // (the pager position could drift out of sync under rapid navigation).
+  const activeIndex = useRef(new Animated.Value(state.index)).current;
+  useEffect(() => {
+    Animated.timing(activeIndex, { toValue: state.index, duration: HANDOFF_MS, useNativeDriver: true }).start();
+  }, [state.index, activeIndex]);
+
+  // A pager swipe should also drop any pending bar-tap hold — otherwise tapping a
+  // far tab and immediately swipe-navigating could keep the tapped tab lit (via
+  // the still-held hover) until the hold timer expires. Clearing it lets the
+  // highlight fall back to `near`, which glides to the newly committed tab.
+  const swiping = usePagerSwiping();
+  useEffect(() => {
+    if (swiping) { cancelHold(); setDragging(0); clearHover(); }
+  }, [swiping]);
 
   // True iOS tab-bar look: the native "chrome material" blur — the exact frosted
   // translucency UIKit uses for bars — with NO heavy tint on top, so the material
@@ -343,7 +365,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
             r={index}
             hover={hovers[slot]}
             dragging={dragging}
-            position={position}
+            activeIndex={activeIndex}
             profile={profile}
             colors={colors}
             styles={styles}
