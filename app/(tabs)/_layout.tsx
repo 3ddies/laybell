@@ -23,6 +23,9 @@ import { useListenMode } from '../../contexts/ListenModeContext';
 export const unstable_settings = { initialRouteName: 'index' };
 
 const SCREEN_W = Dimensions.get('window').width;
+// One shared duration for the drag `hover` + `dragging` handoff animations. They
+// must use the SAME curve so a landed tab's active value never dips (no blink).
+const HANDOFF_MS = 200;
 
 // Wrap the Material Top Tabs navigator so Expo Router drives it with file-based
 // routes. Material Top Tabs is backed by the native react-native-pager-view, so
@@ -290,16 +293,21 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
     const iw = (barWRef.current || SCREEN_W) / n;
     return Math.max(0, Math.min(n - 1, Math.floor(pageX / iw)));
   }
+  // `hover`, `clearHover` and `setDragging` MUST share one timing curve. The
+  // active value is `near*(1-dragging) + hover`; on the landed tab (near=1) that
+  // is `(1-dragging) + hover`, which only stays flat at 1 if dragging and the
+  // target's hover move in perfect lockstep. A curve mismatch (the old spring vs
+  // timing) made it dip mid-handoff → the icon/disc blinked after landing.
   function setHover(slot: number) {
     hovers.forEach((v, i) =>
-      Animated.spring(v, { toValue: i === slot ? 1 : 0, useNativeDriver: true, speed: 50, bounciness: 0 }).start(),
+      Animated.timing(v, { toValue: i === slot ? 1 : 0, duration: HANDOFF_MS, useNativeDriver: true }).start(),
     );
   }
   function clearHover() {
-    hovers.forEach((v) => Animated.spring(v, { toValue: 0, useNativeDriver: true, speed: 50, bounciness: 0 }).start());
+    hovers.forEach((v) => Animated.timing(v, { toValue: 0, duration: HANDOFF_MS, useNativeDriver: true }).start());
   }
   function setDragging(to: number) {
-    Animated.timing(dragging, { toValue: to, duration: to ? 120 : 160, useNativeDriver: true }).start();
+    Animated.timing(dragging, { toValue: to, duration: HANDOFF_MS, useNativeDriver: true }).start();
   }
 
   return (
