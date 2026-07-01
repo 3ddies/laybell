@@ -21,7 +21,6 @@ import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useTabSwipeControl } from '../../contexts/PagerContext';
-import { useTabBarScroll } from '../../contexts/TabBarScrollContext';
 import { useListenMode } from '../../contexts/ListenModeContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchBlockedIds } from '../../lib/blocks';
@@ -104,7 +103,6 @@ export default function MusicScreen() {
   const { show: showOptions } = usePostOptions();
   const { t } = useTranslation();
   const { listenMode, setListenMode } = useListenMode();
-  const { onScroll } = useTabBarScroll();
   // Ref mirror for the dwell-swipe responder (created once) — Listen mode must
   // also seal ITS edge fall-throughs to other app pages, not just the pager's.
   const listenModeRef = useRef(listenMode);
@@ -1166,8 +1164,6 @@ export default function MusicScreen() {
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.discoverContent}
-            onScroll={onScroll}
-            scrollEventThrottle={16}
             refreshControl={
               <RefreshControl
                 refreshing={discoverRefreshing}
@@ -1483,8 +1479,6 @@ export default function MusicScreen() {
           data={playlists.filter(p => !p.is_public)}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
           ListHeaderComponent={
             playlists.some(p => p.is_public) ? (
               <View>
@@ -1617,8 +1611,6 @@ export default function MusicScreen() {
               data={tracks}
               keyExtractor={item => item.post_id}
               contentContainerStyle={styles.listContent}
-              onScroll={onScroll}
-              scrollEventThrottle={16}
               ListEmptyComponent={renderEmpty(
                 'add-circle-outline',
                 t('music.emptyTracksTitle'),
@@ -1665,8 +1657,6 @@ export default function MusicScreen() {
           keyExtractor={item => item.id}
           style={styles.list}
           contentContainerStyle={styles.listContent}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
           ListHeaderComponent={<Text style={styles.sectionTitle}>{t('music.yourSavedSongs')}</Text>}
           refreshControl={
             <RefreshControl
@@ -1726,8 +1716,6 @@ export default function MusicScreen() {
           keyExtractor={item => item.post_id}
           style={styles.list}
           contentContainerStyle={styles.listContent}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
           ListHeaderComponent={<Text style={styles.sectionTitle}>{t('music.yourLikedSongs')}</Text>}
           refreshControl={
             <RefreshControl
@@ -1822,8 +1810,6 @@ export default function MusicScreen() {
               data={tracks}
               keyExtractor={item => item.post_id}
               contentContainerStyle={styles.listContent}
-              onScroll={onScroll}
-              scrollEventThrottle={16}
               ListEmptyComponent={renderEmpty(
                 'musical-notes-outline',
                 t('music.emptyTracksTitle'),

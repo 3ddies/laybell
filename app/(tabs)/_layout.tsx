@@ -17,7 +17,6 @@ import { GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { PagerContext, TabSwipeContext, noteTabSwipe } from '../../contexts/PagerContext';
 import { useListenMode } from '../../contexts/ListenModeContext';
-import { TabBarScrollProvider, useTabBarScroll } from '../../contexts/TabBarScrollContext';
 
 // Land on Home, not the story camera, even though the camera is declared first
 // (so it sits to the LEFT of Home in the pager — swipe right from Home to reach it).
@@ -51,7 +50,7 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
 // animated rather than just stateful. `r` is the slot's index in the FULL route
 // list (so it lines up with `position`, which counts the hidden camera as 0).
 function TabSlot({
-  route, r, hover, dragging, position, profile, colors, styles,
+  route, r, hover, dragging, position, profile, colors, styles, postCircleColor,
 }: {
   route: MaterialTopTabBarProps['state']['routes'][number];
   r: number;
@@ -61,6 +60,8 @@ function TabSlot({
   profile: ReturnType<typeof useProfile>['profile'];
   colors: ThemePalette;
   styles: ReturnType<typeof makeStyles>;
+  // A disc tone slightly darker than the frosted bar (theme-derived in TabBar).
+  postCircleColor: string;
 }) {
   // "Active-ness" of this slot, 0→1, from two sources:
   //  • near  — pager proximity (1 when centred on this tab), so it glides while
@@ -76,16 +77,20 @@ function TabSlot({
   const fillOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' });
   const outlineOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [1, 0], extrapolate: 'clamp' });
 
-  // Center create button: high-contrast, inverted vs the bar — a WHITE disc with
-  // a BLACK "+" in dark/grey, a BLACK disc with a WHITE "+" in light. colors.text
-  // (disc) and colors.background (glyph) flip together per theme. Still lifts/
-  // grows as its tab becomes active.
+  // Center create button: a disc slightly darker than the bar that lifts/grows as
+  // it becomes active; the "+" cross-fades from a muted tone to colors.text
+  // (white in dark/grey, black in light) so it "highlights" when selected.
   if (route.name === 'post') {
     return (
       <View style={styles.tabItem}>
         <Animated.View style={[styles.postWrap, { transform: [{ translateY: lift }, { scale }] }]}>
-          <View style={[styles.postBtn, { backgroundColor: colors.text }]}>
-            <Ionicons name="add" size={28} color={colors.background} />
+          <View style={[styles.postBtn, { backgroundColor: postCircleColor }]}>
+            <Animated.View style={{ opacity: outlineOpacity }}>
+              <Ionicons name="add" size={28} color={colors.textSecondary} />
+            </Animated.View>
+            <Animated.View style={[styles.iconOverlay, { opacity: fillOpacity }]}>
+              <Ionicons name="add" size={28} color={colors.text} />
+            </Animated.View>
           </View>
         </Animated.View>
       </View>
@@ -138,16 +143,16 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { listenMode } = useListenMode();
-  const { hidden, reveal } = useTabBarScroll();
-  // Switching tabs brings the bar back — a fresh screen shouldn't inherit the
-  // previous tab's tucked-away state.
-  useEffect(() => { reveal(); }, [state.index, reveal]);
 
   // True iOS tab-bar look: the native "chrome material" blur — the exact frosted
   // translucency UIKit uses for bars — with NO heavy tint on top, so the material
   // (and whatever shows behind it) reads through like a real iOS bar. On Android
   // (no system materials) we fall back to a regular blur + a subtle tint wash.
   const isLight = mode === 'light';
+  // Post disc: a step DARKER than the frosted bar. In dark/grey the page
+  // background sits below the bar's surface tone; in light the background is
+  // lighter than the bar, so use the border tone for a subtly darker disc.
+  const postCircleColor = isLight ? colors.border : colors.background;
   const blurTint = isLight ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark';
   const androidWash = isLight ? 'rgba(234,232,227,0.7)' : mode === 'grey' ? 'rgba(31,30,28,0.7)' : 'rgba(17,17,17,0.7)';
 
@@ -168,11 +173,6 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
     }).start();
   }, [listenMode, listenFade]);
   const listenDrift = listenFade.interpolate({ inputRange: [0, 1], outputRange: [24, 0] });
-  // Scroll-driven presence: as `hidden`→1 the bar slides down past its own height
-  // and fades out, layered on top of the listen-mode drift/fade. All native.
-  const scrollShift = hidden.interpolate({ inputRange: [0, 1], outputRange: [0, 68 + insets.bottom + 16] });
-  const barTranslateY = Animated.add(listenDrift, scrollShift);
-  const barOpacity = Animated.multiply(listenFade, hidden.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }));
 
   // The swipe-land haptic now fires NATIVELY from react-native-pager-view (see
   // patches/react-native-pager-view+*.patch) at the pager's own commit moment —
@@ -304,7 +304,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   return (
     <Animated.View
       pointerEvents={listenMode ? 'none' : 'auto'}
-      style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: barOpacity, transform: [{ translateX }, { translateY: barTranslateY }] }]}
+      style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: listenFade, transform: [{ translateX }, { translateY: listenDrift }] }]}
     >
       {/* Native iOS chrome-material blur fills the bar (behind the row). The bar
           stays overflow-visible so the center button can lift above the top edge.
@@ -329,6 +329,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
             profile={profile}
             colors={colors}
             styles={styles}
+            postCircleColor={postCircleColor}
           />
         ))}
       </Animated.View>
@@ -350,7 +351,6 @@ export default function TabLayout() {
   return (
     <PagerContext.Provider value={swiping}>
      <TabSwipeContext.Provider value={setSwipeEnabled}>
-     <TabBarScrollProvider>
       <MaterialTopTabs
         initialRouteName="index"
         tabBarPosition="bottom"
@@ -388,7 +388,6 @@ export default function TabLayout() {
             (their swipes belong to profile's fling stepper). */}
         <MaterialTopTabs.Screen name="profile" />
       </MaterialTopTabs>
-     </TabBarScrollProvider>
      </TabSwipeContext.Provider>
     </PagerContext.Provider>
   );
@@ -455,6 +454,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
     ...SHADOWS.sm,
   },
 });

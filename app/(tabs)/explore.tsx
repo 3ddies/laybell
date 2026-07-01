@@ -31,7 +31,6 @@ import {
   sortRailByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
 } from '../../lib/feedScorer';
 import { GridSkeleton, ListRowsSkeleton } from '../../components/Skeleton';
-import { useTabBarScroll } from '../../contexts/TabBarScrollContext';
 
 // Genre clusters for the All grid: 4-song stacks titled by genre, cached per
 // user. Refreshes every 24h — or every 3h when the user is actively consuming
@@ -69,7 +68,6 @@ export default function ExploreScreen() {
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { play, currentTrack, isPlaying, expand } = useAudio();
-  const { onScroll } = useTabBarScroll();
   const [searchQuery, setSearchQuery] = useState('');
   const searchRefs = useRef<Record<string, any>>({}); // per-row nodes for expand-from-row open
   // Search results are sorted/filtered into tabs. One query fetches everything;
@@ -555,8 +553,6 @@ export default function ExploreScreen() {
             key="accounts"
             data={profiles}
             keyExtractor={item => item.id}
-            onScroll={onScroll}
-            scrollEventThrottle={16}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             contentContainerStyle={styles.listContent}
@@ -574,8 +570,6 @@ export default function ExploreScreen() {
             ? posts.filter(p => p.type === 'video')
             : posts}
           keyExtractor={item => item.id}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           contentContainerStyle={styles.listContent}

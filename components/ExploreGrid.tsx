@@ -14,7 +14,6 @@ import { useAudio } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isSwipeTap } from '../contexts/PagerContext';
-import { useTabBarScroll } from '../contexts/TabBarScrollContext';
 import { isAudioPost } from '../lib/genres';
 import { trackVideoProgress } from '../lib/viewTracker';
 import ThumbStat from './ThumbStat';
@@ -78,7 +77,6 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   // Swipe-tap guard: a tab swipe gliding over the grid must not start audio.
   const play: typeof playRaw = (t) => (isSwipeTap() ? Promise.resolve() : playRaw(t));
   const { show: showOptions } = usePostOptions();
-  const { onScroll: onTabBarScroll } = useTabBarScroll();
 
   const longPressFor = (p: GridPost) =>
     currentUserId
@@ -457,7 +455,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={styles.scroll}
       scrollEventThrottle={16}
-      onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; recomputeActive(); onTabBarScroll(e); }}
+      onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; recomputeActive(); }}
       onLayout={e => { viewportH.current = e.nativeEvent.layout.height; recomputeActive(); }}
       refreshControl={
         onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined

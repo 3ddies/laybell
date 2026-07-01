@@ -6,7 +6,6 @@ import AppVideo from '../../components/AppVideo';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
-import { useTabBarScroll } from '../../contexts/TabBarScrollContext';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image,
@@ -341,7 +340,6 @@ export default function HomeScreen() {
   const viewerProfileRef = useRef(myProfile);
   viewerProfileRef.current = myProfile;
   const { play, currentTrack, isPlaying, expand, videoMuted, toggleVideoMuted } = useAudio();
-  const { onScroll } = useTabBarScroll();
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
@@ -954,8 +952,6 @@ export default function HomeScreen() {
         initialNumToRender={5}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
