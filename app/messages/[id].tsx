@@ -42,11 +42,18 @@ export default function ChatScreen() {
   // iMessage-style blue for the user's own (sent) bubbles.
   const bubbleBlue = ['#1FA0FF', '#0A7CFF'] as const;
   // Message times: visible for the first 4s after the convo opens, then fade out.
-  // Tapping a message re-reveals just that one's time (fades 4s after the last tap).
-  const globalOpacity = useRef(new Animated.Value(1)).current;
-  const tapOpacity = useRef(new Animated.Value(0)).current;
-  const [tappedId, setTappedId] = useState<string | null>(null);
-  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tapping a message re-reveals just that one's time (fades 4s after the tap).
+  // Each message owns its OWN opacity value + fade timer, and a tap animates it
+  // DIRECTLY (no React state / re-render), so a tap always takes effect instantly.
+  const opacityMap = useRef<Record<string, Animated.Value>>({}).current;
+  const fadeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({}).current;
+  const getTimeOpacity = (msgId: string) => (opacityMap[msgId] ||= new Animated.Value(0));
+  const scheduleFade = (msgId: string) => {
+    if (fadeTimers[msgId]) clearTimeout(fadeTimers[msgId]);
+    fadeTimers[msgId] = setTimeout(() => {
+      Animated.timing(getTimeOpacity(msgId), { toValue: 0, duration: 500, useNativeDriver: true }).start();
+    }, 4000);
+  };
   const flatListRef = useRef<FlatList>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -82,26 +89,28 @@ export default function ChatScreen() {
 
   useEffect(() => { setup(); }, [id]);
 
-  // Reveal all times on open, then fade them out after 4s.
+  // Reveal every loaded message's time on open, then fade them out after 4s.
   useEffect(() => {
     if (loading) return;
-    globalOpacity.setValue(1);
+    messages.forEach((m) => getTimeOpacity(m.id).setValue(1));
     const timer = setTimeout(() => {
-      Animated.timing(globalOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start();
+      messages.forEach((m) =>
+        Animated.timing(getTimeOpacity(m.id), { toValue: 0, duration: 500, useNativeDriver: true }).start());
     }, 4000);
     return () => clearTimeout(timer);
+    // Runs once, right after the initial load resolves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
-  // Tap a message → show its time, fading out 4s after the most recent tap.
+  // Tap a message → show its time now, fading out 4s later.
   const showTap = (msgId: string) => {
-    setTappedId(msgId);
-    tapOpacity.setValue(1);
-    if (tapTimer.current) clearTimeout(tapTimer.current);
-    tapTimer.current = setTimeout(() => {
-      Animated.timing(tapOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start();
-    }, 4000);
+    const o = getTimeOpacity(msgId);
+    o.stopAnimation();
+    o.setValue(1);
+    scheduleFade(msgId);
   };
-  useEffect(() => () => { if (tapTimer.current) clearTimeout(tapTimer.current); }, []);
+  // Clear any pending fade timers on unmount.
+  useEffect(() => () => { Object.values(fadeTimers).forEach((t) => clearTimeout(t)); }, []);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -284,10 +293,6 @@ export default function ChatScreen() {
         ref={flatListRef}
         data={messages}
         keyExtractor={item => item.id}
-        // renderItem reads `tappedId` (which time to reveal). It's outside `data`,
-        // so FlatList needs extraData to re-render cells when a tap changes it —
-        // otherwise the tap only takes effect on the next unrelated re-render.
-        extraData={tappedId}
         contentContainerStyle={[styles.messagesList, { paddingBottom: insets.bottom + 76 }]}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={
@@ -297,9 +302,7 @@ export default function ChatScreen() {
         }
         renderItem={({ item }) => {
           const isOwn = item.sender_id === currentUserId;
-          // This message's time follows the tap fade if it was the last tapped,
-          // otherwise the shared open-convo fade.
-          const timeOpacity = tappedId === item.id ? tapOpacity : globalOpacity;
+          const timeOpacity = getTimeOpacity(item.id);
           // A story reply renders as its stillshot + the text underneath.
           const storyRef = parseStoryReply(item.body);
           if (storyRef) {
