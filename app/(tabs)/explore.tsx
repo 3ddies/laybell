@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, TextInput,
   FlatList, TouchableOpacity, Image, Keyboard, ScrollView,
-  Animated, Easing, Dimensions, TouchableWithoutFeedback,
+  Animated, Easing, Dimensions,
 } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
@@ -411,9 +411,12 @@ export default function ExploreScreen() {
 
   const isSearching = searchQuery.trim().length > 0;
 
-  // Tapping any NON-interactive area of the search results exits search back to
-  // Explore — an easy escape hatch when the little "x" is hard to hit. Result
-  // rows/tiles keep their own taps; empty space + gaps bubble up to here.
+  // Tapping (NOT swiping) any non-interactive area of the search results exits
+  // search back to Explore — an easy escape hatch when the little "x" is hard to
+  // hit. Result rows/tiles keep their own taps; a still tap on empty space exits,
+  // while a swipe (finger moved) scrolls the list / does nothing. searchTapRef
+  // tracks movement so only a movement-free tap counts.
+  const searchTapRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const exitSearch = () => {
     setSearchQuery('');
     setSearchFocused(false);
@@ -557,8 +560,20 @@ export default function ExploreScreen() {
           <GridSkeleton columns={3} count={12} gap={1.5} padding={0} />
         )
       ) : isSearching ? (
-        <TouchableWithoutFeedback onPress={exitSearch} accessible={false}>
-        <View style={styles.searchResultsWrap}>
+        <View
+          style={styles.searchResultsWrap}
+          // Claim taps that no result row grabbed; a swipe hands the touch to the
+          // list (scroll), and even if it doesn't, `moved` blocks the exit.
+          onStartShouldSetResponder={() => true}
+          onResponderTerminationRequest={() => true}
+          onResponderGrant={(e) => { searchTapRef.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, moved: false }; }}
+          onResponderMove={(e) => {
+            const s = searchTapRef.current;
+            if (s && (Math.abs(e.nativeEvent.pageX - s.x) > 8 || Math.abs(e.nativeEvent.pageY - s.y) > 8)) s.moved = true;
+          }}
+          onResponderRelease={() => { if (searchTapRef.current && !searchTapRef.current.moved) exitSearch(); searchTapRef.current = null; }}
+          onResponderTerminate={() => { searchTapRef.current = null; }}
+        >
         {searchTab === 'accounts' ? (
           <FlatList
             key="accounts"
@@ -698,7 +713,6 @@ export default function ExploreScreen() {
         />
         )}
         </View>
-        </TouchableWithoutFeedback>
       ) : (
         <ExploreGrid
           posts={trendingPosts}
