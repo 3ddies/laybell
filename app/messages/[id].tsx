@@ -7,7 +7,6 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
@@ -26,9 +25,6 @@ import { ChatThreadSkeleton } from '../../components/Skeleton';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 
-// How far the messages slide left to reveal per-row timestamps on a left-drag.
-const TIME_W = 64;
-
 export default function ChatScreen() {
   const { colors, mode } = useTheme();
   const { t } = useTranslation();
@@ -45,17 +41,6 @@ export default function ChatScreen() {
   const inputBorder = light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.14)';
   // iMessage-style blue for the user's own (sent) bubbles.
   const bubbleBlue = ['#1FA0FF', '#0A7CFF'] as const;
-  // Swipe-left to reveal timestamps (iMessage-style). All rows share this value,
-  // clamped so they slide at most TIME_W; released → spring back to 0.
-  const dragX = useRef(new Animated.Value(0)).current;
-  const revealX = dragX.interpolate({ inputRange: [-TIME_W, 0], outputRange: [-TIME_W, 0], extrapolate: 'clamp' });
-  const onTimePan = useRef(Animated.event([{ nativeEvent: { translationX: dragX } }], { useNativeDriver: true })).current;
-  const onTimePanState = (e: any) => {
-    const s = e.nativeEvent.state;
-    if (s === State.END || s === State.CANCELLED || s === State.FAILED) {
-      Animated.spring(dragX, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 20 }).start();
-    }
-  };
   const flatListRef = useRef<FlatList>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -241,7 +226,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <GestureHandlerRootView style={styles.container}>
+    <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
@@ -268,16 +253,6 @@ export default function ChatScreen() {
           this KAV and slides itself (kbShift) — so the KAV's padding can't also
           shove the absolute bar, which is what made the pill vanish while typing. */}
       <KeyboardAvoidingView style={styles.chatBody} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      {/* Left-drag reveals timestamps. activeOffsetX only catches leftward drags
-          and failOffsetY yields to vertical scroll, so the list still scrolls
-          normally. */}
-      <PanGestureHandler
-        onGestureEvent={onTimePan}
-        onHandlerStateChange={onTimePanState}
-        activeOffsetX={[-20, 100000]}
-        failOffsetY={[-14, 14]}
-      >
-      <View style={styles.chatBody}>
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -293,10 +268,8 @@ export default function ChatScreen() {
           const isOwn = item.sender_id === currentUserId;
           // A story reply renders as its stillshot + the text underneath.
           const storyRef = parseStoryReply(item.body);
-          const postId = storyRef ? null : sharedPostId(item.body);
-          let inner;
           if (storyRef) {
-            inner = (
+            return (
               <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
                 <Text style={styles.storyReplyLabel}>
                   {isOwn ? t('messages.youRepliedStory') : t('messages.repliedYourStory')}
@@ -326,49 +299,42 @@ export default function ChatScreen() {
                     </View>
                   )
                 ) : null}
-              </View>
-            );
-          } else if (postId) {
-            // A shared post renders as a standalone preview card (no chat bubble).
-            inner = (
-              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
-                <SharedPostCard postId={postId} />
-              </View>
-            );
-          } else {
-            inner = (
-              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
-                {isOwn ? (
-                  <LinearGradient
-                    colors={bubbleBlue}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[styles.bubble, styles.bubbleOwn]}
-                  >
-                    <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
-                  </LinearGradient>
-                ) : (
-                  <View style={[styles.bubble, styles.bubbleOther]}>
-                    <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
-                  </View>
-                )}
+                <Text style={styles.cardTime}>{formatTime(item.created_at)}</Text>
               </View>
             );
           }
-          // Slide the row left with the shared drag; the timestamp sits just off
-          // the right edge and glides into view. Released → springs back hidden.
-          return (
-            <Animated.View style={{ transform: [{ translateX: revealX }] }}>
-              {inner}
-              <View style={styles.dragTime} pointerEvents="none">
-                <Text style={styles.dragTimeText}>{formatTime(item.created_at)}</Text>
+          const postId = sharedPostId(item.body);
+          // A shared post renders as a standalone preview card (no chat bubble).
+          if (postId) {
+            return (
+              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
+                <SharedPostCard postId={postId} />
+                <Text style={styles.cardTime}>{formatTime(item.created_at)}</Text>
               </View>
-            </Animated.View>
+            );
+          }
+          return (
+            <View style={[styles.bubbleRow, isOwn ? styles.bubbleRowOwn : styles.bubbleRowOther]}>
+              {isOwn && <Text style={styles.msgTime}>{formatTime(item.created_at)}</Text>}
+              {isOwn ? (
+                <LinearGradient
+                  colors={bubbleBlue}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.bubble, styles.bubbleOwn]}
+                >
+                  <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
+                </LinearGradient>
+              ) : (
+                <View style={[styles.bubble, styles.bubbleOther]}>
+                  <TranslatableText text={item.body} render={(s) => renderBody(s, isOwn)} linkStyle={{ color: isOwn ? 'rgba(255,255,255,0.85)' : colors.textSecondary }} />
+                </View>
+              )}
+              {!isOwn && <Text style={styles.msgTime}>{formatTime(item.created_at)}</Text>}
+            </View>
           );
         }}
       />
-      </View>
-      </PanGestureHandler>
       </KeyboardAvoidingView>
 
       <Animated.View style={[styles.inputBarWrap, { transform: [{ translateY: kbShift }] }]}>
@@ -401,7 +367,7 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
       </Animated.View>
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
@@ -438,6 +404,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   bubbleWrap: { marginBottom: SPACING.xs },
   bubbleWrapOwn: { alignItems: 'flex-end' },
   bubbleWrapOther: { alignItems: 'flex-start' },
+  // Text-message row: the bubble + a small time on its INNER side, bottom-aligned
+  // (time to the left of sent bubbles, to the right of received ones).
+  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: SPACING.xs, gap: 6 },
+  bubbleRowOwn: { justifyContent: 'flex-end' },
+  bubbleRowOther: { justifyContent: 'flex-start' },
+  msgTime: { fontSize: 10, color: colors.textTertiary, marginBottom: 3 },
   bubble: { maxWidth: '80%', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 26 },
   bubbleOwn: {
     borderBottomRightRadius: 9,
@@ -458,14 +430,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   link: { textDecorationLine: 'underline', fontWeight: '700' },
   linkOwn: { color: '#fff' },
   linkOther: { color: colors.primaryLight },
-  // Swipe-to-reveal timestamp: parked fully OFF the screen's right edge (the row
-  // sits SPACING.md inside due to list padding, so offset by that too), revealed
-  // as the row slides left. Vertically centered on the row.
-  dragTime: {
-    position: 'absolute', right: -(TIME_W + SPACING.md), top: 0, bottom: 0, width: TIME_W,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  dragTimeText: { fontSize: 11, color: colors.textTertiary, fontWeight: '500' },
+  // Inline trailing timestamp — small + faded, baseline-flows after the message.
+  inlineTime: { fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
+  inlineTimeOther: { color: colors.textTertiary },
+  cardTime: { fontSize: 10, color: colors.textTertiary, marginTop: 3 },
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
   emptyText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center' },
