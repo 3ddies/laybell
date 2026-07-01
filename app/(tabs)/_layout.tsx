@@ -77,19 +77,20 @@ function TabSlot({
   const fillOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' });
   const outlineOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [1, 0], extrapolate: 'clamp' });
 
-  // Center create button: a disc slightly darker than the bar that lifts/grows as
-  // it becomes active; the "+" cross-fades from a muted tone to colors.text
-  // (white in dark/grey, black in light) so it "highlights" when selected.
+  // Center create button: a disc slightly darker than the bar at rest. When you're
+  // ON the tab it cross-fades to an inverted, high-contrast disc — colors.text fill
+  // + a colors.background "+" (white disc/black + in dark & grey, black disc/white +
+  // in light). The inversion is ACTIVE-ONLY (driven by fillOpacity), not permanent.
   if (route.name === 'post') {
     return (
       <View style={styles.tabItem}>
         <Animated.View style={[styles.postWrap, { transform: [{ translateY: lift }, { scale }] }]}>
-          <View style={[styles.postBtn, { backgroundColor: postCircleColor }]}>
-            <Animated.View style={{ opacity: outlineOpacity }}>
+          <View style={styles.postBtnStack}>
+            <View style={[styles.postBtn, { backgroundColor: postCircleColor }]}>
               <Ionicons name="add" size={28} color={colors.textSecondary} />
-            </Animated.View>
-            <Animated.View style={[styles.iconOverlay, { opacity: fillOpacity }]}>
-              <Ionicons name="add" size={28} color={colors.text} />
+            </View>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.postBtn, { backgroundColor: colors.text, opacity: fillOpacity }]}>
+              <Ionicons name="add" size={28} color={colors.background} />
             </Animated.View>
           </View>
         </Animated.View>
@@ -448,6 +449,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     justifyContent: 'center',
     marginTop: -12,
   },
+  // 58×58 relative box so the active inverted disc can absolute-overlay the base
+  // disc exactly (both centered here).
+  postBtnStack: { width: 58, height: 58 },
   postBtn: {
     width: 58,
     height: 58,
