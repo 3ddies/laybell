@@ -50,7 +50,7 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
 // animated rather than just stateful. `r` is the slot's index in the FULL route
 // list (so it lines up with `position`, which counts the hidden camera as 0).
 function TabSlot({
-  route, r, hover, dragging, position, profile, colors, styles,
+  route, r, hover, dragging, position, profile, colors, styles, postCircleColor,
 }: {
   route: MaterialTopTabBarProps['state']['routes'][number];
   r: number;
@@ -60,6 +60,8 @@ function TabSlot({
   profile: ReturnType<typeof useProfile>['profile'];
   colors: ThemePalette;
   styles: ReturnType<typeof makeStyles>;
+  // A disc tone slightly darker than the frosted bar (theme-derived in TabBar).
+  postCircleColor: string;
 }) {
   // "Active-ness" of this slot, 0→1, from two sources:
   //  • near  — pager proximity (1 when centred on this tab), so it glides while
@@ -75,14 +77,21 @@ function TabSlot({
   const fillOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' });
   const outlineOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [1, 0], extrapolate: 'clamp' });
 
-  // Center create button: gradient circle that lifts/grows as it becomes active.
+  // Center create button: a disc slightly darker than the bar that lifts/grows as
+  // it becomes active; the "+" cross-fades from a muted tone to colors.text
+  // (white in dark/grey, black in light) so it "highlights" when selected.
   if (route.name === 'post') {
     return (
       <View style={styles.tabItem}>
         <Animated.View style={[styles.postWrap, { transform: [{ translateY: lift }, { scale }] }]}>
-          <LinearGradient colors={GRADIENTS.primary} style={styles.postBtn}>
-            <Ionicons name="add" size={28} color="#fff" />
-          </LinearGradient>
+          <View style={[styles.postBtn, { backgroundColor: postCircleColor }]}>
+            <Animated.View style={{ opacity: outlineOpacity }}>
+              <Ionicons name="add" size={28} color={colors.textSecondary} />
+            </Animated.View>
+            <Animated.View style={[styles.iconOverlay, { opacity: fillOpacity }]}>
+              <Ionicons name="add" size={28} color={colors.text} />
+            </Animated.View>
+          </View>
         </Animated.View>
       </View>
     );
@@ -121,7 +130,7 @@ function TabSlot({
           <Ionicons name={icon[1]} size={26} color={colors.textTertiary} />
         </Animated.View>
         <Animated.View style={[styles.iconOverlay, { opacity: fillOpacity }]}>
-          <Ionicons name={icon[0]} size={26} color={colors.primary} />
+          <Ionicons name={icon[0]} size={26} color={colors.text} />
         </Animated.View>
       </Animated.View>
     </View>
@@ -140,6 +149,10 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   // (and whatever shows behind it) reads through like a real iOS bar. On Android
   // (no system materials) we fall back to a regular blur + a subtle tint wash.
   const isLight = mode === 'light';
+  // Post disc: a step DARKER than the frosted bar. In dark/grey the page
+  // background sits below the bar's surface tone; in light the background is
+  // lighter than the bar, so use the border tone for a subtly darker disc.
+  const postCircleColor = isLight ? colors.border : colors.background;
   const blurTint = isLight ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark';
   const androidWash = isLight ? 'rgba(234,232,227,0.7)' : mode === 'grey' ? 'rgba(31,30,28,0.7)' : 'rgba(17,17,17,0.7)';
 
@@ -316,6 +329,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
             profile={profile}
             colors={colors}
             styles={styles}
+            postCircleColor={postCircleColor}
           />
         ))}
       </Animated.View>
@@ -416,7 +430,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: c.primary,
+    borderColor: c.text,
   },
   avatarImg: {
     width: 26,
@@ -440,10 +454,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    ...SHADOWS.md,
-    shadowColor: c.primary,
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    ...SHADOWS.sm,
   },
 });
