@@ -7,7 +7,6 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
@@ -38,11 +37,8 @@ export default function ChatScreen() {
   // The floating input bar is a frosted-glass strip; in Light mode it must use a
   // light blur + light fills (it was hardcoded dark → a dark bar on a white app).
   const light = mode === 'light';
-  const barTint = light ? 'light' : 'dark';
-  const barBg = light ? 'rgba(255,255,255,0.6)' : 'rgba(9,9,9,0.55)';
-  const barSeam = light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)';
-  const inputFill = light ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)';
-  const inputBorder = light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.18)';
+  const inputFill = light ? colors.surface : colors.surfaceElevated;
+  const inputBorder = light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.14)';
   const flatListRef = useRef<FlatList>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -337,13 +333,10 @@ export default function ChatScreen() {
       />
 
       <Animated.View style={[styles.inputBarWrap, { transform: [{ translateY: kbShift }] }]}>
-      <BlurView
-        intensity={70}
-        tint={barTint}
-        experimentalBlurMethod="dimezisBlurView"
-        // Above the keyboard the home-indicator inset is irrelevant — use the
-        // slim padding so the bar hugs the keyboard like iMessage.
-        style={[styles.inputBar, { backgroundColor: barBg, borderTopColor: barSeam, paddingBottom: kbUp ? SPACING.sm + 2 : Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}
+      <View
+        // No solid bar — just the floating input pill + send circle over the
+        // messages, for a cleaner look.
+        style={[styles.inputBar, { paddingBottom: kbUp ? SPACING.sm + 2 : Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}
       >
         <TextInput
           style={[styles.input, { backgroundColor: inputFill, borderColor: inputBorder }]}
@@ -367,7 +360,7 @@ export default function ChatScreen() {
             }
           </LinearGradient>
         </TouchableOpacity>
-      </BlurView>
+      </View>
       </Animated.View>
     </KeyboardAvoidingView>
   );
@@ -405,19 +398,20 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   bubbleWrap: { marginBottom: SPACING.xs },
   bubbleWrapOwn: { alignItems: 'flex-end' },
   bubbleWrapOther: { alignItems: 'flex-start' },
-  bubble: { maxWidth: '80%', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22 },
+  bubble: { maxWidth: '80%', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 26 },
   bubbleOwn: {
-    borderBottomRightRadius: 7,
+    borderBottomRightRadius: 9,
     shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
   bubbleOther: {
-    backgroundColor: colors.surfaceElevated, borderBottomLeftRadius: 7,
+    backgroundColor: colors.surfaceElevated, borderBottomLeftRadius: 9,
     borderWidth: 1, borderColor: colors.border,
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  bubbleText: { color: colors.text, fontSize: 16, lineHeight: 22, letterSpacing: -0.3, fontWeight: '500' },
+  // Regular (not medium) weight + SF's natural tight tracking = clean iOS look.
+  bubbleText: { color: colors.text, fontSize: 17, lineHeight: 22, letterSpacing: -0.4, fontWeight: '400' },
   // Sent bubbles are the orange gradient → keep their text white in every theme
   // (the themed color went dark-on-orange in Light mode).
   bubbleTextOwn: { color: '#fff' },
@@ -447,17 +441,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end',
     paddingHorizontal: SPACING.md, paddingTop: SPACING.sm + 2, gap: SPACING.sm,
-    // A whisper of a seam — the blur itself does the separating.
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.07)',
-    backgroundColor: 'rgba(9,9,9,0.55)',
-    overflow: 'hidden',
   },
-  // Quiet glass pill: low-key fill, hairline border, true 44pt height.
+  // Solid rounded pill so it reads cleanly floating over the messages (no bar).
   input: {
-    flex: 1, backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.18)',
+    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 22, minHeight: 44, paddingHorizontal: SPACING.md + 2,
-    paddingVertical: 11, color: colors.text, fontSize: 16, lineHeight: 21, maxHeight: 120,
+    paddingVertical: 11, color: colors.text, fontSize: 17, lineHeight: 22, maxHeight: 120,
   },
   // Flat solid circle — no glow/elevation (the halo read as Android Material).
   sendBtn: {
