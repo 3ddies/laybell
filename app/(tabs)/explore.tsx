@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, TextInput,
   FlatList, TouchableOpacity, Image, Keyboard, ScrollView,
-  Animated, Easing, Dimensions,
+  Animated, Easing, Dimensions, TouchableWithoutFeedback,
 } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
@@ -411,6 +411,15 @@ export default function ExploreScreen() {
 
   const isSearching = searchQuery.trim().length > 0;
 
+  // Tapping any NON-interactive area of the search results exits search back to
+  // Explore — an easy escape hatch when the little "x" is hard to hit. Result
+  // rows/tiles keep their own taps; empty space + gaps bubble up to here.
+  const exitSearch = () => {
+    setSearchQuery('');
+    setSearchFocused(false);
+    Keyboard.dismiss();
+  };
+
   // Highlight ONLY the single result at the very top of the Relevancy tab — the
   // first matching account if any, otherwise the top-ranked post. Everything else
   // renders plain so the highlight reads as a signal, not noise.
@@ -548,7 +557,9 @@ export default function ExploreScreen() {
           <GridSkeleton columns={3} count={12} gap={1.5} padding={0} />
         )
       ) : isSearching ? (
-        searchTab === 'accounts' ? (
+        <TouchableWithoutFeedback onPress={exitSearch} accessible={false}>
+        <View style={styles.searchResultsWrap}>
+        {searchTab === 'accounts' ? (
           <FlatList
             key="accounts"
             data={profiles}
@@ -685,7 +696,9 @@ export default function ExploreScreen() {
           );
         }}
         />
-        )
+        )}
+        </View>
+        </TouchableWithoutFeedback>
       ) : (
         <ExploreGrid
           posts={trendingPosts}
@@ -710,6 +723,8 @@ export default function ExploreScreen() {
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   contentWrap: { flex: 1 },
+  // Fills the search-results area so taps on empty space (not a result) exit search.
+  searchResultsWrap: { flex: 1 },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
