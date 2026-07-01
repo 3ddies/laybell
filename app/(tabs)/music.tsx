@@ -1274,7 +1274,7 @@ export default function MusicScreen() {
                     <Ionicons
                       name={trendingExpanded ? 'chevron-up' : 'chevron-down'}
                       size={14}
-                      color={colors.primary}
+                      color={colors.text}
                     />
                   </TouchableOpacity>
                 )}
@@ -1336,7 +1336,7 @@ export default function MusicScreen() {
                       <Ionicons
                         name={top20Expanded ? 'chevron-up' : 'chevron-down'}
                         size={14}
-                        color={colors.primary}
+                        color={colors.text}
                       />
                     </TouchableOpacity>
                   )}
@@ -2128,7 +2128,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 4, paddingVertical: SPACING.sm, marginTop: SPACING.xs,
   },
-  showMoreText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
+  showMoreText: { color: colors.text, fontSize: 13, fontWeight: '600' },
 
   forYouScroll: { paddingHorizontal: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.sm },
   forYouCard: { width: FOR_YOU_W, gap: SPACING.xs },
