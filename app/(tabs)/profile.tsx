@@ -26,6 +26,7 @@ import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { countLabel } from '../../lib/i18n';
 import { displayUrl } from '../../lib/profileOptions';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
+import { useTabBarScroll } from '../../contexts/TabBarScrollContext';
 import { activeLayout, usedPostIds } from '../../lib/pageLayout';
 import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { isAudioPost } from '../../lib/genres';
@@ -68,6 +69,7 @@ export default function ProfileScreen() {
   const { t } = useTranslation();
   const { isPremium } = usePremium();
   const linkGuard = useLinkGuard();
+  const { onScroll } = useTabBarScroll();
   const styles = useThemedStyles(makeStyles);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats>({ followers: 0, following: 0, posts: 0 });
@@ -696,6 +698,8 @@ export default function ProfileScreen() {
             <ScrollView
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.pageContent}
+              onScroll={onScroll}
+              scrollEventThrottle={16}
               refreshControl={
                 <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile(); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
