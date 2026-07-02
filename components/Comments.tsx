@@ -20,12 +20,13 @@ import { maskHiddenProfile } from '../lib/hiddenProfile';
 import MentionSuggestions from './MentionSuggestions';
 import MentionText from './MentionText';
 import TranslatableText from './TranslatableText';
-import GifPickerModal from './GifPickerModal';
 import AttachmentView from './AttachmentView';
-import ImageViewerModal from './ImageViewerModal';
-import { parseAttachment, attachmentBody, pickImageAttachment, type Attachment } from '../lib/attachments';
+import { parseAttachment, attachmentBody, type Attachment } from '../lib/attachments';
 import { openGifAttachment } from '../lib/gifAttachmentActions';
 import { openCommentActions } from '../lib/commentActions';
+import { openGifPicker } from '../lib/gifPicker';
+import { openImageViewer } from '../lib/imageViewer';
+import { openPhotoPicker } from '../lib/photoPicker';
 import { reportUser } from '../lib/postActions';
 
 type Row = {
@@ -107,9 +108,6 @@ export default function Comments({
   const [inputFocused, setInputFocused] = useState(false);
   // Staged image/GIF attachment + GIF picker for comments.
   const [pendingAttachment, setPendingAttachment] = useState<Attachment | null>(null);
-  const [gifOpen, setGifOpen] = useState(false);
-  const [attaching, setAttaching] = useState(false);
-  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -186,14 +184,11 @@ export default function Comments({
     }
   }
 
-  async function attachImage() {
-    if (!userId || attaching) return;
-    setAttaching(true);
-    try {
-      const att = await pickImageAttachment(userId);
-      if (att) setPendingAttachment(att);
-    } catch { Alert.alert(t('attach.uploadFailed')); }
-    setAttaching(false);
+  // Open the in-app photo grid (rendered in its own overlay so it works from the
+  // Now Playing player, where the native picker gets stranded behind the overlay).
+  function attachImage() {
+    if (!userId) return;
+    openPhotoPicker({ userId, onPicked: setPendingAttachment });
   }
 
   async function submit() {
@@ -297,7 +292,7 @@ export default function Comments({
               // comment sheet (so it's still deletable/reportable).
               const openGif = () => openGifAttachment(att, {
                 userId,
-                onView: () => setViewerUrl(att.url),
+                onView: () => openImageViewer(att.url),
                 canDelete: isOwn,
                 onDelete: () => remove(item.id, item.user_id),
               });
@@ -305,7 +300,7 @@ export default function Comments({
                 <View style={styles.commentAttach}>
                   <AttachmentView
                     url={att.url} w={att.w} h={att.h} maxWidth={132} radius={12}
-                    onPress={isGif ? openGif : () => setViewerUrl(att.url)}
+                    onPress={isGif ? openGif : () => openImageViewer(att.url)}
                     onLongPress={isGif ? openGif : () => openCommentSheet(item)}
                   />
                   {att.text ? <MentionText style={styles.text} text={att.text} onBeforeNavigate={onNavigate} /> : null}
@@ -455,10 +450,10 @@ export default function Comments({
           </View>
         )}
         <View style={styles.inputBar}>
-          <TouchableOpacity style={styles.attachBtn} onPress={attachImage} disabled={attaching} activeOpacity={0.7}>
-            {attaching ? <ActivityIndicator size="small" color={colors.textTertiary} /> : <Ionicons name="image-outline" size={22} color={colors.textTertiary} />}
+          <TouchableOpacity style={styles.attachBtn} onPress={attachImage} activeOpacity={0.7}>
+            <Ionicons name="image-outline" size={22} color={colors.textTertiary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.gifBtn} onPress={() => setGifOpen(true)} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.gifBtn} onPress={() => openGifPicker({ userId, onSelect: (g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h, src: g.src }) })} activeOpacity={0.7}>
             <Text style={styles.gifBtnText}>GIF</Text>
           </TouchableOpacity>
           <TextInput
@@ -477,8 +472,6 @@ export default function Comments({
         </View>
       </View>
 
-      <GifPickerModal visible={gifOpen} userId={userId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h, src: g.src })} />
-      <ImageViewerModal url={viewerUrl} onClose={() => setViewerUrl(null)} />
     </View>
   );
 }

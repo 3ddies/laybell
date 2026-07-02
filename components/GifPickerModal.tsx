@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, TextInput, FlatList, TouchableOpacity, ActivityIndicator, Modal, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TextInput, FlatList, TouchableOpacity, ActivityIndicator, Modal, Alert, Platform, useWindowDimensions } from 'react-native';
+import { FullWindowOverlay } from 'react-native-screens';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,7 +16,7 @@ import { fetchUserGifs, addUserGif, removeUserGif, type UserGif } from '../lib/u
 type Tab = 'search' | 'library';
 
 export default function GifPickerModal({
-  visible, onClose, onSelect, userId,
+  visible, onClose, onSelect, userId, inOverlay,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -23,6 +24,9 @@ export default function GifPickerModal({
   // created, so a sent GIF can offer "go to the original video".
   onSelect: (g: Gif & { src?: string }) => void;
   userId?: string | null;
+  // Render into its own FullWindowOverlay (iOS) when opened from the Now Playing
+  // overlay, where a nested <Modal> would deadlock.
+  inOverlay?: boolean;
 }) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -72,9 +76,8 @@ export default function GifPickerModal({
     ]);
   }
 
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.container, { paddingTop: insets.top + SPACING.sm }]}>
+  const body = (
+    <View style={[styles.container, { paddingTop: insets.top + SPACING.sm }]}>
         {/* Tabs + cancel */}
         <View style={styles.topRow}>
           <View style={styles.tabRow}>
@@ -173,7 +176,17 @@ export default function GifPickerModal({
         )}
 
         {tab === 'search' && <Text style={styles.attribution}>{t('gif.poweredBy')}</Text>}
-      </View>
+    </View>
+  );
+
+  // Inside the iOS Now Playing FullWindowOverlay a nested <Modal> deadlocks, so
+  // render into its own FullWindowOverlay instead (like the other sheets).
+  if (inOverlay && Platform.OS === 'ios') {
+    return visible ? <FullWindowOverlay>{body}</FullWindowOverlay> : null;
+  }
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      {body}
     </Modal>
   );
 }

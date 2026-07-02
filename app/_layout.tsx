@@ -28,6 +28,9 @@ import { AdOptionsProvider } from '../contexts/AdOptionsContext';
 import { BlockConfirmProvider } from '../contexts/BlockConfirmContext';
 import { GifActionSheetProvider } from '../contexts/GifActionSheetContext';
 import { CommentActionSheetProvider } from '../contexts/CommentActionSheetContext';
+import { ImageViewerProvider } from '../contexts/ImageViewerContext';
+import { GifPickerProvider } from '../contexts/GifPickerContext';
+import { PhotoPickerProvider } from '../contexts/PhotoPickerContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
@@ -298,7 +301,13 @@ export default function RootLayout() {
                         <BlockConfirmProvider>
                           <GifActionSheetProvider>
                             <CommentActionSheetProvider>
-                              <AppContent />
+                              <ImageViewerProvider>
+                                <GifPickerProvider>
+                                  <PhotoPickerProvider>
+                                    <AppContent />
+                                  </PhotoPickerProvider>
+                                </GifPickerProvider>
+                              </ImageViewerProvider>
                             </CommentActionSheetProvider>
                           </GifActionSheetProvider>
                         </BlockConfirmProvider>

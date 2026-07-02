@@ -20,7 +20,7 @@ import { createNotification } from '../../lib/createNotification';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleModal';
 import { useAudio } from '../../contexts/AudioContext';
-import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
@@ -1289,60 +1289,70 @@ export default function PostScreen() {
       )}
 
       {postType === 'audio' ? (
-        <View style={styles.audioPickArea}>
-          {isRecording ? (
-            <View style={styles.recordBox}>
-              <View style={styles.recDot} />
-              <Text style={styles.recTime}>{fmtClock(recSecs)}</Text>
-              <Text style={styles.audioPickSub}>{t('post.recording')}</Text>
-              <TouchableOpacity style={styles.stopBtn} onPress={stopRecording}>
-                <Ionicons name="stop" size={24} color={colors.text} />
-                <Text style={styles.stopBtnText}>{t('post.stop')}</Text>
-              </TouchableOpacity>
-            </View>
-          ) : audioFile ? (
+        isRecording ? (
+          // Recording fills the whole page in red — a focused capture screen.
+          <View style={styles.recordingFull}>
+            <View style={styles.recDot} />
+            <Text style={styles.recTimeLg}>{fmtClock(recSecs)}</Text>
+            <Text style={styles.recLabel}>{t('post.recording')}</Text>
+            <TouchableOpacity style={styles.stopBtn} onPress={stopRecording} activeOpacity={0.85}>
+              <Ionicons name="stop" size={22} color={colors.error} />
+              <Text style={styles.stopBtnText}>{t('post.stop')}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : audioFile ? (
+          <View style={styles.audioPickArea}>
             <View style={styles.audioSelected}>
               {/* Borderless filled-circle glyph, same as Today's Pick */}
               <TouchableOpacity onPress={togglePreview} activeOpacity={0.8} hitSlop={6}>
-                <Ionicons name={isPreviewPlaying ? 'pause-circle' : 'play-circle'} size={64} color={colors.primary} />
+                <Ionicons name={isPreviewPlaying ? 'pause-circle' : 'play-circle'} size={72} color={colors.primary} />
               </TouchableOpacity>
               <Text style={styles.audioPickTitle} numberOfLines={1}>{audioFile.name || t('post.audioSelected')}</Text>
               <Text style={styles.audioPickSub}>
                 {audioDuration != null ? `${fmtClock(audioDuration)} · ` : ''}{isPreviewPlaying ? t('post.playing') : t('post.tapToPreview')}
               </Text>
               <View style={styles.audioSelBtns}>
-                <TouchableOpacity style={styles.audioSelBtn} onPress={pickAudio}>
-                  <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />
+                <TouchableOpacity style={styles.audioSelBtn} onPress={pickAudio} activeOpacity={0.85}>
+                  <Ionicons name="cloud-upload-outline" size={16} color={colors.text} />
                   <Text style={styles.audioSelBtnText}>{t('post.replace')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.audioSelBtn} onPress={() => { setAudioFile(null); setAudioDuration(null); startRecording(); }}>
-                  <Ionicons name="mic" size={16} color={colors.primary} />
+                <TouchableOpacity style={styles.audioSelBtn} onPress={() => { setAudioFile(null); setAudioDuration(null); startRecording(); }} activeOpacity={0.85}>
+                  <Ionicons name="mic" size={16} color={colors.text} />
                   <Text style={styles.audioSelBtnText}>{t('post.recordNew')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
-          ) : (
-            <View style={styles.audioChoices}>
-              <TouchableOpacity style={styles.audioChoice} onPress={startRecording}>
-                <LinearGradient colors={GRADIENTS.primary} style={styles.audioChoiceIcon}>
-                  <Ionicons name="mic" size={28} color={colors.text} />
-                </LinearGradient>
-                <Text style={styles.audioChoiceTitle}>{t('post.record')}</Text>
-                <Text style={styles.audioChoiceSub}>{t('post.recordSub')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.audioChoice} onPress={pickAudio}>
-                <View style={[styles.audioChoiceIcon, styles.audioChoiceIconAlt]}>
-                  <Ionicons name="cloud-upload-outline" size={28} color={colors.primary} />
+            <Text style={[styles.audioPickSub, { marginTop: SPACING.lg, textAlign: 'center' }]}>
+              {t('post.audioLimitsHint', { music: fmtMins(MUSIC_MAX_SEC), spoken: fmtMins(SPOKEN_MAX_SEC) })}
+            </Text>
+          </View>
+        ) : (
+          // Record / Upload split the FULL area into two halves divided by a shallow
+          // diagonal: a rotated, oversized board (clipped to the frame) so the seam
+          // reads as a near-horizontal diagonal; content counter-rotates upright.
+          <View style={styles.audioChoices}>
+            <View style={styles.diagBoard}>
+              <TouchableOpacity style={styles.diagHalf} onPress={startRecording} activeOpacity={0.9}>
+                <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+                <View style={styles.diagContent}>
+                  <Ionicons name="mic" size={34} color="#fff" />
+                  <Text style={styles.diagTitleOnPrimary}>{t('post.record')}</Text>
+                  <Text style={styles.diagSubOnPrimary}>{t('post.recordSub')}</Text>
                 </View>
-                <Text style={styles.audioChoiceTitle}>{t('post.upload')}</Text>
-                <Text style={styles.audioChoiceSub}>MP3 · WAV · M4A</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.diagHalf, styles.diagUpload]} onPress={pickAudio} activeOpacity={0.9}>
+                <View style={styles.diagContent}>
+                  <Ionicons name="cloud-upload-outline" size={34} color={colors.primary} />
+                  <Text style={styles.diagTitle}>{t('post.upload')}</Text>
+                  <Text style={styles.diagSub}>MP3 · WAV · M4A</Text>
+                </View>
               </TouchableOpacity>
             </View>
-          )}
-          <Text style={[styles.audioPickSub, { marginTop: SPACING.lg, textAlign: 'center' }]}>
-            {t('post.audioLimitsHint', { music: fmtMins(MUSIC_MAX_SEC), spoken: fmtMins(SPOKEN_MAX_SEC) })}
-          </Text>
-        </View>
+            <Text style={styles.audioHint} pointerEvents="none">
+              {t('post.audioLimitsHint', { music: fmtMins(MUSIC_MAX_SEC), spoken: fmtMins(SPOKEN_MAX_SEC) })}
+            </Text>
+          </View>
+        )
       ) : (
         <>
           {/* Collapsing preview — single media cropper OR the slideshow cover */}
@@ -1469,10 +1479,10 @@ export default function PostScreen() {
 
       {/* Bottom strip — Posts (photo / video / slideshow) vs Music */}
       <View style={styles.typeStrip}>
-        <TouchableOpacity onPress={selectPostsTab} style={styles.typeStripBtn}>
+        <TouchableOpacity onPress={selectPostsTab} activeOpacity={0.85} style={styles.typeStripBtn}>
           <Text style={[styles.typeStripText, postType !== 'audio' && styles.typeStripTextActive]}>{t('post.tabPosts')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => switchType('audio')} style={styles.typeStripBtn}>
+        <TouchableOpacity onPress={() => switchType('audio')} activeOpacity={0.85} style={styles.typeStripBtn}>
           <Text style={[styles.typeStripText, postType === 'audio' && styles.typeStripTextActive]}>{t('post.tabMusic')}</Text>
         </TouchableOpacity>
       </View>
@@ -1611,18 +1621,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   modeToggle: { flexDirection: 'row', backgroundColor: colors.surfaceLight, borderRadius: RADIUS.full, padding: 2 },
   modePill: { paddingHorizontal: SPACING.md, paddingVertical: 5, borderRadius: RADIUS.full },
-  modePillActive: { backgroundColor: colors.primary },
+  modePillActive: { backgroundColor: '#fff', ...SHADOWS.sm },
   modePillText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
-  modePillTextActive: { color: '#fff' },
+  modePillTextActive: { color: '#000' },
 
-
+  // Bottom Posts | Music strip — two equal halves, centered labels, same (dark)
+  // background; the active label is orange and bolder.
   typeStrip: {
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: SPACING.xl,
-    paddingVertical: SPACING.md, borderTopWidth: 0.5, borderTopColor: colors.border,
+    flexDirection: 'row', alignItems: 'stretch',
+    borderTopWidth: 0.5, borderTopColor: colors.border,
   },
-  typeStripBtn: { paddingHorizontal: SPACING.sm },
+  typeStripBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.md },
   typeStripText: { color: colors.textTertiary, fontSize: 13, fontWeight: '700', letterSpacing: 1 },
-  typeStripTextActive: { color: colors.primary },
+  typeStripTextActive: { color: colors.primary, fontWeight: '900' },
 
   audioPickArea: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.lg },
   audioPickBtn: {
@@ -1633,39 +1644,47 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   audioPickTitle: { color: colors.text, fontSize: 16, fontWeight: '700', textAlign: 'center' },
   audioPickSub: { color: colors.textTertiary, fontSize: 13, textAlign: 'center' },
 
-  audioChoices: { flexDirection: 'row', gap: SPACING.md, width: '100%' },
-  audioChoice: {
-    flex: 1, alignItems: 'center', gap: SPACING.xs, paddingVertical: SPACING.xl,
-    borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed', borderRadius: RADIUS.lg,
+  // Record / Upload as two halves split by a shallow diagonal. The board is
+  // oversized + rotated and clipped by the rounded card, so its centre seam reads
+  // as a near-horizontal diagonal; content counter-rotates back to upright.
+  audioChoices: { flex: 1, width: '100%', overflow: 'hidden' },
+  diagBoard: { position: 'absolute', top: -80, bottom: -80, left: -80, right: -80, transform: [{ rotate: '-7deg' }] },
+  audioHint: {
+    position: 'absolute', left: 0, right: 0, bottom: SPACING.md,
+    color: 'rgba(255,255,255,0.75)', fontSize: 12, textAlign: 'center', paddingHorizontal: SPACING.lg,
   },
-  audioChoiceIcon: { width: 56, height: 56, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  audioChoiceIconAlt: { backgroundColor: colors.surfaceElevated },
-  audioChoiceTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
-  audioChoiceSub: { color: colors.textTertiary, fontSize: 12 },
+  diagHalf: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  diagUpload: { backgroundColor: colors.surfaceElevated, borderTopWidth: 2, borderTopColor: colors.background },
+  diagContent: { alignItems: 'center', gap: SPACING.xs, transform: [{ rotate: '7deg' }] },
+  diagTitleOnPrimary: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  diagSubOnPrimary: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' },
+  diagTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
+  diagSub: { color: colors.textTertiary, fontSize: 12, fontWeight: '600' },
 
-  recordBox: {
-    alignItems: 'center', gap: SPACING.sm, padding: SPACING.xl, width: '100%',
-    borderWidth: 1.5, borderColor: colors.error, borderRadius: RADIUS.lg, backgroundColor: colors.error + '11',
+  // Full-page recording screen — the whole area goes red.
+  recordingFull: {
+    flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center',
+    gap: SPACING.md, backgroundColor: colors.error,
   },
-  recDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: colors.error },
-  recTime: { color: colors.text, fontSize: 32, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  recDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#fff' },
+  recTimeLg: { color: '#fff', fontSize: 64, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: 1 },
+  recLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase' },
   stopBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginTop: SPACING.sm,
-    backgroundColor: colors.error, borderRadius: RADIUS.full, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg,
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginTop: SPACING.md,
+    backgroundColor: '#fff', borderRadius: RADIUS.full, paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.xl,
   },
-  stopBtnText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  stopBtnText: { color: colors.error, fontSize: 15, fontWeight: '800' },
 
   audioSelected: {
     alignItems: 'center', gap: SPACING.sm, padding: SPACING.xl, width: '100%',
-    borderWidth: 1.5, borderColor: colors.border, borderRadius: RADIUS.lg,
   },
-  audioSelBtns: { flexDirection: 'row', gap: SPACING.md, marginTop: SPACING.xs },
+  audioSelBtns: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.md },
   audioSelBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.primary,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: SPACING.sm + 1, paddingHorizontal: SPACING.lg,
+    borderRadius: RADIUS.full, backgroundColor: colors.surfaceLight,
   },
-  audioSelBtnText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  audioSelBtnText: { color: colors.text, fontSize: 13.5, fontWeight: '700' },
 
   // details
   detailsContent: { padding: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.xxl },
@@ -1799,7 +1818,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Save-as-draft button (details step)
   draftSaveBtn: {
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#000', borderRadius: RADIUS.full,
+    backgroundColor: colors.surface, borderRadius: RADIUS.full,
     paddingVertical: SPACING.md, marginTop: SPACING.xs,
   },
   draftSaveBtnDisabled: { opacity: 0.5 },
