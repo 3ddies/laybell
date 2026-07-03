@@ -298,7 +298,7 @@ export function ShareSheet({ visible, payload, onClose }: {
   }
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent supportedOrientations={['portrait', 'landscape']}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />

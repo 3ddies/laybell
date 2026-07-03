@@ -25,6 +25,12 @@ export function clampFeedAspect(ratio: number): number {
   return Math.min(Math.max(ratio, 4 / 5), 1.91);
 }
 
+// Video allows wider (cinematic) landscape than photos so horizontally-recorded
+// clips keep their true frame; still floored/ceilinged to avoid extreme slivers.
+export function clampVideoAspect(ratio: number): number {
+  return Math.min(Math.max(ratio, 4 / 5), 2.4);
+}
+
 // [width, height] for ImagePicker's crop `aspect`.
 export function aspectToArray(ratio: string): [number, number] {
   const [w, h] = ratio.split(':').map(Number);

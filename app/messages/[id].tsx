@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, FlatList, TextInput, Image,
   TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
-  Keyboard, Animated, Alert, Modal, Pressable,
+  Keyboard, Animated, Alert, Modal, Pressable, Dimensions,
 } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -96,19 +96,34 @@ export default function ChatScreen() {
   const [kbUp, setKbUp] = useState(false);
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
-    const show = Keyboard.addListener('keyboardWillShow', (e: any) => {
+    // RAISE on willShow OR willChangeFrame (whichever fires — iOS skips willShow
+    // during rapid focus), but only for an ON-SCREEN keyboard frame. LOWER only on
+    // an explicit willHide. This is the fix for "slides up then glitches back down":
+    // iOS emits a stray docked/off-screen frame right after the show, and the old
+    // code treated its zero overlap as a hide and yanked the bar back under the
+    // keyboard. Now nothing but a real willHide can lower it.
+    const raise = (e: any) => {
+      const kb = e.endCoordinates;
+      if (!kb || kb.height <= 0) return;
+      if (kb.screenY >= Dimensions.get('screen').height - 10) return; // off-screen → let willHide handle
       setKbUp(true);
-      Animated.timing(kbShift, {
-        toValue: -(e.endCoordinates?.height ?? 0),
-        duration: e.duration ?? 250,
-        useNativeDriver: true,
-      }).start();
-    });
-    const hide = Keyboard.addListener('keyboardWillHide', (e: any) => {
+      Animated.timing(kbShift, { toValue: -kb.height, duration: e.duration ?? 250, useNativeDriver: true }).start();
+    };
+    const lower = (e: any) => {
       setKbUp(false);
       Animated.timing(kbShift, { toValue: 0, duration: e?.duration ?? 220, useNativeDriver: true }).start();
-    });
-    return () => { show.remove(); hide.remove(); };
+    };
+    // The DID events fire LAST (after the keyboard settles), so they authoritatively
+    // correct the resting position — this is what keeps re-triggers (2nd+ open) from
+    // ending up glitched under the keyboard when events interleave across cycles.
+    const subs = [
+      Keyboard.addListener('keyboardWillShow', raise),
+      Keyboard.addListener('keyboardWillChangeFrame', raise),
+      Keyboard.addListener('keyboardDidShow', raise),
+      Keyboard.addListener('keyboardWillHide', lower),
+      Keyboard.addListener('keyboardDidHide', lower),
+    ];
+    return () => subs.forEach((s) => s.remove());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -558,14 +573,16 @@ export default function ChatScreen() {
 
       <Animated.View style={[styles.inputBarWrap, { transform: [{ translateY: kbShift }] }]}>
       {pendingAttachment && (
-        <View style={styles.attachPreviewRow}>
-          <View>
+        // Full-width row is a keyboard-dismiss zone; the box hugs the GIF only, so
+        // tapping the space beside it exits typing rather than doing nothing.
+        <Pressable style={styles.attachPreviewRow} onPress={() => Keyboard.dismiss()}>
+          <View style={styles.attachPreviewItem}>
             <AttachmentView url={pendingAttachment.url} w={pendingAttachment.w} h={pendingAttachment.h} maxWidth={110} radius={12} />
             <TouchableOpacity style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}>
               <Ionicons name="close-circle" size={22} color={colors.text} />
             </TouchableOpacity>
           </View>
-        </View>
+        </Pressable>
       )}
       <View
         // No solid bar — just the floating input pill + send circle over the
@@ -807,6 +824,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // Staged attachment preview above the compose bar.
   attachPreviewRow: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingBottom: SPACING.xs },
+  attachPreviewItem: { alignSelf: 'flex-start' }, // hug the GIF; rest of the row dismisses the keyboard
   attachRemove: { position: 'absolute', top: -6, right: -6, backgroundColor: colors.background, borderRadius: RADIUS.full },
   // Image + GIF buttons on the compose bar.
   attachBtn: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },

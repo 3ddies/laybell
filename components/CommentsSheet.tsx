@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity, Keyboard, Platform,
-  Pressable, Dimensions, Animated, PanResponder, Easing,
+  Pressable, useWindowDimensions, Animated, PanResponder, Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,8 +9,6 @@ import Comments from './Comments';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
-
-const SCREEN_H = Dimensions.get('window').height;
 
 // Rubber-band resistance: sheet can stretch a little past its ceiling, then
 // snaps back. Displacement approaches `max` asymptotically so it always feels
@@ -35,8 +33,11 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose, onPos
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  // Window height (not a module const) so the sheet fits the CURRENT orientation —
+  // landscape reels open comments without the sheet overflowing a portrait height.
+  const { height: SCREEN_H } = useWindowDimensions();
   const FULL_H = SCREEN_H - insets.top;
-  const DEFAULT_H = Math.min(Math.round(SCREEN_H * 0.78), FULL_H);
+  const DEFAULT_H = Math.min(Math.round(SCREEN_H * 0.75), FULL_H); // 3/4 at rest; drag/type → full
 
   const height = useRef(new Animated.Value(DEFAULT_H)).current;
   const translateY = useRef(new Animated.Value(DEFAULT_H)).current;
@@ -135,10 +136,15 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose, onPos
   })).current;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent supportedOrientations={['portrait', 'landscape']}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
+          {/* While typing, a tap outside the keyboard ONLY dismisses the keyboard
+              (doesn't also close the sheet); otherwise it closes the sheet. */}
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => { if (kbHeight > 0) Keyboard.dismiss(); else dismiss(); }}
+          />
         </Animated.View>
         <Animated.View
           // Bottom clearance: the input bar already carries its own bottom

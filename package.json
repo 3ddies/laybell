@@ -30,6 +30,7 @@
     "expo-media-library": "~18.2.1",
     "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.23",
+    "expo-screen-orientation": "~9.0.9",
     "expo-status-bar": "~3.0.9",
     "expo-video": "~3.0.16",
     "expo-video-thumbnails": "~10.0.8",

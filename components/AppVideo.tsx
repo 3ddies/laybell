@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -38,6 +38,9 @@ export type AppVideoProps = {
   posterContentFit?: ContentFit;
   /** Seek here (seconds) once loaded, and the point looped back to at trimEnd. */
   trimStartSec?: number | null;
+  /** Seek here (seconds) once loaded when no trim start is set — used to resume a
+   *  clip near where another player left off (e.g. rotating a reel to fullscreen). */
+  startPositionSec?: number | null;
   /** When the position reaches this (seconds), loop back to trimStart (or 0). */
   trimEndSec?: number | null;
   /** Progress cadence in ms (timeUpdate interval). Default 250. */
@@ -49,7 +52,10 @@ export type AppVideoProps = {
   ignoreSuspend?: boolean;
 };
 
-export default function AppVideo({
+/** Imperative handle for scrubbing/seeking from a parent (e.g. a progress bar). */
+export type AppVideoHandle = { seek: (sec: number) => void };
+
+const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   source,
   style,
   contentFit = 'cover',
@@ -60,12 +66,13 @@ export default function AppVideo({
   poster,
   posterContentFit,
   trimStartSec,
+  startPositionSec,
   trimEndSec,
   progressIntervalMs = 250,
   onProgress,
   onEnd,
   ignoreSuspend = false,
-}: AppVideoProps) {
+}: AppVideoProps, ref) {
   const uri = typeof source === 'string' ? source : source.uri;
   // A full-screen takeover (e.g. the GIF maker) can globally pause background
   // videos so their audio doesn't bleed through. Opt out with `ignoreSuspend`.
@@ -83,6 +90,8 @@ export default function AppVideo({
   onEndRef.current = onEnd;
   const trimStartRef = useRef<number | null>(trimStartSec ?? null);
   trimStartRef.current = trimStartSec ?? null;
+  const startPositionRef = useRef<number | null>(startPositionSec ?? null);
+  startPositionRef.current = startPositionSec ?? null;
   const trimEndRef = useRef<number | null>(trimEndSec ?? null);
   trimEndRef.current = trimEndSec ?? null;
   // Seed the trim-start seek only once per loaded source.
@@ -96,6 +105,11 @@ export default function AppVideo({
     p.timeUpdateEventInterval = intervalSec;
     if (shouldPlay) p.play();
   });
+
+  // Let a parent scrub/seek the playhead (used by the reel progress bar).
+  useImperativeHandle(ref, () => ({
+    seek: (sec: number) => { try { player.currentTime = Math.max(0, sec); } catch {} },
+  }), [player]);
 
   // Keep mutable player props in sync with React props.
   useEffect(() => { player.muted = muted; }, [muted, player]);
@@ -130,7 +144,8 @@ export default function AppVideo({
         if (!seededRef.current) {
           seededRef.current = true;
           const ts = trimStartRef.current;
-          if (ts != null && ts > 0) { try { player.currentTime = ts; } catch {} }
+          const seekTo = ts != null && ts > 0 ? ts : startPositionRef.current;
+          if (seekTo != null && seekTo > 0) { try { player.currentTime = seekTo; } catch {} }
         }
       }
     });
@@ -171,4 +186,6 @@ export default function AppVideo({
       ) : null}
     </View>
   );
-}
+});
+
+export default AppVideo;

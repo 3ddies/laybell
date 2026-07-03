@@ -23,7 +23,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
-import { IMAGE_FORMATS, aspectToNumber, clampFeedAspect, defaultFormatFor } from '../../lib/aspectRatio';
+import { IMAGE_FORMATS, aspectToNumber, clampVideoAspect, defaultFormatFor } from '../../lib/aspectRatio';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
@@ -450,7 +450,7 @@ export default function PostScreen() {
     // cropRef via initialCrop, so a stale value would mis-position the new pick).
     cropRef.current = null;
     if (m.type === 'video') {
-      setVideoAspect(clampFeedAspect((m.width || 1) / (m.height || 1)));
+      setVideoAspect(clampVideoAspect((m.width || 1) / (m.height || 1)));
       setVideoDuration(m.duration ?? 0);
       setTrimStart(0);
       try {

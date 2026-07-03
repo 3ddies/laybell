@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl, Alert, Animated, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl, Alert, Animated, Keyboard, Pressable } from 'react-native';
 import { Fragment, useCallback, useEffect, useRef, useState, ReactElement } from 'react';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -478,14 +478,17 @@ export default function Comments({
           maxHeight={180}
         />
         {pendingAttachment && (
-          <View style={styles.attachPreviewRow}>
-            <View>
+          // Full-width row is a keyboard-dismiss zone; the bordered box hugs the
+          // GIF only, so tapping the empty space beside it exits typing (handy in
+          // the tight landscape comment sheet) rather than doing nothing.
+          <Pressable style={styles.attachPreviewRow} onPress={() => Keyboard.dismiss()}>
+            <View style={styles.attachPreviewItem}>
               <AttachmentView url={pendingAttachment.url} w={pendingAttachment.w} h={pendingAttachment.h} maxWidth={96} radius={10} />
               <TouchableOpacity style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}>
                 <Ionicons name="close-circle" size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
-          </View>
+          </Pressable>
         )}
         <View style={styles.inputBar}>
           <TouchableOpacity style={styles.attachBtn} onPress={attachImage} activeOpacity={0.7}>
@@ -569,6 +572,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   inputBar: { flexDirection: 'row', alignItems: 'flex-end', gap: SPACING.xs, paddingTop: SPACING.sm + 2, paddingBottom: SPACING.md },
   commentAttach: { marginTop: 4, gap: 4 },
   attachPreviewRow: { flexDirection: 'row', paddingTop: SPACING.sm },
+  // Hugs the GIF (doesn't stretch across the row) so only the thumbnail is the
+  // bounded/interactive element — the rest of the row dismisses the keyboard.
+  attachPreviewItem: { alignSelf: 'flex-start' },
   attachRemove: { position: 'absolute', top: -5, right: -5, backgroundColor: colors.background, borderRadius: RADIUS.full },
   attachBtn: { width: 36, height: 44, alignItems: 'center', justifyContent: 'center' },
   gifBtn: {

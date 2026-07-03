@@ -53,7 +53,10 @@ function groupSongs(songs: GridPost[]): GridPost[][] {
 }
 
 function mediaHeight(post: GridPost): number {
-  if (post.type === 'video') return Math.min(COL_W / aspectToNumber(post.aspect_ratio, 16 / 9), COL_W * 1.25);
+  // All videos (incl. horizontal/cinematic clips) show as tall reel tiles — the
+  // landscape frame center-crops via contentFit="cover", so its thumbnail looks
+  // like a regular reel even though it plays back letterboxed.
+  if (post.type === 'video') return COL_W * 1.25;
   return COL_W; // pictures render 1:1
 }
 

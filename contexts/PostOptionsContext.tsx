@@ -478,7 +478,7 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
     return visible ? <View style={StyleSheet.absoluteFill}>{content}</View> : null;
   }
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent supportedOrientations={['portrait', 'landscape']}>
       {content}
     </Modal>
   );
