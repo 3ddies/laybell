@@ -876,11 +876,11 @@ export default function StoryCameraScreen() {
             {uploading ? (
               uploadPct != null
                 ? <Text style={styles.shareBtnText}>{Math.round(uploadPct * 100)}%</Text>
-                : <ActivityIndicator color="#fff" />
+                : <ActivityIndicator color="#000" />
             ) : (
               <>
                 <Text style={styles.shareBtnText}>{t('storyCamera.addToStory')}</Text>
-                <Ionicons name="arrow-forward-circle" size={22} color="#fff" />
+                <Ionicons name="arrow-forward-circle" size={22} color="#000" />
               </>
             )}
           </TouchableOpacity>
@@ -1417,10 +1417,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    backgroundColor: colors.primary, borderRadius: RADIUS.full,
+    backgroundColor: '#fff', borderRadius: RADIUS.full,
     paddingVertical: SPACING.md,
   },
-  shareBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  shareBtnText: { color: '#000', fontSize: 16, fontWeight: '700' },
 
   captionPreview: {
     backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: RADIUS.md,

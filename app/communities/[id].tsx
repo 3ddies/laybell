@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, Pressable, Image, Alert,
+  Animated, Dimensions, Easing,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +34,8 @@ function accentFor(seed: string): readonly [string, string] {
   return ACCENTS[h % ACCENTS.length];
 }
 
+const SCREEN_W = Dimensions.get('window').width;
+
 export default function CommunityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
@@ -41,6 +44,14 @@ export default function CommunityDetailScreen() {
   const router = useRouter();
   const { profile } = useProfile();
   const userId = profile?.id ?? null;
+
+  // Own right-to-left slide-in on mount (immediately, while it still loads) — the
+  // pager's programmatic entrance can land instantly, so drive the entrance here
+  // and let SwipeBackPager handle only the swipe-back (animateIn={false}).
+  const entryX = useRef(new Animated.Value(SCREEN_W)).current;
+  useEffect(() => {
+    Animated.timing(entryX, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [entryX]);
 
   const [community, setCommunity] = useState<Community | null>(null);
   const [posts, setPosts] = useState<any[]>([]);
@@ -103,61 +114,69 @@ export default function CommunityDetailScreen() {
     );
   }
 
+  // One body for every state (loading / not-found / content), wrapped once by the
+  // pager + entrance Animated.View below — so the screen slides in showing the
+  // skeleton, then the content fills in place (instead of popping in).
+  let body: ReactNode;
   if (loading) {
-    return (
-      <SwipeBackPager>
-        <View style={styles.container}>
-          <View style={styles.skelHeader}>
-            <Skeleton width="100%" height={120} radius={0} style={styles.skelBanner} />
-            <View style={styles.skelInfo}>
-              <View style={styles.titleRow}>
-                <View style={styles.titleCol}>
-                  <SkeletonLine w="70%" h={28} />
-                  <SkeletonLine w="40%" h={13} style={{ marginTop: 8 }} />
-                </View>
-                <Skeleton width={92} height={40} radius={RADIUS.full} />
+    body = (
+      <View style={styles.container}>
+        <View style={styles.skelHeader}>
+          <Skeleton width="100%" height={120} radius={0} style={styles.skelBanner} />
+          <View style={styles.skelInfo}>
+            <View style={styles.titleRow}>
+              <View style={styles.titleCol}>
+                <SkeletonLine w="70%" h={28} />
+                <SkeletonLine w="40%" h={13} style={{ marginTop: 8 }} />
               </View>
-              <View style={{ marginTop: SPACING.sm }}>
-                <SkeletonLine w="55%" h={13} />
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.rulesBlock}>
-                <SkeletonLine w="30%" h={16} />
-                <SkeletonLine w="100%" h={14} style={{ marginTop: 4 }} />
-                <SkeletonLine w="80%" h={14} style={{ marginTop: 4 }} />
-              </View>
-              <View style={styles.divider} />
+              <Skeleton width={92} height={40} radius={RADIUS.full} />
             </View>
-          </View>
-          <View style={{ flex: 1 }}>
-            <GridSkeleton columns={3} count={12} />
-          </View>
-        </View>
-      </SwipeBackPager>
-    );
-  }
-
-  if (!community) {
-    return (
-      <SwipeBackPager>
-        <View style={styles.container}>
-          <TopBar title={t('communities.title')} onBack={() => router.back()} />
-          <View style={styles.centered}>
-            <Ionicons name="lock-closed-outline" size={44} color={colors.textTertiary} />
-            <Text style={styles.notFound}>{t('communities.errNotLive')}</Text>
+            <View style={{ marginTop: SPACING.sm }}>
+              <SkeletonLine w="55%" h={13} />
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.rulesBlock}>
+              <SkeletonLine w="30%" h={16} />
+              <SkeletonLine w="100%" h={14} style={{ marginTop: 4 }} />
+              <SkeletonLine w="80%" h={14} style={{ marginTop: 4 }} />
+            </View>
+            <View style={styles.divider} />
           </View>
         </View>
-      </SwipeBackPager>
+        <View style={{ flex: 1 }}>
+          <GridSkeleton columns={3} count={12} />
+        </View>
+      </View>
     );
+  } else if (!community) {
+    body = (
+      <View style={styles.container}>
+        <TopBar title={t('communities.title')} onBack={() => router.back()} />
+        <View style={styles.centered}>
+          <Ionicons name="lock-closed-outline" size={44} color={colors.textTertiary} />
+          <Text style={styles.notFound}>{t('communities.errNotLive')}</Text>
+        </View>
+      </View>
+    );
+  } else {
+    body = renderContent();
   }
 
-  const accent = accentFor(community.name);
-  const initial = community.name.trim().charAt(0).toUpperCase() || '#';
-  const pending = community.status === 'pending';
+  return (
+    <SwipeBackPager animateIn={false}>
+      <Animated.View style={{ flex: 1, transform: [{ translateX: entryX }] }}>{body}</Animated.View>
+    </SwipeBackPager>
+  );
 
-  const goEdit = () => router.push(`/communities/edit?id=${id}`);
+  function renderContent() {
+    if (!community) return null;
+    const accent = accentFor(community.name);
+    const initial = community.name.trim().charAt(0).toUpperCase() || '#';
+    const pending = community.status === 'pending';
 
-  const gridHeader = (
+    const goEdit = () => router.push(`/communities/edit?id=${id}`);
+
+    const gridHeader = (
     <View>
       {/* For the owner the banner is tappable (→ edit) with a pencil cue. */}
       <TouchableOpacity activeOpacity={isOwner ? 0.9 : 1} onPress={isOwner ? goEdit : undefined} disabled={!isOwner}>
@@ -255,8 +274,7 @@ export default function CommunityDetailScreen() {
     </View>
   );
 
-  return (
-    <SwipeBackPager>
+    return (
       <View style={styles.container}>
         <TopBar
           title={community.name}
@@ -311,8 +329,8 @@ export default function CommunityDetailScreen() {
           />
         )}
       </View>
-    </SwipeBackPager>
-  );
+    );
+  }
 }
 
 function TopBar({ title, onBack, onMenu }: { title: string; onBack: () => void; onMenu?: () => void }) {

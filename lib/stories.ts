@@ -171,8 +171,89 @@ async function loadGroups(
   return map;
 }
 
-// The Home tray: the current user's active stories first, then active stories
-// from people they follow — unseen groups sorted ahead of seen ones.
+const lastCreatedAt = (g: StoryGroup) => g.stories[g.stories.length - 1]?.created_at ?? '';
+
+// Fallback ordering when the relevance pass can't run (e.g. a table isn't set up):
+// your own story leads, then unseen groups, then most-recent-first.
+function baselineTraySort(list: StoryGroup[], userId: string): StoryGroup[] {
+  return [...list].sort((a, b) => {
+    if (a.user.id === userId) return -1;
+    if (b.user.id === userId) return 1;
+    if (a.hasUnseen !== b.hasUnseen) return a.hasUnseen ? -1 : 1;
+    return lastCreatedAt(b).localeCompare(lastCreatedAt(a));
+  });
+}
+
+const tierWeight = (t?: string | null): number =>
+  t === 'diamond' ? 1 : t === 'gold' ? 0.75 : t === 'silver' ? 0.5 : t === 'bronze' ? 0.25 : 0;
+
+// Rank the followed-user story groups by RELEVANCE to `viewerId`, so the most
+// relevant appear first in the tray (and therefore in the viewer sequence).
+// Blends: story recency, whether it's unseen, the author's badge tier, the
+// viewer's own past affinity for this author's stories (liking weighted heavier
+// than watching), and the story's popularity among all watchers (views + likes).
+// Story replies live in DMs (not a queryable per-story count) so they fold into
+// this affinity/popularity signal rather than a separate term. Bounded, parallel
+// queries; throws are handled by the caller (falls back to the baseline sort).
+async function rankStoryGroups(groups: StoryGroup[], viewerId: string): Promise<StoryGroup[]> {
+  if (groups.length <= 1) return groups;
+
+  const authorIds = groups.map((g) => g.user.id);
+  const activeStoryIds = groups.flatMap((g) => g.stories.map((s) => s.id));
+  const activeAuthor = new Map<string, string>(); // active story id -> author
+  groups.forEach((g) => g.stories.forEach((s) => activeAuthor.set(s.id, g.user.id)));
+
+  const [authorStoriesRes, myViewsRes, myLikesRes, popViewsRes, popLikesRes] = await Promise.all([
+    // Every story (active + expired-but-not-deleted) by these authors → maps the
+    // viewer's historical views/likes below to an author for the affinity signal.
+    supabase.from('stories').select('id, user_id').in('user_id', authorIds),
+    supabase.from('story_views').select('story_id').eq('viewer_id', viewerId),
+    supabase.from('story_likes').select('story_id').eq('user_id', viewerId),
+    supabase.from('story_views').select('story_id').in('story_id', activeStoryIds),
+    supabase.from('story_likes').select('story_id').in('story_id', activeStoryIds),
+  ]);
+
+  const storyAuthor = new Map<string, string>();
+  (authorStoriesRes.data ?? []).forEach((r: any) => storyAuthor.set(r.id, r.user_id));
+
+  const watchAff: Record<string, number> = {};
+  const likeAff: Record<string, number> = {};
+  (myViewsRes.data ?? []).forEach((v: any) => { const a = storyAuthor.get(v.story_id); if (a) watchAff[a] = (watchAff[a] || 0) + 1; });
+  (myLikesRes.data ?? []).forEach((l: any) => { const a = storyAuthor.get(l.story_id); if (a) likeAff[a] = (likeAff[a] || 0) + 1; });
+
+  const popV: Record<string, number> = {};
+  const popL: Record<string, number> = {};
+  (popViewsRes.data ?? []).forEach((v: any) => { const a = activeAuthor.get(v.story_id); if (a) popV[a] = (popV[a] || 0) + 1; });
+  (popLikesRes.data ?? []).forEach((l: any) => { const a = activeAuthor.get(l.story_id); if (a) popL[a] = (popL[a] || 0) + 1; });
+
+  const now = Date.now();
+  const popRaw = (a: string) => (popV[a] || 0) + 2 * (popL[a] || 0); // a like counts double a view
+  const maxPop = Math.max(1, ...authorIds.map(popRaw));
+
+  const scored = groups.map((g) => {
+    const a = g.user.id;
+    const newest = g.stories.reduce((m, s) => Math.max(m, Date.parse(s.created_at) || 0), 0);
+    const recency = Math.max(0, Math.min(1, 1 - (now - newest) / (24 * 60 * 60 * 1000))); // 0..1 over the 24h window
+    const score =
+      0.35 * recency +
+      0.25 * Math.min((likeAff[a] || 0) / 3, 1) +   // liking > watching
+      0.12 * Math.min((watchAff[a] || 0) / 5, 1) +
+      0.12 * tierWeight((g.user as any).badge_tier) +
+      0.16 * (popRaw(a) / maxPop);
+    return { g, score };
+  });
+  // Fully-watched groups always fall to the RIGHT of unwatched ones (they carry no
+  // new content); relevance only orders WITHIN each partition. A group flips back to
+  // the unwatched partition automatically once its author posts a new (unseen) story.
+  scored.sort((x, y) =>
+    (x.g.hasUnseen === y.g.hasUnseen)
+      ? (y.score - x.score || lastCreatedAt(y.g).localeCompare(lastCreatedAt(x.g)))
+      : (x.g.hasUnseen ? -1 : 1));
+  return scored.map((s) => s.g);
+}
+
+// The Home tray: the current user's active stories first, then active stories from
+// people they follow, ordered by relevance (see rankStoryGroups).
 export async function fetchStoryTray(userId: string, localSeen: Set<string> = new Set()): Promise<StoryGroup[]> {
   const { data: follows } = await supabase
     .from('follows')
@@ -184,15 +265,14 @@ export async function fetchStoryTray(userId: string, localSeen: Set<string> = ne
   const map = await loadGroups(authorIds, userId, localSeen);
   const list = Array.from(map.values());
 
-  list.sort((a, b) => {
-    if (a.user.id === userId) return -1; // your own story always leads
-    if (b.user.id === userId) return 1;
-    if (a.hasUnseen !== b.hasUnseen) return a.hasUnseen ? -1 : 1; // unseen first
-    const aLast = a.stories[a.stories.length - 1]?.created_at ?? '';
-    const bLast = b.stories[b.stories.length - 1]?.created_at ?? '';
-    return bLast.localeCompare(aLast); // most recent first
-  });
-  return list;
+  const own = list.find((g) => g.user.id === userId) ?? null;
+  const others = list.filter((g) => g.user.id !== userId);
+  try {
+    const ranked = await rankStoryGroups(others, userId);
+    return own ? [own, ...ranked] : ranked; // your own story always leads
+  } catch {
+    return baselineTraySort(list, userId);
+  }
 }
 
 // Stories for the viewer, in the exact order of `userIds` (drops users whose
