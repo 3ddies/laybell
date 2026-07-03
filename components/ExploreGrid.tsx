@@ -517,7 +517,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   musicHeader: {
     height: MUSIC_HEADER_H, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: SPACING.sm,
-    backgroundColor: colors.primary,
+    backgroundColor: '#FFFFFF',
   },
   // Logo-yellow word on the bright orange: a tight dark drop shadow lifts the
   // letters off the banner (raised-print look) so they stay crisp despite the

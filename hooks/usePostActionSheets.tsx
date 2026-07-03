@@ -53,5 +53,9 @@ export function usePostActionSheets() {
     </>
   );
 
-  return { share, showOptions, sheets };
+  // True while any of these sheets/modals is open — lets callers (e.g. the
+  // landscape reel overlay) keep their own chrome up until the sheet is dismissed.
+  const sheetsOpen = shareVisible || optsVisible || !!playlistPostId || !!gifVideo;
+
+  return { share, showOptions, sheets, sheetsOpen };
 }

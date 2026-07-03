@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Animated, PanResponder } from 'react-native';
 
 // Asymptotic rubber-band: approaches `max` displacement as drag → ∞.
@@ -11,17 +11,30 @@ function rubber(drag: number, max = 38): number {
 // swipes left or right but that gesture doesn't map to an action in the parent.
 // Only claims clearly horizontal gestures (4:1 dx/dy ratio, min 6 px dx) so it
 // co-exists safely with surrounding vertical FlatLists and scroll views.
-export default function ElasticSwipeView({ children, style }: {
+export default function ElasticSwipeView({ children, style, disabled = false }: {
   children: React.ReactNode;
   style?: any;
+  // Suppress the elastic swipe entirely (e.g. while the content is pinch-zoomed,
+  // so a zoom-pan doesn't rubber-band the whole view and reveal black edges).
+  disabled?: boolean;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
+
+  // When zoom takes over, stop any in-flight rubber-band spring and zero the
+  // offset — a running/settled native-animated transform here otherwise composites
+  // with the zoom's own native pan and makes it stutter.
+  useEffect(() => {
+    if (disabled) { translateX.stopAnimation(); translateX.setValue(0); }
+  }, [disabled, translateX]);
 
   const pan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
     onStartShouldSetPanResponderCapture: () => false,
     onMoveShouldSetPanResponder: (_e, g) =>
-      Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 4,
+      !disabledRef.current
+      && Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 4,
     onMoveShouldSetPanResponderCapture: () => false,
     onPanResponderMove: (_e, g) => {
       translateX.setValue(Math.sign(g.dx) * rubber(Math.abs(g.dx)));
@@ -39,8 +52,16 @@ export default function ElasticSwipeView({ children, style }: {
     },
   })).current;
 
+  // While disabled (content pinch-zoomed), render WITHOUT the animated transform
+  // AND without the pan responder — so neither a lingering native transform nor
+  // the RN PanResponder competes with the zoom's RNGH gestures (the cause of the
+  // choppy zoomed-pan after a prior swipe). Same element type either way, so the
+  // video/children never remount.
   return (
-    <Animated.View style={[style, { transform: [{ translateX }] }]} {...pan.panHandlers}>
+    <Animated.View
+      style={[style, disabled ? null : { transform: [{ translateX }] }]}
+      {...(disabled ? null : pan.panHandlers)}
+    >
       {children}
     </Animated.View>
   );

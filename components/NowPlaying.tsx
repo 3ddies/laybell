@@ -61,10 +61,11 @@ function Progress() {
 function Controls() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const { isPlaying, isBuffering, pause, resume, next, previous, queueIndex, queueLength } = useAudio();
-  const hasQueue = queueLength > 1;
+  const { isPlaying, isBuffering, pause, resume, next, previous, queueIndex, queueLength, hasMore } = useAudio();
+  const hasQueue = queueLength > 1 || hasMore;
   const canPrev = queueIndex > 0;
-  const canNext = queueIndex < queueLength - 1;
+  // "Next" stays enabled at the end when more relevant songs can still be pulled in.
+  const canNext = queueIndex < queueLength - 1 || hasMore;
   return (
     <View style={styles.controls}>
       {hasQueue && (

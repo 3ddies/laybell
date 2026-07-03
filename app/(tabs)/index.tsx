@@ -15,6 +15,12 @@ import { FeedSkeleton } from '../../components/Skeleton';
 
 const SCREEN_W = Dimensions.get('window').width;
 const MAX_VIDEO_H = SCREEN_W * 1.25; // cap feed video at 4:5 so tall (9:16) clips aren't too long
+
+// Map a feed post to a playable audio Track.
+const toTrack = (p: any): Track => ({
+  id: p.id, uri: p.media_url, caption: p.caption,
+  artist: p.profiles?.display_name ?? '', cover: p.cover_url ?? null,
+});
 import { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,7 +30,7 @@ import { SPACING, RADIUS, SHADOWS, GRADIENTS, type ThemePalette } from '../../co
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { timeAgo } from '../../lib/timeAgo';
-import { useAudio } from '../../contexts/AudioContext';
+import { useAudio, type Track } from '../../contexts/AudioContext';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useShare } from '../../contexts/ShareContext';
@@ -346,12 +352,16 @@ export default function HomeScreen() {
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [seenPostIds, setSeenPostIds] = useState<Set<string>>(new Set());
   const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
+  // Live mirrors read by the song-queue builder / loader (see playFeedSong).
+  const postsRef = useRef<Post[]>([]);
+  postsRef.current = posts;
+  const followingRef = useRef<Set<string>>(new Set());
   // Current user's own profile (age/gender/location) for ad targeting. Kept in a
   // ref so fetchPosts can read it without re-running on every profile change.
   const { profile: myProfile } = useProfile();
   const viewerProfileRef = useRef(myProfile);
   viewerProfileRef.current = myProfile;
-  const { play, currentTrack, isPlaying, expand, videoMuted, toggleVideoMuted } = useAudio();
+  const { play, playQueue, currentTrack, isPlaying, expand, videoMuted, toggleVideoMuted } = useAudio();
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
@@ -377,8 +387,8 @@ export default function HomeScreen() {
   // Latest values for the stable card callbacks below. Updating a ref (instead of
   // putting these in useCallback deps) lets the callbacks keep a constant identity
   // — so memoized PostCards don't re-render — while still acting on current state.
-  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare, t, linkGuard });
-  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, expand, toggleVideoMuted, toggleSongMuted, openShare, t, linkGuard };
+  const live = useRef({ currentUserId, likedPosts, savedPosts, playlistCount, router, play, playQueue, expand, toggleVideoMuted, toggleSongMuted, openShare, t, linkGuard });
+  live.current = { currentUserId, likedPosts, savedPosts, playlistCount, router, play, playQueue, expand, toggleVideoMuted, toggleSongMuted, openShare, t, linkGuard };
 
   // Track which video is on-screen so it auto-plays while others pause.
   // FlatList requires these references to be stable across renders.
@@ -605,6 +615,7 @@ export default function HomeScreen() {
       const followingSet = new Set<string>(
         followingData?.map((f: any) => f.following_id) ?? []
       );
+      followingRef.current = followingSet;
 
       // Hide archived posts (owner-only, archived_at set) and posts from blocked
       // users before ranking. archived_at is absent until the column is migrated,
@@ -797,14 +808,35 @@ export default function HomeScreen() {
     });
   }, []);
 
-  const onPlayTrack = useCallback((item: Post) => {
+  // Playing a song from the feed queues ALL the feed's songs in relevance order
+  // (they're already scored), so "next" moves to the next most relevant song even
+  // for ones not yet scrolled into view. A loader pulls MORE ranked songs when the
+  // queue runs low, so next / auto-advance never dead-end.
+  const songLoader = useCallback(async (excludeIds: Set<string>): Promise<Track[]> => {
+    const { data } = await supabase
+      .from('posts')
+      .select(`*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme), likes(count), comments(count)`)
+      .eq('type', 'audio').eq('is_public', true)
+      .order('created_at', { ascending: false })
+      .limit(120);
+    const now = Date.now();
+    return (data ?? [])
+      .filter((p: any) => p.media_url && !p.archived_at && !excludeIds.has(p.id))
+      .map((p: any) => ({ p, s: scorePost(p, affinityProfile.current, followingRef.current, new Set(), now) }))
+      .sort((a, b) => b.s - a.s)
+      .map((x) => toTrack(x.p));
+  }, []);
+  const playFeedSong = useCallback((item: Post, expand = false) => {
     if (isSwipeTap()) return; // never start audio from a swipe glide
-    live.current.play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url });
-  }, []);
-  const onExpandTrack = useCallback((item: Post) => {
-    live.current.play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url });
-    live.current.expand();
-  }, []);
+    const songs = postsRef.current.filter((p: any) => p.type === 'audio' && p.media_url && !p.__ad);
+    let queue = songs;
+    let startIndex = songs.findIndex((p) => p.id === item.id);
+    if (startIndex < 0) { queue = [item, ...songs]; startIndex = 0; }
+    live.current.playQueue(queue.map(toTrack), startIndex, songLoader);
+    if (expand) live.current.expand();
+  }, [songLoader]);
+  const onPlayTrack = useCallback((item: Post) => playFeedSong(item), [playFeedSong]);
+  const onExpandTrack = useCallback((item: Post) => playFeedSong(item, true), [playFeedSong]);
   const onToggleMuted = useCallback(() => live.current.toggleVideoMuted(), []);
   const onToggleSongMute = useCallback(() => live.current.toggleSongMuted(), []);
 

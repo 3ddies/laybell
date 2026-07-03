@@ -60,12 +60,16 @@ export type AudioAdState = {
   canSkip: boolean;
 };
 
+// Supplies MORE relevant tracks when the queue runs low, excluding ids already
+// queued — lets a home-feed queue keep "next" working forever (see index.tsx).
+export type QueueLoader = (excludeIds: Set<string>) => Promise<Track[]>;
+
 type AudioContextType = {
   currentTrack: Track | null;
   isPlaying: boolean;
   isBuffering: boolean;
   play: (track: Track) => Promise<void>;
-  playQueue: (tracks: Track[], startIndex?: number) => Promise<void>;
+  playQueue: (tracks: Track[], startIndex?: number, loadMore?: QueueLoader) => Promise<void>;
   // Now Playing reports comment activity so a song ending at the end of the queue
   // doesn't tear the sheet away while the user is still engaged with the comments.
   setCommentComposing: (composing: boolean) => void; // focused / draft / reply
@@ -82,6 +86,7 @@ type AudioContextType = {
   previous: () => void;
   queueIndex: number;
   queueLength: number;
+  hasMore: boolean; // more relevant tracks can be pulled in → "next" stays enabled
   videoMuted: boolean;
   toggleVideoMuted: () => void;
   // Audio ads (playlist breaks). adState is non-null only while an ad is playing.
@@ -135,6 +140,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const adStatusSubRef = useRef<{ remove: () => void } | null>(null);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
+  const queueLoaderRef = useRef<QueueLoader | null>(null);
+  const loadingMoreRef = useRef(false);
   const playTokenRef = useRef(0); // guards against overlapping plays (rapid next/prev)
   const holdForCommentRef = useRef(false); // user is composing a comment in Now Playing
   const engagedNearEndRef = useRef(false); // user touched the comments past 80% → keep the player open
@@ -159,6 +166,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }).current;
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueLength, setQueueLength] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   // Per-post stream accounting, persisted for a rolling 24h window (keyed by post id):
   //   listenMs        – cumulative genuine forward listen time (across replays)
   //   streamsAwarded  – streams already credited via listening (0, 1, or 2)
@@ -474,10 +482,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function playQueue(tracks: Track[], startIndex = 0) {
+  async function playQueue(tracks: Track[], startIndex = 0, loadMore?: QueueLoader) {
     if (!tracks.length) return;
     queueRef.current = tracks;
     queueIndexRef.current = startIndex;
+    queueLoaderRef.current = loadMore ?? null;
+    setHasMore(!!loadMore);
     setQueueLength(tracks.length);
     setQueueIndex(startIndex);
     // Arm audio-ad scheduling for THIS playlist session (single-track taps go
@@ -489,21 +499,43 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     await play(tracks[startIndex], true);
   }
 
-  function next() {
-    if (adPlayingRef.current) return; // locked during an audio ad
-    const q = queueRef.current;
-    const ni = queueIndexRef.current + 1;
-    if (!(q.length && ni < q.length)) return; // nothing to skip to
-    // An ad is queued up — play it BETWEEN songs first (manual skip counts as
-    // "a song finishing"); proceedToNextTrack fires the ad and its completion
-    // advances to the song being skipped to (queueIndex + 1).
-    if (adDueRef.current && adArmedRef.current) {
-      proceedToNextTrack();
-      return;
-    }
+  // Pull more relevant tracks from the registered loader (home-feed queue) and
+  // append them, so "next" / auto-advance never dead-end. Returns whether the
+  // queue grew. Dedupes against what's already queued.
+  async function appendFromLoader(): Promise<boolean> {
+    const loader = queueLoaderRef.current;
+    if (!loader || loadingMoreRef.current) return false;
+    loadingMoreRef.current = true;
+    try {
+      const more = await loader(new Set(queueRef.current.map((t) => t.id)));
+      const fresh = (more ?? []).filter((t) => !queueRef.current.some((q) => q.id === t.id));
+      if (fresh.length) {
+        queueRef.current = [...queueRef.current, ...fresh];
+        setQueueLength(queueRef.current.length);
+        return true;
+      }
+      // Loader is dry — stop advertising "more" so the UI can settle.
+      queueLoaderRef.current = null;
+      setHasMore(false);
+    } catch { /* keep the loader; a transient failure shouldn't kill the queue */ }
+    finally { loadingMoreRef.current = false; }
+    return false;
+  }
+
+  // Advance to a (now-valid) queue index, running a due ad between songs first.
+  function advanceTo(ni: number) {
+    if (adDueRef.current && adArmedRef.current) { proceedToNextTrack(); return; }
     queueIndexRef.current = ni;
     setQueueIndex(ni);
-    play(q[ni], true, true);
+    play(queueRef.current[ni], true, true);
+  }
+
+  function next() {
+    if (adPlayingRef.current) return; // locked during an audio ad
+    const ni = queueIndexRef.current + 1;
+    if (ni < queueRef.current.length) { advanceTo(ni); return; }
+    // At the end of the loaded queue — fetch more relevant songs, then skip.
+    appendFromLoader().then((grew) => { if (grew) advanceTo(ni); });
   }
 
   // Restart the current track from the top — used by the Spotify-style "previous"
@@ -551,6 +583,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (loadedIdRef.current) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
     queueRef.current = [];
     queueIndexRef.current = 0;
+    queueLoaderRef.current = null;
+    setHasMore(false);
     setQueueLength(0);
     setQueueIndex(0);
     disarmAds(); // the playlist is over — stop the ad clock
@@ -559,20 +593,25 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // The normal "track finished" outcome: advance to the next track in the queue
   // (a playlist plays on), or close if this was the last one.
   function advanceOrEnd() {
-    const q = queueRef.current;
     const nextIdx = queueIndexRef.current + 1;
-    if (q.length && nextIdx < q.length) {
-      queueIndexRef.current = nextIdx;
-      setQueueIndex(nextIdx);
+    const goTo = (idx: number) => {
+      queueIndexRef.current = idx;
+      setQueueIndex(idx);
       // Release the just-finished player (we're inside its status callback, so the
       // listener goes now and the player itself is freed on the next tick).
       statusSubRef.current?.remove(); statusSubRef.current = null;
       releaseSound(soundRef.current);
       soundRef.current = null;
-      play(q[nextIdx], true, true);
-    } else {
-      endQueue();
-    }
+      play(queueRef.current[idx], true, true);
+    };
+    if (nextIdx < queueRef.current.length) { goTo(nextIdx); return; }
+    // Last loaded track finished — try to pull in more relevant songs so playback
+    // rolls on; only close the player if the loader is genuinely dry.
+    setIsBuffering(true);
+    appendFromLoader().then((grew) => {
+      if (grew) goTo(queueIndexRef.current + 1);
+      else endQueue();
+    });
   }
 
   // The track is done and nothing is holding the player open. If an audio ad came
@@ -845,7 +884,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, play, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>
+    <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, play, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, hasMore, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>
       <AudioPositionContext.Provider value={subscribePosition}>
         {children}
       </AudioPositionContext.Provider>

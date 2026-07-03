@@ -1,5 +1,6 @@
 import AppVideo, { type AppVideoHandle } from '../../components/AppVideo';
 import VideoScrubBar, { type VideoScrubBarHandle } from '../../components/VideoScrubBar';
+import ZoomableView from '../../components/ZoomableView';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, Animated,
   useWindowDimensions,
@@ -56,7 +57,7 @@ export default function ReelScreen() {
   const linkGuard = useLinkGuard();
   // Hosted locally (not via the root context) so the sheets present over this
   // transparentModal route on iOS — see usePostActionSheets.
-  const { share: openShare, showOptions, sheets } = usePostActionSheets();
+  const { share: openShare, showOptions, sheets, sheetsOpen } = usePostActionSheets();
   const { id, post: postParam } = useLocalSearchParams<{ id: string; post?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -122,6 +123,11 @@ export default function ReelScreen() {
   // Latest playback position (ms) of the active reel, so the fullscreen overlay
   // resumes roughly where the vertical player left off.
   const positionRef = useRef(0);
+  // True while the active video is pinch-zoomed — taps then do NOT pause or toggle
+  // controls, and the elastic swipe is suppressed (zoom is a separate interaction).
+  const zoomedRef = useRef(false);
+  const [zoomed, setZoomed] = useState(false);
+  const onZoomChange = (z: boolean) => { zoomedRef.current = z; setZoomed(z); };
 
   // ── Scrub bar wiring (vertical feed) ────────────────────────────────────────
   // Per-item seek handles + a ref-driven progress bar (see VideoScrubBar): the
@@ -152,7 +158,44 @@ export default function ReelScreen() {
   // cinematic view is unobstructed. Kept visible while paused for easy tapping.
   const controlsOpacity = useRef(new Animated.Value(0)).current;
   const [controlsVisible, setControlsVisible] = useState(false);
+  const controlsVisibleRef = useRef(false);
+  controlsVisibleRef.current = controlsVisible;
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True while the controls should stay pinned (video paused, or a rail sheet
+  // open). Read at reveal-time so controls shown in that state skip the auto-fade.
+  const holdControlsRef = useRef(false);
   const [capExpanded, setCapExpanded] = useState(false); // landscape caption toggle
+
+  const clearFadeTimer = () => { if (fadeTimerRef.current) { clearTimeout(fadeTimerRef.current); fadeTimerRef.current = null; } };
+  // Reveal the rail + profile; auto-hide after 2s UNLESS the controls are held
+  // (paused / sheet open), in which case they stay until that clears.
+  const revealControls = () => {
+    clearFadeTimer();
+    setControlsVisible(true);
+    Animated.timing(controlsOpacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    if (!holdControlsRef.current) {
+      fadeTimerRef.current = setTimeout(() => {
+        Animated.timing(controlsOpacity, { toValue: 0, duration: 450, useNativeDriver: true })
+          .start(({ finished }) => { if (finished) setControlsVisible(false); });
+      }, 2000);
+    }
+  };
+  const hideControls = () => {
+    clearFadeTimer();
+    Animated.timing(controlsOpacity, { toValue: 0, duration: 220, useNativeDriver: true })
+      .start(({ finished }) => { if (finished) setControlsVisible(false); });
+  };
+  // Landscape tap zones: the center pauses/plays; anywhere else toggles the
+  // controls (show for 2s if hidden, or close them to enter clean view mode).
+  const handleOverlayTap = (e: any) => {
+    if (zoomedRef.current) return; // zoom is separate — don't pause / toggle controls
+    const lx = e.nativeEvent?.locationX ?? 0;
+    const ly = e.nativeEvent?.locationY ?? 0;
+    const inCenter = lx > winW * 0.3 && lx < winW * 0.7 && ly > winH * 0.2 && ly < winH * 0.8;
+    if (inCenter) { setPaused((p) => !p); return; }
+    if (controlsVisibleRef.current) hideControls();
+    else revealControls();
+  };
   const landscapeReels = useMemo(
     () => posts.filter((p) => !p.__ad && aspectToNumber(p.aspect_ratio, 16 / 9) > 1),
     [posts],
@@ -182,19 +225,29 @@ export default function ReelScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landscapeFullscreen]);
 
-  // Flash the overlay controls in whenever a horizontal reel is landed on (or
-  // paused), then fade them out ~1s later while it keeps playing.
+  // Controls stay pinned while the video is paused or a rail sheet is open.
+  const railSheetOpen = commentsFor != null || sheetsOpen;
+  const holdControls = paused || railSheetOpen;
+  holdControlsRef.current = holdControls;
+
+  // Reveal the controls for their initial 2s when a horizontal reel is landed on
+  // (or re-entering landscape). Whether they then fade is governed by holdControls.
   useEffect(() => {
-    if (!landscapeFullscreen) { controlsOpacity.setValue(0); setControlsVisible(false); return; }
-    setControlsVisible(true);
-    Animated.timing(controlsOpacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-    if (paused) return; // keep them up (and tappable) while paused
-    const t = setTimeout(() => {
-      Animated.timing(controlsOpacity, { toValue: 0, duration: 450, useNativeDriver: true })
-        .start(({ finished }) => { if (finished) setControlsVisible(false); });
-    }, 2000);
-    return () => clearTimeout(t);
-  }, [landscapeFullscreen, overlayId, paused, controlsOpacity]);
+    if (!landscapeFullscreen) { clearFadeTimer(); controlsOpacity.setValue(0); setControlsVisible(false); return; }
+    revealControls();
+    return clearFadeTimer;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [landscapeFullscreen, overlayId]);
+
+  // When hold changes, only adjust ALREADY-VISIBLE controls: pin them (pause /
+  // sheet open) or resume the 2s fade (unpaused & closed). Never reveal from
+  // hidden — so pressing pause in clean view mode doesn't pop the buttons up.
+  useEffect(() => {
+    if (!landscapeFullscreen || !controlsVisibleRef.current) return;
+    if (holdControls) clearFadeTimer();
+    else revealControls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [landscapeFullscreen, holdControls]);
 
   // Collapse the caption again whenever a new horizontal reel is landed on.
   useEffect(() => { setCapExpanded(false); }, [overlayId]);
@@ -333,31 +386,41 @@ export default function ReelScreen() {
     const commentCount = item.comments?.[0]?.count || 0;
     const saveCount = item.save_count || 0;
     const shareCount = item.share_count || 0;
+    // Landscape: generous hit area on each button so a near-miss still fires it,
+    // and the rail/meta absorb stray taps in their region so tapping AROUND the
+    // buttons doesn't fall through and close the controls. Vertical is unchanged.
+    const railHit = compact ? { top: 10, bottom: 10, left: 20, right: 16 } : undefined;
+    const absorb = compact ? () => true : undefined;
     return (
       <>
         {/* bottom gradient for legibility */}
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.bottomFade} pointerEvents="none" />
 
         {/* Right action rail (bottom-anchored: options sits just above the bar) */}
-        <View style={[styles.rail, compact && styles.railCompact, { bottom: railBottom }]}>
-          <TouchableOpacity style={styles.railBtn} onPress={() => toggleLike(item)}>
+        <View
+          style={[styles.rail, compact && styles.railCompact, { bottom: railBottom }]}
+          onStartShouldSetResponder={absorb}
+          hitSlop={compact ? { left: 24, right: 8, top: 14, bottom: 14 } : undefined}
+        >
+          <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => toggleLike(item)}>
             <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={32} color={isLiked ? colors.like : '#fff'} />
             {likeCount > 0 && <Text style={styles.railText}>{formatCount(likeCount)}</Text>}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.railBtn} onPress={() => setCommentsFor({ id: item.id, ownerId: item.user_id })}>
+          <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => setCommentsFor({ id: item.id, ownerId: item.user_id })}>
             <Ionicons name="chatbubble-outline" size={30} color="#fff" />
             {commentCount > 0 && <Text style={styles.railText}>{formatCount(commentCount)}</Text>}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.railBtn} onPress={() => toggleSave(item)}>
+          <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => toggleSave(item)}>
             <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={28} color="#fff" />
             {saveCount > 0 && <Text style={styles.railText}>{formatCount(saveCount)}</Text>}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.railBtn} onPress={() => share(item)}>
+          <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => share(item)}>
             <Ionicons name="share-social-outline" size={28} color="#fff" />
             {shareCount > 0 && <Text style={styles.railText}>{formatCount(shareCount)}</Text>}
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.railBtn}
+            hitSlop={railHit}
             onPress={() => showOptions({
               postId: item.id,
               isOwn: item.user_id === currentUserId,
@@ -375,7 +438,7 @@ export default function ReelScreen() {
         </View>
 
         {/* Author + caption */}
-        <View style={[styles.meta, { bottom: metaBottom }]}>
+        <View style={[styles.meta, { bottom: metaBottom }]} onStartShouldSetResponder={absorb}>
           <View style={styles.authorRow}>
             <TouchableOpacity style={styles.author} onPress={() => router.push(`/profile/${item.user_id}`)}>
               <StoryAvatar
@@ -475,8 +538,15 @@ export default function ReelScreen() {
     const poster = item.thumbnail_url ?? item.cover_url ?? null;
 
     return (
-      <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }}>
-        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => setPaused((p) => !p)}>
+      <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }} disabled={zoomed}>
+        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => { if (zoomedRef.current) return; setPaused((p) => !p); }}>
+          <ZoomableView
+            width={SCREEN_W}
+            height={SCREEN_H}
+            style={StyleSheet.absoluteFill}
+            active={visibleId === item.id}
+            onZoomChange={onZoomChange}
+          >
           <AppVideo
             ref={(r) => { if (r) videoRefs.current.set(item.id, r); else videoRefs.current.delete(item.id); }}
             source={{ uri: item.media_url }}
@@ -499,6 +569,7 @@ export default function ReelScreen() {
               trackVideoProgress(item.id, pos, dur);
             }}
           />
+          </ZoomableView>
         </TouchableOpacity>
 
         {/* paused indicator */}
@@ -530,7 +601,14 @@ export default function ReelScreen() {
     const resume = item.id === enteredFromIdRef.current ? positionRef.current / 1000 : null;
     return (
       <View style={{ width: winW, height: winH }}>
-        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => setPaused((p) => !p)}>
+        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={handleOverlayTap}>
+          <ZoomableView
+            width={winW}
+            height={winH}
+            style={StyleSheet.absoluteFill}
+            active={overlayId === item.id}
+            onZoomChange={onZoomChange}
+          >
           <AppVideo
             ref={(r) => { if (r) overlayRefs.current.set(item.id, r); else overlayRefs.current.delete(item.id); }}
             source={{ uri: item.media_url }}
@@ -552,6 +630,7 @@ export default function ReelScreen() {
               trackVideoProgress(item.id, pos, dur);
             }}
           />
+          </ZoomableView>
         </TouchableOpacity>
       </View>
     );
@@ -569,9 +648,9 @@ export default function ReelScreen() {
               data={posts}
               keyExtractor={(p) => p.id}
               pagingEnabled
-              // Freeze paging while the progress bar is being dragged so a scrub
-              // can never leak into scrolling to the next reel.
-              scrollEnabled={!scrubbing}
+              // Freeze paging while the progress bar is being dragged (scrub) or the
+              // video is pinch-zoomed, so neither leaks into scrolling reels.
+              scrollEnabled={!scrubbing && !zoomed}
               showsVerticalScrollIndicator={false}
               snapToInterval={SCREEN_H}
               snapToAlignment="start"
@@ -615,6 +694,8 @@ export default function ReelScreen() {
                 keyExtractor={(p) => p.id}
                 horizontal
                 pagingEnabled
+                // No paging while pinch-zoomed — zoom fully owns the gesture.
+                scrollEnabled={!zoomed}
                 showsHorizontalScrollIndicator={false}
                 snapToInterval={winW}
                 snapToAlignment="start"
