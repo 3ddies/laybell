@@ -29,13 +29,16 @@ function dampGesture(raw: number): number {
 }
 
 export default function ZoomableView({
-  width, height, active = true, style, onZoomChange, children,
+  width, height, active = true, style, onZoomChange, onGesture, children,
 }: {
   width: number;
   height: number;
   active?: boolean;
   style?: StyleProp<ViewStyle>;
   onZoomChange?: (locked: boolean) => void;
+  /** Fires the moment a pinch or pan actually activates (any zoom level), so the
+   *  parent can tell a tap apart from a zoom movement. */
+  onGesture?: () => void;
   children: ReactNode;
 }) {
   const baseScale = useRef(new Animated.Value(1)).current;
@@ -145,6 +148,7 @@ export default function ZoomableView({
   const onPinchState = (e: PinchGestureHandlerStateChangeEvent) => {
     if (e.nativeEvent.state === State.ACTIVE) {
       pinchActiveRef.current = true;
+      onGesture?.();
       // Interrupt a running settle cleanly, capturing where it was.
       baseScale.stopAnimation((v) => { curScale.current = Math.max(1, v); });
       baseTX.stopAnimation((v) => { curTX.current = v; });
@@ -177,7 +181,7 @@ export default function ZoomableView({
     Animated.event([{ nativeEvent: { translationX: panTX, translationY: panTY } }], { useNativeDriver: true }),
   ).current;
   const onPanState = (e: PanGestureHandlerStateChangeEvent) => {
-    if (e.nativeEvent.state === State.ACTIVE) { panActiveRef.current = true; syncLocked(); }
+    if (e.nativeEvent.state === State.ACTIVE) { panActiveRef.current = true; onGesture?.(); syncLocked(); }
     if (e.nativeEvent.oldState === State.ACTIVE) {
       panActiveRef.current = false;
       // Commit the finger's end position (clamped). The pan itself is smooth and

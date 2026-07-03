@@ -127,6 +127,10 @@ export default function ReelScreen() {
   // controls, and the elastic swipe is suppressed (zoom is a separate interaction).
   const zoomedRef = useRef(false);
   const [zoomed, setZoomed] = useState(false);
+  // Set the instant a pinch/pan activates (see ZoomableView onGesture), cleared at
+  // the start of each fresh press (onPressIn). Lets a tap know if it was part of a
+  // zoom movement → then it doesn't pause; a clean tap always does (even zoomed).
+  const gestureSincePressRef = useRef(false);
   const onZoomChange = (z: boolean) => { zoomedRef.current = z; setZoomed(z); };
 
   // ── Scrub bar wiring (vertical feed) ────────────────────────────────────────
@@ -188,7 +192,9 @@ export default function ReelScreen() {
   // Landscape tap zones: the center pauses/plays; anywhere else toggles the
   // controls (show for 2s if hidden, or close them to enter clean view mode).
   const handleOverlayTap = (e: any) => {
-    if (zoomedRef.current) return; // zoom is separate — don't pause / toggle controls
+    // A clean tap works (even while zoomed); a tap that was part of a pinch/drag
+    // this press does not.
+    if (gestureSincePressRef.current) return;
     const lx = e.nativeEvent?.locationX ?? 0;
     const ly = e.nativeEvent?.locationY ?? 0;
     const inCenter = lx > winW * 0.3 && lx < winW * 0.7 && ly > winH * 0.2 && ly < winH * 0.8;
@@ -539,13 +545,19 @@ export default function ReelScreen() {
 
     return (
       <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }} disabled={zoomed}>
-        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => { if (zoomedRef.current) return; setPaused((p) => !p); }}>
+        <TouchableOpacity
+          activeOpacity={1}
+          style={StyleSheet.absoluteFill}
+          onPressIn={() => { gestureSincePressRef.current = false; }}
+          onPress={() => { if (gestureSincePressRef.current) return; setPaused((p) => !p); }}
+        >
           <ZoomableView
             width={SCREEN_W}
             height={SCREEN_H}
             style={StyleSheet.absoluteFill}
             active={visibleId === item.id}
             onZoomChange={onZoomChange}
+            onGesture={() => { gestureSincePressRef.current = true; }}
           >
           <AppVideo
             ref={(r) => { if (r) videoRefs.current.set(item.id, r); else videoRefs.current.delete(item.id); }}
@@ -601,13 +613,19 @@ export default function ReelScreen() {
     const resume = item.id === enteredFromIdRef.current ? positionRef.current / 1000 : null;
     return (
       <View style={{ width: winW, height: winH }}>
-        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={handleOverlayTap}>
+        <TouchableOpacity
+          activeOpacity={1}
+          style={StyleSheet.absoluteFill}
+          onPressIn={() => { gestureSincePressRef.current = false; }}
+          onPress={handleOverlayTap}
+        >
           <ZoomableView
             width={winW}
             height={winH}
             style={StyleSheet.absoluteFill}
             active={overlayId === item.id}
             onZoomChange={onZoomChange}
+            onGesture={() => { gestureSincePressRef.current = true; }}
           >
           <AppVideo
             ref={(r) => { if (r) overlayRefs.current.set(item.id, r); else overlayRefs.current.delete(item.id); }}
