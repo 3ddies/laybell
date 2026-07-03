@@ -1633,7 +1633,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   typeStripBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.md },
   typeStripText: { color: colors.textTertiary, fontSize: 13, fontWeight: '700', letterSpacing: 1 },
-  typeStripTextActive: { color: colors.primary, fontWeight: '900' },
+  typeStripTextActive: { color: colors.primary, fontWeight: '900', fontSize: 14 },
 
   audioPickArea: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.lg },
   audioPickBtn: {

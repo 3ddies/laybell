@@ -34,6 +34,15 @@ const COL_W = (Dimensions.get('window').width - H_PADDING * 2 - GAP) / 2;
 const COL3_W = (Dimensions.get('window').width - H_PADDING * 2 - GAP * 2) / 3; // genre 3-up grid
 const ROW_H = COL_W / 3;            // a song row is 1/3 of a picture tile
 const MUSIC_HEADER_H = 30;
+
+// Layered black outline for the yellow header word — RN has no text stroke, so we
+// stack offset black copies behind the fill (crisp, unlike a blurry text shadow).
+const HEADER_STROKE = 1.6;
+const HEADER_OUTLINE: ReadonlyArray<readonly [number, number]> = [
+  [-HEADER_STROKE, 0], [HEADER_STROKE, 0], [0, -HEADER_STROKE], [0, HEADER_STROKE],
+  [-HEADER_STROKE, -HEADER_STROKE], [HEADER_STROKE, -HEADER_STROKE],
+  [-HEADER_STROKE, HEADER_STROKE], [HEADER_STROKE, HEADER_STROKE],
+];
 const VIDEO_GAP = 3;                // min non-video cells between videos
 
 type Cell =
@@ -349,10 +358,21 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     if (cell.kind === 'music') {
       return (
         <View key={cell.key} style={[styles.musicCard, { height: cell.height }]}>
-          {/* Centered genre word — heavy urban cut in the logo color */}
-          <View style={styles.musicHeader}>
-            <Text style={styles.musicHeaderText} numberOfLines={1}>{cell.title}</Text>
-          </View>
+          {/* Genre word on the selected-tab gradient — white with a black outline. */}
+          <LinearGradient colors={GRADIENTS.primaryWarm} style={styles.musicHeader}>
+            <View>
+              {HEADER_OUTLINE.map(([x, y], i) => (
+                <Text
+                  key={i}
+                  numberOfLines={1}
+                  style={[styles.musicHeaderText, styles.musicHeaderStroke, { position: 'absolute', left: x, top: y }]}
+                >
+                  {cell.title}
+                </Text>
+              ))}
+              <Text style={styles.musicHeaderText} numberOfLines={1}>{cell.title}</Text>
+            </View>
+          </LinearGradient>
           {cell.songs.map((s, i) => {
             const active = currentTrack?.id === s.id && isPlaying;
             return (
@@ -517,7 +537,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   musicHeader: {
     height: MUSIC_HEADER_H, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: SPACING.sm,
-    backgroundColor: '#FFFFFF',
   },
   // Logo-yellow word on the bright orange: a tight dark drop shadow lifts the
   // letters off the banner (raised-print look) so they stay crisp despite the
@@ -525,10 +544,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   musicHeaderText: {
     color: colors.primaryLight, fontSize: 14, fontWeight: '900', fontStyle: 'italic',
     textTransform: 'uppercase', letterSpacing: 1.6,
-    textShadowColor: 'rgba(60, 18, 2, 0.85)',
-    textShadowOffset: { width: 0, height: 1.5 },
-    textShadowRadius: 2,
   },
+  // Black outline copies stacked behind the yellow fill (see HEADER_OUTLINE).
+  musicHeaderStroke: { color: '#000' },
   songRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.sm },
   songRowBorder: { borderTopWidth: 0.5, borderTopColor: colors.border },
   songIcon: { width: 32, height: 32, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
