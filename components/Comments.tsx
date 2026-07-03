@@ -34,6 +34,29 @@ type Row = {
   parent_id: string | null; profiles: any;
 };
 
+// Rank TOP-LEVEL comments most-relevant-first. Blends likes, reply count, like
+// velocity (likes earned per hour since posting — "recency to the amount of likes
+// received"), and a gentle recency baseline so unengaged comments fall
+// newest-first and ties break by recency. Computed once per load (snapshot), so an
+// optimistic like never reshuffles the list under the reader. Returns ordered ids.
+function rankTopLevelIds(comments: any[], likeCounts: Record<string, number>): string[] {
+  const now = Date.now();
+  const replyCount: Record<string, number> = {};
+  for (const c of comments) if (c.parent_id) replyCount[c.parent_id] = (replyCount[c.parent_id] || 0) + 1;
+  const score = (c: any) => {
+    const likes = likeCounts[c.id] || 0;
+    const replies = replyCount[c.id] || 0;
+    const ageH = Math.max(0, (now - (Date.parse(c.created_at) || now)) / 3_600_000);
+    const recency = 1 / Math.pow(ageH + 2, 0.6); // ~0.66 when fresh, decays with age
+    const velocity = likes / (ageH + 1);         // fast-liked comments rank higher
+    return likes * 2.5 + replies * 2 + velocity * 3 + recency * 1.5;
+  };
+  return comments
+    .filter((c) => !c.parent_id)
+    .sort((a, b) => score(b) - score(a) || (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0))
+    .map((c) => c.id);
+}
+
 export default function Comments({
   postId, ownerId, ListHeaderComponent, style, contentPadding, minHeaderHeight, onRefresh, onNavigate, onComposingChange, onEngage, onScrollTop, onPosted,
 }: {
@@ -99,6 +122,8 @@ export default function Comments({
   const [userId, setUserId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  // Relevance order of top-level comment ids, snapshotted at load (see rankTopLevelIds).
+  const [topOrder, setTopOrder] = useState<string[]>([]);
   const [likes, setLikes] = useState<Record<string, number>>({});
   const [likedByMe, setLikedByMe] = useState<Set<string>>(new Set());
   const [replyTo, setReplyTo] = useState<{ id: string; name: string } | null>(null);
@@ -127,20 +152,20 @@ export default function Comments({
     })) as any);
 
     const ids = comments.map((c: any) => c.id);
+    const counts: Record<string, number> = {};
+    const mine = new Set<string>();
     if (ids.length) {
       const { data: cl } = await supabase.from('comment_likes').select('comment_id, user_id').in('comment_id', ids);
-      const counts: Record<string, number> = {};
-      const mine = new Set<string>();
       (cl ?? []).forEach((l: any) => {
         counts[l.comment_id] = (counts[l.comment_id] || 0) + 1;
         if (user && l.user_id === user.id) mine.add(l.comment_id);
       });
-      setLikes(counts);
-      setLikedByMe(mine);
-    } else {
-      setLikes({});
-      setLikedByMe(new Set());
     }
+    setLikes(counts);
+    setLikedByMe(mine);
+    // Snapshot the relevance order now (with fresh like/reply counts) so the list
+    // is stable — liking a comment later won't reshuffle it mid-read.
+    setTopOrder(rankTopLevelIds(comments, counts));
   }, [postId]);
 
   useEffect(() => { load(); }, [load]);
@@ -164,7 +189,20 @@ export default function Comments({
     setRefreshing(false);
   }, [load, onRefresh]);
 
-  const topLevel = rows.filter(r => !r.parent_id);
+  // Top-level comments in relevance order (topOrder), with any posted-this-session
+  // comments not yet in the snapshot appended at the end (they get ranked on the
+  // next load/refresh). Replies stay chronological within their thread.
+  const topLevel = (() => {
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const seen = new Set<string>();
+    const out: Row[] = [];
+    for (const id of topOrder) {
+      const r = byId.get(id);
+      if (r && !r.parent_id) { out.push(r); seen.add(id); }
+    }
+    for (const r of rows) if (!r.parent_id && !seen.has(r.id)) out.push(r);
+    return out;
+  })();
   const repliesOf = (id: string) => rows.filter(r => r.parent_id === id);
 
   async function toggleLike(commentId: string) {
