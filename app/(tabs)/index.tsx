@@ -31,6 +31,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { useAudio, type Track } from '../../contexts/AudioContext';
+import { attachEngagementCountsAll } from '../../lib/postCounts';
 import { createNotification } from '../../lib/createNotification';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useShare } from '../../contexts/ShareContext';
@@ -548,9 +549,7 @@ export default function HomeScreen() {
       .from('posts')
       .select(`
         *,
-        profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme),
-        likes(count),
-        comments(count)
+        profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)
       `)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -620,7 +619,7 @@ export default function HomeScreen() {
       // Hide archived posts (owner-only, archived_at set) and posts from blocked
       // users before ranking. archived_at is absent until the column is migrated,
       // so this is a harmless no-op pre-migration.
-      const visible = (data as any[]).filter(
+      const visible = attachEngagementCountsAll(data as any[]).filter(
         (p) => !p.archived_at && !blockedIds.has(p.user_id)
       );
 
@@ -815,12 +814,12 @@ export default function HomeScreen() {
   const songLoader = useCallback(async (excludeIds: Set<string>): Promise<Track[]> => {
     const { data } = await supabase
       .from('posts')
-      .select(`*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme), likes(count), comments(count)`)
+      .select(`*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)`)
       .eq('type', 'audio').eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(120);
     const now = Date.now();
-    return (data ?? [])
+    return attachEngagementCountsAll(data)
       .filter((p: any) => p.media_url && !p.archived_at && !excludeIds.has(p.id))
       .map((p: any) => ({ p, s: scorePost(p, affinityProfile.current, followingRef.current, new Set(), now) }))
       .sort((a, b) => b.s - a.s)

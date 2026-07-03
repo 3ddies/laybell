@@ -21,6 +21,7 @@ import { createNotification } from '../../lib/createNotification';
 import { usePostActionSheets } from '../../hooks/usePostActionSheets';
 import { formatCount } from '../../lib/format';
 import { aspectToNumber } from '../../lib/aspectRatio';
+import { attachEngagementCounts, attachEngagementCountsAll } from '../../lib/postCounts';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
 import FollowButton from '../../components/FollowButton';
@@ -278,14 +279,14 @@ export default function ReelScreen() {
     ]);
     const followingSet = new Set<string>((followingRes.data ?? []).map((f: any) => f.following_id));
 
-    const SELECT = '*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme), likes(count), comments(count)';
+    const SELECT = '*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)';
     const { data } = await supabase
       .from('posts').select(SELECT)
       .eq('is_public', true).eq('type', 'video')
       .order('created_at', { ascending: false }).limit(40);
 
     const now = Date.now();
-    let list = [...(data ?? [])]
+    let list = attachEngagementCountsAll(data)
       .map((p) => ({ p, s: scorePost(p, profile, followingSet, seen, now) }))
       .sort((a, b) => b.s - a.s)
       .map((x) => x.p);
@@ -296,7 +297,7 @@ export default function ReelScreen() {
     if (idx >= 0) { start = list[idx]; list.splice(idx, 1); }
     else {
       const { data: one } = await supabase.from('posts').select(SELECT).eq('id', id).single();
-      start = one;
+      start = attachEngagementCounts(one);
     }
     const ordered = start ? [start, ...list] : list;
     // Preserve the served spotlight flag on the tapped reel — the refetched DB

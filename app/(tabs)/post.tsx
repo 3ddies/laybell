@@ -1335,14 +1335,18 @@ export default function PostScreen() {
               <TouchableOpacity style={styles.diagHalf} onPress={startRecording} activeOpacity={0.9}>
                 <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
                 <View style={styles.diagContent}>
-                  <Ionicons name="mic" size={34} color="#fff" />
+                  <View style={[styles.diagIconWrap, styles.diagIconWrapRecord]}>
+                    <Ionicons name="mic" size={42} color="#fff" />
+                  </View>
                   <Text style={styles.diagTitleOnPrimary}>{t('post.record')}</Text>
                   <Text style={styles.diagSubOnPrimary}>{t('post.recordSub')}</Text>
                 </View>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.diagHalf, styles.diagUpload]} onPress={pickAudio} activeOpacity={0.9}>
                 <View style={styles.diagContent}>
-                  <Ionicons name="cloud-upload-outline" size={34} color={colors.primary} />
+                  <View style={[styles.diagIconWrap, styles.diagIconWrapUpload]}>
+                    <Ionicons name="cloud-upload-outline" size={42} color={colors.primary} />
+                  </View>
                   <Text style={styles.diagTitle}>{t('post.upload')}</Text>
                   <Text style={styles.diagSub}>MP3 · WAV · M4A</Text>
                 </View>
@@ -1655,11 +1659,17 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   diagHalf: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   diagUpload: { backgroundColor: colors.surfaceElevated, borderTopWidth: 2, borderTopColor: colors.background },
-  diagContent: { alignItems: 'center', gap: SPACING.xs, transform: [{ rotate: '7deg' }] },
-  diagTitleOnPrimary: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  diagSubOnPrimary: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' },
-  diagTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
-  diagSub: { color: colors.textTertiary, fontSize: 12, fontWeight: '600' },
+  diagContent: { alignItems: 'center', gap: SPACING.sm, transform: [{ rotate: '7deg' }] },
+  // Prominent circular icon badge behind each glyph.
+  diagIconWrap: { width: 82, height: 82, borderRadius: 41, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  diagIconWrapRecord: { backgroundColor: 'rgba(255,255,255,0.22)' },
+  diagIconWrapUpload: {
+    backgroundColor: 'rgba(242,101,34,0.12)', borderWidth: 1.5, borderColor: 'rgba(242,101,34,0.35)',
+  },
+  diagTitleOnPrimary: { color: '#fff', fontSize: 24, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
+  diagSubOnPrimary: { color: 'rgba(255,255,255,0.92)', fontSize: 13.5, fontWeight: '600' },
+  diagTitle: { color: colors.text, fontSize: 24, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
+  diagSub: { color: colors.textSecondary, fontSize: 13.5, fontWeight: '600' },
 
   // Full-page recording screen — the whole area goes red.
   recordingFull: {
