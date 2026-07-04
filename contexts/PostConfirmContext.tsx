@@ -30,7 +30,10 @@ export function PostConfirmProvider({ children }: { children: ReactNode }) {
     : t(spot ? 'postAction.archiveBodySpot' : 'postAction.archiveBody');
   const confirmLabel = isDelete ? t('common.delete') : t('postAction.archiveBtn');
 
-  function close() { setVisible(false); setReq(null); }
+  // Keep `req` set through the dialog's fade-out (only toggle visibility) so the
+  // copy doesn't flip to the other variant while it animates away. It's overwritten
+  // on the next open.
+  function close() { setVisible(false); }
 
   async function onConfirm() {
     const r = req;
@@ -38,7 +41,6 @@ export function PostConfirmProvider({ children }: { children: ReactNode }) {
     setBusy(true);
     const ok = r.kind === 'delete' ? await deletePostById(r.postId) : await archivePostById(r.postId);
     setVisible(false);
-    setReq(null);
     setBusy(false);
     if (ok) r.onDone?.();
     else Alert.alert(t('common.error'), t(r.kind === 'delete' ? 'postAction.deleteError' : 'postAction.archiveError'));

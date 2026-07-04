@@ -116,6 +116,9 @@ type PostCardProps = {
   audioActive: boolean;
   videoMuted: boolean;
   songMuted: boolean;
+  // isVisibleVideo → the centered card: mounts the player (so it pre-loads).
+  // shouldPlayVideo → mounted AND settled (not scrolling): actually plays.
+  isVisibleVideo: boolean;
   shouldPlayVideo: boolean;
   onProfile: (item: Post) => void;
   onOptions: (item: Post) => void;
@@ -150,7 +153,7 @@ function FeedHeader() {
 // from HomeScreen are referentially stable, and `item` keeps its reference for
 // unchanged posts, so React.memo's shallow compare skips them.
 const PostCard = memo(function PostCard({
-  item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted, shouldPlayVideo,
+  item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted, isVisibleVideo, shouldPlayVideo,
   onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive,
 }: PostCardProps) {
   const { colors } = useTheme();
@@ -273,22 +276,31 @@ const PostCard = memo(function PostCard({
             activeOpacity={1}
             onPress={() => vidRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenReel(item, { x, y, width: w, height: h }))}
           >
-            <AppVideo
-              source={{ uri: item.media_url }}
-              style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
-              contentFit="cover"
-              // Thumbnail shows until the first frame decodes — covers the brief
-              // Cloudflare encode window for a freshly-posted video (and smooths
-              // the load for every video).
-              poster={item.thumbnail_url}
-              loop
-              muted={item.song_id ? true : videoMuted}
-              active={shouldPlayVideo}
-              // Feed watching counts toward views (muted autoplay included) —
-              // the tracker accumulates genuine watch time across surfaces and
-              // the server enforces the per-user/device caps.
-              onProgress={(pos, dur) => trackVideoProgress(item.id, pos, dur)}
-            />
+            <View style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}>
+              {/* Thumbnail for every card; the real player mounts ONLY for the
+                  visible card so fast scrolling never spins up a video player per
+                  row (the source of the scroll jank). */}
+              {!!item.thumbnail_url && (
+                <Image source={{ uri: item.thumbnail_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+              )}
+              {isVisibleVideo && (
+                <AppVideo
+                  source={{ uri: item.media_url }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  poster={item.thumbnail_url}
+                  loop
+                  muted={item.song_id ? true : videoMuted}
+                  // Mounted while centered (pre-loads under the poster); only PLAYS
+                  // once the feed settles, so a fast scroll doesn't churn playback.
+                  active={shouldPlayVideo}
+                  // Feed watching counts toward views (muted autoplay included) —
+                  // the tracker accumulates genuine watch time across surfaces and
+                  // the server enforces the per-user/device caps.
+                  onProgress={(pos, dur) => trackVideoProgress(item.id, pos, dur)}
+                />
+              )}
+            </View>
           </TouchableOpacity>
           <TouchableOpacity style={styles.videoAudioBtn} onPress={item.song_id ? onToggleSongMute : onToggleMuted}>
             <Ionicons name={(item.song_id ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color={colors.text} />
@@ -462,7 +474,9 @@ export default function HomeScreen() {
 
   // Track which video is on-screen so it auto-plays while others pause.
   // FlatList requires these references to be stable across renders.
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  // minimumViewTime keeps a fast fling from flickering the "visible" video across
+  // every card it passes — only a card that lingers briefly becomes the active one.
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 90 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     // A video post, or a slideshow that contains at least one video slide, becomes
     // the "playing" item so its current video slide can autoplay.
@@ -960,6 +974,7 @@ export default function HomeScreen() {
           audioActive={isPlaying && currentTrack?.id === item.id}
           videoMuted={videoMuted}
           songMuted={songMuted}
+          isVisibleVideo={visibleVideoId === item.id}
           shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
           onProfile={onProfile}
           onOptions={onOptions}
