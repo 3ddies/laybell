@@ -17,6 +17,8 @@ type Props = {
   /** Optional middle action (e.g. a softer alternative) shown between confirm and cancel. */
   secondaryLabel?: string;
   onSecondary?: () => void;
+  /** Tint the secondary action with the error color (e.g. a destructive alternative). */
+  secondaryDestructive?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -34,6 +36,7 @@ export default function ConfirmDialog({
   destructive = false,
   secondaryLabel,
   onSecondary,
+  secondaryDestructive = false,
   onConfirm,
   onCancel,
 }: Props) {
@@ -85,8 +88,12 @@ export default function ConfirmDialog({
           <Text style={styles.confirmText}>{confirmLabel}</Text>
         </TouchableOpacity>
         {!!secondaryLabel && !!onSecondary && (
-          <TouchableOpacity style={styles.secondaryBtn} onPress={onSecondary} activeOpacity={0.85}>
-            <Text style={styles.secondaryText}>{secondaryLabel}</Text>
+          <TouchableOpacity
+            style={[styles.secondaryBtn, secondaryDestructive && { borderColor: colors.error }]}
+            onPress={onSecondary}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.secondaryText, secondaryDestructive && { color: colors.error }]}>{secondaryLabel}</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.7}>

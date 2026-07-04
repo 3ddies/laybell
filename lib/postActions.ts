@@ -29,10 +29,25 @@ export async function deletePostById(postId: string): Promise<boolean> {
   if (error || !data?.length) return false;
   if (media.length) await removePublicUrls(media);
   // Video posts on Cloudflare Stream: delete the CDN asset so it stops costing
-  // storage. Ownership is enforced server-side; safe to fire for any uid we hold.
-  if (videoUid) await deleteStreamVideo(videoUid);
+  // storage. Ownership is enforced server-side; fire-and-forget so the delete stays
+  // snappy (best-effort cleanup, never throws).
+  if (videoUid) deleteStreamVideo(videoUid);
   return true;
 }
+
+// ── Themed delete/archive confirm bridge ─────────────────────────────────────
+// The themed PostConfirm dialog (contexts/PostConfirmContext) registers its opener
+// here, so the imperative confirmDeletePost/confirmArchivePost callers (the 3-dot
+// menu, long-press, the archive screen) stay unchanged while the confirm is a real
+// in-app card instead of a system Alert. Falls back to Alert if not mounted.
+export type PostConfirmRequest = {
+  kind: 'delete' | 'archive';
+  postId: string;
+  spotlighted: boolean;
+  onDone?: () => void;
+};
+let postConfirmHandler: ((req: PostConfirmRequest) => void) | null = null;
+export function setPostConfirmHandler(fn: ((req: PostConfirmRequest) => void) | null) { postConfirmHandler = fn; }
 
 // Archiving hides a post from your profile/feed/explore without deleting it.
 // `archived_at` is set to now (archive) or cleared to null (restore). Requires
@@ -69,6 +84,7 @@ export async function restorePostById(postId: string): Promise<boolean> {
 // are warned before committing. The spotlight check degrades to the normal copy.
 export async function confirmArchivePost(postId: string, onArchived?: () => void) {
   const spotlighted = await isPostSpotlighted(postId);
+  if (postConfirmHandler) { postConfirmHandler({ kind: 'archive', postId, spotlighted, onDone: onArchived }); return; }
   Alert.alert(
     spotlighted ? tg('postAction.archiveTitleSpot') : tg('postAction.archiveTitle'),
     spotlighted ? tg('postAction.archiveBodySpot') : tg('postAction.archiveBody'),
@@ -93,6 +109,7 @@ export async function confirmArchivePost(postId: string, onArchived?: () => void
 // before they commit. The spotlight check degrades to the normal copy on error.
 export async function confirmDeletePost(postId: string, onDeleted?: () => void) {
   const spotlighted = await isPostSpotlighted(postId);
+  if (postConfirmHandler) { postConfirmHandler({ kind: 'delete', postId, spotlighted, onDone: onDeleted }); return; }
   Alert.alert(
     spotlighted ? tg('postAction.deleteTitleSpot') : tg('postAction.deleteTitle'),
     spotlighted ? tg('postAction.deleteBodySpot') : tg('postAction.deleteBody'),

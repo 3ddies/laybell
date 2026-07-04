@@ -26,6 +26,7 @@ import { LinkGuardProvider } from '../contexts/LinkGuardContext';
 import { ReportProvider } from '../contexts/ReportContext';
 import { AdOptionsProvider } from '../contexts/AdOptionsContext';
 import { BlockConfirmProvider } from '../contexts/BlockConfirmContext';
+import { PostConfirmProvider } from '../contexts/PostConfirmContext';
 import { GifActionSheetProvider } from '../contexts/GifActionSheetContext';
 import { CommentActionSheetProvider } from '../contexts/CommentActionSheetContext';
 import { ImageViewerProvider } from '../contexts/ImageViewerContext';
@@ -300,6 +301,7 @@ export default function RootLayout() {
                     <ReportProvider>
                       <AdOptionsProvider>
                         <BlockConfirmProvider>
+                          <PostConfirmProvider>
                           <GifActionSheetProvider>
                             <CommentActionSheetProvider>
                               <ImageViewerProvider>
@@ -313,6 +315,7 @@ export default function RootLayout() {
                               </ImageViewerProvider>
                             </CommentActionSheetProvider>
                           </GifActionSheetProvider>
+                          </PostConfirmProvider>
                         </BlockConfirmProvider>
                       </AdOptionsProvider>
                     </ReportProvider>

@@ -1,7 +1,8 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Image, Alert, RefreshControl,
+  ScrollView, Image, Alert, RefreshControl, Platform,
 } from 'react-native';
+import { FullWindowOverlay } from 'react-native-screens';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +12,7 @@ import { restorePostById, deletePostById } from '../lib/postActions';
 import { fetchArchivedStories, restoreStory, deleteStory, type Story } from '../lib/stories';
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -51,57 +53,40 @@ export default function ArchiveScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  function onPostPress(post: any) {
-    Alert.alert(
-      t('archive.postTitle'),
-      t('archive.postBody'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('archive.restore'),
-          onPress: async () => {
-            const ok = await restorePostById(post.id);
-            if (ok) setPosts(prev => prev.filter(p => p.id !== post.id));
-            else Alert.alert(t('archive.errorTitle'), t('archive.restorePostError'));
-          },
-        },
-        {
-          text: t('archive.deletePermanently'),
-          style: 'destructive',
-          onPress: async () => {
-            const ok = await deletePostById(post.id);
-            if (ok) setPosts(prev => prev.filter(p => p.id !== post.id));
-            else Alert.alert(t('archive.errorTitle'), t('archive.deletePostError'));
-          },
-        },
-      ],
-    );
+  // Restore / delete-permanently is a themed ConfirmDialog (Restore is the safe
+  // primary; "Delete permanently" the destructive secondary). `confirm` holds the
+  // target and stays set through the exit animation; `dialogOpen` drives visibility.
+  const [confirm, setConfirm] = useState<{ kind: 'post' | 'story'; id: string } | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  function onPostPress(post: any) { setConfirm({ kind: 'post', id: post.id }); setDialogOpen(true); }
+  function onStoryPress(story: Story) { setConfirm({ kind: 'story', id: story.id }); setDialogOpen(true); }
+
+  async function doRestore() {
+    const c = confirm; if (!c) return;
+    setDialogOpen(false);
+    if (c.kind === 'post') {
+      const ok = await restorePostById(c.id);
+      if (ok) setPosts(prev => prev.filter(p => p.id !== c.id));
+      else Alert.alert(t('archive.errorTitle'), t('archive.restorePostError'));
+    } else {
+      const ok = await restoreStory(c.id);
+      if (ok) setStories(prev => prev.filter(s => s.id !== c.id));
+      else Alert.alert(t('archive.errorTitle'), t('archive.restoreStoryError'));
+    }
   }
 
-  function onStoryPress(story: Story) {
-    Alert.alert(
-      t('archive.storyTitle'),
-      t('archive.storyBody'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('archive.restore'),
-          onPress: async () => {
-            const ok = await restoreStory(story.id);
-            if (ok) setStories(prev => prev.filter(s => s.id !== story.id));
-            else Alert.alert(t('archive.errorTitle'), t('archive.restoreStoryError'));
-          },
-        },
-        {
-          text: t('archive.deletePermanently'),
-          style: 'destructive',
-          onPress: async () => {
-            await deleteStory(story.id);
-            setStories(prev => prev.filter(s => s.id !== story.id));
-          },
-        },
-      ],
-    );
+  async function doDeletePermanently() {
+    const c = confirm; if (!c) return;
+    setDialogOpen(false);
+    if (c.kind === 'post') {
+      const ok = await deletePostById(c.id);
+      if (ok) setPosts(prev => prev.filter(p => p.id !== c.id));
+      else Alert.alert(t('archive.errorTitle'), t('archive.deletePostError'));
+    } else {
+      await deleteStory(c.id);
+      setStories(prev => prev.filter(s => s.id !== c.id));
+    }
   }
 
   // Tap an archived story → replay it like the original (read-only: the viewer
@@ -116,6 +101,21 @@ export default function ArchiveScreen() {
   }
 
   const isEmpty = tab === 'posts' ? posts.length === 0 : stories.length === 0;
+
+  const confirmDialog = (
+    <ConfirmDialog
+      visible={dialogOpen}
+      title={confirm?.kind === 'story' ? t('archive.storyTitle') : t('archive.postTitle')}
+      message={confirm?.kind === 'story' ? t('archive.storyBody') : t('archive.postBody')}
+      confirmLabel={t('archive.restore')}
+      icon="refresh-outline"
+      secondaryLabel={t('archive.deletePermanently')}
+      secondaryDestructive
+      onConfirm={doRestore}
+      onSecondary={doDeletePermanently}
+      onCancel={() => setDialogOpen(false)}
+    />
+  );
 
   return (
     <View style={styles.container}>
@@ -219,6 +219,10 @@ export default function ArchiveScreen() {
           )}
         </ScrollView>
       )}
+
+      {Platform.OS === 'ios' ? (
+        <FullWindowOverlay>{confirmDialog}</FullWindowOverlay>
+      ) : confirmDialog}
     </View>
   );
 }
