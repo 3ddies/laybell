@@ -97,7 +97,15 @@
           "microphonePermission": "Allow Laybell to record audio for your posts."
         }
       ],
-      "expo-video"
+      "expo-video",
+      "@livekit/react-native-expo-plugin",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Allow Laybell to use your camera to broadcast livestreams.",
+          "microphonePermission": "Allow Laybell to use your microphone for livestreams and studio sessions."
+        }
+      ]
     ],
     "extra": {
       "router": {},

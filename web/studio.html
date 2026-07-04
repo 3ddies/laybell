@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laybell Studio — connect your DAW</title>
+<style>
+:root { --bg:#0d0d0f; --card:#16151a; --ink:#f5f4f2; --muted:#a4a3ab; --line:#272630; --brand:#F26522; --brand2:#E8401C; --ok:#22C55E; --err:#F43F5E; }
+* { box-sizing:border-box; }
+html,body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; display:flex; align-items:center; justify-content:center; padding:24px; }
+main { width:100%; max-width:440px; }
+.logo { width:64px; height:64px; border-radius:16px; margin:0 auto 16px; background:linear-gradient(135deg,var(--brand),var(--brand2)); display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; color:#fff; }
+h1 { font-size:22px; margin:0 0 6px; text-align:center; }
+p.sub { color:var(--muted); margin:0 0 22px; text-align:center; font-size:14px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; margin-bottom:14px; }
+label { display:block; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin:0 0 6px; }
+input { width:100%; padding:13px 14px; border-radius:12px; border:1px solid var(--line); background:#0f0e12; color:var(--ink); font-size:16px; margin-bottom:12px; }
+input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
+.btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:14px 18px; border-radius:13px; border:0; cursor:pointer; font-weight:700; font-size:15px; margin:0 0 10px; }
+.btn-primary { background:linear-gradient(90deg,var(--brand),var(--brand2)); color:#fff; }
+.btn-ghost { background:transparent; border:1px solid var(--line); color:var(--ink); }
+.btn[disabled] { opacity:.5; cursor:default; }
+.hint { font-size:13px; color:var(--muted); line-height:1.55; }
+.status { font-size:13px; margin:6px 0 0; min-height:20px; }
+.status.ok { color:var(--ok); } .status.err { color:var(--err); }
+#room { display:none; }
+.people { display:flex; flex-wrap:wrap; gap:10px; margin:4px 0 14px; }
+.person { display:flex; align-items:center; gap:8px; background:#0f0e12; border:1px solid var(--line); border-radius:999px; padding:6px 14px 6px 8px; font-size:14px; }
+.dot { width:10px; height:10px; border-radius:5px; background:var(--line); }
+.person.speaking .dot { background:var(--ok); }
+.row { display:flex; gap:10px; }
+.row .btn { margin-bottom:0; }
+.pill { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:3px 10px; margin-left:8px; vertical-align:2px; }
+.pill .dot { width:8px; height:8px; }
+.pill.live .dot { background:var(--ok); }
+.countin { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); font-size:140px; font-weight:900; color:#fff; z-index:50; }
+.countin.rec { color:var(--err); }
+</style>
+</head><body><main>
+  <div class="logo">L</div>
+  <h1>Laybell Studio</h1>
+  <p class="sub">Join a live studio session from your computer and pipe FL&nbsp;Studio, BandLab, or any app's audio straight into the room.</p>
+
+  <!-- Join -->
+  <div class="card" id="join">
+    <label for="code">Session code</label>
+    <input id="code" maxlength="8" autocomplete="off" placeholder="A1B2C3D4">
+    <label for="name">Your name</label>
+    <input id="name" maxlength="40" placeholder="Producer">
+    <button class="btn btn-primary" id="joinBtn">Join session</button>
+    <p class="status" id="joinStatus"></p>
+  </div>
+
+  <!-- In-room -->
+  <div class="card" id="room">
+    <div style="margin-bottom:10px">In session<span class="pill live" id="connPill"><span class="dot"></span><span id="connText">connected</span></span></div>
+    <div class="people" id="people"></div>
+    <div class="row">
+      <button class="btn btn-ghost" id="muteBtn">Mute mic</button>
+      <button class="btn btn-primary" id="dawBtn">Share app audio</button>
+    </div>
+    <p class="status" id="roomStatus"></p>
+    <p class="hint" style="margin-top:10px">
+      <b>Connect your DAW:</b> click <i>Share app audio</i>, pick the FL&nbsp;Studio / BandLab window or your screen, and tick
+      <i>"share audio"</i> in the browser dialog. Everyone in the session hears your DAW in studio quality.
+      When the host fires a <b>sync count-in</b>, this page counts 4 beats then flashes <b style="color:var(--err)">REC</b> —
+      punch record in your DAW on the flash and every take lines up.
+    </p>
+    <button class="btn btn-ghost" id="leaveBtn" style="margin-top:12px">Leave</button>
+  </div>
+
+  <p class="hint" style="text-align:center">Laybell — the connector for online studio sessions.</p>
+</main>
+
+<div class="countin" id="countin"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<script>
+(function () {
+  // Keep in sync with lib/supabase.ts.
+  var TOKEN_FN = 'https://wawpaokvtptfmuygjnns.supabase.co/functions/v1/livekit-token';
+
+  var LK = window.LivekitClient;
+  var room = null, micTrack = null, dawTrack = null, muted = false;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var params = new URLSearchParams(location.search);
+  var preCode = (params.get('code') || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
+  if (preCode) $('code').value = preCode.toUpperCase();
+
+  function setStatus(el, msg, cls) { el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
+
+  // Music-grade capture: raw signal, no voice processing, stereo 48k.
+  var STUDIO_AUDIO = {
+    echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+    channelCount: 2, sampleRate: 48000
+  };
+  var PUBLISH_OPTS = { dtx: false, red: false, audioPreset: { maxBitrate: 320000 } };
+
+  $('joinBtn').addEventListener('click', join);
+  $('muteBtn').addEventListener('click', toggleMute);
+  $('dawBtn').addEventListener('click', shareDaw);
+  $('leaveBtn').addEventListener('click', function () { location.reload(); });
+
+  async function join() {
+    var code = $('code').value.trim().toUpperCase();
+    var name = $('name').value.trim() || 'Studio guest';
+    if (!code) { setStatus($('joinStatus'), 'Enter the session code from the Laybell app.', 'err'); return; }
+    $('joinBtn').disabled = true;
+    setStatus($('joinStatus'), 'Connecting…');
+    try {
+      var res = await fetch(TOKEN_FN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code, name: name })
+      });
+      var data = await res.json();
+      if (!res.ok || !data.token) throw new Error(data.error === 'invalid_code' ? 'That code is invalid or the session ended.' : 'Could not join.');
+
+      room = new LK.Room({ adaptiveStream: false, publishDefaults: PUBLISH_OPTS });
+      wireRoom(room);
+      await room.connect(data.url, data.token);
+
+      // Publish the mic in studio quality.
+      micTrack = await LK.createLocalAudioTrack(STUDIO_AUDIO);
+      await room.localParticipant.publishTrack(micTrack, PUBLISH_OPTS);
+
+      $('join').style.display = 'none';
+      $('room').style.display = 'block';
+      renderPeople();
+    } catch (e) {
+      setStatus($('joinStatus'), e.message || 'Could not join.', 'err');
+      try { if (room) room.disconnect(); } catch (_) {}
+      room = null;
+    }
+    $('joinBtn').disabled = false;
+  }
+
+  function wireRoom(r) {
+    r.on(LK.RoomEvent.ParticipantConnected, renderPeople)
+     .on(LK.RoomEvent.ParticipantDisconnected, renderPeople)
+     .on(LK.RoomEvent.ActiveSpeakersChanged, renderPeople)
+     .on(LK.RoomEvent.TrackMuted, renderPeople)
+     .on(LK.RoomEvent.TrackUnmuted, renderPeople)
+     .on(LK.RoomEvent.Disconnected, function () {
+       $('connText').textContent = 'disconnected';
+       $('connPill').classList.remove('live');
+     })
+     .on(LK.RoomEvent.TrackSubscribed, function (track) {
+       if (track.kind === 'audio') { var el = track.attach(); document.body.appendChild(el); }
+     })
+     .on(LK.RoomEvent.DataReceived, function (payload) {
+       try {
+         var msg = JSON.parse(new TextDecoder().decode(payload));
+         if (msg && msg.t === 'countin' && typeof msg.startAt === 'number') runCountIn(msg);
+       } catch (_) {}
+     });
+  }
+
+  function renderPeople() {
+    if (!room) return;
+    var box = $('people');
+    box.innerHTML = '';
+    var everyone = [room.localParticipant];
+    room.remoteParticipants.forEach(function (p) { everyone.push(p); });
+    everyone.forEach(function (p) {
+      var div = document.createElement('div');
+      div.className = 'person' + (p.isSpeaking ? ' speaking' : '');
+      var label = (p === room.localParticipant ? 'You' : (p.name || p.identity));
+      div.innerHTML = '<span class="dot"></span>';
+      div.appendChild(document.createTextNode(label));
+      box.appendChild(div);
+    });
+  }
+
+  function toggleMute() {
+    if (!micTrack) return;
+    muted = !muted;
+    if (muted) micTrack.mute(); else micTrack.unmute();
+    $('muteBtn').textContent = muted ? 'Unmute mic' : 'Mute mic';
+  }
+
+  // The DAW connector: capture a window/screen WITH audio and publish only the
+  // audio track — FL Studio / BandLab output flows into the session.
+  async function shareDaw() {
+    if (!room) return;
+    try {
+      var media = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+      var audio = media.getAudioTracks()[0];
+      media.getVideoTracks().forEach(function (t) { t.stop(); }); // audio-only share
+      if (!audio) {
+        setStatus($('roomStatus'), 'No audio in that share — pick a window/screen and tick "share audio".', 'err');
+        return;
+      }
+      if (dawTrack) { try { room.localParticipant.unpublishTrack(dawTrack); dawTrack.stop(); } catch (_) {} }
+      dawTrack = audio;
+      await room.localParticipant.publishTrack(audio, {
+        dtx: false, red: false, audioPreset: { maxBitrate: 320000 },
+        source: LK.Track.Source.ScreenShareAudio, name: 'daw-audio'
+      });
+      audio.addEventListener('ended', function () {
+        setStatus($('roomStatus'), 'App audio share stopped.');
+        dawTrack = null;
+      });
+      setStatus($('roomStatus'), 'Your app audio is live in the session.', 'ok');
+      $('dawBtn').textContent = 'Change shared audio';
+    } catch (e) {
+      if (e && e.name !== 'NotAllowedError') setStatus($('roomStatus'), 'Could not share audio.', 'err');
+    }
+  }
+
+  // 4 beats then REC, landing exactly on msg.startAt — same choreography as the app.
+  var countTimers = [];
+  function runCountIn(msg) {
+    countTimers.forEach(clearTimeout);
+    countTimers = [];
+    var overlay = $('countin');
+    var beatMs = 60000 / Math.max(40, Math.min(240, msg.bpm || 120));
+    for (var beat = 4; beat >= 1; beat--) (function (b) {
+      var at = msg.startAt - b * beatMs - Date.now();
+      if (at < 0) return;
+      countTimers.push(setTimeout(function () {
+        overlay.textContent = String(b);
+        overlay.className = 'countin';
+        overlay.style.display = 'flex';
+      }, at));
+    })(beat);
+    var recIn = msg.startAt - Date.now();
+    if (recIn >= 0) {
+      countTimers.push(setTimeout(function () {
+        overlay.textContent = 'REC';
+        overlay.className = 'countin rec';
+        overlay.style.display = 'flex';
+      }, recIn));
+      countTimers.push(setTimeout(function () { overlay.style.display = 'none'; }, recIn + 1800));
+    }
+  }
+})();
+</script>
+</body></html>

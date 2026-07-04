@@ -1007,19 +1007,28 @@ export default function HomeScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.logoBtn}
-          onPress={() => { revealChevron(); setMenuOpen(true); }}
-          activeOpacity={0.7}
-        >
-          <View style={styles.logoWrap}>
-            <Text style={styles.headerLogo}>Laybell</Text>
-            <Text style={styles.tm}>™</Text>
-          </View>
-          <Animated.View style={[styles.logoChevron, { opacity: chevronOpacity }]} pointerEvents="none">
-            <Ionicons name="chevron-down" size={20} color={colors.primaryLight} />
-          </Animated.View>
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.logoBtn}
+            onPress={() => { revealChevron(); setMenuOpen(true); }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.logoWrap}>
+              <Text style={styles.headerLogo}>Laybell</Text>
+              <Text style={styles.tm}>™</Text>
+            </View>
+            <Animated.View style={[styles.logoChevron, { opacity: chevronOpacity }]} pointerEvents="none">
+              <Ionicons name="chevron-down" size={20} color={colors.primaryLight} />
+            </Animated.View>
+          </TouchableOpacity>
+          {/* Live: a tv with a red LIVE disc on its screen — opens the live feed. */}
+          <TouchableOpacity style={styles.liveBtn} onPress={() => router.push('/live')} activeOpacity={0.7}>
+            <Ionicons name="tv-outline" size={30} color={colors.text} />
+            <View style={styles.liveDisc}>
+              <Text style={styles.liveDiscText}>LIVE</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
         <View style={styles.headerRight}>
           <TouchableOpacity
             style={styles.headerIconBtn}
@@ -1180,7 +1189,22 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: colors.border,
   },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   logoBtn: { flexDirection: 'row', alignItems: 'center' },
+  liveBtn: { position: 'relative', padding: 2, marginTop: 2 },
+  // Red disc centered on the tv's screen area (the glyph's top ~2/3).
+  liveDisc: {
+    position: 'absolute',
+    top: 7,
+    left: 8.5,
+    width: 17,
+    height: 17,
+    borderRadius: 8.5,
+    backgroundColor: '#F43F5E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveDiscText: { color: '#fff', fontSize: 5.5, fontWeight: '800', letterSpacing: 0.2 },
   headerLogo: {
     color: colors.primaryLight,
     fontSize: 32,

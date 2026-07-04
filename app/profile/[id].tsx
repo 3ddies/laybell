@@ -32,6 +32,7 @@ import { activeLayout, usedPostIds } from '../../lib/pageLayout';
 import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { slideshowThumb } from '../../lib/slideshow';
 import { createNotification } from '../../lib/createNotification';
+import { hasOpenShop } from '../../lib/shop';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { ProfileSkeleton } from '../../components/Skeleton';
 
@@ -73,6 +74,7 @@ export default function PublicProfileScreen() {
   const [qrVisible, setQrVisible] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followsMe, setFollowsMe] = useState(false); // does this profile follow me back?
+  const [hasShop, setHasShop] = useState(false); // open shop → green Shop button
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('posts');
   const [followLoading, setFollowLoading] = useState(false);
@@ -146,6 +148,14 @@ export default function PublicProfileScreen() {
   })).current;
 
   useEffect(() => { setup(); }, [id]);
+
+  // Shop button gate: RLS only exposes shops that are open (or your own).
+  useEffect(() => {
+    if (!id) return;
+    let active = true;
+    hasOpenShop(String(id)).then((v) => { if (active) setHasShop(v); }).catch(() => {});
+    return () => { active = false; };
+  }, [id]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -567,6 +577,16 @@ export default function PublicProfileScreen() {
         ) : null}
       </View>
 
+      {/* Shop (only when this user has an open shop) — above Follow / Message */}
+      {!isOwnProfile && hasShop && (
+        <View style={styles.shopButtonRow}>
+          <TouchableOpacity style={styles.shopButton} onPress={() => router.push(`/shop/${id}`)} activeOpacity={0.85}>
+            <Ionicons name="storefront" size={17} color="#fff" />
+            <Text style={styles.shopButtonText}>{t('shop.title')}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Follow / Message */}
       {!isOwnProfile && (
         <View style={styles.actionButtons}>
@@ -672,6 +692,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   linkText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
 
+  // Green marketplace entry, full-width above Follow/Message.
+  shopButtonRow: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },
+  shopButton: { backgroundColor: colors.success, borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
+  shopButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   actionButtons: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: SPACING.sm },
   followButton: { flex: 1, backgroundColor: colors.primary, borderRadius: RADIUS.md, paddingVertical: SPACING.sm + 2, alignItems: 'center' },
   followingButton: { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border },

@@ -634,14 +634,24 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
-          <TouchableOpacity
-            style={styles.spotlightBtn}
-            activeOpacity={0.8}
-            onPress={() => router.push('/spotlight')}
-          >
-            <Ionicons name="sparkles" size={15} color="#fff" />
-            <Text style={styles.spotlightBtnText}>Spotlight</Text>
-          </TouchableOpacity>
+          <View style={styles.sideBtns}>
+            <TouchableOpacity
+              style={styles.shopBtn}
+              activeOpacity={0.8}
+              onPress={() => router.push('/shop?tab=mine')}
+            >
+              <Ionicons name="storefront" size={15} color="#fff" />
+              <Text style={styles.shopBtnText}>{t('shop.title')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.spotlightBtn}
+              activeOpacity={0.8}
+              onPress={() => router.push('/spotlight')}
+            >
+              <Ionicons name="sparkles" size={15} color="#fff" />
+              <Text style={styles.spotlightBtnText}>Spotlight</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -744,9 +754,17 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   infoSection: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   infoLeft: { flex: 1, gap: 4 },
-  // Solid orange button with white text/icon (profile page only).
+  // Shop (green) stacked above Spotlight (orange) — both solid with white text.
+  sideBtns: { gap: SPACING.sm, alignItems: 'stretch' },
+  shopBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    backgroundColor: colors.success,
+    borderRadius: RADIUS.full,
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
+  },
+  shopBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   spotlightBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
     backgroundColor: colors.primary,
     borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,

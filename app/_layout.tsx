@@ -39,6 +39,24 @@ import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
 import WelcomeTour, { WELCOME_TOUR_FLAG } from '../components/WelcomeTour';
 import { useNotifications } from '../hooks/useNotifications';
 
+// WebRTC globals for the live features (livestream WHIP/WHEP + LiveKit studio
+// rooms). Guarded so a dev client built BEFORE the webrtc natives were added
+// still boots — the live screens then show their "rebuild required" fallback.
+// Hermes has no DOMException; livekit-client expects it, so shim it first
+// (applies whether or not the natives are present).
+if (typeof (global as { DOMException?: unknown }).DOMException === 'undefined') {
+  (global as { DOMException?: unknown }).DOMException = class DOMException extends Error {
+    constructor(message?: string, name?: string) {
+      super(message);
+      this.name = name ?? 'Error';
+    }
+  };
+}
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  require('@livekit/react-native').registerGlobals();
+} catch { /* native module not in this binary yet */ }
+
 function AppContent() {
   useNotifications();
   const { colors } = useTheme();
@@ -144,7 +162,7 @@ function AppContent() {
             the route itself must not animate (iOS ignores slide_from_right on
             modal presentations and would slide up from the bottom instead). The
             stack's own back gesture stays off — the pager owns the swipe. */}
-        {['messages/index', 'notifications', 'settings', 'saved', 'gifs', 'analytics', 'spotlight', 'ad-manager/index', 'ad-manager/create', 'ad-manager/[id]', 'badges', 'permissions', 'playlists', 'playlist/[id]', 'downloads', 'premium', 'communities/index', 'communities/create', 'communities/edit', 'communities/[id]', 'privacy-policy', 'terms-of-service', 'community-guidelines', 'advertiser-terms', 'privacy-center'].map((name) => (
+        {['messages/index', 'notifications', 'settings', 'saved', 'gifs', 'analytics', 'spotlight', 'ad-manager/index', 'ad-manager/create', 'ad-manager/[id]', 'badges', 'permissions', 'playlists', 'playlist/[id]', 'downloads', 'premium', 'communities/index', 'communities/create', 'communities/edit', 'communities/[id]', 'privacy-policy', 'terms-of-service', 'community-guidelines', 'advertiser-terms', 'privacy-center', 'live/index', 'live/go-live', 'studio/index', 'studio/[id]', 'shop/index', 'shop/[userId]', 'shop/listing/[id]', 'shop/new-listing'].map((name) => (
           <Stack.Screen
             key={name}
             name={name}
