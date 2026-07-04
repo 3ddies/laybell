@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync, createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import { probeAudioDurationSec } from '../../lib/audioProbe';
@@ -30,6 +31,7 @@ import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../comp
 import PhotoGrid, { type PickedMedia, type PhotoGridHandle } from '../../components/PhotoGrid';
 import { MAX_SLIDES, type Slide } from '../../lib/slideshow';
 import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/upload';
+import { useUploadQueue } from '../../contexts/UploadQueueContext';
 import { peekPendingSpotlight, clearPendingSpotlight, activateCampaign, spotlightDurationPhrase } from '../../lib/spotlight';
 import {
   loadDrafts, saveDraft, deleteDraft, draftThumb, draftSummary, makeDraftId, type Draft,
@@ -204,7 +206,19 @@ export default function PostScreen() {
   // Tier-gated public slots: none/bronze 6, silver 12, gold 24, diamond ∞.
   // Friends-only posts are never gated; deleting/archiving frees a slot.
   const { profile } = useProfile();
+  const navigation = useNavigation<any>();
+  const { enqueueVideo, prewarmVideo, scrollHomeTop } = useUploadQueue();
   const myPostLimit = publicPostLimit(rawTier(profile));
+
+  // Speculatively start the video upload the moment the user reaches the details
+  // step — most people who get here do post, so by the time they hit Share the
+  // clip is usually already uploaded and publishing feels instant. Idempotent per
+  // file; if they never publish it's a harmless (unused) Stream asset.
+  useEffect(() => {
+    if (step === 'details' && postType === 'video' && media?.uri) {
+      prewarmVideo(media.uri, VIDEO_MAX_SEC + 30);
+    }
+  }, [step, postType, media?.uri, prewarmVideo]);
   const [publicCount, setPublicCount] = useState<number | null>(null);
 
   // Live count of public (non-archived) posts for the slot hint + gate.
@@ -722,7 +736,51 @@ export default function PostScreen() {
         }
       }
 
-      let mediaUrl: string;
+      // VIDEO → background upload queue. We hand the whole publish (upload to
+      // Cloudflare Stream, insert the row, mentions/badges/notifications/spotlight)
+      // to the queue and return to the feed IMMEDIATELY, where an optimistic card
+      // plays the local file with a progress badge until the CDN copy is ready.
+      // Posting feels instant and never blocks on the upload.
+      if (postType === 'video') {
+        const trimmedV = videoDuration > VIDEO_MAX_SEC;
+        const videoDurSecV = trimmedV ? VIDEO_MAX_SEC : Math.round(videoDuration);
+        const ps = peekPendingSpotlight();
+        const spotLabel = ps?.label ?? null;
+        enqueueVideo({
+          userId: user.id,
+          localUri: media!.uri,
+          thumbnailUri: thumbnailUri ?? null,               // file:// → uploaded as the post poster
+          posterUri: media?.posterUri ?? thumbnailUri ?? null, // ph:// ok → shown in the optimistic card
+          aspectRatio: String(videoAspect),
+          caption: caption.trim(),
+          isPublic,
+          hasCommunity,
+          genre: genre && showGenre ? genre : null,
+          durationSeconds: videoDurSecV > 0 ? videoDurSecV : null,
+          trim: trimmedV ? { start: trimStart, end: trimStart + VIDEO_MAX_SEC } : null,
+          song: song ? { id: song.id, title: song.title, artist: song.artist, artistId: song.artistId ?? null } : null,
+          taggedIds: tagged.map((tp) => tp.id),
+          communityIds: communities.map((c) => c.id),
+          allowGifs,
+          maxDurationSeconds: VIDEO_MAX_SEC + 30,
+          spotlight: ps ? { campaignId: ps.campaignId, days: ps.days } : null,
+        });
+        if (ps) { clearPendingSpotlight(); setPendingSpotBanner(null); }
+        if (isPublic) setPublicCount((c) => (c == null ? c : c + 1));
+        if (editingDraftId.current) deleteDraft(editingDraftId.current).then(setDrafts);
+        setPostedToast({
+          title: spotLabel ? t('post.postedSpotlightTitle') : t('post.postedTitle'),
+          message: spotLabel
+            ? t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) })
+            : t('post.postedBody'),
+          spotlight: !!spotLabel,
+        });
+        resetAll();
+        setLoading(false);
+        return;
+      }
+
+      let mediaUrl = '';
       let thumbnailUrl: string | null = null;
       let coverUrl: string | null = null;
       let slidesPayload: Slide[] | null = null;
@@ -779,21 +837,10 @@ export default function PostScreen() {
           outUri = out.uri;
         }
         mediaUrl = await uploadToStorage(user.id, outUri, 'jpg', 'image/jpeg');
-      } else {
-        // video — duration is the only rule (no size caps). Big files are
-        // first compressed to 1080p H.264 on-device (pass-through until the
-        // dev client carries the native compressor), then streamed with live
-        // progress so long uploads never look hung.
-        const upUri = await compressVideoIfPossible(media!.uri, setUploadPct);
-        setUploadPct(null);
-        const ext = (upUri === media!.uri ? media!.uri.split('.').pop() : 'mp4') || 'mp4';
-        mediaUrl = await uploadToStorageWithProgress('posts', user.id, upUri, ext, 'video/mp4', setUploadPct);
-        setUploadPct(null);
-        if (thumbnailUri) thumbnailUrl = await uploadToStorage(user.id, thumbnailUri, 'jpg', 'image/jpeg');
       }
+      // (video is handled earlier via the background upload queue and returns.)
 
-      const trimmed = postType === 'video' && videoDuration > VIDEO_MAX_SEC;
-      const videoDurSec = trimmed ? VIDEO_MAX_SEC : Math.round(videoDuration);
+      const trimmed = false; // videos (the only trimmed type) never reach here
 
       const { data: newPost, error: postError } = await supabase.from('posts').insert({
         user_id: user.id,
@@ -805,9 +852,7 @@ export default function PostScreen() {
         is_public: hasCommunity ? true : isPublic,
         ...(genre && showGenre ? { genre } : {}),
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
-        ...(postType === 'video' && videoDurSec > 0 ? { duration_seconds: videoDurSec } : {}),
         ...(postType === 'image' ? { aspect_ratio: format } : {}),
-        ...(postType === 'video' ? { aspect_ratio: String(videoAspect) } : {}),
         ...(postType === 'slideshow' ? { aspect_ratio: format, slides: slidesPayload } : {}),
         ...(trimmed ? { trim_start: trimStart, trim_end: trimStart + VIDEO_MAX_SEC } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
@@ -818,8 +863,8 @@ export default function PostScreen() {
         ...(tagged.length && postType !== 'audio' ? { tagged_user_ids: tagged.map((t) => t.id) } : {}),
         ...(hasCommunity ? { community_ids: communities.map((c) => c.id) } : {}),
         // Creator controls: only send the flag relevant to the media type.
+        // (video's allow_gifs is set in the background queue, not here.)
         ...(postType === 'audio' ? { downloadable: allowDownloads } : {}),
-        ...(postType === 'video' ? { allow_gifs: allowGifs } : {}),
       }).select('id').single();
       if (postError) throw postError;
       if (isPublic) {
@@ -1577,6 +1622,9 @@ export default function PostScreen() {
         message={postedToast?.message}
         duration={postedToast?.spotlight ? 3800 : 2800}
         bottomOffset={SPACING.xxl + SPACING.md}
+        // Tap the confirmation to jump to the Home feed (scrolled to the top) and
+        // watch the just-posted video, which is pinned there.
+        onPress={() => { setPostedToast(null); scrollHomeTop(); navigation.navigate('index'); }}
         onHide={() => setPostedToast(null)}
       />
     </View>

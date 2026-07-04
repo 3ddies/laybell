@@ -31,6 +31,7 @@ import { CommentActionSheetProvider } from '../contexts/CommentActionSheetContex
 import { ImageViewerProvider } from '../contexts/ImageViewerContext';
 import { GifPickerProvider } from '../contexts/GifPickerContext';
 import { PhotoPickerProvider } from '../contexts/PhotoPickerContext';
+import { UploadQueueProvider } from '../contexts/UploadQueueContext';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
@@ -304,7 +305,9 @@ export default function RootLayout() {
                               <ImageViewerProvider>
                                 <GifPickerProvider>
                                   <PhotoPickerProvider>
-                                    <AppContent />
+                                    <UploadQueueProvider>
+                                      <AppContent />
+                                    </UploadQueueProvider>
                                   </PhotoPickerProvider>
                                 </GifPickerProvider>
                               </ImageViewerProvider>

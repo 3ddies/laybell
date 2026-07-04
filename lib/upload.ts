@@ -1,11 +1,34 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import Constants from 'expo-constants';
 import { supabase, supabaseUrl, supabaseAnonKey } from './supabase';
+
+// react-native-compressor 2.x is built on react-native-nitro-modules, which hard
+// -crashes in Expo Go ("NitroModules are not supported in Expo Go"). Detect the
+// Expo Go client so we can skip the native re-encode there entirely (Cloudflare
+// Stream transcodes server-side anyway, so quality is unaffected).
+const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
 
 // Threshold (bytes) above which we transcode before upload. Below it a clip is
 // already small/fast enough that re-encoding only adds latency. 12 MB comfortably
 // covers a short 1080p clip; anything bigger (4K/HEVC iPhone footage, long HD
 // clips) gets shrunk to feed-friendly H.264 first.
 const COMPRESS_FLOOR_BYTES = 12 * 1024 * 1024;
+
+// The upload task (and Cloudflare) only speak file:// — but a picked video can be
+// a ph:// / assets-library:// Photos asset when MediaLibrary has no local copy
+// (iCloud / storage-optimized clips). Copy such assets into the cache first so the
+// uploader has a readable file. (In dev/store builds the compressor already emits
+// a file://; this covers Expo Go, where compression is skipped.)
+export async function ensureLocalFile(uri: string): Promise<string> {
+  if (!uri || uri.startsWith('file://')) return uri;
+  try {
+    const dest = `${FileSystem.cacheDirectory}upload_${Date.now()}.mp4`;
+    await FileSystem.copyAsync({ from: uri, to: dest });
+    return dest;
+  } catch {
+    return uri; // couldn't localize — let the caller surface the original error
+  }
+}
 
 async function fileSizeBytes(uri: string): Promise<number> {
   try {
@@ -31,6 +54,10 @@ export async function compressVideoIfPossible(
   onProgress?: (fraction: number) => void,
 ): Promise<string> {
   try {
+    // Expo Go can't load the Nitro-based compressor at all — importing it there
+    // throws a fatal error, so bail to the original bytes before touching it.
+    if (IS_EXPO_GO) return uri;
+
     // Already-small clips: skip the re-encode entirely (keeps posting snappy).
     const bytes = await fileSizeBytes(uri);
     if (bytes && bytes < COMPRESS_FLOOR_BYTES) return uri;

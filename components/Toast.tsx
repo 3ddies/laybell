@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
@@ -14,6 +14,8 @@ type Props = {
   duration?: number;
   /** Extra lift above the safe-area inset — clears a bottom bar when present. */
   bottomOffset?: number;
+  /** When set, the toast becomes tappable (shows a chevron) and runs this on press. */
+  onPress?: () => void;
   onHide: () => void;
 };
 
@@ -27,6 +29,7 @@ export default function Toast({
   icon = 'checkmark-circle',
   duration = 2600,
   bottomOffset = SPACING.xl,
+  onPress,
   onHide,
 }: Props) {
   const insets = useSafeAreaInsets();
@@ -54,19 +57,28 @@ export default function Toast({
   if (!visible) return null;
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] });
 
+  const inner = (
+    <View style={styles.card}>
+      <Ionicons name={icon} size={22} color={colors.primary} />
+      <View style={styles.body}>
+        <Text style={styles.title} numberOfLines={1}>{title}</Text>
+        {!!message && <Text style={styles.message} numberOfLines={2}>{message}</Text>}
+      </View>
+      {!!onPress && <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />}
+    </View>
+  );
+
   return (
-    // pointerEvents none so the toast never swallows taps meant for the UI behind it.
+    // No onPress → pointerEvents none so the toast never swallows taps meant for the
+    // UI behind it. With onPress → box-none lets the card itself be tapped while
+    // empty margins still pass touches through.
     <Animated.View
-      pointerEvents="none"
+      pointerEvents={onPress ? 'box-none' : 'none'}
       style={[styles.wrap, { bottom: insets.bottom + bottomOffset, opacity: anim, transform: [{ translateY }] }]}
     >
-      <View style={styles.card}>
-        <Ionicons name={icon} size={22} color={colors.primary} />
-        <View style={styles.body}>
-          <Text style={styles.title} numberOfLines={1}>{title}</Text>
-          {!!message && <Text style={styles.message} numberOfLines={2}>{message}</Text>}
-        </View>
-      </View>
+      {onPress
+        ? <Pressable onPress={() => { onPress(); hide(); }} style={({ pressed }) => (pressed ? { opacity: 0.85 } : null)}>{inner}</Pressable>
+        : inner}
     </Animated.View>
   );
 }

@@ -23,6 +23,11 @@ import { useMediaSuspend } from '../contexts/MediaSuspendContext';
 
 type ContentFit = 'cover' | 'contain' | 'fill';
 
+// Cap on load-error retries per source. With the backoff below (~1.5–5s steps)
+// this spans a few minutes — enough to cover a Cloudflare clip's encode window —
+// then gives up so a genuinely broken URL doesn't retry forever.
+const MAX_LOAD_RETRIES = 45;
+
 export type AppVideoProps = {
   source: string | { uri: string };
   style?: StyleProp<ViewStyle>;
@@ -86,6 +91,12 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   // Latest callbacks/trim points read inside the (once-subscribed) listeners.
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
+  // Read the live "should be playing" flag inside listeners (the effect that
+  // subscribes runs once per source, so a plain closure would go stale).
+  const shouldPlayRef = useRef(shouldPlay);
+  shouldPlayRef.current = shouldPlay;
+  // Count load-error retries per source (see the statusChange handler).
+  const retriesRef = useRef(0);
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;
   const trimStartRef = useRef<number | null>(trimStartSec ?? null);
@@ -137,15 +148,31 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   // old listeners are torn down, and we re-seed trim/poster for the new source.
   useEffect(() => {
     seededRef.current = false;
+    retriesRef.current = 0;
     setShowPoster(!!poster);
     const statusSub = player.addListener('statusChange', ({ status }: any) => {
       if (status === 'readyToPlay') {
+        retriesRef.current = 0;
         setShowPoster(false);
         if (!seededRef.current) {
           seededRef.current = true;
           const ts = trimStartRef.current;
           const seekTo = ts != null && ts > 0 ? ts : startPositionRef.current;
           if (seekTo != null && seekTo > 0) { try { player.currentTime = seekTo; } catch {} }
+        }
+        // A load can succeed via the error-retry below (e.g. a freshly-posted
+        // Cloudflare clip that just finished encoding). The shouldPlay effect
+        // won't re-fire on its own, so kick playback here if it should be running.
+        if (shouldPlayRef.current) { try { player.play(); } catch {} }
+      } else if (status === 'error') {
+        // A just-posted Cloudflare video is briefly un-decodable while it finishes
+        // encoding — the manifest 404s, expo-video errors, and would otherwise sit
+        // on the poster forever. Reload on a gentle backoff so it starts playing
+        // the instant encoding completes (also self-heals transient network drops).
+        if (retriesRef.current < MAX_LOAD_RETRIES) {
+          retriesRef.current += 1;
+          const delay = Math.min(5000, 1500 + retriesRef.current * 400);
+          setTimeout(() => { try { player.replace({ uri }); } catch {} }, delay);
         }
       }
     });

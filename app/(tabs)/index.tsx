@@ -21,7 +21,7 @@ const toTrack = (p: any): Track => ({
   id: p.id, uri: p.media_url, caption: p.caption,
   artist: p.profiles?.display_name ?? '', cover: p.cover_url ?? null,
 });
-import { useEffect, useState, useCallback, useRef, memo } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -59,6 +59,8 @@ import { aspectToNumber } from '../../lib/aspectRatio';
 import { trackVideoProgress } from '../../lib/viewTracker';
 import TrackRow from '../../components/TrackRow';
 import StoriesTray from '../../components/StoriesTray';
+import PendingUploads from '../../components/PendingUploads';
+import { useUploadQueue } from '../../contexts/UploadQueueContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import SongAttribution from '../../components/SongAttribution';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
@@ -130,6 +132,18 @@ type PostCardProps = {
   // A slideshow video slide turned its audio on/off → pause/resume its song.
   onSlideAudioActive: (item: Post, active: boolean) => void;
 };
+
+// Stable feed header (stories tray + any in-flight upload cards). Defined at module
+// scope so feed re-renders / refetches never remount it — which would restart the
+// optimistic upload card's local video mid-playback.
+function FeedHeader() {
+  return (
+    <>
+      <StoriesTray />
+      <PendingUploads />
+    </>
+  );
+}
 
 // Memoized so that toggling a like/save on one post (which changes the feed's
 // liked/saved sets) only re-renders that card — not all ~50 rows. All callbacks
@@ -263,6 +277,10 @@ const PostCard = memo(function PostCard({
               source={{ uri: item.media_url }}
               style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
               contentFit="cover"
+              // Thumbnail shows until the first frame decodes — covers the brief
+              // Cloudflare encode window for a freshly-posted video (and smooths
+              // the load for every video).
+              poster={item.thumbnail_url}
               loop
               muted={item.song_id ? true : videoMuted}
               active={shouldPlayVideo}
@@ -347,6 +365,11 @@ export default function HomeScreen() {
   const { share: openShare } = useShare();
   const linkGuard = useLinkGuard();
   const [posts, setPosts] = useState<Post[]>([]);
+  // Background video uploads: optimistic cards render at the top of the feed while
+  // the upload/encode runs (see PendingUploads), and completedTick pulls the real
+  // row in once it lands.
+  const { pending, completedTick, pinnedIds, clearPinned, homeScrollTick } = useUploadQueue();
+  const [pinnedPosts, setPinnedPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -356,6 +379,52 @@ export default function HomeScreen() {
   // Live mirrors read by the song-queue builder / loader (see playFeedSong).
   const postsRef = useRef<Post[]>([]);
   postsRef.current = posts;
+
+  // While a background upload's optimistic card is showing, hide the real DB row
+  // with the same id so the two never appear together — the card hands off to the
+  // row the moment the upload finishes and the card is removed.
+  const pendingPostIds = useMemo(
+    () => new Set(pending.map((p) => p.postId).filter(Boolean) as string[]),
+    [pending],
+  );
+  // Freshly-finished posts are pinned to the very top (as real, fully-interactive
+  // PostCards) until a manual refresh. Prefer the copy already in `posts` (freshest),
+  // fall back to the separately-fetched one (covers feed modes that exclude own posts).
+  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
+  const feedData = useMemo(() => {
+    const pins = pinnedIds
+      .map((id) => posts.find((p) => p.id === id) || pinnedPosts.find((p) => p.id === id))
+      .filter(Boolean) as Post[];
+    const rest = posts.filter((p) => !pinnedSet.has(p.id) && !pendingPostIds.has(p.id));
+    return [...pins, ...rest];
+  }, [posts, pinnedPosts, pinnedIds, pinnedSet, pendingPostIds]);
+
+  // Fetch the pinned posts' full rows (so a pin still shows even when the active feed
+  // mode wouldn't include your own post).
+  useEffect(() => {
+    if (!pinnedIds.length) { setPinnedPosts([]); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('posts')
+        .select(`*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)`)
+        .in('id', pinnedIds);
+      if (!cancelled && data) setPinnedPosts(attachEngagementCountsAll(data as any[]) as Post[]);
+    })();
+    return () => { cancelled = true; };
+  }, [pinnedIds]);
+
+  // A background upload just landed (or finished encoding) — pull the fresh row in.
+  useEffect(() => {
+    if (completedTick > 0) fetchPosts(currentUserId || undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completedTick]);
+
+  // The just-posted confirmation was tapped — bring the pinned new post into view.
+  const feedListRef = useRef<FlatList>(null);
+  useEffect(() => {
+    if (homeScrollTick > 0) feedListRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, [homeScrollTick]);
   const followingRef = useRef<Set<string>>(new Set());
   // Current user's own profile (age/gender/location) for ad targeting. Kept in a
   // ref so fetchPosts can read it without re-running on every profile change.
@@ -1002,12 +1071,13 @@ export default function HomeScreen() {
       </Modal>
 
       <FlatList
-        data={posts}
+        ref={feedListRef}
+        data={feedData}
         // Spotlight instances key off their campaign so a promoted post can
         // never key-collide with itself (organic copies are filtered at merge).
         keyExtractor={(item) => (item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
         renderItem={renderPost}
-        ListHeaderComponent={<StoriesTray />}
+        ListHeaderComponent={FeedHeader}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.feedContent}
         removeClippedSubviews
@@ -1025,6 +1095,8 @@ export default function HomeScreen() {
             onRefresh={async () => {
               setRefreshing(true);
               refreshStories();
+              // Release any pinned just-posted posts so they fall into natural rank.
+              clearPinned();
               const seen = await loadSeenPostIds();
               setSeenPostIds(seen);
               await fetchPosts(currentUserId || undefined, seen);
