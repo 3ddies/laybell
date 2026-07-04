@@ -1,22 +1,25 @@
 import { Alert } from 'react-native';
 import { supabase } from './supabase';
 import { collectPostMediaUrls, removePublicUrls } from './storageCleanup';
+import { deleteStreamVideo } from './streamUpload';
 import { isPostSpotlighted } from './spotlight';
 import { tg } from './i18n';
 
 export async function deletePostById(postId: string): Promise<boolean> {
-  // Capture media URLs BEFORE deleting the row so we can also clean up the
-  // public Storage objects (the DB delete only removes the row). Best-effort —
-  // the profile-delete trigger in storage_cleanup.sql is the backstop, and the
-  // per-user Storage DELETE policy from that same migration is what lets this run.
+  // Capture media URLs (and the Cloudflare Stream uid) BEFORE deleting the row so
+  // we can also clean up the public Storage objects and the Stream asset (the DB
+  // delete only removes the row). Best-effort — the profile-delete trigger in
+  // storage_cleanup.sql is the backstop, and the per-user Storage DELETE policy
+  // from that same migration is what lets this run.
   let media: string[] = [];
+  let videoUid: string | null = null;
   try {
     const { data } = await supabase
       .from('posts')
-      .select('media_url, thumbnail_url, cover_url, slides')
+      .select('media_url, thumbnail_url, cover_url, slides, video_uid')
       .eq('id', postId)
       .single();
-    if (data) media = collectPostMediaUrls(data);
+    if (data) { media = collectPostMediaUrls(data); videoUid = (data as any).video_uid ?? null; }
   } catch {}
   // `.select('id')` so we can tell a real delete from a no-op: an RLS-blocked
   // delete (e.g. the posts DELETE policy is missing — supabase/sql/posts_delete_policy.sql)
@@ -25,6 +28,9 @@ export async function deletePostById(postId: string): Promise<boolean> {
   const { data, error } = await supabase.from('posts').delete().eq('id', postId).select('id');
   if (error || !data?.length) return false;
   if (media.length) await removePublicUrls(media);
+  // Video posts on Cloudflare Stream: delete the CDN asset so it stops costing
+  // storage. Ownership is enforced server-side; safe to fire for any uid we hold.
+  if (videoUid) await deleteStreamVideo(videoUid);
   return true;
 }
 

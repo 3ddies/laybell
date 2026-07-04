@@ -100,6 +100,13 @@ export async function resolveStreamSubdomain(uid: string): Promise<string | null
   return null;
 }
 
+// Delete a Cloudflare Stream video (deleted post / abandoned prewarm) so it stops
+// costing storage. Best-effort + ownership-checked server-side; never throws.
+export async function deleteStreamVideo(uid: string): Promise<void> {
+  if (!uid) return;
+  try { await supabase.functions.invoke('stream-delete', { body: { uid } }); } catch { /* best-effort */ }
+}
+
 // Background: poll until Cloudflare finishes encoding. Returns true when ready.
 export async function pollStreamReady(uid: string, timeoutMs = 300_000): Promise<boolean> {
   const start = Date.now();

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useRef, useCallback, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { compressVideoIfPossible, ensureLocalFile } from '../lib/upload';
-import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, pollStreamReady } from '../lib/streamUpload';
+import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, pollStreamReady, deleteStreamVideo } from '../lib/streamUpload';
 import { bumpBadge } from '../lib/badges';
 import { processMentions } from '../lib/mentions';
 import { createNotification } from '../lib/createNotification';
@@ -64,6 +64,9 @@ type Ctx = {
   // Speculatively start uploading a video (e.g. when the user reaches the details
   // step) so it's already up by the time they hit Share. Idempotent per uri.
   prewarmVideo: (localUri: string, maxDurationSeconds: number) => void;
+  // Delete an unpublished prewarm's Cloudflare asset (abandoned clip) so it doesn't
+  // linger as paid storage. No-op if it was already claimed by an enqueue.
+  discardPrewarm: (localUri: string) => void;
   enqueueVideo: (job: VideoJob) => void;
   retry: (tempId: string) => void;
   dismiss: (tempId: string) => void;
@@ -83,6 +86,7 @@ type PrewarmEntry = {
   promise: Promise<{ uid: string; subdomain: string } | null>;
   progress: number;
   attachedTempId: string | null; // the pending card now mirroring this upload, once enqueued
+  claimed: boolean;              // an enqueue is using it — never discard a claimed prewarm
 };
 
 const UploadQueueContext = createContext<Ctx | null>(null);
@@ -233,7 +237,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
 
   const prewarmVideo = useCallback((localUri: string, maxDurationSeconds: number) => {
     if (!localUri || prewarmRef.current.has(localUri)) return;
-    const entry: PrewarmEntry = { progress: 0, attachedTempId: null, promise: Promise.resolve(null) };
+    const entry: PrewarmEntry = { progress: 0, attachedTempId: null, claimed: false, promise: Promise.resolve(null) };
     entry.promise = (async () => {
       try {
         return await startStreamUpload(
@@ -246,7 +250,21 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
     prewarmRef.current.set(localUri, entry);
   }, [update]);
 
+  // Abandoned prewarm (user switched clips or left without posting): once its upload
+  // resolves, delete the Cloudflare asset. Claimed prewarms (an enqueue is posting
+  // them) are left alone.
+  const discardPrewarm = useCallback((localUri: string) => {
+    const entry = prewarmRef.current.get(localUri);
+    if (!entry || entry.claimed) return;
+    prewarmRef.current.delete(localUri);
+    entry.promise.then((r) => { if (r?.uid) deleteStreamVideo(r.uid); }).catch(() => {});
+  }, []);
+
   const enqueueVideo = useCallback((job: VideoJob) => {
+    // Claim the matching prewarm synchronously so a concurrent discard can't delete
+    // the asset we're about to publish.
+    const pre = prewarmRef.current.get(job.localUri);
+    if (pre) pre.claimed = true;
     const tempId = `up_${++SEQ}`;
     jobsRef.current.set(tempId, job);
     setPending((list) => [
@@ -279,7 +297,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
   const scrollHomeTop = useCallback(() => setHomeScrollTick((n) => n + 1), []);
 
   return (
-    <UploadQueueContext.Provider value={{ pending, completedTick, prewarmVideo, enqueueVideo, retry, dismiss, pinnedIds, clearPinned, homeScrollTick, scrollHomeTop }}>
+    <UploadQueueContext.Provider value={{ pending, completedTick, prewarmVideo, discardPrewarm, enqueueVideo, retry, dismiss, pinnedIds, clearPinned, homeScrollTick, scrollHomeTop }}>
       {children}
     </UploadQueueContext.Provider>
   );

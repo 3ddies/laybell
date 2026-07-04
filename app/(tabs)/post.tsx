@@ -207,18 +207,26 @@ export default function PostScreen() {
   // Friends-only posts are never gated; deleting/archiving frees a slot.
   const { profile } = useProfile();
   const navigation = useNavigation<any>();
-  const { enqueueVideo, prewarmVideo, scrollHomeTop } = useUploadQueue();
+  const { enqueueVideo, prewarmVideo, discardPrewarm, scrollHomeTop } = useUploadQueue();
   const myPostLimit = publicPostLimit(rawTier(profile));
 
   // Speculatively start the video upload the moment the user reaches the details
   // step — most people who get here do post, so by the time they hit Share the
-  // clip is usually already uploaded and publishing feels instant. Idempotent per
-  // file; if they never publish it's a harmless (unused) Stream asset.
+  // clip is usually already uploaded and publishing feels instant. If they instead
+  // switch clips or leave without posting, the prewarmed (unpublished) Stream asset
+  // is discarded so it doesn't linger as paid storage. A claimed prewarm (being
+  // published) is never discarded.
+  const prewarmedUriRef = useRef<string | null>(null);
   useEffect(() => {
     if (step === 'details' && postType === 'video' && media?.uri) {
+      if (prewarmedUriRef.current && prewarmedUriRef.current !== media.uri) discardPrewarm(prewarmedUriRef.current);
+      prewarmedUriRef.current = media.uri;
       prewarmVideo(media.uri, VIDEO_MAX_SEC + 30);
+    } else if (prewarmedUriRef.current) {
+      discardPrewarm(prewarmedUriRef.current);
+      prewarmedUriRef.current = null;
     }
-  }, [step, postType, media?.uri, prewarmVideo]);
+  }, [step, postType, media?.uri, prewarmVideo, discardPrewarm]);
   const [publicCount, setPublicCount] = useState<number | null>(null);
 
   // Live count of public (non-archived) posts for the slot hint + gate.
