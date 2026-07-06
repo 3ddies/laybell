@@ -20,6 +20,8 @@ import { processMentions, getActiveMentionQuery, applyMention } from '../../lib/
 import { createNotification } from '../../lib/createNotification';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleModal';
+import FeaturesModal from '../../components/FeaturesModal';
+import { type Feature } from '../../lib/features';
 import { useAudio } from '../../contexts/AudioContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
@@ -184,6 +186,8 @@ export default function PostScreen() {
   const [song, setSong] = useState<PickedSong | null>(null); // another creator's track on this image/video
   const [showSongPicker, setShowSongPicker] = useState(false);
   const [tagged, setTagged] = useState<TaggedPerson[]>([]); // accounts tagged on this post (≤10)
+  const [features, setFeatures] = useState<Feature[]>([]); // song collaborators (audio, ≤6)
+  const [showFeaturesModal, setShowFeaturesModal] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
   // Communities this post is attributed to (a post can belong to several). Only
   // communities the user is an active, non-muted member of are postable.
@@ -391,7 +395,7 @@ export default function PostScreen() {
       videoAspect, videoDuration, trimStart,
       slides,
       audioFile, audioDuration, coverUri, audioKind,
-      song, tagged,
+      song, tagged, features,
       allowDownloads, allowGifs,
     };
     const next = await saveDraft(draft);
@@ -422,6 +426,7 @@ export default function PostScreen() {
     setAudioKind(d.audioKind);
     setSong(d.song);
     setTagged(d.tagged ?? []);
+    setFeatures(d.features ?? []);
     setAllowDownloads(d.allowDownloads ?? true);
     setAllowGifs(d.allowGifs ?? true);
     setError('');
@@ -869,6 +874,8 @@ export default function PostScreen() {
           ? { song_id: song.id, song_title: song.title, song_artist: song.artist, song_artist_id: song.artistId }
           : {}),
         ...(tagged.length && postType !== 'audio' ? { tagged_user_ids: tagged.map((t) => t.id) } : {}),
+        // Song "features" (collaborators) — audio posts only, ≤6.
+        ...(features.length && postType === 'audio' ? { features: features.slice(0, 6) } : {}),
         ...(hasCommunity ? { community_ids: communities.map((c) => c.id) } : {}),
         // Creator controls: only send the flag relevant to the media type.
         // (video's allow_gifs is set in the background queue, not here.)
@@ -889,6 +896,12 @@ export default function PostScreen() {
         if (postType !== 'audio') {
           for (const t of tagged) {
             if (t.id !== user.id) createNotification({ userId: t.id, actorId: user.id, type: 'tag', postId: newPost.id });
+          }
+        }
+        // Notify each credited collaborator (audio features).
+        if (postType === 'audio') {
+          for (const f of features) {
+            if (f.id !== user.id) createNotification({ userId: f.id, actorId: user.id, type: 'tag', postId: newPost.id });
           }
         }
       }
@@ -1117,6 +1130,23 @@ export default function PostScreen() {
             </View>
           )}
 
+          {/* Features (audio) — credit Laybell collaborators on the song. */}
+          {postType === 'audio' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>{t('features.title')}</Text>
+              <TouchableOpacity style={styles.coverPicker} onPress={() => setShowFeaturesModal(true)}>
+                <View style={styles.coverPlaceholder}><Ionicons name="people" size={22} color={features.length ? colors.primary : colors.textTertiary} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.coverTitle} numberOfLines={1}>
+                    {features.length ? features.map((f) => f.name).join(', ') : t('features.add')}
+                  </Text>
+                  <Text style={styles.coverSub}>{features.length ? t('features.count', { count: features.length, max: 6 }) : t('features.sub')}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Genre (audio) — same dropdown control as the non-audio column.
               Locked when posting to communities (shared genre, or "no genre"). */}
           {postType === 'audio' && showGenre && (
@@ -1258,6 +1288,7 @@ export default function PostScreen() {
         </ScrollView>
         <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} />
         <TagPeopleModal visible={showTagModal} initial={tagged} onClose={() => setShowTagModal(false)} onDone={setTagged} />
+        <FeaturesModal visible={showFeaturesModal} initial={features} onClose={() => setShowFeaturesModal(false)} onDone={setFeatures} />
         <CommunityPickerModal
           visible={showCommunityPicker}
           userId={profile?.id ?? null}

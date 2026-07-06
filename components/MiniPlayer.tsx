@@ -1,10 +1,13 @@
 import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react-native';
+import { useRouter } from 'expo-router';
 import { feedChrome } from '../lib/feedChrome';
 import { useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
 import { recordAdClick, AUDIO_AD_SKIP_MS } from '../lib/ads';
+import { fetchFeatures, type Feature } from '../lib/features';
+import SongCardTitle from './SongCardTitle';
 import { useListenMode } from '../contexts/ListenModeContext';
 import { useLinkGuard } from '../contexts/LinkGuardContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -34,6 +37,20 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   const insets = useSafeAreaInsets();
   const { listenMode } = useListenMode();
   const linkGuard = useLinkGuard();
+  const router = useRouter();
+
+  // Song collaborators ("features") for the currently-playing track — fetched
+  // (and cached) when the track changes, so the card can flip title ↔ credits.
+  // Never fetched for ads (they aren't posts).
+  const [features, setFeatures] = useState<Feature[]>([]);
+  const trackId = !adState ? currentTrack?.id ?? null : null;
+  useEffect(() => {
+    if (!trackId) { setFeatures([]); return; }
+    let alive = true;
+    setFeatures([]);
+    fetchFeatures(trackId).then((f) => { if (alive) setFeatures(f); }).catch(() => {});
+    return () => { alive = false; };
+  }, [trackId]);
 
   // Listen mode: the tab bar fades away, so the player glides down into the
   // space it vacated (the 68px bar height), staying flush above the home bar.
@@ -292,7 +309,14 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
         {/* Tapping the bar (except the controls) expands the now-playing screen */}
         <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => expand()}>
           <View style={styles.trackInfo}>
-            <Text style={styles.caption} numberOfLines={1}>{track.caption || t('player.audioTrack')}</Text>
+            <SongCardTitle
+              title={track.caption || t('player.audioTrack')}
+              features={features}
+              positionMs={positionMs}
+              durationMs={durationMs}
+              titleStyle={styles.caption}
+              onOpenProfile={(id) => router.push(`/profile/${id}`)}
+            />
             <Text style={styles.artist} numberOfLines={1}>{track.artist}</Text>
           </View>
           <Text style={styles.timeText}>

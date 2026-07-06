@@ -54,6 +54,7 @@ export type Draft = {
   // attribution
   song: any | null;             // PickedSong attached to an image/video/slideshow
   tagged: any[];                // TaggedPerson[]
+  features?: any[];             // Feature[] — song collaborators (audio only)
 
   // per-post creator controls (both default true). Optional so older drafts load.
   allowDownloads?: boolean;     // audio: whether listeners may download for offline
