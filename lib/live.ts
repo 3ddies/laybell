@@ -12,11 +12,16 @@ export type LiveProfile = {
   avatar_url: string | null;
 };
 
+// Broadcast orientation (phone go-live choice). 'horizontal' and 'both'
+// streams ALSO surface in Laybell TV; 'vertical'/'both' show in the main feed.
+export type LiveOrientation = 'vertical' | 'horizontal' | 'both';
+
 export type LiveStream = {
   id: string;
   user_id: string;
   title: string | null;
   mode: 'webrtc' | 'rtmp';
+  orientation: LiveOrientation;
   cf_input_uid: string;
   playback_url: string;
   status: 'idle' | 'live' | 'ended';
@@ -51,15 +56,33 @@ async function attachProfiles<T extends { user_id: string }>(rows: T[]): Promise
   return rows.map((r) => ({ ...r, profile: byId.get(r.user_id) }));
 }
 
-/** All broadcasts currently live, newest first — the Live tab's feed. */
-export async function fetchLiveStreams(): Promise<LiveStream[]> {
-  const { data, error } = await supabase
+const LIVE_COLS = 'id, user_id, title, mode, orientation, cf_input_uid, playback_url, status, started_at, viewer_peak';
+
+/**
+ * Broadcasts currently live, newest first. `horizontalOnly` (Laybell TV's Lives
+ * tab) keeps only orientation 'horizontal'|'both'. Falls back gracefully if the
+ * orientation column isn't migrated yet (the filter no-ops → all lives shown).
+ */
+export async function fetchLiveStreams(horizontalOnly = false): Promise<LiveStream[]> {
+  let q = supabase
     .from('live_streams')
-    .select('id, user_id, title, mode, cf_input_uid, playback_url, status, started_at, viewer_peak')
+    .select(LIVE_COLS)
     .eq('status', 'live')
     .order('started_at', { ascending: false })
     .limit(50);
-  if (error) throw error;
+  if (horizontalOnly) q = q.in('orientation', ['horizontal', 'both']);
+  const { data, error } = await q;
+  if (error) {
+    // Pre-migration (no orientation column): retry without the horizontal filter.
+    if (horizontalOnly) {
+      const { data: d2 } = await supabase
+        .from('live_streams')
+        .select('id, user_id, title, mode, cf_input_uid, playback_url, status, started_at, viewer_peak')
+        .eq('status', 'live').order('started_at', { ascending: false }).limit(50);
+      return attachProfiles((d2 ?? []) as LiveStream[]);
+    }
+    throw error;
+  }
   return attachProfiles((data ?? []) as LiveStream[]);
 }
 
@@ -71,6 +94,7 @@ export async function fetchLiveStreams(): Promise<LiveStream[]> {
 export async function createLiveStream(
   title: string,
   mode: 'webrtc' | 'rtmp',
+  orientation: LiveOrientation = 'vertical',
 ): Promise<{ stream: LiveStream; keys: LiveStreamKeys }> {
   const { data, error } = await supabase.functions.invoke('live-input', {
     body: { action: 'create', title },
@@ -88,6 +112,7 @@ export async function createLiveStream(
       user_id: userId,
       title: title || null,
       mode,
+      orientation,
       cf_input_uid: data.inputUid,
       playback_url: playbackUrl,
     })

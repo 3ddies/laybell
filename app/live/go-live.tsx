@@ -14,7 +14,7 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import {
   createLiveStream, discardLiveStream, endLiveStream, isInputConnected, joinLiveChannel,
-  markLive, type LiveStream, type LiveStreamKeys,
+  markLive, type LiveOrientation, type LiveStream, type LiveStreamKeys,
 } from '../../lib/live';
 import { WhipPublisher, getRTCView, webrtcAvailable } from '../../lib/whip';
 
@@ -42,6 +42,8 @@ export default function GoLiveScreen() {
   const phaseRef = useRef<Phase>('setup');
   const setPhase = (p: Phase) => { phaseRef.current = p; setPhaseState(p); };
   const [mode, setMode] = useState<Mode>(webrtcAvailable() ? 'webrtc' : 'rtmp');
+  // Phone broadcast orientation — horizontal/both also land in Laybell TV.
+  const [orientation, setOrientation] = useState<LiveOrientation>('vertical');
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +84,9 @@ export default function GoLiveScreen() {
     setBusy(true);
     setError(null);
     try {
-      const { stream, keys } = await createLiveStream(title.trim(), mode);
+      // Orientation only applies to phone (webrtc) broadcasts; encoders set
+      // their own framing, so those default to vertical bookkeeping.
+      const { stream, keys } = await createLiveStream(title.trim(), mode, mode === 'webrtc' ? orientation : 'vertical');
       streamRef.current = stream;
       keysRef.current = keys;
       if (mode === 'webrtc') {
@@ -214,6 +218,35 @@ export default function GoLiveScreen() {
                 {mode === 'rtmp' && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
               </TouchableOpacity>
 
+              {/* Orientation (phone only) — horizontal/both also land in Laybell TV. */}
+              {mode === 'webrtc' && (
+                <View style={styles.orientWrap}>
+                  <Text style={styles.orientLabel}>{t('live.orientationLabel')}</Text>
+                  <View style={styles.orientRow}>
+                    {([
+                      { key: 'vertical' as const, icon: 'phone-portrait-outline', label: t('live.orientVertical') },
+                      { key: 'horizontal' as const, icon: 'phone-landscape-outline', label: t('live.orientHorizontal') },
+                      { key: 'both' as const, icon: 'swap-horizontal', label: t('live.orientBoth') },
+                    ]).map((o) => (
+                      <TouchableOpacity
+                        key={o.key}
+                        style={[styles.orientBtn, orientation === o.key && styles.orientBtnActive]}
+                        onPress={() => setOrientation(o.key)}
+                      >
+                        <Ionicons name={o.icon as never} size={18} color={orientation === o.key ? colors.primary : colors.textSecondary} />
+                        <Text style={[styles.orientText, orientation === o.key && { color: colors.primary }]}>{o.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {orientation !== 'vertical' && (
+                    <View style={styles.tvNote}>
+                      <Ionicons name="tv-outline" size={13} color={colors.textTertiary} />
+                      <Text style={styles.tvNoteText}>{t('live.tvNote')}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
               {!!error && <Text style={styles.error}>{error}</Text>}
               <TouchableOpacity onPress={prepare} disabled={busy} activeOpacity={0.85} style={styles.primaryBtn}>
                 <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnBg}>
@@ -309,6 +342,17 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   titleInput: { backgroundColor: c.surfaceLight, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: c.text, fontSize: 15 },
   modeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 12 },
   modeRowActive: { borderColor: c.primary },
+  orientWrap: { gap: 8, marginTop: 2 },
+  orientLabel: { color: c.textTertiary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
+  orientRow: { flexDirection: 'row', gap: 8 },
+  orientBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4,
+    borderWidth: 1, borderColor: c.border, borderRadius: 12, paddingVertical: 10,
+  },
+  orientBtnActive: { borderColor: c.primary, backgroundColor: c.primary + '12' },
+  orientText: { color: c.textSecondary, fontSize: 11, fontWeight: '600' },
+  tvNote: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tvNoteText: { flex: 1, color: c.textTertiary, fontSize: 11.5, lineHeight: 16 },
   modeTextWrap: { flex: 1, gap: 2 },
   modeTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
   modeSub: { color: c.textTertiary, fontSize: 12, lineHeight: 17 },

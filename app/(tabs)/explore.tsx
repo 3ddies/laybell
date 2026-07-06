@@ -463,15 +463,27 @@ export default function ExploreScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>{t('explore.title')}</Text>
-        <TouchableOpacity
-          style={styles.communitiesBtn}
-          onPress={() => router.push('/communities')}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t('explore.communities')}
-        >
-          <Ionicons name="people" size={22} color={colors.text} />
-        </TouchableOpacity>
+        <View style={styles.headerBtns}>
+          {/* Laybell TV — horizontal video hub, beside Communities. */}
+          <TouchableOpacity
+            style={styles.communitiesBtn}
+            onPress={() => router.push('/tv')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('tv.title')}
+          >
+            <Ionicons name="tv" size={21} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.communitiesBtn}
+            onPress={() => router.push('/communities')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('explore.communities')}
+          >
+            <Ionicons name="people" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search */}
@@ -756,6 +768,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.md, paddingTop: SPACING.xxl + SPACING.sm, paddingBottom: SPACING.sm,
   },
   headerTitle: { color: colors.text, fontSize: 32, fontWeight: '900', letterSpacing: 0.3 },
+  headerBtns: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   communitiesBtn: {
     width: 40, height: 40, borderRadius: RADIUS.full,
     alignItems: 'center', justifyContent: 'center',

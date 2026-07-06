@@ -179,3 +179,11 @@ end; $$;
 alter table public.live_streams replica identity full;
 alter table public.studio_sessions replica identity full;
 alter table public.studio_session_members replica identity full;
+
+-- ── v2: Laybell TV — broadcast orientation ─────────────────────────────────────
+-- The phone go-live orientation choice. 'horizontal'/'both' streams ALSO appear
+-- in Laybell TV's Lives tab; 'vertical'/'both' appear in the main Live feed.
+-- Idempotent for DBs created before this.
+alter table public.live_streams
+  add column if not exists orientation text not null default 'vertical'
+  check (orientation in ('vertical', 'horizontal', 'both'));
