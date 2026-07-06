@@ -177,7 +177,11 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   // edge. (iOS layers it over a soft uniform blur; Android uses the scrim
   // alone, which reads the same.)
   const bgRgb = isLight ? '242,241,237' : mode === 'grey' ? '22,21,20' : '9,9,9';
-  const scrimColors = [`rgba(${bgRgb},0)`, `rgba(${bgRgb},0.55)`, `rgba(${bgRgb},0.95)`] as const;
+  // Airier through the top half, then a taller, fully-solid base — the fade
+  // runs longer and the bottom is genuinely opaque.
+  const scrimColors = [
+    `rgba(${bgRgb},0)`, `rgba(${bgRgb},0.3)`, `rgba(${bgRgb},0.92)`, `rgba(${bgRgb},1)`,
+  ] as const;
 
   // The camera lives at route 0 but isn't a button — the visible bar is every
   // other route, kept paired with its real route index so `position` lines up.
@@ -209,6 +213,13 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   // of the gesture) so the bar feels present the moment you call it back.
   const panelFade = feedChrome.interpolate({ inputRange: [0, 0.85, 1], outputRange: [1, 0.06, 0], extrapolate: 'clamp' });
   const chip = feedChrome.interpolate({ inputRange: [0.25, 1], outputRange: [0, 1], extrapolate: 'clamp' });
+  // As the bar condenses, the icon row DROPS toward the bottom edge of the
+  // screen (riding the same gesture-following value), so the chips settle low
+  // like they've been set down — and float back up as the bar reassembles.
+  const iconDrop = feedChrome.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, insets.bottom > 0 ? insets.bottom - 2 : 12],
+  });
   // Chip fill: a near-solid wash of the theme background — content peeks
   // through the GAPS between chips, not through the chips themselves, so the
   // icons pop instead of blending into the feed.
@@ -358,10 +369,10 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
           icons never move with scroll, only the glass breathes. */}
       <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: panelFade }]}>
         {Platform.OS === 'ios' && <BlurView tint={blurTint} intensity={40} style={styles.blurFill} />}
-        <LinearGradient colors={scrimColors} locations={[0, 0.42, 1]} style={styles.blurFill} />
+        <LinearGradient colors={scrimColors} locations={[0, 0.38, 0.72, 1]} style={styles.blurFill} />
       </Animated.View>
       <Animated.View
-        style={styles.row}
+        style={[styles.row, { transform: [{ translateY: iconDrop }] }]}
         onLayout={(e) => { barWRef.current = e.nativeEvent.layout.width; }}
         {...panRef.current.panHandlers}
       >
