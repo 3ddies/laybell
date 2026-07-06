@@ -24,8 +24,9 @@ const SHOW_DISTANCE = 70;
 // keeps the chrome hidden — only crossing this upward speed (px/s) arms the
 // reveal. Once armed, the chrome follows the finger for the REST of that
 // gesture even if it slows, so it never stutters mid-reveal. Scrolling down
-// again or the scroll settling disarms it.
-const REVEAL_VELOCITY = 650;
+// again or the scroll settling disarms it. (650 felt hair-trigger — raised
+// per owner so casual up-drifts stay full-bleed and only a real flick reveals.)
+const REVEAL_VELOCITY = 1100;
 let revealArmed = false;
 
 /** Feed onScroll: the chrome follows the scroll delta proportionally. */
