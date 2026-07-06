@@ -16,6 +16,7 @@ import type { ParamListBase, TabNavigationState } from '@react-navigation/native
 import { GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { PagerContext, TabSwipeContext, noteTabSwipe } from '../../contexts/PagerContext';
+import { feedChrome, setFeedChromeHidden } from '../../lib/feedChrome';
 import { useListenMode } from '../../contexts/ListenModeContext';
 
 // Land on Home, not the story camera, even though the camera is declared first
@@ -178,6 +179,13 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   }, [listenMode, listenFade]);
   const listenDrift = listenFade.interpolate({ inputRange: [0, 1], outputRange: [24, 0] });
 
+  // Reactive chrome: the Home feed's down-scroll slides the bar off the bottom
+  // (in lockstep with the header sliding up); up-scroll brings it back.
+  const chromeShift = feedChrome.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 68 + insets.bottom + 6],
+  });
+
   // The swipe-land haptic now fires NATIVELY from react-native-pager-view (see
   // patches/react-native-pager-view+*.patch) at the pager's own commit moment —
   // instant and consistent on every swipe, with no JS prediction needed.
@@ -313,7 +321,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   return (
     <Animated.View
       pointerEvents={listenMode ? 'none' : 'auto'}
-      style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: listenFade, transform: [{ translateX }, { translateY: listenDrift }] }]}
+      style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: listenFade, transform: [{ translateX }, { translateY: listenDrift }, { translateY: chromeShift }] }]}
     >
       {/* Native iOS chrome-material blur fills the bar (behind the row). The bar
           stays overflow-visible so the center button can lift above the top edge.
@@ -389,9 +397,12 @@ export default function TabLayout() {
           // settles. noteTabSwipe feeds the guardPress() tap suppressor — taps
           // are filtered at the press handlers, NEVER by blocking touches, so
           // rapid consecutive swipes always reach the pager.
-          swipeStart: () => { swipingRef.current = true; setSwiping(true); noteTabSwipe(true); Keyboard.dismiss(); },
+          swipeStart: () => { swipingRef.current = true; setSwiping(true); noteTabSwipe(true); Keyboard.dismiss(); setFeedChromeHidden(false); },
           swipeEnd: () => { swipingRef.current = false; lastSwipeEndAt.current = Date.now(); setSwiping(false); noteTabSwipe(false); },
           state: (e) => {
+            // Any tab change brings the reactive chrome back (a hidden bar on
+            // Explore/Music would just look broken).
+            setFeedChromeHidden(false);
             const navState = (e as { data?: { state?: { index?: number; routeNames?: string[] } } }).data?.state;
             const newIndex = navState?.index;
             const names = navState?.routeNames;

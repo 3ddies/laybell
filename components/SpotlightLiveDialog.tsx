@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { tabTick } from '../lib/haptics';
 
 // The celebratory "Your post is in the Spotlight!" moment — replaces the stock
 // system alert. Same fade+scale entrance as ConfirmDialog, but staged like the
@@ -28,6 +29,7 @@ export default function SpotlightLiveDialog({
 
   useEffect(() => {
     if (visible) {
+      tabTick(); // celebratory entrance gets a physical tick too
       fade.setValue(0);
       scale.setValue(0.9);
       Animated.parallel([

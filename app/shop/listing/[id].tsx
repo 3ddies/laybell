@@ -14,6 +14,7 @@ import { useTheme, useThemedStyles } from '../../../contexts/ThemeContext';
 import { useTranslation } from '../../../contexts/LanguageContext';
 import { useProfile } from '../../../contexts/ProfileContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { reactionPop } from '../../../lib/haptics';
 import { usePostMusic } from '../../../contexts/PostMusicContext';
 import { WEB_ORIGIN } from '../../../lib/appLinks';
 import { reportListing } from '../../../lib/postActions';
@@ -88,6 +89,7 @@ export default function ListingScreen() {
     try {
       const o = await requestToBuy(listing, '');
       setOrder(o);
+      reactionPop(); // request sent — small physical confirmation
     } catch (e) {
       const msg = (e as Error)?.message ?? '';
       if (msg.includes('rate_limited')) setError(t('shop.rateLimited'));

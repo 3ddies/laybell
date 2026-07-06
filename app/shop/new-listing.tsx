@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwipeBackPager from '../../components/SwipeBackPager';
+import { tabTick } from '../../lib/haptics';
 import { RADIUS, SPACING, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -120,6 +121,7 @@ export default function NewListingScreen() {
       if (preview) media.preview_url = await uploadListingPreview(listingId, preview.uri, preview.mime);
       if (file) media.file_path = await uploadListingFile(listingId, file.uri, file.mime, file.name);
       if (Object.keys(media).length) await updateListing(listingId, media);
+      tabTick(); // published — mark the moment
       router.back();
     } catch {
       setError(t('shop.error'));

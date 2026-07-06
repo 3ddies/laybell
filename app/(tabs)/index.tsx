@@ -4,8 +4,9 @@ import {
 } from '../../lib/feedScorer';
 import AppVideo from '../../components/AppVideo';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
+import { feedChrome, setFeedChromeHidden, trackFeedScroll } from '../../lib/feedChrome';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image,
@@ -500,6 +501,23 @@ export default function HomeScreen() {
   }).current;
   const [feedMode, setFeedMode] = useState<'all' | 'following' | 'friends'>('all');
   const [menuOpen, setMenuOpen] = useState(false);
+  // Measured height of the floating header — pads the feed underneath it and
+  // sets how far it slides away when the reactive chrome hides.
+  const [headerH, setHeaderH] = useState(0);
+  const navigation = useNavigation();
+
+  // Tapping the Home tab while ALREADY on Home scrolls the feed back to the
+  // top (Instagram behavior) and brings the reactive chrome back.
+  useEffect(() => {
+    const unsub = (navigation as { addListener: (ev: string, cb: () => void) => () => void })
+      .addListener('tabPress', () => {
+        if ((navigation as { isFocused: () => boolean }).isFocused()) {
+          feedListRef.current?.scrollToOffset({ offset: 0, animated: true });
+          setFeedChromeHidden(false);
+        }
+      });
+    return unsub;
+  }, [navigation]);
   const [initialized, setInitialized] = useState(false);
 
   // The dropdown chevron is hidden until the logo is tapped, then fades back out
@@ -1005,8 +1023,17 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
+      {/* Header — floats over the feed and tucks away as you scroll down,
+          returning the moment you scroll up (Instagram-style reactive chrome).
+          The feed pads itself by the measured header height below. */}
+      <Animated.View
+        style={[
+          styles.header,
+          styles.headerFloat,
+          { transform: [{ translateY: feedChrome.interpolate({ inputRange: [0, 1], outputRange: [0, -(headerH || 140)] }) }] },
+        ]}
+        onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
+      >
         <View style={styles.headerLeft}>
           <TouchableOpacity
             style={styles.logoBtn}
@@ -1051,7 +1078,7 @@ export default function HomeScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </View>
+      </Animated.View>
 
       {/* Feed-mode dropdown */}
       <Modal
@@ -1103,7 +1130,11 @@ export default function HomeScreen() {
         renderItem={renderPost}
         ListHeaderComponent={FeedHeader}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.feedContent}
+        contentContainerStyle={[styles.feedContent, { paddingTop: headerH }]}
+        // Drives the reactive chrome: down-scroll tucks header + tab bar away,
+        // up-scroll (or nearing the top) brings them back.
+        onScroll={(e) => trackFeedScroll(e.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
         removeClippedSubviews
         windowSize={5}
         maxToRenderPerBatch={5}
@@ -1112,6 +1143,7 @@ export default function HomeScreen() {
         viewabilityConfig={viewabilityConfig}
         refreshControl={
           <RefreshControl
+            progressViewOffset={headerH}
             refreshing={refreshing}
             // Reload the seen-set from storage first so posts shown in prior
             // loads get the seen-penalty and genuinely new/unseen recent posts
@@ -1188,6 +1220,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingBottom: SPACING.sm,
     borderBottomWidth: 0.5,
     borderBottomColor: colors.border,
+  },
+  // Reactive chrome: the header floats over the feed (which pads itself by the
+  // measured height) so it can slide away without reflowing the list.
+  headerFloat: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    zIndex: 20,
+    backgroundColor: colors.background,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   logoBtn: { flexDirection: 'row', alignItems: 'center' },

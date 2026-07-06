@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import ShopListingCard from '../../components/ShopListingCard';
 import { GridSkeleton, ListRowsSkeleton } from '../../components/Skeleton';
+import { reactionPop, tabTick } from '../../lib/haptics';
 import { RADIUS, SPACING, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -77,7 +78,9 @@ export default function ShopHubScreen() {
 
         {tab === 'explore' && <ExploreTab />}
         {tab === 'mine' && <MyShopTab myId={profile?.id ?? null} myAge={(profile as { age?: number | null } | null)?.age ?? null} />}
-        {tab === 'orders' && <OrdersTab />}
+        {tab === 'orders' && (
+          <OrdersTab onChanged={() => pendingSalesCount().then(setPendingCount).catch(() => {})} />
+        )}
       </View>
     </SwipeBackPager>
   );
@@ -242,6 +245,7 @@ function MyShopTab({ myId, myAge }: { myId: string | null; myAge: number | null 
     setBusy(true);
     try {
       await createShop(name, bio);
+      tabTick(); // shop opened — a small moment worth marking
       await load();
     } catch { /* surfaced by empty state */ }
     setBusy(false);
@@ -440,7 +444,7 @@ function MyShopTab({ myId, myAge }: { myId: string | null; myAge: number | null 
 
 // --- Orders ----------------------------------------------------------------------
 
-function OrdersTab() {
+function OrdersTab({ onChanged }: { onChanged?: () => void }) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -463,12 +467,14 @@ function OrdersTab() {
   async function act(order: ShopOrder, status: 'delivered' | 'declined') {
     setSales((prev) => prev.map((o) => (o.id === order.id ? { ...o, status } : o)));
     if (status === 'delivered') {
+      reactionPop(); // a sale closing deserves a tick
       // Delivering also DMs the buyer that their file is unlocked — the same
       // channel their buy request opened.
       await deliverOrder(order, t('shop.deliveredDm', { title: order.listing?.title ?? '' })).catch(() => load());
     } else {
       await setOrderStatus(order.id, status).catch(() => load());
     }
+    onChanged?.(); // keep the Orders-tab badge honest
   }
 
   if (loading) return <ListRowsSkeleton rows={6} />;
