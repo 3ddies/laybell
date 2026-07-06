@@ -1162,16 +1162,18 @@ export default function PostScreen() {
             </View>
           )}
 
-          {/* Caption — full width */}
+          {/* Caption (media) / Title (music) — full width. Music uses a slim,
+              single-line box labelled "Title" to discourage caption-like names. */}
           <View style={styles.field}>
+            {postType === 'audio' && <Text style={styles.fieldLabel}>{t('post.titleLabel')}</Text>}
             <TextInput
-              style={styles.captionBox}
-              placeholder={t('post.captionPlaceholder')}
+              style={postType === 'audio' ? styles.titleBox : styles.captionBox}
+              placeholder={postType === 'audio' ? t('post.titlePlaceholder') : t('post.captionPlaceholder')}
               placeholderTextColor={colors.textTertiary}
               value={caption}
               onChangeText={setCaption}
-              multiline
-              maxLength={500}
+              multiline={postType !== 'audio'}
+              maxLength={postType === 'audio' ? 100 : 500}
               editable={!swiping}
             />
             <MentionSuggestions
@@ -1819,6 +1821,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
     borderRadius: RADIUS.md, padding: SPACING.sm + 2, minHeight: 88,
     color: colors.text, fontSize: 15, textAlignVertical: 'top',
+  },
+  // Music "Title" box: slim, single-line — nudges toward a real title, not a caption.
+  titleBox: {
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    borderRadius: RADIUS.md, paddingHorizontal: SPACING.sm + 2, paddingVertical: SPACING.sm, minHeight: 46,
+    color: colors.text, fontSize: 15, marginTop: 6,
   },
 
   // Public/Private pill button.
