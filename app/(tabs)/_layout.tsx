@@ -177,10 +177,11 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   // edge. (iOS layers it over a soft uniform blur; Android uses the scrim
   // alone, which reads the same.)
   const bgRgb = isLight ? '242,241,237' : mode === 'grey' ? '22,21,20' : '9,9,9';
-  // Airier through the top half, then a taller, fully-solid base — the fade
-  // runs longer and the bottom is genuinely opaque.
+  // A continuous ease from clear to solid — five stops approximate a smooth
+  // curve so there's no visible band where "transparent" meets "solid" (the
+  // old 0.92→1.0 jump read as a stationary dark bar under a glass sheet).
   const scrimColors = [
-    `rgba(${bgRgb},0)`, `rgba(${bgRgb},0.3)`, `rgba(${bgRgb},0.92)`, `rgba(${bgRgb},1)`,
+    `rgba(${bgRgb},0)`, `rgba(${bgRgb},0.14)`, `rgba(${bgRgb},0.45)`, `rgba(${bgRgb},0.8)`, `rgba(${bgRgb},0.98)`,
   ] as const;
 
   // The camera lives at route 0 but isn't a button — the visible bar is every
@@ -369,7 +370,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
           icons never move with scroll, only the glass breathes. */}
       <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: panelFade }]}>
         {Platform.OS === 'ios' && <BlurView tint={blurTint} intensity={40} style={styles.blurFill} />}
-        <LinearGradient colors={scrimColors} locations={[0, 0.38, 0.72, 1]} style={styles.blurFill} />
+        <LinearGradient colors={scrimColors} locations={[0, 0.28, 0.55, 0.8, 1]} style={styles.blurFill} />
       </Animated.View>
       <Animated.View
         style={[styles.row, { transform: [{ translateY: iconDrop }] }]}

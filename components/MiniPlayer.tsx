@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react-native';
+import { feedChrome } from '../lib/feedChrome';
 import { useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -59,6 +60,15 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
       useNativeDriver: true,
     }).start();
   }, [bottomDock, dockSlide]);
+
+  // Home's reactive chrome: when the tab bar condenses into chips (and the
+  // chips drop toward the screen edge), the music bar rides the SAME value
+  // down so it always hugs the bottom elements instead of floating where the
+  // full bar used to be. Zero everywhere else (chrome resets on tab change).
+  const chromeSlide = feedChrome.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, (insets.bottom > 0 ? insets.bottom - 2 : 12) + 6],
+  });
 
   // Overlay variants (Create tab card / camera side chip): the player waits
   // out a short dwell on the tab before fading in — a quick swipe-through
@@ -128,7 +138,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
     const secsLeft = Math.max(1, Math.ceil((AUDIO_AD_SKIP_MS - adState.elapsedMs) / 1000));
     const adProgress = adState.durationMs > 0 ? adState.elapsedMs / adState.durationMs : 0;
     return (
-      <Animated.View style={[styles.container, { bottom: bottomOffset, transform: [{ translateY: Animated.add(listenSlide, dockSlide) }] }]}>
+      <Animated.View style={[styles.container, { bottom: bottomOffset, transform: [{ translateY: Animated.add(Animated.add(listenSlide, dockSlide), chromeSlide) }] }]}>
         {/* Progress fill (non-interactive — ads aren't seekable). */}
         <View style={styles.scrubWrap}>
           <View style={styles.adProgressTrack}>
@@ -256,7 +266,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
       style={[styles.container, {
         bottom: bottomOffset,
         opacity: Animated.multiply(barFade, appearAnim),
-        transform: [{ translateY: Animated.add(Animated.add(listenSlide, dockSlide), appearRise) }],
+        transform: [{ translateY: Animated.add(Animated.add(Animated.add(listenSlide, dockSlide), appearRise), chromeSlide) }],
       }]}
     >
       <View style={styles.scrubWrap}>
