@@ -76,7 +76,9 @@ function BadgeEmblem({ profile, tier, ownerId, size = 14, style }: Props) {
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={[
-        { width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+        // NO overflow:hidden here — a clipped view can't cast badgeGlow's outer
+        // shadow (RN). DiamondShine clips itself, so the glow is preserved.
+        { width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center' },
         badgeRim(t),
         badgeGlow(t),
         style,
