@@ -98,7 +98,11 @@ export default function SongCardTitle({
   // A fresh Marquee instance per side (keyed) so measurement re-runs cleanly on
   // the flip and on song changes.
   return (
-    <Animated.View style={{ opacity: fade }}>
+    // alignSelf:stretch so the title always fills the available width and has a
+    // real box to overflow against. The bottom bar already stretches (its parent
+    // stretches children); the full player's `meta` centres children, which
+    // otherwise shrink-wraps this to the text and kills the overflow → no scroll.
+    <Animated.View style={[styles.root, { opacity: fade }]}>
       {showFeatures ? (
         <Marquee key={'f:' + features.map((f) => f.id).join(',')} centered={centered}>
           <Text style={[fStyle, styles.featLabel]}>feat. </Text>
@@ -120,6 +124,7 @@ export default function SongCardTitle({
 }
 
 const styles = StyleSheet.create({
+  root: { alignSelf: 'stretch' },
   clip: { overflow: 'hidden', flexDirection: 'row' },
   clipCentered: { justifyContent: 'center' },
   measurer: { position: 'absolute', left: 0, top: 0, opacity: 0, width: MEASURE_W },
