@@ -6,7 +6,7 @@ import AppVideo from '../../components/AppVideo';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
-import { feedChrome, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
+import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, FlatList,
@@ -1032,7 +1032,7 @@ export default function HomeScreen() {
         style={[
           styles.header,
           styles.headerFloat,
-          { transform: [{ translateY: feedChrome.interpolate({ inputRange: [0, 1], outputRange: [0, -(headerH || 140)] }) }] },
+          { transform: [{ translateY: feedChromeTop.interpolate({ inputRange: [0, 1], outputRange: [0, -(headerH || 140)] }) }] },
         ]}
         onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
       >
@@ -1137,7 +1137,8 @@ export default function HomeScreen() {
         // (slow drag = gradual tuck, fast fling = instant), settling to the
         // nearest edge when the scroll comes to rest.
         onScroll={(e) => trackFeedScroll(e.nativeEvent.contentOffset.y)}
-        onScrollEndDrag={settleFeedChrome}
+        onScrollBeginDrag={feedDragStart}
+        onScrollEndDrag={feedDragEnd}
         onMomentumScrollEnd={settleFeedChrome}
         scrollEventThrottle={16}
         removeClippedSubviews
