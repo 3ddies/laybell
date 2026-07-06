@@ -32,6 +32,11 @@ let dragging = false;
 // Music lists) share this tracker, so the first frame of a new gesture must
 // only record its position — never compute a delta against another list's.
 let anchorNext = true;
+// After a programmatic reset (tab change, swipe, tap-to-top) the tracker goes
+// DEAF until the next real finger drag: the previous tab's list keeps emitting
+// momentum scroll frames after it's offscreen, and without this those frames
+// would re-condense the bar on the new tab (the "carried over" glitch).
+let suppressed = false;
 
 const HIDE_DISTANCE = 210;
 const REVEAL_VELOCITY = 1100; // px/s of upward motion that arms the reveal
@@ -67,6 +72,7 @@ function scheduleSettle() {
 export function feedDragStart(): void {
   dragging = true;
   anchorNext = true;
+  suppressed = false; // a real finger drag re-arms tracking after a reset
   if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
 }
 
@@ -80,6 +86,7 @@ export function feedDragEnd(): void {
 
 /** Feed onScroll. */
 export function trackFeedScroll(y: number): void {
+  if (suppressed) return; // stale momentum from a tab we've already left
   const now = Date.now();
   if (anchorNext) { anchorNext = false; lastY = y; lastT = now; return; }
   const dt = Math.min(100, Math.max(1, now - lastT));
@@ -125,6 +132,7 @@ export function settleFeedChrome(): void {
 export function setFeedChromeHidden(next: boolean): void {
   const to = next ? 1 : 0;
   revealArmed = false;
+  suppressed = true; // ignore leftover momentum until the next real drag
   stopGlides();
   if (botValue !== to) {
     Animated.timing(feedChrome, { toValue: to, duration: 300, easing: EASE, useNativeDriver: true }).start();
