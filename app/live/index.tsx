@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Image, TextInput,
   KeyboardAvoidingView, Platform, RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -173,6 +173,9 @@ export default function LiveScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
+  // Opened from Laybell TV with a specific stream to start on. Consumed once.
+  const { streamId } = useLocalSearchParams<{ streamId?: string }>();
+  const startStreamId = useRef<string | null>(streamId ?? null);
   const [streams, setStreams] = useState<LiveStream[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -183,7 +186,12 @@ export default function LiveScreen() {
     try {
       const rows = await fetchLiveStreams();
       setStreams(rows);
-      setVisibleId((cur) => (cur && rows.some((r) => r.id === cur) ? cur : rows[0]?.id ?? null));
+      setVisibleId((cur) => {
+        // First load from TV: honor the requested stream if it's live.
+        const want = startStreamId.current;
+        if (want && rows.some((r) => r.id === want)) { startStreamId.current = null; return want; }
+        return cur && rows.some((r) => r.id === cur) ? cur : rows[0]?.id ?? null;
+      });
     } catch { /* offline / pre-migration */ }
     setLoading(false);
   }, []);
@@ -242,6 +250,7 @@ export default function LiveScreen() {
               decelerationRate="fast"
               showsVerticalScrollIndicator={false}
               getItemLayout={(_, i) => ({ length: pageH, offset: pageH * i, index: i })}
+              initialScrollIndex={Math.max(0, streams.findIndex((s) => s.id === visibleId))}
               onViewableItemsChanged={onViewableItemsChanged}
               viewabilityConfig={{ itemVisiblePercentThreshold: 80, minimumViewTime: 90 }}
               windowSize={3}

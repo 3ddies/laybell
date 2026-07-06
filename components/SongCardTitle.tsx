@@ -36,8 +36,10 @@ function Marquee({ text, style }: { text: string; style: StyleProp<TextStyle> })
 
   return (
     <View style={styles.clip} onLayout={(e) => setBoxW(e.nativeEvent.layout.width)}>
+      {/* NO numberOfLines — inside a flex parent it clamps the measured width to
+          the box (textW === boxW) and the marquee never triggers. flexShrink:0 +
+          the parent's overflow:hidden keep it on one line and clip the overflow. */}
       <Animated.Text
-        numberOfLines={1}
         style={[style, styles.marqueeText, { transform: [{ translateX: x }] }]}
         onLayout={(e) => setTextW(e.nativeEvent.layout.width)}
       >

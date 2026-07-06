@@ -136,7 +136,7 @@ export default function LaybellTVScreen() {
               />
             }
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.liveCard} onPress={() => router.push('/live')} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.liveCard} onPress={() => router.push({ pathname: '/live', params: { streamId: item.id } })} activeOpacity={0.85}>
                 {item.profile?.avatar_url ? (
                   <Image source={{ uri: item.profile.avatar_url }} style={styles.liveAvatar} />
                 ) : (
