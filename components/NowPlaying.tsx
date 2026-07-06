@@ -22,6 +22,8 @@ import Comments from './Comments';
 import { recordAdClick, AUDIO_AD_SKIP_MS } from '../lib/ads';
 import { isPostSpotlighted } from '../lib/spotlight';
 import { useLinkGuard } from '../contexts/LinkGuardContext';
+import { fetchFeatures, type Feature } from '../lib/features';
+import SongCardTitle from './SongCardTitle';
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 // Full-width art (capped at 300): at rest the header fills the screen down to
@@ -33,6 +35,29 @@ function formatMs(ms: number): string {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// The cycling title lives in its OWN position subscription (like Progress), so
+// only this small block re-renders 4×/sec — not the whole player. Flips the
+// large centered title between the song name and its collaborator credits.
+function SongTitleBlock({ title, features, titleStyle, onOpenProfile }: {
+  title: string;
+  features: Feature[];
+  titleStyle: any;
+  onOpenProfile: (id: string) => void;
+}) {
+  const { positionMs, durationMs } = useAudioPosition();
+  return (
+    <SongCardTitle
+      title={title}
+      features={features}
+      positionMs={positionMs}
+      durationMs={durationMs}
+      titleStyle={titleStyle}
+      centered
+      onOpenProfile={onOpenProfile}
+    />
+  );
 }
 
 function Progress() {
@@ -125,6 +150,8 @@ export default function NowPlaying() {
   const [userId, setUserId] = useState<string | null>(null);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [ownerName, setOwnerName] = useState<string | undefined>();
+  // Song collaborators for the title↔features flip (mirrors the mini card).
+  const [features, setFeatures] = useState<Feature[]>([]);
   const [ownerBadge, setOwnerBadge] = useState<{ badge_tier?: string | null; badge_show?: boolean | null } | null>(null);
   // True when this song has a live spotlight → a subtle sparkle by the artist name.
   const [spotlighted, setSpotlighted] = useState(false);
@@ -163,6 +190,16 @@ export default function NowPlaying() {
   // Remember the playing track so an exit animation can keep rendering it after
   // the queue clears it.
   useEffect(() => { if (currentTrack) lastTrackRef.current = currentTrack; }, [currentTrack]);
+
+  // Fetch this track's features (never for ads) so the title can flip to credits.
+  const featTrackId = !adState ? currentTrack?.id ?? null : null;
+  useEffect(() => {
+    if (!featTrackId) { setFeatures([]); return; }
+    let alive = true;
+    setFeatures([]);
+    fetchFeatures(featTrackId).then((f) => { if (alive) setFeatures(f); }).catch(() => {});
+    return () => { alive = false; };
+  }, [featTrackId]);
 
   // Song ended while the full player was open: the queue emptied so currentTrack
   // is now null, but `expanded` is still true. Fade + gently scale the sheet out
@@ -438,7 +475,12 @@ export default function NowPlaying() {
                 </View>
 
                 <View style={styles.meta}>
-                  <Text style={styles.title} numberOfLines={1}>{track.caption || t('player.audioTrack')}</Text>
+                  <SongTitleBlock
+                    title={track.caption || t('player.audioTrack')}
+                    features={features}
+                    titleStyle={styles.title}
+                    onOpenProfile={(id) => { collapse(); router.push(`/profile/${id}`); }}
+                  />
                   <TouchableOpacity disabled={!ownerId} onPress={goProfile}>
                     <View style={styles.artistRow}>
                       <Text style={styles.artist} numberOfLines={1}>

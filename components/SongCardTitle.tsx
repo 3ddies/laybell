@@ -50,7 +50,7 @@ function Marquee({ text, style }: { text: string; style: StyleProp<TextStyle> })
 }
 
 export default function SongCardTitle({
-  title, features, positionMs, durationMs, titleStyle, featStyle, onOpenProfile,
+  title, features, positionMs, durationMs, titleStyle, featStyle, onOpenProfile, centered = false,
 }: {
   title: string;
   features: Feature[];
@@ -59,6 +59,9 @@ export default function SongCardTitle({
   titleStyle: StyleProp<TextStyle>;
   featStyle?: StyleProp<TextStyle>;
   onOpenProfile: (id: string) => void;
+  // Full-player (Spotify-style) mode: centered title (no marquee) + centered
+  // credits. The bottom bar (default) marquees long titles and left-aligns.
+  centered?: boolean;
 }) {
   const canCycle = durationMs >= MIN_DURATION_MS && features.length > 0;
   const showFeatures = canCycle && Math.floor(positionMs / CYCLE_MS) % 2 === 1;
@@ -76,9 +79,9 @@ export default function SongCardTitle({
   return (
     <Animated.View style={{ opacity: fade }}>
       {showFeatures ? (
-        <View style={styles.featRow}>
+        <View style={[styles.featRow, centered && styles.featRowCentered]}>
           <Text style={[featStyle ?? titleStyle, styles.featLabel]} numberOfLines={1}>feat. </Text>
-          <View style={styles.featNames}>
+          <View style={[styles.featNames, centered && styles.featNamesCentered]}>
             {features.map((f, i) => (
               <TouchableOpacity key={f.id} onPress={() => onOpenProfile(f.id)} hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}>
                 <Text style={[featStyle ?? titleStyle, styles.featName]} numberOfLines={1}>
@@ -88,6 +91,8 @@ export default function SongCardTitle({
             ))}
           </View>
         </View>
+      ) : centered ? (
+        <Text style={titleStyle} numberOfLines={1}>{title}</Text>
       ) : (
         <Marquee text={title} style={titleStyle} />
       )}
@@ -99,7 +104,9 @@ const styles = StyleSheet.create({
   clip: { overflow: 'hidden', flexDirection: 'row' },
   marqueeText: { flexShrink: 0 },
   featRow: { flexDirection: 'row', alignItems: 'center' },
+  featRowCentered: { justifyContent: 'center' },
   featLabel: { opacity: 0.7, flexShrink: 0 },
   featNames: { flex: 1, flexDirection: 'row', overflow: 'hidden' },
+  featNamesCentered: { flex: 0, flexShrink: 1 },
   featName: { fontWeight: '700', textDecorationLine: 'underline', flexShrink: 0 },
 });
