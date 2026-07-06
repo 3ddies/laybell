@@ -26,19 +26,38 @@ import type { UserAffinityProfile } from './feedScorer';
 // Master kill switch — flip to false to disable all ad serving instantly.
 export const ADS_ENABLED = true;
 
-// At least this many feed items between two ads (and ads never sit next to a
-// Spotlight). Looser than Spotlight's gap so the two systems don't crowd.
+// Feed: the FIRST ad lands after this many items; every subsequent gap is
+// RANDOMIZED between MIN and MAX (ads never sit next to a Spotlight). Random
+// spacing keeps the feed from feeling metronomic. Injection runs once per
+// fetch and is stored in state, so the placement is stable until a refresh.
 export const AD_FEED_GAP = 9;
+export const AD_FEED_GAP_MIN = 7;
+export const AD_FEED_GAP_MAX = 13;
 
-// Reels: the ad lands at output index REEL_AD_FIRST (the 3rd reel), then every
-// REEL_AD_EVERY positions after (indices 2, 7, 12, 17 …).
+// Reels: the first ad is 2 reels into scrolling (output index 2), then a
+// RANDOM 4-7 videos between each subsequent ad.
 export const REEL_AD_FIRST = 2;
-export const REEL_AD_EVERY = 5;
+export const REEL_AD_EVERY_MIN = 4;
+export const REEL_AD_EVERY_MAX = 7;
 
-// Audio: first ad after 1 min of cumulative APP-SESSION listening (any main-
-// player streaming, across songs and stops), then every 3 min 30 s after.
+// Audio: first ad after 1 min of cumulative APP-SESSION listening, then each
+// subsequent gate is RANDOMIZED between 3 and 5 min so breaks never feel
+// metronomic (nextAudioGateMs()).
 export const AUDIO_AD_FIRST_MS = 60_000;
-export const AUDIO_AD_EVERY_MS = 210_000;
+export const AUDIO_AD_EVERY_MIN_MS = 180_000; // 3 min
+export const AUDIO_AD_EVERY_MAX_MS = 300_000; // 5 min
+
+// Inclusive integer in [min, max]. Placement uses plain Math.random — feed/
+// reel weaving runs once per fetch (result stored in state), and the audio
+// gate is a per-break scalar, so nothing re-randomizes on a re-render.
+export function randInt(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+/** Randomized ms until the next audio ad break (3-5 min). */
+export function nextAudioGateMs(): number {
+  return randInt(AUDIO_AD_EVERY_MIN_MS, AUDIO_AD_EVERY_MAX_MS);
+}
 
 // Reel ads become skippable after this much genuine ad playback.
 export const AD_SKIP_MS = 5_000;
@@ -409,39 +428,44 @@ export async function pickAudioAd(viewer: AdViewer): Promise<AudioAd | null> {
 // Inject feed ads into the already-ranked organic+spotlight list, spaced by
 // `gap` and never adjacent to a Spotlight or at the very top/bottom. Leftover
 // ads are dropped (held for the next load). Ranking is untouched.
-export function injectFeedAds(list: any[], ads: any[], gap: number = AD_FEED_GAP): any[] {
+export function injectFeedAds(list: any[], ads: any[], firstGap: number = AD_FEED_GAP): any[] {
   if (!ads.length || list.length < 2) return list;
   const out: any[] = [];
   let since = 0;
   let ai = 0;
+  // First ad uses firstGap; each subsequent gap is a fresh random 7-13.
+  let nextGap = firstGap;
   for (let i = 0; i < list.length; i++) {
     out.push(list[i]);
     since++;
     const isSpot = !!list[i].__spotlight || !!list[i].__ad;
     const nextIsSpot = i + 1 < list.length && (!!list[i + 1].__spotlight || !!list[i + 1].__ad);
     const notEdge = i < list.length - 1;
-    if (ai < ads.length && since >= gap && !isSpot && !nextIsSpot && notEdge) {
+    if (ai < ads.length && since >= nextGap && !isSpot && !nextIsSpot && notEdge) {
       out.push(ads[ai++]);
       since = 0;
+      nextGap = randInt(AD_FEED_GAP_MIN, AD_FEED_GAP_MAX);
     }
   }
   return out;
 }
 
-// Weave reel ads into the ordered reel list at output indices 2, 7, 12, 17 …
-// (the 3rd reel, then every 5th). No trailing ad; the same campaign can repeat
-// across slots when the pool is small.
+// Weave reel ads into the ordered reel list: the first at output index 2 (the
+// 3rd reel), then a RANDOM 4-7 videos between each subsequent ad. No trailing
+// ad; the same campaign can repeat across slots when the pool is small.
 export function weaveReelAds(organic: any[], pool: AdSource[]): any[] {
   if (!pool.length || !organic.length) return organic;
   const out: any[] = [];
   let oi = 0;
   let slot = 0;
-  const isAdPos = (idx: number) => idx >= REEL_AD_FIRST && (idx - REEL_AD_FIRST) % REEL_AD_EVERY === 0;
+  let nextAdAt = REEL_AD_FIRST;
   while (oi < organic.length) {
     const idx = out.length;
-    if (isAdPos(idx)) {
+    if (idx === nextAdAt) {
       out.push(reelItemFor(pool[slot % pool.length], slot));
       slot++;
+      // Skip the ad's own slot, then 4-7 organic reels before the next ad.
+      nextAdAt = idx + 1 + randInt(REEL_AD_EVERY_MIN, REEL_AD_EVERY_MAX);
     } else {
       out.push(organic[oi]);
       oi++;

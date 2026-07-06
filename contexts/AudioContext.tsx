@@ -10,7 +10,7 @@ import { recordListen } from '../lib/listenHistory';
 import { recordStream as recordStreamDurable } from '../lib/streamOutbox';
 import {
   pickAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
-  AUDIO_AD_FIRST_MS, AUDIO_AD_EVERY_MS, AUDIO_AD_SKIP_MS,
+  AUDIO_AD_FIRST_MS, nextAudioGateMs, AUDIO_AD_SKIP_MS,
   type AdViewer, type AudioAd,
 } from '../lib/ads';
 import { buildAffinityProfile, EMPTY_PROFILE } from '../lib/feedScorer';
@@ -257,9 +257,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     let ad: AudioAd | null = null;
     try { ad = await pickAudioAd(viewer); } catch {}
     if (!ad) {
-      // No matching inventory — push the next break out.
+      // No matching inventory — push the next break out (randomized 3-5 min).
       adPlayingRef.current = false;
-      adNextThresholdRef.current = adListenMsRef.current + AUDIO_AD_EVERY_MS;
+      adNextThresholdRef.current = adListenMsRef.current + nextAudioGateMs();
       // If this break was scheduled BETWEEN songs (the track already finished and
       // is waiting on the ad), there's nothing to resume — proceed to the next
       // track. If it was an ad-first song move (the fresh track is loaded but
@@ -318,7 +318,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     adSoundRef.current = null;
     setAdState(null);
     adPlayingRef.current = false;
-    adNextThresholdRef.current = adListenMsRef.current + AUDIO_AD_EVERY_MS;
+    // Next break randomized 3-5 min out (first-ever gate stays 1 min).
+    adNextThresholdRef.current = adListenMsRef.current + nextAudioGateMs();
     if (pendingFinishRef.current) {
       // The track ended WHILE the ad played (handleTrackFinished deferred it) —
       // advance/close now instead of resuming a finished track.
