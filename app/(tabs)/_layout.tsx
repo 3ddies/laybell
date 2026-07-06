@@ -138,7 +138,9 @@ function TabSlot({
       <Animated.View style={[styles.iconWrap, { transform: [{ translateY: lift }, { scale }] }]}>
         <Animated.View pointerEvents="none" style={[styles.chip, { opacity: chip, backgroundColor: chipBg }]} />
         <Animated.View style={{ opacity: outlineOpacity }}>
-          <Ionicons name={icon[1]} size={26} color={colors.textTertiary} />
+          {/* textSecondary (not tertiary): the airier glass needs icons that
+              carry their own contrast instead of borrowing it from the panel. */}
+          <Ionicons name={icon[1]} size={26} color={colors.textSecondary} />
         </Animated.View>
         {/* Condensed mode brightens inactive outlines to full text color so
             they pop against the feed (opacity = chip × inactive-ness). */}
@@ -170,7 +172,9 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   // lighter than the bar, so use the border tone for a subtly darker disc.
   const postCircleColor = isLight ? colors.border : colors.background;
   const blurTint = isLight ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark';
-  const androidWash = isLight ? 'rgba(234,232,227,0.7)' : mode === 'grey' ? 'rgba(31,30,28,0.7)' : 'rgba(17,17,17,0.7)';
+  // Lighter-handed wash than before — the bar reads as airier glass with more
+  // of the feed ghosting through (icons carry the contrast, not the panel).
+  const androidWash = isLight ? 'rgba(234,232,227,0.52)' : mode === 'grey' ? 'rgba(31,30,28,0.52)' : 'rgba(17,17,17,0.52)';
 
   // The camera lives at route 0 but isn't a button — the visible bar is every
   // other route, kept paired with its real route index so `position` lines up.
@@ -351,7 +355,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
           condenses into chips and fades back in on return — icons never move
           with scroll, only the glass breathes. */}
       <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: panelFade }]}>
-        <BlurView tint={blurTint} intensity={100} style={styles.blurFill} />
+        <BlurView tint={blurTint} intensity={62} style={styles.blurFill} />
         {Platform.OS === 'android' && <View style={[styles.blurFill, { backgroundColor: androidWash }]} />}
         <View style={styles.topHairline} />
       </Animated.View>
