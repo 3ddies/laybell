@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput,
-  ActivityIndicator, Alert, Image, Switch, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, Image, Switch, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +19,7 @@ import { analyzeUrl, scanText } from '../../lib/linkSafety';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { useProfile } from '../../contexts/ProfileContext';
 import SwipeBackPager from '../../components/SwipeBackPager';
+import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -111,6 +112,9 @@ export default function CreateAdScreen() {
   const [uploadLabel, setUploadLabel] = useState('');
   const publishingRef = useRef(false);
 
+  // Which placement the library video grid is currently picking for.
+  const [videoPickerFor, setVideoPickerFor] = useState<AdPlacement | null>(null);
+
   const hasLocation = profile?.latitude != null && profile?.longitude != null;
 
   function patchDraft(p: AdPlacement, patch: Partial<CreativeDraft>) {
@@ -146,18 +150,20 @@ export default function CreateAdScreen() {
     patchDraft(p, { picks });
   }
 
-  async function pickVideo(p: AdPlacement) {
-    const ImagePicker = await import('expo-image-picker');
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert(t('adCreate.photosNeededTitle'), t('adCreate.photosNeededBody')); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-      quality: 0.85,
-    });
-    if (res.canceled || !res.assets?.[0]) return;
-    const a = res.assets[0];
+  // Videos come from the SAME library grid the composer uses for reels
+  // (expo-media-library → getAssetInfoAsync localUri) — the system picker's
+  // export step failed outright on some videos ("The operation could not be
+  // completed"), so any video that posts as a reel now works here too.
+  function pickVideo(p: AdPlacement) {
+    setVideoPickerFor(p);
+  }
+
+  function onVideoPicked(m: PickedMedia) {
+    const p = videoPickerFor;
+    setVideoPickerFor(null);
+    if (!p || m.type !== 'video') return;
     patchDraft(p, {
-      picks: [{ uri: a.uri, width: a.width, height: a.height, kind: 'video', durationSec: a.duration ? Math.round(a.duration / 1000) : null }],
+      picks: [{ uri: m.uri, width: m.width, height: m.height, kind: 'video', durationSec: m.duration ? Math.round(m.duration) : null }],
     });
   }
 
@@ -725,6 +731,24 @@ export default function CreateAdScreen() {
               <Text style={styles.uploadText}>{uploadLabel}</Text>
             </View>
           )}
+
+          {/* Library video picker — the reels-proven media grid, videos only. */}
+          <Modal
+            visible={videoPickerFor !== null}
+            animationType="slide"
+            onRequestClose={() => setVideoPickerFor(null)}
+          >
+            <View style={styles.videoPickerContainer}>
+              <View style={styles.videoPickerHeader}>
+                <TouchableOpacity style={styles.videoPickerClose} onPress={() => setVideoPickerFor(null)}>
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </TouchableOpacity>
+                <Text style={styles.videoPickerTitle}>{t('adCreate.addVideo')}</Text>
+                <View style={styles.videoPickerClose} />
+              </View>
+              <PhotoGrid videosOnly onPick={onVideoPicked} />
+            </View>
+          </Modal>
         </View>
       </KeyboardAvoidingView>
     </SwipeBackPager>
@@ -742,6 +766,10 @@ function ReviewRow({ k, v, styles }: { k: string; v: string; styles: any }) {
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  videoPickerContainer: { flex: 1, backgroundColor: colors.background, paddingTop: SPACING.xxl },
+  videoPickerHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.sm, paddingBottom: SPACING.sm },
+  videoPickerClose: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  videoPickerTitle: { flex: 1, textAlign: 'center', color: colors.text, fontSize: 16, fontWeight: '700' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.sm,

@@ -48,7 +48,7 @@ import { bumpBadge } from './badges';
 // Spotlights never receive the seen-penalty (bought reach must not decay like
 // scored reach) and serve only in the Home feed's "All" mode.
 
-export type SpotlightPackageKey = '1d' | '3d' | '7d';
+export type SpotlightPackageKey = '12h' | '1d' | '3d' | '7d';
 
 export type SpotlightPackage = {
   key: SpotlightPackageKey;
@@ -60,9 +60,10 @@ export type SpotlightPackage = {
 };
 
 export const SPOTLIGHT_PACKAGES: SpotlightPackage[] = [
-  { key: '1d', label: '1 Day',  days: 1, priceCents: 499,  weight: 1, blurb: 'A quick burst — your post launches at the top of the feed for a day.' },
-  { key: '3d', label: '3 Days', days: 3, priceCents: 1199, weight: 2, blurb: 'Three days of reach, with a longer head start at the top.' },
-  { key: '7d', label: '7 Days', days: 7, priceCents: 2499, weight: 3, blurb: 'A full week in the spotlight, with the longest head start.' },
+  { key: '12h', label: '12 Hours', days: 0.5, priceCents: 599,  weight: 1, blurb: 'A same-day boost — take the top of the feed while the moment is hot.' },
+  { key: '1d',  label: '1 Day',    days: 1,   priceCents: 1099, weight: 2, blurb: 'A quick burst — your post launches at the top of the feed for a day.' },
+  { key: '3d',  label: '3 Days',   days: 3,   priceCents: 2499, weight: 3, blurb: 'Three days of reach, with a full day of guaranteed top placement.' },
+  { key: '7d',  label: '7 Days',   days: 7,   priceCents: 4999, weight: 4, blurb: 'A full week in the spotlight, with the longest guaranteed placement.' },
 ];
 
 // Duration as it reads MID-SENTENCE (e.g. "for the next ___"). "1 day" drops the
@@ -159,8 +160,12 @@ export const SPOTLIGHT_FLOOR_VS_AVG = 1.1;
 // strength hits SPOTLIGHT_STRONG at exactly this age when perf = 0. Engagement
 // stretches it: at perf 0.5 the same drop takes twice as long; at perf ≈ 1 the
 // multiplier effectively never decays. Bigger packages get a longer window.
+// v2 packages: weight 1→4h (12 Hours), 2→8h (1 Day), 3→24h (3 Days),
+// 4→36h (7 Days). Legacy campaigns (old weights 1–3 = 12/24/36h) decay a bit
+// faster under this map, which only affects pre-v2 test campaigns.
+const RAMP_HOURS: Record<number, number> = { 1: 4, 2: 8, 3: 24, 4: 36 };
 export function rampHoursFor(weight: number): number {
-  return 12 * Math.max(1, Math.min(3, weight || 1));
+  return RAMP_HOURS[Math.round(weight)] ?? 8;
 }
 
 // Merge-space anchors derived from the PENALIZED organic ranking — the same

@@ -68,6 +68,28 @@ export type ShopOrder = {
 
 export const LISTING_CATEGORIES: ListingCategory[] = ['beat', 'song', 'sample_pack', 'preset', 'service', 'other'];
 
+// ── Marketplace economics ─────────────────────────────────────────────────────
+// Laybell takes 15% of every sale. Sales tax is the BUYER's cost (added on top
+// at purchase, Poshmark-style) — it never reduces the seller's take-home.
+export const SHOP_FEE_RATE = 0.15;
+// Estimated sales tax shown to sellers for context (varies by buyer location).
+export const SHOP_TAX_RATE = 0.06;
+
+/** What the seller keeps after Laybell's 15% fee. */
+export function sellerEarningsCents(priceCents: number): number {
+  return Math.max(0, Math.round(priceCents * (1 - SHOP_FEE_RATE)));
+}
+
+/** Laybell's cut on a sale. */
+export function shopFeeCents(priceCents: number): number {
+  return Math.max(0, priceCents - sellerEarningsCents(priceCents));
+}
+
+/** Estimated tax the BUYER pays on top of the listing price. */
+export function buyerTaxCents(priceCents: number): number {
+  return Math.max(0, Math.round(priceCents * SHOP_TAX_RATE));
+}
+
 export function formatPrice(cents: number, currency = 'USD'): string {
   if (cents <= 0) return 'FREE';
   const symbol = currency === 'USD' ? '$' : `${currency} `;
@@ -110,7 +132,9 @@ export async function createShop(name: string, bio: string): Promise<Shop> {
   const userId = await myId();
   const { data, error } = await supabase
     .from('shops')
-    .insert({ user_id: userId, name: name.trim(), bio: bio.trim() || null })
+    // accepted_terms_at documents the seller-agreement consent captured by the
+    // required checkbox in the create-shop form.
+    .insert({ user_id: userId, name: name.trim(), bio: bio.trim() || null, accepted_terms_at: new Date().toISOString() })
     .select()
     .single();
   if (error) throw error;
@@ -224,19 +248,24 @@ export async function fetchSellerListings(userId: string, includeAll = false): P
   return (data ?? []) as ShopListing[];
 }
 
+export type ExploreSort = 'new' | 'price' | 'popular';
+
 export async function exploreListings(opts: {
   search?: string;
   category?: ListingCategory | null;
+  sort?: ExploreSort;
   offset?: number;
   limit?: number;
 } = {}): Promise<ShopListing[]> {
-  const { search = '', category = null, offset = 0, limit = 30 } = opts;
+  const { search = '', category = null, sort = 'new', offset = 0, limit = 30 } = opts;
   let q = supabase
     .from('shop_listings')
     .select(LISTING_COLS)
     .eq('status', 'active')
-    .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
+  if (sort === 'price') q = q.order('price_cents', { ascending: true }).order('created_at', { ascending: false });
+  else if (sort === 'popular') q = q.order('sales_count', { ascending: false }).order('created_at', { ascending: false });
+  else q = q.order('created_at', { ascending: false });
   if (category) q = q.eq('category', category);
   const term = search.trim();
   if (term) q = q.or(`title.ilike.%${term}%,genre.ilike.%${term}%,description.ilike.%${term}%`);
@@ -262,6 +291,9 @@ export async function requestToBuy(listing: ShopListing, note: string): Promise<
       buyer_id: buyerId,
       seller_id: listing.user_id,
       price_cents: listing.price_cents,
+      // Snapshot Laybell's 15% at order time, so a future fee change can't
+      // retroactively alter a deal's bookkeeping.
+      fee_cents: shopFeeCents(listing.price_cents),
       currency: listing.currency,
       note: note.trim() || null,
     })
@@ -282,6 +314,31 @@ export async function requestToBuy(listing: ShopListing, note: string): Promise<
 export async function setOrderStatus(orderId: string, status: 'delivered' | 'declined' | 'cancelled'): Promise<void> {
   const { error } = await supabase.from('shop_orders').update({ status }).eq('id', orderId);
   if (error) throw error;
+}
+
+/**
+ * Deliver an order AND tell the buyer over DM that their file is unlocked —
+ * closing the loop the same way the buy request opened it.
+ */
+export async function deliverOrder(order: ShopOrder, message: string): Promise<void> {
+  await setOrderStatus(order.id, 'delivered');
+  supabase
+    .from('messages')
+    .insert({ sender_id: order.seller_id, receiver_id: order.buyer_id, body: message })
+    .then(undefined, () => { /* best effort */ });
+}
+
+/** Requested buy orders waiting on the seller — drives the Orders tab badge. */
+export async function pendingSalesCount(): Promise<number> {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth?.user?.id;
+  if (!uid) return 0;
+  const { count } = await supabase
+    .from('shop_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('seller_id', uid)
+    .eq('status', 'requested');
+  return count ?? 0;
 }
 
 /** The caller's existing order on a listing (drives the listing CTA state). */

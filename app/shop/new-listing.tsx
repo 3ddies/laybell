@@ -12,7 +12,8 @@ import { RADIUS, SPACING, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import {
-  LISTING_CATEGORIES, createListing, fetchListing, updateListing,
+  LISTING_CATEGORIES, buyerTaxCents, createListing, fetchListing, formatPrice,
+  sellerEarningsCents, shopFeeCents, updateListing,
   uploadListingCover, uploadListingFile, uploadListingPreview,
   type ListingCategory, type ListingLicense,
 } from '../../lib/shop';
@@ -211,18 +212,43 @@ export default function NewListingScreen() {
             ))}
           </View>
           {license !== 'free' && (
-            <View style={styles.priceRow}>
-              <Text style={styles.priceSymbol}>$</Text>
-              <TextInput
-                style={[styles.input, styles.priceInput]}
-                placeholder="0.00"
-                placeholderTextColor={colors.textTertiary}
-                value={price}
-                onChangeText={setPrice}
-                keyboardType="decimal-pad"
-                maxLength={9}
-              />
-            </View>
+            <>
+              <View style={styles.priceRow}>
+                <Text style={styles.priceSymbol}>$</Text>
+                <TextInput
+                  style={[styles.input, styles.priceInput]}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textTertiary}
+                  value={price}
+                  onChangeText={setPrice}
+                  keyboardType="decimal-pad"
+                  maxLength={9}
+                />
+              </View>
+              {/* Poshmark-style earnings breakdown — live as the price is typed. */}
+              {priceCents > 0 && (
+                <View style={styles.earnCard}>
+                  <View style={styles.earnRow}>
+                    <Text style={styles.earnLabel}>{t('shop.earnPrice')}</Text>
+                    <Text style={styles.earnValue}>{formatPrice(priceCents)}</Text>
+                  </View>
+                  <View style={styles.earnRow}>
+                    <Text style={styles.earnLabel}>{t('shop.earnFee')}</Text>
+                    <Text style={styles.earnValue}>−{formatPrice(shopFeeCents(priceCents))}</Text>
+                  </View>
+                  <View style={styles.earnRow}>
+                    <Text style={styles.earnLabel}>{t('shop.earnTax')}</Text>
+                    <Text style={styles.earnValueMuted}>+{formatPrice(buyerTaxCents(priceCents))}</Text>
+                  </View>
+                  <View style={styles.earnDivider} />
+                  <View style={styles.earnRow}>
+                    <Text style={styles.earnTotalLabel}>{t('shop.earnYou')}</Text>
+                    <Text style={styles.earnTotalValue}>{formatPrice(sellerEarningsCents(priceCents))}</Text>
+                  </View>
+                  <Text style={styles.earnNote}>{t('shop.earnNote')}</Text>
+                </View>
+              )}
+            </>
           )}
 
           {/* Audio slots */}
@@ -259,6 +285,8 @@ export default function NewListingScreen() {
               <Text style={styles.greenBtnText}>{editId ? t('shop.saveListing') : t('shop.publish')}</Text>
             )}
           </TouchableOpacity>
+          {/* Rights attestation — publishing is the act of confirming ownership. */}
+          <Text style={styles.rightsNote}>{t('shop.rightsNote')}</Text>
         </ScrollView>
       </View>
     </SwipeBackPager>
@@ -290,6 +318,19 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   priceSymbol: { color: c.text, fontSize: 18, fontWeight: '800' },
   priceInput: { flex: 1 },
+  earnCard: {
+    backgroundColor: c.surface, borderRadius: RADIUS.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+    padding: 12, gap: 7,
+  },
+  earnRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  earnLabel: { color: c.textSecondary, fontSize: 13 },
+  earnValue: { color: c.text, fontSize: 13, fontWeight: '600' },
+  earnValueMuted: { color: c.textTertiary, fontSize: 13, fontWeight: '600' },
+  earnDivider: { height: StyleSheet.hairlineWidth, backgroundColor: c.border, marginVertical: 2 },
+  earnTotalLabel: { color: c.text, fontSize: 14, fontWeight: '800' },
+  earnTotalValue: { color: c.success, fontSize: 16, fontWeight: '800' },
+  earnNote: { color: c.textTertiary, fontSize: 11, lineHeight: 15, marginTop: 2 },
   fileRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: c.surface, borderRadius: RADIUS.md,
@@ -303,4 +344,5 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   },
   greenBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   error: { color: c.error, fontSize: 13, textAlign: 'center' },
+  rightsNote: { color: c.textTertiary, fontSize: 11, lineHeight: 15, textAlign: 'center', paddingHorizontal: 14 },
 });

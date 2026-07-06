@@ -141,7 +141,7 @@ export async function submitReport(postId: string, reason = 'other') {
 // The themed report sheet (contexts/ReportContext) registers its opener here, so
 // the imperative reportPost/reportUser callers (the 3-dot menu, the story viewer)
 // can stay unchanged while the UI is a real in-app sheet instead of an Alert.
-export type ReportRequest = { kind: 'post' | 'user' | 'conversation'; targetId: string; onClose?: () => void };
+export type ReportRequest = { kind: 'post' | 'user' | 'conversation' | 'listing'; targetId: string; onClose?: () => void };
 let reportHandler: ((req: ReportRequest) => void) | null = null;
 export function setReportHandler(fn: ((req: ReportRequest) => void) | null) { reportHandler = fn; }
 
@@ -163,6 +163,24 @@ export async function submitUserReport(userId: string, reason = 'other') {
   await supabase.from('user_reports').insert({
     reported_id: userId, reporter_id: user?.id ?? null, reason,
   });
+}
+
+// Records a shop-listing report (scams, stolen content, prohibited material).
+// Snapshots the seller so the report survives listing deletion. Silently no-ops
+// if shop_reports isn't migrated yet.
+export async function submitListingReport(listingId: string, reason = 'other') {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: l } = await supabase.from('shop_listings').select('user_id').eq('id', listingId).maybeSingle();
+  await supabase.from('shop_reports').insert({
+    listing_id: listingId, seller_id: (l as { user_id?: string } | null)?.user_id ?? null,
+    reporter_id: user?.id ?? null, reason,
+  });
+}
+
+// Report a shop listing through the themed report sheet (same UX as post/user).
+export function reportListing(listingId: string) {
+  if (reportHandler) { reportHandler({ kind: 'listing', targetId: listingId }); return; }
+  submitListingReport(listingId).catch(() => {});
 }
 
 // Records a group-conversation report. Silently no-ops if conversation_reports

@@ -357,6 +357,19 @@ export default function TabLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
+  // ── Swipe teleport guard ────────────────────────────────────────────────────
+  // A finger swipe moves the pager EXACTLY one page. Right after a login/account
+  // switch (the whole tree remounts, keyed by user id), the freshly re-created
+  // native pager sometimes reports a garbage page for the first gesture — the
+  // "swipe left on Home, land on Profile" glitch. Track the last settled index
+  // and whether a swipe gesture is in flight; if a swipe "commits" a jump of
+  // more than one page, redirect to the ADJACENT page in the swiped direction
+  // (where the finger was actually headed). Bar drags and tab taps navigate
+  // programmatically (no swipeStart), so multi-tab jumps from those stay exempt.
+  const swipingRef = useRef(false);
+  const lastSwipeEndAt = useRef(0);
+  const settledIndexRef = useRef<number | null>(null);
+
   return (
     <PagerContext.Provider value={swiping}>
      <TabSwipeContext.Provider value={setSwipeEnabled}>
@@ -371,14 +384,30 @@ export default function TabLayout() {
         // bottom is normally covered by the bar overlay, but when Listen mode fades
         // the bar away the pager's default (white) background would show through.
         screenOptions={{ swipeEnabled: swipeEnabled && !listenMode, sceneStyle: { paddingBottom: 68 + insets.bottom, backgroundColor: colors.background } }}
-        screenListeners={{
+        screenListeners={({ navigation }) => ({
           // Pause mid-swipe work (video autoplay, caption focus) until the page
           // settles. noteTabSwipe feeds the guardPress() tap suppressor — taps
           // are filtered at the press handlers, NEVER by blocking touches, so
           // rapid consecutive swipes always reach the pager.
-          swipeStart: () => { setSwiping(true); noteTabSwipe(true); Keyboard.dismiss(); },
-          swipeEnd: () => { setSwiping(false); noteTabSwipe(false); },
-        }}
+          swipeStart: () => { swipingRef.current = true; setSwiping(true); noteTabSwipe(true); Keyboard.dismiss(); },
+          swipeEnd: () => { swipingRef.current = false; lastSwipeEndAt.current = Date.now(); setSwiping(false); noteTabSwipe(false); },
+          state: (e) => {
+            const navState = (e as { data?: { state?: { index?: number; routeNames?: string[] } } }).data?.state;
+            const newIndex = navState?.index;
+            const names = navState?.routeNames;
+            if (typeof newIndex !== 'number' || !names) return;
+            const prev = settledIndexRef.current;
+            settledIndexRef.current = newIndex;
+            if (prev == null) return;
+            const delta = newIndex - prev;
+            const swipeDriven = swipingRef.current || Date.now() - lastSwipeEndAt.current < 600;
+            if (swipeDriven && Math.abs(delta) > 1) {
+              const intended = Math.max(0, Math.min(names.length - 1, prev + Math.sign(delta)));
+              settledIndexRef.current = intended;
+              navigation.navigate(names[intended]);
+            }
+          },
+        })}
       >
         {/* Live camera, page 0 (LEFT of Home) — swipe right off Home reveals it.
             CameraView stays mounted (active only when focused) so swiping never

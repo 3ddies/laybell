@@ -35,9 +35,10 @@ export const AD_FEED_GAP = 9;
 export const REEL_AD_FIRST = 2;
 export const REEL_AD_EVERY = 5;
 
-// Audio: first ad after 1 min of cumulative playlist listening, then every 6 min.
+// Audio: first ad after 1 min of cumulative APP-SESSION listening (any main-
+// player streaming, across songs and stops), then every 3 min 30 s after.
 export const AUDIO_AD_FIRST_MS = 60_000;
-export const AUDIO_AD_EVERY_MS = 360_000;
+export const AUDIO_AD_EVERY_MS = 210_000;
 
 // Reel ads become skippable after this much genuine ad playback.
 export const AD_SKIP_MS = 5_000;

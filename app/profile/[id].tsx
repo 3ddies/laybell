@@ -716,9 +716,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   pageHidden: { display: 'none' },
   pageContent: { paddingBottom: SPACING.xxl + 60 },
 
-  postsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  // 2px gutters between cells (gap needs pixel-sized items — thirds would overflow the row).
+  postsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   musicList: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: SPACING.sm },
-  gridItem: { width: '33.33%', aspectRatio: 1 },
+  gridItem: { width: (SCREEN_W - 4) / 3, aspectRatio: 1 },
   gridImage: { width: '100%', height: '100%' },
   gridPlaceholder: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', borderWidth: 0.5, borderColor: colors.border },
   gridPlayOverlay: {

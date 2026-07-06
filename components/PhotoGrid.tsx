@@ -47,6 +47,9 @@ type PhotoGridProps = {
   selectedIds?: string[];
   // Show the selection order (slideshow) instead of a plain check (single).
   numbered?: boolean;
+  // Videos only (e.g. the ad manager's video creative picker) — also hides the
+  // camera tile, which captures stills.
+  videosOnly?: boolean;
 };
 
 // Device camera-roll grid (Instagram-style) showing photos AND videos together.
@@ -55,7 +58,7 @@ type PhotoGridProps = {
 // items show a check (single) or an order number (slideshow), and tapping a
 // selected item removes it (onRemove).
 const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid(
-  { onPick, onRemove, onScroll, onScrollActive, selectedIds = [], numbered = false },
+  { onPick, onRemove, onScroll, onScrollActive, selectedIds = [], numbered = false, videosOnly = false },
   ref,
 ) {
   const { colors } = useTheme();
@@ -80,7 +83,9 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     setLoading(true);
     try {
       const page = await MediaLibrary.getAssetsAsync({
-        mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video],
+        mediaType: videosOnly
+          ? [MediaLibrary.MediaType.video]
+          : [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video],
         sortBy: [[MediaLibrary.SortBy.creationTime, false]],
         first: PAGE,
         after,
@@ -105,7 +110,7 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     }
     loadingRef.current = false;
     setLoading(false);
-  }, []);
+  }, [videosOnly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -162,7 +167,7 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     );
   }
 
-  const data: any[] = [{ id: '__camera__' }, ...assets];
+  const data: any[] = videosOnly ? [...assets] : [{ id: '__camera__' }, ...assets];
 
   return (
     <FlatList

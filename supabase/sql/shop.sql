@@ -93,6 +93,8 @@ create table if not exists public.shop_orders (
     check (status in ('requested', 'delivered', 'declined', 'cancelled')),
   -- Price snapshot at request time, so a later listing edit can't change a deal.
   price_cents int not null,
+  -- Laybell's 15% cut, snapshotted at order time (lib/shop.ts SHOP_FEE_RATE).
+  fee_cents int not null default 0,
   currency text not null default 'USD',
   note text,
   created_at timestamptz not null default now(),
@@ -194,3 +196,74 @@ create policy "Sellers manage deliverables" on storage.objects for delete
 
 -- 5) Realtime — full rows so deletes carry keys (order status live-updates).
 alter table public.shop_orders replica identity full;
+
+-- ── v2: seller economics (idempotent for DBs created before it) ──────────────
+-- Laybell fee snapshot per order (15%, lib/shop.ts SHOP_FEE_RATE).
+alter table public.shop_orders add column if not exists fee_cents int not null default 0;
+
+-- ── v3: trust & safety ────────────────────────────────────────────────────────
+-- The marketplace settles payment off-platform, so protection concentrates on:
+-- contract capacity (18+ sellers), documented consent (seller terms), abuse
+-- throttles (buy-request flooding), reportability (scams/IP theft), and sane
+-- content bounds. All idempotent.
+
+-- 1) Sellers must be adults. Minors' contracts are voidable and marketplaces
+--    that let minors sell carry real liability; buying stays open to all users
+--    (the app itself is 13+ with parental consent).
+drop policy if exists "Users can open their shop" on public.shops;
+create policy "Users can open their shop" on public.shops for insert
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid() and coalesce(p.age, 0) >= 18
+    )
+  );
+
+-- 2) Documented seller-terms acceptance (set by the app at shop creation).
+alter table public.shops add column if not exists accepted_terms_at timestamptz;
+
+-- 3) Listing reports — feeds the same manual-moderation queue as post/user
+--    reports. reason uses the app's shared report codes ('scam', 'ip', …).
+create table if not exists public.shop_reports (
+  id uuid primary key default gen_random_uuid(),
+  reporter_id uuid references auth.users(id) on delete set null,
+  listing_id uuid references public.shop_listings(id) on delete set null,
+  seller_id uuid references auth.users(id) on delete set null,
+  reason text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.shop_reports enable row level security;
+drop policy if exists "Users can report listings" on public.shop_reports;
+create policy "Users can report listings" on public.shop_reports for insert
+  with check (auth.uid() = reporter_id);
+-- No select policy: reports are read by moderators via the service role only.
+
+-- 4) Buy-request throttle: 20 requests per buyer per 24h. Blocks harassment
+--    floods and inventory-lockup attacks on exclusive listings.
+create or replace function public.shop_order_rate_limit()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare recent int;
+begin
+  select count(*) into recent from public.shop_orders
+    where buyer_id = new.buyer_id and created_at > now() - interval '24 hours';
+  if recent >= 20 then
+    raise exception 'rate_limited';
+  end if;
+  return new;
+end; $$;
+drop trigger if exists shop_orders_rate_limit on public.shop_orders;
+create trigger shop_orders_rate_limit before insert on public.shop_orders
+  for each row execute function public.shop_order_rate_limit();
+
+-- 5) Content bounds the client already enforces, now guaranteed server-side
+--    (deceptive mega-prices, unbounded text). $10,000 cap per digital listing.
+alter table public.shop_listings drop constraint if exists shop_listings_title_len;
+alter table public.shop_listings add constraint shop_listings_title_len
+  check (char_length(title) <= 120);
+alter table public.shop_listings drop constraint if exists shop_listings_desc_len;
+alter table public.shop_listings add constraint shop_listings_desc_len
+  check (description is null or char_length(description) <= 2000);
+alter table public.shop_listings drop constraint if exists shop_listings_price_cap;
+alter table public.shop_listings add constraint shop_listings_price_cap
+  check (price_cents <= 1000000);

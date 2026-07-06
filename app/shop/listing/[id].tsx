@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, ActivityIndicator, Linking,
+  View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, ActivityIndicator, Linking, RefreshControl, Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,7 +13,10 @@ import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../../../constant
 import { useTheme, useThemedStyles } from '../../../contexts/ThemeContext';
 import { useTranslation } from '../../../contexts/LanguageContext';
 import { useProfile } from '../../../contexts/ProfileContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePostMusic } from '../../../contexts/PostMusicContext';
+import { WEB_ORIGIN } from '../../../lib/appLinks';
+import { reportListing } from '../../../lib/postActions';
 import {
   fetchListing, formatPrice, getDeliverableUrl, myOrderForListing, requestToBuy,
   setOrderStatus, updateListing, type ShopListing, type ShopOrder,
@@ -34,14 +37,20 @@ export default function ListingScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { profile } = useProfile();
-  const { playSong, stop: stopSong } = usePostMusic();
+  const { playSong, stop: stopSong, activeId } = usePostMusic();
+  // Derived from the shared player, so the icon always matches what's audible.
+  const previewing = activeId === PREVIEW_HOST;
 
   const [listing, setListing] = useState<ShopListing | null>(null);
   const [order, setOrder] = useState<ShopOrder | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // One-time marketplace safety primer, shown before the FIRST buy request on
+  // this device (payments happen off-platform, so buyers must know the rules).
+  const [safetyOpen, setSafetyOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const isOwner = !!listing && listing.user_id === profile?.id;
 
@@ -55,27 +64,43 @@ export default function ListingScreen() {
     setLoading(false);
   }, [id]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => () => { stopSong(PREVIEW_HOST); }, [stopSong]);
+  // Stop the preview on unmount ONLY. stopSong's identity changes on every
+  // context re-render, so listing it as a dep re-ran this cleanup right after
+  // playSong updated the context — killing the preview the instant it started.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => { stopSong(PREVIEW_HOST); }, []);
 
   function togglePreview() {
     if (!listing?.preview_url) return;
-    if (previewing) {
-      stopSong(PREVIEW_HOST);
-      setPreviewing(false);
-    } else {
-      playSong(PREVIEW_HOST, listing.id, listing.preview_url);
-      setPreviewing(true);
-    }
+    if (previewing) stopSong(PREVIEW_HOST);
+    else playSong(PREVIEW_HOST, listing.id, listing.preview_url);
   }
+
+  const SAFETY_ACK_KEY = 'shop_safety_ack_v1';
 
   async function buy() {
     if (!listing || busy) return;
+    // First purchase request on this device → show the safety primer once.
+    const acked = await AsyncStorage.getItem(SAFETY_ACK_KEY).catch(() => null);
+    if (!acked) { setSafetyOpen(true); return; }
     setBusy(true);
+    setError(null);
     try {
       const o = await requestToBuy(listing, '');
       setOrder(o);
-    } catch { /* unique violation = already requested */ await load(); }
+    } catch (e) {
+      const msg = (e as Error)?.message ?? '';
+      if (msg.includes('rate_limited')) setError(t('shop.rateLimited'));
+      else await load(); // unique violation = already requested → resync
+    }
     setBusy(false);
+  }
+
+  async function ackSafetyAndBuy() {
+    setSafetyOpen(false);
+    // Persist the ack BEFORE re-entering buy(), which re-reads it.
+    await AsyncStorage.setItem(SAFETY_ACK_KEY, '1').catch(() => {});
+    buy();
   }
 
   async function cancelRequest() {
@@ -114,7 +139,23 @@ export default function ListingScreen() {
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>{listing?.title ?? t('shop.title')}</Text>
-          <View style={styles.headerBtn} />
+          {listing ? (
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={() =>
+                Share.share({
+                  message: `${t('shop.shareMsg', {
+                    title: listing.title,
+                    price: listing.price_cents <= 0 ? t('shop.free') : formatPrice(listing.price_cents, listing.currency),
+                  })}\n${WEB_ORIGIN}/open.html?p=shop/listing/${listing.id}`,
+                }).catch(() => {})
+              }
+            >
+              <Ionicons name="share-outline" size={21} color={colors.text} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.headerBtn} />
+          )}
         </View>
 
         {loading || !listing ? (
@@ -125,7 +166,16 @@ export default function ListingScreen() {
             </View>
           )
         ) : (
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView
+            contentContainerStyle={styles.content}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                tintColor={colors.textSecondary}
+                onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }}
+              />
+            }
+          >
             {/* Cover + preview play */}
             <TouchableOpacity activeOpacity={listing.preview_url ? 0.85 : 1} onPress={togglePreview}>
               <View style={styles.coverWrap}>
@@ -165,24 +215,27 @@ export default function ListingScreen() {
             )}
             {!!listing.description && <Text style={styles.description}>{listing.description}</Text>}
 
-            {/* Seller */}
+            {/* Seller — the row is the shop entrance ("View shop" → their shop
+                grid); ONLY the avatar circle opens the regular profile. */}
             <TouchableOpacity
               style={styles.sellerRow}
-              onPress={() => router.push(`/profile/${listing.user_id}`)}
+              onPress={() => router.push(`/shop/${listing.user_id}`)}
               activeOpacity={0.8}
             >
-              {listing.seller?.avatar_url ? (
-                <Image source={{ uri: listing.seller.avatar_url }} style={styles.sellerAvatar} />
-              ) : (
-                <LinearGradient colors={GRADIENTS.primary} style={styles.sellerAvatar}>
-                  <Text style={styles.sellerInitial}>{(sellerName || '?').charAt(0).toUpperCase()}</Text>
-                </LinearGradient>
-              )}
+              <TouchableOpacity onPress={() => router.push(`/profile/${listing.user_id}`)} hitSlop={4}>
+                {listing.seller?.avatar_url ? (
+                  <Image source={{ uri: listing.seller.avatar_url }} style={styles.sellerAvatar} />
+                ) : (
+                  <LinearGradient colors={GRADIENTS.primary} style={styles.sellerAvatar}>
+                    <Text style={styles.sellerInitial}>{(sellerName || '?').charAt(0).toUpperCase()}</Text>
+                  </LinearGradient>
+                )}
+              </TouchableOpacity>
               <View style={styles.flex}>
                 <Text style={styles.sellerName}>{sellerName}</Text>
                 <Text style={styles.sellerSub}>{t('shop.viewShop')}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+              <Ionicons name="storefront-outline" size={18} color={colors.textTertiary} />
             </TouchableOpacity>
 
             {/* CTAs */}
@@ -247,13 +300,30 @@ export default function ListingScreen() {
                   <Ionicons name="chatbubble-outline" size={17} color={colors.text} />
                   <Text style={styles.messageBtnText}>{t('shop.messageSeller')}</Text>
                 </TouchableOpacity>
+                {!!error && <Text style={styles.errorText}>{error}</Text>}
                 {order?.status === 'requested' && (
                   <Text style={styles.hint}>{t('shop.requestHint')}</Text>
                 )}
+                <TouchableOpacity style={styles.reportRow} onPress={() => reportListing(listing.id)} hitSlop={6}>
+                  <Ionicons name="flag-outline" size={13} color={colors.textTertiary} />
+                  <Text style={styles.reportText}>{t('shop.report')}</Text>
+                </TouchableOpacity>
               </View>
             )}
           </ScrollView>
         )}
+
+        {/* One-time buyer safety primer (payments settle off-platform). */}
+        <ConfirmDialog
+          visible={safetyOpen}
+          title={t('shop.safetyTitle')}
+          message={t('shop.safetyBody')}
+          confirmLabel={t('shop.safetyOk')}
+          cancelLabel={t('common.cancel')}
+          icon="shield-checkmark-outline"
+          onConfirm={ackSafetyAndBuy}
+          onCancel={() => setSafetyOpen(false)}
+        />
 
         <ConfirmDialog
           visible={confirmRemove}
@@ -320,6 +390,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   },
   messageBtnText: { color: c.text, fontSize: 14, fontWeight: '600' },
   hint: { color: c.textTertiary, fontSize: 12, textAlign: 'center', lineHeight: 17, paddingHorizontal: 10 },
+  errorText: { color: c.error, fontSize: 12.5, textAlign: 'center' },
+  reportRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 6 },
+  reportText: { color: c.textTertiary, fontSize: 12 },
   gone: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   goneText: { color: c.textTertiary, fontSize: 14 },
 });

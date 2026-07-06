@@ -812,9 +812,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   pageHidden: { display: 'none' },
   pageContent: { paddingBottom: SPACING.xxl + 80 },
 
-  postsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  // 2px gutters between cells (gap needs pixel-sized items — thirds would overflow the row).
+  postsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   musicList: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: SPACING.sm },
-  gridItem: { width: '33.33%', aspectRatio: 1, position: 'relative' },
+  gridItem: { width: (SCREEN_W - 4) / 3, aspectRatio: 1, position: 'relative' },
   gridImage: { width: '100%', height: '100%' },
   gridPlaceholder: {
     width: '100%', height: '100%',

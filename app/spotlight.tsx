@@ -16,6 +16,8 @@ import {
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
 import SwipeBackPager from '../components/SwipeBackPager';
+import ConfirmDialog from '../components/ConfirmDialog';
+import SpotlightLiveDialog from '../components/SpotlightLiveDialog';
 import { SPACING, RADIUS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { Skeleton, SkeletonLine, GridSkeleton } from '../components/Skeleton';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -71,6 +73,12 @@ export default function SpotlightScreen() {
   const [myPosts, setMyPosts] = useState<any[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
   const [attachingId, setAttachingId] = useState<string | null>(null);
+
+  // Themed dialogs (no stock system alerts in the main flow).
+  const [pickTarget, setPickTarget] = useState<any | null>(null); // post awaiting spotlight confirm
+  const [liveDuration, setLiveDuration] = useState<string | null>(null); // success dialog
+  const [cancelTarget, setCancelTarget] = useState<SpotlightCampaign | null>(null);
+  const [endTarget, setEndTarget] = useState<SpotlightCampaign | null>(null);
 
   const load = useCallback(async () => {
     setCampaigns(await fetchMyCampaigns());
@@ -190,71 +198,56 @@ export default function SpotlightScreen() {
 
   function handlePickPost(post: any) {
     if (!flowCampaign || !pkg || attachingId) return;
-    Alert.alert(
-      t('spotlight.confirmPickTitle'),
-      t('spotlight.confirmPickBody', { label: pkg.label }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('spotlight.confirmPickAction'),
-          onPress: async () => {
-            setAttachingId(post.id);
-            const ok = await activateCampaign(flowCampaign.id, post.id, pkg.days);
-            setAttachingId(null);
-            if (!ok) {
-              Alert.alert(t('spotlight.errorTitle'), t('spotlight.startFailedBody'));
-              return;
-            }
-            // Any parked "create a new post" handoff is stale now that the
-            // campaign went live through the grid.
-            clearPendingSpotlight();
-            setFlowOpen(false);
-            load();
-            Alert.alert(t('spotlight.liveTitle'), t('spotlight.liveBody', { duration: spotlightDurationPhrase(pkg.label) }));
-          },
-        },
-      ],
-    );
+    setPickTarget(post);
+  }
+
+  async function confirmPick() {
+    const post = pickTarget;
+    setPickTarget(null);
+    if (!flowCampaign || !pkg || !post || attachingId) return;
+    setAttachingId(post.id);
+    const ok = await activateCampaign(flowCampaign.id, post.id, pkg.days);
+    setAttachingId(null);
+    if (!ok) {
+      Alert.alert(t('spotlight.errorTitle'), t('spotlight.startFailedBody'));
+      return;
+    }
+    // Any parked "create a new post" handoff is stale now that the
+    // campaign went live through the grid.
+    clearPendingSpotlight();
+    setFlowOpen(false);
+    load();
+    // The celebratory themed dialog (renders at the screen root, which is
+    // visible again now that the flow modal is down).
+    setLiveDuration(spotlightDurationPhrase(pkg.label));
   }
 
   // ─── Campaign card actions ──────────────────────────────────────────────────
 
   function confirmCancelPending(c: SpotlightCampaign) {
-    Alert.alert(
-      t('spotlight.cancelTitle'),
-      t('spotlight.cancelBody'),
-      [
-        { text: t('spotlight.keepIt'), style: 'cancel' },
-        {
-          text: t('spotlight.cancelAction'),
-          style: 'destructive',
-          onPress: async () => {
-            const ok = await cancelPendingCampaign(c.id);
-            if (ok) load();
-            else Alert.alert(t('spotlight.errorTitle'), t('spotlight.cancelFailedBody'));
-          },
-        },
-      ],
-    );
+    setCancelTarget(c);
+  }
+
+  async function doCancelPending() {
+    const c = cancelTarget;
+    setCancelTarget(null);
+    if (!c) return;
+    const ok = await cancelPendingCampaign(c.id);
+    if (ok) load();
+    else Alert.alert(t('spotlight.errorTitle'), t('spotlight.cancelFailedBody'));
   }
 
   function confirmEndEarly(c: SpotlightCampaign) {
-    Alert.alert(
-      t('spotlight.endTitle'),
-      t('spotlight.endBody'),
-      [
-        { text: t('spotlight.keepRunning'), style: 'cancel' },
-        {
-          text: t('spotlight.endAction'),
-          style: 'destructive',
-          onPress: async () => {
-            const ok = await endCampaign(c.id);
-            if (ok) load();
-            else Alert.alert(t('spotlight.errorTitle'), t('spotlight.endFailedBody'));
-          },
-        },
-      ],
-    );
+    setEndTarget(c);
+  }
+
+  async function doEndEarly() {
+    const c = endTarget;
+    setEndTarget(null);
+    if (!c) return;
+    const ok = await endCampaign(c.id);
+    if (ok) load();
+    else Alert.alert(t('spotlight.errorTitle'), t('spotlight.endFailedBody'));
   }
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -602,8 +595,50 @@ export default function SpotlightScreen() {
               </ScrollView>
             )
           )}
+
+          {/* Themed spotlight-this-post confirmation (inside the flow modal so
+              it stacks above the grid). */}
+          <ConfirmDialog
+            visible={!!pickTarget}
+            title={t('spotlight.confirmPickTitle')}
+            message={pkg ? t('spotlight.confirmPickBody', { label: pkg.label }) : ''}
+            confirmLabel={t('spotlight.confirmPickAction')}
+            cancelLabel={t('common.cancel')}
+            icon="sparkles"
+            onConfirm={confirmPick}
+            onCancel={() => setPickTarget(null)}
+          />
         </View>
       </Modal>
+
+      {/* Themed campaign-card confirmations (screen level). */}
+      <ConfirmDialog
+        visible={!!cancelTarget}
+        title={t('spotlight.cancelTitle')}
+        message={t('spotlight.cancelBody')}
+        confirmLabel={t('spotlight.cancelAction')}
+        cancelLabel={t('spotlight.keepIt')}
+        destructive
+        onConfirm={doCancelPending}
+        onCancel={() => setCancelTarget(null)}
+      />
+      <ConfirmDialog
+        visible={!!endTarget}
+        title={t('spotlight.endTitle')}
+        message={t('spotlight.endBody')}
+        confirmLabel={t('spotlight.endAction')}
+        cancelLabel={t('spotlight.keepRunning')}
+        destructive
+        onConfirm={doEndEarly}
+        onCancel={() => setEndTarget(null)}
+      />
+
+      {/* The celebratory "you're live" moment — replaces the stock alert. */}
+      <SpotlightLiveDialog
+        visible={!!liveDuration}
+        duration={liveDuration ?? ''}
+        onClose={() => setLiveDuration(null)}
+      />
     </View>
     </SwipeBackPager>
   );

@@ -194,13 +194,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const badgeEligibleRef = useRef(false);
 
   // ── Audio-ad scheduler ──────────────────────────────────────────────────────
-  // Armed ONLY while a real playlist queue plays (playQueue). Accrues genuine
-  // forward listen ms across the queue session; fires the first ad at 1 min and
-  // every 6 min after. The ad plays on a SEPARATE sound so the music's stream/
-  // badge accounting is never touched; the music is paused (not unloaded) and
-  // resumes at the same spot when the ad ends/skips.
+  // The ad clock runs for the WHOLE APP SESSION and counts every genuine main-
+  // player listen ms — across songs, stops and re-picks (30s of song A + 30s of
+  // song B = 1 min accrued). Casual reel/post ambient audio never touches this
+  // context, so it never accrues; a post song only counts once it's promoted to
+  // the main player (the "actually streams it" rule). First ad due at 1 min per
+  // launch, then every 3 min 30 s. A due break fires at the NEXT song boundary
+  // (finish, skip, or picking a different song). The ad plays on a SEPARATE
+  // sound so the music's stream/badge accounting is never touched; the music is
+  // paused (not unloaded) and resumes at the same spot when the ad ends/skips.
   const [adState, setAdState] = useState<AudioAdState | null>(null);
-  const adArmedRef = useRef(false);
   const adListenMsRef = useRef(0);
   const adNextThresholdRef = useRef(AUDIO_AD_FIRST_MS);
   const adSoundRef = useRef<AudioPlayer | null>(null);
@@ -226,13 +229,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (!p) return;
     try { p.pause(); } catch {}
     setTimeout(() => { try { p.remove(); } catch {} }, 0);
-  }
-
-  function disarmAds() {
-    adArmedRef.current = false;
-    adListenMsRef.current = 0;
-    adNextThresholdRef.current = AUDIO_AD_FIRST_MS;
-    adDueRef.current = false;
   }
 
   // Resolve the viewer (demographics + taste) for ad targeting when a playlist
@@ -266,8 +262,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       adNextThresholdRef.current = adListenMsRef.current + AUDIO_AD_EVERY_MS;
       // If this break was scheduled BETWEEN songs (the track already finished and
       // is waiting on the ad), there's nothing to resume — proceed to the next
-      // track. Otherwise the music is still playing and just keeps going.
+      // track. If it was an ad-first song move (the fresh track is loaded but
+      // deliberately unstarted), start it now. Otherwise music is mid-play.
       if (pendingFinishRef.current) maybeRunDeferredFinish();
+      else if (soundRef.current) { try { soundRef.current.play(); setIsPlaying(true); } catch {} }
       return;
     }
     adMetaRef.current = ad;
@@ -404,14 +402,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     pendingFinishRef.current = false;
     saveProgress();
     flushBadgeMs();
-    // Tear down any in-flight audio ad and disarm scheduling.
+    // Tear down any in-flight audio ad. The session ad CLOCK deliberately
+    // survives a stop — exiting a song and picking another keeps accruing
+    // toward the same break (and keeps an already-due break due).
     adPlayingRef.current = false;
     adMetaRef.current = null;
     if (adWatchdogRef.current) { clearTimeout(adWatchdogRef.current); adWatchdogRef.current = null; }
     adStatusSubRef.current?.remove(); adStatusSubRef.current = null;
     releaseSound(adSoundRef.current); adSoundRef.current = null;
     setAdState(null);
-    disarmAds();
     playTokenRef.current++; // cancel any in-flight load
     statusSubRef.current?.remove(); statusSubRef.current = null;
     releaseSound(soundRef.current);
@@ -490,12 +489,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setHasMore(!!loadMore);
     setQueueLength(tracks.length);
     setQueueIndex(startIndex);
-    // Arm audio-ad scheduling for THIS playlist session (single-track taps go
-    // through play() with fromQueue=false and never arm).
-    adArmedRef.current = true;
-    adListenMsRef.current = 0;
-    adNextThresholdRef.current = AUDIO_AD_FIRST_MS;
-    armAdViewer();
+    // The session-wide ad clock keeps running — play() arms the viewer and
+    // handles any due break; a new playlist never resets accrued listening.
     await play(tracks[startIndex], true);
   }
 
@@ -524,7 +519,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   // Advance to a (now-valid) queue index, running a due ad between songs first.
   function advanceTo(ni: number) {
-    if (adDueRef.current && adArmedRef.current) { proceedToNextTrack(); return; }
+    if (adDueRef.current) { proceedToNextTrack(); return; }
     queueIndexRef.current = ni;
     setQueueIndex(ni);
     play(queueRef.current[ni], true, true);
@@ -587,7 +582,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setHasMore(false);
     setQueueLength(0);
     setQueueIndex(0);
-    disarmAds(); // the playlist is over — stop the ad clock
+    // The session ad clock keeps its accrual — the next listen continues it.
   }
 
   // The normal "track finished" outcome: advance to the next track in the queue
@@ -619,7 +614,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // mid-play. The ad runs on its own sound; finishAudioAd re-enters the deferred
   // path (pendingFinishRef) to advance once it ends. Otherwise advance/close now.
   function proceedToNextTrack() {
-    if (adDueRef.current && adArmedRef.current && !adPlayingRef.current) {
+    if (adDueRef.current && !adPlayingRef.current) {
       adDueRef.current = false;
       pendingFinishRef.current = true; // tells finishAudioAd to advance, not resume
       setIsPlaying(false);
@@ -709,7 +704,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       releaseSound(adSoundRef.current); adSoundRef.current = null;
       setAdState(null);
     }
-    if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; setQueueLength(0); setQueueIndex(0); disarmAds(); }
+    // Single-track taps clear the queue but never the session ad clock.
+    if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; setQueueLength(0); setQueueIndex(0); }
     // Tapping the already-playing track in a list toggles it off. Queue navigation
     // (next / previous / restart / advance) must always play its target — never
     // stop and close the player — so it passes suppressToggle to skip this.
@@ -735,6 +731,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsBuffering(true);
     emitPosition(0, 0);
     setVideoMuted(true); // a song is playing → mute feed video to avoid overlap
+
+    // Every main-player listen accrues toward ad breaks — resolve the ad viewer
+    // once per session, on the first real play.
+    if (!adViewerRef.current) armAdViewer();
 
     // Music-badge accounting: reset the per-song 10-min cap only when the SONG
     // changes (loops/replays of the same song keep sharing its budget). Eligibility
@@ -800,9 +800,23 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       if (token !== playTokenRef.current) return;
       const player = createAudioPlayer({ uri: playUri }, { updateInterval: 250 });
       soundRef.current = player;
+      const previousSongId = loadedIdRef.current;
       loadedIdRef.current = track.id;
       markInUse(track.id);  // protect this file from removal/eviction while it's loaded
-      player.play();
+
+      // A break is due and the user just MOVED to a different song (picked from
+      // a list, feed, shop preview promotion…): the ad plays FIRST. The fresh
+      // track is loaded but NEVER started — not even for a beat — and every
+      // fireAudioAd outcome (finish, skip, load failure, no inventory) starts
+      // it from 0:00. (Restarting the SAME song isn't a move; it stays ad-free.)
+      const adFirst = adDueRef.current && !adPlayingRef.current && previousSongId !== track.id;
+      if (adFirst) {
+        adDueRef.current = false;
+        setIsPlaying(false);
+        fireAudioAd();
+      } else {
+        player.play();
+      }
 
       statusSubRef.current = player.addListener('playbackStatusUpdate', (status: any) => {
         if (!status.isLoaded) return;
@@ -830,11 +844,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
               badgeMsRef.current += credit;
               if (badgeMsRef.current >= 15000) flushBadgeMs();
             }
-            // Audio-ad clock: only while a playlist is armed and no ad is mid-
-            // play. Crossing the threshold marks an ad DUE — it does NOT fire
-            // here (ads never interrupt a song mid-play). The track-finished
-            // path plays the due ad between songs.
-            if (adArmedRef.current && !adPlayingRef.current) {
+            // Audio-ad clock: EVERY genuine main-player listen ms counts,
+            // session-wide across songs and stops. Crossing the threshold marks
+            // an ad DUE — it does NOT fire here (ads never interrupt a song
+            // mid-play). The break plays at the next song boundary: finish,
+            // skip, or the user picking a different song.
+            if (!adPlayingRef.current) {
               adListenMsRef.current += delta;
               if (adListenMsRef.current >= adNextThresholdRef.current) adDueRef.current = true;
             }

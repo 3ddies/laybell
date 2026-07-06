@@ -76,6 +76,8 @@ export default function SellerShopScreen() {
               />
             }
             ListHeaderComponent={
+              // The whole bar opens the seller's profile (you're already in
+              // their shop, so there's no shop destination to guard here).
               <TouchableOpacity
                 style={styles.sellerRow}
                 onPress={() => router.push(`/profile/${userId}`)}
@@ -91,7 +93,13 @@ export default function SellerShopScreen() {
                 <View style={styles.flex}>
                   <Text style={styles.sellerName}>{name}</Text>
                   {!!shop?.bio && <Text style={styles.sellerBio} numberOfLines={2}>{shop.bio}</Text>}
+                  {listings.length > 0 && (
+                    <Text style={styles.sellerMeta}>
+                      {t('shop.shopMeta', { n: listings.length, m: listings.reduce((s, l) => s + l.sales_count, 0) })}
+                    </Text>
+                  )}
                 </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
             }
             renderItem={({ item }) => (
@@ -128,6 +136,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   avatarInitial: { color: '#fff', fontSize: 17, fontWeight: '700' },
   sellerName: { color: c.text, fontSize: 14, fontWeight: '700' },
   sellerBio: { color: c.textTertiary, fontSize: 12, marginTop: 2 },
+  sellerMeta: { color: c.textSecondary, fontSize: 11, fontWeight: '600', marginTop: 3 },
   empty: { alignItems: 'center', gap: 10, marginTop: 30 },
   emptyText: { color: c.textTertiary, fontSize: 13 },
 });

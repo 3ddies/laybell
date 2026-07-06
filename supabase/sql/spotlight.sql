@@ -62,8 +62,9 @@ create table if not exists public.ad_campaigns (
   id               uuid primary key default gen_random_uuid(),
   user_id          uuid not null references auth.users(id) on delete cascade,
   post_id          uuid references public.posts(id) on delete cascade,
-  package_key      text not null check (package_key in ('1d', '3d', '7d')),
-  duration_days    integer not null check (duration_days > 0),
+  package_key      text not null check (package_key in ('12h', '1d', '3d', '7d')),
+  -- numeric: the 12-hour package stores 0.5 days.
+  duration_days    numeric(4, 2) not null check (duration_days > 0),
   price_cents      integer not null check (price_cents >= 0),
   weight           integer not null default 1 check (weight between 1 and 10),
   status           text not null default 'pending'
@@ -275,3 +276,12 @@ end;
 $$;
 
 grant execute on function public.record_ad_tap(uuid, text) to authenticated;
+
+-- ── v2 packages (idempotent migration for DBs created before it) ─────────────
+-- 12 Hours $5.99 (4h guaranteed placement) · 1 Day $10.99 (8h) ·
+-- 3 Days $24.99 (24h) · 7 Days $49.99 (36h). The placement window per weight
+-- lives in lib/spotlight.ts rampHoursFor (weights 1–4).
+alter table public.ad_campaigns drop constraint if exists ad_campaigns_package_key_check;
+alter table public.ad_campaigns add constraint ad_campaigns_package_key_check
+  check (package_key in ('12h', '1d', '3d', '7d'));
+alter table public.ad_campaigns alter column duration_days type numeric(4, 2);
