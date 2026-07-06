@@ -39,7 +39,11 @@ let anchorNext = true;
 let suppressed = false;
 
 const HIDE_DISTANCE = 210;
-const REVEAL_VELOCITY = 1100; // px/s of upward motion that arms the reveal
+// Deliberately HIGH bar: the condensed chips are a clean resting state with no
+// urgency to leave, so bringing the bar back takes an intentional hard flick
+// (casual and even brisk up-scrolls stay full-bleed). Nearing the top of the
+// feed, tapping Home, or changing tabs always restores it regardless.
+const REVEAL_VELOCITY = 1800; // px/s of upward motion that arms the reveal
 const EASE = Easing.out(Easing.cubic);
 let revealArmed = false;
 let botGliding = false;
