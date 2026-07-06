@@ -3,6 +3,7 @@ import {
 } from 'react-native';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import AppVideo from './AppVideo';
+import { feedDragEnd, feedDragStart, settleFeedChrome, trackFeedScroll } from '../lib/feedChrome';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -69,7 +70,7 @@ function mediaHeight(post: GridPost): number {
   return COL_W; // pictures render 1:1
 }
 
-export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, songClusters, onClusterSongPlay, currentUserId, onPostDeleted, header, emptyText }: {
+export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, songClusters, onClusterSongPlay, currentUserId, onPostDeleted, header, emptyText, trackChrome, bottomPad }: {
   posts: GridPost[]; refreshing?: boolean; onRefresh?: () => void; songTiles?: boolean;
   // Pre-built genre clusters (title + songs) replacing the generic
   // "Trending Songs" stacks in the All view; plays report back for the
@@ -80,6 +81,12 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   // Override the empty-state line (defaults to the genre wording); callers like
   // the community grid pass their own so it doesn't duplicate a header message.
   emptyText?: string;
+  // Explore TAB only: drive the reactive bottom-bar chrome from this grid's
+  // scroll (other hosts — Saved, communities — must NOT touch the chrome).
+  trackChrome?: boolean;
+  // Extra bottom clearance when the host screen escapes the pager's bar
+  // padding so content extends under the (condensable) tab bar.
+  bottomPad?: number;
 }) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -476,9 +483,16 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     <ScrollView
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
-      contentContainerStyle={styles.scroll}
+      contentContainerStyle={[styles.scroll, bottomPad ? { paddingBottom: bottomPad } : null]}
       scrollEventThrottle={16}
-      onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; recomputeActive(); }}
+      onScroll={e => {
+        scrollY.current = e.nativeEvent.contentOffset.y;
+        recomputeActive();
+        if (trackChrome) trackFeedScroll(e.nativeEvent.contentOffset.y);
+      }}
+      onScrollBeginDrag={trackChrome ? feedDragStart : undefined}
+      onScrollEndDrag={trackChrome ? feedDragEnd : undefined}
+      onMomentumScrollEnd={trackChrome ? settleFeedChrome : undefined}
       onLayout={e => { viewportH.current = e.nativeEvent.layout.height; recomputeActive(); }}
       refreshControl={
         onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined

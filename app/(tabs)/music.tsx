@@ -3,6 +3,8 @@ import {
   Alert, TextInput, Modal, Image, Dimensions, RefreshControl, Keyboard,
   KeyboardAvoidingView, Platform, TouchableWithoutFeedback, PanResponder, Animated, Easing,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { chromeScrollProps } from '../../lib/feedChrome';
 import { useNavigation } from '@react-navigation/native';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
@@ -102,6 +104,10 @@ type Track = {
 export default function MusicScreen() {
   const { show: showOptions } = usePostOptions();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  // Content extends under the (condensable) tab bar — clearance each vertical
+  // list adds so its last row still clears the full bar.
+  const barClear = 68 + insets.bottom + 24;
   const { listenMode, setListenMode } = useListenMode();
   // Ref mirror for the dwell-swipe responder (created once) — Listen mode must
   // also seal ITS edge fall-throughs to other app pages, not just the pager's.
@@ -1067,7 +1073,7 @@ export default function MusicScreen() {
           keyExtractor={item => item.id}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          contentContainerStyle={styles.searchListContent}
+          contentContainerStyle={[styles.searchListContent, { paddingBottom: barClear }]}
           ListHeaderComponent={
             searchProfiles.length > 0 ? (
               <View style={styles.searchProfiles}>
@@ -1169,6 +1175,7 @@ export default function MusicScreen() {
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.discoverContent}
+            {...chromeScrollProps}
             refreshControl={
               <RefreshControl
                 refreshing={discoverRefreshing}
@@ -1483,7 +1490,8 @@ export default function MusicScreen() {
         <FlatList
           data={playlists.filter(p => !p.is_public)}
           keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: barClear }]}
+          {...chromeScrollProps}
           ListHeaderComponent={
             playlists.some(p => p.is_public) ? (
               <View>
@@ -1615,7 +1623,7 @@ export default function MusicScreen() {
             <FlatList
               data={tracks}
               keyExtractor={item => item.post_id}
-              contentContainerStyle={styles.listContent}
+              contentContainerStyle={[styles.listContent, { paddingBottom: barClear }]}
               ListEmptyComponent={renderEmpty(
                 'add-circle-outline',
                 t('music.emptyTracksTitle'),
@@ -1661,7 +1669,8 @@ export default function MusicScreen() {
           data={savedTracks}
           keyExtractor={item => item.id}
           style={styles.list}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: barClear }]}
+          {...chromeScrollProps}
           ListHeaderComponent={<Text style={styles.sectionTitle}>{t('music.yourSavedSongs')}</Text>}
           refreshControl={
             <RefreshControl
@@ -1720,7 +1729,8 @@ export default function MusicScreen() {
           data={likedTracks}
           keyExtractor={item => item.post_id}
           style={styles.list}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: barClear }]}
+          {...chromeScrollProps}
           ListHeaderComponent={<Text style={styles.sectionTitle}>{t('music.yourLikedSongs')}</Text>}
           refreshControl={
             <RefreshControl
@@ -1814,7 +1824,7 @@ export default function MusicScreen() {
             <FlatList
               data={tracks}
               keyExtractor={item => item.post_id}
-              contentContainerStyle={styles.listContent}
+              contentContainerStyle={[styles.listContent, { paddingBottom: barClear }]}
               ListEmptyComponent={renderEmpty(
                 'musical-notes-outline',
                 t('music.emptyTracksTitle'),
@@ -1952,7 +1962,9 @@ export default function MusicScreen() {
 
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  // Absolute-fill (same trick as Home/Explore): escapes the pager's bar-height
+  // scene padding so content extends under the condensable tab bar.
+  container: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.background },
   loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 
   header: {

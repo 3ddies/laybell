@@ -31,6 +31,8 @@ import {
   sortRailByAffinity, EMPTY_PROFILE, type UserAffinityProfile,
 } from '../../lib/feedScorer';
 import { GridSkeleton, ListRowsSkeleton } from '../../components/Skeleton';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { chromeScrollProps } from '../../lib/feedChrome';
 
 // Genre clusters for the All grid: 4-song stacks titled by genre, cached per
 // user. Refreshes every 24h — or every 3h when the user is actively consuming
@@ -62,6 +64,10 @@ type Profile = {
 };
 
 export default function ExploreScreen() {
+  const insets = useSafeAreaInsets();
+  // Content extends under the (condensable) tab bar — this is the clearance
+  // each vertical list adds so its last row still clears the full bar.
+  const barClear = 68 + insets.bottom + 24;
   const { show: showOptions } = usePostOptions();
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -581,7 +587,8 @@ export default function ExploreScreen() {
             keyExtractor={item => item.id}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { paddingBottom: barClear }]}
+            {...chromeScrollProps}
             ListEmptyComponent={<Text style={styles.emptyText}>{t('explore.noAccountsFound')}</Text>}
             renderItem={({ item }) => renderAccount(item, false)}
           />
@@ -598,7 +605,8 @@ export default function ExploreScreen() {
           keyExtractor={item => item.id}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: barClear }]}
+          {...chromeScrollProps}
           ListHeaderComponent={
             searchTab === 'relevancy' && profiles.length > 0 ? (
               <View style={styles.accountsHeader}>
@@ -723,6 +731,8 @@ export default function ExploreScreen() {
           onClusterSongPlay={noteClusterPlay}
           currentUserId={currentUserId}
           header={selectedGenre === 'All' ? <SuggestedAccounts currentUserId={currentUserId} /> : undefined}
+          trackChrome
+          bottomPad={barClear}
           onPostDeleted={(id) => {
             setTrendingPosts(prev => prev.filter(p => p.id !== id));
             setPosts(prev => prev.filter(p => p.id !== id));
@@ -735,7 +745,9 @@ export default function ExploreScreen() {
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  // Absolute-fill (same trick as Home/story-camera): escapes the pager's
+  // bar-height scene padding so the grid extends under the condensable bar.
+  container: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.background },
   contentWrap: { flex: 1 },
   // Fills the search-results area so taps on empty space (not a result) exit search.
   searchResultsWrap: { flex: 1 },

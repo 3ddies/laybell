@@ -28,6 +28,10 @@ feedChromeTop.addListener(({ value }) => { topValue = value; });
 let lastY = 0;
 let lastT = 0;
 let dragging = false;
+// Re-anchor on each new drag: different scrollables (Home feed, Explore grid,
+// Music lists) share this tracker, so the first frame of a new gesture must
+// only record its position — never compute a delta against another list's.
+let anchorNext = true;
 
 const HIDE_DISTANCE = 210;
 const REVEAL_VELOCITY = 1100; // px/s of upward motion that arms the reveal
@@ -62,6 +66,7 @@ function scheduleSettle() {
 /** Feed onScrollBeginDrag. */
 export function feedDragStart(): void {
   dragging = true;
+  anchorNext = true;
   if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
 }
 
@@ -76,6 +81,7 @@ export function feedDragEnd(): void {
 /** Feed onScroll. */
 export function trackFeedScroll(y: number): void {
   const now = Date.now();
+  if (anchorNext) { anchorNext = false; lastY = y; lastT = now; return; }
   const dt = Math.min(100, Math.max(1, now - lastT));
   lastT = now;
   const dy = y - lastY;
@@ -131,3 +137,13 @@ export function setFeedChromeHidden(next: boolean): void {
 export function isFeedChromeHidden(): boolean {
   return botValue > 0.5;
 }
+
+// Spreadable handler bundle for any vertical scrollable that should drive the
+// reactive chrome (Home feed, Explore grid, Music lists).
+export const chromeScrollProps = {
+  onScroll: (e: { nativeEvent: { contentOffset: { y: number } } }) => trackFeedScroll(e.nativeEvent.contentOffset.y),
+  onScrollBeginDrag: feedDragStart,
+  onScrollEndDrag: feedDragEnd,
+  onMomentumScrollEnd: settleFeedChrome,
+  scrollEventThrottle: 16,
+} as const;
