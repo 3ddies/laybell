@@ -1,4 +1,4 @@
-import { Animated } from 'react-native';
+import { Animated, Easing } from 'react-native';
 
 // Instagram-style reactive chrome for the Home feed, with per-bar reveal rules
 // (owner-tuned):
@@ -25,8 +25,10 @@ let lastY = 0;
 let lastT = 0;
 let dragging = false;
 
-const HIDE_DISTANCE = 140;
-const SHOW_DISTANCE = 70;
+// Longer travel = calmer, more speed-proportional morphs: a lazy scroll eases
+// the chrome over more distance; only a genuinely fast scroll moves it fast.
+const HIDE_DISTANCE = 210;
+const SHOW_DISTANCE = 120;
 
 // Upward speed (px/s) that arms revealing. Slow drifts never reveal.
 const REVEAL_VELOCITY = 1100;
@@ -92,15 +94,18 @@ export function trackFeedScroll(y: number): void {
 export function settleFeedChrome(): void {
   if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
   revealArmed = false;
+  // Gentle glide to the edge — no spring snap; a decelerating ease reads as
+  // the chrome coasting to rest rather than being yanked.
+  const settleEase = Easing.out(Easing.cubic);
   if (botValue !== 0 && botValue !== 1) {
     const to = botValue > 0.5 ? 1 : 0;
     botValue = to;
-    Animated.timing(feedChrome, { toValue: to, duration: 140, useNativeDriver: true }).start();
+    Animated.timing(feedChrome, { toValue: to, duration: 320, easing: settleEase, useNativeDriver: true }).start();
   }
   if (topValue !== 0 && topValue !== 1) {
     const to = topValue > 0.5 ? 1 : 0;
     topValue = to;
-    Animated.timing(feedChromeTop, { toValue: to, duration: 140, useNativeDriver: true }).start();
+    Animated.timing(feedChromeTop, { toValue: to, duration: 320, easing: settleEase, useNativeDriver: true }).start();
   }
 }
 
@@ -108,13 +113,14 @@ export function settleFeedChrome(): void {
 export function setFeedChromeHidden(next: boolean): void {
   const to = next ? 1 : 0;
   revealArmed = false;
+  const ease = Easing.out(Easing.cubic);
   if (botValue !== to) {
     botValue = to;
-    Animated.timing(feedChrome, { toValue: to, duration: 200, useNativeDriver: true }).start();
+    Animated.timing(feedChrome, { toValue: to, duration: 300, easing: ease, useNativeDriver: true }).start();
   }
   if (topValue !== to) {
     topValue = to;
-    Animated.timing(feedChromeTop, { toValue: to, duration: 200, useNativeDriver: true }).start();
+    Animated.timing(feedChromeTop, { toValue: to, duration: 300, easing: ease, useNativeDriver: true }).start();
   }
 }
 

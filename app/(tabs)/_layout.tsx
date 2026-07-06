@@ -213,6 +213,10 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   // into one uniform material). The fade front-loads slightly (done by ~85%
   // of the gesture) so the bar feels present the moment you call it back.
   const panelFade = feedChrome.interpolate({ inputRange: [0, 0.85, 1], outputRange: [1, 0.06, 0], extrapolate: 'clamp' });
+  // The panel also SINKS as it fades — the gradient's solid base recedes below
+  // the screen edge like a tide going out, so the transition reads as motion,
+  // never as a shaped box dissolving in place.
+  const panelSink = feedChrome.interpolate({ inputRange: [0, 1], outputRange: [0, 46], extrapolate: 'clamp' });
   const chip = feedChrome.interpolate({ inputRange: [0.25, 1], outputRange: [0, 1], extrapolate: 'clamp' });
   // As the bar condenses, the icon row DROPS toward the bottom edge of the
   // screen (riding the same gesture-following value), so the chips settle low
@@ -368,7 +372,7 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
           top border — the gradient dissolving into the feed IS the edge. It
           still fades out as the bar condenses into chips and back on return;
           icons never move with scroll, only the glass breathes. */}
-      <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: panelFade }]}>
+      <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: panelFade, transform: [{ translateY: panelSink }] }]}>
         {Platform.OS === 'ios' && <BlurView tint={blurTint} intensity={40} style={styles.blurFill} />}
         <LinearGradient colors={scrimColors} locations={[0, 0.28, 0.55, 0.8, 1]} style={styles.blurFill} />
       </Animated.View>
