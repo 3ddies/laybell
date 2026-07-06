@@ -4,31 +4,34 @@ import type { Feature } from '../lib/features';
 
 // The cycling song-card title, used by the bottom mini player AND the full
 // Spotify-style player. Two behaviors:
-//  • Anything that overflows the card (a long title OR a long feature list)
-//    MARQUEES: scrolls left, pauses, snaps back — like other music apps.
-//  • Songs >= 20s WITH features flip between the title and the collaborator
-//    credits every 10s (position-driven, so a partial last interval naturally
-//    holds to the song's end). Tapping a credited name (even mid-scroll) opens
-//    that artist's profile.
-// `centered` (full player) centres content that fits; the bottom bar left-aligns.
+//  • A title (or feature list) that FITS shows on one line, centred on the full
+//    player / left-aligned on the bar.
+//  • One that OVERFLOWS marquees: scrolls left through the whole name, pauses,
+//    snaps back — like other music apps. Feature names stay tappable while
+//    scrolling.
+//  • Songs >= 20s WITH features flip between the title and the credits every
+//    10s (position-driven, so a partial last interval holds to the song's end).
+//
+// The marquee measures the content's TRUE single-line width in an unconstrained
+// off-screen pass, then sizes the visible row to exactly that — otherwise the
+// text wraps/truncates inside the bounded card and never overflows to scroll.
 
 const CYCLE_MS = 10_000;
 const MIN_DURATION_MS = 20_000;
+const MEASURE_W = 2000; // wider than any real title so the measurer never wraps
 
-// Marquees any row content when it overflows its box. Measures the content
-// (an inner row) vs the clip; only animates past a small threshold.
 function Marquee({ centered, children }: { centered?: boolean; children: ReactNode }) {
   const [boxW, setBoxW] = useState(0);
   const [contentW, setContentW] = useState(0);
   const x = useRef(new Animated.Value(0)).current;
   const overflow = Math.max(0, contentW - boxW);
-  const fits = overflow <= 4;
+  const fits = boxW > 0 && overflow <= 2;
 
   useEffect(() => {
     x.stopAnimation();
     x.setValue(0);
-    if (fits) return;
-    const dist = overflow + 6;
+    if (boxW <= 0 || overflow <= 2) return;
+    const dist = overflow + 8;
     const dur = dist * 42; // ~42ms/px — an unhurried read
     const loop = Animated.loop(Animated.sequence([
       Animated.delay(1400),
@@ -38,17 +41,23 @@ function Marquee({ centered, children }: { centered?: boolean; children: ReactNo
     ]));
     loop.start();
     return () => loop.stop();
-  }, [overflow, fits, x]);
+  }, [overflow, boxW, x]);
 
   return (
     <View
       style={[styles.clip, centered && fits && styles.clipCentered]}
       onLayout={(e) => setBoxW(e.nativeEvent.layout.width)}
     >
-      <Animated.View
-        style={[styles.row, { transform: [{ translateX: x }] }]}
-        onLayout={(e) => setContentW(e.nativeEvent.layout.width)}
-      >
+      {/* Off-screen measurer with unbounded width → children never wrap, so the
+          inner row reports the true single-line content width. */}
+      <View style={styles.measurer} pointerEvents="none">
+        <View style={styles.measureInner} onLayout={(e) => setContentW(e.nativeEvent.layout.width)}>
+          {children}
+        </View>
+      </View>
+      {/* Visible content, sized to its true width so it lays out on one line and
+          overflows the clip (scrolled by translateX). */}
+      <Animated.View style={[styles.row, contentW ? { width: contentW } : null, { transform: [{ translateX: x }] }]}>
         {children}
       </Animated.View>
     </View>
@@ -82,10 +91,12 @@ export default function SongCardTitle({
 
   const fStyle = featStyle ?? titleStyle;
 
+  // A fresh Marquee instance per side (keyed) so measurement re-runs cleanly on
+  // the flip and on song changes.
   return (
     <Animated.View style={{ opacity: fade }}>
       {showFeatures ? (
-        <Marquee centered={centered}>
+        <Marquee key={'f:' + features.map((f) => f.id).join(',')} centered={centered}>
           <Text style={[fStyle, styles.featLabel]}>feat. </Text>
           {features.map((f, i) => (
             <TouchableOpacity key={f.id} onPress={() => onOpenProfile(f.id)} hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}>
@@ -96,8 +107,8 @@ export default function SongCardTitle({
           ))}
         </Marquee>
       ) : (
-        <Marquee centered={centered}>
-          <Text style={[titleStyle, styles.noShrink]}>{title}</Text>
+        <Marquee key={'t:' + title} centered={centered}>
+          <Text style={titleStyle}>{title}</Text>
         </Marquee>
       )}
     </Animated.View>
@@ -107,10 +118,9 @@ export default function SongCardTitle({
 const styles = StyleSheet.create({
   clip: { overflow: 'hidden', flexDirection: 'row' },
   clipCentered: { justifyContent: 'center' },
-  // The scrolling content is a single inline row sized to its content (never
-  // shrinks), so it can exceed the clip and be marqueed.
-  row: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
-  noShrink: { flexShrink: 0 },
-  featLabel: { opacity: 0.7, flexShrink: 0 },
-  featName: { fontWeight: '700', textDecorationLine: 'underline', flexShrink: 0 },
+  measurer: { position: 'absolute', left: 0, top: 0, opacity: 0, width: MEASURE_W },
+  measureInner: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center' },
+  featLabel: { opacity: 0.7 },
+  featName: { fontWeight: '700', textDecorationLine: 'underline' },
 });
