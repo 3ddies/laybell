@@ -1,45 +1,58 @@
 import { Animated, Easing } from 'react-native';
 
-// Instagram-style reactive chrome for the Home feed, with per-bar reveal rules
+// Instagram-style reactive chrome for the Home feed, with per-bar rules
 // (owner-tuned):
 //
-//   HIDING (both bars): follows any downward scroll 1:1, speed-agnostic.
-//   BOTTOM BAR reveal:  upward motion past REVEAL_VELOCITY — finger down or
-//                       momentum, doesn't matter — then follows the gesture.
-//   TOP BAR reveal:     ONLY on a flick-and-release. While the finger is on
-//                       the screen the header stays tucked no matter how fast
-//                       the drag is; it comes back during the momentum phase
-//                       (after release) of a fast upward flick.
+//   HIDING (both bars): FOLLOWS any downward scroll 1:1 over ~210px —
+//     speed-agnostic, the morph is literally your gesture.
+//   REVEALING: gated on upward speed. Crossing REVEAL_VELOCITY doesn't start
+//     delta-following (at fling speeds that completed in a few frames and
+//     read as a POP) — it triggers ONE smooth decelerating glide to shown,
+//     the same easing family as the settle, so up feels as fluid as down.
+//     • bottom bar: glides as soon as the gesture arms, finger down or not.
+//     • top bar:    glides only after release (flick-and-release).
 //
 // Two native-driver values (0 = shown, 1 = hidden): `feedChrome` drives the
-// tab bar, `feedChromeTop` drives the header. They hide together and settle
-// independently to their nearest edge when scrolling rests.
+// tab bar + music bar, `feedChromeTop` drives the header. Mirrors stay true
+// through glides via value listeners.
 
-export const feedChrome = new Animated.Value(0);     // bottom tab bar
+export const feedChrome = new Animated.Value(0);     // bottom tab bar (+ mini player)
 export const feedChromeTop = new Animated.Value(0);  // Home header
 
-// Mirrors (Animated.Value has no sync read).
 let botValue = 0;
 let topValue = 0;
+// Keep the JS mirrors accurate even while timing animations drive the values.
+feedChrome.addListener(({ value }) => { botValue = value; });
+feedChromeTop.addListener(({ value }) => { topValue = value; });
+
 let lastY = 0;
 let lastT = 0;
 let dragging = false;
 
-// Longer travel = calmer, more speed-proportional morphs: a lazy scroll eases
-// the chrome over more distance; only a genuinely fast scroll moves it fast.
 const HIDE_DISTANCE = 210;
-const SHOW_DISTANCE = 120;
-
-// Upward speed (px/s) that arms revealing. Slow drifts never reveal.
-const REVEAL_VELOCITY = 1100;
+const REVEAL_VELOCITY = 1100; // px/s of upward motion that arms the reveal
+const EASE = Easing.out(Easing.cubic);
 let revealArmed = false;
+let botGliding = false;
+let topGliding = false;
 
-function setBot(v: number) { if (v !== botValue) { botValue = v; feedChrome.setValue(v); } }
-function setTop(v: number) { if (v !== topValue) { topValue = v; feedChromeTop.setValue(v); } }
+function glideIn(av: Animated.Value, which: 'bot' | 'top') {
+  const current = which === 'bot' ? botValue : topValue;
+  const gliding = which === 'bot' ? botGliding : topGliding;
+  if (gliding || current === 0) return;
+  if (which === 'bot') botGliding = true; else topGliding = true;
+  Animated.timing(av, { toValue: 0, duration: 380, easing: EASE, useNativeDriver: true }).start(() => {
+    if (which === 'bot') botGliding = false; else topGliding = false;
+  });
+}
+
+function stopGlides() {
+  if (botGliding) { feedChrome.stopAnimation(); botGliding = false; }
+  if (topGliding) { feedChromeTop.stopAnimation(); topGliding = false; }
+}
 
 // Settle fallback: momentum frames keep refreshing this timer; if the feed
-// goes quiet (drag ended with no fling, or momentum died without the end
-// event), the chrome still snaps to its nearest edges.
+// goes quiet the chrome still eases to its nearest edges.
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleSettle() {
   if (settleTimer) clearTimeout(settleTimer);
@@ -55,10 +68,12 @@ export function feedDragStart(): void {
 /** Feed onScrollEndDrag — momentum may still follow. */
 export function feedDragEnd(): void {
   dragging = false;
+  // A gesture that armed the reveal while dragging releases the header now.
+  if (revealArmed) glideIn(feedChromeTop, 'top');
   scheduleSettle();
 }
 
-/** Feed onScroll: the chrome follows the scroll delta proportionally. */
+/** Feed onScroll. */
 export function trackFeedScroll(y: number): void {
   const now = Date.now();
   const dt = Math.min(100, Math.max(1, now - lastT));
@@ -66,46 +81,37 @@ export function trackFeedScroll(y: number): void {
   const dy = y - lastY;
   lastY = y;
   if (!dragging) scheduleSettle();
-  // Near the top there's nothing to reclaim — always fully shown.
+  // Near the top there's nothing to reclaim — glide fully shown.
   if (y < 60) {
     revealArmed = false;
-    setBot(0);
-    setTop(0);
+    glideIn(feedChrome, 'bot');
+    glideIn(feedChromeTop, 'top');
     return;
   }
   if (dy > 0) {
-    // Downward: both bars follow into hiding; any in-flight reveal disarms.
+    // Downward: cancel any in-flight reveal and FOLLOW into hiding.
     revealArmed = false;
-    const next = Math.min(1, botValue + dy / HIDE_DISTANCE);
-    setBot(next);
-    setTop(Math.min(1, topValue + dy / HIDE_DISTANCE));
+    stopGlides();
+    feedChrome.setValue(Math.min(1, botValue + dy / HIDE_DISTANCE));
+    feedChromeTop.setValue(Math.min(1, topValue + dy / HIDE_DISTANCE));
   } else if (dy < 0) {
     const upVelocity = (-dy / dt) * 1000; // px per second
     if (!revealArmed && upVelocity >= REVEAL_VELOCITY) revealArmed = true;
     if (!revealArmed) return; // slow drift up → everything stays put
-    // Bottom bar: follows the armed gesture, finger down or not.
-    setBot(Math.max(0, botValue + dy / SHOW_DISTANCE));
-    // Top bar: flick-and-RELEASE only — follows solely during momentum.
-    if (!dragging) setTop(Math.max(0, topValue + dy / SHOW_DISTANCE));
+    glideIn(feedChrome, 'bot');
+    if (!dragging) glideIn(feedChromeTop, 'top');
   }
 }
 
-/** Scroll came to rest — settle each bar to its own nearest edge. */
+/** Scroll came to rest — ease each bar to its own nearest edge. */
 export function settleFeedChrome(): void {
   if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
   revealArmed = false;
-  // Gentle glide to the edge — no spring snap; a decelerating ease reads as
-  // the chrome coasting to rest rather than being yanked.
-  const settleEase = Easing.out(Easing.cubic);
-  if (botValue !== 0 && botValue !== 1) {
-    const to = botValue > 0.5 ? 1 : 0;
-    botValue = to;
-    Animated.timing(feedChrome, { toValue: to, duration: 320, easing: settleEase, useNativeDriver: true }).start();
+  if (!botGliding && botValue !== 0 && botValue !== 1) {
+    Animated.timing(feedChrome, { toValue: botValue > 0.5 ? 1 : 0, duration: 320, easing: EASE, useNativeDriver: true }).start();
   }
-  if (topValue !== 0 && topValue !== 1) {
-    const to = topValue > 0.5 ? 1 : 0;
-    topValue = to;
-    Animated.timing(feedChromeTop, { toValue: to, duration: 320, easing: settleEase, useNativeDriver: true }).start();
+  if (!topGliding && topValue !== 0 && topValue !== 1) {
+    Animated.timing(feedChromeTop, { toValue: topValue > 0.5 ? 1 : 0, duration: 320, easing: EASE, useNativeDriver: true }).start();
   }
 }
 
@@ -113,14 +119,12 @@ export function settleFeedChrome(): void {
 export function setFeedChromeHidden(next: boolean): void {
   const to = next ? 1 : 0;
   revealArmed = false;
-  const ease = Easing.out(Easing.cubic);
+  stopGlides();
   if (botValue !== to) {
-    botValue = to;
-    Animated.timing(feedChrome, { toValue: to, duration: 300, easing: ease, useNativeDriver: true }).start();
+    Animated.timing(feedChrome, { toValue: to, duration: 300, easing: EASE, useNativeDriver: true }).start();
   }
   if (topValue !== to) {
-    topValue = to;
-    Animated.timing(feedChromeTop, { toValue: to, duration: 300, easing: ease, useNativeDriver: true }).start();
+    Animated.timing(feedChromeTop, { toValue: to, duration: 300, easing: EASE, useNativeDriver: true }).start();
   }
 }
 
