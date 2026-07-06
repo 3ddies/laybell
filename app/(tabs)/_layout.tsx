@@ -54,7 +54,7 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
 // animated rather than just stateful. `r` is the slot's index in the FULL route
 // list (so it lines up with `position`, which counts the hidden camera as 0).
 function TabSlot({
-  route, r, hover, dragging, position, profile, colors, styles, postCircleColor,
+  route, r, hover, dragging, position, profile, colors, styles, postCircleColor, chip, chipBg,
 }: {
   route: MaterialTopTabBarProps['state']['routes'][number];
   r: number;
@@ -66,6 +66,10 @@ function TabSlot({
   styles: ReturnType<typeof makeStyles>;
   // A disc tone slightly darker than the frosted bar (theme-derived in TabBar).
   postCircleColor: string;
+  // Reactive chrome (0 = full bar, 1 = condensed): each slot grows a floating
+  // circular chip behind its icon as the bar's frosted panel dissolves.
+  chip: Animated.AnimatedInterpolation<number>;
+  chipBg: string;
 }) {
   // "Active-ness" of this slot, 0→1, from two sources:
   //  • near  — pager proximity (1 when centred on this tab), so it glides while
@@ -108,6 +112,7 @@ function TabSlot({
     return (
       <View style={styles.tabItem}>
         <Animated.View style={{ transform: [{ translateY: lift }, { scale }] }}>
+          <Animated.View pointerEvents="none" style={[styles.chip, { opacity: chip, backgroundColor: chipBg }]} />
           <View style={styles.avatarRing}>
             {profile?.avatar_url ? (
               <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
@@ -131,6 +136,7 @@ function TabSlot({
   return (
     <View style={styles.tabItem}>
       <Animated.View style={[styles.iconWrap, { transform: [{ translateY: lift }, { scale }] }]}>
+        <Animated.View pointerEvents="none" style={[styles.chip, { opacity: chip, backgroundColor: chipBg }]} />
         <Animated.View style={{ opacity: outlineOpacity }}>
           <Ionicons name={icon[1]} size={26} color={colors.textTertiary} />
         </Animated.View>
@@ -179,12 +185,18 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   }, [listenMode, listenFade]);
   const listenDrift = listenFade.interpolate({ inputRange: [0, 1], outputRange: [24, 0] });
 
-  // Reactive chrome: the Home feed's down-scroll slides the bar off the bottom
-  // (in lockstep with the header sliding up); up-scroll brings it back.
-  const chromeShift = feedChrome.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 68 + insets.bottom + 6],
-  });
+  // Reactive chrome: instead of sliding away, the bar CONDENSES — the frosted
+  // panel, wash and top hairline dissolve while a floating circular chip grows
+  // behind each icon, leaving five glassy buttons hovering over the feed. A
+  // slight downward drift sells the "detach" moment. Everything rides the same
+  // gesture-following value, so a slow scroll morphs it gradually and a fling
+  // snaps it — and the icons stay exactly where your thumb knows them.
+  const panelFade = feedChrome.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const chip = feedChrome.interpolate({ inputRange: [0.25, 1], outputRange: [0, 1], extrapolate: 'clamp' });
+  const chromeDrift = feedChrome.interpolate({ inputRange: [0, 1], outputRange: [0, 10] });
+  // Chip fill: a translucent wash of the theme background so content reads
+  // through the gaps but icons stay legible on top of anything.
+  const chipBg = isLight ? 'rgba(242,241,237,0.82)' : mode === 'grey' ? 'rgba(22,21,20,0.72)' : 'rgba(9,9,9,0.66)';
 
   // The swipe-land haptic now fires NATIVELY from react-native-pager-view (see
   // patches/react-native-pager-view+*.patch) at the pager's own commit moment —
@@ -321,15 +333,20 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   return (
     <Animated.View
       pointerEvents={listenMode ? 'none' : 'auto'}
-      style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: listenFade, transform: [{ translateX }, { translateY: listenDrift }, { translateY: chromeShift }] }]}
+      style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: listenFade, transform: [{ translateX }, { translateY: listenDrift }, { translateY: chromeDrift }] }]}
     >
       {/* Native iOS chrome-material blur fills the bar (behind the row). The bar
           stays overflow-visible so the center button can lift above the top edge.
-          Android can't render system materials, so it gets a tint wash instead. */}
-      <BlurView tint={blurTint} intensity={100} style={styles.blurFill} />
-      {Platform.OS === 'android' && (
-        <View pointerEvents="none" style={[styles.blurFill, { backgroundColor: androidWash }]} />
-      )}
+          Android can't render system materials, so it gets a tint wash instead.
+          The whole frosted panel (blur + wash + hairline) fades out as the bar
+          condenses into per-icon chips. */}
+      <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: panelFade }]}>
+        <BlurView tint={blurTint} intensity={100} style={styles.blurFill} />
+        {Platform.OS === 'android' && (
+          <View style={[styles.blurFill, { backgroundColor: androidWash }]} />
+        )}
+        <View style={styles.topHairline} />
+      </Animated.View>
       <Animated.View
         style={styles.row}
         onLayout={(e) => { barWRef.current = e.nativeEvent.layout.width; }}
@@ -347,6 +364,8 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
             colors={colors}
             styles={styles}
             postCircleColor={postCircleColor}
+            chip={chip}
+            chipBg={chipBg}
           />
         ))}
       </Animated.View>
@@ -447,11 +466,28 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     // Flat, full-width, like a native iOS tab bar: the frosted BlurView child IS
     // the background (transparent here), with just a hairline top separator — no
     // rounded corners, no drop shadow. Stays overflow-visible for the center btn.
+    // The hairline lives INSIDE the fading panel wrapper (topHairline) so it
+    // dissolves with the frosted glass when the bar condenses into chips.
     backgroundColor: 'transparent',
-    borderTopColor: c.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 6,
     overflow: 'visible',
+  },
+  topHairline: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: c.border,
+  },
+  // Condensed-mode chip: a glassy bordered circle that grows behind each icon
+  // as the bar panel dissolves (46px around the 32px icon footprint).
+  chip: {
+    position: 'absolute',
+    top: -7, left: -7,
+    width: 46, height: 46,
+    borderRadius: 23,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    ...SHADOWS.sm,
   },
   barOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   // The blur fills the whole bar, flush to the screen edges (square corners).
