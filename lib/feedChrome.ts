@@ -1,44 +1,59 @@
 import { Animated } from 'react-native';
 
-// Instagram/Twitter-style reactive chrome for the Home feed: scrolling DOWN
-// tucks the header up and the bottom bar down (more room for content);
-// scrolling UP — or landing near the top — brings both back instantly.
+// Instagram/Twitter-style reactive chrome for the Home feed. The chrome value
+// FOLLOWS the scroll 1:1 (0 = fully shown, 1 = fully hidden): a slow drag
+// tucks the header/bar away gradually under your finger, a fast fling sweeps
+// them off instantly — speed comes from the gesture, not a canned animation.
+// When the scroll settles, the chrome snaps to whichever edge it's nearest.
 //
-// One shared native-driver Animated.Value (0 = chrome shown, 1 = hidden):
-// the Home header and the tab bar both interpolate their own translate off it,
-// so the two move in lockstep from a single timing animation.
+// One shared native-driver Animated.Value: the Home header and the tab bar
+// both interpolate their own translate off it, so they move in lockstep.
 
 export const feedChrome = new Animated.Value(0);
 
-let hidden = false;
-
-export function setFeedChromeHidden(next: boolean): void {
-  if (next === hidden) return;
-  hidden = next;
-  Animated.timing(feedChrome, {
-    toValue: next ? 1 : 0,
-    duration: 240,
-    useNativeDriver: true,
-  }).start();
-}
-
-export function isFeedChromeHidden(): boolean {
-  return hidden;
-}
-
-// Scroll-delta tracker: call from the feed's onScroll. Direction changes reset
-// the accumulator so a long slow scroll can't get "stuck"; small thresholds
-// make the reveal feel eager (Instagram hides lazily, reveals eagerly).
+// Mirror of the animated value (Animated.Value has no sync read).
+let value = 0;
 let lastY = 0;
-let accum = 0;
 
+// Scroll distance that fully hides/reveals the chrome. Revealing is ~2×
+// as eager as hiding (IG feel: hide lazily, come back the moment you look up).
+const HIDE_DISTANCE = 140;
+const SHOW_DISTANCE = 70;
+
+/** Feed onScroll: the chrome follows the scroll delta proportionally. */
 export function trackFeedScroll(y: number): void {
   const dy = y - lastY;
   lastY = y;
-  // Near the top the chrome is ALWAYS shown (nothing to reclaim up there).
-  if (y < 60) { accum = 0; setFeedChromeHidden(false); return; }
-  if (Math.sign(dy) !== Math.sign(accum)) accum = 0;
-  accum += dy;
-  if (accum > 24) setFeedChromeHidden(true);
-  else if (accum < -12) setFeedChromeHidden(false);
+  // Near the top there's nothing to reclaim — always fully shown.
+  if (y < 60) {
+    if (value !== 0) { value = 0; feedChrome.setValue(0); }
+    return;
+  }
+  // Ignore bounce/overscroll artifacts (huge negative jumps from scrollToOffset
+  // are fine — they reveal, which is always safe).
+  const next = Math.max(0, Math.min(1, value + dy / (dy > 0 ? HIDE_DISTANCE : SHOW_DISTANCE)));
+  if (next !== value) {
+    value = next;
+    feedChrome.setValue(next);
+  }
+}
+
+/** Scroll came to rest — settle the chrome to the nearest edge. */
+export function settleFeedChrome(): void {
+  if (value === 0 || value === 1) return;
+  const to = value > 0.5 ? 1 : 0;
+  value = to;
+  Animated.timing(feedChrome, { toValue: to, duration: 140, useNativeDriver: true }).start();
+}
+
+/** Programmatic show/hide (tab changes, tap-to-top, swipes). */
+export function setFeedChromeHidden(next: boolean): void {
+  const to = next ? 1 : 0;
+  if (value === to) return;
+  value = to;
+  Animated.timing(feedChrome, { toValue: to, duration: 200, useNativeDriver: true }).start();
+}
+
+export function isFeedChromeHidden(): boolean {
+  return value > 0.5;
 }

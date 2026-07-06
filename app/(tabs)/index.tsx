@@ -6,7 +6,8 @@ import AppVideo from '../../components/AppVideo';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
-import { feedChrome, setFeedChromeHidden, trackFeedScroll } from '../../lib/feedChrome';
+import { feedChrome, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, Image,
@@ -505,6 +506,7 @@ export default function HomeScreen() {
   // sets how far it slides away when the reactive chrome hides.
   const [headerH, setHeaderH] = useState(0);
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
 
   // Tapping the Home tab while ALREADY on Home scrolls the feed back to the
   // top (Instagram behavior) and brings the reactive chrome back.
@@ -1130,10 +1132,13 @@ export default function HomeScreen() {
         renderItem={renderPost}
         ListHeaderComponent={FeedHeader}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.feedContent, { paddingTop: headerH }]}
-        // Drives the reactive chrome: down-scroll tucks header + tab bar away,
-        // up-scroll (or nearing the top) brings them back.
+        contentContainerStyle={[styles.feedContent, { paddingTop: headerH, paddingBottom: 68 + insets.bottom + SPACING.xxl + 60 }]}
+        // Drives the reactive chrome: the header/bar FOLLOW the scroll delta
+        // (slow drag = gradual tuck, fast fling = instant), settling to the
+        // nearest edge when the scroll comes to rest.
         onScroll={(e) => trackFeedScroll(e.nativeEvent.contentOffset.y)}
+        onScrollEndDrag={settleFeedChrome}
+        onMomentumScrollEnd={settleFeedChrome}
         scrollEventThrottle={16}
         removeClippedSubviews
         windowSize={5}
@@ -1208,7 +1213,11 @@ export default function HomeScreen() {
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  // Absolute-fill (same trick as the story camera): escapes the pager's
+  // bar-height scene padding so the feed truly extends under the tab bar —
+  // when the reactive chrome hides the bar, CONTENT shows there, not a
+  // background strip. The list pads its own bottom to clear the bar instead.
+  container: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.background },
   loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 
   header: {
