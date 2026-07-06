@@ -140,6 +140,11 @@ function TabSlot({
         <Animated.View style={{ opacity: outlineOpacity }}>
           <Ionicons name={icon[1]} size={26} color={colors.textTertiary} />
         </Animated.View>
+        {/* Condensed mode brightens inactive outlines to full text color so
+            they pop against the feed (opacity = chip × inactive-ness). */}
+        <Animated.View style={[styles.iconOverlay, { opacity: Animated.multiply(chip, outlineOpacity) }]}>
+          <Ionicons name={icon[1]} size={26} color={colors.text} />
+        </Animated.View>
         <Animated.View style={[styles.iconOverlay, { opacity: fillOpacity }]}>
           <Ionicons name={icon[0]} size={26} color={colors.text} />
         </Animated.View>
@@ -193,10 +198,15 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   // snaps it — and the icons stay exactly where your thumb knows them.
   const panelFade = feedChrome.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const chip = feedChrome.interpolate({ inputRange: [0.25, 1], outputRange: [0, 1], extrapolate: 'clamp' });
-  const chromeDrift = feedChrome.interpolate({ inputRange: [0, 1], outputRange: [0, 10] });
-  // Chip fill: a translucent wash of the theme background so content reads
-  // through the gaps but icons stay legible on top of anything.
-  const chipBg = isLight ? 'rgba(242,241,237,0.82)' : mode === 'grey' ? 'rgba(22,21,20,0.72)' : 'rgba(9,9,9,0.66)';
+  // The panel returns EDGES-FIRST: two half-panels pinned to the outer edges
+  // scale inward toward the middle (and melt center-first when condensing).
+  // translate+scale together keep each half's outer edge glued in place.
+  const panelLeftShift = feedChrome.interpolate({ inputRange: [0, 1], outputRange: [0, -SCREEN_W / 4] });
+  const panelRightShift = feedChrome.interpolate({ inputRange: [0, 1], outputRange: [0, SCREEN_W / 4] });
+  // Chip fill: a near-solid wash of the theme background — content peeks
+  // through the GAPS between chips, not through the chips themselves, so the
+  // icons pop instead of blending into the feed.
+  const chipBg = isLight ? 'rgba(242,241,237,0.94)' : mode === 'grey' ? 'rgba(22,21,20,0.92)' : 'rgba(9,9,9,0.9)';
 
   // The swipe-land haptic now fires NATIVELY from react-native-pager-view (see
   // patches/react-native-pager-view+*.patch) at the pager's own commit moment —
@@ -333,18 +343,29 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   return (
     <Animated.View
       pointerEvents={listenMode ? 'none' : 'auto'}
-      style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: listenFade, transform: [{ translateX }, { translateY: listenDrift }, { translateY: chromeDrift }] }]}
+      style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: listenFade, transform: [{ translateX }, { translateY: listenDrift }] }]}
     >
       {/* Native iOS chrome-material blur fills the bar (behind the row). The bar
           stays overflow-visible so the center button can lift above the top edge.
           Android can't render system materials, so it gets a tint wash instead.
-          The whole frosted panel (blur + wash + hairline) fades out as the bar
-          condenses into per-icon chips. */}
-      <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: panelFade }]}>
+          The frosted panel is SPLIT into two edge-pinned halves: condensing
+          melts it from the middle outward, and the bar returns by sweeping back
+          in from the edges to the middle. Icons never move with scroll — only
+          the glass does. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.panelHalf, styles.panelLeft, { opacity: panelFade, transform: [{ translateX: panelLeftShift }, { scaleX: panelFade }] }]}
+      >
         <BlurView tint={blurTint} intensity={100} style={styles.blurFill} />
-        {Platform.OS === 'android' && (
-          <View style={[styles.blurFill, { backgroundColor: androidWash }]} />
-        )}
+        {Platform.OS === 'android' && <View style={[styles.blurFill, { backgroundColor: androidWash }]} />}
+        <View style={styles.topHairline} />
+      </Animated.View>
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.panelHalf, styles.panelRight, { opacity: panelFade, transform: [{ translateX: panelRightShift }, { scaleX: panelFade }] }]}
+      >
+        <BlurView tint={blurTint} intensity={100} style={styles.blurFill} />
+        {Platform.OS === 'android' && <View style={[styles.blurFill, { backgroundColor: androidWash }]} />}
         <View style={styles.topHairline} />
       </Animated.View>
       <Animated.View
@@ -478,6 +499,11 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: c.border,
   },
+  // The frosted panel's two edge-pinned halves (see TabBar) — each carries its
+  // own blur/wash/hairline so the sweep reads as one continuous surface.
+  panelHalf: { position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden' },
+  panelLeft: { left: 0 },
+  panelRight: { right: 0 },
   // Condensed-mode chip: a glassy bordered circle that grows behind each icon
   // as the bar panel dissolves (46px around the 32px icon footprint).
   chip: {
