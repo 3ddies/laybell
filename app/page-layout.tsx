@@ -270,7 +270,9 @@ export default function PageLayoutScreen() {
                 style={[styles.tplCard, active && styles.tplCardActive, !unlock.unlocked && styles.tplCardLocked]}
               >
                 <View style={[styles.tplIcon, active && { backgroundColor: colors.primary }]}>
-                  <Ionicons name={(unlock.unlocked ? meta.icon : 'lock-closed') as any} size={20} color={active ? '#fff' : unlock.unlocked ? colors.primary : colors.textTertiary} />
+                  {unlock.unlocked
+                    ? <TemplatePreview template={tpl} active={active} colors={colors} />
+                    : <Ionicons name="lock-closed" size={20} color={colors.textTertiary} />}
                 </View>
                 <View style={{ flex: 1 }}>
                   <View style={styles.tplTitleRow}>
@@ -348,6 +350,54 @@ export default function PageLayoutScreen() {
     </View>
   );
 }
+
+// A tiny schematic PREVIEW of each template's shape, drawn from mini blocks so
+// users see the layout before selecting it — Big Picture = big hero + 2 stacked
+// squares; Media Star = hero + 2 song bars; Big Bell = a mix.
+function TemplatePreview({ template, active, colors }: { template: LayoutTemplate; active: boolean; colors: ThemePalette }) {
+  const solid = active ? '#fff' : colors.primary;
+  const faint = active ? 'rgba(255,255,255,0.5)' : colors.primary + '66';
+  if (template === 'big_picture') {
+    return (
+      <View style={pv.wrap}>
+        <View style={[pv.hero, { backgroundColor: solid }]} />
+        <View style={pv.col}>
+          <View style={[pv.small, { backgroundColor: faint }]} />
+          <View style={[pv.small, { backgroundColor: faint }]} />
+        </View>
+      </View>
+    );
+  }
+  if (template === 'media_star') {
+    return (
+      <View style={pv.wrap}>
+        <View style={[pv.hero, { backgroundColor: solid }]} />
+        <View style={pv.col}>
+          <View style={[pv.bar, { backgroundColor: faint }]} />
+          <View style={[pv.bar, { backgroundColor: faint }]} />
+        </View>
+      </View>
+    );
+  }
+  // big_bell — a hero + one square + one bar to signal "mix".
+  return (
+    <View style={pv.wrap}>
+      <View style={[pv.heroSm, { backgroundColor: solid }]} />
+      <View style={pv.col}>
+        <View style={[pv.small, { backgroundColor: faint }]} />
+        <View style={[pv.bar, { backgroundColor: faint }]} />
+      </View>
+    </View>
+  );
+}
+const pv = StyleSheet.create({
+  wrap: { width: 40, height: 34, flexDirection: 'row', gap: 3, alignItems: 'center' },
+  hero: { width: 22, height: 22, borderRadius: 3 },
+  heroSm: { width: 18, height: 22, borderRadius: 3 },
+  col: { flex: 1, gap: 3, justifyContent: 'center' },
+  small: { width: '100%', height: 9.5, borderRadius: 2 },
+  bar: { width: '100%', height: 6, borderRadius: 2 },
+});
 
 function Counts({ icon, n, label, colors }: { icon: string; n: number; label: string; colors: ThemePalette }) {
   return (

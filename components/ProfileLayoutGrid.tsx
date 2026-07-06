@@ -324,7 +324,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // ── Media Star cluster ──
   starRow: { flexDirection: 'row', width: '100%', height: STAR_VISUAL, position: 'relative' },
-  starVisual: { width: STAR_VISUAL, height: STAR_VISUAL, position: 'relative' },
+  // The highlighted hero gets a prominent accent frame so it reads as the
+  // centerpiece of the cluster (owner: "more border around highlighted content").
+  starVisual: {
+    width: STAR_VISUAL, height: STAR_VISUAL, position: 'relative',
+    borderWidth: 2.5, borderColor: colors.primary, borderRadius: RADIUS.md, overflow: 'hidden',
+  },
   starRight: { flex: 1, padding: 6, gap: 6, justifyContent: 'center' },
   starSong: { flex: 1 },
   songRow: {
@@ -341,7 +346,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // ── Big Picture block ──
   bigRow: { flexDirection: 'row', width: '100%', height: CELL * 2, position: 'relative' },
-  bigHero: { width: CELL * 2, height: CELL * 2, position: 'relative' },
+  // Highlighted hero gets the same prominent accent frame as Media Star.
+  bigHero: {
+    width: CELL * 2, height: CELL * 2, position: 'relative',
+    borderWidth: 2.5, borderColor: colors.primary, borderRadius: RADIUS.md, overflow: 'hidden',
+  },
   bigRight: { width: CELL },
   bigCell: { width: CELL, height: CELL, position: 'relative' },
 });

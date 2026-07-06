@@ -1,10 +1,41 @@
-import React from 'react';
-import { TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { TouchableOpacity, View, Animated, Easing, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { emblemGradient, badgeRim, badgeGlow, displayedTier, type Tier, type ProfileBadgeFields } from '../lib/badges';
 import { useProfile } from '../contexts/ProfileContext';
+
+// A specular sheen that sweeps diagonally across the DIAMOND emblem on a loop
+// (the "diamond shine" — the one tier that earns a live animation). Clipped to
+// the circle by the emblem's overflow:hidden. Native-driven, pauses between
+// sweeps so it reads as an occasional glint, not a strobe.
+function DiamondShine({ size }: { size: number }) {
+  const x = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(x, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.delay(1900),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [x]);
+  const translateX = x.interpolate({ inputRange: [0, 1], outputRange: [-size * 1.1, size * 1.1] });
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: size / 2, overflow: 'hidden' }]}>
+      <Animated.View style={{ position: 'absolute', top: -size * 0.6, bottom: -size * 0.6, width: size * 0.55, transform: [{ translateX }, { rotate: '22deg' }] }}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.9)', 'rgba(255,255,255,0)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={{ flex: 1 }}
+        />
+      </Animated.View>
+    </View>
+  );
+}
 
 // The circular badge "emblem" shown next to a username app-wide (Instagram
 // verified-check style), tinted by the user's overall badge tier with a subtle
@@ -45,13 +76,14 @@ function BadgeEmblem({ profile, tier, ownerId, size = 14, style }: Props) {
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={[
-        { width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center' },
+        { width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
         badgeRim(t),
         badgeGlow(t),
         style,
       ]}
     >
       <Ionicons name="checkmark-sharp" size={Math.round(size * 0.66)} color={checkColor(t)} />
+      {t === 'diamond' && <DiamondShine size={size} />}
     </LinearGradient>
   );
 
