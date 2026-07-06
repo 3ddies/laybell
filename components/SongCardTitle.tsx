@@ -18,7 +18,11 @@ import type { Feature } from '../lib/features';
 
 const CYCLE_MS = 10_000;
 const MIN_DURATION_MS = 20_000;
-const MEASURE_W = 2000; // wider than any real title so the measurer never wraps
+// Must comfortably exceed the widest a max-length title/feature-list can be at
+// the largest card font — otherwise the measurer wraps and the scroll can't
+// reveal the whole name. The composer caps titles at 80 chars (~1200px at the
+// full-player font), so 4000 leaves a wide margin (and covers long credit rows).
+const MEASURE_W = 4000;
 
 function Marquee({ centered, children }: { centered?: boolean; children: ReactNode }) {
   const [boxW, setBoxW] = useState(0);

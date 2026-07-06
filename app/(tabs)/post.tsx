@@ -1173,7 +1173,10 @@ export default function PostScreen() {
               value={caption}
               onChangeText={setCaption}
               multiline={postType !== 'audio'}
-              maxLength={postType === 'audio' ? 100 : 500}
+              // Cap the title where the song-card marquee can still reveal it
+              // in full (see MEASURE_W in SongCardTitle) — longer would scroll
+              // past what the measurer covers and get cut off.
+              maxLength={postType === 'audio' ? 80 : 500}
               editable={!swiping}
             />
             <MentionSuggestions
