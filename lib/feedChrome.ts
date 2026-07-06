@@ -14,32 +14,52 @@ export const feedChrome = new Animated.Value(0);
 // Mirror of the animated value (Animated.Value has no sync read).
 let value = 0;
 let lastY = 0;
+let lastT = 0;
 
-// Scroll distance that fully hides/reveals the chrome. Revealing is ~2×
-// as eager as hiding (IG feel: hide lazily, come back the moment you look up).
+// Scroll distance that fully hides/reveals the chrome once motion counts.
 const HIDE_DISTANCE = 140;
 const SHOW_DISTANCE = 70;
 
+// Instagram's reveal rule: a SLOW upward scroll (drifting back to re-read)
+// keeps the chrome hidden — only crossing this upward speed (px/s) arms the
+// reveal. Once armed, the chrome follows the finger for the REST of that
+// gesture even if it slows, so it never stutters mid-reveal. Scrolling down
+// again or the scroll settling disarms it.
+const REVEAL_VELOCITY = 650;
+let revealArmed = false;
+
 /** Feed onScroll: the chrome follows the scroll delta proportionally. */
 export function trackFeedScroll(y: number): void {
+  const now = Date.now();
+  const dt = Math.min(100, Math.max(1, now - lastT));
+  lastT = now;
   const dy = y - lastY;
   lastY = y;
   // Near the top there's nothing to reclaim — always fully shown.
   if (y < 60) {
+    revealArmed = false;
     if (value !== 0) { value = 0; feedChrome.setValue(0); }
     return;
   }
-  // Ignore bounce/overscroll artifacts (huge negative jumps from scrollToOffset
-  // are fine — they reveal, which is always safe).
-  const next = Math.max(0, Math.min(1, value + dy / (dy > 0 ? HIDE_DISTANCE : SHOW_DISTANCE)));
-  if (next !== value) {
-    value = next;
-    feedChrome.setValue(next);
+  if (dy > 0) {
+    // Downward: always follows (hiding is speed-agnostic), and disarms any
+    // in-flight reveal.
+    revealArmed = false;
+    const next = Math.min(1, value + dy / HIDE_DISTANCE);
+    if (next !== value) { value = next; feedChrome.setValue(next); }
+  } else if (dy < 0) {
+    // Upward: gated on speed — arm only past the velocity threshold.
+    const upVelocity = (-dy / dt) * 1000; // px per second
+    if (!revealArmed && upVelocity >= REVEAL_VELOCITY) revealArmed = true;
+    if (!revealArmed) return; // slow drift up → chrome stays where it is
+    const next = Math.max(0, value + dy / SHOW_DISTANCE);
+    if (next !== value) { value = next; feedChrome.setValue(next); }
   }
 }
 
 /** Scroll came to rest — settle the chrome to the nearest edge. */
 export function settleFeedChrome(): void {
+  revealArmed = false;
   if (value === 0 || value === 1) return;
   const to = value > 0.5 ? 1 : 0;
   value = to;
