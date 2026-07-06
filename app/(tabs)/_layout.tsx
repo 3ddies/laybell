@@ -172,9 +172,12 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   // lighter than the bar, so use the border tone for a subtly darker disc.
   const postCircleColor = isLight ? colors.border : colors.background;
   const blurTint = isLight ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark';
-  // Lighter-handed wash than before — the bar reads as airier glass with more
-  // of the feed ghosting through (icons carry the contrast, not the panel).
-  const androidWash = isLight ? 'rgba(234,232,227,0.52)' : mode === 'grey' ? 'rgba(31,30,28,0.52)' : 'rgba(17,17,17,0.52)';
+  // The bar's surface is a VERTICAL scrim: solid at the very bottom, melting
+  // into transparency toward its top edge — no hard border, the fade IS the
+  // edge. (iOS layers it over a soft uniform blur; Android uses the scrim
+  // alone, which reads the same.)
+  const bgRgb = isLight ? '242,241,237' : mode === 'grey' ? '22,21,20' : '9,9,9';
+  const scrimColors = [`rgba(${bgRgb},0)`, `rgba(${bgRgb},0.55)`, `rgba(${bgRgb},0.95)`] as const;
 
   // The camera lives at route 0 but isn't a button — the visible bar is every
   // other route, kept paired with its real route index so `position` lines up.
@@ -348,16 +351,14 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
       pointerEvents={listenMode ? 'none' : 'auto'}
       style={[styles.bar, styles.barOverlay, { height: 68 + insets.bottom, paddingBottom: insets.bottom, opacity: listenFade, transform: [{ translateX }, { translateY: listenDrift }] }]}
     >
-      {/* Native iOS chrome-material blur fills the bar (behind the row). The bar
-          stays overflow-visible so the center button can lift above the top edge.
-          Android can't render system materials, so it gets a tint wash instead.
-          One continuous frosted panel that smoothly fades out as the bar
-          condenses into chips and fades back in on return — icons never move
-          with scroll, only the glass breathes. */}
+      {/* The bar's surface: a soft uniform blur (iOS) under a bottom-solid →
+          top-transparent scrim of the theme background. The panel has no hard
+          top border — the gradient dissolving into the feed IS the edge. It
+          still fades out as the bar condenses into chips and back on return;
+          icons never move with scroll, only the glass breathes. */}
       <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: panelFade }]}>
-        <BlurView tint={blurTint} intensity={62} style={styles.blurFill} />
-        {Platform.OS === 'android' && <View style={[styles.blurFill, { backgroundColor: androidWash }]} />}
-        <View style={styles.topHairline} />
+        {Platform.OS === 'ios' && <BlurView tint={blurTint} intensity={40} style={styles.blurFill} />}
+        <LinearGradient colors={scrimColors} locations={[0, 0.42, 1]} style={styles.blurFill} />
       </Animated.View>
       <Animated.View
         style={styles.row}
@@ -483,12 +484,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     backgroundColor: 'transparent',
     paddingTop: 6,
     overflow: 'visible',
-  },
-  topHairline: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: c.border,
   },
   // Condensed-mode chip: a glassy bordered circle that grows behind each icon
   // as the bar panel dissolves (46px around the 32px icon footprint).
