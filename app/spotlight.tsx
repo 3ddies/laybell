@@ -11,6 +11,7 @@ import {
   SPOTLIGHT_PACKAGES, fmtPrice, packageFor, effectiveStatus, timeLeftLabel, rampHoursFor,
   purchaseCampaign, activateCampaign, cancelPendingCampaign, endCampaign,
   fetchMyCampaigns, setPendingSpotlight, clearPendingSpotlight, spotlightDurationPhrase,
+  fetchFreeSpotlightAvailable, claimFreeSpotlight,
   type SpotlightPackage, type SpotlightCampaign, type SpotlightStatus,
 } from '../lib/spotlight';
 import { isAudioPost } from '../lib/genres';
@@ -60,6 +61,10 @@ export default function SpotlightScreen() {
   const [campaigns, setCampaigns] = useState<SpotlightCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Premium free monthly Spotlight: whether this month's credit is unclaimed, and
+  // whether the CURRENT create flow is spending it (skips package/pay → grid).
+  const [freeAvailable, setFreeAvailable] = useState(false);
+  const [freeFlow, setFreeFlow] = useState(false);
 
   // Create / resume flow (modal)
   const [flowOpen, setFlowOpen] = useState(false);
@@ -81,7 +86,9 @@ export default function SpotlightScreen() {
   const [endTarget, setEndTarget] = useState<SpotlightCampaign | null>(null);
 
   const load = useCallback(async () => {
-    setCampaigns(await fetchMyCampaigns());
+    const [camps, free] = await Promise.all([fetchMyCampaigns(), fetchFreeSpotlightAvailable()]);
+    setCampaigns(camps);
+    setFreeAvailable(free);
     setLoading(false);
     setRefreshing(false);
   }, []);
@@ -105,10 +112,21 @@ export default function SpotlightScreen() {
   // ─── Create flow ────────────────────────────────────────────────────────────
 
   function startFlow() {
+    setFreeFlow(false);
     setPkg(null);
     setFlowCampaign(null);
     setFlowStep('package');
     setFlowOpen(true);
+  }
+
+  // Premium free monthly boost: skip package + payment and go straight to picking
+  // an existing post; claimFreeSpotlight mints the 1-day Spotlight on pick.
+  function startFreeFlow() {
+    setFreeFlow(true);
+    setPkg(packageFor('1d'));   // for labels/duration only — no charge
+    setFlowCampaign(null);
+    setFlowOpen(true);
+    openPostGrid();             // sets step 'grid' and loads eligible posts
   }
 
   // A paid `pending` campaign (e.g. the app died mid-flow) re-enters at the
@@ -204,13 +222,28 @@ export default function SpotlightScreen() {
   async function confirmPick() {
     const post = pickTarget;
     setPickTarget(null);
-    if (!flowCampaign || !pkg || !post || attachingId) return;
+    if (!pkg || !post || attachingId) return;
+    // Free flow has no pre-bought campaign — the RPC mints one on claim.
+    if (!freeFlow && !flowCampaign) return;
     setAttachingId(post.id);
-    const ok = await activateCampaign(flowCampaign.id, post.id, pkg.days);
-    setAttachingId(null);
-    if (!ok) {
-      Alert.alert(t('spotlight.errorTitle'), t('spotlight.startFailedBody'));
-      return;
+    if (freeFlow) {
+      const res = await claimFreeSpotlight(post.id);
+      setAttachingId(null);
+      if (!res.ok) {
+        if (res.reason === 'already_claimed') setFreeAvailable(false);
+        Alert.alert(
+          t('spotlight.errorTitle'),
+          res.reason === 'already_claimed' ? t('spotlight.freeAlreadyClaimed') : t('spotlight.startFailedBody'),
+        );
+        return;
+      }
+    } else {
+      const ok = await activateCampaign(flowCampaign!.id, post.id, pkg.days);
+      setAttachingId(null);
+      if (!ok) {
+        Alert.alert(t('spotlight.errorTitle'), t('spotlight.startFailedBody'));
+        return;
+      }
     }
     // Any parked "create a new post" handoff is stale now that the
     // campaign went live through the grid.
@@ -370,6 +403,16 @@ export default function SpotlightScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
           }
         >
+          {freeAvailable && (
+            <TouchableOpacity style={styles.freeBanner} onPress={startFreeFlow} activeOpacity={0.85}>
+              <View style={styles.freeIcon}><Ionicons name="gift" size={22} color="#fff" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.freeTitle}>{t('spotlight.freeTitle')}</Text>
+                <Text style={styles.freeSub}>{t('spotlight.freeSub')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+            </TouchableOpacity>
+          )}
           {hasActive ? (
             // ── Active spotlight(s): the practical management screen ──────────────
             <>
@@ -446,7 +489,7 @@ export default function SpotlightScreen() {
               style={styles.backBtn}
               onPress={() => {
                 if (flowStep === 'pay') setFlowStep('package');
-                else if (flowStep === 'grid') setFlowStep('choose');
+                else if (flowStep === 'grid' && !freeFlow) setFlowStep('choose');
                 else setFlowOpen(false);
               }}
             >
@@ -659,6 +702,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   scroll: { padding: SPACING.md, paddingBottom: SPACING.xxl, gap: SPACING.md },
   hint: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
+
+  // Premium free-monthly-Spotlight banner.
+  freeBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    backgroundColor: colors.primary + '14', borderRadius: RADIUS.lg,
+    borderWidth: 1.5, borderColor: colors.primary, padding: SPACING.md,
+  },
+  freeIcon: {
+    width: 44, height: 44, borderRadius: RADIUS.full, backgroundColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  freeTitle: { color: colors.text, fontSize: 15, fontWeight: '800' },
+  freeSub: { color: colors.textSecondary, fontSize: 12, marginTop: 1, lineHeight: 16 },
 
   // Attractive landing (no live spotlight)
   hero: { alignItems: 'center', gap: SPACING.xs },

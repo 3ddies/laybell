@@ -349,6 +349,22 @@ function withinGrace(today: string): boolean {
   return Date.now() < Date.UTC(y, m - 1, d) + GRACE_HOURS * 3600_000;
 }
 
+// PREMIUM perk — a longer grace window for time-sensitive badges. The premium
+// status is injected by lib/entitlements (setBadgePremiumGetter) rather than
+// imported, because entitlements.ts already imports THIS module (the reverse
+// import would be a cycle). Read at evaluation time so it tracks live status.
+let _isPremiumGetter: () => boolean = () => false;
+export function setBadgePremiumGetter(fn: () => boolean): void { _isPremiumGetter = fn; }
+const PREMIUM_GRACE_DAYS = 3;
+
+// How many PRIOR days still count toward today's badges/streaks. Premium users
+// get a 3-day cushion (a busy day never breaks a streak); free users keep the
+// existing behavior — 1 day (yesterday) during the 6h midnight window, else 0.
+function graceDaysNow(today: string): number {
+  if (_isPremiumGetter()) return PREMIUM_GRACE_DAYS;
+  return withinGrace(today) ? 1 : 0;
+}
+
 // Per-category max of two qualifying sets.
 function mergeTiers(a: CategoryTiers, b: CategoryTiers): CategoryTiers {
   const out: CategoryTiers = { ...a };
@@ -363,17 +379,28 @@ function mergeTiers(a: CategoryTiers, b: CategoryTiers): CategoryTiers {
 // grace window the evaluation also runs anchored to YESTERDAY and the better
 // tier per category wins, so nothing reverts at the stroke of midnight.
 export function qualifyingTiers(state: BadgeState): CategoryTiers {
-  const base = qualifyingTiersAt(state, state.today);
-  if (!withinGrace(state.today)) return base;
-  return mergeTiers(base, qualifyingTiersAt(state, addDaysUTC(state.today, -1)));
+  let tiers = qualifyingTiersAt(state, state.today);
+  // Merge in each grace day (premium: 3, free: yesterday during the 6h window),
+  // taking the best tier per category — so a badge earned within the grace window
+  // is retained even if today doesn't qualify.
+  const grace = graceDaysNow(state.today);
+  for (let i = 1; i <= grace; i++) {
+    tiers = mergeTiers(tiers, qualifyingTiersAt(state, addDaysUTC(state.today, -i)));
+  }
+  return tiers;
 }
 
-// Login streak with the same midnight grace the tier evaluation gets.
+// Login streak with the same grace the tier evaluation gets. Anchoring the streak
+// at an earlier day bridges a recent lapse: a run that ended within the grace
+// window still counts, so the streak (and its badge) survives up to `grace` days.
 function loginStreakWithGrace(state: BadgeState): number {
   const byDay = new Map(state.daily.map(r => [r.day, r]));
-  const s = streakLength(state.today, d => byDay.has(d));
-  if (!withinGrace(state.today)) return s;
-  return Math.max(s, streakLength(addDaysUTC(state.today, -1), d => byDay.has(d)));
+  let best = streakLength(state.today, d => byDay.has(d));
+  const grace = graceDaysNow(state.today);
+  for (let i = 1; i <= grace; i++) {
+    best = Math.max(best, streakLength(addDaysUTC(state.today, -i), d => byDay.has(d)));
+  }
+  return best;
 }
 
 // The badge KEYS the user currently qualifies for: one per category from the tier

@@ -37,9 +37,13 @@ const SponsoredCard = memo(function SponsoredCard({ item, shouldPlayVideo, onCta
     <View style={styles.card}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.brandAvatar}>
-          <Text style={styles.brandInitial}>{brand.charAt(0).toUpperCase()}</Text>
-        </View>
+        {ad?.avatarUrl ? (
+          <Image source={{ uri: ad.avatarUrl }} style={styles.brandAvatar} />
+        ) : (
+          <View style={styles.brandAvatar}>
+            <Text style={styles.brandInitial}>{brand.charAt(0).toUpperCase()}</Text>
+          </View>
+        )}
         <View style={styles.headerInfo}>
           <View style={styles.nameRow}>
             <Text style={styles.brandName} numberOfLines={1}>{brand}</Text>

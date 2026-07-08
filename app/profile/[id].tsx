@@ -1,12 +1,17 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Image, RefreshControl, PanResponder,
+  ScrollView, ActivityIndicator, RefreshControl, PanResponder,
   Animated, Easing, Dimensions,
 } from 'react-native';
+// Content thumbnails use expo-image: memory+disk cached, so re-renders and
+// remounts repaint instantly instead of flashing (RN's core Image flickers when
+// list rows re-render with fresh source objects under the new architecture).
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState, useRef } from 'react';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { useAudio } from '../../contexts/AudioContext';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { supabase } from '../../lib/supabase';
@@ -22,7 +27,6 @@ import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import ProfileQRModal from '../../components/ProfileQRModal';
-import SupporterBadge from '../../components/SupporterBadge';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { countLabel } from '../../lib/i18n';
@@ -60,6 +64,7 @@ export default function PublicProfileScreen() {
   const linkGuard = useLinkGuard();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
+  const isFocused = useIsFocused();
   const { playQueue, expand } = useAudio();
   const { playingId } = useAudioPlayer();
   const { show: showOptions } = usePostOptions();
@@ -399,6 +404,9 @@ export default function PublicProfileScreen() {
           spotlightIds={spotlightIds}
           playingId={playingId}
           artistName={profile?.display_name}
+          // Pause the looping hero when this sub-tab is hidden or the profile is
+          // off-screen — a detached VideoView that plays to its end stalls black.
+          active={activeTab === 'posts' && isFocused}
           onOpenVisual={openVisual}
           onPlaySongs={(queue, idx) => playQueue(queue, idx)}
         />
@@ -447,7 +455,7 @@ export default function PublicProfileScreen() {
             {post.type === 'slideshow' ? (
               <>
                 {/* Slide 1's screenshot (video) or slide 1 itself (image) */}
-                <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} resizeMode="cover" />
+                <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} contentFit="cover" />
                 <View style={styles.gridPlayOverlay}>
                   <Ionicons name="copy" size={13} color="#fff" />
                 </View>
@@ -460,10 +468,10 @@ export default function PublicProfileScreen() {
                 </View>
               </>
             ) : post.type === 'image' ? (
-              <Image source={{ uri: post.media_url }} style={styles.gridImage} resizeMode="cover" />
+              <Image source={{ uri: post.media_url }} style={styles.gridImage} contentFit="cover" />
             ) : post.type === 'audio' && post.cover_url ? (
               <>
-                <Image source={{ uri: post.cover_url }} style={styles.gridImage} resizeMode="cover" />
+                <Image source={{ uri: post.cover_url }} style={styles.gridImage} contentFit="cover" />
                 <View style={styles.gridPlayOverlay}>
                   <Ionicons name="musical-notes" size={13} color="#fff" />
                 </View>
@@ -562,7 +570,6 @@ export default function PublicProfileScreen() {
       <View style={styles.infoSection}>
         <View style={styles.nameRow}>
           <Text style={styles.displayName}>{profile?.display_name}</Text>
-          <SupporterBadge premiumUntil={(profile as any)?.premium_until} />
           <BadgeEmblem profile={profile} size={17} />
         </View>
         {profile?.bio

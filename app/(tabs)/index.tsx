@@ -1,7 +1,8 @@
 import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
-  EMPTY_PROFILE, type UserAffinityProfile,
+  EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
 } from '../../lib/feedScorer';
+import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
 import AppVideo from '../../components/AppVideo';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
@@ -118,8 +119,9 @@ type PostCardProps = {
   audioActive: boolean;
   videoMuted: boolean;
   songMuted: boolean;
-  // isVisibleVideo → the centered card: mounts the player (so it pre-loads).
-  // shouldPlayVideo → mounted AND settled (not scrolling): actually plays.
+  // isVisibleVideo → the centered card OR a near-viewport neighbor: mounts the
+  // player (so it pre-loads before the user arrives).
+  // shouldPlayVideo → mounted AND centered AND settled: actually plays.
   isVisibleVideo: boolean;
   shouldPlayVideo: boolean;
   onProfile: (item: Post) => void;
@@ -279,9 +281,10 @@ const PostCard = memo(function PostCard({
             onPress={() => vidRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenReel(item, { x, y, width: w, height: h }))}
           >
             <View style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}>
-              {/* Thumbnail for every card; the real player mounts ONLY for the
-                  visible card so fast scrolling never spins up a video player per
-                  row (the source of the scroll jank). */}
+              {/* Thumbnail for every card; the real player mounts only for the
+                  visible card and its nearest video neighbors (pre-warmed, paused)
+                  so fast scrolling never spins up a player per row while landing
+                  on a video still plays instantly. */}
               {!!item.thumbnail_url && (
                 <Image source={{ uri: item.thumbnail_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
               )}
@@ -412,6 +415,10 @@ export default function HomeScreen() {
     const rest = posts.filter((p) => !pinnedSet.has(p.id) && !pendingPostIds.has(p.id));
     return [...pins, ...rest];
   }, [posts, pinnedPosts, pinnedIds, pinnedSet, pendingPostIds]);
+  // Live copy for the (stable) viewability callback below — it scans around the
+  // viewport for upcoming videos to pre-warm without re-subscribing.
+  const feedDataRef = useRef<Post[]>([]);
+  feedDataRef.current = feedData;
 
   // Fetch the pinned posts' full rows (so a pin still shows even when the active feed
   // mode wouldn't include your own post).
@@ -454,6 +461,13 @@ export default function HomeScreen() {
   const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string; item?: Post } | null>(null);
   const [playlistCount, setPlaylistCount] = useState(0);
   const [visibleVideoId, setVisibleVideoId] = useState<string | null>(null);
+  // Video posts that keep a player MOUNTED: every on-screen video plus the
+  // nearest one above/below the viewport. Warm players sit paused but pre-load
+  // their stream, so the moment one becomes the visible video it plays with no
+  // perceptible delay. Stored as a joined key so an unchanged set never causes
+  // a re-render.
+  const [warmKey, setWarmKey] = useState('');
+  const warmVideoIds = useMemo(() => new Set(warmKey ? warmKey.split('|') : []), [warmKey]);
   const [visibleMusicId, setVisibleMusicId] = useState<string | null>(null);
   // Slideshow posts whose current video slide has its audio on — their attached
   // song pauses so it doesn't overlap the video. (Separate from the global mute.)
@@ -462,11 +476,24 @@ export default function HomeScreen() {
   const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
   const router = useRouter();
 
-  // Only autoplay feed videos when this tab is settled and focused — not while
-  // a swipe is dragging the feed off-screen (saves rendering, matches "land first").
+  // Only autoplay feed videos when this tab is focused — not while a swipe is
+  // dragging the feed off-screen (saves rendering, matches "land first").
   const isFocused = useIsFocused();
   const swiping = usePagerSwiping();
-  const canPlayVideo = isFocused && !swiping;
+
+  // ── Fast-scroll gate ────────────────────────────────────────────────────────
+  // Videos autoplay the moment they're on screen — EXCEPT during a genuinely
+  // fast fling. Velocity is sampled per scroll event: fast mode engages above
+  // FAST_IN dp/ms, releases below FAST_OUT (or ~130ms after scroll events stop),
+  // and the deferred viewability snapshot then applies immediately — so the
+  // video you land on starts the instant the fling slows, not on a fixed timer.
+  const [fastScrolling, setFastScrolling] = useState(false);
+  const fastScrollRef = useRef(false);
+  const scrollSample = useRef({ y: 0, t: 0 });
+  const scrollStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current); }, []);
+
+  const canPlayVideo = isFocused && !swiping && !fastScrolling;
 
   // Latest values for the stable card callbacks below. Updating a ref (instead of
   // putting these in useCallback deps) lets the callbacks keep a constant identity
@@ -476,10 +503,12 @@ export default function HomeScreen() {
 
   // Track which video is on-screen so it auto-plays while others pause.
   // FlatList requires these references to be stable across renders.
-  // minimumViewTime keeps a fast fling from flickering the "visible" video across
-  // every card it passes — only a card that lingers briefly becomes the active one.
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 90 }).current;
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
+  // TWO viewability pairs: video activation is EAGER (40% visible, no dwell
+  // time) so playback feels automatic the moment a video slides in, while
+  // spotlight/ad impressions + ambient music keep the original deliberate
+  // 60% + 90ms rule (impression semantics unchanged).
+  const pendingVideoViewables = useRef<any[] | null>(null);
+  const applyVideoViewables = useRef((viewableItems: any[]) => {
     // A video post, or a slideshow that contains at least one video slide, becomes
     // the "playing" item so its current video slide can autoplay.
     const firstVideo = viewableItems.find(v =>
@@ -487,6 +516,40 @@ export default function HomeScreen() {
       (isSlideshow(v.item?.type) && Array.isArray(v.item?.slides) && v.item.slides.some((s: any) => s?.type === 'video'))
     );
     setVisibleVideoId(firstVideo ? firstVideo.item.id : null);
+    // Keep players mounted (paused) for every on-screen video plus the nearest
+    // one on each side of the viewport — see warmVideoIds above. Ads and
+    // slideshows manage their own players.
+    const data = feedDataRef.current;
+    const ids: string[] = [];
+    const idxs: number[] = [];
+    for (const v of viewableItems) {
+      if (v.index != null) idxs.push(v.index);
+      const p = v.item;
+      if (p && !p.__ad && p.type === 'video' && p.media_url) ids.push(p.id);
+    }
+    if (idxs.length) {
+      const findVideo = (from: number, step: number) => {
+        for (let k = from, seen = 0; k >= 0 && k < data.length && seen < 8; k += step, seen++) {
+          const p: any = data[k];
+          if (p && !p.__ad && p.type === 'video' && p.media_url) return p.id as string;
+        }
+        return null;
+      };
+      const below = findVideo(Math.max(...idxs) + 1, 1);
+      const above = findVideo(Math.min(...idxs) - 1, -1);
+      if (below) ids.push(below);
+      if (above) ids.push(above);
+    }
+    setWarmKey(ids.join('|'));
+  }).current;
+  const onVideoViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
+    // Mid-fling snapshots are deferred (see setFastScroll) so a fast scroll
+    // never churns players; the LATEST snapshot applies the moment it slows.
+    if (fastScrollRef.current) { pendingVideoViewables.current = viewableItems; return; }
+    pendingVideoViewables.current = null;
+    applyVideoViewables(viewableItems);
+  }).current;
+  const onImpressionViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     // The most-visible post that carries an attached song — its track plays ambiently.
     const firstMusic = viewableItems.find(v => v.item?.song_id);
     setVisibleMusicId(firstMusic ? firstMusic.item.id : null);
@@ -500,6 +563,40 @@ export default function HomeScreen() {
       if (v.item?.__ad) recordAdImpression(v.item, 'feed', live.current.currentUserId);
     }
   }).current;
+  const viewabilityConfigCallbackPairs = useRef([
+    { viewabilityConfig: { itemVisiblePercentThreshold: 40, minimumViewTime: 0 }, onViewableItemsChanged: onVideoViewableItemsChanged },
+    { viewabilityConfig: { itemVisiblePercentThreshold: 60, minimumViewTime: 90 }, onViewableItemsChanged: onImpressionViewableItemsChanged },
+  ]).current;
+
+  // Enter/exit fast-scroll mode; exiting flushes the viewability snapshot that
+  // was deferred mid-fling so the landed video starts right away.
+  const setFastScroll = (on: boolean) => {
+    if (fastScrollRef.current === on) return;
+    fastScrollRef.current = on;
+    setFastScrolling(on);
+    if (!on && pendingVideoViewables.current) {
+      const pending = pendingVideoViewables.current;
+      pendingVideoViewables.current = null;
+      applyVideoViewables(pending);
+    }
+  };
+  // dp per ms. FAST_IN ≈ 2.4 screens/s (a real fling); FAST_OUT ≈ 1 screen/s —
+  // the hysteresis keeps ordinary browsing scrolls from ever entering fast mode.
+  const FAST_IN = 2.0, FAST_OUT = 0.8;
+  const trackScrollVelocity = (y: number) => {
+    const t = Date.now();
+    const { y: py, t: pt } = scrollSample.current;
+    scrollSample.current = { y, t };
+    const dt = t - pt;
+    if (dt > 0 && dt < 200) { // >200ms gap = a new gesture, not a velocity sample
+      const v = Math.abs(y - py) / dt;
+      if (v >= FAST_IN) setFastScroll(true);
+      else if (v <= FAST_OUT) setFastScroll(false);
+    }
+    // A fling's final events can still be fast — clear soon after events stop.
+    if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current);
+    scrollStopTimer.current = setTimeout(() => setFastScroll(false), 130);
+  };
   const [feedMode, setFeedMode] = useState<'all' | 'following' | 'friends'>('all');
   const [menuOpen, setMenuOpen] = useState(false);
   // Measured height of the floating header — pads the feed underneath it and
@@ -702,7 +799,7 @@ export default function HomeScreen() {
       affinity: affinityProfile.current,
     };
 
-    const [{ data }, { data: likesData }, { data: savesData }, blockedIds, spotItems, adItems] = await Promise.all([
+    const [{ data }, { data: likesData }, { data: savesData }, blockedIds, spotItems, adItems, girlSpaceIds] = await Promise.all([
       query,
       userId ? supabase.from('likes').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
       userId ? supabase.from('saves').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
@@ -711,7 +808,11 @@ export default function HomeScreen() {
       // keep their strict "people you chose" guarantee.
       feedMode === 'all' ? fetchFeedSpotlights() : Promise.resolve([] as any[]),
       feedMode === 'all' ? fetchFeedAds(adViewer) : Promise.resolve([] as any[]),
+      fetchGirlSpaceCommunityIds(),
     ]);
+    // Girl space: feminine-tagged community posts are softly down-ranked for men
+    // who don't already engage with the creator (see lib/feedScorer scorePost).
+    const scoreOpts: ScoreOpts = { viewerGender: (viewerProfileRef.current as any)?.gender ?? null, girlSpaceIds };
 
     if (data) {
       const followingSet = new Set<string>(
@@ -735,7 +836,7 @@ export default function HomeScreen() {
       const profile = affinityProfile.current;
       const scoredPairs = visible.map((p) => ({
         item: p,
-        score: scorePost(p, profile, followingSet, seen, now),
+        score: scorePost(p, profile, followingSet, seen, now, scoreOpts),
       }));
       // The spotlight anchor is the feed's best organic score WITHOUT the
       // seen-penalty, matching the spotlights' own penalty-free scoring so
@@ -994,7 +1095,7 @@ export default function HomeScreen() {
           audioActive={isPlaying && currentTrack?.id === item.id}
           videoMuted={videoMuted}
           songMuted={songMuted}
-          isVisibleVideo={visibleVideoId === item.id}
+          isVisibleVideo={visibleVideoId === item.id || warmVideoIds.has(item.id)}
           shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
           onProfile={onProfile}
           onOptions={onOptions}
@@ -1012,7 +1113,7 @@ export default function HomeScreen() {
         />
       )}
     </ElasticSwipeView>
-  ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, songMuted, canPlayVideo, visibleVideoId,
+  ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, songMuted, canPlayVideo, visibleVideoId, warmVideoIds,
       onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions]);
 
   if (loading) {
@@ -1136,17 +1237,19 @@ export default function HomeScreen() {
         // Drives the reactive chrome: the header/bar FOLLOW the scroll delta
         // (slow drag = gradual tuck, fast fling = instant), settling to the
         // nearest edge when the scroll comes to rest.
-        onScroll={(e) => trackFeedScroll(e.nativeEvent.contentOffset.y)}
+        onScroll={(e) => {
+          trackFeedScroll(e.nativeEvent.contentOffset.y);
+          trackScrollVelocity(e.nativeEvent.contentOffset.y);
+        }}
         onScrollBeginDrag={feedDragStart}
         onScrollEndDrag={feedDragEnd}
-        onMomentumScrollEnd={settleFeedChrome}
+        onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); }}
         scrollEventThrottle={16}
         removeClippedSubviews
         windowSize={5}
         maxToRenderPerBatch={5}
         initialNumToRender={5}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
+        viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
         refreshControl={
           <RefreshControl
             progressViewOffset={headerH}

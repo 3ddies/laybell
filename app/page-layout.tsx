@@ -66,11 +66,20 @@ export default function PageLayoutScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The starter block each template builds from. Big Bell's signature is its
+  // looping hero, so it seeds a Big Picture block with the loop pre-armed —
+  // the user drops a video in and it animates, then adds Media Stars / more
+  // Big Pictures around it. Media Star seeds a star; Big Picture a plain hero.
+  function seedBlock(t: LayoutTemplate) {
+    if (t === 'media_star') return emptyBlock('media_star');
+    return { ...emptyBlock('big_picture'), loop: t === 'big_bell' };
+  }
+
   function selectTemplate(t: LayoutTemplate) {
     if (t === template) return;
     setTemplate(t);
-    // Seed a fresh, empty first block to build into.
-    setBlocks([emptyBlock(t === 'big_picture' ? 'big_picture' : 'media_star')]);
+    // Seed a fresh first block to build into.
+    setBlocks([seedBlock(t)]);
   }
 
   function addBlock(kind: BlockKind) {
@@ -81,7 +90,7 @@ export default function PageLayoutScreen() {
       const next = prev.filter((_, idx) => idx !== i);
       // Always keep at least one block to build into (esp. single-block templates
       // like Big Picture, which have no "add" button to recreate one).
-      if (next.length === 0 && template) return [emptyBlock(template === 'big_picture' ? 'big_picture' : 'media_star')];
+      if (next.length === 0 && template) return [seedBlock(template)];
       return next;
     });
   }

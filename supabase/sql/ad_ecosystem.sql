@@ -69,6 +69,10 @@ alter table public.ad_campaigns add column if not exists bid_cpm_cents   integer
 alter table public.ad_campaigns add column if not exists click_count     integer not null default 0;
 alter table public.ad_campaigns add column if not exists advertiser_name text;
 alter table public.ad_campaigns add column if not exists is_business     boolean not null default false;
+-- Display avatar shown on the ad: a business uploads its own logo/profile
+-- picture; a regular-user campaign snapshots the creator's own profile avatar at
+-- creation. Null = fall back to the advertiser-name initial.
+alter table public.ad_campaigns add column if not exists advertiser_avatar_url text;
 alter table public.ad_campaigns add column if not exists policy_accepted_at timestamptz;
 -- Lightweight, all-optional targeting (null = no constraint = everyone).
 alter table public.ad_campaigns add column if not exists target_age_min  integer;

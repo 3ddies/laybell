@@ -28,6 +28,15 @@ const SCREEN_W = Dimensions.get('window').width;
 // must use the SAME curve so a landed tab's active value never dips (no blink).
 const HANDOFF_MS = 200;
 
+// How long after the tab tree (re)mounts we still treat an UNGESTURED multi-page
+// jump as the native-pager "login teleport" glitch and snap it back. The tree
+// remounts on every login / account switch (app/_layout keys it by user id),
+// which is exactly when the freshly re-created pager mis-fires. Long enough to
+// cover the mount/layout race; short enough that it can't touch real navigation
+// (the only programmatic multi-tab jumps come from stack screens that fire long
+// after this window, and in-tab steps are always adjacent).
+const MOUNT_GUARD_MS = 1500;
+
 // Wrap the Material Top Tabs navigator so Expo Router drives it with file-based
 // routes. Material Top Tabs is backed by the native react-native-pager-view, so
 // swiping between tabs shows the adjacent screen sliding in (real preview, not
@@ -425,6 +434,14 @@ export default function TabLayout() {
   const swipingRef = useRef(false);
   const lastSwipeEndAt = useRef(0);
   const settledIndexRef = useRef<number | null>(null);
+  // Fresh on every (re)mount — so the extra "spurious jump" correction only runs
+  // in the brief window right after a login/account-switch remount (the pager
+  // glitch window), never during normal use.
+  const mountedAt = useRef(Date.now());
+  // Last time a tab was reached via the bar (a drag-release or tap). The bar
+  // emits `tabPress`; a native-pager teleport does not — so this lets the guard
+  // tell an intentional multi-tab bar jump apart from the glitch.
+  const lastTabPressAt = useRef(0);
 
   return (
     <PagerContext.Provider value={swiping}>
@@ -447,6 +464,10 @@ export default function TabLayout() {
           // rapid consecutive swipes always reach the pager.
           swipeStart: () => { swipingRef.current = true; setSwiping(true); noteTabSwipe(true); Keyboard.dismiss(); setFeedChromeHidden(false); },
           swipeEnd: () => { swipingRef.current = false; lastSwipeEndAt.current = Date.now(); setSwiping(false); noteTabSwipe(false); },
+          // The bar (drag-release AND tap) navigates by emitting tabPress, so mark
+          // the moment — a real bar-driven multi-tab jump must stay exempt from the
+          // spurious-jump guard below.
+          tabPress: () => { lastTabPressAt.current = Date.now(); },
           state: (e) => {
             // Any tab change brings the reactive chrome back (a hidden bar on
             // Explore/Music would just look broken).
@@ -455,15 +476,46 @@ export default function TabLayout() {
             const newIndex = navState?.index;
             const names = navState?.routeNames;
             if (typeof newIndex !== 'number' || !names) return;
+
+            const homeIndex = names.indexOf('index');
+            const justMounted = Date.now() - mountedAt.current < MOUNT_GUARD_MS;
             const prev = settledIndexRef.current;
+
+            // First settle after (re)mount MUST be Home. A freshly re-created native
+            // pager occasionally reports a far page here (the login "teleport"); snap
+            // straight back to Home before it becomes our reference point. (An
+            // adjacent first settle is left alone — that's just the initial layout.)
+            if (prev == null) {
+              if (justMounted && homeIndex >= 0 && Math.abs(newIndex - homeIndex) > 1) {
+                settledIndexRef.current = homeIndex;
+                navigation.navigate(names[homeIndex]);
+              } else {
+                settledIndexRef.current = newIndex;
+              }
+              return;
+            }
+
             settledIndexRef.current = newIndex;
-            if (prev == null) return;
             const delta = newIndex - prev;
+            if (Math.abs(delta) <= 1) return; // a normal single-page move
+
             const swipeDriven = swipingRef.current || Date.now() - lastSwipeEndAt.current < 600;
-            if (swipeDriven && Math.abs(delta) > 1) {
+            const barDriven = Date.now() - lastTabPressAt.current < 700;
+            if (swipeDriven) {
+              // A finger swipe moves EXACTLY one page, so an over-committed swipe
+              // lands on the ADJACENT page in the swiped direction (where the finger
+              // was actually headed) — never a far tab.
               const intended = Math.max(0, Math.min(names.length - 1, prev + Math.sign(delta)));
               settledIndexRef.current = intended;
               navigation.navigate(names[intended]);
+            } else if (justMounted && !barDriven) {
+              // A multi-page jump with NO gesture and NO bar press, moments after
+              // the (re)mount = the spurious native-pager teleport (the login glitch
+              // that lands on Profile). Revert to where we actually were (Home).
+              // Intentional multi-tab bar jumps (barDriven) and every jump after the
+              // window stay untouched.
+              settledIndexRef.current = prev;
+              navigation.navigate(names[prev]);
             }
           },
         })}

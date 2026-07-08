@@ -24,8 +24,13 @@
 | Perk | Status |
 |---|---|
 | **Unlimited offline (byte-capped)** | **Live** — `effectivePinLimit()` drops the per-tier count limit for premium; the 3 GB device byte cap still applies. |
-| **Ad-free (feed + reels + audio)** | **Live** — `adFree()` short-circuits `fetchFeedAds` / `fetchReelAds` / `pickAudioAd` in `lib/ads.ts`. |
-| **Supporter badge on profile** | **Live** — `SupporterBadge` shows on any profile from `profiles.premium_until` (set by the webhook); the owner's profile also lights up instantly from the client's RevenueCat status. |
+| **Ad-free HOME FEED** | **Live** — `adFree()` short-circuits `fetchFeedAds` in `lib/ads.ts`. Reels + Music are NOT ad-free (see below). |
+| **50% fewer ads in Reels + Music** | **Live** — `adSpacingMultiplier()` (×2 for premium) widens the reel weave spacing (`weaveReelAds`) and the audio gate (`firstAudioGateMs` / `nextAudioGateMs`) in `lib/ads.ts`, roughly halving ads there. |
+| **3-day badge grace (time-sensitive badges)** | **Live** — `lib/badges.ts` `graceDaysNow()` returns 3 for premium (via `setBadgePremiumGetter` wired from `lib/entitlements`), widening the streak/daily grace window. |
+| **Supporter badge on profile** | **Removed** — the premium star badge was pulled from both profile screens per product direction. `components/SupporterBadge.tsx` is now unused. |
+| **Earn Money (Live donations)** | **Live (simulated)** — premium hosts receive tips on Laybell Live. `lib/donations.ts` + `components/LiveDonateModal.tsx`; premium lock + 15% fee + est. tax computed server-side by the `donation_guard` trigger. **Run `supabase/sql/donations.sql`.** Swap `provider:'simulated'` for a real processor + payouts later. |
+| **Follower insights** | **Live** — Premium-gated `app/follower-insights.tsx` (Settings → Follower insights): "doesn't follow back" (live graph diff) + "who unfollowed you" (`follow_events` log). **Run `supabase/sql/follower_insights.sql`** (unfollows are tracked from when it's applied — no back-fill). |
+| **Monthly Spotlight boost** | **Live** — one free 1-day Spotlight/month for Premium. Banner on the Spotlight screen → pick a post → `claim_free_spotlight` RPC. **Run `supabase/sql/spotlight_credit.sql`.** Resets monthly via `profiles.spotlight_credit_used_month`; unused doesn't carry over. |
 | **Higher-quality audio** | **Stub** — entitlement ready, but there's a single bitrate today, so nothing to switch yet. Implement when multiple qualities exist. |
 
 ## Manual steps you must do

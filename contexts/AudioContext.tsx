@@ -10,7 +10,7 @@ import { recordListen } from '../lib/listenHistory';
 import { recordStream as recordStreamDurable } from '../lib/streamOutbox';
 import {
   pickAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
-  AUDIO_AD_FIRST_MS, nextAudioGateMs, AUDIO_AD_SKIP_MS,
+  firstAudioGateMs, nextAudioGateMs, AUDIO_AD_SKIP_MS,
   type AdViewer, type AudioAd,
 } from '../lib/ads';
 import { buildAffinityProfile, EMPTY_PROFILE } from '../lib/feedScorer';
@@ -205,7 +205,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // paused (not unloaded) and resumes at the same spot when the ad ends/skips.
   const [adState, setAdState] = useState<AudioAdState | null>(null);
   const adListenMsRef = useRef(0);
-  const adNextThresholdRef = useRef(AUDIO_AD_FIRST_MS);
+  // First break lands later for premium (×2) — firstAudioGateMs applies the
+  // spacing multiplier; subsequent gates come from nextAudioGateMs (also scaled).
+  const adNextThresholdRef = useRef(firstAudioGateMs());
   const adSoundRef = useRef<AudioPlayer | null>(null);
   const adPlayingRef = useRef(false);
   const adMetaRef = useRef<AudioAd | null>(null);

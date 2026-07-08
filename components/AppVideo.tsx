@@ -97,6 +97,12 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   shouldPlayRef.current = shouldPlay;
   // Count load-error retries per source (see the statusChange handler).
   const retriesRef = useRef(0);
+  // True once the source has reached readyToPlay at least once. After that, a
+  // transient 'error' must NOT force a full reload — see the statusChange handler.
+  const hasLoadedRef = useRef(false);
+  // Guards the trim-end loop seek so it fires once per cycle, not once per
+  // timeUpdate tick while the playhead sits past the trim point (a seek storm).
+  const trimSeekingRef = useRef(false);
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;
   const trimStartRef = useRef<number | null>(trimStartSec ?? null);
@@ -108,6 +114,8 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   // Seed the trim-start seek only once per loaded source.
   const seededRef = useRef(false);
 
+  // The poster (still) shows until the player reports its first ready frame,
+  // mirroring expo-av's usePoster. Kept deliberately simple.
   const [showPoster, setShowPoster] = useState(!!poster);
 
   const player = useVideoPlayer({ uri }, (p) => {
@@ -127,8 +135,8 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   useEffect(() => { player.loop = loop; }, [loop, player]);
   useEffect(() => { player.timeUpdateEventInterval = intervalSec; }, [intervalSec, player]);
   useEffect(() => {
-    if (shouldPlay) player.play();
-    else player.pause();
+    if (shouldPlay) { try { player.play(); } catch {} }
+    else { try { player.pause(); } catch {} }
   }, [shouldPlay, player]);
 
   // When the trim window itself changes (e.g. the GIF maker's scrubber moves the
@@ -149,10 +157,13 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   useEffect(() => {
     seededRef.current = false;
     retriesRef.current = 0;
+    hasLoadedRef.current = false;
+    trimSeekingRef.current = false;
     setShowPoster(!!poster);
     const statusSub = player.addListener('statusChange', ({ status }: any) => {
       if (status === 'readyToPlay') {
         retriesRef.current = 0;
+        hasLoadedRef.current = true;
         setShowPoster(false);
         if (!seededRef.current) {
           seededRef.current = true;
@@ -165,11 +176,16 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
         // won't re-fire on its own, so kick playback here if it should be running.
         if (shouldPlayRef.current) { try { player.play(); } catch {} }
       } else if (status === 'error') {
-        // A just-posted Cloudflare video is briefly un-decodable while it finishes
-        // encoding — the manifest 404s, expo-video errors, and would otherwise sit
-        // on the poster forever. Reload on a gentle backoff so it starts playing
-        // the instant encoding completes (also self-heals transient network drops).
-        if (retriesRef.current < MAX_LOAD_RETRIES) {
+        // Only force a reload for a source that has NEVER loaded: a just-posted
+        // Cloudflare clip is briefly un-decodable while it finishes encoding (the
+        // manifest 404s), and without this it would sit on the poster forever.
+        //
+        // Once a clip HAS played, a transient error (a loop-boundary blip, a brief
+        // network drop, an HLS segment hiccup) must NOT trigger replace(): a full
+        // reload flashes the poster and re-buffers, which reads as a freeze —
+        // the error resets nothing, so it would reload endlessly. A loaded clip
+        // recovers on its own, so leave it be.
+        if (!hasLoadedRef.current && retriesRef.current < MAX_LOAD_RETRIES) {
           retriesRef.current += 1;
           const delay = Math.min(5000, 1500 + retriesRef.current * 400);
           setTimeout(() => { try { player.replace({ uri }); } catch {} }, delay);
@@ -180,8 +196,17 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
       const dur = player.duration || 0;
       onProgressRef.current?.(currentTime * 1000, dur * 1000);
       const te = trimEndRef.current;
-      if (te != null && currentTime >= te) {
-        try { player.currentTime = trimStartRef.current ?? 0; } catch {}
+      if (te != null) {
+        // Loop back to the trim start once per cycle. The guard stops the coarse
+        // (~4×/s) timeUpdate from firing a fresh seek on every tick while the
+        // playhead is still past the trim point but the seek hasn't landed —
+        // that seek storm is itself a stutter. Re-arm once the playhead returns.
+        if (currentTime >= te && !trimSeekingRef.current) {
+          trimSeekingRef.current = true;
+          try { player.currentTime = trimStartRef.current ?? 0; } catch {}
+        } else if (trimSeekingRef.current && currentTime < te - 0.3) {
+          trimSeekingRef.current = false;
+        }
       }
     });
     const endSub = player.addListener('playToEnd', () => { onEndRef.current?.(); });

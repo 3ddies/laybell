@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Image } from 'react-native';
 import AppVideo from './AppVideo';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -82,7 +82,11 @@ export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, o
       {/* Brand + headline + CTA */}
       <View style={[styles.meta, { bottom: insets.bottom + 28 }]}>
         <View style={styles.brandRow}>
-          <View style={styles.brandAvatar}><Text style={styles.brandInitial}>{(ad?.advertiserName || 'S').charAt(0).toUpperCase()}</Text></View>
+          {ad?.avatarUrl ? (
+            <Image source={{ uri: ad.avatarUrl }} style={styles.brandAvatar} />
+          ) : (
+            <View style={styles.brandAvatar}><Text style={styles.brandInitial}>{(ad?.advertiserName || 'S').charAt(0).toUpperCase()}</Text></View>
+          )}
           <Text style={styles.brandName} numberOfLines={1}>{ad?.advertiserName || t('ad.sponsored')}</Text>
           <TouchableOpacity style={styles.optionsBtn} onPress={onOptions} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />

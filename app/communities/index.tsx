@@ -15,7 +15,7 @@ import { CommunitiesSkeleton } from '../../components/Skeleton';
 import { genreLabel } from '../../lib/genres';
 import { formatCount } from '../../lib/format';
 import {
-  fetchCommunityRails, searchCommunities, respondInvite, canCreateCommunity,
+  fetchCommunityRails, fetchOfficialCommunities, searchCommunities, respondInvite, canCreateCommunity,
   type CommunityRails, type Community,
 } from '../../lib/communities';
 
@@ -31,6 +31,8 @@ export default function CommunitiesScreen() {
   const canCreate = canCreateCommunity(profile);
 
   const [rails, setRails] = useState<CommunityRails>(EMPTY);
+  // Laybell-owned official topic tabs (surfaced only here, in the Communities tab).
+  const [official, setOfficial] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
@@ -38,10 +40,16 @@ export default function CommunitiesScreen() {
   const [searching, setSearching] = useState(false);
 
   const load = useCallback(async () => {
-    const r = await fetchCommunityRails(userId);
+    const [r, off] = await Promise.all([fetchCommunityRails(userId), fetchOfficialCommunities()]);
     setRails(r);
+    setOfficial(off);
     setLoading(false);
   }, [userId]);
+
+  // Girl space: hide the feminine official tabs from men in this directory (they
+  // stay reachable via search / direct link); the feed does the soft down-ranking.
+  const g = (profile?.gender ?? '').toLowerCase();
+  const shownOfficial = (g === 'man' || g === 'male') ? official.filter((c) => c.space !== 'girl') : official;
 
   useEffect(() => { load(); }, [load]);
 
@@ -174,6 +182,7 @@ export default function CommunitiesScreen() {
               </View>
             )}
 
+            <Rail title={t('communities.laybell')} data={shownOfficial} />
             <Rail title={t('communities.yours')} data={rails.mine} />
             <Rail title={t('communities.recommended')} data={rails.recommended} />
             <Rail title={t('communities.trending')} data={rails.trending} />
@@ -181,7 +190,8 @@ export default function CommunitiesScreen() {
 
             {/* Cold-start empty state */}
             {rails.mine.length === 0 && rails.recommended.length === 0 &&
-             rails.trending.length === 0 && rails.explore.length === 0 && rails.invites.length === 0 && (
+             rails.trending.length === 0 && rails.explore.length === 0 && rails.invites.length === 0 &&
+             shownOfficial.length === 0 && (
               <View style={styles.emptyState}>
                 <Ionicons name="people-outline" size={48} color={colors.textTertiary} />
                 <Text style={styles.emptyTitle}>{t('communities.empty')}</Text>

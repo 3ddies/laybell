@@ -203,12 +203,31 @@ export interface ScoredPost {
   [key: string]: any;
 }
 
+// ── "Girl space" gender de-prioritization ────────────────────────────────────
+// Feminine-tagged (Laybell "Girl space") community posts are SOFTLY down-ranked
+// for men — still discoverable, just lower — UNLESS the man already shows interest
+// (follows the creator, or has real creator affinity), which lifts the penalty so
+// engagement gradually opens the content up. Women / non-binary / unspecified
+// viewers are never affected.
+export const GIRL_SPACE_MAN_PENALTY = 0.3;
+const GIRL_SPACE_INTEREST_AFFINITY = 0.2;
+function isMan(gender?: string | null): boolean {
+  const g = (gender ?? '').toLowerCase();
+  return g === 'man' || g === 'male';
+}
+
+export type ScoreOpts = {
+  viewerGender?: string | null;
+  girlSpaceIds?: Set<string>; // official "Girl space" community ids
+};
+
 export function scorePost(
   post: ScoredPost,
   profile: UserAffinityProfile,
   followingSet: Set<string>,
   seenSet: Set<string>,
   now: number,
+  opts?: ScoreOpts,
 ): number {
   const likes    = post.likes?.[0]?.count    || 0;
   const comments = post.comments?.[0]?.count || 0;
@@ -227,5 +246,18 @@ export function scorePost(
   const badgeMul     = BADGE_SCORE_BOOST[post.profiles?.badge_tier ?? ''] ?? 1.0;
   const seenMul      = seenSet.has(post.id) ? 0.15 : 1.0;
 
-  return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul;
+  // Girl space: down-rank feminine-tagged posts for uninterested men (see above).
+  let girlSpaceMul = 1.0;
+  const gs = opts?.girlSpaceIds;
+  if (gs && gs.size && isMan(opts?.viewerGender)) {
+    const cids: string[] = post.community_ids ?? [];
+    if (cids.some((id) => gs.has(id))) {
+      const interested =
+        followingSet.has(post.user_id) ||
+        (profile.creatorScores[post.user_id] ?? 0) >= GIRL_SPACE_INTEREST_AFFINITY;
+      if (!interested) girlSpaceMul = GIRL_SPACE_MAN_PENALTY;
+    }
+  }
+
+  return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul * girlSpaceMul;
 }

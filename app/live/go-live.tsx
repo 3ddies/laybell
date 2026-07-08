@@ -17,6 +17,8 @@ import {
   markLive, type LiveOrientation, type LiveStream, type LiveStreamKeys,
 } from '../../lib/live';
 import { WhipPublisher, getRTCView, webrtcAvailable } from '../../lib/whip';
+import { fetchDonationEarnings, fmtCents } from '../../lib/donations';
+import { isPremium } from '../../lib/entitlements';
 
 // Go Live: two broadcast paths off one Cloudflare live input.
 //  • Phone — camera+mic published straight from the device over WHIP; viewers
@@ -50,6 +52,20 @@ export default function GoLiveScreen() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [viewers, setViewers] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Premium hosts earn donations (lib/donations); take-home total, polled while live.
+  const [earnedCents, setEarnedCents] = useState(0);
+  const canEarn = isPremium();
+
+  // While live (and Premium), poll the donation take-home so the host sees tips
+  // roll in. Cheap RPC every 15s; stops the moment the broadcast ends.
+  useEffect(() => {
+    if (phase !== 'live' || !canEarn || !profile?.id) return;
+    let alive = true;
+    const pull = () => fetchDonationEarnings().then((e) => { if (alive) setEarnedCents(e.totalCents); });
+    pull();
+    const iv = setInterval(pull, 15_000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [phase, canEarn, profile?.id]);
 
   const streamRef = useRef<LiveStream | null>(null);
   const keysRef = useRef<LiveStreamKeys | null>(null);
@@ -178,6 +194,12 @@ export default function GoLiveScreen() {
                 <Ionicons name="eye-outline" size={13} color="#fff" />
                 <Text style={styles.viewerText}>{viewers}</Text>
               </View>
+              {canEarn && (
+                <View style={styles.earnPill}>
+                  <Ionicons name="gift" size={12} color="#fff" />
+                  <Text style={styles.viewerText}>{fmtCents(earnedCents)}</Text>
+                </View>
+              )}
             </View>
           ) : <View style={styles.headerBtn} />}
         </View>
@@ -337,6 +359,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   livePillText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
   viewerPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
   viewerText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  earnPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.primary, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
   body: { flex: 1, justifyContent: 'flex-end', padding: 16, paddingBottom: Platform.OS === 'ios' ? 34 : 22 },
   card: { backgroundColor: c.surfaceElevated, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 16, gap: 12 },
   titleInput: { backgroundColor: c.surfaceLight, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: c.text, fontSize: 15 },

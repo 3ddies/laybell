@@ -10,6 +10,9 @@ export type LiveProfile = {
   username: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  // Drives the live donation lock — only a Premium host (premium_until in the
+  // future) can receive tips (lib/donations hostCanReceive).
+  premium_until: string | null;
 };
 
 // Broadcast orientation (phone go-live choice). 'horizontal' and 'both'
@@ -50,7 +53,7 @@ async function attachProfiles<T extends { user_id: string }>(rows: T[]): Promise
   if (!ids.length) return rows;
   const { data } = await supabase
     .from('profiles')
-    .select('id, username, display_name, avatar_url')
+    .select('id, username, display_name, avatar_url, premium_until')
     .in('id', ids);
   const byId = new Map((data ?? []).map((p) => [p.id, p as LiveProfile]));
   return rows.map((r) => ({ ...r, profile: byId.get(r.user_id) }));

@@ -3,7 +3,7 @@ import { tg } from './i18n';
 import { bumpBadge } from './badges';
 import { fetchBlockedIds } from './blocks';
 import { isAdPersonalizationEnabled } from './adPrefs';
-import { adFree } from './entitlements';
+import { adFree, adSpacingMultiplier } from './entitlements';
 import type { UserAffinityProfile } from './feedScorer';
 
 // Ad ecosystem — dedicated-creative ads across Feed, Reels and Audio + the
@@ -54,9 +54,16 @@ export function randInt(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
-/** Randomized ms until the next audio ad break (3-5 min). */
+/** Randomized ms until the next audio ad break (3-5 min). Premium widens the gate
+ *  (×2 → ~50% fewer music ads) via adSpacingMultiplier. */
 export function nextAudioGateMs(): number {
-  return randInt(AUDIO_AD_EVERY_MIN_MS, AUDIO_AD_EVERY_MAX_MS);
+  return randInt(AUDIO_AD_EVERY_MIN_MS, AUDIO_AD_EVERY_MAX_MS) * adSpacingMultiplier();
+}
+
+/** ms of listening before the FIRST audio ad of a session. Premium pushes it out
+ *  (×2) so the first music-ad break also lands later. */
+export function firstAudioGateMs(): number {
+  return AUDIO_AD_FIRST_MS * adSpacingMultiplier();
 }
 
 // Reel ads become skippable after this much genuine ad playback.
@@ -114,6 +121,7 @@ export type AdCampaign = {
   impression_count?: number;
   click_count?: number;
   advertiser_name?: string | null;
+  advertiser_avatar_url?: string | null;
   is_business?: boolean;
   target_age_min?: number | null;
   target_age_max?: number | null;
@@ -133,6 +141,7 @@ export type AdMeta = {
   creativeId: string;
   ownerId: string;
   advertiserName: string;
+  avatarUrl: string | null;
   headline: string;
   body: string;
   ctaLabel: string;
@@ -146,6 +155,7 @@ export type AudioAd = {
   creativeId: string;
   ownerId: string;
   advertiserName: string;
+  avatarUrl: string | null;
   headline: string;
   ctaLabel: string;
   ctaUrl: string | null;
@@ -259,6 +269,7 @@ function metaFor(c: AdCampaign, cr: AdCreative, placement: AdPlacement): AdMeta 
     creativeId: cr.id,
     ownerId: c.user_id,
     advertiserName: c.advertiser_name ?? tg('ad.sponsored'),
+    avatarUrl: c.advertiser_avatar_url ?? null,
     headline: cr.headline ?? '',
     body: cr.body ?? '',
     ctaLabel: cr.cta_label ?? tg('sponsoredCard.learnMore'),
@@ -284,7 +295,7 @@ function feedItemFor(c: AdCampaign, cr: AdCreative): any {
     profiles: {
       username: c.advertiser_name ?? tg('ad.sponsored'),
       display_name: c.advertiser_name ?? tg('ad.sponsored'),
-      avatar_url: null,
+      avatar_url: c.advertiser_avatar_url ?? null,
     },
     likes: [{ count: 0 }],
     comments: [{ count: 0 }],
@@ -325,7 +336,7 @@ function normalizeUrl(url: string | null | undefined): string | null {
 const CAMPAIGN_SELECT = `
   id, user_id, kind, status, starts_at, ends_at,
   budget_cents_total, budget_cents_daily, spent_cents, bid_cpm_cents,
-  impression_count, click_count, advertiser_name, is_business, objective, placements,
+  impression_count, click_count, advertiser_name, advertiser_avatar_url, is_business, objective, placements,
   target_age_min, target_age_max, target_gender, target_genres,
   target_lat, target_lng, target_radius_km, created_at,
   ad_creatives ( id, campaign_id, placement, media_type, media_url, slides, thumbnail_url, cover_url, aspect_ratio, duration_seconds, headline, body, cta_label, cta_url )
@@ -383,7 +394,8 @@ export async function fetchFeedAds(viewer: AdViewer): Promise<any[]> {
 
 // A pool of reel ad sources the weaver rotates through across slots.
 export async function fetchReelAds(viewer: AdViewer): Promise<AdSource[]> {
-  if (adFree()) return [];   // Premium: ad-free reels
+  // Premium is NOT ad-free in reels — it gets ~50% fewer via wider weave spacing
+  // (weaveReelAds reads adSpacingMultiplier). So the pool is fetched for everyone.
   const campaigns = await fetchEligibleCampaigns(viewer);
   const out: AdSource[] = [];
   for (const c of campaigns) {
@@ -397,7 +409,8 @@ export async function fetchReelAds(viewer: AdViewer): Promise<AdSource[]> {
 // doesn't always serve the same advertiser).
 let audioRotation = 0;
 export async function pickAudioAd(viewer: AdViewer): Promise<AudioAd | null> {
-  if (adFree()) return null;   // Premium: no audio ads between songs
+  // Premium is NOT ad-free in Music — it gets ~50% fewer via a wider gate between
+  // breaks (nextAudioGateMs / firstAudioGateMs read adSpacingMultiplier).
   const campaigns = await fetchEligibleCampaigns(viewer);
   const pool: AudioAd[] = [];
   for (const c of campaigns) {
@@ -408,6 +421,7 @@ export async function pickAudioAd(viewer: AdViewer): Promise<AudioAd | null> {
         creativeId: cr.id,
         ownerId: c.user_id,
         advertiserName: c.advertiser_name ?? tg('ad.sponsored'),
+        avatarUrl: c.advertiser_avatar_url ?? null,
         headline: cr.headline ?? '',
         ctaLabel: cr.cta_label ?? tg('sponsoredCard.learnMore'),
         ctaUrl: normalizeUrl(cr.cta_url),
@@ -453,19 +467,21 @@ export function injectFeedAds(list: any[], ads: any[], firstGap: number = AD_FEE
 // Weave reel ads into the ordered reel list: the first at output index 2 (the
 // 3rd reel), then a RANDOM 4-7 videos between each subsequent ad. No trailing
 // ad; the same campaign can repeat across slots when the pool is small.
-export function weaveReelAds(organic: any[], pool: AdSource[]): any[] {
+// `spacing` widens both the first slot and the between-gaps — premium passes ×2
+// (via adSpacingMultiplier) for ~50% fewer reel ads; free users get ×1.
+export function weaveReelAds(organic: any[], pool: AdSource[], spacing = adSpacingMultiplier()): any[] {
   if (!pool.length || !organic.length) return organic;
   const out: any[] = [];
   let oi = 0;
   let slot = 0;
-  let nextAdAt = REEL_AD_FIRST;
+  let nextAdAt = Math.round(REEL_AD_FIRST * spacing);
   while (oi < organic.length) {
     const idx = out.length;
     if (idx === nextAdAt) {
       out.push(reelItemFor(pool[slot % pool.length], slot));
       slot++;
-      // Skip the ad's own slot, then 4-7 organic reels before the next ad.
-      nextAdAt = idx + 1 + randInt(REEL_AD_EVERY_MIN, REEL_AD_EVERY_MAX);
+      // Skip the ad's own slot, then (4-7)×spacing organic reels before the next.
+      nextAdAt = idx + 1 + randInt(Math.round(REEL_AD_EVERY_MIN * spacing), Math.round(REEL_AD_EVERY_MAX * spacing));
     } else {
       out.push(organic[oi]);
       oi++;
@@ -608,6 +624,9 @@ export type NewCampaignInput = {
   objective: AdObjective;
   advertiserName: string;
   isBusiness: boolean;
+  // Display avatar for the ad: an uploaded business logo, or the creator's own
+  // profile avatar for a regular-user campaign. Null = fall back to an initial.
+  advertiserAvatarUrl?: string | null;
   placements: AdPlacement[];
   creatives: NewCreativeInput[];
   budgetCentsTotal: number;
@@ -646,6 +665,7 @@ export async function purchaseAdCampaign(input: NewCampaignInput): Promise<strin
         status: 'pending',
         objective: input.objective,
         advertiser_name: input.advertiserName,
+        advertiser_avatar_url: input.advertiserAvatarUrl ?? null,
         is_business: input.isBusiness,
         placements: input.placements,
         budget_cents_total: input.budgetCentsTotal,

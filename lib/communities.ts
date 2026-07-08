@@ -27,6 +27,13 @@ export type Community = {
   member_count: number;
   post_count: number;
   created_at: string;
+  // Laybell-owned "official" communities: default topic tabs everyone can browse
+  // and post to WITHOUT joining. `space='girl'` marks the feminine "Girl space"
+  // tabs (down-ranked for men in the feed, see lib/feedScorer). `open_posting`
+  // lets any user post (the post guard skips the membership check).
+  is_official?: boolean;
+  space?: string | null;
+  open_posting?: boolean;
   // Present when the row was fetched in the context of the current user's
   // membership (the discovery "Your communities" rail, the detail screen).
   myRole?: CommunityRole | null;
@@ -51,7 +58,10 @@ export type CommunityMember = {
 
 export type CommunityInvite = { user_id: string; role: CommunityRole };
 
-export type PostableCommunity = { id: string; name: string; hashtag: string; genre: string };
+// `founder` groups communities by their founding user for the "one per founder"
+// rule (owner_id, or 'laybell' for the official tabs, or the id as a unique
+// fallback). The composer blocks picking two communities with the same founder.
+export type PostableCommunity = { id: string; name: string; hashtag: string; genre: string; founder: string };
 
 export type CommunityRails = {
   mine: Community[];        // active memberships (any role)
@@ -207,18 +217,68 @@ export async function fetchCommunityPosts(id: string): Promise<any[]> {
 export async function fetchMyPostableCommunities(userId: string | null): Promise<PostableCommunity[]> {
   if (!userId) return [];
   try {
-    const { data } = await supabase
-      .from('community_members')
-      .select('muted_until, communities!inner(id, name, hashtag, genre, status)')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .eq('communities.status', 'live');
+    // Two sources, merged: communities the user is an active member of, PLUS the
+    // Laybell-official open-posting tabs (anyone can post to those without joining).
+    const [memberRes, officialRes] = await Promise.all([
+      supabase
+        .from('community_members')
+        .select('muted_until, communities!inner(id, name, hashtag, genre, status, owner_id, is_official)')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .eq('communities.status', 'live'),
+      supabase
+        .from('communities')
+        .select('id, name, hashtag, genre, owner_id, is_official')
+        .eq('status', 'live')
+        .eq('is_official', true)
+        .eq('open_posting', true),
+    ]);
     const now = Date.now();
-    return ((data as any[]) ?? [])
-      .filter((r) => r.communities && (!r.muted_until || new Date(r.muted_until).getTime() < now))
-      .map((r) => ({ id: r.communities.id, name: r.communities.name, hashtag: r.communities.hashtag, genre: r.communities.genre }));
+    const out = new Map<string, PostableCommunity>();
+    const founderOf = (c: any): string => c.owner_id ?? (c.is_official ? 'laybell' : c.id);
+    for (const r of (memberRes.data as any[]) ?? []) {
+      const c = r.communities;
+      if (c && (!r.muted_until || new Date(r.muted_until).getTime() < now)) {
+        out.set(c.id, { id: c.id, name: c.name, hashtag: c.hashtag, genre: c.genre, founder: founderOf(c) });
+      }
+    }
+    for (const c of (officialRes.data as any[]) ?? []) {
+      out.set(c.id, { id: c.id, name: c.name, hashtag: c.hashtag, genre: c.genre, founder: founderOf(c) });
+    }
+    return [...out.values()];
   } catch {
     return [];
+  }
+}
+
+// The Laybell-owned "official" topic tabs, in a stable order for the Explore rail.
+// Everyone can browse these without joining (they're always 'live').
+export async function fetchOfficialCommunities(): Promise<Community[]> {
+  try {
+    const { data } = await supabase
+      .from('communities')
+      .select('*')
+      .eq('is_official', true)
+      .eq('status', 'live')
+      .order('name', { ascending: true });
+    return (data as Community[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// Ids of the feminine "Girl space" official communities, cached briefly (the set
+// is tiny and static). Used by the feed to soft-down-rank these posts for men.
+let _girlSpaceCache: { ids: Set<string>; at: number } | null = null;
+export async function fetchGirlSpaceCommunityIds(): Promise<Set<string>> {
+  if (_girlSpaceCache && Date.now() - _girlSpaceCache.at < 3_600_000) return _girlSpaceCache.ids;
+  try {
+    const { data } = await supabase.from('communities').select('id').eq('space', 'girl');
+    const ids = new Set<string>(((data as any[]) ?? []).map((c) => c.id as string));
+    _girlSpaceCache = { ids, at: Date.now() };
+    return ids;
+  } catch {
+    return _girlSpaceCache?.ids ?? new Set<string>();
   }
 }
 

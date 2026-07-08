@@ -17,6 +17,8 @@ import { supabase } from '../../lib/supabase';
 import {
   fetchLiveStreams, joinLiveChannel, type LiveChatMessage, type LiveStream,
 } from '../../lib/live';
+import { hostCanReceive, fmtCents } from '../../lib/donations';
+import LiveDonateModal from '../../components/LiveDonateModal';
 import { WhepPlayer, getRTCView, webrtcAvailable } from '../../lib/whip';
 import AppVideo from '../../components/AppVideo';
 import { Skeleton, SkeletonCircle } from '../../components/Skeleton';
@@ -62,7 +64,10 @@ function LiveCard({
   const [viewers, setViewers] = useState(0);
   const [chat, setChat] = useState<LiveChatMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const [donateOpen, setDonateOpen] = useState(false);
   const channelRef = useRef<ReturnType<typeof joinLiveChannel> | null>(null);
+  // Donations unlock only for a Premium host (also enforced server-side).
+  const canDonate = hostCanReceive(stream.profile?.premium_until);
 
   // Presence + chat only while this card is the visible one.
   useEffect(() => {
@@ -129,6 +134,12 @@ function LiveCard({
           <Ionicons name="eye-outline" size={13} color="#fff" />
           <Text style={styles.viewerText}>{viewers}</Text>
         </View>
+        {canDonate && (
+          <TouchableOpacity style={styles.donatePill} onPress={() => setDonateOpen(true)} activeOpacity={0.85}>
+            <Ionicons name="gift" size={14} color="#fff" />
+            <Text style={styles.donateText}>{t('live.donate.button')}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Bottom overlay: title + chat + input */}
@@ -162,6 +173,16 @@ function LiveCard({
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {canDonate && (
+        <LiveDonateModal
+          visible={donateOpen}
+          stream={stream}
+          onClose={() => setDonateOpen(false)}
+          // Announce the tip in chat so the host + room see it (uses the donor's name).
+          onDonated={(cents) => channelRef.current?.sendChat(t('live.donate.chat', { amount: fmtCents(cents) }))}
+        />
+      )}
     </View>
   );
 }
@@ -312,6 +333,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   livePillText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
   viewerPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
   viewerText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  donatePill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.primary, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  donateText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   bottomWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 14, paddingBottom: 14, gap: 8 },
   title: { color: '#fff', fontSize: 14, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
   chatList: { gap: 5 },

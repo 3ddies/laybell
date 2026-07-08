@@ -22,10 +22,14 @@ export default function PremiumScreen() {
   const { t } = useTranslation();
   const { isPremium, packages, configured, loading, purchase, restore } = usePremium();
 
+  // Earn Money leads and is highlighted so the eye lands on it first.
   const perks = [
+    { icon: 'cash-outline' as const, label: t('premium.perkEarn'), desc: t('premium.perkEarnDesc'), highlight: true },
+    { icon: 'people-outline' as const, label: t('premium.perkFollowers'), desc: t('premium.perkFollowersDesc') },
+    { icon: 'musical-notes-outline' as const, label: t('premium.perkLessAds'), desc: t('premium.perkLessAdsDesc') },
+    { icon: 'flash-outline' as const, label: t('premium.perkSpotlight'), desc: t('premium.perkSpotlightDesc') },
+    { icon: 'ribbon-outline' as const, label: t('premium.perkBadgeGrace'), desc: t('premium.perkBadgeGraceDesc') },
     { icon: 'cloud-download-outline' as const, label: t('premium.perkOffline'), desc: t('premium.perkOfflineDesc') },
-    { icon: 'musical-notes-outline' as const, label: t('premium.perkAdFree'), desc: t('premium.perkAdFreeDesc') },
-    { icon: 'ribbon-outline' as const, label: t('premium.perkBadge'), desc: t('premium.perkBadgeDesc') },
   ];
 
   async function buy(pkg: Pkg) {
@@ -64,12 +68,12 @@ export default function PremiumScreen() {
           <Text style={styles.perksTitle}>{t('premium.perksTitle')}</Text>
           <View style={styles.perks}>
             {perks.map((p) => (
-              <View key={p.label} style={styles.perkRow}>
-                <View style={styles.perkIcon}>
-                  <Ionicons name={p.icon} size={20} color={colors.primary} />
+              <View key={p.label} style={[styles.perkRow, p.highlight && styles.perkRowHighlight]}>
+                <View style={[styles.perkIcon, p.highlight && styles.perkIconHighlight]}>
+                  <Ionicons name={p.icon} size={p.highlight ? 24 : 20} color={p.highlight ? '#fff' : colors.primary} />
                 </View>
                 <View style={styles.perkBody}>
-                  <Text style={styles.perkText}>{p.label}</Text>
+                  <Text style={[styles.perkText, p.highlight && styles.perkTextHighlight]}>{p.label}</Text>
                   <Text style={styles.perkDesc}>{p.desc}</Text>
                 </View>
               </View>
@@ -180,6 +184,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   perkBody: { flex: 1, gap: 2 },
   perkText: { color: colors.text, fontSize: 15, fontWeight: '700' },
   perkDesc: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
+  // "Earn Money" — the eye-catching lead perk: accent border/tint + a solid
+  // primary icon disc and a bigger, heavier label.
+  perkRowHighlight: {
+    borderColor: colors.primary, borderWidth: 1.5,
+    backgroundColor: colors.primary + '14',
+  },
+  perkIconHighlight: { backgroundColor: colors.primary },
+  perkTextHighlight: { fontSize: 18, fontWeight: '900', color: colors.text },
 
   activeCard: {
     alignItems: 'center', gap: SPACING.xs, padding: SPACING.lg,

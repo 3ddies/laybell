@@ -86,6 +86,9 @@ export default function CreateAdScreen() {
   const [objective, setObjective] = useState<AdObjective>('awareness');
   const [advertiserName, setAdvertiserName] = useState('');
   const [isBusiness, setIsBusiness] = useState(false);
+  // Business ads carry their own uploaded profile picture; regular-user ads reuse
+  // the creator's own profile avatar (snapshotted at publish).
+  const [businessAvatar, setBusinessAvatar] = useState<Pick | null>(null);
 
   // Placements + creatives
   const [placements, setPlacements] = useState<AdPlacement[]>([]);
@@ -192,9 +195,28 @@ export default function CreateAdScreen() {
     patchDraft(p, { cover: { uri: a.uri, width: a.width, height: a.height, kind: 'image' } });
   }
 
+  // Business profile picture (optional) — becomes the advertiser avatar shown on
+  // every ad. Regular-user campaigns reuse the creator's own profile avatar, so
+  // this picker only appears when "This is a business" is on.
+  async function pickBusinessAvatar() {
+    const ImagePicker = await import('expo-image-picker');
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert(t('adCreate.photosNeededTitle'), t('adCreate.photosNeededBody')); return; }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: false,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    setBusinessAvatar({ uri: a.uri, width: a.width, height: a.height, kind: 'image' });
+  }
+
   // ── Validation ───────────────────────────────────────────────────────────────
   function validateStep(s: Step): string | null {
-    if (s === 'basics' && !advertiserName.trim()) return t('adCreate.errAdvertiserName');
+    if (s === 'basics' && isBusiness && !advertiserName.trim()) return t('adCreate.errAdvertiserName');
     if (s === 'placements' && placements.length === 0) return t('adCreate.errPlacement');
     if (s === 'creatives') {
       for (const p of placements) {
@@ -324,12 +346,30 @@ export default function CreateAdScreen() {
         creatives.push(await buildCreative(user.id, p, drafts[p]));
       }
 
+      // Advertiser identity. A business supplies its own name + uploaded picture.
+      // A regular user's ad runs under their normal profile (like a regular post):
+      // name = their display name / username, avatar = their profile picture.
+      let advertiserAvatarUrl: string | null = null;
+      let advertiserDisplayName: string;
+      if (isBusiness) {
+        advertiserDisplayName = advertiserName.trim();
+        if (businessAvatar) {
+          setUploadLabel(t('adCreate.uploadingLogo'));
+          const up = await uploadOne(user.id, businessAvatar);
+          advertiserAvatarUrl = up.url;
+        }
+      } else {
+        advertiserDisplayName = (profile?.display_name || profile?.username || '').trim();
+        advertiserAvatarUrl = profile?.avatar_url ?? null;
+      }
+
       setUploadLabel(t('adCreate.launchingCampaign'));
       const endsAt = new Date(Date.now() + Math.max(1, parseInt(days, 10) || 1) * 86_400_000).toISOString();
       const id = await purchaseAdCampaign({
         objective,
-        advertiserName: advertiserName.trim(),
+        advertiserName: advertiserDisplayName,
         isBusiness,
+        advertiserAvatarUrl,
         placements,
         creatives,
         budgetCentsTotal: Math.round(parseFloat(budget) * 100),
@@ -364,6 +404,12 @@ export default function CreateAdScreen() {
   }
 
   // ── Renders ───────────────────────────────────────────────────────────────────
+  // The name shown on the ad: a business's typed name, else the user's own
+  // profile name (regular-user ads run like a normal post).
+  const previewAdvertiserName = isBusiness
+    ? advertiserName.trim()
+    : (profile?.display_name || profile?.username || '').trim();
+
   const budgetCents = Math.round((parseFloat(budget) || 0) * 100);
   const cpmCents = Math.round((parseFloat(cpm) || 0) * 100);
   const estImps = estimatedImpressions(budgetCents, cpmCents);
@@ -524,15 +570,6 @@ export default function CreateAdScreen() {
                     </TouchableOpacity>
                   );
                 })}
-                <Text style={[styles.label, { marginTop: SPACING.md }]}>{t('adCreate.advertiserNameLabel')}</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('adCreate.advertiserNamePlaceholder')}
-                  placeholderTextColor={colors.textTertiary}
-                  value={advertiserName}
-                  onChangeText={setAdvertiserName}
-                  maxLength={40}
-                />
                 <View style={styles.switchRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.switchLabel}>{t('adCreate.isBusinessLabel')}</Text>
@@ -545,6 +582,48 @@ export default function CreateAdScreen() {
                     thumbColor={isBusiness ? colors.primary : colors.textTertiary}
                   />
                 </View>
+
+                {isBusiness ? (
+                  <>
+                    <Text style={[styles.label, { marginTop: SPACING.md }]}>{t('adCreate.advertiserNameLabel')}</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder={t('adCreate.advertiserNamePlaceholder')}
+                      placeholderTextColor={colors.textTertiary}
+                      value={advertiserName}
+                      onChangeText={setAdvertiserName}
+                      maxLength={40}
+                    />
+                    <Text style={[styles.label, { marginTop: SPACING.md }]}>{t('adCreate.businessLogoLabel')}</Text>
+                    <TouchableOpacity style={styles.avatarPickRow} onPress={pickBusinessAvatar} activeOpacity={0.8}>
+                      {businessAvatar ? (
+                        <Image source={{ uri: businessAvatar.uri }} style={styles.avatarPreview} />
+                      ) : (
+                        <View style={[styles.avatarPreview, styles.avatarPreviewEmpty]}>
+                          <Ionicons name="business-outline" size={22} color={colors.primary} />
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.avatarPickText}>{businessAvatar ? t('adCreate.changeLogo') : t('adCreate.addLogo')}</Text>
+                        <Text style={styles.switchSub}>{t('adCreate.businessLogoSub')}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <View style={styles.profileNoteRow}>
+                    {profile?.avatar_url ? (
+                      <Image source={{ uri: profile.avatar_url }} style={styles.avatarPreview} />
+                    ) : (
+                      <View style={[styles.avatarPreview, styles.avatarPreviewEmpty]}>
+                        <Ionicons name="person-outline" size={22} color={colors.primary} />
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      {!!previewAdvertiserName && <Text style={styles.avatarPickText} numberOfLines={1}>{previewAdvertiserName}</Text>}
+                      <Text style={styles.switchSub}>{t('adCreate.regularProfileNote')}</Text>
+                    </View>
+                  </View>
+                )}
               </>
             )}
 
@@ -668,7 +747,7 @@ export default function CreateAdScreen() {
             {step === 'review' && (
               <>
                 <View style={styles.card}>
-                  <Text style={styles.reviewTitle}>{advertiserName || t('adCreate.untitled')}</Text>
+                  <Text style={styles.reviewTitle}>{previewAdvertiserName || t('adCreate.untitled')}</Text>
                   <ReviewRow k={t('adCreate.reviewObjective')} v={t(`adCreate.objective.${objective}.label`)} styles={styles} />
                   <ReviewRow k={t('adCreate.reviewPlacements')} v={placements.map(labelFor).join(', ') || '—'} styles={styles} />
                   <ReviewRow k={t('adCreate.reviewBudget')} v={fmtPrice(budgetCents)} styles={styles} />
@@ -813,6 +892,20 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   switchLabel: { color: colors.text, fontSize: 14, fontWeight: '600' },
   switchSub: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+
+  // Advertiser avatar picker (business) / profile-reuse note (regular user)
+  avatarPickRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: colors.border, padding: SPACING.md,
+  },
+  profileNoteRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    padding: SPACING.md, marginTop: SPACING.sm,
+  },
+  avatarPreview: { width: 48, height: 48, borderRadius: RADIUS.full, backgroundColor: colors.surfaceElevated },
+  avatarPreviewEmpty: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
+  avatarPickText: { color: colors.text, fontSize: 14, fontWeight: '700' },
 
   // Creative card
   card: {

@@ -241,6 +241,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/friends'),
     },
     {
+      icon: 'person-remove-outline',
+      label: t('account.followerInsights'),
+      subtitle: t('account.followerInsightsSub'),
+      onPress: () => router.push('/follower-insights'),
+    },
+    {
       icon: 'stats-chart-outline',
       label: t('account.analytics'),
       subtitle: t('account.analyticsSub'),

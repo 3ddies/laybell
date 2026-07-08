@@ -39,12 +39,18 @@ export default function CommunityPickerModal({ visible, userId, selectedIds, onC
   function toggle(id: string) {
     setPicked((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) { next.delete(id); }
-      else { if (next.size >= MAX_POST_COMMUNITIES) return prev; next.add(id); } // cap at 3 tags
+      if (next.has(id)) { next.delete(id); return next; }
+      if (next.size >= MAX_POST_COMMUNITIES) return prev; // cap at 3 tags
+      // One community per FOUNDER: block a second pick from the same founding user.
+      const c = list.find((x) => x.id === id);
+      if (c && list.some((x) => prev.has(x.id) && x.founder === c.founder)) return prev;
+      next.add(id);
       return next;
     });
   }
   const atMax = picked.size >= MAX_POST_COMMUNITIES;
+  // Founders already represented in the current pick (for blocking siblings).
+  const pickedFounders = new Set(list.filter((c) => picked.has(c.id)).map((c) => c.founder));
   function apply() {
     onApply(list.filter((c) => picked.has(c.id)));
     onClose();
@@ -93,12 +99,17 @@ export default function CommunityPickerModal({ visible, userId, selectedIds, onC
               <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
                 {list.map((c) => {
                   const on = picked.has(c.id);
-                  const blocked = !on && atMax; // can't add more than the cap
+                  // Blocked if we're at the cap, OR another community from the same
+                  // founder is already picked (one per founder).
+                  const sameFounderPicked = !on && pickedFounders.has(c.founder);
+                  const blocked = !on && (atMax || sameFounderPicked);
                   return (
                     <TouchableOpacity key={c.id} style={[styles.row, blocked && styles.rowBlocked]} onPress={() => toggle(c.id)}>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.rowText, on && { color: colors.primary, fontWeight: '800' }]} numberOfLines={1}>{c.name}</Text>
-                        <Text style={styles.rowHash} numberOfLines={1}>#{c.hashtag} · {genreLabel(c.genre)}</Text>
+                        <Text style={styles.rowHash} numberOfLines={1}>
+                          #{c.hashtag} · {genreLabel(c.genre)}{sameFounderPicked ? ` · ${t('communities.onePerFounder')}` : ''}
+                        </Text>
                       </View>
                       <Ionicons name={on ? 'checkbox' : 'square-outline'} size={22} color={on ? colors.primary : colors.textTertiary} />
                     </TouchableOpacity>

@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { bumpBadge } from './badges';
+import { isPremium } from './entitlements';
 
 // Spotlight (formerly "Ads") — pay-for-exposure promoted posts. Single source
 // of truth for packages, the campaign lifecycle, the spotlight scoring model,
@@ -402,6 +403,56 @@ export async function activateCampaign(campaignId: string, postId: string, days:
     return !error && !!data?.length;
   } catch {
     return false;
+  }
+}
+
+// ─── Free monthly Spotlight (Premium perk) ─────────────────────────────────────
+// One free 1-day Spotlight per calendar month. Eligibility + the atomic claim
+// live in supabase/sql/spotlight_credit.sql; here we just check status and call
+// the RPC. Resets automatically each month; an unused credit doesn't carry over.
+
+/** Current month as 'YYYY-MM' (UTC, matching the server's to_char(now())). */
+export function currentSpotlightMonth(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** True if the Premium user still has this month's free Spotlight to claim. */
+export async function fetchFreeSpotlightAvailable(): Promise<boolean> {
+  try {
+    if (!isPremium()) return false;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('spotlight_credit_used_month')
+      .eq('id', user.id)
+      .single();
+    if (error) return false;
+    return (data?.spotlight_credit_used_month ?? null) !== currentSpotlightMonth();
+  } catch {
+    return false;
+  }
+}
+
+export type ClaimFreeResult =
+  | { ok: true; id: string }
+  | { ok: false; reason: 'already_claimed' | 'not_premium' | 'invalid_post' | 'unavailable' };
+
+/** Spend the free monthly credit on one of the caller's public posts (1-day boost). */
+export async function claimFreeSpotlight(postId: string): Promise<ClaimFreeResult> {
+  try {
+    const { data, error } = await supabase.rpc('claim_free_spotlight', { p_post_id: postId });
+    if (error) {
+      const m = `${error.message ?? ''}`.toLowerCase();
+      if (m.includes('already_claimed')) return { ok: false, reason: 'already_claimed' };
+      if (m.includes('not_premium')) return { ok: false, reason: 'not_premium' };
+      if (m.includes('invalid_post')) return { ok: false, reason: 'invalid_post' };
+      return { ok: false, reason: 'unavailable' };
+    }
+    return { ok: true, id: data as string };
+  } catch {
+    return { ok: false, reason: 'unavailable' };
   }
 }
 

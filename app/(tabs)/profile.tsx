@@ -1,12 +1,16 @@
 import { useRouter, useFocusEffect } from 'expo-router';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useAudio } from '../../contexts/AudioContext';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Image, RefreshControl, PanResponder,
+  ScrollView, RefreshControl, PanResponder,
   Animated, Easing, Dimensions,
 } from 'react-native';
+// Content thumbnails use expo-image: memory+disk cached, so re-renders and
+// remounts repaint instantly instead of flashing (RN's core Image flickers when
+// list rows re-render with fresh source objects under the new architecture).
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState, useRef } from 'react';
@@ -19,8 +23,6 @@ import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import ProfileQRModal from '../../components/ProfileQRModal';
-import SupporterBadge from '../../components/SupporterBadge';
-import { usePremium } from '../../contexts/PremiumContext';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { countLabel } from '../../lib/i18n';
@@ -66,7 +68,6 @@ export default function ProfileScreen() {
   const { openCamera } = useStories();
   const { colors } = useTheme();
   const { t } = useTranslation();
-  const { isPremium } = usePremium();
   const linkGuard = useLinkGuard();
   const styles = useThemedStyles(makeStyles);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -84,6 +85,7 @@ export default function ProfileScreen() {
   const [publicPlaylists, setPublicPlaylists] = useState<any[]>([]);
   const router = useRouter();
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const { playQueue, expand } = useAudio();
   const { playingId } = useAudioPlayer();
 
@@ -416,6 +418,9 @@ export default function ProfileScreen() {
           spotlightIds={spotlightIds}
           playingId={playingId}
           artistName={profile?.display_name}
+          // Pause the looping hero when this sub-tab is hidden or the profile is
+          // off-screen — a detached VideoView that plays to its end stalls black.
+          active={activeTab === 'posts' && isFocused}
           onOpenVisual={openVisual}
           onPlaySongs={(queue, idx) => playQueue(queue, idx)}
           onLongPressPost={showPostOptions}
@@ -499,7 +504,7 @@ export default function ProfileScreen() {
             {post.type === 'slideshow' ? (
               <>
                 {/* Slide 1's screenshot (video) or slide 1 itself (image) */}
-                <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} resizeMode="cover" />
+                <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} contentFit="cover" />
                 <View style={styles.gridPlayOverlay}>
                   <Ionicons name="copy" size={13} color="#fff" />
                 </View>
@@ -512,10 +517,10 @@ export default function ProfileScreen() {
                 </View>
               </>
             ) : post.type === 'image' ? (
-              <Image source={{ uri: post.media_url }} style={styles.gridImage} resizeMode="cover" />
+              <Image source={{ uri: post.media_url }} style={styles.gridImage} contentFit="cover" />
             ) : isAudioPost(post.type) && post.cover_url ? (
               <>
-                <Image source={{ uri: post.cover_url }} style={styles.gridImage} resizeMode="cover" />
+                <Image source={{ uri: post.cover_url }} style={styles.gridImage} contentFit="cover" />
                 <View style={styles.gridPlayOverlay}>
                   <Ionicons name="musical-notes" size={13} color="#fff" />
                 </View>
@@ -607,7 +612,6 @@ export default function ProfileScreen() {
           <View style={styles.infoLeft}>
             <View style={styles.nameRow}>
               <Text style={styles.displayName}>{profile?.display_name}</Text>
-              <SupporterBadge active={isPremium} premiumUntil={(profile as any)?.premium_until} />
               {myTier ? (
                 <BadgeEmblem profile={badgeProfile} size={17} />
               ) : (
