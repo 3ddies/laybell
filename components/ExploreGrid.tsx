@@ -16,6 +16,7 @@ import { formatCount } from '../lib/format';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isSwipeTap } from '../contexts/PagerContext';
 import { isAudioPost } from '../lib/genres';
+import { isHorizontalVideo } from '../lib/tv';
 import { trackVideoProgress } from '../lib/viewTracker';
 import ThumbStat from './ThumbStat';
 import VideoThumb from './VideoThumb';
@@ -32,9 +33,19 @@ type GridPost = {
 const GAP = 6;
 const H_PADDING = SPACING.md;
 const COL_W = (Dimensions.get('window').width - H_PADDING * 2 - GAP) / 2;
+const SCREEN_H = Dimensions.get('window').height;
+// Minimum vertical spacing between autoplay-eligible videos, so previews are
+// spread evenly down the whole grid (never clumped, no long dead zones). ~0.6 of
+// a screen → roughly one preview per screen as you scroll.
+const PLAYABLE_GAP = SCREEN_H * 0.6;
+// Full-width Laybell-TV hero banner: spans both columns at a 16:9 shape.
+const BANNER_H = Math.round(((COL_W * 2 + GAP) * 9) / 16);
 const COL3_W = (Dimensions.get('window').width - H_PADDING * 2 - GAP * 2) / 3; // genre 3-up grid
 const ROW_H = COL_W / 3;            // a song row is 1/3 of a picture tile
 const MUSIC_HEADER_H = 30;
+// Never autoplay more than this many video previews at once on the grid — only
+// the ones nearest the viewport center play, so previews never clump on screen.
+const MAX_CONCURRENT_VIDEOS = 2;
 
 // Layered black outline for the yellow header word — RN has no text stroke, so we
 // stack offset black copies behind the fill (crisp, unlike a blurry text shadow).
@@ -60,11 +71,36 @@ function groupSongs(songs: GridPost[]): GridPost[][] {
   return groups;
 }
 
+// Smooth weighted round-robin (error diffusion): deals the queues' items into ONE
+// sequence, each queue spread evenly across it in proportion to its size, order
+// preserved within a queue. Used for variety mixing AND for spreading horizontal
+// video tiles among vertical ones so wide tiles never cluster.
+function interleave<T>(queues: T[][]): T[] {
+  const live = queues.filter(q => q.length > 0);
+  const total = live.reduce((n, q) => n + q.length, 0);
+  const st = live.map(q => ({ q, i: 0, credit: 0 }));
+  const out: T[] = [];
+  for (let step = 0; step < total; step++) {
+    let pick: (typeof st)[number] | null = null;
+    for (const x of st) {
+      if (x.i >= x.q.length) continue; // spent queues stop competing
+      x.credit += x.q.length;
+      if (!pick || x.credit > pick.credit) pick = x;
+    }
+    if (!pick) break;
+    pick.credit -= total;
+    out.push(pick.q[pick.i++]);
+  }
+  return out;
+}
+
 function mediaHeight(post: GridPost): number {
-  // All videos (incl. horizontal/cinematic clips) show as tall reel tiles — the
-  // landscape frame center-crops via contentFit="cover", so its thumbnail looks
-  // like a regular reel even though it plays back letterboxed.
-  if (post.type === 'video') return COL_W * 1.25;
+  if (post.type === 'video') {
+    // Laybell-TV videos (landscape, aspect > 1) get a HORIZONTAL 16:9 tile so the
+    // grid thumbnail resembles the video's real shape; vertical clips stay tall
+    // reel tiles. Both fill via contentFit="cover".
+    return isHorizontalVideo(post) ? Math.round((COL_W * 9) / 16) : COL_W * 1.25;
+  }
   return COL_W; // pictures render 1:1
 }
 
@@ -131,16 +167,33 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   const mountedIds = useRef<Set<string>>(new Set()); // once visible, keep the <Video> mounted
   const scrollY = useRef(0);
   const viewportH = useRef(0);
+  // Video onLayout y is COLUMN-relative. The grid is split into two sections (above
+  // and below the Laybell-TV banner); each section's row measures its y in the
+  // scroll content here, so a video's position converts to scroll-content coords as
+  // sectionOffset + column-relative y (which section from bottomVideoIds below).
+  const sectionOffsets = useRef({ top: 0, bottom: 0 });
   const videoPos = useRef<Record<string, { y: number; h: number }>>({});
 
   const recomputeActive = () => {
     const top = scrollY.current;
     const bottom = top + viewportH.current;
-    const next = new Set<string>();
+    const center = (top + bottom) / 2;
+    const off = sectionOffsets.current;
+    // Every video overlapping the viewport, with its distance from the viewport
+    // center. Only the nearest few actually play (see MAX_CONCURRENT_VIDEOS) so a
+    // cluster of previews never all render at once — the rest stay mounted but
+    // paused on their poster. Playback tracks the center as you scroll.
+    const overlapping: { id: string; dist: number }[] = [];
     for (const id in videoPos.current) {
       const { y, h } = videoPos.current[id];
-      if (y < bottom && y + h > top) { next.add(id); mountedIds.current.add(id); }
+      const cy = (bottomVideoIds.has(id) ? off.bottom : off.top) + y; // → scroll-content coords
+      if (cy < bottom && cy + h > top) {
+        mountedIds.current.add(id);
+        overlapping.push({ id, dist: Math.abs(cy + h / 2 - center) });
+      }
     }
+    overlapping.sort((a, b) => a.dist - b.dist);
+    const next = new Set(overlapping.slice(0, MAX_CONCURRENT_VIDEOS).map(o => o.id));
     setVisibleIds(prev => {
       if (prev.size === next.size && [...next].every(id => prev.has(id))) return prev;
       return next;
@@ -150,12 +203,27 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   // The masonry layout depends only on the posts and the songTiles mode, not on
   // playback state — so memoize it. Without this the whole filter/sort/group/pack
   // recomputed on every render, including each 250ms audio progress tick.
-  const { cols, playableSet } = useMemo(() => {
-    if (!posts || posts.length === 0) {
-      return { cols: [[], []] as Cell[][], playableSet: new Set<string>() };
-    }
+  const { topCols, bottomCols, bannerPost, playableSet, bottomVideoIds, topShortCol, topPadTop } = useMemo(() => {
+    const EMPTY = {
+      topCols: [[], []] as Cell[][], bottomCols: [[], []] as Cell[][],
+      bannerPost: null as GridPost | null, playableSet: new Set<string>(),
+      bottomVideoIds: new Set<string>(), topShortCol: -1, topPadTop: 0,
+    };
+    if (!posts || posts.length === 0) return EMPTY;
 
-    const videos = posts.filter(p => p.type === 'video');
+    // Laybell-TV hero banner: the most relevant HORIZONTAL video (posts are already
+    // relevance-ordered, so the first landscape one is the top pick). It's featured
+    // full-width under the first song card, so exclude it from the grid tiles. Only
+    // in the masonry ("All") view — the genre square grid doesn't use it.
+    const bannerPost: GridPost | null = songTiles ? null : (posts.find(isHorizontalVideo) ?? null);
+    const allVideos = posts.filter(p => p.type === 'video' && p.id !== bannerPost?.id);
+    // Spread HORIZONTAL (16:9) tiles evenly among the vertical reels — several
+    // landscape clips arriving consecutively would otherwise occupy consecutive
+    // video slots and read as a wide-tile cluster on the grid.
+    const videos = interleave([
+      allVideos.filter(p => !isHorizontalVideo(p)),
+      allVideos.filter(isHorizontalVideo),
+    ]);
     // Images + slideshows render as 1:1 STILL tiles — a slideshow is never a video,
     // so it never live-loops (always a static cover). In genre view songs join them
     // as cover tiles; in "All" they stay grouped into Trending Songs stacks.
@@ -170,17 +238,9 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       ? songClusters
       : groupSongs(posts.filter(p => isAudioPost(p.type))).map(g => ({ title: t('explore.trendingSongs'), songs: g }));
 
-    // Only ~1 in every 4 videos auto-plays; the rest stay as still thumbnails so the
-    // grid isn't overstimulating. Prefer vertical (portrait) clips for the play
-    // slots since they look better on the grid.
-    const playableCount = Math.ceil(videos.length / 4);
-    const isVertical = (p: GridPost) => aspectToNumber(p.aspect_ratio, 16 / 9) < 1; // w/h < 1 => portrait
-    const playableSet = new Set(
-      [...videos]
-        .sort((a, b) => Number(isVertical(b)) - Number(isVertical(a))) // verticals first
-        .slice(0, playableCount)
-        .map(v => v.id),
-    );
+    // Which videos auto-play (`playableSet`) is decided AFTER the layout is packed,
+    // from each video's final vertical position — not from a content-order slice —
+    // so the previews are spread evenly down the whole grid (see below).
 
     // ── Systematic, declumped masonry ────────────────────────────────────────
     // Three visual VARIETIES share the grid: videos (tall reel tiles), still
@@ -208,44 +268,129 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       })),
     ].filter(q => q.length > 0);
 
-    // Smooth weighted interleave: every step each live queue accrues credit equal
-    // to its remaining-agnostic size, and the most-owed queue emits one item —
-    // dealing each variety out evenly across the sequence in proportion to count.
-    const totalCells = varietyQueues.reduce((n, q) => n + q.length, 0);
-    const qState = varietyQueues.map(q => ({ items: q, i: 0, credit: 0 }));
-    const ordered: Cell[] = [];
-    for (let step = 0; step < totalCells; step++) {
-      let pick: (typeof qState)[number] | null = null;
-      for (const q of qState) {
-        if (q.i >= q.items.length) continue; // spent queues stop competing
-        q.credit += q.items.length;
-        if (!pick || q.credit > pick.credit) pick = q;
-      }
-      if (!pick) break;
-      pick.credit -= totalCells;
-      ordered.push(pick.items[pick.i++]);
-    }
+    // Deal all three varieties into one evenly-mixed sequence (see interleave).
+    const ordered = interleave(varietyQueues);
 
-    // Pack the interleaved sequence, avoiding same-variety vertical neighbors.
-    const cols: Cell[][] = [[], []];
-    const colH = [0, 0];
+    // Top-left slot is always a looping preview video: pull the first video to the
+    // front so ordered[0] packs into column 0 (top-left) and — being the topmost
+    // video — is always autoplay-eligible.
+    const firstVideoIdx = ordered.findIndex(c => c.kind === 'media' && c.post.type === 'video');
+    if (firstVideoIdx > 0) ordered.unshift(...ordered.splice(firstVideoIdx, 1));
+    const heroVideoId = ordered[0]?.kind === 'media' && ordered[0].post.type === 'video' ? ordered[0].post.id : null;
+
     const variety = (cell: Cell): string =>
       cell.kind === 'music' ? 'music' : cell.post.type === 'video' ? 'video' : 'still';
     const endsWith = (col: Cell[], v: string) =>
       col.length > 0 && variety(col[col.length - 1]) === v;
-    for (const cell of ordered) {
-      const v = variety(cell);
-      let c = colH[0] <= colH[1] ? 0 : 1;
-      // Redirect to the other column only when it BOTH declumps and won't open a
-      // gap taller than one tile — declumping never fights the masonry balance.
-      if (endsWith(cols[c], v) && !endsWith(cols[c ^ 1], v) && colH[c ^ 1] - colH[c] <= COL_W) {
-        c ^= 1;
+
+    // Song cards get deliberate placement: the FIRST on the RIGHT (col 1), each
+    // subsequent one on the opposite side from the last (zig-zag), relaxed only if
+    // the target column runs much taller. State is carried ACROSS the two sections.
+    const music = { seen: false, lastCol: 0 };
+    // Pack one section (2-column masonry) and report each video's section-relative
+    // center. Non-music cells go shortest-first with same-variety declumping.
+    const packSection = (cells: Cell[]) => {
+      const cols: Cell[][] = [[], []];
+      const colH = [0, 0];
+      const centers: { id: string; yc: number }[] = [];
+      for (const cell of cells) {
+        const v = variety(cell);
+        let c: number;
+        if (v === 'music') {
+          const target = music.seen ? music.lastCol ^ 1 : 1;
+          c = colH[target] - colH[target ^ 1] > COL_W * 1.5 ? target ^ 1 : target;
+          music.seen = true;
+          music.lastCol = c;
+        } else {
+          c = colH[0] <= colH[1] ? 0 : 1;
+          if (endsWith(cols[c], v) && !endsWith(cols[c ^ 1], v) && colH[c ^ 1] - colH[c] <= COL_W) c ^= 1;
+        }
+        const yTop = colH[c];
+        cols[c].push(cell);
+        colH[c] += cell.height + GAP;
+        if (cell.kind === 'media' && cell.post.type === 'video') centers.push({ id: cell.post.id, yc: yTop + cell.height / 2 });
       }
-      cols[c].push(cell);
-      colH[c] += cell.height + GAP;
+      return { cols, colH, centers };
+    };
+
+    // Split the grid AFTER the first song card and drop the full-width Laybell-TV
+    // banner there — so the content BELOW the banner restarts even (a fresh 2-col
+    // start). Only when we actually have a banner video and a song card, with room
+    // for content on both sides.
+    const firstMusicIdx = ordered.findIndex(c => c.kind === 'music');
+    const splitAt = bannerPost && firstMusicIdx >= 0 && firstMusicIdx < ordered.length - 1
+      ? firstMusicIdx + 1 : -1;
+    const rest = splitAt >= 0 ? ordered.slice(splitAt) : [];
+    const top = packSection(splitAt >= 0 ? ordered.slice(0, splitAt) : ordered);
+    // GAP-FILL / LEVELLING: cutting the section right after the first song card can
+    // leave it lopsided (the song card lands on the right, so the left column may
+    // hold only the hero) — a blank block sitting on top of the banner. Keep
+    // pulling upcoming media tiles into the SHORTER column, BEST-FIT (the tile
+    // whose height is closest to the current gap), for as long as it actually
+    // shrinks the gap (h < 2·gap). This converges the two columns to nearly flush,
+    // so there's never a big hole above the banner — short horizontal 16:9 tiles
+    // top off small gaps neatly. A different variety than the landing tile breaks
+    // ties (keeps the declumping).
+    if (splitAt >= 0) {
+      for (;;) {
+        const short = top.colH[0] <= top.colH[1] ? 0 : 1;
+        const gap = Math.abs(top.colH[0] - top.colH[1]);
+        if (gap <= GAP + 2) break; // effectively level
+        const lastCell = top.cols[short][top.cols[short].length - 1];
+        const lastV = lastCell ? variety(lastCell) : '';
+        let bestIdx = -1, bestScore = Infinity;
+        for (let k = 0; k < rest.length; k++) {
+          const c = rest[k];
+          if (c.kind !== 'media' || c.height >= gap * 2) continue; // wouldn't shrink the gap
+          const score = Math.abs(c.height - gap) + (variety(c) === lastV ? COL_W * 0.2 : 0);
+          if (score < bestScore) { bestScore = score; bestIdx = k; }
+        }
+        if (bestIdx < 0) break; // nothing left can level it further
+        const [cell] = rest.splice(bestIdx, 1) as (Cell & { kind: 'media' })[];
+        const yTop = top.colH[short];
+        top.cols[short].push(cell);
+        top.colH[short] += cell.height + GAP;
+        if (cell.post.type === 'video') top.centers.push({ id: cell.post.id, yc: yTop + cell.height / 2 });
+      }
+    }
+    const bottom = packSection(rest);
+    const usedBanner = splitAt >= 0 ? bannerPost : null;
+
+    // Global (whole-scroll) video centers so eligibility spacing spans BOTH
+    // sections + the banner between them (heights are all computable here).
+    const bannerH = usedBanner ? BANNER_H + GAP * 2 : 0;
+    const bottomBase = Math.max(top.colH[0], top.colH[1]) + bannerH;
+
+    // Any residual gap the levelling couldn't close sits at the bottom of the
+    // shorter top column (under the song card, above the banner). Rather than
+    // leave one obvious empty block, CENTER that column's last tile in the leftover
+    // space — push it down half the residual, so the space splits above and below
+    // it and reads as intentional breathing room, not a hole.
+    const topShortCol = usedBanner && top.colH[0] !== top.colH[1] ? (top.colH[0] < top.colH[1] ? 0 : 1) : -1;
+    const topResidual = Math.abs(top.colH[0] - top.colH[1]);
+    const topPadTop = topShortCol >= 0 && topResidual > GAP * 2 ? Math.round(topResidual / 2) : 0;
+    const globalCenters = [
+      ...top.centers,
+      ...bottom.centers.map(c => ({ id: c.id, yc: c.yc + bottomBase })),
+    ].sort((a, b) => a.yc - b.yc);
+    const bottomVideoIds = new Set(bottom.centers.map(c => c.id));
+
+    // Autoplay eligibility, spread by POSITION across the whole grid — one preview
+    // per ~PLAYABLE_GAP, no clumps, no long gaps. The top-left hero anchors the
+    // spacing so a slightly-higher shorter video in the other column can't steal
+    // the first preview slot (that made the top-RIGHT play instead of top-left).
+    const playableSet = new Set<string>();
+    let lastPlayableY = -Infinity;
+    if (heroVideoId) {
+      const hero = globalCenters.find(v => v.id === heroVideoId);
+      if (hero) { playableSet.add(heroVideoId); lastPlayableY = hero.yc; }
+    }
+    for (const { id, yc } of globalCenters) {
+      if (playableSet.has(id)) continue;
+      if (yc - lastPlayableY >= PLAYABLE_GAP) { playableSet.add(id); lastPlayableY = yc; }
     }
 
-    return { cols, playableSet };
+    return { topCols: top.cols, bottomCols: bottom.cols, bannerPost: usedBanner, playableSet, bottomVideoIds, topShortCol, topPadTop };
   }, [posts, songTiles, songClusters, t]);
 
   if (!posts || posts.length === 0) {
@@ -444,6 +589,26 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     return renderMedia(cell);
   };
 
+  // Full-width Laybell-TV hero banner: a big 16:9 thumbnail of the top trending
+  // horizontal video, spanning both columns. Sits under the first song card and
+  // gives the grid below it a fresh even start. Tap opens the reel. The overlay
+  // shows @username (consistent with every other grid tile); the caption sits
+  // UNDER the preview as its own line.
+  const renderTVBanner = (p: GridPost) => (
+    <View style={styles.tvBannerWrap}>
+      <TouchableOpacity style={styles.tvBanner} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
+        <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
+        <View style={styles.tvTag}><Ionicons name="tv" size={13} color="#fff" /><Text style={styles.tvTagText}>Laybell TV</Text></View>
+        <View style={styles.playBadge}><Ionicons name="play" size={14} color="#fff" /></View>
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.78)']} style={styles.mediaOverlay}>
+          <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
+        </LinearGradient>
+        <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
+      </TouchableOpacity>
+      {!!p.caption && <Text style={styles.tvCaption} numberOfLines={2}>{p.caption}</Text>}
+    </View>
+  );
+
   // Genre view: a uniform 3-up square grid.
   const renderSquare = (p: GridPost) => {
     if (isAudioPost(p.type)) {
@@ -523,11 +688,35 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       {songTiles ? (
         <View style={styles.grid3}>{posts.map(renderSquare)}</View>
       ) : (
-        <View style={styles.row}>
-          {cols.map((col, ci) => (
-            <View key={ci} style={styles.col}>{col.map(renderCell)}</View>
-          ))}
-        </View>
+        <>
+          <View
+            style={styles.row}
+            onLayout={e => { sectionOffsets.current.top = e.nativeEvent.layout.y; recomputeActive(); }}
+          >
+            {topCols.map((col, ci) => (
+              <View key={ci} style={styles.col}>
+                {col.map((cell, ri) =>
+                  // Center the shorter column's last tile in the leftover space so
+                  // a residual gap under the song card splits above/below it.
+                  ci === topShortCol && ri === col.length - 1 && topPadTop > 0
+                    ? <View key={cell.key} style={{ marginTop: topPadTop }}>{renderCell(cell)}</View>
+                    : renderCell(cell)
+                )}
+              </View>
+            ))}
+          </View>
+          {bannerPost && renderTVBanner(bannerPost)}
+          {(bottomCols[0].length > 0 || bottomCols[1].length > 0) && (
+            <View
+              style={styles.row}
+              onLayout={e => { sectionOffsets.current.bottom = e.nativeEvent.layout.y; recomputeActive(); }}
+            >
+              {bottomCols.map((col, ci) => (
+                <View key={ci} style={styles.col}>{col.map(renderCell)}</View>
+              ))}
+            </View>
+          )}
+        </>
       )}
     </ScrollView>
   );
@@ -551,6 +740,21 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   mediaCard: { width: COL_W, borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: colors.surfaceLight },
   mediaImage: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
+
+  // Full-width Laybell-TV hero banner (spans both columns; content below restarts even).
+  tvBannerWrap: { marginVertical: GAP },
+  tvBanner: {
+    height: BANNER_H, borderRadius: RADIUS.md, overflow: 'hidden',
+    backgroundColor: colors.surfaceLight, position: 'relative',
+  },
+  // Same face as the caption under real Laybell-TV thumbnails (components/
+  // TVVideoList.tsx `caption`: text color, weight 700) — just bigger for the hero.
+  tvCaption: { color: colors.text, fontSize: 15, fontWeight: '700', lineHeight: 20, marginTop: 6, paddingHorizontal: 2 },
+  tvTag: {
+    position: 'absolute', top: 8, right: 8, flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  tvTagText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
   playBadge: {
     position: 'absolute', top: 8, left: 8, width: 22, height: 22, borderRadius: 11,
     backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
