@@ -90,13 +90,16 @@ export const BADGES: BadgeDef[] = [
   { key: 'ads_bronze',       category: 'ads',       tier: 'bronze', title: 'Bronze Patron',  criteria: 'Engage with a spotlighted post today',   permanent: false, locked: false },
   { key: 'ads_silver',       category: 'ads',       tier: 'silver', title: 'Silver Patron',  criteria: 'Engage with 2+ spotlighted posts today', permanent: false, locked: false },
 
-  // ── Locked stubs (no underlying system yet) ──
-  { key: 'community_bronze', category: 'community', tier: 'bronze', title: 'Bronze Member',  criteria: 'Join a community',                       permanent: false, locked: true },
-  { key: 'community_silver', category: 'community', tier: 'silver', title: 'Silver Member',  criteria: 'Stay in good standing for a week',        permanent: false, locked: true },
-  { key: 'community_gold',   category: 'community', tier: 'gold',   title: 'Gold Member',    criteria: 'Become a community manager',             permanent: false, locked: true },
-  { key: 'app_sharing_bronze',  category: 'app_sharing', tier: 'bronze',  title: 'Bronze Advocate',  criteria: 'Share the app',                  permanent: false, locked: true },
-  { key: 'app_sharing_silver',  category: 'app_sharing', tier: 'silver',  title: 'Silver Advocate',  criteria: 'Share the app with 8+ people',   permanent: false, locked: true },
-  { key: 'app_sharing_gold',    category: 'app_sharing', tier: 'gold',    title: 'Gold Advocate',    criteria: 'Share the app with 15 people',   permanent: true,  locked: true },
+  // Community — live membership/ownership (from lib/communities). Bronze: be an
+  // active member of any community; Silver: own (created) a community. No gold.
+  { key: 'community_bronze', category: 'community', tier: 'bronze', title: 'Bronze Member',  criteria: 'Join a community',  permanent: false, locked: false },
+  { key: 'community_silver', category: 'community', tier: 'silver', title: 'Silver Member',  criteria: 'Own a community',   permanent: false, locked: false },
+
+  // App sharing — lifetime count of app shares/invites (profiles.app_shares,
+  // bumped by record_app_share). Gold is permanent (a milestone you keep).
+  { key: 'app_sharing_bronze',  category: 'app_sharing', tier: 'bronze',  title: 'Bronze Advocate',  criteria: 'Share the app',                  permanent: false, locked: false },
+  { key: 'app_sharing_silver',  category: 'app_sharing', tier: 'silver',  title: 'Silver Advocate',  criteria: 'Share the app with 8+ people',   permanent: false, locked: false },
+  { key: 'app_sharing_gold',    category: 'app_sharing', tier: 'gold',    title: 'Gold Advocate',    criteria: 'Share the app with 15 people',   permanent: true,  locked: false },
 ];
 
 export const BADGES_BY_KEY: Record<string, BadgeDef> = Object.fromEntries(BADGES.map(b => [b.key, b]));
@@ -309,7 +312,14 @@ export type DailyRow = { day: string; likes: number; comments: number; music_sec
 // `top_playlist_listens` = play count of the user's single most-listened PUBLIC
 // playlist (not a sum across playlists) — the curator badge requires one playlist
 // to hit the threshold on its own.
-export type BadgeState = { today: string; daily: DailyRow[]; public_posts: number; top_playlist_listens: number };
+export type BadgeState = {
+  today: string; daily: DailyRow[]; public_posts: number; top_playlist_listens: number;
+  // Live community standing (from lib/communities): count of active memberships
+  // and of communities the user owns. Day-independent, like public_posts.
+  communities_joined: number; communities_owned: number;
+  // Lifetime app-share count (profiles.app_shares) — drives the App-sharing badges.
+  app_shares: number;
+};
 
 // Add `delta` UTC days to a 'YYYY-MM-DD' string. Pure UTC math anchored to the
 // server-provided day — never the device clock — so timezones can't shift "today".
@@ -464,6 +474,21 @@ function qualifyingTiersAt(state: BadgeState, today: string): CategoryTiers {
   else if (pl >= 500) out.curator = 'silver';
   else if (pl >= 100) out.curator = 'bronze';
 
+  // community — live membership/ownership. Own a community → silver; be an active
+  // member of any → bronze (owning implies membership, so an owner gets silver).
+  // Live: leaving your last community drops bronze; the community being archived
+  // drops silver — both re-award automatically on the next evaluation.
+  if (state.communities_owned >= 1) out.community = 'silver';
+  else if (state.communities_joined >= 1) out.community = 'bronze';
+
+  // app sharing — lifetime count of app shares/invites (cumulative, only grows).
+  // Gold is permanent (see catalog), so once hit it's held even if the number
+  // somehow changed. Bronze 1 / Silver 8 / Gold 15.
+  const shares = state.app_shares;
+  if (shares >= 15) out.app_sharing = 'gold';
+  else if (shares >= 8) out.app_sharing = 'silver';
+  else if (shares >= 1) out.app_sharing = 'bronze';
+
   return out;
 }
 
@@ -478,6 +503,9 @@ export type BadgeMetrics = {
   publicPosts: number;
   topPlaylistListens: number;
   todayAdEngagements: number;
+  communitiesJoined: number;
+  communitiesOwned: number;
+  appShares: number;
 };
 export function computeMetrics(state: BadgeState): BadgeMetrics {
   const byDay = new Map(state.daily.map(r => [r.day, r]));
@@ -492,6 +520,9 @@ export function computeMetrics(state: BadgeState): BadgeMetrics {
     publicPosts: state.public_posts,
     topPlaylistListens: state.top_playlist_listens,
     todayAdEngagements: todayRow?.ad_engagements ?? 0,
+    communitiesJoined: state.communities_joined,
+    communitiesOwned: state.communities_owned,
+    appShares: state.app_shares,
   };
 }
 
@@ -503,7 +534,7 @@ export async function fetchBadgeState(): Promise<BadgeState | null> {
     // Only PUBLIC playlists count and only the single best one (max, not sum):
     // a privated playlist drops out of this query immediately, so the curator
     // badge revokes on the next evaluation and re-awards if it goes public again.
-    const [stateRes, playsRes] = await Promise.all([
+    const [stateRes, playsRes, commRes] = await Promise.all([
       supabase.rpc('get_badge_state'),
       (async () => {
         try {
@@ -515,6 +546,28 @@ export async function fetchBadgeState(): Promise<BadgeState | null> {
           return data.reduce((max, r: any) => Math.max(max, r.play_count ?? 0), 0);
         } catch { return 0; }
       })(),
+      // Community standing + lifetime app-shares, read client-side (same graceful
+      // pattern as playlist listens): active memberships → "joined", owned
+      // non-archived communities → "owned", profiles.app_shares → "shares". If a
+      // migration isn't applied the corresponding select fails and reads as 0.
+      (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return { joined: 0, owned: 0, shares: 0 };
+          const [joinedRes, ownedRes, shareRes] = await Promise.all([
+            supabase.from('community_members').select('community_id', { count: 'exact', head: true })
+              .eq('user_id', user.id).eq('status', 'active'),
+            supabase.from('communities').select('id', { count: 'exact', head: true })
+              .eq('owner_id', user.id).neq('status', 'archived'),
+            supabase.from('profiles').select('app_shares').eq('id', user.id).maybeSingle(),
+          ]);
+          return {
+            joined: joinedRes.count ?? 0,
+            owned: ownedRes.count ?? 0,
+            shares: (shareRes.data as any)?.app_shares ?? 0,
+          };
+        } catch { return { joined: 0, owned: 0, shares: 0 }; }
+      })(),
     ]);
     if (stateRes.error || !stateRes.data) return null;
     const d: any = stateRes.data;
@@ -523,6 +576,9 @@ export async function fetchBadgeState(): Promise<BadgeState | null> {
       daily: Array.isArray(d.daily) ? d.daily : [],
       public_posts: d.public_posts ?? 0,
       top_playlist_listens: playsRes,
+      communities_joined: commRes.joined,
+      communities_owned: commRes.owned,
+      app_shares: commRes.shares,
     };
   } catch {
     return null;
@@ -683,6 +739,15 @@ export async function recordActivity(category: string, count = 1): Promise<void>
 // Mark the user active today (ensures today's row exists) without changing a counter.
 export async function touchLogin(): Promise<void> {
   await recordActivity('login', 0);
+}
+
+// Record ONE completed app share/invite (bumps the lifetime profiles.app_shares
+// counter), then re-evaluate so the App-sharing (Advocate) badge updates. Called
+// from share surfaces after the native share sheet reports an actual share.
+// Awaits the increment so the debounced evaluation reads the new total.
+export async function recordAppShare(): Promise<void> {
+  try { await supabase.rpc('record_app_share'); } catch {}
+  evaluateBadgesDebounced();
 }
 
 let evalTimer: ReturnType<typeof setTimeout> | null = null;

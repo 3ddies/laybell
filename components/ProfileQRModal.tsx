@@ -4,6 +4,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, RADIUS } from '../constants/theme';
 import { profileShareUrl } from '../lib/appLinks';
+import { recordAppShare } from '../lib/badges';
 import QRCodeView from './QRCodeView';
 
 type Props = {
@@ -24,8 +25,14 @@ export default function ProfileQRModal({ visible, onClose, userId, username, dis
   const { t } = useTranslation();
   const url = profileShareUrl(userId);
 
-  const onShare = () => {
-    Share.share({ message: url, url }).catch(() => {});
+  const onShare = async () => {
+    try {
+      const res = await Share.share({ message: url, url });
+      // Only count it once the user actually shares (not on dismiss). The profile
+      // QR routes non-users to the app store, so sharing it = inviting to the app;
+      // it credits the App-sharing (Advocate) badge.
+      if (res.action === Share.sharedAction) recordAppShare();
+    } catch { /* share sheet dismissed or unavailable */ }
   };
 
   return (

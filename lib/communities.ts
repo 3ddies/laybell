@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { rawTier, tierRank, type ProfileBadgeFields } from './badges';
+import { rawTier, tierRank, evaluateBadgesDebounced, type ProfileBadgeFields } from './badges';
 
 // Communities + community hashtags — data layer.
 // Schema + RLS + RPCs live in supabase/sql/communities.sql. Everything here
@@ -295,6 +295,7 @@ export async function createCommunity(opts: {
       p_invites: opts.invites,
     });
     if (error) return { error: friendlyRpcError(error) };
+    evaluateBadgesDebounced(); // owning a community → Silver community badge
     return { id: data as string };
   } catch (e: any) {
     return { error: friendlyRpcError(e) };
@@ -302,18 +303,27 @@ export async function createCommunity(opts: {
 }
 
 export async function joinCommunity(id: string): Promise<boolean> {
-  try { const { error } = await supabase.rpc('community_join', { p_community: id }); return !error; }
-  catch { return false; }
+  try {
+    const { error } = await supabase.rpc('community_join', { p_community: id });
+    if (!error) evaluateBadgesDebounced(); // active membership → Bronze community badge
+    return !error;
+  } catch { return false; }
 }
 
 export async function leaveCommunity(id: string): Promise<boolean> {
-  try { const { error } = await supabase.rpc('community_leave', { p_community: id }); return !error; }
-  catch { return false; }
+  try {
+    const { error } = await supabase.rpc('community_leave', { p_community: id });
+    if (!error) evaluateBadgesDebounced(); // leaving your last one may drop the badge
+    return !error;
+  } catch { return false; }
 }
 
 export async function respondInvite(id: string, accept: boolean): Promise<boolean> {
-  try { const { error } = await supabase.rpc('community_respond_invite', { p_community: id, p_accept: accept }); return !error; }
-  catch { return false; }
+  try {
+    const { error } = await supabase.rpc('community_respond_invite', { p_community: id, p_accept: accept });
+    if (!error && accept) evaluateBadgesDebounced(); // accepting = joining
+    return !error;
+  } catch { return false; }
 }
 
 export async function setMemberRole(id: string, target: string, role: CommunityRole): Promise<{ ok: boolean; error?: string }> {

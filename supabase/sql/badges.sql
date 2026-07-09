@@ -122,7 +122,12 @@ using (auth.uid() = user_id);
 alter table public.profiles
   add column if not exists badge_show       boolean not null default true,
   add column if not exists profile_theme    text,
-  add column if not exists story_ring_style text;
+  add column if not exists story_ring_style text,
+  -- Lifetime count of times the user has shared/invited others to the app.
+  -- Drives the App-sharing (Advocate) badges: bronze 1, silver 8, gold 15.
+  -- A cumulative total (not per-day), so it lives on profiles, not the daily
+  -- table, and is read directly by fetchBadgeState.
+  add column if not exists app_shares       integer not null default 0;
 
 -- ─── record_badge_activity ────────────────────────────────────────────────────
 -- Atomically upsert today's (UTC) row and increment one counter. Called by the
@@ -164,6 +169,30 @@ end;
 $$;
 
 grant execute on function public.record_badge_activity(text, integer) to authenticated;
+
+-- ─── record_app_share ─────────────────────────────────────────────────────────
+-- Atomically bump the caller's lifetime app-share counter by one. Called each
+-- time the user completes a share of the app (the profile-QR "Share" sheet /
+-- invite). Cumulative and permanent-ish (only ever increments), driving the
+-- App-sharing badges. Single-statement UPDATE, so concurrent shares can't lose
+-- an increment.
+create or replace function public.record_app_share()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then return; end if;
+  update public.profiles
+     set app_shares = coalesce(app_shares, 0) + 1
+   where id = v_uid;
+end;
+$$;
+
+grant execute on function public.record_app_share() to authenticated;
 
 -- ─── get_badge_state ──────────────────────────────────────────────────────────
 -- One round trip for the evaluator: the current UTC date, the caller's last

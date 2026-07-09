@@ -75,6 +75,11 @@ function badgeStatus(def: BadgeDef, m: BadgeMetrics | null, held: Set<string>): 
     case 'curator_gold':    return cur(m.topPlaylistListens, 2500, 'listens');
     case 'ads_bronze': return cur(m.todayAdEngagements, 1, 'today');
     case 'ads_silver': return cur(m.todayAdEngagements, 2, 'today');
+    case 'community_bronze': return cur(m.communitiesJoined, 1, 'joined');
+    case 'community_silver': return cur(m.communitiesOwned, 1, 'owned');
+    case 'app_sharing_bronze': return cur(m.appShares, 1, 'shares');
+    case 'app_sharing_silver': return cur(m.appShares, 8, 'shares');
+    case 'app_sharing_gold':   return cur(m.appShares, 15, 'shares');
     default: return { kind: 'progress', cur: 0, target: 1, unit: '' };
   }
 }
