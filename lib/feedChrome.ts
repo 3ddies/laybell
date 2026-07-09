@@ -82,7 +82,7 @@ function stopBottomGlide() {
 // scroll has stopped mid-transition), it commits to a clean end state. The snap-in
 // cutoff is DIRECTIONAL (see topReappearing): if the header was DISAPPEARING it
 // snaps fully in from just past 37% down (topValue < 0.63); if it was REAPPEARING
-// (scroll-up) it must be more than 60% back (topValue < 0.4) before it commits to
+// (scroll-up) it must be more than 52% back (topValue < 0.48) before it commits to
 // fully in — otherwise it slides back out. Any scroll cancels it and the follow
 // takes back over.
 const TOP_SETTLE_MS = 750;
@@ -90,11 +90,11 @@ let topSettleTimer: ReturnType<typeof setTimeout> | null = null;
 let topSettling = false;
 // Whether the header was last moving toward SHOWN (reappearing, i.e. scrolling
 // up) vs toward hidden (disappearing). The resolve threshold is DIRECTIONAL:
-// reappearing needs the header more than 60% back before it commits to fully in
+// reappearing needs the header more than 52% back before it commits to fully in
 // (the user is likely just reading posts and doesn't want the bar popping back);
 // disappearing keeps the lenient 37% snap-in.
 let topReappearing = false;
-const SNAP_IN_REAPPEAR = 0.4;  // reappearing → snap in only past 60% down (topValue < 0.4)
+const SNAP_IN_REAPPEAR = 0.48;  // reappearing → snap in only past 52% back (topValue < 0.48)
 const SNAP_IN_DISAPPEAR = 0.63; // disappearing → snap in past 37% down (topValue < 0.63)
 function clearTopSettle() {
   if (topSettleTimer) { clearTimeout(topSettleTimer); topSettleTimer = null; }
@@ -103,7 +103,7 @@ function clearTopSettle() {
 function settleTopBar() {
   topSettleTimer = null;
   if (topValue <= 0.001 || topValue >= 0.999) return; // already resolved
-  // Directional: reappearing must be more than 60% back to snap in; disappearing
+  // Directional: reappearing must be more than 52% back to snap in; disappearing
   // snaps in from just past 37% (see topReappearing).
   const snapIn = topReappearing ? SNAP_IN_REAPPEAR : SNAP_IN_DISAPPEAR;
   const to: 0 | 1 = topValue < snapIn ? 0 : 1; // past threshold → snap in; else slide out
