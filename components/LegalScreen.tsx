@@ -39,7 +39,7 @@ export default function LegalScreen({ doc }: { doc: LegalDoc }) {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={24} color={colors.primary} />
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>{doc.title}</Text>
           <View style={{ width: 40 }} />

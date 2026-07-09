@@ -402,7 +402,7 @@ export default function ChatScreen() {
       <View style={styles.container}>
         <View style={[styles.header, { paddingTop: insets.top }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={26} color={colors.primary} />
+            <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
         </View>
         <ChatThreadSkeleton rows={9} />
@@ -414,7 +414,7 @@ export default function ChatScreen() {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={26} color={colors.primary} />
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.headerUser} activeOpacity={0.7} onPress={() => router.push(`/profile/${id}`)}>
           {otherUser?.avatar_url ? (

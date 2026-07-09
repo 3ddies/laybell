@@ -257,7 +257,7 @@ export default function GifMakerModal({
       <View style={{ paddingTop: insets.top + SPACING.sm }}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="chevron-back" size={26} color={colors.primary} />
+            <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.title}>{t('gif.make.title')}</Text>
           <View style={{ width: 26 }} />

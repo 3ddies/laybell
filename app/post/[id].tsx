@@ -215,7 +215,7 @@ export default function PostDetailScreen() {
         <View style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-              <Ionicons name="chevron-back" size={24} color={colors.primary} />
+              <Ionicons name="chevron-back" size={24} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{t('postView.title')}</Text>
             <View style={{ width: 40 }} />
@@ -241,7 +241,7 @@ export default function PostDetailScreen() {
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={dismiss}>
-          <Ionicons name="chevron-back" size={24} color={colors.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('postView.title')}</Text>
         <View style={{ width: 40 }} />

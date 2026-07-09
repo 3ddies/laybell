@@ -246,7 +246,7 @@ export default function MessagesScreen() {
         <View style={styles.container}>
           <View style={[styles.header, { paddingTop: Math.max(insets.top, SPACING.md) }]}>
             <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="chevron-back" size={26} color={colors.primary} />
+              <Ionicons name="chevron-back" size={26} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{t('messages.title')}</Text>
             <TouchableOpacity
@@ -297,7 +297,7 @@ export default function MessagesScreen() {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, SPACING.md) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={26} color={colors.primary} />
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('messages.title')}</Text>
         <TouchableOpacity
