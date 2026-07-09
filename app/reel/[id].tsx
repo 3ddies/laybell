@@ -466,19 +466,21 @@ export default function ReelScreen() {
           {/* Caption + community hashtag on the same line (wraps below only when
               the caption wraps). Taps through to that community. In expandable
               (landscape) mode it collapses to one line with a Show more/less toggle. */}
-          {!!item.caption && (
+          {(!!item.caption || (item.community_tags?.length ?? 0) > 0) && (
             <TranslatableText
-              text={item.caption}
+              text={item.caption ?? ''}
               render={(s) => (
                 <View>
                   <View style={styles.captionRow}>
-                    <MentionText
-                      style={styles.caption}
-                      numberOfLines={expandable ? (capExpanded ? undefined : 1) : 2}
-                      text={s}
-                    />
-                    {(item.community_tags ?? []).map((ct: { id: string; hashtag: string }) => (
-                      <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} />
+                    {!!s && (
+                      <MentionText
+                        style={styles.caption}
+                        numberOfLines={expandable ? (capExpanded ? undefined : 1) : 2}
+                        text={s}
+                      />
+                    )}
+                    {(item.community_tags ?? []).map((ct: { id: string; hashtag: string }, i: number) => (
+                      <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} leading={i === 0 && !!s} />
                     ))}
                   </View>
                   {expandable && (s.length > 38 || s.includes('\n')) && (

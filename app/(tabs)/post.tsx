@@ -1689,7 +1689,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   headerActionText: { color: colors.primary, fontSize: 16, fontWeight: '700' },
   // Byte-level upload progress under the header while a big file streams up.
   uploadBarTrack: { height: 3, backgroundColor: colors.surfaceLight, overflow: 'hidden' },
-  uploadBarFill: { height: 3, backgroundColor: colors.primary },
+  uploadBarFill: { height: 3, backgroundColor: '#ffffff' },
 
   previewArea: { backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.xs, overflow: 'hidden' },
   previewPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, gap: SPACING.sm, alignSelf: 'center' },

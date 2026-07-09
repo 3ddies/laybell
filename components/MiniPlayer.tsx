@@ -82,9 +82,16 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   // chips drop toward the screen edge), the music bar rides the SAME value
   // down so it always hugs the bottom elements instead of floating where the
   // full bar used to be. Zero everywhere else (chrome resets on tab change).
+  //
+  // Normal (bar visible): full `+ 6` travel so the card rides all the way down to
+  // hug the condensed circle buttons. When the bar is HIDDEN (Listen mode / a
+  // pushed screen) the card is already docked at the bottom, so the same travel
+  // would drive its rounded corners into the screen's curved edge — there we stop
+  // ~14px sooner (`- 8`) to keep the bottom boundary clear. Same feel either way.
+  const barHidden = listenMode || bottomDock;
   const chromeSlide = feedChrome.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, (insets.bottom > 0 ? insets.bottom - 2 : 12) + 6],
+    outputRange: [0, (insets.bottom > 0 ? insets.bottom - 2 : 12) + (barHidden ? -8 : 6)],
   });
 
   // Overlay variants (Create tab card / camera side chip): the player waits

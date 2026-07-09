@@ -321,14 +321,14 @@ const PostCard = memo(function PostCard({
           sits right after the caption when it fits on one line and drops to the
           next line only when the caption itself wraps. The media above opens the
           post; the tag opens its community. */}
-      {!!item.caption && !isAudioPost(item.type) && (
+      {(!!item.caption || (item.community_tags?.length ?? 0) > 0) && !isAudioPost(item.type) && (
         <TranslatableText
-          text={item.caption}
+          text={item.caption ?? ''}
           render={(s) => (
             <View style={styles.captionRow}>
-              <MentionText style={styles.caption} numberOfLines={3} text={s} />
-              {(item.community_tags ?? []).map((ct) => (
-                <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} />
+              {!!s && <MentionText style={styles.caption} numberOfLines={3} text={s} />}
+              {(item.community_tags ?? []).map((ct, i) => (
+                <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} leading={i === 0 && !!s} />
               ))}
             </View>
           )}

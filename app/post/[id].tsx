@@ -393,14 +393,14 @@ export default function PostDetailScreen() {
 
             {/* Caption + community hashtag on the same line (wraps below only
                 when the caption itself wraps). Taps through to that community. */}
-            {!!post.caption && !isAudioPost(post.type) && (
+            {(!!post.caption || (post.community_tags?.length ?? 0) > 0) && !isAudioPost(post.type) && (
               <TranslatableText
-                text={post.caption}
+                text={post.caption ?? ''}
                 render={(s) => (
                   <View style={styles.captionRow}>
-                    <MentionText style={styles.caption} text={s} />
-                    {(post.community_tags ?? []).map((ct) => (
-                      <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} />
+                    {!!s && <MentionText style={styles.caption} text={s} />}
+                    {(post.community_tags ?? []).map((ct, i) => (
+                      <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} leading={i === 0 && !!s} />
                     ))}
                   </View>
                 )}

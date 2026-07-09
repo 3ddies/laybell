@@ -235,7 +235,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   section: { paddingHorizontal: SPACING.md, marginBottom: SPACING.lg, gap: SPACING.sm },
   railWrap: { marginBottom: SPACING.lg },
-  railTitle: { color: colors.text, fontSize: 16, fontWeight: '800', paddingHorizontal: SPACING.md, marginBottom: SPACING.sm },
+  railTitle: { color: colors.text, fontSize: 20, lineHeight: 28, fontWeight: '900', paddingHorizontal: SPACING.md, marginBottom: SPACING.sm },
   railList: { paddingHorizontal: SPACING.md, gap: SPACING.sm },
 
   inviteRow: {

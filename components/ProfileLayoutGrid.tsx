@@ -7,7 +7,7 @@ import AppVideo from './AppVideo';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
-import { slideshowThumb, parseSlides, slideCover } from '../lib/slideshow';
+import { slideshowThumb, parseSlides } from '../lib/slideshow';
 import VideoThumb from './VideoThumb';
 import ThumbStat from './ThumbStat';
 import SpotlightThumbBadge from './SpotlightThumbBadge';
@@ -49,20 +49,33 @@ function LoopVideo({ uri, poster, style }: { uri: string; poster?: string | null
 // thumbnail every 2s (crossfading via expo-image's transition) instead of the
 // static slide-1 still. A single-slide slideshow just shows its cover.
 function SlideshowLoop({ post, active = true, style }: { post: any; active?: boolean; style: any }) {
-  const covers = parseSlides(post).map(slideCover).filter(Boolean);
+  // Cycle over EVERY slide (images and videos alike). Video slides render as a
+  // still frame via VideoThumb — its stored poster when present, otherwise a
+  // frame generated (and cached) from the video — so a clip never shows up as a
+  // blank tile in the loop and stays part of the rotation.
+  const slides = parseSlides(post);
   const [idx, setIdx] = useState(0);
   useEffect(() => {
-    if (covers.length <= 1 || !active) return;
-    const t = setInterval(() => setIdx(i => (i + 1) % covers.length), 2000);
+    if (slides.length <= 1 || !active) return;
+    const t = setInterval(() => setIdx(i => (i + 1) % slides.length), 2000);
     return () => clearInterval(t);
-  }, [covers.length, active]);
-  const uri = covers[idx] ?? covers[0] ?? slideshowThumb(post) ?? undefined;
+  }, [slides.length, active]);
+  const cur = slides[idx] ?? slides[0];
   return (
     <View style={style}>
-      <ExpoImage source={{ uri }} style={loopStyles.fill} contentFit="cover" transition={500} />
-      {covers.length > 1 && (
+      {cur?.type === 'video' ? (
+        <VideoThumb thumbnailUrl={cur.thumbnail_url} mediaUrl={cur.url} style={loopStyles.fill} />
+      ) : (
+        <ExpoImage
+          source={{ uri: cur?.url ?? slideshowThumb(post) ?? undefined }}
+          style={loopStyles.fill}
+          contentFit="cover"
+          transition={500}
+        />
+      )}
+      {slides.length > 1 && (
         <View style={loopStyles.dots}>
-          {covers.map((_, k) => <View key={k} style={[loopStyles.dot, k === idx && loopStyles.dotOn]} />)}
+          {slides.map((_, k) => <View key={k} style={[loopStyles.dot, k === idx && loopStyles.dotOn]} />)}
         </View>
       )}
     </View>
@@ -97,7 +110,6 @@ function Thumb({ post, style, loop, loopActive, editable, spotlighted, onPress, 
   registerNode?: (n: any) => void;
 }) {
   const { colors } = useTheme();
-  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity
@@ -142,12 +154,8 @@ function Thumb({ post, style, loop, loopActive, editable, spotlighted, onPress, 
           <Ionicons name={isSongPost(post) ? 'musical-notes' : 'videocam'} size={26} color={colors.primary} />
         </LinearGradient>
       )}
-      {/* No badge on the looping video hero: a "LIVE" tag read as a livestream
-          (which it isn't) — the moving footage speaks for itself. Slideshows
-          keep the "AUTO" tag since a still-cycling grid isn't self-evident. */}
-      {loop && post.type === 'slideshow' && (
-        <View style={styles.liveTag}><Ionicons name="albums" size={9} color="#fff" /><Text style={styles.liveText}>{t('profileGrid.auto')}</Text></View>
-      )}
+      {/* No badge on the looping hero (video or slideshow): the moving footage /
+          cycling stills speak for themselves — a corner tag just adds clutter. */}
       {spotlighted && <SpotlightThumbBadge />}
       {!editable && <ThumbStat type={post.type} viewCount={post.view_count} streamCount={post.stream_count} />}
       {editable && (
@@ -314,9 +322,20 @@ export default function ProfileLayoutGrid({
     const canLoop = (ownerTier === 'diamond') && i === loopBlockIndex && isLoopMedia(big);
     return (
       <View style={styles.bigRow}>
-        {big
-          ? <Thumb post={big} style={[styles.bigHero, heroBorder]} loop={canLoop} loopActive={active} onPress={thumbPress(big, () => onSlotPress?.(i, 'big'))} {...thumbCommon(big)} />
-          : renderEmptySlot([styles.bigHero, heroBorder], 'image-outline', t('profileGrid.heroMedia'), editable ? () => onSlotPress?.(i, 'big') : undefined)}
+        {/* Hero wrapper: a relative box the exact size of the hero so the loop
+            pill can pin to the HERO's own top-right corner (positioning it in
+            the row would drift, since the row's CELL math ignores card padding). */}
+        <View style={styles.bigHeroWrap}>
+          {big
+            ? <Thumb post={big} style={[styles.bigHero, heroBorder]} loop={canLoop} loopActive={active} onPress={thumbPress(big, () => onSlotPress?.(i, 'big'))} {...thumbCommon(big)} />
+            : renderEmptySlot([styles.bigHero, heroBorder], 'image-outline', t('profileGrid.heroMedia'), editable ? () => onSlotPress?.(i, 'big') : undefined)}
+          {editable && onToggleLoop && isLoopMedia(big) && (
+            <TouchableOpacity style={[styles.loopBtn, canLoop && styles.loopBtnOn]} onPress={() => onToggleLoop(i)}>
+              <Ionicons name={big.type === 'slideshow' ? 'albums' : 'sync'} size={12} color={canLoop ? '#fff' : colors.textSecondary} />
+              <Text style={[styles.loopText, canLoop && { color: '#fff' }]}>{big.type === 'slideshow' ? t('profileGrid.autoSlides') : t('profileGrid.loop12s')}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <View style={styles.bigRight}>
           {[0, 1].map((s) => {
             const rp = block.regulars?.[s] ? byId.get(block.regulars[s]) : null;
@@ -325,17 +344,7 @@ export default function ProfileLayoutGrid({
               : <Fragment key={s}>{renderEmptySlot(styles.bigCell, 'add', t('profileGrid.regular'), editable ? () => onSlotPress?.(i, 'regular', s) : undefined)}</Fragment>;
           })}
         </View>
-        {editable && (
-          <>
-            {onToggleLoop && isLoopMedia(big) && (
-              <TouchableOpacity style={[styles.loopBtn, canLoop && styles.loopBtnOn]} onPress={() => onToggleLoop(i)}>
-                <Ionicons name={big.type === 'slideshow' ? 'albums' : 'sync'} size={12} color={canLoop ? '#fff' : colors.textSecondary} />
-                <Text style={[styles.loopText, canLoop && { color: '#fff' }]}>{big.type === 'slideshow' ? t('profileGrid.autoSlides') : t('profileGrid.loop12s')}</Text>
-              </TouchableOpacity>
-            )}
-            {renderRemoveBtn(() => onRemoveBlock?.(i))}
-          </>
-        )}
+        {editable && renderRemoveBtn(() => onRemoveBlock?.(i))}
       </View>
     );
   }
@@ -359,11 +368,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     position: 'absolute', top: 6, left: 6, width: 20, height: 20, borderRadius: 10,
     backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
   },
-  liveTag: {
-    position: 'absolute', top: 6, right: 6, flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full, paddingHorizontal: 6, paddingVertical: 2,
-  },
-  liveText: { color: '#fff', fontSize: 8, fontWeight: '900', letterSpacing: 0.5 },
 
   empty: {
     alignItems: 'center', justifyContent: 'center', gap: 4,
@@ -381,8 +385,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     position: 'absolute', bottom: 6, left: 6, width: 22, height: 22, borderRadius: 11,
     backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
   },
+  // Builder-only pill, pinned to the HERO square's own top-right corner — it
+  // lives INSIDE bigHeroWrap, so these insets are relative to the hero box (not
+  // the row, whose CELL math ignores card padding). Gated behind `editable`, so
+  // it never renders publicly.
   loopBtn: {
-    position: 'absolute', bottom: 6, right: CELL + 6, flexDirection: 'row', alignItems: 'center', gap: 4,
+    position: 'absolute', top: 6, right: 6, flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 4, zIndex: 5,
   },
   loopBtnOn: { backgroundColor: colors.primary },
@@ -412,6 +420,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // ── Big Picture block ──
   bigRow: { flexDirection: 'row', width: '100%', height: CELL * 2, position: 'relative' },
+  // Sizes to the hero itself so the loop pill anchors to the hero's real corner.
+  bigHeroWrap: { position: 'relative' },
   // Highlighted hero gets the same prominent accent frame as Media Star.
   bigHero: {
     width: CELL * 2, height: CELL * 2, position: 'relative',
