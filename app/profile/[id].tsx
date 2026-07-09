@@ -23,6 +23,7 @@ import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import SpotlightThumbBadge from '../../components/SpotlightThumbBadge';
 import TrackRow from '../../components/TrackRow';
+import { applyMusicOrder, parseMusicOrder } from '../../lib/musicOrder';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
@@ -339,15 +340,18 @@ export default function PublicProfileScreen() {
         </View>
       );
     }
-    // Live-spotlighted tracks float to the TOP (newest-first among them); the
-    // rest follow most-recent → least-recent. When a spotlight expires the post
-    // drops out of spotlightIds, so it returns to its default placement.
-    const tracks = [...data].sort((a, b) => {
-      const sa = spotlightIds.has(a.id) ? 1 : 0;
-      const sb = spotlightIds.has(b.id) ? 1 : 0;
-      if (sa !== sb) return sb - sa;
-      return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
-    });
+    // A saved custom order (the owner's Premium arrangement) WINS; otherwise
+    // live-spotlighted tracks float to the TOP (newest-first among them), the rest
+    // most-recent → least-recent.
+    const order = parseMusicOrder((profile as any)?.music_order);
+    const tracks = order.length
+      ? applyMusicOrder([...data], order)
+      : [...data].sort((a, b) => {
+          const sa = spotlightIds.has(a.id) ? 1 : 0;
+          const sb = spotlightIds.has(b.id) ? 1 : 0;
+          if (sa !== sb) return sb - sa;
+          return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+        });
     const queue = tracks.map((t) => ({
       id: t.id, uri: t.media_url, caption: t.caption,
       artist: t.profiles?.display_name ?? profile?.display_name ?? '', cover: t.cover_url,
@@ -502,7 +506,7 @@ export default function PublicProfileScreen() {
       {/* Back */}
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={colors.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.usernameHeader}>@{profile?.username}</Text>
         {!isOwnProfile ? (

@@ -19,6 +19,8 @@ import { tabTick } from '../../lib/haptics';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTabSwipeControl } from '../../contexts/PagerContext';
 import { useProfile } from '../../contexts/ProfileContext';
+import { usePremium } from '../../contexts/PremiumContext';
+import { applyMusicOrder, parseMusicOrder } from '../../lib/musicOrder';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
@@ -65,6 +67,7 @@ const SCREEN_W = Dimensions.get('window').width;
 export default function ProfileScreen() {
   const { show: showOptions } = usePostOptions();
   const { profile: liveProfile } = useProfile();
+  const { isPremium } = usePremium();
   const { openCamera } = useStories();
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -326,21 +329,32 @@ export default function ProfileScreen() {
         </View>
       );
     }
-    // Live-spotlighted tracks float to the TOP (newest-first among them); the
-    // rest follow most-recent → least-recent. When a spotlight expires the post
-    // drops out of spotlightIds, so it returns to its default placement.
-    const tracks = [...data].sort((a, b) => {
-      const sa = spotlightIds.has(a.id) ? 1 : 0;
-      const sb = spotlightIds.has(b.id) ? 1 : 0;
-      if (sa !== sb) return sb - sa;
-      return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
-    });
+    // A saved custom order (Premium perk — see /music-order) WINS: the tab shows
+    // the user's exact arrangement (new songs appended newest-first). With no
+    // custom order, live-spotlighted tracks float to the TOP (newest-first among
+    // them), the rest most-recent → least-recent.
+    const order = parseMusicOrder((profile as any)?.music_order);
+    const tracks = order.length
+      ? applyMusicOrder([...data], order)
+      : [...data].sort((a, b) => {
+          const sa = spotlightIds.has(a.id) ? 1 : 0;
+          const sb = spotlightIds.has(b.id) ? 1 : 0;
+          if (sa !== sb) return sb - sa;
+          return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+        });
     const queue = tracks.map((t) => ({
       id: t.id, uri: t.media_url, caption: t.caption,
       artist: t.profiles?.display_name ?? profile?.display_name ?? '', cover: t.cover_url,
     }));
     return (
       <View style={styles.musicList}>
+        {/* Premium: arrange the Music tab in a custom order (see /music-order). */}
+        {isPremium && data.length > 1 && (
+          <TouchableOpacity style={styles.reorderMusicBtn} onPress={() => router.push('/music-order')} activeOpacity={0.8}>
+            <Ionicons name="swap-vertical" size={16} color={colors.primary} />
+            <Text style={styles.reorderMusicText}>{t('profile.reorderMusic')}</Text>
+          </TouchableOpacity>
+        )}
         {tracks.map((track, i) => (
           <TrackRow
             key={track.id}
@@ -819,6 +833,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // 2px gutters between cells (gap needs pixel-sized items — thirds would overflow the row).
   postsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   musicList: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: SPACING.sm },
+  reorderMusicBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: SPACING.sm, borderRadius: RADIUS.full,
+    borderWidth: 1, borderColor: colors.primary + '44', backgroundColor: colors.primary + '10',
+  },
+  reorderMusicText: { color: colors.primaryLight, fontSize: 13.5, fontWeight: '700' },
   gridItem: { width: (SCREEN_W - 4) / 3, aspectRatio: 1, position: 'relative' },
   gridImage: { width: '100%', height: '100%' },
   gridPlaceholder: {
