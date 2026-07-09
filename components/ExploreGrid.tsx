@@ -94,6 +94,24 @@ function interleave<T>(queues: T[][]): T[] {
   return out;
 }
 
+// Laybell-TV banner caption. Renders at the BIGGER size first; if that wraps to
+// more than one line, drops to the normal size (multi-line already looks right).
+// So a single-line caption gets the slightly larger font, multi-line stays put.
+// One-directional (big → normal), so it never flip-flops.
+function TVCaption({ text }: { text: string }) {
+  const styles = useThemedStyles(makeStyles);
+  const [big, setBig] = useState(true);
+  return (
+    <Text
+      style={[styles.tvCaption, big && styles.tvCaptionBig]}
+      numberOfLines={2}
+      onTextLayout={e => { if (big && e.nativeEvent.lines.length > 1) setBig(false); }}
+    >
+      {text}
+    </Text>
+  );
+}
+
 function mediaHeight(post: GridPost): number {
   if (post.type === 'video') {
     // Laybell-TV videos (landscape, aspect > 1) get a HORIZONTAL 16:9 tile so the
@@ -605,7 +623,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
         </LinearGradient>
         <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
       </TouchableOpacity>
-      {!!p.caption && <Text style={styles.tvCaption} numberOfLines={2}>{p.caption}</Text>}
+      {!!p.caption && <TVCaption text={p.caption} />}
     </View>
   );
 
@@ -750,6 +768,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Same face as the caption under real Laybell-TV thumbnails (components/
   // TVVideoList.tsx `caption`: text color, weight 700) — just bigger for the hero.
   tvCaption: { color: colors.text, fontSize: 15, fontWeight: '700', lineHeight: 20, marginTop: 6, paddingHorizontal: 2 },
+  // One-line captions only (see TVCaption): slightly larger, and EQUAL space above
+  // and below so the single line sits evenly centered in its area (overrides the
+  // base marginTop). Multi-line captions keep the base style untouched.
+  tvCaptionBig: { fontSize: 17, lineHeight: 22, marginTop: 9, marginBottom: 9 },
   tvTag: {
     position: 'absolute', top: 8, right: 8, flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3,
