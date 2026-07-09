@@ -100,6 +100,18 @@ export default function StoryViewerScreen() {
   const [replyText, setReplyText] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const [sentFlash, setSentFlash] = useState(false);
+  // The story id whose IMAGE has finished decoding and is actually on screen.
+  // Story-specific overlays (caption, stickers, song chip) stay hidden until the
+  // CURRENT story's media has painted, so advancing never flashes the next
+  // story's text/elements over the previous (still-showing) image while the new
+  // one decodes. Videos paint their poster frame immediately, so they don't gate.
+  const [loadedMediaId, setLoadedMediaId] = useState<string | null>(null);
+  // The last IMAGE that finished decoding, painted BEHIND the live media so a
+  // story change never flashes the black container while the next image loads —
+  // even when that next image isn't cached yet (a freshly-posted story). Together
+  // with the overlay gate this makes every advance land as: previous frame →
+  // (decode) → next frame WITH its text/elements, never chrome-over-black first.
+  const [heldFrameUri, setHeldFrameUri] = useState<string | null>(null);
 
   const pausedRef = useRef(false);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -125,6 +137,11 @@ export default function StoryViewerScreen() {
   const group = groups[userIndex] ?? null;
   const story = group?.stories[storyIndex] ?? null;
   const isOwn = !!currentUserId && group?.user.id === currentUserId;
+
+  // Computed during render (no lag) so a story flip hides the outgoing overlays
+  // in the SAME frame: an image is "ready" only once its own onLoad has fired;
+  // a video is ready right away (its poster already shows the correct frame).
+  const mediaReady = !story || story.media_type !== 'image' || loadedMediaId === story.id;
 
   // Fresh snapshots for the gesture/advance callbacks.
   const posRef = useRef({ userIndex: 0, storyIndex: 0 });
@@ -215,6 +232,19 @@ export default function StoryViewerScreen() {
     setLiked(false);
     if (isOwn) fetchStoryViewerCount(story.id).then(setViewerCount).catch(() => {});
     else if (currentUserId) fetchStoryLiked(story.id, currentUserId).then(setLiked).catch(() => {});
+
+    // Warm the neighbor images (next story of this user + first story of the next
+    // user) so a flip usually lands on an already-decoded frame. The overlay gate
+    // (mediaReady) still guarantees correctness on the rare uncached advance.
+    {
+      const { userIndex: ui, storyIndex: si } = posRef.current;
+      const g2 = groupsRef.current[ui];
+      const warm: (string | undefined)[] = [
+        g2?.stories[si + 1]?.media_type === 'image' ? g2?.stories[si + 1]?.media_url : undefined,
+        groupsRef.current[ui + 1]?.stories[0]?.media_type === 'image' ? groupsRef.current[ui + 1]?.stories[0]?.media_url : undefined,
+      ];
+      warm.forEach((u) => { if (u) ExpoImage.prefetch(u).catch(() => {}); });
+    }
 
     // Images advance on a timed fill; videos advance from playback status instead.
     if (story.media_type === 'image') startImageProgress(0);
@@ -585,11 +615,24 @@ export default function StoryViewerScreen() {
           </View>
         ) : (
           <>
+            {/* Held previous frame — painted behind the live media so a story
+                change never flashes black while the next image decodes (works
+                even when that image isn't cached yet). Overlays gate on top. */}
+            {heldFrameUri && (
+              <ExpoImage source={{ uri: heldFrameUri }} style={StyleSheet.absoluteFill} contentFit="contain" pointerEvents="none" />
+            )}
+
             {/* Media. expo-image (cached, fast) avoids the flash when tapping between
                 stories; the video shows its thumbnail poster while it buffers so
                 there's no pitch-black gap on open / person change. */}
             {story.media_type === 'image' ? (
-              <ExpoImage source={{ uri: story.media_url }} style={StyleSheet.absoluteFill} contentFit="contain" />
+              <ExpoImage
+                source={{ uri: story.media_url }}
+                style={StyleSheet.absoluteFill}
+                contentFit="contain"
+                onLoad={() => { setLoadedMediaId(story.id); setHeldFrameUri(story.media_url); }}
+                onError={() => setLoadedMediaId(story.id)}
+              />
             ) : (
               <AppVideo
                 key={story.id}
@@ -612,6 +655,16 @@ export default function StoryViewerScreen() {
 
             {/* Tap surface (advance / pause) */}
             <Pressable style={StyleSheet.absoluteFill} onPressIn={onPressIn} onPressOut={onPressOut} />
+
+            {/* Cold open (no previous frame to hold): show a loader instead of a
+                black screen while the first image decodes. On later advances
+                expo-image keeps the previous frame up, so no spinner is needed —
+                loadedMediaId is non-null there and this stays hidden. */}
+            {!mediaReady && loadedMediaId === null && (
+              <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
+                <ActivityIndicator color="#fff" />
+              </View>
+            )}
 
             {/* Top scrim for legibility */}
             <LinearGradient colors={['rgba(0,0,0,0.55)', 'transparent']} style={styles.topScrim} pointerEvents="none" />
@@ -674,7 +727,7 @@ export default function StoryViewerScreen() {
             </View>
 
             {/* Bottom caption (or, for older stories, the single positioned caption). */}
-            {!!story.caption && (
+            {mediaReady && !!story.caption && (
               story.caption_style ? (
                 <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
                   <View style={styles.captionStickerCenter}>
@@ -699,7 +752,7 @@ export default function StoryViewerScreen() {
                 author — rendered through the SAME style resolver as the editor
                 (font / color / background / emoji metadata in stickers jsonb),
                 so the story looks exactly as it did when composed. */}
-            {(story.stickers ?? []).length > 0 && (
+            {mediaReady && (story.stickers ?? []).length > 0 && (
               <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
                 {(story.stickers ?? []).map((st: any, i: number) => {
                   const { textStyle, boxStyle } = resolveSticker(st);
@@ -727,7 +780,7 @@ export default function StoryViewerScreen() {
 
             {/* Own-story footer: viewer count. Live → tap to see WHO watched.
                 Archived replay → count only, read-only (no per-viewer list). */}
-            {isOwn && (
+            {mediaReady && isOwn && (
               archived ? (
                 <View style={[styles.seenRow, { bottom: insets.bottom + 18 }]}>
                   <Ionicons name="eye-outline" size={18} color="#fff" />
@@ -748,7 +801,7 @@ export default function StoryViewerScreen() {
             )}
 
             {/* Someone else's story: reply pill + heart */}
-            {!isOwn && !!currentUserId && (
+            {mediaReady && !isOwn && !!currentUserId && (
               <View style={[styles.replyRow, { bottom: insets.bottom }]}>
                 <TouchableOpacity style={styles.replyPill} activeOpacity={0.8} onPress={openReply}>
                   <Text style={styles.replyPillText}>{t('story.replyTo', { name: group?.user.display_name || group?.user.username || t('story.fallbackName') })}</Text>
@@ -772,7 +825,7 @@ export default function StoryViewerScreen() {
             )}
 
             {/* Song chip — top-right, tucked under the header controls */}
-            {!!story.song_id && (
+            {mediaReady && !!story.song_id && (
               <View style={[styles.songTopRight, { top: insets.top + 58 }]} pointerEvents="box-none">
                 <SongAttribution
                   inline
@@ -789,7 +842,7 @@ export default function StoryViewerScreen() {
 
             {/* Bottom caption — bare bold text (no bar), inset clear of the
                 heart/eye controls so nothing collides. */}
-            {!!story.caption && !story.caption_style && (
+            {mediaReady && !!story.caption && !story.caption_style && (
               <View style={[styles.bottomStack, { bottom: insets.bottom + 50 }]} pointerEvents="none">
                 <Text style={styles.caption}>{story.caption}</Text>
               </View>
