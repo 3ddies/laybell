@@ -44,8 +44,6 @@ const HEADER_OUTLINE: ReadonlyArray<readonly [number, number]> = [
   [-HEADER_STROKE, -HEADER_STROKE], [HEADER_STROKE, -HEADER_STROKE],
   [-HEADER_STROKE, HEADER_STROKE], [HEADER_STROKE, HEADER_STROKE],
 ];
-const VIDEO_GAP = 3;                // min non-video cells between videos
-
 type Cell =
   | { kind: 'media'; key: string; post: GridPost; height: number }
   | { kind: 'music'; key: string; title: string; songs: GridPost[]; height: number };
@@ -184,45 +182,68 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
         .map(v => v.id),
     );
 
-    // Base (non-video) cells: interleave the 1:1 tiles and (in All view) music stacks.
-    const baseCells: Cell[] = [];
-    let mi = 0;
-    tileMedia.forEach((m, idx) => {
-      baseCells.push({ kind: 'media', key: m.id, post: m, height: mediaHeight(m) });
-      if (idx % 2 === 1 && mi < musicGroups.length) {
-        const g = musicGroups[mi];
-        baseCells.push({ kind: 'music', key: `music-${mi}`, title: g.title, songs: g.songs, height: MUSIC_HEADER_H + g.songs.length * ROW_H });
-        mi++;
+    // ── Systematic, declumped masonry ────────────────────────────────────────
+    // Three visual VARIETIES share the grid: videos (tall reel tiles), still
+    // tiles (image / slideshow), and song stacks. Two independent steps keep the
+    // grid a fair, un-clumped mixture no matter the content ratio — instead of
+    // the old ad-hoc "music after every 2nd tile + splice videos on alternating
+    // sides" heuristic, which could still clump:
+    //
+    //   1) EVEN INTERLEAVE — deal all three varieties into ONE ordered sequence
+    //      with proportional error diffusion (smooth weighted round-robin): each
+    //      variety is spread across the whole scroll in proportion to its count,
+    //      so a rare type (e.g. one song stack) never bunches and a common type
+    //      never dominates a run. Relevance order within each variety is kept.
+    //   2) DECLUMPED PACK — masonry into two columns shortest-first, but never
+    //      stack the SAME variety back-to-back in a column when the other column
+    //      can take it without opening a big height gap. So varieties stay mixed
+    //      vertically too, and song stacks in particular never touch.
+    const cellFor = (p: GridPost): Cell => ({ kind: 'media', key: p.id, post: p, height: mediaHeight(p) });
+    const varietyQueues: Cell[][] = [
+      videos.map(cellFor),                                        // videos
+      tileMedia.filter(p => p.type !== 'video').map(cellFor),     // still tiles (image/slideshow)
+      musicGroups.map((g, i): Cell => ({                          // song stacks
+        kind: 'music', key: `music-${i}`, title: g.title, songs: g.songs,
+        height: MUSIC_HEADER_H + g.songs.length * ROW_H,
+      })),
+    ].filter(q => q.length > 0);
+
+    // Smooth weighted interleave: every step each live queue accrues credit equal
+    // to its remaining-agnostic size, and the most-owed queue emits one item —
+    // dealing each variety out evenly across the sequence in proportion to count.
+    const totalCells = varietyQueues.reduce((n, q) => n + q.length, 0);
+    const qState = varietyQueues.map(q => ({ items: q, i: 0, credit: 0 }));
+    const ordered: Cell[] = [];
+    for (let step = 0; step < totalCells; step++) {
+      let pick: (typeof qState)[number] | null = null;
+      for (const q of qState) {
+        if (q.i >= q.items.length) continue; // spent queues stop competing
+        q.credit += q.items.length;
+        if (!pick || q.credit > pick.credit) pick = q;
       }
-    });
-    while (mi < musicGroups.length) {
-      const g = musicGroups[mi];
-      baseCells.push({ kind: 'music', key: `music-${mi}`, title: g.title, songs: g.songs, height: MUSIC_HEADER_H + g.songs.length * ROW_H });
-      mi++;
+      if (!pick) break;
+      pick.credit -= totalCells;
+      ordered.push(pick.items[pick.i++]);
     }
 
-    // Masonry the base cells; splice videos in on alternating sides, spaced apart.
+    // Pack the interleaved sequence, avoiding same-variety vertical neighbors.
     const cols: Cell[][] = [[], []];
     const colH = [0, 0];
-    let videoSide = 0;
-    let sinceVideo = VIDEO_GAP; // allow a video early
-    let vi = 0;
-    const placeVideo = () => {
-      const v = videos[vi++];
-      const h = mediaHeight(v);
-      cols[videoSide].push({ kind: 'media', key: v.id, post: v, height: h });
-      colH[videoSide] += h + GAP;
-      videoSide ^= 1;
-      sinceVideo = 0;
-    };
-    for (const cell of baseCells) {
-      const c = colH[0] <= colH[1] ? 0 : 1;
+    const variety = (cell: Cell): string =>
+      cell.kind === 'music' ? 'music' : cell.post.type === 'video' ? 'video' : 'still';
+    const endsWith = (col: Cell[], v: string) =>
+      col.length > 0 && variety(col[col.length - 1]) === v;
+    for (const cell of ordered) {
+      const v = variety(cell);
+      let c = colH[0] <= colH[1] ? 0 : 1;
+      // Redirect to the other column only when it BOTH declumps and won't open a
+      // gap taller than one tile — declumping never fights the masonry balance.
+      if (endsWith(cols[c], v) && !endsWith(cols[c ^ 1], v) && colH[c ^ 1] - colH[c] <= COL_W) {
+        c ^= 1;
+      }
       cols[c].push(cell);
       colH[c] += cell.height + GAP;
-      sinceVideo++;
-      if (vi < videos.length && sinceVideo >= VIDEO_GAP) placeVideo();
     }
-    while (vi < videos.length) placeVideo();
 
     return { cols, playableSet };
   }, [posts, songTiles, songClusters, t]);

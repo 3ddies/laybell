@@ -7,7 +7,7 @@ import AppVideo from '../../components/AppVideo';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
-import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
+import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, setFeedHeaderHeight, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, FlatList,
@@ -481,12 +481,16 @@ export default function HomeScreen() {
   const isFocused = useIsFocused();
   const swiping = usePagerSwiping();
 
-  // ── Fast-scroll gate ────────────────────────────────────────────────────────
-  // Videos autoplay the moment they're on screen — EXCEPT during a genuinely
-  // fast fling. Velocity is sampled per scroll event: fast mode engages above
-  // FAST_IN dp/ms, releases below FAST_OUT (or ~130ms after scroll events stop),
-  // and the deferred viewability snapshot then applies immediately — so the
-  // video you land on starts the instant the fling slows, not on a fixed timer.
+  // ── Scroll gate ─────────────────────────────────────────────────────────────
+  // Videos autoplay the moment they're on screen — EXCEPT while the feed is
+  // actively moving at more than a gentle browse. During a fast OR MODERATE
+  // scroll, mounting/tearing-down a native player per video and flipping which
+  // one plays (worst when several videos sit close together) is what makes the
+  // mid-speed range feel choppy — so the gate DEFERS the viewability snapshot
+  // (no warm-set / visibleVideo churn, no play) until the scroll eases below
+  // GATE_OUT, at which point the latest snapshot applies and the centered,
+  // already-warmed video plays instantly. Only slow reading scrolls (under
+  // GATE_OUT) keep playing live. Velocity is sampled per scroll event.
   const [fastScrolling, setFastScrolling] = useState(false);
   const fastScrollRef = useRef(false);
   const scrollSample = useRef({ y: 0, t: 0 });
@@ -580,9 +584,12 @@ export default function HomeScreen() {
       applyVideoViewables(pending);
     }
   };
-  // dp per ms. FAST_IN ≈ 2.4 screens/s (a real fling); FAST_OUT ≈ 1 screen/s —
-  // the hysteresis keeps ordinary browsing scrolls from ever entering fast mode.
-  const FAST_IN = 2.0, FAST_OUT = 0.8;
+  // dp per ms. GATE_IN ≈ 1.25 screens/s catches moderate scrolls (not just fast
+  // flings) — that mid band was the choppy one; GATE_OUT ≈ 0.5 screens/s keeps
+  // the gate engaged until the scroll has nearly stopped, so play resumes only
+  // as you settle. The gap between them is hysteresis: a gentle reading scroll
+  // (under GATE_OUT) never trips the gate and keeps videos playing live.
+  const GATE_IN = 1.0, GATE_OUT = 0.4;
   const trackScrollVelocity = (y: number) => {
     const t = Date.now();
     const { y: py, t: pt } = scrollSample.current;
@@ -590,8 +597,8 @@ export default function HomeScreen() {
     const dt = t - pt;
     if (dt > 0 && dt < 200) { // >200ms gap = a new gesture, not a velocity sample
       const v = Math.abs(y - py) / dt;
-      if (v >= FAST_IN) setFastScroll(true);
-      else if (v <= FAST_OUT) setFastScroll(false);
+      if (v >= GATE_IN) setFastScroll(true);
+      else if (v <= GATE_OUT) setFastScroll(false);
     }
     // A fling's final events can still be fast — clear soon after events stop.
     if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current);
@@ -1135,7 +1142,7 @@ export default function HomeScreen() {
           styles.headerFloat,
           { transform: [{ translateY: feedChromeTop.interpolate({ inputRange: [0, 1], outputRange: [0, -(headerH || 140)] }) }] },
         ]}
-        onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
+        onLayout={(e) => { const h = e.nativeEvent.layout.height; setHeaderH(h); setFeedHeaderHeight(h); }}
       >
         <View style={styles.headerLeft}>
           <TouchableOpacity
@@ -1241,7 +1248,14 @@ export default function HomeScreen() {
           trackFeedScroll(e.nativeEvent.contentOffset.y);
           trackScrollVelocity(e.nativeEvent.contentOffset.y);
         }}
-        onScrollBeginDrag={feedDragStart}
+        // Engage the gate the INSTANT a drag begins — before velocity is even
+        // sampled — so the currently-playing video pauses and the warm-set churn
+        // defers immediately. Otherwise the most expensive moment (an active,
+        // decoding video + live viewability churn) lands right at scroll start,
+        // which is the choppiness felt when scrolling straight after a video
+        // plays. A slow reading scroll un-gates again on the first sub-GATE_OUT
+        // sample, so it still plays live.
+        onScrollBeginDrag={() => { feedDragStart(); setFastScroll(true); }}
         onScrollEndDrag={feedDragEnd}
         onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); }}
         scrollEventThrottle={16}
