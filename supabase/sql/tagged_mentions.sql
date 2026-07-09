@@ -29,10 +29,12 @@ create index if not exists mentions_mentioned_idx on public.mentions(mentioned_u
 
 -- 2) Allow the new notification types. The notifications.type CHECK constraint
 --    (if one exists) only permitted like/comment/follow/message; recreate it with
---    the new mention + song-usage types so those inserts don't fail.
+--    the new mention + song-usage types so those inserts don't fail. 'friend' is
+--    the mutual-follow notification (a follow-back that makes you friends — see
+--    contexts/FollowContext); it must be allowed too or following back errors.
 alter table public.notifications drop constraint if exists notifications_type_check;
 alter table public.notifications add constraint notifications_type_check
-  check (type in ('like','comment','follow','message','mention','song_used','song_story','tag'));
+  check (type in ('like','comment','follow','friend','message','mention','song_used','song_story','tag'));
 
 -- 3) Let the original artist SEE any post/story that used their song (for the
 --    Tagged screen) — even a followers-only one from someone they don't follow.
