@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start", "--", "--offline", "-p", "8082"],
       "port": 8082
+    },
+    {
+      "name": "AdminConsole",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["admin-console/serve.mjs"],
+      "port": 5599
     }
   ]
 }

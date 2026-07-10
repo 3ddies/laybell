@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laybell Moderation Console</title>
+<!--
+  Laybell private admin/moderation console (Phase 2 — read + act).
+  Self-contained. Holds the PUBLIC anon key only (same one that's already in the
+  app bundle) and NO service-role key. Every privileged action is gated server-side
+  by laybell_admins role checks in the admin_* RPCs / the admin-actions edge fn, so
+  this file being readable is fine — security rests on Supabase Auth + roles, not on
+  hiding this page. Open it directly (double-click) or serve it (see serve.mjs).
+-->
+<style>
+  :root {
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c222b; --line:#2a313c; --line2:#39424f;
+    --txt:#e6edf3; --dim:#9aa7b4; --accent:#4f8cff; --accent2:#1f6feb;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --crit:#ff6a69;
+    --chip:#242c38;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--txt); font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  button { font:inherit; cursor:pointer; }
+  a { color:var(--accent); cursor:pointer; text-decoration:none; }
+  input,select { font:inherit; background:var(--panel2); color:var(--txt); border:1px solid var(--line2); border-radius:8px; padding:9px 11px; }
+  input:focus,select:focus { outline:none; border-color:var(--accent); }
+  .btn { background:var(--accent2); color:#fff; border:0; border-radius:8px; padding:9px 14px; font-weight:600; }
+  .btn:hover { background:var(--accent); }
+  .btn.ghost { background:transparent; border:1px solid var(--line2); color:var(--txt); }
+  .btn.ghost:hover { border-color:var(--accent); color:#fff; }
+  .btn.warn { background:transparent; border:1px solid var(--warn); color:var(--warn); }
+  .btn.bad  { background:transparent; border:1px solid var(--bad);  color:var(--bad); }
+  .btn.sm { padding:6px 10px; font-size:12.5px; }
+  .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .row { display:flex; gap:10px; align-items:center; }
+  .wrap { max-width:1180px; margin:0 auto; padding:18px; }
+  .muted { color:var(--dim); }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+
+  /* login */
+  .login { min-height:100%; display:grid; place-items:center; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:26px; width:360px; }
+  .card h1 { margin:0 0 4px; font-size:20px; }
+  .card .sub { color:var(--dim); margin-bottom:18px; font-size:13px; }
+  .card label { display:block; font-size:12px; color:var(--dim); margin:12px 0 5px; }
+  .card input { width:100%; }
+  .err { color:var(--bad); font-size:13px; margin-top:12px; min-height:18px; }
+
+  /* app chrome */
+  header.top { display:flex; align-items:center; gap:14px; padding:12px 18px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5; }
+  header.top .brand { font-weight:800; letter-spacing:.2px; }
+  header.top .brand .dot { color:var(--accent); }
+  .rolechip { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:3px 8px; border-radius:20px; background:var(--chip); border:1px solid var(--line2); }
+  .rolechip.owner { color:var(--crit); border-color:#4a2a2a; }
+  .rolechip.moderator { color:var(--accent); border-color:#26405f; }
+  .rolechip.reviewer { color:var(--dim); }
+  .spacer { flex:1; }
+  nav.tabs { display:flex; gap:4px; padding:10px 18px 0; border-bottom:1px solid var(--line); background:var(--panel); }
+  nav.tabs button { background:transparent; border:0; color:var(--dim); padding:9px 14px; border-radius:8px 8px 0 0; font-weight:600; border-bottom:2px solid transparent; }
+  nav.tabs button.active { color:#fff; border-bottom-color:var(--accent); }
+
+  /* table */
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+  tbody tr:hover { background:var(--panel2); }
+  .tag { display:inline-block; font-size:11px; padding:2px 8px; border-radius:20px; background:var(--chip); border:1px solid var(--line2); color:var(--dim); }
+  .sev-low{color:var(--dim)} .sev-medium{color:var(--warn)} .sev-high{color:var(--bad)} .sev-critical{color:var(--crit);font-weight:700}
+  .count-open { color:var(--bad); font-weight:700; }
+
+  /* drawer */
+  .drawer-bg { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:20; display:none; }
+  .drawer-bg.open { display:block; }
+  .drawer { position:fixed; top:0; right:0; height:100%; width:min(620px,94vw); background:var(--panel); border-left:1px solid var(--line); z-index:21; transform:translateX(100%); transition:transform .18s ease; overflow-y:auto; }
+  .drawer.open { transform:translateX(0); }
+  .drawer .dh { display:flex; align-items:center; gap:10px; padding:16px 18px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--panel); }
+  .drawer .db { padding:18px; }
+  .actions { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 18px; }
+  .report { border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--panel2); }
+  .report .rh { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+  pre.snap { margin:6px 0 0; padding:10px; background:#0b0e13; border:1px solid var(--line); border-radius:8px; max-height:280px; overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+  details summary { cursor:pointer; color:var(--dim); font-size:12.5px; }
+  .kv { display:grid; grid-template-columns:150px 1fr; gap:6px 12px; font-size:13px; margin:10px 0; }
+  .kv .k { color:var(--dim); }
+  .empty { padding:40px; text-align:center; color:var(--dim); }
+  .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--panel2); border:1px solid var(--line2); border-radius:10px; padding:11px 16px; z-index:40; box-shadow:0 8px 30px rgba(0,0,0,.4); max-width:80vw; }
+  .toast.ok { border-color:#22452a; } .toast.bad { border-color:#5a2b2b; color:#ffb4b0; }
+  .loading { padding:40px; text-align:center; color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="drawer-bg" id="drawerBg" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+// ── config: PUBLIC anon key only (same as lib/supabase.ts). No service role here. ──
+const SUPABASE_URL  = 'https://wawpaokvtptfmuygjnns.supabase.co';
+const SUPABASE_ANON  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhd3Bhb2t2dHB0Zm11eWdqbm5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5MDgyNjMsImV4cCI6MjA5NTQ4NDI2M30.78PkYUy1rnoGUvqKSF85QWqbFQF9Kfy2PV3Fzs0nPZY';
+
+if (!window.supabase) { document.getElementById('app').innerHTML =
+  '<div class="loading">Could not load the Supabase client from the CDN — check your internet connection and reload.</div>'; }
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+});
+
+const ROLE_RANK = { reviewer:1, moderator:2, owner:3 };
+let ME = { email:null, role:null };
+let TAB = 'queue';
+let QUEUE = [];
+let DEMO = false;   // preview mode: sample data, nothing sent to the server
+
+const el = (h) => { const d=document.createElement('div'); d.innerHTML=h.trim(); return d.firstChild; };
+const esc = (s) => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const short = (s,n=10) => { s=String(s??''); return s.length>n ? s.slice(0,n)+'…' : s; };
+const can = (r) => ROLE_RANK[ME.role] >= ROLE_RANK[r];
+
+function toast(msg, kind='ok') {
+  document.querySelectorAll('.toast').forEach(t=>t.remove());
+  const t = el(`<div class="toast ${kind}">${esc(msg)}</div>`); document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 3800);
+}
+async function rpc(fn, args) {
+  if (DEMO) return mockRpc(fn, args);
+  const { data, error } = await sb.rpc(fn, args||{});
+  if (error) throw new Error(error.message || String(error));
+  return data;
+}
+async function callEdge(action, body) {
+  if (DEMO) {
+    if (action==='auth_info') return { status:'ok', auth:{ email:'demo.user@example.com', created_at:'2025-02-14T00:00:00Z', last_sign_in_at:'2026-07-09T22:10:00Z', banned_until:null } };
+    throw new Error('Demo mode — sign in for real to make changes.');
+  }
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) throw new Error('not signed in');
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-actions`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', apikey:SUPABASE_ANON, Authorization:`Bearer ${session.access_token}` },
+    body: JSON.stringify({ action, ...body }),
+  });
+  const out = await res.json().catch(()=>({status:'error',message:'bad response'}));
+  if (!res.ok || out.status === 'error') throw new Error(out.message || `HTTP ${res.status} (is the admin-actions function deployed?)`);
+  return out;
+}
+
+// ── demo / preview data (used only when DEMO === true) ────────────────────────
+const MOCK_QUEUE = [
+  { subject_type:'post', subject_id:'a1b2c3d4-0000-4000-8000-000000000001', subject_user_id:'11111111-1111-4111-8111-111111111111',
+    report_count:5, open_count:5, first_reported_at:'2026-07-08T10:00:00Z', last_reported_at:'2026-07-10T09:12:00Z',
+    reasons:['nudity','spam'], case_id:null, case_status:'open', severity:'high', assignee_id:null, has_notes:false },
+  { subject_type:'user', subject_id:'22222222-2222-4222-8222-222222222222', subject_user_id:'22222222-2222-4222-8222-222222222222',
+    report_count:3, open_count:2, first_reported_at:'2026-07-07T14:00:00Z', last_reported_at:'2026-07-10T08:40:00Z',
+    reasons:['harassment','hate'], case_id:'c0000000-0000-4000-8000-000000000009', case_status:'investigating', severity:'critical', has_notes:true },
+  { subject_type:'domain', subject_id:'sketchy-download.example', subject_user_id:null,
+    report_count:2, open_count:2, first_reported_at:'2026-07-09T11:00:00Z', last_reported_at:'2026-07-10T07:05:00Z',
+    reasons:['scam, phishing'], case_status:'open', severity:'medium' },
+  { subject_type:'shop_listing', subject_id:'33333333-3333-4333-8333-333333333333', subject_user_id:'44444444-4444-4444-8444-444444444444',
+    report_count:1, open_count:1, first_reported_at:'2026-07-10T06:00:00Z', last_reported_at:'2026-07-10T06:00:00Z',
+    reasons:['ip'], case_status:'open', severity:'low' },
+];
+function mockCase(type, id){
+  const snap = type==='user'
+    ? { username:'trolls_r_us', display_name:'Anon', bio:'reported for harassment in DMs and comments' }
+    : { id, type:'image', user_id:'11111111-1111-4111-8111-111111111111', caption:'(sample reported content)', media_url:'https://…/blocked.jpg', is_public:true };
+  return {
+    subject_type:type, subject_id:id, can_deanonymize:true,
+    reports:[
+      { id:'r0000000-0000-4000-8000-000000000001', reason:'nudity', created_at:'2026-07-10T09:12:00Z', resolved_at:null, snapshot:snap, reporter_id:'99999999-9999-4999-8999-999999999999' },
+      { id:'r0000000-0000-4000-8000-000000000002', reason:'spam: posting the same link repeatedly', created_at:'2026-07-09T18:30:00Z', resolved_at:null, snapshot:snap, reporter_id:'88888888-8888-4888-8888-888888888888' },
+    ],
+    case:null,
+  };
+}
+function mockUser(id){
+  return {
+    profile:{ id, username:'trolls_r_us', display_name:'Anon', bio:'sample account under review', link:null, badge_tier:'bronze', is_minor:false, age:24, hidden:false, legal_hold:false, delete_requested_at:null, last_seen_at:'2026-07-10T09:00:00Z' },
+    sanction:{ state:'warned', strike_count:2, suspended_until:null },
+    open_reports:{ user:1, post:2 }, content:{ posts:14, stories:3 }, legal_hold_posts:0,
+    auth:{ email:'demo.user@example.com', created_at:'2025-02-14T00:00:00Z', last_sign_in_at:'2026-07-09T22:10:00Z', banned_until:null },
+  };
+}
+const MOCK_AUDIT = [
+  { created_at:'2026-07-10T09:20:00Z', actor_id:'ownerbee-0000-4000-8000-000000000000', actor_role:'owner', action:'suspend', target_type:'user', target_id:'22222222-2222-4222-8222-222222222222', reason:'repeated harassment' },
+  { created_at:'2026-07-10T08:05:00Z', actor_id:'modxxxxx-0000-4000-8000-000000000000', actor_role:'moderator', action:'hide_content', target_type:'post', target_id:'a1b2c3d4-0000-4000-8000-000000000001', reason:'nudity' },
+  { created_at:'2026-07-09T20:00:00Z', actor_id:'ownerbee-0000-4000-8000-000000000000', actor_role:'owner', action:'blocklist_add', target_type:'domain', target_id:'sketchy-download.example', reason:'phishing kit' },
+];
+function mockRpc(fn, args){
+  if (fn==='current_admin_role') return 'owner';
+  if (fn==='admin_list_queue')   return MOCK_QUEUE.filter(q => (args && args.p_include_resolved) || q.open_count>0);
+  if (fn==='admin_get_case')     return mockCase(args.p_subject_type, args.p_subject_id);
+  if (fn==='admin_user_detail')  return mockUser(args.p_user);
+  if (fn==='admin_list_audit')   return MOCK_AUDIT;
+  throw new Error('Demo mode — sign in with a real admin account to make changes.');
+}
+
+// ── boot ──────────────────────────────────────────────────────────────────────
+(async function boot(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if (session) await afterLogin(); else renderLogin();
+})();
+
+// ── login ───────────────────────────────────────────────────────────────────
+function renderLogin(msg) {
+  document.getElementById('app').innerHTML = '';
+  const card = el(`
+    <div class="login"><div class="card">
+      <h1>Laybell <span class="dot" style="color:var(--accent)">Moderation</span></h1>
+      <div class="sub">Sign in with your Laybell admin account.</div>
+      <label>Email</label><input id="email" type="email" autocomplete="username" placeholder="you@example.com">
+      <label>Password</label><input id="pw" type="password" autocomplete="current-password" placeholder="••••••••">
+      <div style="margin-top:18px"><button class="btn" id="go" style="width:100%">Sign in</button></div>
+      <div class="err" id="err">${esc(msg||'')}</div>
+      <div class="muted" style="font-size:12px;margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        Preview: leave email <b>blank</b> and click Sign in to explore the console with sample data (nothing is sent to the database).
+      </div>
+    </div></div>`);
+  document.getElementById('app').appendChild(card);
+  const go = document.getElementById('go');
+  const submit = async () => {
+    go.disabled = true; document.getElementById('err').textContent = '';
+    try {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('pw').value;
+      // One-click preview: empty email → demo mode (sample data, no real session).
+      if (!email) { DEMO = true; ME = { email:'preview — demo data', role:'owner' }; return renderApp(); }
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      await afterLogin();
+    } catch (e) { document.getElementById('err').textContent = e.message || 'Sign-in failed.'; go.disabled=false; }
+  };
+  go.onclick = submit;
+  document.getElementById('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
+}
+
+async function afterLogin() {
+  const { data:{ user } } = await sb.auth.getUser();
+  ME.email = user?.email;
+  let role = null;
+  try { role = await rpc('current_admin_role'); }
+  catch (e) { await sb.auth.signOut(); return renderLogin('Could not verify admin role: ' + e.message); }
+  if (!role) { await sb.auth.signOut(); return renderLogin('This account is not a Laybell admin. Ask an owner to grant you a role.'); }
+  ME.role = role;
+  renderApp();
+}
+
+async function signOut(){ if(!DEMO){ try{ await sb.auth.signOut(); }catch(e){} } DEMO=false; ME={email:null,role:null}; renderLogin(); }
+
+// ── app shell ─────────────────────────────────────────────────────────────────
+function renderApp() {
+  document.getElementById('app').innerHTML = '';
+  const shell = el(`
+    <div>
+      <header class="top">
+        <div class="brand">Laybell <span class="dot">Moderation</span></div>
+        <span class="rolechip ${ME.role}">${ME.role}</span>
+        ${DEMO?'<span class="rolechip" style="color:#ffd27a;border-color:#5a4a1f">DEMO — sample data, nothing saved</span>':''}
+        <div class="spacer"></div>
+        <span class="muted">${esc(ME.email||'')}</span>
+        <button class="btn ghost sm" onclick="signOut()">${DEMO?'Exit demo':'Sign out'}</button>
+      </header>
+      <nav class="tabs" id="tabs">
+        <button data-t="queue">Queue</button>
+        <button data-t="user">User lookup</button>
+        <button data-t="audit">Audit log</button>
+      </nav>
+      <div class="wrap" id="view"></div>
+    </div>`);
+  document.getElementById('app').appendChild(shell);
+  shell.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { TAB=b.dataset.t; paintTabs(); renderView(); });
+  paintTabs(); renderView();
+}
+function paintTabs(){ document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.t===TAB)); }
+
+function renderView(){
+  const v = document.getElementById('view');
+  if (TAB==='queue') return renderQueue(v);
+  if (TAB==='user')  return renderUserLookup(v);
+  if (TAB==='audit') return renderAudit(v);
+}
+
+// ── queue ───────────────────────────────────────────────────────────────────
+async function renderQueue(v){
+  v.innerHTML = `<div class="row" style="margin-bottom:12px">
+      <h2 style="margin:0;font-size:17px">Moderation queue</h2>
+      <label class="muted row" style="gap:6px;font-size:13px;margin-left:8px"><input type="checkbox" id="incRes" style="width:auto"> show resolved</label>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="refresh">Refresh</button>
+    </div><div id="qbody"><div class="loading">Loading…</div></div>`;
+  document.getElementById('refresh').onclick = ()=>loadQueue();
+  document.getElementById('incRes').onchange = ()=>loadQueue();
+  loadQueue();
+}
+async function loadQueue(){
+  const inc = document.getElementById('incRes')?.checked || false;
+  const body = document.getElementById('qbody');
+  body.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    QUEUE = await rpc('admin_list_queue', { p_include_resolved: inc, p_limit: 200, p_offset: 0 }) || [];
+    if (!QUEUE.length) { body.innerHTML = '<div class="empty">🎉 Queue is clear — no open reports.</div>'; return; }
+    const rows = QUEUE.map((r,i)=>`
+      <tr onclick="openCase(${i})" style="cursor:pointer">
+        <td><span class="tag">${esc(r.subject_type)}</span></td>
+        <td class="mono">${esc(short(r.subject_id,14))}</td>
+        <td><span class="count-open">${r.open_count}</span> <span class="muted">/ ${r.report_count}</span></td>
+        <td class="muted">${esc((r.reasons||[]).slice(0,3).join(', '))}${(r.reasons||[]).length>3?'…':''}</td>
+        <td class="sev-${esc(r.severity||'medium')}">${esc(r.severity||'—')}</td>
+        <td><span class="tag">${esc(r.case_status||'open')}</span></td>
+        <td class="muted">${fmtDate(r.last_reported_at)}</td>
+      </tr>`).join('');
+    body.innerHTML = `<table><thead><tr>
+        <th>Type</th><th>Subject</th><th>Open</th><th>Reasons</th><th>Severity</th><th>Status</th><th>Last report</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+  } catch (e) { body.innerHTML = `<div class="empty">Failed to load queue: ${esc(e.message)}<br><span class="muted">Have you run admin_console_rpcs.sql?</span></div>`; }
+}
+function fmtDate(s){ if(!s) return '—'; const d=new Date(s); return d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+
+// ── case drawer ───────────────────────────────────────────────────────────────
+function closeDrawer(){ document.getElementById('drawer').classList.remove('open'); document.getElementById('drawerBg').classList.remove('open'); }
+function showDrawer(html){ const d=document.getElementById('drawer'); d.innerHTML=html; d.classList.add('open'); document.getElementById('drawerBg').classList.add('open'); }
+
+async function openCase(i){
+  const q = QUEUE[i];
+  showDrawer(`<div class="dh"><b>Case</b> <span class="tag">${esc(q.subject_type)}</span><div class="spacer"></div><button class="btn ghost sm" onclick="closeDrawer()">✕</button></div><div class="db"><div class="loading">Loading evidence…</div></div>`);
+  let data;
+  try { data = await rpc('admin_get_case', { p_subject_type:q.subject_type, p_subject_id:q.subject_id }); }
+  catch(e){ document.querySelector('#drawer .db').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const reports = (data.reports||[]).map(rp=>`
+    <div class="report">
+      <div class="rh"><span class="tag">${esc(rp.reason||'—')}</span><span class="muted">${fmtDate(rp.created_at)}</span>
+        ${rp.resolved_at?'<span class="tag" style="color:var(--ok)">resolved</span>':'<span class="tag" style="color:var(--bad)">open</span>'}
+        ${rp.reporter_id?`<span class="muted mono" title="reporter (owner-only)">by ${esc(short(rp.reporter_id,8))}</span>`:''}</div>
+      ${rp.snapshot?`<details><summary>evidence snapshot</summary><pre class="snap">${esc(JSON.stringify(rp.snapshot,null,2))}</pre></details>`:'<span class="muted">no snapshot</span>'}
+    </div>`).join('') || '<div class="muted">No individual reports found for this subject.</div>';
+
+  const su = q.subject_user_id;
+  const A = []; // action buttons
+  A.push(`<button class="btn sm" onclick="act('resolve','${q.subject_type}','${q.subject_id}')">Resolve (actioned)</button>`);
+  A.push(`<button class="btn ghost sm" onclick="act('dismiss','${q.subject_type}','${q.subject_id}')">Dismiss</button>`);
+  A.push(`<button class="btn warn sm" onclick="act('escalate','${q.subject_type}','${q.subject_id}')">Escalate</button>`);
+  if (['post','story','comment','shop_listing'].includes(q.subject_type))
+    A.push(`<button class="btn warn sm" onclick="act('hide_content','${q.subject_type}','${q.subject_id}')">Hide content</button>`,
+           `<button class="btn ghost sm" onclick="act('restore_content','${q.subject_type}','${q.subject_id}')">Restore</button>`);
+  if (['post','user'].includes(q.subject_type)) {
+    const lt = q.subject_type;
+    A.push(`<button class="btn warn sm" onclick="act('hold_set','${lt}','${q.subject_id}')">Legal hold</button>`);
+    if (can('owner')) A.push(`<button class="btn ghost sm" onclick="act('hold_release','${lt}','${q.subject_id}')">Release hold</button>`);
+  }
+  if (q.subject_type==='domain')
+    A.push(`<button class="btn warn sm" onclick="act('block','domain','${q.subject_id}')">Blocklist domain</button>`,
+           `<button class="btn ghost sm" onclick="act('unblock','domain','${q.subject_id}')">Unblock</button>`);
+
+  const userBox = su ? `
+    <div class="kv">
+      <div class="k">Subject account</div><div class="mono">${esc(su)} · <a onclick="lookupUser('${su}')">open</a></div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost sm" onclick="act('warn','user','${su}')">Warn</button>
+      <button class="btn warn sm" onclick="act('suspend','user','${su}')">Suspend</button>
+      <button class="btn warn sm" onclick="act('shadow_on','user','${su}')">Shadow-ban</button>
+      <button class="btn ghost sm" onclick="act('shadow_off','user','${su}')">Un-shadow</button>
+      <button class="btn warn sm" onclick="act('hide_on','user','${su}')">Hide account</button>
+      <button class="btn ghost sm" onclick="act('hide_off','user','${su}')">Unhide</button>
+      <button class="btn ghost sm" onclick="act('lift','user','${su}')">Lift sanction</button>
+      ${can('owner')?`<button class="btn bad sm" onclick="act('ban','user','${su}')">Ban login</button>
+        <button class="btn ghost sm" onclick="act('unban','user','${su}')">Unban</button>
+        <button class="btn ghost sm" onclick="act('authinfo','user','${su}')">Auth info</button>
+        <button class="btn bad sm" onclick="act('harddelete','user','${su}')">Hard delete</button>`:''}
+    </div>` : '';
+
+  showDrawer(`
+    <div class="dh"><b>Case</b> <span class="tag">${esc(q.subject_type)}</span> <span class="mono muted">${esc(short(q.subject_id,18))}</span>
+      <div class="spacer"></div><button class="btn ghost sm" onclick="closeDrawer()">✕</button></div>
+    <div class="db">
+      <div class="actions">${A.join('')}</div>
+      ${userBox}
+      <h3 style="font-size:14px;margin:14px 0 8px">Reports (${(data.reports||[]).length})</h3>
+      ${reports}
+    </div>`);
+}
+
+// ── action dispatcher ─────────────────────────────────────────────────────────
+async function act(kind, type, id){
+  try {
+    if (kind==='resolve' || kind==='dismiss') {
+      const note = prompt(kind==='dismiss'?'Dismiss — note (optional):':'Resolve — what action did you take?','') ;
+      if (note===null) return;
+      await rpc('admin_resolve_report',{p_subject_type:type,p_subject_id:id,p_action_taken:note||null,p_dismiss:kind==='dismiss',p_note:note||null});
+      toast('Case resolved'); closeDrawer(); loadQueue(); return;
+    }
+    if (kind==='escalate') { const to=prompt('Escalate to (owner / legal / ncmec):','owner'); if(!to)return;
+      const why=prompt('Reason:','')||null; await rpc('admin_escalate_case',{p_subject_type:type,p_subject_id:id,p_to:to,p_reason:why});
+      toast('Escalated (subject auto legal-held)'); closeDrawer(); loadQueue(); return; }
+    if (kind==='hide_content'){ const why=prompt('Reason for takedown:','')||null; await rpc('admin_hide_content',{p_type:type,p_id:id,p_reason:why}); toast('Content hidden'); return; }
+    if (kind==='restore_content'){ const why=prompt('Reason for restore:','')||null; await rpc('admin_restore_content',{p_type:type,p_id:id,p_reason:why}); toast('Content restored'); return; }
+    if (kind==='hold_set'){ const why=prompt('Legal-hold reason:','')||null; await rpc('admin_set_legal_hold',{p_type:type,p_id:id,p_on:true,p_reason:why}); toast('Legal hold set'); return; }
+    if (kind==='hold_release'){ const why=prompt('Release reason (owner):','')||null; await rpc('admin_set_legal_hold',{p_type:type,p_id:id,p_on:false,p_reason:why}); toast('Legal hold released'); return; }
+    if (kind==='block'){ const sev=prompt('Severity (block / warn):','block')||'block'; const why=prompt('Reason:','')||null; await rpc('admin_blocklist_add',{p_domain:id,p_severity:sev,p_reason:why}); toast('Domain blocklisted'); return; }
+    if (kind==='unblock'){ await rpc('admin_blocklist_remove',{p_domain:id}); toast('Domain removed from blocklist'); return; }
+    if (kind==='warn'){ const why=prompt('Warning reason:','')||null; await rpc('admin_warn_user',{p_user:id,p_reason:why}); toast('User warned'); return; }
+    if (kind==='suspend'){ const m=prompt('Suspend for how many minutes?','1440'); if(!m)return; const why=prompt('Reason:','')||null; await rpc('admin_suspend_user',{p_user:id,p_minutes:parseInt(m,10)||60,p_reason:why}); toast('User suspended'); return; }
+    if (kind==='shadow_on'){ const why=prompt('Shadow-ban reason:','')||null; await rpc('admin_shadowban_user',{p_user:id,p_on:true,p_reason:why}); toast('User shadow-banned'); return; }
+    if (kind==='shadow_off'){ const why=prompt('Reason:','')||null; await rpc('admin_shadowban_user',{p_user:id,p_on:false,p_reason:why}); toast('Shadow-ban lifted'); return; }
+    if (kind==='hide_on'){ const why=prompt('Hide-account reason:','')||null; await rpc('admin_hide_account',{p_user:id,p_on:true,p_reason:why}); toast('Account hidden'); return; }
+    if (kind==='hide_off'){ const why=prompt('Reason:','')||null; await rpc('admin_hide_account',{p_user:id,p_on:false,p_reason:why}); toast('Account unhidden'); return; }
+    if (kind==='lift'){ const why=prompt('Reason:','')||null; await rpc('admin_lift_sanction',{p_user:id,p_reason:why}); toast('Sanction lifted'); return; }
+    // owner-only, edge function
+    if (kind==='ban'){ if(!confirm('Ban this account from logging in?'))return; const why=prompt('Ban reason:','')||null; await callEdge('ban',{user_id:id,reason:why}); toast('Login banned'); return; }
+    if (kind==='unban'){ const why=prompt('Unban reason:','')||null; await callEdge('unban',{user_id:id,reason:why}); toast('Login restored'); return; }
+    if (kind==='authinfo'){ const r=await callEdge('auth_info',{user_id:id}); alert('Email: '+(r.auth?.email||'—')+'\nLast sign-in: '+(r.auth?.last_sign_in_at||'—')+'\nBanned until: '+(r.auth?.banned_until||'—')); return; }
+    if (kind==='harddelete'){ if(!confirm('PERMANENTLY delete this account and all their data? This cannot be undone.'))return; if(!confirm('Are you absolutely sure?'))return; const why=prompt('Delete reason:','')||null; const r=await callEdge('hard_delete',{user_id:id,reason:why,confirm:true}); toast('Account '+r.status); closeDrawer(); loadQueue(); return; }
+  } catch(e){ toast(e.message,'bad'); }
+}
+
+// ── user lookup ───────────────────────────────────────────────────────────────
+function renderUserLookup(v){
+  v.innerHTML = `<h2 style="font-size:17px">User investigator</h2>
+    <div class="row"><input id="uid" placeholder="user UUID" style="width:360px" class="mono"><button class="btn" id="ulook">Look up</button></div>
+    <div id="ubody" style="margin-top:16px"></div>`;
+  document.getElementById('ulook').onclick = ()=>lookupUser(document.getElementById('uid').value.trim());
+  document.getElementById('uid').addEventListener('keydown',e=>{ if(e.key==='Enter') lookupUser(e.target.value.trim()); });
+}
+async function lookupUser(id){
+  if(!id) return;
+  if(TAB!=='user'){ TAB='user'; paintTabs(); renderView(); document.getElementById('uid').value=id; }
+  closeDrawer();
+  const body = document.getElementById('ubody'); if(body) body.innerHTML='<div class="loading">Loading…</div>';
+  try {
+    const d = await rpc('admin_user_detail',{p_user:id});
+    const p = d.profile||{}; const s = d.sanction; const au = d.auth;
+    document.getElementById('ubody').innerHTML = `
+      <div class="card" style="width:auto;max-width:640px">
+        <div class="kv">
+          <div class="k">Username</div><div>@${esc(p.username||'—')} · ${esc(p.display_name||'')}</div>
+          <div class="k">User ID</div><div class="mono">${esc(p.id||id)}</div>
+          <div class="k">Bio</div><div>${esc(p.bio||'—')}</div>
+          <div class="k">Minor / age</div><div>${p.is_minor?'⚠️ minor':'adult'} ${p.age?('· '+p.age):''}</div>
+          <div class="k">Hidden</div><div>${p.hidden?'yes':'no'}</div>
+          <div class="k">Legal hold</div><div>${p.legal_hold?'⚖️ yes':'no'} ${d.legal_hold_posts?`(${d.legal_hold_posts} posts held)`:''}</div>
+          <div class="k">Sanction</div><div>${s?`<b>${esc(s.state)}</b> · strikes ${s.strike_count} ${s.suspended_until?('· until '+fmtDate(s.suspended_until)):''}`:'active'}</div>
+          <div class="k">Open reports</div><div>user ${d.open_reports?.user||0} · post ${d.open_reports?.post||0}</div>
+          <div class="k">Content</div><div>${d.content?.posts||0} posts · ${d.content?.stories||0} stories</div>
+          ${au?`<div class="k">Email (owner)</div><div>${esc(au.email||'—')}</div>
+          <div class="k">Last sign-in</div><div>${fmtDate(au.last_sign_in_at)}</div>
+          <div class="k">Banned until</div><div>${au.banned_until?esc(au.banned_until):'no'}</div>`:'<div class="k">Auth fields</div><div class="muted">owner-only</div>'}
+        </div>
+        <div class="actions">
+          <button class="btn ghost sm" onclick="act('warn','user','${id}')">Warn</button>
+          <button class="btn warn sm" onclick="act('suspend','user','${id}')">Suspend</button>
+          <button class="btn warn sm" onclick="act('shadow_on','user','${id}')">Shadow-ban</button>
+          <button class="btn warn sm" onclick="act('hide_on','user','${id}')">Hide</button>
+          <button class="btn ghost sm" onclick="act('lift','user','${id}')">Lift</button>
+          ${can('owner')?`<button class="btn bad sm" onclick="act('ban','user','${id}')">Ban</button>
+            <button class="btn ghost sm" onclick="act('authinfo','user','${id}')">Auth info</button>`:''}
+        </div>
+      </div>`;
+  } catch(e){ document.getElementById('ubody').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+// ── audit log ─────────────────────────────────────────────────────────────────
+async function renderAudit(v){
+  v.innerHTML = `<h2 style="font-size:17px">Audit log</h2><div id="abody"><div class="loading">Loading…</div></div>`;
+  try {
+    const rows = await rpc('admin_list_audit',{p_target_user:null,p_limit:150,p_offset:0}) || [];
+    if(!rows.length){ document.getElementById('abody').innerHTML='<div class="empty">No admin actions logged yet.</div>'; return; }
+    document.getElementById('abody').innerHTML = `<table><thead><tr>
+        <th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Reason</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td class="muted">${fmtDate(r.created_at)}</td>
+        <td class="mono">${esc(short(r.actor_id,8))} <span class="tag">${esc(r.actor_role||'')}</span></td>
+        <td><b>${esc(r.action)}</b></td>
+        <td class="mono">${esc(r.target_type||'')} ${esc(short(r.target_id,12))}</td>
+        <td class="muted">${esc(r.reason||'')}</td></tr>`).join('')}
+      </tbody></table>`;
+  } catch(e){ document.getElementById('abody').innerHTML=`<div class="empty">${esc(e.message)}</div>`; }
+}
+</script>
+</body>
+</html>
