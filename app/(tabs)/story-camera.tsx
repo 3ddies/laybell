@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity,
   Alert, Image, TextInput, Linking, Dimensions, Pressable, KeyboardAvoidingView,
   Platform, Keyboard, Animated, Easing, PanResponder, ScrollView,
 } from 'react-native';
@@ -9,7 +9,6 @@ import {
   useCameraPermissions, useMicrophonePermissions,
 } from 'expo-camera';
 import AppVideo from '../../components/AppVideo';
-import * as VideoThumbnails from 'expo-video-thumbnails';
 import * as MediaLibrary from 'expo-media-library';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { Image as ExpoImage } from 'expo-image';
@@ -17,9 +16,6 @@ import { useIsFocused, useNavigation, useNavigationState } from '@react-navigati
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../lib/supabase';
-import { uploadStoryMedia, createStory } from '../../lib/stories';
-import { compressVideoIfPossible, uploadToStorageWithProgress } from '../../lib/upload';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import StickerLayer, {
@@ -28,6 +24,7 @@ import StickerLayer, {
 } from '../../components/StickerLayer';
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { useStories } from '../../contexts/StoriesContext';
+import { useStoryUpload } from '../../contexts/StoryUploadContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
@@ -65,6 +62,7 @@ export default function StoryCameraScreen() {
   const focusedTab = useNavigationState((s: any) => s?.routes?.[s.index]?.name);
   const cameraActive = isFocused || (swiping && focusedTab === 'index');
   const { refresh: refreshStories } = useStories();
+  const { prewarmStory, enqueueStory, discardPrewarm } = useStoryUpload();
 
   const [camPermission, requestCamPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
@@ -137,6 +135,12 @@ export default function StoryCameraScreen() {
 
   // ── Editor state ────────────────────────────────────────────────────────────
   const [captured, setCaptured] = useState<Captured | null>(null);
+  // Prep in the background the instant media is captured: compress + thumbnail +
+  // byte upload all start now, so tapping Post is just a row insert (instant).
+  useEffect(() => {
+    if (captured) prewarmStory(captured);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captured?.uri]);
   const [caption, setCaption] = useState('');                       // plain bottom caption
   const [stickers, setStickers] = useState<Sticker[]>([]);           // draggable text/emoji stickers
   const [editingId, setEditingId] = useState<string | null>(null);  // sticker whose text is being edited
@@ -168,10 +172,6 @@ export default function StoryCameraScreen() {
   const [dragActive, setDragActive] = useState(false);              // a sticker is mid-drag → show trash
   const [overTrash, setOverTrash] = useState(false);
   const [saved, setSaved] = useState(false);                         // media saved to device
-  const [uploading, setUploading] = useState(false);
-  // Live 0–1 progress for the video story path (compress, then upload), so a big
-  // 4K clip shows a moving % instead of a frozen spinner — same feel as posts.
-  const [uploadPct, setUploadPct] = useState<number | null>(null);
 
   // ── Text / emoji stickers ───────────────────────────────────────────────────
   function addStickerAt(xNorm: number, yNorm: number) {
@@ -286,6 +286,9 @@ export default function StoryCameraScreen() {
         if (afTimer.current) { clearTimeout(afTimer.current); afTimer.current = null; }
         if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
         if (recordingRef.current) cameraRef.current?.stopRecording();
+        // Abandoned capture (left without posting) → cancel its speculative
+        // upload. No-op if the capture was already handed to a post.
+        discardPrewarm();
         pressActiveRef.current = false;
         photoHoldRef.current = false;
         setRecording(false);
@@ -620,6 +623,9 @@ export default function StoryCameraScreen() {
 
   function retake() {
     stopSong('story-editor');
+    // Drop any in-flight prewarm (no-op once it's been claimed by a post) so an
+    // abandoned capture's speculative upload is cancelled + its orphan cleaned up.
+    discardPrewarm();
     setCaptured(null);
     setCaption(''); setStickers([]); setEditingId(null); setEditingText('');
     setSong(null); setShowCaption(false); setSaved(false);
@@ -643,69 +649,24 @@ export default function StoryCameraScreen() {
     }
   }
 
-  async function shareStory() {
+  function shareStory() {
     if (!captured) return;
-    stopSong('story-editor');
-    setUploading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error(t('storyCamera.notAuthenticated'));
-
-      let mediaUrl: string;
-      let thumbnailUrl: string | null = null;
-
-      if (captured.type === 'image') {
-        let outUri = captured.uri;
-        // Camera shots are already processed in takePhoto; only library picks
-        // still need the downscale/compress pass here.
-        if (!captured.processed) {
-          try {
-            const out = await manipulateAsync(captured.uri, [{ resize: { width: 1920 } }], {
-              compress: 0.9, format: SaveFormat.JPEG,
-            });
-            outUri = out.uri;
-          } catch {}
-        }
-        mediaUrl = await uploadStoryMedia(user.id, outUri, 'jpg', 'image/jpeg');
-      } else {
-        // Library picks can be 4K originals — shrink to 1080p when the native
-        // compressor is in the build (pass-through otherwise), then stream the
-        // bytes up with live progress so long uploads never look hung.
-        const upUri = await compressVideoIfPossible(captured.uri, setUploadPct);
-        setUploadPct(null);
-        const ext = (upUri === captured.uri ? captured.uri.split('.').pop() : 'mp4') || 'mp4';
-        mediaUrl = await uploadToStorageWithProgress('stories', user.id, upUri, ext, 'video/mp4', setUploadPct);
-        setUploadPct(null);
-        try {
-          const { uri } = await VideoThumbnails.getThumbnailAsync(captured.uri, { time: 0 });
-          thumbnailUrl = await uploadStoryMedia(user.id, uri, 'jpg', 'image/jpeg');
-        } catch {}
-      }
-
-      await createStory({
-        userId: user.id,
-        mediaUrl,
-        mediaType: captured.type,
-        thumbnailUrl,
-        caption: caption.trim() || null,
-        aspectRatio: '9:16',
-        durationSeconds: captured.type === 'video' ? captured.durationSec ?? null : null,
-        song,
-        stickers: stickers.length
-          ? stickers.map(({ text, x, y, scale, rotation, font, color, bg, size, emoji }) =>
-              ({ text, x, y, scale, rotation, font, color, bg, size, emoji }))
-          : null,
-      });
-
-      retake();
-      refreshStories();
-      navigation.navigate('index');
-    } catch (e: any) {
-      Alert.alert(t('storyCamera.postFailTitle'), e?.message ?? t('post.tryAgain'));
-    } finally {
-      setUploading(false);
-      setUploadPct(null);
-    }
+    // Optimistic post: hand the (already-prewarming) upload + a snapshot of the
+    // edits to the background provider, then return to Home immediately. No % —
+    // the story pops into the tray, already-ready, once the upload lands.
+    enqueueStory({
+      captured,
+      caption: caption.trim() || null,
+      aspectRatio: '9:16',
+      durationSeconds: captured.type === 'video' ? captured.durationSec ?? null : null,
+      song: song ? { id: song.id, title: song.title, artist: song.artist, artistId: song.artistId } : null,
+      stickers: stickers.length
+        ? stickers.map(({ text, x, y, scale, rotation, font, color, bg, size, emoji }) =>
+            ({ text, x, y, scale, rotation, font, color, bg, size, emoji }))
+        : null,
+    });
+    retake();
+    navigation.navigate('index');
   }
 
   // ─── Permission gate ─────────────────────────────────────────────────────
@@ -872,17 +833,9 @@ export default function StoryCameraScreen() {
               <Text style={styles.captionPreviewText} numberOfLines={2}>{caption}</Text>
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity style={styles.shareBtn} onPress={shareStory} disabled={uploading}>
-            {uploading ? (
-              uploadPct != null
-                ? <Text style={styles.shareBtnText}>{Math.round(uploadPct * 100)}%</Text>
-                : <ActivityIndicator color="#000" />
-            ) : (
-              <>
-                <Text style={styles.shareBtnText}>{t('storyCamera.addToStory')}</Text>
-                <Ionicons name="arrow-forward-circle" size={22} color="#000" />
-              </>
-            )}
+          <TouchableOpacity style={styles.shareBtn} onPress={shareStory}>
+            <Text style={styles.shareBtnText}>{t('storyCamera.addToStory')}</Text>
+            <Ionicons name="arrow-forward-circle" size={22} color="#000" />
           </TouchableOpacity>
         </View>
         )}

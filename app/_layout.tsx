@@ -34,6 +34,7 @@ import { GifPickerProvider } from '../contexts/GifPickerContext';
 import { PhotoPickerProvider } from '../contexts/PhotoPickerContext';
 import { UploadQueueProvider } from '../contexts/UploadQueueContext';
 import { CastProvider } from '../contexts/CastContext';
+import { StoryUploadProvider } from '../contexts/StoryUploadContext';
 import CastBar from '../components/CastBar';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
@@ -330,9 +331,11 @@ export default function RootLayout() {
                                 <GifPickerProvider>
                                   <PhotoPickerProvider>
                                     <UploadQueueProvider>
-                                      <CastProvider>
-                                        <AppContent />
-                                      </CastProvider>
+                                      <StoryUploadProvider>
+                                        <CastProvider>
+                                          <AppContent />
+                                        </CastProvider>
+                                      </StoryUploadProvider>
                                     </UploadQueueProvider>
                                   </PhotoPickerProvider>
                                 </GifPickerProvider>
