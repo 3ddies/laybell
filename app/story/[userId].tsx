@@ -101,17 +101,17 @@ export default function StoryViewerScreen() {
   const [sendingReply, setSendingReply] = useState(false);
   const [sentFlash, setSentFlash] = useState(false);
   // The story id whose IMAGE has finished decoding and is actually on screen.
-  // Story-specific overlays (caption, stickers, song chip) stay hidden until the
-  // CURRENT story's media has painted, so advancing never flashes the next
-  // story's text/elements over the previous (still-showing) image while the new
-  // one decodes. Videos paint their poster frame immediately, so they don't gate.
-  const [loadedMediaId, setLoadedMediaId] = useState<string | null>(null);
-  // The last IMAGE that finished decoding, painted BEHIND the live media so a
-  // story change never flashes the black container while the next image loads —
-  // even when that next image isn't cached yet (a freshly-posted story). Together
-  // with the overlay gate this makes every advance land as: previous frame →
-  // (decode) → next frame WITH its text/elements, never chrome-over-black first.
-  const [heldFrameUri, setHeldFrameUri] = useState<string | null>(null);
+  // The story id whose media has actually painted its first frame (image onLoad
+  // or video onReady, see AppVideo). A full-screen grey cover stays up until this
+  // matches the CURRENT story, so a story change / open shows a clean grey until
+  // the image AND all overlays/chrome are ready, then reveals them ATOMICALLY —
+  // never text or chrome over a blank/half-loaded frame, and never a stale frame
+  // from the previous story bleeding through (the old overlap bug).
+  const [readyId, setReadyId] = useState<string | null>(null);
+  // Per-remount tick to retry a transiently-failing image URL (a just-uploaded
+  // public URL can 404 for a beat) instead of revealing a broken frame.
+  const [reloadTick, setReloadTick] = useState(0);
+  const imgErrorsRef = useRef<Record<string, number>>({});
 
   const pausedRef = useRef(false);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -138,10 +138,14 @@ export default function StoryViewerScreen() {
   const story = group?.stories[storyIndex] ?? null;
   const isOwn = !!currentUserId && group?.user.id === currentUserId;
 
-  // Computed during render (no lag) so a story flip hides the outgoing overlays
-  // in the SAME frame: an image is "ready" only once its own onLoad has fired;
-  // a video is ready right away (its poster already shows the correct frame).
-  const mediaReady = !story || story.media_type !== 'image' || loadedMediaId === story.id;
+  // Render-derived so a story flip re-raises the grey cover in the SAME commit:
+  // "ready" only once THIS story's own media has painted its first frame.
+  const ready = !!story && readyId === story.id;
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
+  // Loading circle on the grey cover — shown only if the story stays un-ready for
+  // a beat, so a fast/cached load doesn't flash a spinner but a real load does.
+  const [showLoader, setShowLoader] = useState(false);
 
   // Fresh snapshots for the gesture/advance callbacks.
   const posRef = useRef({ userIndex: 0, storyIndex: 0 });
@@ -234,8 +238,8 @@ export default function StoryViewerScreen() {
     else if (currentUserId) fetchStoryLiked(story.id, currentUserId).then(setLiked).catch(() => {});
 
     // Warm the neighbor images (next story of this user + first story of the next
-    // user) so a flip usually lands on an already-decoded frame. The overlay gate
-    // (mediaReady) still guarantees correctness on the rare uncached advance.
+    // user) so a flip usually lands on an already-decoded frame. The grey cover
+    // still guarantees a clean reveal on the rare uncached advance.
     {
       const { userIndex: ui, storyIndex: si } = posRef.current;
       const g2 = groupsRef.current[ui];
@@ -246,18 +250,41 @@ export default function StoryViewerScreen() {
       warm.forEach((u) => { if (u) ExpoImage.prefetch(u).catch(() => {}); });
     }
 
-    // Images advance on a timed fill; videos advance from playback status instead.
-    if (story.media_type === 'image') startImageProgress(0);
-    return stopProgressAnim;
+    // Safety: never sit on the grey cover forever. If the media hasn't painted
+    // after a while (a genuinely dead/deleted URL), reveal anyway so the viewer
+    // isn't stuck on grey.
+    const revealTimer = setTimeout(() => setReadyId(story.id), 12000);
+
+    // Image countdown starts from the READY effect below (once the image is
+    // actually on screen), not here — so a story never counts down / auto-advances
+    // while it's still the grey loader. Videos advance from playback status.
+    return () => { stopProgressAnim(); clearTimeout(revealTimer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story?.id]);
+
+  // Start the image countdown the moment the image is actually shown (ready), so
+  // the visible duration is the full IMAGE_DURATION regardless of load time.
+  useEffect(() => {
+    if (ready && story?.media_type === 'image' && isFocused && !pausedRef.current) {
+      startImageProgress(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, story?.id]);
+
+  // Delay the grey-cover loading circle so a quick/cached load doesn't flash it.
+  useEffect(() => {
+    setShowLoader(false);
+    if (ready) return;
+    const t = setTimeout(() => setShowLoader(true), 280);
+    return () => clearTimeout(t);
+  }, [ready, story?.id]);
 
   // Freeze progress while the viewer is covered (e.g. you tapped through to a
   // profile) and resume from where it left off on return.
   useEffect(() => {
     if (!isFocused) {
       stopProgressAnim();
-    } else if (!loading && story && !pausedRef.current && story.media_type === 'image') {
+    } else if (!loading && story && !pausedRef.current && story.media_type === 'image' && readyRef.current) {
       progressAnim.stopAnimation((v: number) => startImageProgress(typeof v === 'number' ? v : 0));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -324,7 +351,7 @@ export default function StoryViewerScreen() {
     setPaused(false);
     stopProgressAnim();
     progressAnim.setValue(0);
-    if (story?.media_type === 'image') startImageProgress(0);
+    if (story?.media_type === 'image' && readyRef.current) startImageProgress(0);
   }
 
   // ─── horizontal swipe = jump to the next / previous PERSON ───────────────────
@@ -363,7 +390,7 @@ export default function StoryViewerScreen() {
   function resume() {
     pausedRef.current = false;
     setPaused(false);
-    if (story?.media_type === 'image') {
+    if (story?.media_type === 'image' && readyRef.current) {
       progressAnim.stopAnimation((v: number) => startImageProgress(typeof v === 'number' ? v : 0));
     }
   }
@@ -615,35 +642,37 @@ export default function StoryViewerScreen() {
           </View>
         ) : (
           <>
-            {/* Held previous frame — painted behind the live media so a story
-                change never flashes black while the next image decodes (works
-                even when that image isn't cached yet). Overlays gate on top. */}
-            {heldFrameUri && (
-              <ExpoImage source={{ uri: heldFrameUri }} style={StyleSheet.absoluteFill} contentFit="contain" pointerEvents="none" />
-            )}
-
-            {/* Media. expo-image (cached, fast) avoids the flash when tapping between
-                stories; the video shows its thumbnail poster while it buffers so
-                there's no pitch-black gap on open / person change. */}
+            {/* Media — full-bleed cover-fit to match the composer (which authors at
+                cover), so a clip never plays back letterboxed/"smaller" than it was
+                framed. The grey cover below hides it until its first frame paints. */}
             {story.media_type === 'image' ? (
               <ExpoImage
+                key={`${story.id}:${reloadTick}`}
                 source={{ uri: story.media_url }}
                 style={StyleSheet.absoluteFill}
-                contentFit="contain"
-                onLoad={() => { setLoadedMediaId(story.id); setHeldFrameUri(story.media_url); }}
-                onError={() => setLoadedMediaId(story.id)}
+                contentFit="cover"
+                onLoad={() => setReadyId(story.id)}
+                onError={() => {
+                  // A freshly-posted URL can 404 for a beat — retry a few times
+                  // (remount refetches) before giving up and revealing anyway.
+                  const n = (imgErrorsRef.current[story.id] ?? 0) + 1;
+                  imgErrorsRef.current[story.id] = n;
+                  if (n <= 3) setTimeout(() => setReloadTick((t) => t + 1), 500 * n);
+                  else setReadyId(story.id);
+                }}
               />
             ) : (
               <AppVideo
                 key={story.id}
                 source={{ uri: story.media_url }}
                 style={StyleSheet.absoluteFill}
-                contentFit="contain"
+                contentFit="cover"
                 active={!paused}
                 muted={!!story.song_id}
                 poster={story.thumbnail_url}
-                posterContentFit="contain"
+                posterContentFit="cover"
                 progressIntervalMs={VIDEO_PROGRESS_INTERVAL_MS}
+                onReady={() => setReadyId(story.id)}
                 onProgress={(pos, dur) => {
                   if (dur && !pausedRef.current) {
                     animateProgressTo(Math.min(1, pos / dur), VIDEO_PROGRESS_INTERVAL_MS);
@@ -655,16 +684,6 @@ export default function StoryViewerScreen() {
 
             {/* Tap surface (advance / pause) */}
             <Pressable style={StyleSheet.absoluteFill} onPressIn={onPressIn} onPressOut={onPressOut} />
-
-            {/* Cold open (no previous frame to hold): show a loader instead of a
-                black screen while the first image decodes. On later advances
-                expo-image keeps the previous frame up, so no spinner is needed —
-                loadedMediaId is non-null there and this stays hidden. */}
-            {!mediaReady && loadedMediaId === null && (
-              <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
-                <ActivityIndicator color="#fff" />
-              </View>
-            )}
 
             {/* Top scrim for legibility */}
             <LinearGradient colors={['rgba(0,0,0,0.55)', 'transparent']} style={styles.topScrim} pointerEvents="none" />
@@ -727,7 +746,7 @@ export default function StoryViewerScreen() {
             </View>
 
             {/* Bottom caption (or, for older stories, the single positioned caption). */}
-            {mediaReady && !!story.caption && (
+            {!!story.caption && (
               story.caption_style ? (
                 <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
                   <View style={styles.captionStickerCenter}>
@@ -752,7 +771,7 @@ export default function StoryViewerScreen() {
                 author — rendered through the SAME style resolver as the editor
                 (font / color / background / emoji metadata in stickers jsonb),
                 so the story looks exactly as it did when composed. */}
-            {mediaReady && (story.stickers ?? []).length > 0 && (
+            {(story.stickers ?? []).length > 0 && (
               <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
                 {(story.stickers ?? []).map((st: any, i: number) => {
                   const { textStyle, boxStyle } = resolveSticker(st);
@@ -780,7 +799,7 @@ export default function StoryViewerScreen() {
 
             {/* Own-story footer: viewer count. Live → tap to see WHO watched.
                 Archived replay → count only, read-only (no per-viewer list). */}
-            {mediaReady && isOwn && (
+            {isOwn && (
               archived ? (
                 <View style={[styles.seenRow, { bottom: insets.bottom + 18 }]}>
                   <Ionicons name="eye-outline" size={18} color="#fff" />
@@ -801,7 +820,7 @@ export default function StoryViewerScreen() {
             )}
 
             {/* Someone else's story: reply pill + heart */}
-            {mediaReady && !isOwn && !!currentUserId && (
+            {!isOwn && !!currentUserId && (
               <View style={[styles.replyRow, { bottom: insets.bottom }]}>
                 <TouchableOpacity style={styles.replyPill} activeOpacity={0.8} onPress={openReply}>
                   <Text style={styles.replyPillText}>{t('story.replyTo', { name: group?.user.display_name || group?.user.username || t('story.fallbackName') })}</Text>
@@ -825,7 +844,7 @@ export default function StoryViewerScreen() {
             )}
 
             {/* Song chip — top-right, tucked under the header controls */}
-            {mediaReady && !!story.song_id && (
+            {!!story.song_id && (
               <View style={[styles.songTopRight, { top: insets.top + 58 }]} pointerEvents="box-none">
                 <SongAttribution
                   inline
@@ -842,9 +861,22 @@ export default function StoryViewerScreen() {
 
             {/* Bottom caption — bare bold text (no bar), inset clear of the
                 heart/eye controls so nothing collides. */}
-            {mediaReady && !!story.caption && !story.caption_style && (
+            {!!story.caption && !story.caption_style && (
               <View style={[styles.bottomStack, { bottom: insets.bottom + 50 }]} pointerEvents="none">
                 <Text style={styles.caption}>{story.caption}</Text>
+              </View>
+            )}
+
+            {/* Grey cover — the LAST child, so it sits above the media AND every
+                overlay/chrome layer. Opaque until THIS story's first frame paints
+                (`ready`), then it lifts and the whole story (image + caption +
+                stickers + header + progress) appears in one clean frame. This is
+                what makes a not-yet-ready story show plain grey instead of text
+                or chrome over a blank/half-loaded frame. pointerEvents none so
+                swipe-down-to-dismiss still works while grey. */}
+            {!ready && (
+              <View style={[StyleSheet.absoluteFill, styles.greyCover]} pointerEvents="none">
+                {showLoader && <ActivityIndicator color="rgba(255,255,255,0.9)" size="large" />}
               </View>
             )}
           </>
@@ -975,6 +1007,10 @@ export default function StoryViewerScreen() {
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   root: { flex: 1 },
   container: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
+  // Solid mid-grey shown until a story is fully ready — matches the loading
+  // skeleton's tone so fetch → decode → reveal reads as one clean sequence.
+  // Centers the loading circle.
+  greyCover: { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' },
   center: { alignItems: 'center', justifyContent: 'center', gap: SPACING.md },
   empty: { color: colors.textSecondary, fontSize: 15 },
   emptyBtn: { paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg, borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border },

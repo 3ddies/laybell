@@ -53,6 +53,9 @@ export type AppVideoProps = {
   /** currentTimeMs/durationMs (converted from expo-video's seconds). */
   onProgress?: (currentTimeMs: number, durationMs: number) => void;
   onEnd?: () => void;
+  /** Fires ONCE when the player reaches readyToPlay — i.e. the first frame can
+   *  actually paint. Lets a parent hold a placeholder until real content shows. */
+  onReady?: () => void;
   /** Keep playing even when a full-screen UI has globally suspended media. */
   ignoreSuspend?: boolean;
 };
@@ -76,6 +79,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   progressIntervalMs = 250,
   onProgress,
   onEnd,
+  onReady,
   ignoreSuspend = false,
 }: AppVideoProps, ref) {
   const uri = typeof source === 'string' ? source : source.uri;
@@ -105,6 +109,10 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   const trimSeekingRef = useRef(false);
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  // onReady fires once per source (first readyToPlay), not on every re-buffer.
+  const firedReadyRef = useRef(false);
   const trimStartRef = useRef<number | null>(trimStartSec ?? null);
   trimStartRef.current = trimStartSec ?? null;
   const startPositionRef = useRef<number | null>(startPositionSec ?? null);
@@ -159,12 +167,14 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
     retriesRef.current = 0;
     hasLoadedRef.current = false;
     trimSeekingRef.current = false;
+    firedReadyRef.current = false;
     setShowPoster(!!poster);
     const statusSub = player.addListener('statusChange', ({ status }: any) => {
       if (status === 'readyToPlay') {
         retriesRef.current = 0;
         hasLoadedRef.current = true;
         setShowPoster(false);
+        if (!firedReadyRef.current) { firedReadyRef.current = true; onReadyRef.current?.(); }
         if (!seededRef.current) {
           seededRef.current = true;
           const ts = trimStartRef.current;
