@@ -261,3 +261,19 @@ export function scorePost(
 
   return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul * girlSpaceMul;
 }
+
+// ── Per-refresh variety ──────────────────────────────────────────────────────
+// scorePost is deterministic, so pulling to refresh over the SAME posts would
+// reproduce the identical order every time (the seen-penalty is a uniform 0.15×
+// that doesn't change relative order). A small bounded multiplier, drawn fresh
+// per fetch per post, reshuffles ONLY posts whose scores are already close — a
+// strong post's lead easily survives ±22%, so the timeline feels alive on every
+// refresh without letting mediocre content leapfrog genuinely better work.
+//
+// Apply it to the ORGANIC sort order AFTER the deterministic score and AFTER the
+// spotlight anchors are computed, so spotlight placement stays hour-stable and
+// the seen-penalty's intent is untouched.
+export const FEED_VARIETY_JITTER = 0.22;
+export function varietyMultiplier(strength = FEED_VARIETY_JITTER): number {
+  return 1 + (Math.random() * 2 - 1) * strength;
+}

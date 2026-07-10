@@ -1,5 +1,5 @@
 import {
-  buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost,
+  buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, varietyMultiplier,
   EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
 } from '../../lib/feedScorer';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
@@ -395,6 +395,10 @@ export default function HomeScreen() {
   const affinityProfile = useRef<UserAffinityProfile>(EMPTY_PROFILE);
   // Live mirrors read by the song-queue builder / loader (see playFeedSong).
   const postsRef = useRef<Post[]>([]);
+  // Bumped at the start of every fetchPosts; the deferred spotlight/ad "paint 2"
+  // checks it's still the latest before writing, so a slow promoted-layer weave
+  // can't clobber a newer fetch (pull-to-refresh / feed-mode switch mid-load).
+  const fetchSeq = useRef(0);
   postsRef.current = posts;
 
   // While a background upload's optimistic card is showing, hide the real DB row
@@ -752,6 +756,9 @@ export default function HomeScreen() {
   }
 
   async function fetchPosts(userId?: string, seen: Set<string> = seenPostIds) {
+    // Own this fetch — the deferred promoted-layer paint below only writes while
+    // it's still the latest fetch (a newer pull-to-refresh / mode switch bumps it).
+    const seq = ++fetchSeq.current;
     let query = supabase
       .from('posts')
       .select(`
@@ -806,70 +813,93 @@ export default function HomeScreen() {
       affinity: affinityProfile.current,
     };
 
-    const [{ data }, { data: likesData }, { data: savesData }, blockedIds, spotItems, adItems, girlSpaceIds] = await Promise.all([
-      query,
-      userId ? supabase.from('likes').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
-      userId ? supabase.from('saves').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
-      userId ? fetchBlockedIds() : Promise.resolve(new Set<string>()),
-      // Spotlights and ads serve only in the discovery feed — Following/Friends
-      // keep their strict "people you chose" guarantee.
-      feedMode === 'all' ? fetchFeedSpotlights() : Promise.resolve([] as any[]),
-      feedMode === 'all' ? fetchFeedAds(adViewer) : Promise.resolve([] as any[]),
-      fetchGirlSpaceCommunityIds(),
-    ]);
-    // Girl space: feminine-tagged community posts are softly down-ranked for men
-    // who don't already engage with the creator (see lib/feedScorer scorePost).
-    const scoreOpts: ScoreOpts = { viewerGender: (viewerProfileRef.current as any)?.gender ?? null, girlSpaceIds };
+    // Everything below awaits the network / AsyncStorage. Wrap it so (a) the
+    // skeleton always clears for the LATEST fetch even if a query throws, and
+    // (b) a failed promoted-layer fetch degrades to the organic feed (already
+    // painted) instead of blanking it.
+    try {
+      // CORE fetch — the minimum to rank + paint ORGANIC content. The promoted
+      // layer (spotlights + ads) is deferred to PAINT 2 below: rankSpotlight does
+      // per-campaign AsyncStorage reads and ad targeting runs its own pass, so
+      // keeping them off the critical path lets the first screen of real posts
+      // replace the skeleton as soon as the posts query returns.
+      const [{ data }, { data: likesData }, { data: savesData }, blockedIds, girlSpaceIds] = await Promise.all([
+        query,
+        userId ? supabase.from('likes').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
+        userId ? supabase.from('saves').select('post_id').eq('user_id', userId) : Promise.resolve({ data: null }),
+        userId ? fetchBlockedIds() : Promise.resolve(new Set<string>()),
+        fetchGirlSpaceCommunityIds(),
+      ]);
 
-    if (data) {
-      const followingSet = new Set<string>(
-        followingData?.map((f: any) => f.following_id) ?? []
-      );
+      if (likesData) setLikedPosts(new Set(likesData.map((l: any) => l.post_id)));
+      if (savesData) setSavedPosts(new Set(savesData.map((s: any) => s.post_id)));
+      if (!data) return; // finally clears loading/refreshing
+
+      // Girl space: feminine-tagged community posts are softly down-ranked for men
+      // who don't already engage with the creator (see lib/feedScorer scorePost).
+      const scoreOpts: ScoreOpts = { viewerGender: (viewerProfileRef.current as any)?.gender ?? null, girlSpaceIds };
+      const followingSet = new Set<string>(followingData?.map((f: any) => f.following_id) ?? []);
       followingRef.current = followingSet;
 
-      // Hide archived posts (owner-only, archived_at set) and posts from blocked
-      // users before ranking. archived_at is absent until the column is migrated,
-      // so this is a harmless no-op pre-migration.
+      // Hide archived posts (owner-only, archived_at set) and blocked users' posts
+      // before ranking. archived_at is absent pre-migration — a harmless no-op.
       const visible = attachEngagementCountsAll(data as any[]).filter(
         (p) => !p.archived_at && !blockedIds.has(p.user_id)
       );
 
-      // Both feeds use the same recency × engagement × personalization ranking
-      // (see scorePost). They differ only in the query above: "all" pulls public
-      // posts, "following" is pre-filtered to people you follow — so the same
-      // algorithm now surfaces the freshest, most relevant followed posts on top
-      // instead of a flat chronological list.
+      // Deterministic recency × engagement × personalization score (see scorePost).
+      // This exact score anchors spotlight placement below, so it stays stable.
       const now = Date.now();
       const profile = affinityProfile.current;
       const scoredPairs = visible.map((p) => ({
         item: p,
         score: scorePost(p, profile, followingSet, seen, now, scoreOpts),
       }));
-      // The spotlight anchor is the feed's best organic score WITHOUT the
-      // seen-penalty, matching the spotlights' own penalty-free scoring so
-      // perf compares like-with-like. Anchoring on the penalized scores would
-      // collapse the denominator ~6.7× on a refreshed, all-seen feed and pin
-      // every spotlight at the ceiling regardless of real performance.
+      // Per-refresh VARIETY: jitter each organic score by ±FEED_VARIETY_JITTER,
+      // drawn once here, so near-equal posts reshuffle on every refresh while a
+      // genuinely stronger post keeps its lead. Computed ONCE and reused by BOTH
+      // paints so the organic order never visibly reshuffles between them.
+      const orderedPairs = scoredPairs.map((sp) => ({ item: sp.item, score: sp.score * varietyMultiplier() }));
+
+      // A newer fetch (pull-to-refresh / mode switch) superseded us — let it own
+      // the screen. Bailing here seq-guards PAINT 1 AND the seen-record below.
+      if (fetchSeq.current !== seq) return;
+
+      // PAINT 1 — organic, ranked + jittered. Real content replaces the skeleton
+      // now; the promoted layer weaves in on the next paint.
+      setPosts([...orderedPairs].sort((a, b) => b.score - a.score).map((p) => p.item));
+      setLoading(false);
+      setRefreshing(false);
+
+      // Following / Friends keep their strict "people you chose" guarantee — no
+      // spotlights or ads. Record seen and stop.
+      if (feedMode !== 'all') {
+        recordSeenPostIds(visible.map((p: any) => p.id));
+        return;
+      }
+
+      // PAINT 2 — weave the promoted layer (spotlights + ads) without blocking the
+      // first paint. Fetched here, off the critical path; a failure throws to the
+      // finally and leaves PAINT 1's organic feed in place.
+      const [spotItems, adItems] = await Promise.all([fetchFeedSpotlights(), fetchFeedAds(adViewer)]);
+
+      // The spotlight anchor is the feed's best organic score WITHOUT the seen-
+      // penalty (matches the spotlights' own penalty-free scoring) AND without the
+      // variety jitter, so spotlight SCORING stays stable; final placement can
+      // still drift a slot or two per refresh as it competes with jittered posts.
       const neverSeen = new Set<string>();
       const topScore = visible.reduce(
         (m: number, p: any) => Math.max(m, scorePost(p, profile, followingSet, neverSeen, now)),
         0,
       );
-
-      // Spotlights rank INTO the feed: scored like a regular post times a
-      // decaying, never-recovering multiplier (see lib/spotlight). The top
-      // spotlight defaults to the 3rd slot — only genuine trending performance
-      // lets it climb higher — and a decayed one sinks toward (but never
-      // below) the feed's average. mergeSpotlights then guarantees ≥6 regular
-      // posts between any two spotlights. They skip the seen-penalty (empty
-      // seen-set here) and the seen-set write below — bought reach must not
-      // decay like scored reach does.
+      // Spotlights rank INTO the feed: a regular-post score × a decaying multiplier
+      // (see lib/spotlight). Default 3rd slot; mergeSpotlights guarantees ≥6 posts
+      // between any two, and skips the seen-penalty + seen-set write (bought reach
+      // must not decay like scored reach).
       const spots = spotItems.filter((s) => !blockedIds.has(s.user_id));
       const spotPostIds = new Set(spots.map((s) => s.id));
-      // Anchors must live in the same deduped space mergeSpotlights ranks in:
-      // the spotlights' own organic copies are removed there, so counting them
-      // here would point the "3rd post" anchor one slot off (or pick a small-
-      // feed branch that no longer applies).
+      // Anchors live in the deduped space mergeSpotlights ranks in (spotlights'
+      // own organic copies are removed there), from the DETERMINISTIC scores.
       const anchorPairs = scoredPairs.filter((p) => !spotPostIds.has(p.item.id));
       const sortedOrg = [...anchorPairs].sort((a, b) => b.score - a.score);
       const anchors = {
@@ -881,25 +911,15 @@ export default function HomeScreen() {
           : 0,
         count: anchorPairs.length,
       };
-      // How strongly THIS viewer's demonstrated tastes match a spotlighted
-      // post (0..1): top creator counts in full, genre/type progressively
-      // less, an explicit follow counts a lot. Feeds the per-viewer trending
-      // lift — a spotlight can top the feed of someone who loves its maker.
+      // How strongly THIS viewer's tastes match a spotlighted post (0..1).
       const affinityFor = (p: any) => Math.max(
         profile.creatorScores[p.user_id] ?? 0,
         (profile.genreScores[p.genre ?? ''] ?? 0) * 0.8,
         (profile.typeScores[p.type] ?? 0) * 0.6,
         followingSet.has(p.user_id) ? 0.6 : 0,
       );
-      // A spotlight buys a fresh shot at reach, so score its base (organic)
-      // score as if the post were created the moment the spotlight started.
-      // Otherwise a years-old post is crushed by recency-decay to ≈0 BEFORE the
-      // multiplier applies — burying it AND pinning perf≈0 (max-speed decay, no
-      // climb), so its fresh engagement never counts. The campaign clock already
-      // runs from startsAt, so this makes the WHOLE model treat it like a new
-      // post: it competes near the top at launch and fades over the campaign.
-      // Non-destructive — the real created_at (profile age, organic feed once the
-      // campaign ends) is untouched.
+      // A spotlight buys a fresh shot at reach — score its base as if created when
+      // the campaign started so recency-decay doesn't bury an older promoted post.
       const freshForSpotlight = (p: any) => ({ ...p, created_at: p.__spotlight?.startsAt ?? p.created_at });
       const spotPairs = await Promise.all(spots.map(async (s) => ({
         item: s,
@@ -915,22 +935,20 @@ export default function HomeScreen() {
           viewerId: userId ?? null,
         }),
       })));
-      // Ads inject AFTER the spotlight merge via a pure spacing pass — they
-      // never flow through scorePost/rankSpotlight, so the tuned organic +
-      // spotlight ranking is byte-for-byte unchanged. injectFeedAds no-ops when
-      // there are no ads (Following/Friends, or empty inventory).
-      const merged = mergeSpotlights(scoredPairs, spotPairs);
+      // Merge spotlights into the SAME jittered organic order, then inject ads via
+      // the pure spacing pass. injectFeedAds no-ops when there are no ads.
+      const merged = mergeSpotlights(orderedPairs, spotPairs);
       const adsForFeed = (adItems as any[]).filter((a) => a.user_id !== userId && !blockedIds.has(a.user_id));
+      // Re-check: the promoted-layer await may have been overtaken by a newer fetch.
+      if (fetchSeq.current !== seq) return;
       setPosts(injectFeedAds(merged, adsForFeed));
-      // Persist post IDs shown to the user so they can be deprioritised next
-      // session — spotlighted posts excluded, so a campaign never leaves its
-      // post pre-penalised in organic ranking once it ends.
+      // Persist shown IDs (spotlights excluded) so they deprioritise next session.
       recordSeenPostIds(visible.filter((p: any) => !spotPostIds.has(p.id)).map((p: any) => p.id));
+    } finally {
+      // Backstop: whatever happened above (including a thrown query), never leave
+      // the LATEST fetch's skeleton spinning.
+      if (fetchSeq.current === seq) { setLoading(false); setRefreshing(false); }
     }
-    if (likesData) setLikedPosts(new Set(likesData.map((l: any) => l.post_id)));
-    if (savesData) setSavedPosts(new Set(savesData.map((s: any) => s.post_id)));
-    setLoading(false);
-    setRefreshing(false);
   }
 
   // Stable card callbacks — identity never changes (empty deps + the `live` ref),
