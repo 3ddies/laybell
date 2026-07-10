@@ -1,5 +1,5 @@
 import {
-  buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, varietyMultiplier,
+  buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, arrangeFeed,
   EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
 } from '../../lib/feedScorer';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
@@ -18,6 +18,10 @@ import { FeedSkeleton } from '../../components/Skeleton';
 
 const SCREEN_W = Dimensions.get('window').width;
 const MAX_VIDEO_H = SCREEN_W * 1.25; // cap feed video at 4:5 so tall (9:16) clips aren't too long
+// Home feed candidate POOL — how many recent posts we pull to sample the shown
+// arrangement from (see lib/feedScorer.arrangeFeed). Bigger = more genuinely
+// different content per refresh; capped by how many posts actually exist.
+const POOL_SIZE = 120;
 
 // Map a feed post to a playable audio Track.
 const toTrack = (p: any): Track => ({
@@ -766,7 +770,11 @@ export default function HomeScreen() {
         profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)
       `)
       .order('created_at', { ascending: false })
-      .limit(50);
+      // Wide candidate POOL (not the shown count) — arrangeFeed weighted-samples a
+      // different arrangement from it each refresh, so pulling to refresh yields a
+      // genuinely different feed the way current Instagram does. The ceiling is how
+      // many posts actually exist; with a small pool "different" is naturally limited.
+      .limit(POOL_SIZE);
 
     // Fetch the following list for every mode:
     //   • following mode  – needed to filter posts
@@ -855,11 +863,12 @@ export default function HomeScreen() {
         item: p,
         score: scorePost(p, profile, followingSet, seen, now, scoreOpts),
       }));
-      // Per-refresh VARIETY: jitter each organic score by ±FEED_VARIETY_JITTER,
-      // drawn once here, so near-equal posts reshuffle on every refresh while a
-      // genuinely stronger post keeps its lead. Computed ONCE and reused by BOTH
-      // paints so the organic order never visibly reshuffles between them.
-      const orderedPairs = scoredPairs.map((sp) => ({ item: sp.item, score: sp.score * varietyMultiplier() }));
+      // Instagram-style arrangement (see lib/feedScorer.arrangeFeed): a fresh
+      // weighted-random draw from the whole pool, tilted toward higher scores and
+      // spread by author, so every refresh is a genuinely different arrangement.
+      // Computed ONCE and reused by BOTH paints so the order never reshuffles
+      // between them; anchors below stay on the deterministic scoredPairs.
+      const orderedPairs = arrangeFeed(scoredPairs);
 
       // A newer fetch (pull-to-refresh / mode switch) superseded us — let it own
       // the screen. Bailing here seq-guards PAINT 1 AND the seen-record below.

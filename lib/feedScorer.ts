@@ -262,18 +262,57 @@ export function scorePost(
   return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul * girlSpaceMul;
 }
 
-// ── Per-refresh variety ──────────────────────────────────────────────────────
-// scorePost is deterministic, so pulling to refresh over the SAME posts would
-// reproduce the identical order every time (the seen-penalty is a uniform 0.15×
-// that doesn't change relative order). A small bounded multiplier, drawn fresh
-// per fetch per post, reshuffles ONLY posts whose scores are already close — a
-// strong post's lead easily survives ±22%, so the timeline feels alive on every
-// refresh without letting mediocre content leapfrog genuinely better work.
+// ── Instagram-style feed arrangement ─────────────────────────────────────────
+// Current Instagram gives a wholesale-different feed on nearly every refresh —
+// not by lightly reordering a fixed set, but by drawing a fresh WEIGHTED-RANDOM
+// sample from a large candidate pool each time (quality-tilted, so good posts are
+// likelier but nothing is pinned). arrangeFeed approximates that: from the
+// fetched pool it draws a new weighted-random ORDER every fetch, so refreshing
+// shows a genuinely different arrangement while stronger posts still cluster
+// toward the top. It also spreads same-author posts so one creator never clumps
+// (an IG hallmark).
 //
-// Apply it to the ORGANIC sort order AFTER the deterministic score and AFTER the
-// spotlight anchors are computed, so spotlight placement stays hour-stable and
-// the seen-penalty's intent is untouched.
-export const FEED_VARIETY_JITTER = 0.22;
-export function varietyMultiplier(strength = FEED_VARIETY_JITTER): number {
-  return 1 + (Math.random() * 2 - 1) * strength;
+// The ceiling is CONTENT SUPPLY — with few posts in the pool there's only so much
+// "different" possible — so the home query pulls a WIDE pool (see index.tsx).
+//
+// Runs AFTER the deterministic scorePost and AFTER the spotlight anchors are
+// computed (anchors + the seen-penalty stay on the deterministic score), and
+// BEFORE the spotlight merge.
+
+// Sampling weight = score^FEED_QUALITY_BIAS. 1.0 = proportional to score (strong
+// variety, good posts likelier); higher = steadier/more-quality; lower = more
+// chaotic. AUTHOR_SPREAD_DECAY lowers a creator's successive posts' weight so
+// they fan out (lower = more aggressive spreading).
+export const FEED_QUALITY_BIAS = 1.0;
+export const AUTHOR_SPREAD_DECAY = 0.55;
+
+export function arrangeFeed<T extends { item: { user_id?: string }; score: number }>(
+  pairs: T[],
+  opts?: { qualityBias?: number; authorDecay?: number },
+): T[] {
+  if (pairs.length < 2) return pairs;
+  const qualityBias = opts?.qualityBias ?? FEED_QUALITY_BIAS;
+  const authorDecay = opts?.authorDecay ?? AUTHOR_SPREAD_DECAY;
+
+  // Walk best-first to count each author's posts, build a sampling WEIGHT (score
+  // with a per-author decay), then draw a fresh key per post: an Efraimidis–
+  // Spirakis-style weighted shuffle — different order every fetch, tilted toward
+  // higher weights.
+  const byAuthor = new Map<string, number>();
+  const shuffled = [...pairs]
+    .sort((a, b) => b.score - a.score)
+    .map((p) => {
+      const uid = p.item.user_id ?? '';
+      const n = byAuthor.get(uid) ?? 0;
+      byAuthor.set(uid, n + 1);
+      const weight = Math.max(p.score, 1e-9) * Math.pow(authorDecay, n);
+      return { pair: p, key: Math.pow(weight, qualityBias) * Math.random() };
+    })
+    .sort((a, b) => b.key - a.key);
+
+  // Reassign scores to the pool's own sorted distribution so the ORDER is the
+  // weighted shuffle while magnitudes stay in the normal range the spotlight
+  // anchors/merge expect (raw keys are tiny — every spotlight would outrank them).
+  const desc = pairs.map((p) => p.score).sort((a, b) => b - a);
+  return shuffled.map((s, i) => ({ ...s.pair, score: desc[i] }));
 }
