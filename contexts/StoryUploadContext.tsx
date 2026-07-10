@@ -6,7 +6,6 @@ import { tg } from '../lib/i18n';
 import { uploadStoryMedia, createStory, type StorySticker } from '../lib/stories';
 import { compressVideoIfPossible, uploadToStorageWithProgress } from '../lib/upload';
 import { removePublicUrls } from '../lib/storageCleanup';
-import StoryFailedBanner from '../components/StoryFailedBanner';
 import { useStories } from './StoriesContext';
 
 // ─── Background story upload ─────────────────────────────────────────────────
@@ -52,12 +51,22 @@ type StoryUploadValue = {
   /** Abandon an unposted capture: cancels the claim and best-effort deletes any
    *  already-uploaded orphan object(s). No-op once the upload was claimed by post. */
   discardPrewarm: () => void;
+  /** The post that failed all its retries after the user left the composer (null
+   *  otherwise) — drives the always-on-top tap-to-retry banner. */
+  failedJob: StoryJob | null;
+  /** Re-run the failed post from its local capture file. */
+  retryFailed: () => void;
+  /** Give up on the failed post (dismiss the banner). */
+  dismissFailed: () => void;
 };
 
 const StoryUploadContext = createContext<StoryUploadValue>({
   prewarmStory: () => {},
   enqueueStory: () => {},
   discardPrewarm: () => {},
+  failedJob: null,
+  retryFailed: () => {},
+  dismissFailed: () => {},
 });
 
 export const useStoryUpload = () => useContext(StoryUploadContext);
@@ -174,15 +183,18 @@ export function StoryUploadProvider({ children }: { children: ReactNode }) {
     if (job) publish(job, null); // re-upload fresh from the local capture file
   }, [failed, publish]);
 
+  const dismissFailed = useCallback(() => setFailed(null), []);
+
   const value = useMemo(
-    () => ({ prewarmStory, enqueueStory, discardPrewarm }),
-    [prewarmStory, enqueueStory, discardPrewarm],
+    () => ({ prewarmStory, enqueueStory, discardPrewarm, failedJob: failed, retryFailed, dismissFailed }),
+    [prewarmStory, enqueueStory, discardPrewarm, failed, retryFailed, dismissFailed],
   );
 
+  // The tap-to-retry banner is rendered by the root layout (inside the iOS
+  // FullWindowOverlay) so it stays above native pushed-screen modals — not here.
   return (
     <StoryUploadContext.Provider value={value}>
       {children}
-      {failed && <StoryFailedBanner onRetry={retryFailed} onDismiss={() => setFailed(null)} />}
     </StoryUploadContext.Provider>
   );
 }

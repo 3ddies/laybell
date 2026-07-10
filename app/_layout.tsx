@@ -34,8 +34,9 @@ import { GifPickerProvider } from '../contexts/GifPickerContext';
 import { PhotoPickerProvider } from '../contexts/PhotoPickerContext';
 import { UploadQueueProvider } from '../contexts/UploadQueueContext';
 import { CastProvider } from '../contexts/CastContext';
-import { StoryUploadProvider } from '../contexts/StoryUploadContext';
+import { StoryUploadProvider, useStoryUpload } from '../contexts/StoryUploadContext';
 import CastBar from '../components/CastBar';
+import StoryFailedBanner from '../components/StoryFailedBanner';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
@@ -63,6 +64,7 @@ try {
 function AppContent() {
   useNotifications();
   const { colors } = useTheme();
+  const { failedJob, retryFailed, dismissFailed } = useStoryUpload();
   const segments = useSegments();
   // Full-screen media viewers stay immersive — no floating mini player there.
   const immersive = segments[0] === 'story' || segments[0] === 'post' || segments[0] === 'reel';
@@ -102,6 +104,9 @@ function AppContent() {
       {!immersive && <MiniPlayer variant={playerVariant} bottomDock={bottomDock} />}
       {/* Laybell TV cast controller — self-hides unless a Cast session is live. */}
       <CastBar />
+      {/* Tap-to-retry after a failed background story post — in the overlay so it
+          stays above native pushed-screen modals. */}
+      {failedJob && <StoryFailedBanner onRetry={retryFailed} onDismiss={dismissFailed} />}
       <NowPlaying />
       <BadgeUpgradeToast />
     </>

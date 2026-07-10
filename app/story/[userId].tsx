@@ -31,6 +31,7 @@ import { useProfile } from '../../contexts/ProfileContext';
 import { usePostMusic } from '../../contexts/PostMusicContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { StorySkeleton, Skeleton } from '../../components/Skeleton';
+import Spinner from '../../components/Spinner';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const IMAGE_DURATION_MS = 10000;
@@ -702,31 +703,38 @@ export default function StoryViewerScreen() {
               ))}
             </View>
 
-            {/* Header */}
+            {/* Header — the progress bar (above) and the close X stay visible even
+                while the story is a grey loader, so it still reads as a story;
+                the author + song-mute + trash/report reveal WITH the media. The
+                spacer keeps the X pinned right when the author is hidden. */}
             <View style={[styles.header, { top: insets.top + 18 }]}>
-              <TouchableOpacity
-                style={styles.author}
-                onPress={() => { stopProgressAnim(); router.push(`/profile/${group.user.id}`); }}
-              >
-                {group.user.avatar_url ? (
-                  <Image source={{ uri: group.user.avatar_url }} style={styles.avatar} />
-                ) : (
-                  <LinearGradient colors={['#E8401C', '#F26522']} style={styles.avatar}>
-                    <Text style={styles.avatarText}>{group.user.display_name?.charAt(0).toUpperCase()}</Text>
-                  </LinearGradient>
-                )}
-                <Text style={styles.authorName} numberOfLines={1}>{group.user.username || group.user.display_name}</Text>
-                <BadgeEmblem profile={group.user} size={13} />
-                <Text style={styles.time}>{timeAgo(story.created_at)}</Text>
-              </TouchableOpacity>
+              {ready ? (
+                <TouchableOpacity
+                  style={styles.author}
+                  onPress={() => { stopProgressAnim(); router.push(`/profile/${group.user.id}`); }}
+                >
+                  {group.user.avatar_url ? (
+                    <Image source={{ uri: group.user.avatar_url }} style={styles.avatar} />
+                  ) : (
+                    <LinearGradient colors={['#E8401C', '#F26522']} style={styles.avatar}>
+                      <Text style={styles.avatarText}>{group.user.display_name?.charAt(0).toUpperCase()}</Text>
+                    </LinearGradient>
+                  )}
+                  <Text style={styles.authorName} numberOfLines={1}>{group.user.username || group.user.display_name}</Text>
+                  <BadgeEmblem profile={group.user} size={13} />
+                  <Text style={styles.time}>{timeAgo(story.created_at)}</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={{ flex: 1 }} />
+              )}
 
               <View style={styles.headerRight}>
-                {!!story.song_id && (
+                {ready && !!story.song_id && (
                   <TouchableOpacity style={styles.headerBtn} onPress={toggleSongMuted} hitSlop={8}>
                     <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={21} color="#fff" />
                   </TouchableOpacity>
                 )}
-                {isOwn ? (
+                {ready && (isOwn ? (
                   // Archived replay is read-only — manage (restore/delete) from the
                   // Archive screen, so no trash button here.
                   archived ? null : (
@@ -738,7 +746,7 @@ export default function StoryViewerScreen() {
                   <TouchableOpacity style={styles.headerBtn} onPress={onReport} hitSlop={8}>
                     <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
                   </TouchableOpacity>
-                )}
+                ))}
                 <TouchableOpacity style={styles.headerBtn} onPress={dismiss} hitSlop={8}>
                   <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>
@@ -876,7 +884,7 @@ export default function StoryViewerScreen() {
                 swipe-down-to-dismiss still works while grey. */}
             {!ready && (
               <View style={[StyleSheet.absoluteFill, styles.greyCover]} pointerEvents="none">
-                {showLoader && <ActivityIndicator color="rgba(255,255,255,0.9)" size="large" />}
+                {showLoader && <Spinner size={34} color="#fff" thickness={3} />}
               </View>
             )}
           </>
@@ -1009,8 +1017,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
   // Solid mid-grey shown until a story is fully ready — matches the loading
   // skeleton's tone so fetch → decode → reveal reads as one clean sequence.
-  // Centers the loading circle.
-  greyCover: { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' },
+  // Centers the loading circle. zIndex 5 covers the media + content overlays but
+  // sits BELOW the always-on progress bar + close X (zIndex 10) so a loading
+  // story still looks like a story.
+  greyCover: { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center', zIndex: 5 },
   center: { alignItems: 'center', justifyContent: 'center', gap: SPACING.md },
   empty: { color: colors.textSecondary, fontSize: 15 },
   emptyBtn: { paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg, borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border },
@@ -1018,14 +1028,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   topScrim: { position: 'absolute', top: 0, left: 0, right: 0, height: 160 },
 
-  progressRow: { position: 'absolute', left: SPACING.sm, right: SPACING.sm, flexDirection: 'row', gap: 4 },
+  // zIndex 10 so the top story bar stays visible ABOVE the grey loading cover.
+  progressRow: { position: 'absolute', left: SPACING.sm, right: SPACING.sm, flexDirection: 'row', gap: 4, zIndex: 10 },
   progressTrack: { flex: 1, height: 2.5, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' },
   // Full-width fill scaled from the left via scaleX (0→1) so the bar can be driven
   // by Animated without re-rendering or re-measuring each frame.
   progressFill: { width: '100%', height: '100%', backgroundColor: '#fff', borderRadius: 2, transformOrigin: 'left' },
 
   header: {
-    position: 'absolute', left: SPACING.md, right: SPACING.md,
+    position: 'absolute', left: SPACING.md, right: SPACING.md, zIndex: 10,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   author: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, flexShrink: 1 },
