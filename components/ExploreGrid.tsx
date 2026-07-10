@@ -549,8 +549,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     if (cell.kind === 'music') {
       return (
         <View key={cell.key} style={[styles.musicCard, { height: cell.height }]}>
-          {/* Genre word on the selected-tab gradient — white with a black outline. */}
-          <LinearGradient colors={GRADIENTS.primaryWarm} style={styles.musicHeader}>
+          {/* Genre word on a silvery "plate": a bright sheen up top fading to a
+              soft silver, so the pure-white letters read brighter than the card.
+              White fill + black outline. */}
+          <LinearGradient colors={['#FAFAFA', '#CFCFCF']} style={styles.musicHeader}>
             <View>
               {HEADER_OUTLINE.map(([x, y], i) => (
                 <Text
@@ -799,15 +801,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     height: MUSIC_HEADER_H, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: SPACING.sm,
   },
-  // Logo-yellow word on the bright orange: a tight dark drop shadow lifts the
-  // letters off the banner (raised-print look) so they stay crisp despite the
-  // two brand colors sitting close in brightness.
+  // Pure-white word on the silver plate: the black outline copies (see
+  // HEADER_OUTLINE) crisp the edges, and a soft dark shadow lifts the letters off
+  // the card for a raised/embossed look — so background-white and text-white read
+  // as clearly different surfaces, not one flat block.
   musicHeaderText: {
-    color: colors.primaryLight, fontSize: 14, fontWeight: '900', fontStyle: 'italic',
+    color: '#FFFFFF', fontSize: 14, fontWeight: '900', fontStyle: 'italic',
     textTransform: 'uppercase', letterSpacing: 1.6,
+    textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
   },
-  // Black outline copies stacked behind the yellow fill (see HEADER_OUTLINE).
-  musicHeaderStroke: { color: '#000' },
+  // Black outline copies stacked behind the white fill (see HEADER_OUTLINE).
+  // Kill the fill's shadow here so only the top white copy is shadowed (8 shadowed
+  // black copies would smear into a muddy halo).
+  musicHeaderStroke: { color: '#000', textShadowColor: 'transparent', textShadowRadius: 0 },
   songRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.sm },
   songRowBorder: { borderTopWidth: 0.5, borderTopColor: colors.border },
   songIcon: { width: 32, height: 32, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
