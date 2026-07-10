@@ -77,6 +77,57 @@ index 66ad7b6..5e90dfb 100644
                      val pageScrollState: String = when (state) {
                          ViewPager2.SCROLL_STATE_IDLE -> "idle"
                          ViewPager2.SCROLL_STATE_DRAGGING -> "dragging"
+diff --git a/node_modules/react-native-pager-view/ios/Fabric/RNCPagerViewComponentView.mm b/node_modules/react-native-pager-view/ios/Fabric/RNCPagerViewComponentView.mm
+index 067f92e..24786bc 100644
+--- a/node_modules/react-native-pager-view/ios/Fabric/RNCPagerViewComponentView.mm
++++ b/node_modules/react-native-pager-view/ios/Fabric/RNCPagerViewComponentView.mm
+@@ -23,6 +23,9 @@ using namespace facebook::react;
+     LayoutMetrics _oldLayoutMetrics;
+     UIScrollView *scrollView;
+     BOOL transitioning;
++    // Laybell: warmed-up generator for the swipe-land haptic (fired natively at
++    // the exact commit moment so the tick is instant + consistent every swipe).
++    UIImpactFeedbackGenerator *_swipeHaptic;
+ }
+ 
+ // Needed because of this: https://github.com/facebook/react-native/pull/37274
+@@ -270,6 +273,13 @@ using namespace facebook::react;
+ #pragma mark - UIScrollViewDelegate
+ 
+ - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
++    // Laybell: warm the Taptic engine at drag-start so the landing impact is
++    // instant and at full strength when the swipe commits (a cold generator's
++    // first tap is weak/late).
++    if (!_swipeHaptic) {
++        _swipeHaptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
++    }
++    [_swipeHaptic prepare];
+     const auto strongEventEmitter = *std::dynamic_pointer_cast<const RNCViewPagerEventEmitter>(_eventEmitter);
+     strongEventEmitter.onPageScrollStateChanged(RNCViewPagerEventEmitter::OnPageScrollStateChanged{.pageScrollState =  RNCViewPagerEventEmitter::OnPageScrollStateChangedPageScrollState::Dragging });
+ }
+@@ -294,7 +304,21 @@ using namespace facebook::react;
+         }
+     }
+ 
+-   
++    // Laybell: fire a MEDIUM impact the instant a USER SWIPE will commit to a NEW
++    // page. willEndDragging runs ONLY for user drags (never programmatic page
++    // changes) at finger-release; targetContentOffset is where the pager will
++    // settle. The current page sits centred at one page-length, so a target that
++    // lands away from centre is a real page change — a snap-back or an edge
++    // overscroll (cropped to centre above) targets centre, so it stays silent.
++    CGFloat centre = [self isHorizontal] ? scrollView.bounds.size.width : scrollView.bounds.size.height;
++    CGFloat settleTarget = [self isHorizontal] ? targetContentOffset->x : targetContentOffset->y;
++    if (centre > 0 && fabs(settleTarget - centre) > centre * 0.5) {
++        if (!_swipeHaptic) {
++            _swipeHaptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
++        }
++        [_swipeHaptic impactOccurred];
++        [_swipeHaptic prepare]; // ready for the next swipe
++    }
+ }
+ 
+ - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
 diff --git a/node_modules/react-native-pager-view/ios/RNCPagerView.m b/node_modules/react-native-pager-view/ios/RNCPagerView.m
 index 19552ce..640c11e 100644
 --- a/node_modules/react-native-pager-view/ios/RNCPagerView.m
