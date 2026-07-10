@@ -1,4 +1,5 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { NativeModules } from 'react-native';
 import { buildMediaInfo, type CastItem } from '../lib/cast';
 
 // ─── Laybell TV casting (Google Cast / Chromecast) ───────────────────────────
@@ -23,7 +24,13 @@ try {
 // The static Cast API (session dialog + session manager) lives on the default
 // export in v4; fall back across shapes so a minor version bump can't break it.
 const GCast: any = RNGC?.default ?? RNGC?.CastContext ?? RNGC ?? null;
-export const castNativeAvailable = !!RNGC && !!(RNGC.useRemoteMediaClient || RNGC.CastButton);
+// The JS is ALWAYS bundled — what matters is whether the NATIVE module is linked
+// in THIS binary. On a dev client built before the Cast rebuild, the JS loads but
+// `NativeModules.RNGCCastContext` is undefined; the library's hooks then call
+// `Native.getCastState()` and throw "cannot read getCastState of null". Probe the
+// exact native module the library reads (`const { RNGCCastContext } = NativeModules`)
+// so the real provider only mounts when the native side actually exists.
+export const castNativeAvailable = !!RNGC && !!NativeModules.RNGCCastContext;
 
 export type CastValue = {
   /** The native Cast SDK is linked in this binary (else everything is inert). */
