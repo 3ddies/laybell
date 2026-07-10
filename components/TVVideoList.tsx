@@ -36,7 +36,7 @@ const COL_THUMB_H = COL_W * (9 / 16);
 const FEAT_W = Math.round((SCREEN_W - H_PADDING * 2) * 0.42);
 const FEAT_H = Math.round(FEAT_W * 1.3);
 
-export default function TVVideoList({ posts, featured, currentUserId, refreshing, onRefresh, bottomPad, emptyText, onPostDeleted }: {
+export default function TVVideoList({ posts, featured, currentUserId, refreshing, onRefresh, bottomPad, emptyText, onPostDeleted, castActive, onCast }: {
   posts: TVPost[];
   // Personalized top picks shown as portrait tiles above the grid (omit/empty to
   // hide the row — e.g. while searching).
@@ -47,6 +47,10 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
   bottomPad?: number;
   emptyText?: string;
   onPostDeleted?: (id: string) => void;
+  // When a Cast session is live, tapping a tile throws it to the TV (via onCast)
+  // instead of opening the on-phone reel viewer.
+  castActive?: boolean;
+  onCast?: (post: TVPost) => void;
 }) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -56,6 +60,8 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
 
   const openVideo = (p: TVPost, e?: any, w = COL_W, h = COL_THUMB_H) => {
     if (isSwipeTap()) return; // a tab swipe gliding over a card must not open the viewer
+    // Casting to a TV: hand the tile off to the TV instead of the phone viewer.
+    if (castActive && onCast) { onCast(p); return; }
     const ne = e?.nativeEvent;
     const src = ne
       ? JSON.stringify({ x: ne.pageX - ne.locationX, y: ne.pageY - ne.locationY, width: w, height: h })

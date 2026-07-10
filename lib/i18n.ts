@@ -1760,6 +1760,8 @@ const en: Record<string, string> = {
   'tv.recommended': 'Recommended for you',
   'tv.moreVideos': 'More videos',
   'tv.liveUntitled': 'Live now',
+  'tv.cast.castingTo': 'Casting to {device}',
+  'tv.cast.yourTv': 'your TV',
   'features.title': 'Features',
   'features.add': 'Add features',
   'features.sub': 'Credit Laybell collaborators on this song',

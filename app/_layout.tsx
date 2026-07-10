@@ -33,6 +33,8 @@ import { ImageViewerProvider } from '../contexts/ImageViewerContext';
 import { GifPickerProvider } from '../contexts/GifPickerContext';
 import { PhotoPickerProvider } from '../contexts/PhotoPickerContext';
 import { UploadQueueProvider } from '../contexts/UploadQueueContext';
+import { CastProvider } from '../contexts/CastContext';
+import CastBar from '../components/CastBar';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
@@ -97,6 +99,8 @@ function AppContent() {
   const overlays = (
     <>
       {!immersive && <MiniPlayer variant={playerVariant} bottomDock={bottomDock} />}
+      {/* Laybell TV cast controller — self-hides unless a Cast session is live. */}
+      <CastBar />
       <NowPlaying />
       <BadgeUpgradeToast />
     </>
@@ -326,7 +330,9 @@ export default function RootLayout() {
                                 <GifPickerProvider>
                                   <PhotoPickerProvider>
                                     <UploadQueueProvider>
-                                      <AppContent />
+                                      <CastProvider>
+                                        <AppContent />
+                                      </CastProvider>
                                     </UploadQueueProvider>
                                   </PhotoPickerProvider>
                                 </GifPickerProvider>

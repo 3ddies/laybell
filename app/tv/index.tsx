@@ -15,6 +15,10 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchHorizontalVideos, matchesQuery, rankVideosForUser } from '../../lib/tv';
 import { fetchLiveStreams, type LiveStream } from '../../lib/live';
+import { useCast } from '../../contexts/CastContext';
+import CastButton from '../../components/CastButton';
+import AirPlayButton from '../../components/AirPlayButton';
+import { postToCastItem, liveToCastItem, type CastItem } from '../../lib/cast';
 
 // Laybell TV — a horizontal-only video hub. It adds NO new media types: the
 // Videos tab is the existing reel-explore grid filtered to landscape videos,
@@ -39,6 +43,7 @@ export default function LaybellTVScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { profile } = useProfile();
+  const cast = useCast();
 
   const [tab, setTab] = useState<Tab>('videos');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -77,6 +82,27 @@ export default function LaybellTVScreen() {
     ? videos.filter((v) => matchesQuery(v, query))
     : ranked.filter((v) => !featuredIds.has(v.id));
 
+  // ── Cast handoff (only when a session is live) ─────────────────────────────
+  // Tapping a TV item while connected throws it to the TV with the visible list
+  // as the queue (so next/prev + autoplay-next roll through Laybell TV), instead
+  // of opening the on-phone viewer. Scoped to TV content — nothing else casts.
+  const castVideo = (post: any) => {
+    const item = postToCastItem(post);
+    if (!item) return;
+    const queue = (searching ? gridVideos : ranked)
+      .map(postToCastItem).filter(Boolean) as CastItem[];
+    cast.cast(item, queue);
+  };
+  // Returns true if it cast (RTMP lives only — WebRTC lives can't cast, so the
+  // caller falls back to the on-phone live viewer).
+  const castLive = (live: LiveStream): boolean => {
+    const item = liveToCastItem(live);
+    if (!item) return false;
+    const queue = lives.map(liveToCastItem).filter(Boolean) as CastItem[];
+    cast.cast(item, queue);
+    return true;
+  };
+
   return (
     <SwipeBackPager>
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
@@ -89,9 +115,15 @@ export default function LaybellTVScreen() {
             <Ionicons name="tv" size={18} color={colors.primary} />
             <Text style={styles.headerTitle}>{t('tv.title')}</Text>
           </View>
-          <TouchableOpacity onPress={() => router.push('/live/go-live')} style={styles.headerBtn}>
-            <Ionicons name="radio-outline" size={20} color={colors.text} />
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            {/* AirPlay (iOS → Apple TV / AirPlay-2 TVs) + Google Cast (Chromecast /
+                Google TV). Each self-hides when its transport isn't available. */}
+            <AirPlayButton size={24} tint={colors.text} />
+            <CastButton size={24} tint={colors.text} />
+            <TouchableOpacity onPress={() => router.push('/live/go-live')} style={styles.headerBtn}>
+              <Ionicons name="radio-outline" size={20} color={colors.text} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Segmented tabs + search circle */}
@@ -159,6 +191,8 @@ export default function LaybellTVScreen() {
               onRefresh={async () => { setRefreshing(true); await loadVideos(); setRefreshing(false); }}
               bottomPad={insets.bottom + 24}
               emptyText={query.trim() ? t('tv.noResults') : t('tv.noVideos')}
+              castActive={cast.connected}
+              onCast={castVideo}
               onPostDeleted={(id) => {
                 setVideos((prev) => prev.filter((p) => p.id !== id));
                 setRanked((prev) => prev.filter((p) => p.id !== id));
@@ -180,7 +214,16 @@ export default function LaybellTVScreen() {
               />
             }
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.liveCard} onPress={() => router.push({ pathname: '/live', params: { streamId: item.id } })} activeOpacity={0.85}>
+              <TouchableOpacity
+                style={styles.liveCard}
+                onPress={() => {
+                  // Cast RTMP lives to the TV when connected; WebRTC lives can't
+                  // cast, so those still open the on-phone live viewer.
+                  if (cast.connected && castLive(item)) return;
+                  router.push({ pathname: '/live', params: { streamId: item.id } });
+                }}
+                activeOpacity={0.85}
+              >
                 {item.profile?.avatar_url ? (
                   <Image source={{ uri: item.profile.avatar_url }} style={styles.liveAvatar} />
                 ) : (
@@ -218,6 +261,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: c.background },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   titleWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   headerTitle: { color: c.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
   tabRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, marginTop: 4, marginBottom: 10 },
