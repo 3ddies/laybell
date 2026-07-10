@@ -1,5 +1,4 @@
-import { createContext, useContext, useRef, type ReactNode } from 'react';
-import { Alert } from 'react-native';
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { supabase } from '../lib/supabase';
@@ -7,6 +6,7 @@ import { tg } from '../lib/i18n';
 import { uploadStoryMedia, createStory, type StorySticker } from '../lib/stories';
 import { compressVideoIfPossible, uploadToStorageWithProgress } from '../lib/upload';
 import { removePublicUrls } from '../lib/storageCleanup';
+import StoryFailedBanner from '../components/StoryFailedBanner';
 import { useStories } from './StoriesContext';
 
 // ─── Background story upload ─────────────────────────────────────────────────
@@ -40,7 +40,7 @@ export type StoryJob = {
 };
 
 type Uploaded = { mediaUrl: string; thumbnailUrl: string | null };
-type Prewarm = { uri: string; promise: Promise<Uploaded>; claimed: boolean };
+type Prewarm = { uri: string; promise: Promise<Uploaded> };
 
 type StoryUploadValue = {
   /** Start compress/thumbnail/upload for freshly-captured media, in the
@@ -97,82 +97,92 @@ async function uploadCaptured(captured: CapturedMedia): Promise<Uploaded> {
 
 export function StoryUploadProvider({ children }: { children: ReactNode }) {
   const { refresh: refreshStories } = useStories();
-  // The single in-flight prewarm. Lives in a ref (not state) — this provider
-  // never needs to re-render; the work just runs.
+  // The single in-flight prewarm — HANDED OFF (ref nulled) the moment a post
+  // claims it, so an unposted one is always the only thing discardPrewarm sees.
   const prewarmRef = useRef<Prewarm | null>(null);
+  // The last post that failed all its retries (the user has already left the
+  // composer) → drives the tap-to-retry banner. Holds the whole job so Retry
+  // can re-run it from the local capture file.
+  const [failed, setFailed] = useState<StoryJob | null>(null);
 
-  const prewarmStory = (captured: CapturedMedia) => {
-    if (prewarmRef.current?.uri === captured.uri) return; // already warming this file
-    // A different capture replaced the old one before it was posted — clean it up.
-    if (prewarmRef.current && !prewarmRef.current.claimed) discardPrewarm();
-    const promise = uploadCaptured(captured);
-    promise.catch(() => {}); // the real await/handling is in enqueueStory
-    prewarmRef.current = { uri: captured.uri, promise, claimed: false };
-  };
-
-  const enqueueStory = (job: StoryJob) => {
-    // Reuse the prewarmed upload if it matches; otherwise start it now (cold).
-    if (!prewarmRef.current || prewarmRef.current.uri !== job.captured.uri) {
-      prewarmStory(job.captured);
-    }
-    const pre = prewarmRef.current!;
-    pre.claimed = true;
-
-    (async () => {
-      // Fast path: reuse the prewarmed upload. If it FAILED (a transient blip
-      // while the user was still editing), don't trust the dead promise — fall
-      // through and re-upload fresh, so a recovered network still posts.
-      let uploaded: Uploaded | null = null;
-      try { uploaded = await pre.promise; } catch { uploaded = null; }
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error(tg('storyCamera.notAuthenticated'));
-        // Bounded retries so a momentary failure doesn't silently lose the post
-        // now that the composer is gone. A successful upload is reused across
-        // createStory retries; only a failed upload is re-attempted.
-        for (let attempt = 1; ; attempt++) {
-          try {
-            if (!uploaded) uploaded = await uploadCaptured(job.captured);
-            await createStory({
-              userId: user.id,
-              mediaUrl: uploaded.mediaUrl,
-              mediaType: job.captured.type,
-              thumbnailUrl: uploaded.thumbnailUrl,
-              caption: job.caption,
-              aspectRatio: job.aspectRatio,
-              durationSeconds: job.durationSeconds,
-              song: job.song,
-              stickers: job.stickers,
-            });
-            refreshStories(); // the finished story pops into the tray, already ready
-            return;
-          } catch (e) {
-            if (attempt >= 3) throw e;
-            await new Promise((r) => setTimeout(r, 1500 * attempt));
-          }
-        }
-      } catch (e: any) {
-        // The user has already left the composer, so surface the failure here.
-        Alert.alert(tg('storyCamera.postFailTitle'), e?.message ?? tg('post.tryAgain'));
-      } finally {
-        if (prewarmRef.current === pre) prewarmRef.current = null;
-      }
-    })();
-  };
-
-  const discardPrewarm = () => {
+  const discardPrewarm = useCallback(() => {
     const pre = prewarmRef.current;
     prewarmRef.current = null;
-    if (!pre || pre.claimed) return; // posted uploads are kept
+    if (!pre) return;
     // Once the abandoned upload resolves, delete the orphaned object(s).
     pre.promise
       .then(({ mediaUrl, thumbnailUrl }) => removePublicUrls([mediaUrl, thumbnailUrl]))
       .catch(() => {});
-  };
+  }, []);
+
+  const prewarmStory = useCallback((captured: CapturedMedia) => {
+    if (prewarmRef.current?.uri === captured.uri) return; // already warming this file
+    if (prewarmRef.current) discardPrewarm(); // a different, unposted capture — clean it up
+    const promise = uploadCaptured(captured);
+    promise.catch(() => {}); // the real handling happens in publish()
+    prewarmRef.current = { uri: captured.uri, promise };
+  }, [discardPrewarm]);
+
+  // Publish a story: reuse `prewarmed` when it succeeds, else upload fresh, with
+  // bounded retries (a successful upload is reused across createStory retries).
+  // On final failure — the user is gone — raise the retryable banner. Shared by
+  // the Post tap and the banner's Retry.
+  const publish = useCallback(async (job: StoryJob, prewarmed: Promise<Uploaded> | null) => {
+    let uploaded: Uploaded | null = null;
+    if (prewarmed) { try { uploaded = await prewarmed; } catch { uploaded = null; } }
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error(tg('storyCamera.notAuthenticated'));
+      for (let attempt = 1; ; attempt++) {
+        try {
+          if (!uploaded) uploaded = await uploadCaptured(job.captured);
+          await createStory({
+            userId: user.id,
+            mediaUrl: uploaded.mediaUrl,
+            mediaType: job.captured.type,
+            thumbnailUrl: uploaded.thumbnailUrl,
+            caption: job.caption,
+            aspectRatio: job.aspectRatio,
+            durationSeconds: job.durationSeconds,
+            song: job.song,
+            stickers: job.stickers,
+          });
+          refreshStories(); // the finished story pops into the tray, already ready
+          return;
+        } catch (e) {
+          if (attempt >= 3) throw e;
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+        }
+      }
+    } catch {
+      setFailed(job);
+    }
+  }, [refreshStories]);
+
+  const enqueueStory = useCallback((job: StoryJob) => {
+    if (!prewarmRef.current || prewarmRef.current.uri !== job.captured.uri) {
+      prewarmStory(job.captured);
+    }
+    const pre = prewarmRef.current!;
+    prewarmRef.current = null; // hand off: retake/blur discardPrewarm won't touch it
+    publish(job, pre.promise);
+  }, [prewarmStory, publish]);
+
+  const retryFailed = useCallback(() => {
+    const job = failed;
+    setFailed(null);
+    if (job) publish(job, null); // re-upload fresh from the local capture file
+  }, [failed, publish]);
+
+  const value = useMemo(
+    () => ({ prewarmStory, enqueueStory, discardPrewarm }),
+    [prewarmStory, enqueueStory, discardPrewarm],
+  );
 
   return (
-    <StoryUploadContext.Provider value={{ prewarmStory, enqueueStory, discardPrewarm }}>
+    <StoryUploadContext.Provider value={value}>
       {children}
+      {failed && <StoryFailedBanner onRetry={retryFailed} onDismiss={() => setFailed(null)} />}
     </StoryUploadContext.Provider>
   );
 }

@@ -261,6 +261,7 @@ const en: Record<string, string> = {
   'storyCamera.saveFailBody': 'Saving may need the latest app build.',
   'storyCamera.notAuthenticated': 'Not authenticated',
   'storyCamera.postFailTitle': 'Could not post story',
+  'storyCamera.postFailBanner': "Your story didn't post",
   'storyCamera.camNeededTitle': 'Camera access needed',
   'storyCamera.camNeededBody': 'Allow camera access to capture stories.',
   'storyCamera.allowCamera': 'Allow camera',
