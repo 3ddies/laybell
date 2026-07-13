@@ -11,7 +11,7 @@ import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, setFeed
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, Image,
+  TouchableOpacity, Platform,
   RefreshControl, Dimensions, Modal, Animated,
 } from 'react-native';
 import { FeedSkeleton } from '../../components/Skeleton';
@@ -30,6 +30,8 @@ const toTrack = (p: any): Track => ({
 });
 import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { bumpBadge } from '../../lib/badges';
@@ -40,6 +42,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import { useAudio, type Track } from '../../contexts/AudioContext';
 import { attachEngagementCountsAll } from '../../lib/postCounts';
 import { createNotification } from '../../lib/createNotification';
+import { selection, impactLight } from '../../lib/haptics';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useShare } from '../../contexts/ShareContext';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
@@ -147,14 +150,14 @@ type PostCardProps = {
 // Stable feed header (stories tray + any in-flight upload cards). Defined at module
 // scope so feed re-renders / refetches never remount it — which would restart the
 // optimistic upload card's local video mid-playback.
-function FeedHeader() {
+const FeedHeader = memo(function FeedHeader() {
   return (
     <>
       <StoriesTray />
       <PendingUploads />
     </>
   );
-}
+});
 
 // Memoized so that toggling a like/save on one post (which changes the feed's
 // liked/saved sets) only re-renders that card — not all ~50 rows. All callbacks
@@ -224,10 +227,13 @@ const PostCard = memo(function PostCard({
           ref={imgRef}
           onPress={() => imgRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }))}
         >
-          <Image
+          {/* expo-image: decodes at DISPLAYED size (RN Image decodes the full
+              multi-MP original — memory spikes + dropped frames mid-scroll). */}
+          <ExpoImage
             source={{ uri: item.media_url }}
             style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
           />
           {!!item.song_id && (
             <TouchableOpacity style={styles.videoAudioBtn} onPress={onToggleSongMute}>
@@ -290,7 +296,7 @@ const PostCard = memo(function PostCard({
                   so fast scrolling never spins up a player per row while landing
                   on a video still plays instantly. */}
               {!!item.thumbnail_url && (
-                <Image source={{ uri: item.thumbnail_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                <ExpoImage source={{ uri: item.thumbnail_url }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
               )}
               {isVisibleVideo && (
                 <AppVideo
@@ -341,7 +347,7 @@ const PostCard = memo(function PostCard({
 
       {/* Actions */}
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => { popLike(); onLike(item); }} activeOpacity={0.6} hitSlop={8}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => { selection(); popLike(); onLike(item); }} activeOpacity={0.6} hitSlop={8}>
           <Animated.View style={{ transform: [{ scale: likeScale }] }}>
             <Ionicons
               name={isLiked ? 'heart' : 'heart-outline'}
@@ -359,7 +365,7 @@ const PostCard = memo(function PostCard({
           {commentCount > 0 && <Text style={styles.actionCount}>{commentCount}</Text>}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onSave(item)} activeOpacity={0.6} hitSlop={8}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => { selection(); onSave(item); }} activeOpacity={0.6} hitSlop={8}>
           <Ionicons
             name={isSaved ? 'bookmark' : 'bookmark-outline'}
             size={22}
@@ -380,7 +386,7 @@ const PostCard = memo(function PostCard({
 
 export default function HomeScreen() {
   const { show: showOptions } = usePostOptions();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const { share: openShare } = useShare();
@@ -561,10 +567,24 @@ export default function HomeScreen() {
     pendingVideoViewables.current = null;
     applyVideoViewables(viewableItems);
   }).current;
-  const onImpressionViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
-    // The most-visible post that carries an attached song — its track plays ambiently.
+  // The most-visible post that carries an attached song — its track plays ambiently.
+  const applyMusicViewables = useRef((viewableItems: any[]) => {
     const firstMusic = viewableItems.find(v => v.item?.song_id);
     setVisibleMusicId(firstMusic ? firstMusic.item.id : null);
+  }).current;
+  const pendingMusicViewables = useRef<any[] | null>(null);
+  const onImpressionViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
+    // Ambient-song selection tears down + creates a NATIVE audio player (plus a
+    // possible Supabase fetch), so mid-fling snapshots are deferred exactly like
+    // the video pair — the latest applies as the scroll slows (see setFastScroll).
+    // The impression loop below stays live: it's cheap (in-memory dedupe +
+    // fire-and-forget RPC) and impression semantics must not change.
+    if (fastScrollRef.current) {
+      pendingMusicViewables.current = viewableItems;
+    } else {
+      pendingMusicViewables.current = null;
+      applyMusicViewables(viewableItems);
+    }
     // A spotlight card crossing the 60% visibility line counts as one
     // impression (deduped per campaign per session in lib/spotlight, owner
     // views never count).
@@ -591,6 +611,11 @@ export default function HomeScreen() {
       pendingVideoViewables.current = null;
       applyVideoViewables(pending);
     }
+    if (!on && pendingMusicViewables.current) {
+      const pendingMusic = pendingMusicViewables.current;
+      pendingMusicViewables.current = null;
+      applyMusicViewables(pendingMusic);
+    }
   };
   // dp per ms. GATE_IN ≈ 1.25 screens/s catches moderate scrolls (not just fast
   // flings) — that mid band was the choppy one; GATE_OUT ≈ 0.5 screens/s keeps
@@ -609,9 +634,17 @@ export default function HomeScreen() {
       else if (v <= GATE_OUT) setFastScroll(false);
     }
     // A fling's final events can still be fast — clear soon after events stop.
-    if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current);
-    scrollStopTimer.current = setTimeout(() => setFastScroll(false), 130);
+    // LAZY: one pending timeout re-arms itself with the remainder instead of
+    // being cleared + recreated on every scroll frame (same pattern as
+    // lib/feedChrome — per-frame timer churn was part of the staticy feel).
+    if (!scrollStopTimer.current) scrollStopTimer.current = setTimeout(checkScrollStop, 130);
   };
+  function checkScrollStop() {
+    scrollStopTimer.current = null;
+    const idle = Date.now() - scrollSample.current.t;
+    if (idle >= 130) { setFastScroll(false); return; }
+    scrollStopTimer.current = setTimeout(checkScrollStop, 130 - idle);
+  }
   const [feedMode, setFeedMode] = useState<'all' | 'following' | 'friends'>('all');
   const [menuOpen, setMenuOpen] = useState(false);
   // Measured height of the floating header — pads the feed underneath it and
@@ -1116,6 +1149,7 @@ export default function HomeScreen() {
       {(item as any).__ad ? (
         <SponsoredCard
           item={item}
+          isVisibleVideo={visibleVideoId === item.id}
           shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
           onCta={onAdCta}
           onOptions={onAdOptions}
@@ -1167,10 +1201,21 @@ export default function HomeScreen() {
         style={[
           styles.header,
           styles.headerFloat,
+          Platform.OS === 'ios' && styles.headerGlass,
           { transform: [{ translateY: feedChromeTop.interpolate({ inputRange: [0, 1], outputRange: [0, -(headerH || 140)] }) }] },
         ]}
         onLayout={(e) => { const h = e.nativeEvent.layout.height; setHeaderH(h); setFeedHeaderHeight(h); }}
       >
+        {/* iOS: real frosted material behind the floating header (matches the tab
+            bar), so the feed blurs through it instead of hiding under a flat slab. */}
+        {Platform.OS === 'ios' && (
+          <BlurView
+            tint={mode === 'light' ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark'}
+            intensity={40}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+        )}
         <View style={styles.headerLeft}>
           <TouchableOpacity
             style={styles.logoBtn}
@@ -1286,7 +1331,10 @@ export default function HomeScreen() {
         onScrollEndDrag={feedDragEnd}
         onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); }}
         scrollEventThrottle={16}
-        removeClippedSubviews
+        // Android-only: on iOS removeClippedSubviews is a known source of
+        // flickering/blank cells with complex children (video posts) — one of
+        // the "staticy" scroll artifacts — and iOS clips efficiently without it.
+        removeClippedSubviews={Platform.OS === 'android'}
         windowSize={5}
         maxToRenderPerBatch={5}
         initialNumToRender={5}
@@ -1299,6 +1347,7 @@ export default function HomeScreen() {
             // loads get the seen-penalty and genuinely new/unseen recent posts
             // rise to the top on every pull-to-refresh.
             onRefresh={async () => {
+              impactLight(); // tactile confirm the pull-to-refresh caught
               setRefreshing(true);
               refreshStories();
               // Release any pinned just-posted posts so they fall into natural rank.
@@ -1383,6 +1432,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     zIndex: 20,
     backgroundColor: colors.background,
   },
+  // iOS: drop the solid fill so the BlurView behind provides a real frosted surface.
+  headerGlass: { backgroundColor: 'transparent' },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   logoBtn: { flexDirection: 'row', alignItems: 'center' },
   liveBtn: { position: 'relative', padding: 2, marginTop: 2 },

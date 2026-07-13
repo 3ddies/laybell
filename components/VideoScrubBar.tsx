@@ -53,7 +53,9 @@ export default forwardRef<VideoScrubBarHandle, Props>(function VideoScrubBar(
         toValue: frac,
         duration: Math.min(1200, Math.max(120, dt)),
         easing: Easing.linear,
-        useNativeDriver: false,
+        // Native-driven scaleX: the glide runs continuously for the entire reel
+        // playback — JS-driven it stalled exactly when the JS thread hitched.
+        useNativeDriver: true,
       }).start();
     },
   }), [anim]);
@@ -97,7 +99,10 @@ export default forwardRef<VideoScrubBarHandle, Props>(function VideoScrubBar(
     }),
   ).current;
 
-  const width = anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+  // Native-driven fill: full-width bar scaled from its left edge (solid color,
+  // so the scale reads as the identical left-anchored reveal). The knob (drag
+  // only) rides a translateX over the measured width.
+  const knobX = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.max(1, widthRef.current)] });
 
   return (
     <View
@@ -107,9 +112,9 @@ export default forwardRef<VideoScrubBarHandle, Props>(function VideoScrubBar(
       {...pan.panHandlers}
     >
       <View style={[styles.track, dragging && styles.trackActive, { bottom: bottomInset }]} pointerEvents="none">
-        <Animated.View style={[styles.fill, { width }]} />
+        <Animated.View style={[styles.fill, { transform: [{ scaleX: anim }] }]} />
       </View>
-      {dragging && <Animated.View style={[styles.knob, { left: width, bottom: bottomInset - 5 }]} pointerEvents="none" />}
+      {dragging && <Animated.View style={[styles.knob, { left: 0, bottom: bottomInset - 5, transform: [{ translateX: knobX }] }]} pointerEvents="none" />}
     </View>
   );
 });
@@ -124,7 +129,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden',
   },
   trackActive: { height: 5, borderRadius: 3 },
-  fill: { height: '100%', backgroundColor: '#fff', borderRadius: 3 },
+  fill: { width: '100%', height: '100%', backgroundColor: '#fff', borderRadius: 3, transformOrigin: 'left' },
   knob: {
     position: 'absolute', width: 14, height: 14, borderRadius: 7, marginLeft: -7,
     backgroundColor: '#fff',

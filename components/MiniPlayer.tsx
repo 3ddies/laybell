@@ -1,9 +1,10 @@
-import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Animated, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { feedChrome } from '../lib/feedChrome';
 import { useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
 import { recordAdClick, AUDIO_AD_SKIP_MS } from '../lib/ads';
 import { fetchFeatures, type Feature } from '../lib/features';
@@ -29,7 +30,7 @@ function formatMs(ms: number): string {
 type PlayerVariant = 'bar' | 'compact' | 'side';
 
 export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { variant?: PlayerVariant; bottomDock?: boolean }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const { currentTrack, isPlaying, isBuffering, pause, resume, stop, seekTo, expanded, expand, adState, skipAudioAd } = useAudio();
@@ -287,12 +288,22 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   return (
     <Animated.View
       pointerEvents={isBar ? 'auto' : 'none'}
-      style={[styles.container, {
+      style={[styles.container, Platform.OS === 'ios' && styles.containerGlass, {
         bottom: bottomOffset,
         opacity: Animated.multiply(barFade, appearAnim),
         transform: [{ translateY: Animated.add(Animated.add(Animated.add(listenSlide, dockSlide), appearRise), chromeSlide) }],
       }]}
     >
+      {/* iOS: real frosted material behind the persistent player, matching the
+          tab bar it sits directly above. */}
+      {Platform.OS === 'ios' && (
+        <BlurView
+          tint={mode === 'light' ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark'}
+          intensity={50}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+      )}
       <View style={styles.scrubWrap}>
         <Scrubber
           progress={progress}
@@ -353,9 +364,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: colors.surfaceElevated,
     borderRadius: RADIUS.lg, overflow: 'hidden',
     borderWidth: 0.5, borderColor: colors.primaryLight + '55',
-    ...SHADOWS.md,
+    // iOS: overflow:'hidden' clips the layer shadow — it drew NOTHING here but
+    // still forced alpha-based shadow work on a bar that moves with every
+    // scroll. Android elevation is unaffected, so keep the shadow there.
+    ...(Platform.OS === 'ios' ? {} : SHADOWS.md),
     zIndex: 100,
   },
+  // iOS: drop the solid fill so the BlurView behind provides a real frosted surface.
+  containerGlass: { backgroundColor: 'transparent' },
   scrubWrap: { paddingHorizontal: SPACING.sm, paddingTop: SPACING.xs },
   inner: {
     flexDirection: 'row', alignItems: 'center',

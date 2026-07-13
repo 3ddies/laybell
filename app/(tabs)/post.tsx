@@ -18,6 +18,7 @@ import { bumpBadge, publicPostLimit, rawTier, tierLabel } from '../../lib/badges
 import { useProfile } from '../../contexts/ProfileContext';
 import { processMentions, getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { createNotification } from '../../lib/createNotification';
+import { notifySuccess } from '../../lib/haptics';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleModal';
 import FeaturesModal from '../../components/FeaturesModal';
@@ -781,6 +782,7 @@ export default function PostScreen() {
         if (ps) { clearPendingSpotlight(); setPendingSpotBanner(null); }
         if (isPublic) setPublicCount((c) => (c == null ? c : c + 1));
         if (editingDraftId.current) deleteDraft(editingDraftId.current).then(setDrafts);
+        notifySuccess(); // celebratory buzz — post accepted (video uploads in the background)
         setPostedToast({
           title: spotLabel ? t('post.postedSpotlightTitle') : t('post.postedTitle'),
           message: spotLabel
@@ -882,6 +884,7 @@ export default function PostScreen() {
         ...(postType === 'audio' ? { downloadable: allowDownloads } : {}),
       }).select('id').single();
       if (postError) throw postError;
+      notifySuccess(); // celebratory buzz on a published post
       if (isPublic) {
         bumpBadge('posts_created'); // recomputes the Posts badge from the live grid
         setPublicCount((c) => (c == null ? c : c + 1)); // slot hint stays honest

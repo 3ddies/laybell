@@ -15,7 +15,7 @@ import {
 import type { ParamListBase, TabNavigationState } from '@react-navigation/native';
 import { GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
-import { PagerContext, TabSwipeContext, noteTabSwipe } from '../../contexts/PagerContext';
+import { TabSwipeContext, noteTabSwipe } from '../../contexts/PagerContext';
 import { feedChrome, setFeedChromeHidden } from '../../lib/feedChrome';
 import { useListenMode } from '../../contexts/ListenModeContext';
 
@@ -121,7 +121,7 @@ function TabSlot({
     return (
       <View style={styles.tabItem}>
         <Animated.View style={{ transform: [{ translateY: lift }, { scale }] }}>
-          <Animated.View pointerEvents="none" style={[styles.chip, { opacity: chip, backgroundColor: chipBg }]} />
+          <Animated.View pointerEvents="none" shouldRasterizeIOS style={[styles.chip, { opacity: chip, backgroundColor: chipBg }]} />
           <View style={styles.avatarRing}>
             {profile?.avatar_url ? (
               <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
@@ -145,7 +145,7 @@ function TabSlot({
   return (
     <View style={styles.tabItem}>
       <Animated.View style={[styles.iconWrap, { transform: [{ translateY: lift }, { scale }] }]}>
-        <Animated.View pointerEvents="none" style={[styles.chip, { opacity: chip, backgroundColor: chipBg }]} />
+        <Animated.View pointerEvents="none" shouldRasterizeIOS style={[styles.chip, { opacity: chip, backgroundColor: chipBg }]} />
         <Animated.View style={{ opacity: outlineOpacity }}>
           {/* textSecondary (not tertiary): the airier glass needs icons that
               carry their own contrast instead of borrowing it from the panel. */}
@@ -294,6 +294,16 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
     }
     return 0;
   };
+  // Maps a pager-direction flick (+1 = next tab, i.e. finger moved left) to the
+  // visible slot adjacent to the CURRENT tab; -1 when there's nowhere to go
+  // (edge, or the current page isn't a bar slot — e.g. the camera).
+  const flickSlotRef = useRef<(dir: 1 | -1) => number>(() => -1);
+  flickSlotRef.current = (dir) => {
+    const cur = visible.findIndex((v) => v.index === state.index);
+    if (cur < 0) return -1;
+    const target = cur + dir;
+    return target >= 0 && target < visible.length ? target : -1;
+  };
 
   const panRef = useRef(
     PanResponder.create({
@@ -315,9 +325,21 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
           setHover(slot);
         }
       },
-      onPanResponderRelease: (e) => {
-        const slot = slotFromX(e.nativeEvent.pageX);
-        const jump = commitRef.current(slot);
+      onPanResponderRelease: (e, g) => {
+        let slot = slotFromX(e.nativeEvent.pageX);
+        let jump = commitRef.current(slot);
+        // A pager-shaped FLICK that released on the CURRENT tab's slot: the user
+        // was page-swiping with a low thumb (the bar captures the whole bottom
+        // band), not working the bar — translate it to the adjacent tab in pager
+        // direction (finger left = next tab). Slow drag-and-hold releases never
+        // qualify (velocity gate), so the bar's designed feel is unchanged.
+        if (jump === 0 && Math.abs(g.vx) >= 0.5 && Math.abs(g.dx) >= 24 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5) {
+          const target = flickSlotRef.current(g.vx < 0 ? 1 : -1);
+          if (target >= 0) {
+            const j = commitRef.current(target);
+            if (j > 0) { jump = j; slot = target; }
+          }
+        }
         dragSlot.current = -1;
         if (jump > 0) {
           // Navigated. Keep ONLY the target lit and the current tab dimmed until
@@ -412,7 +434,10 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
 }
 
 export default function TabLayout() {
-  const [swiping, setSwiping] = useState(false);
+  // NOTE: the "is a swipe in progress" flag deliberately does NOT live here as
+  // React state — it's a module store in PagerContext (usePagerSwiping). State
+  // here re-rendered the whole navigator at every swipe start/end, racing the
+  // native pager mid-gesture (dropped fast swipes, hitchy handoffs).
   // Slideshow carousels flip this off while you swipe between slides so the swipe
   // doesn't bubble up and change tabs (re-enabled when the gesture ends).
   const [swipeEnabled, setSwipeEnabled] = useState(true);
@@ -444,7 +469,6 @@ export default function TabLayout() {
   const lastTabPressAt = useRef(0);
 
   return (
-    <PagerContext.Provider value={swiping}>
      <TabSwipeContext.Provider value={setSwipeEnabled}>
       <MaterialTopTabs
         initialRouteName="index"
@@ -462,8 +486,8 @@ export default function TabLayout() {
           // settles. noteTabSwipe feeds the guardPress() tap suppressor — taps
           // are filtered at the press handlers, NEVER by blocking touches, so
           // rapid consecutive swipes always reach the pager.
-          swipeStart: () => { swipingRef.current = true; setSwiping(true); noteTabSwipe(true); Keyboard.dismiss(); setFeedChromeHidden(false); },
-          swipeEnd: () => { swipingRef.current = false; lastSwipeEndAt.current = Date.now(); setSwiping(false); noteTabSwipe(false); },
+          swipeStart: () => { swipingRef.current = true; noteTabSwipe(true); Keyboard.dismiss(); setFeedChromeHidden(false); },
+          swipeEnd: () => { swipingRef.current = false; lastSwipeEndAt.current = Date.now(); noteTabSwipe(false); },
           // The bar (drag-release AND tap) navigates by emitting tabPress, so mark
           // the moment — a real bar-driven multi-tab jump must stay exempt from the
           // spurious-jump guard below.
@@ -501,14 +525,19 @@ export default function TabLayout() {
 
             const swipeDriven = swipingRef.current || Date.now() - lastSwipeEndAt.current < 600;
             const barDriven = Date.now() - lastTabPressAt.current < 700;
-            if (swipeDriven) {
+            if (barDriven) {
+              // Intentional bar navigation (tap or drag-release) — checked FIRST:
+              // a tabPress is a stronger intent signal than a ≤600ms-old swipe.
+              // (Before, a far bar jump made moments after a swipe fell into the
+              // swipe branch below and was redirected to the adjacent tab.)
+            } else if (swipeDriven) {
               // A finger swipe moves EXACTLY one page, so an over-committed swipe
               // lands on the ADJACENT page in the swiped direction (where the finger
               // was actually headed) — never a far tab.
               const intended = Math.max(0, Math.min(names.length - 1, prev + Math.sign(delta)));
               settledIndexRef.current = intended;
               navigation.navigate(names[intended]);
-            } else if (justMounted && !barDriven) {
+            } else if (justMounted) {
               // A multi-page jump with NO gesture and NO bar press, moments after
               // the (re)mount = the spurious native-pager teleport (the login glitch
               // that lands on Profile). Revert to where we actually were (Home).
@@ -538,7 +567,6 @@ export default function TabLayout() {
         <MaterialTopTabs.Screen name="profile" />
       </MaterialTopTabs>
      </TabSwipeContext.Provider>
-    </PagerContext.Provider>
   );
 }
 

@@ -28,7 +28,7 @@ import SharedPostCard from '../../components/SharedPostCard';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import TranslatableText from '../../components/TranslatableText';
 import { ChatThreadSkeleton } from '../../components/Skeleton';
-import { tabTick, reactionPop } from '../../lib/haptics';
+import { tabTick, reactionPop, impactLight } from '../../lib/haptics';
 
 type Message = { id: string; body: string; sender_id: string; receiver_id: string; created_at: string };
 type Reaction = { message_id: string; user_id: string; emoji: string };
@@ -330,6 +330,7 @@ export default function ChatScreen() {
       .insert({ sender_id: currentUserId, receiver_id: id, body })
       .select().single();
     if (!error && data) {
+      impactLight(); // soft confirming tap on a sent message
       setMessages(prev => [...prev, data]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       // Notify recipient — only on first message of session to avoid spam
@@ -445,6 +446,10 @@ export default function ChatScreen() {
         ref={flatListRef}
         data={messages}
         keyExtractor={item => item.id}
+        // iOS: drag the transcript down to interactively dismiss the keyboard
+        // (iMessage feel); keep taps (long-press to react) alive with the keyboard up.
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.messagesList, { paddingBottom: insets.bottom + 76 }]}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={

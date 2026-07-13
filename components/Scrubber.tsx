@@ -1,5 +1,5 @@
 import { View, StyleSheet, PanResponder, Animated } from 'react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -9,6 +9,14 @@ const clamp = (n: number) => Math.max(0, Math.min(1, n));
 // A draggable progress scrubber. Uses absolute pageX vs the bar's measured
 // window position, and an Animated value so playback glides smoothly between
 // status updates and dragging doesn't re-render the parent.
+//
+// NATIVE-DRIVEN: playback retargets this animation ~4×/s for as long as any
+// music plays, and the bar rides in the MiniPlayer on every screen — as a
+// JS-driven width animation it was a continuous JS-thread layout pass
+// app-wide. Instead, the fill is a mask/gradient pair moved by OPPOSITE
+// translateX transforms: the clipping mask slides left to hide, while the
+// gradient counter-slides so it stays fixed in track space. Pixel-identical
+// to the old width reveal, but it runs entirely on the native driver.
 export default function Scrubber({
   progress, onSeek, height = 20, trackHeight = 4, thumbSize = 14,
 }: {
@@ -29,7 +37,8 @@ export default function Scrubber({
   // Glide toward the playback position when not actively dragging.
   useEffect(() => {
     if (dragging.current) return;
-    Animated.timing(anim, { toValue: clamp(progress), duration: 240, useNativeDriver: false }).start();
+    Animated.timing(anim, { toValue: clamp(progress), duration: 240, useNativeDriver: true }).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progress]);
 
   const measure = () => ref.current?.measureInWindow((x, _y, w) => { layout.current = { x, w }; setWidth(w); });
@@ -47,25 +56,35 @@ export default function Scrubber({
     })
   ).current;
 
-  const fillWidth = anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
-  const thumbLeft = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.max(0, width - thumbSize)] });
+  // Reveal transforms (see header comment). Memoized per measured width so the
+  // per-tick progress re-renders don't rebuild/reattach the interpolations.
+  const w = Math.max(1, width);
+  const { maskX, gradX, thumbX } = useMemo(() => ({
+    maskX: anim.interpolate({ inputRange: [0, 1], outputRange: [-w, 0] }),
+    gradX: anim.interpolate({ inputRange: [0, 1], outputRange: [w, 0] }),
+    thumbX: anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.max(0, w - thumbSize)] }),
+  }), [anim, w, thumbSize]);
 
   return (
     <View ref={ref} onLayout={measure} style={[styles.area, { height }]} {...pan.panHandlers}>
       <View style={[styles.track, { height: trackHeight, borderRadius: trackHeight / 2 }]}>
-        <Animated.View style={{ width: fillWidth, height: '100%', overflow: 'hidden' }}>
-          {/* Fixed-width gradient revealed by the animated mask, so it doesn't stretch */}
-          <LinearGradient
-            colors={GRADIENTS.primaryWarm}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-            style={{ width: width || 1, height: '100%' }}
-          />
+        {/* Sliding clip window: its own bounds clip the counter-slid gradient,
+            and the track's overflow:hidden clips whatever pokes past the ends. */}
+        <Animated.View style={{ width: '100%', height: '100%', overflow: 'hidden', transform: [{ translateX: maskX }] }}>
+          <Animated.View style={{ width: '100%', height: '100%', transform: [{ translateX: gradX }] }}>
+            {/* Fixed-width gradient held stationary in track space by the counter-slide */}
+            <LinearGradient
+              colors={GRADIENTS.primaryWarm}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={{ width: w, height: '100%' }}
+            />
+          </Animated.View>
         </Animated.View>
       </View>
       <Animated.View
         style={[styles.thumb, {
           width: thumbSize, height: thumbSize, borderRadius: thumbSize / 2,
-          top: (height - thumbSize) / 2, left: thumbLeft,
+          top: (height - thumbSize) / 2, left: 0, transform: [{ translateX: thumbX }],
         }]}
       />
     </View>

@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, ScrollView, Image, TouchableOpacity, StyleSheet, Text,
+  View, ScrollView, TouchableOpacity, StyleSheet, Text,
   type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import AppVideo from './AppVideo';
 import { Ionicons } from '@expo/vector-icons';
 import { RADIUS } from '../constants/theme';
@@ -117,21 +118,32 @@ export default function SlideshowCarousel({
           const body = (
             <View style={{ width, height, backgroundColor: '#000' }}>
               {isVideo ? (
-                <SlideVideo
-                  uri={s.url}
-                  poster={s.thumbnail_url}
-                  width={width}
-                  height={height}
-                  play={!!active && i === current}
-                  muted={!videoAudioOn}
-                  // Watch time on video slides counts toward the post's
-                  // (internal-only) view tally — same tracker + server caps
-                  // as regular videos. Paused slides report no forward
-                  // progress, so only the playing slide accrues.
-                  onProgress={postId ? (pos, dur) => trackVideoProgress(postId, pos, dur) : undefined}
-                />
+                Math.abs(i - current) <= 1 ? (
+                  <SlideVideo
+                    uri={s.url}
+                    poster={s.thumbnail_url}
+                    width={width}
+                    height={height}
+                    play={!!active && i === current}
+                    muted={!videoAudioOn}
+                    // Watch time on video slides counts toward the post's
+                    // (internal-only) view tally — same tracker + server caps
+                    // as regular videos. Paused slides report no forward
+                    // progress, so only the playing slide accrues.
+                    onProgress={postId ? (pos, dur) => trackVideoProgress(postId, pos, dur) : undefined}
+                  />
+                ) : (
+                  // FAR video slides hold their poster instead of a live native
+                  // player — a paging swipe only ever moves one slide, so the
+                  // incoming slide's player (current ± 1) is always already
+                  // mounted; nothing visibly changes, but a multi-video
+                  // slideshow no longer allocates every AVPlayer at mount.
+                  s.thumbnail_url
+                    ? <ExpoImage source={{ uri: s.thumbnail_url }} style={{ width, height }} contentFit="contain" cachePolicy="memory-disk" />
+                    : <View style={{ width, height }} />
+                )
               ) : (
-                <Image source={{ uri: s.url }} style={{ width, height }} resizeMode="cover" />
+                <ExpoImage source={{ uri: s.url }} style={{ width, height }} contentFit="cover" cachePolicy="memory-disk" />
               )}
             </View>
           );

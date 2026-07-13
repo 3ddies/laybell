@@ -22,7 +22,7 @@ import { openGifAttachment } from '../../../lib/gifAttachmentActions';
 import GifPickerModal from '../../../components/GifPickerModal';
 import AttachmentView from '../../../components/AttachmentView';
 import ImageViewerModal from '../../../components/ImageViewerModal';
-import { tabTick, reactionPop } from '../../../lib/haptics';
+import { tabTick, reactionPop, impactLight } from '../../../lib/haptics';
 import SharedPostCard from '../../../components/SharedPostCard';
 import GroupAvatar from '../../../components/GroupAvatar';
 import { ChatThreadSkeleton } from '../../../components/Skeleton';
@@ -218,6 +218,7 @@ export default function GroupChatScreen() {
       .insert({ sender_id: currentUserId, conversation_id: id, body })
       .select('id, body, sender_id, conversation_id, created_at').single();
     if (!error && data) {
+      impactLight(); // soft confirming tap on a sent message
       setMessages(prev => [...prev, data as Message]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       // Notify the other members (fire-and-forget).
@@ -382,6 +383,8 @@ export default function GroupChatScreen() {
           ref={flatListRef}
           data={messages}
           keyExtractor={item => item.id}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={[styles.messagesList, { paddingBottom: insets.bottom + 76 }]}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           ListEmptyComponent={

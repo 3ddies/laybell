@@ -22,7 +22,7 @@ import PlaylistOptionsSheet from '../../components/PlaylistOptionsSheet';
 import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTranslation } from '../../contexts/LanguageContext';
-import { useTabSwipeControl } from '../../contexts/PagerContext';
+import { useTabSwipeControl, isSwipeTap } from '../../contexts/PagerContext';
 import { useListenMode } from '../../contexts/ListenModeContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchBlockedIds } from '../../lib/blocks';
@@ -169,10 +169,17 @@ export default function MusicScreen() {
   activeViewRef.current = activeView;
 
   useFocusEffect(useCallback(() => {
-    const t = setTimeout(() => {
+    // The dwell lock must never land MID-GESTURE — yanking the pager's
+    // scrollEnabled while a swipe is in flight kills the drag dead (a genuine
+    // dropped-swipe path). If a swipe is active (or just ended) when the dwell
+    // expires, re-check shortly instead.
+    let t: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      if (isSwipeTap()) { t = setTimeout(arm, 300); return; }
       innerSwipeRef.current = true;
       setTabSwipe(false); // outer pager off — swipes now belong to the pills
-    }, 4000);
+    };
+    t = setTimeout(arm, 4000);
     return () => {
       clearTimeout(t);
       innerSwipeRef.current = false;

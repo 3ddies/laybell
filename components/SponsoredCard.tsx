@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import AppVideo from './AppVideo';
 import { Ionicons } from '@expo/vector-icons';
 import { memo } from 'react';
@@ -21,12 +22,15 @@ const MAX_VIDEO_H = SCREEN_W * 1.25;
 
 type Props = {
   item: any; // feed ad item: { id, type, media_url, slides, aspect_ratio, __ad }
+  // Mount the native video player only when the card is near-visible (same
+  // discipline as PostCard); defaults true so other hosts are unaffected.
+  isVisibleVideo?: boolean;
   shouldPlayVideo: boolean;
   onCta: (item: any) => void;
   onOptions: (item: any) => void;
 };
 
-const SponsoredCard = memo(function SponsoredCard({ item, shouldPlayVideo, onCta, onOptions }: Props) {
+const SponsoredCard = memo(function SponsoredCard({ item, isVisibleVideo = true, shouldPlayVideo, onCta, onOptions }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
@@ -38,7 +42,7 @@ const SponsoredCard = memo(function SponsoredCard({ item, shouldPlayVideo, onCta
       {/* Header */}
       <View style={styles.header}>
         {ad?.avatarUrl ? (
-          <Image source={{ uri: ad.avatarUrl }} style={styles.brandAvatar} />
+          <ExpoImage source={{ uri: ad.avatarUrl }} style={styles.brandAvatar} contentFit="cover" cachePolicy="memory-disk" />
         ) : (
           <View style={styles.brandAvatar}>
             <Text style={styles.brandInitial}>{brand.charAt(0).toUpperCase()}</Text>
@@ -65,10 +69,11 @@ const SponsoredCard = memo(function SponsoredCard({ item, shouldPlayVideo, onCta
       {/* Media */}
       {item.type === 'image' && !!item.media_url && (
         <TouchableOpacity activeOpacity={0.95} onPress={() => onCta(item)}>
-          <Image
+          <ExpoImage
             source={{ uri: item.media_url }}
             style={[styles.media, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
           />
         </TouchableOpacity>
       )}
@@ -88,14 +93,20 @@ const SponsoredCard = memo(function SponsoredCard({ item, shouldPlayVideo, onCta
 
       {item.type === 'video' && !!item.media_url && (
         <TouchableOpacity activeOpacity={0.95} onPress={() => onCta(item)}>
-          <AppVideo
-            source={{ uri: item.media_url }}
-            style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
-            contentFit="cover"
-            loop
-            muted
-            active={shouldPlayVideo}
-          />
+          {isVisibleVideo ? (
+            <AppVideo
+              source={{ uri: item.media_url }}
+              style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
+              contentFit="cover"
+              loop
+              muted
+              active={shouldPlayVideo}
+            />
+          ) : (
+            // Off-screen: hold the slot without a live AVPlayer (ads carry no
+            // poster asset). The player mounts as the card approaches 40% visible.
+            <View style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]} />
+          )}
         </TouchableOpacity>
       )}
 

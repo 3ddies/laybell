@@ -4,6 +4,7 @@ import { useFollow } from '../contexts/FollowContext';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { selection } from '../lib/haptics';
 
 // Small connection pill shown next to another user's username across the feeds.
 // Reflects both follow tiers:
@@ -30,7 +31,7 @@ export default function FollowButton({ userId, style }: { userId?: string | null
   return (
     <TouchableOpacity
       style={[styles.btn, filled ? styles.follow : styles.following, style]}
-      onPress={() => toggleFollow(userId)}
+      onPress={() => { selection(); toggleFollow(userId); }}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       activeOpacity={0.8}
     >

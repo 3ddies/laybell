@@ -44,3 +44,48 @@ export function reactionPop(): void {
     /* haptics unavailable — ignore */
   }
 }
+
+// The light "selection" detent — the subtle tick iOS uses for small binary state
+// flips (follow, like, save, opening a long-press menu). Softer and drier than an
+// impact. Fire-and-forget: never awaited, never throws, no-ops where haptics
+// aren't available.
+export function selection(): void {
+  try {
+    const h = load();
+    h?.selectionAsync?.()?.catch(() => {});
+  } catch {
+    /* haptics unavailable — ignore */
+  }
+}
+
+// A LIGHT impact tap — a soft confirming knock for a committed action (send a
+// message, a swipe-up pull-to-refresh). Same fire-and-forget contract as above.
+export function impactLight(): void {
+  try {
+    const h = load();
+    h?.impactAsync?.(h.ImpactFeedbackStyle?.Light)?.catch(() => {});
+  } catch {
+    /* haptics unavailable — ignore */
+  }
+}
+
+// iOS notification feedbacks — the distinctive success / warning "double taps".
+// Success: a completed action (a post published). Warning: a destructive prompt
+// appearing (delete / block / remove). Same fire-and-forget contract as above.
+export function notifySuccess(): void {
+  try {
+    const h = load();
+    h?.notificationAsync?.(h.NotificationFeedbackType?.Success)?.catch(() => {});
+  } catch {
+    /* haptics unavailable — ignore */
+  }
+}
+
+export function notifyWarning(): void {
+  try {
+    const h = load();
+    h?.notificationAsync?.(h.NotificationFeedbackType?.Warning)?.catch(() => {});
+  } catch {
+    /* haptics unavailable — ignore */
+  }
+}

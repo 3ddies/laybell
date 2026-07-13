@@ -8,10 +8,11 @@ import { Animated, Easing } from 'react-native';
 //     header you literally scroll past) and back in as you scroll UP, both
 //     regardless of speed. It can rest partway (part of the scroll feel, not a
 //     spring); speed-agnostic on purpose so it never feels overreactive.
-//   BOTTOM bar (tab bar + mini player): follows any downward scroll 1:1 over
-//     ~210px to condense into the circle icons; a PARTIAL hide snaps back to the
-//     full bar (only a completed hide sticks). Coming BACK from the circles is
-//     SPEED-gated — only a distinctly fast up-flick reveals it (any distance).
+//   BOTTOM bar (tab bar + mini player): SPEED-gated BOTH ways. Only a distinctly
+//     hard, fast DOWN-flick condenses it into the circle icons — a slow or short
+//     read-scroll leaves the full bar exactly where it is. Coming BACK from the
+//     circles is likewise SPEED-gated — only a distinctly fast up-flick reveals it
+//     (any distance).
 //
 // `feedChrome` (bottom bar + music bar) and `feedChromeTop` (header) are both
 // native-driver values (0 = shown, 1 = hidden). Mirrors stay true via value
@@ -36,11 +37,16 @@ let anchorNext = true;
 // emitting momentum frames after it's offscreen.
 let suppressed = false;
 
-const HIDE_DISTANCE = 210;
+// BOTTOM tab bar hide (full bar → circles) is SPEED-gated: only a distinctly hard,
+// fast DOWN-flick condenses it — a slow/short read-scroll leaves the full bar in
+// place (owner: shouldn't collapse on a gentle scroll). Tune to taste: HIGHER =
+// must flick harder/faster to collapse.
+const BOTTOM_HIDE_VELOCITY = 5000;   // px/s downward — bottom bar's collapse gate
 // BOTTOM tab bar reveal (circles → full bar) is SPEED-gated: only a distinctly
 // hard, fast up-flick brings it back (owner: shouldn't come back too easily).
 const BOTTOM_REVEAL_VELOCITY = 5670; // px/s upward — bottom bar's speed gate
 let bottomArmed = false;             // bottom bar reveal armed this gesture
+let bottomHideArmed = false;         // bottom bar collapse armed this gesture
 
 // The Laybell HEADER (top bar) is NOT speed-gated — it tracks the scroll 1:1
 // (see trackFeedScroll): up out of view as you scroll down (a stationary header
@@ -100,6 +106,15 @@ function clearTopSettle() {
   if (topSettleTimer) { clearTimeout(topSettleTimer); topSettleTimer = null; }
   if (topSettling) { feedChromeTop.stopAnimation(); topSettling = false; }
 }
+// Lazy re-check for the resolver above: if the feed scrolled since this check
+// was armed, re-arm for the remaining quiet period instead of resolving early.
+let topLastScrollAt = 0;
+function checkTopSettle() {
+  topSettleTimer = null;
+  const idleFor = Date.now() - topLastScrollAt;
+  if (idleFor < TOP_SETTLE_MS) { topSettleTimer = setTimeout(checkTopSettle, TOP_SETTLE_MS - idleFor); return; }
+  settleTopBar();
+}
 function settleTopBar() {
   topSettleTimer = null;
   if (topValue <= 0.001 || topValue >= 0.999) return; // already resolved
@@ -116,13 +131,25 @@ function settleTopBar() {
   }).start(() => { topSettling = false; });
 }
 
-// Settle fallback: momentum frames keep refreshing this timer; if the feed goes
-// quiet with the bottom bar mid-transition, it snaps back to the full bar (see
-// settleFeedChrome — a partial hide never sticks).
+// Settle fallback: if the feed goes quiet with the bottom bar mid-transition,
+// it snaps back to the full bar (see settleFeedChrome — a partial hide never
+// sticks). LAZY timer: momentum frames only stamp lastScrollActivityAt; one
+// pending timeout re-checks and re-arms with the remainder. (The old version
+// cleared + recreated the timeout on EVERY scroll frame — measurable JS-thread
+// churn during scroll, part of the "staticy" feed feel on iOS.)
+const SETTLE_IDLE_MS = 160;
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
+let lastScrollActivityAt = 0;
 function scheduleSettle() {
-  if (settleTimer) clearTimeout(settleTimer);
-  settleTimer = setTimeout(settleFeedChrome, 160);
+  lastScrollActivityAt = Date.now();
+  if (settleTimer) return; // one pending check is enough — it re-arms itself
+  settleTimer = setTimeout(checkSettle, SETTLE_IDLE_MS);
+}
+function checkSettle() {
+  settleTimer = null;
+  const idleFor = Date.now() - lastScrollActivityAt;
+  if (idleFor >= SETTLE_IDLE_MS) { settleFeedChrome(); return; }
+  settleTimer = setTimeout(checkSettle, SETTLE_IDLE_MS - idleFor); // scrolled since — wait out the remainder
 }
 
 /** Feed onScrollBeginDrag. */
@@ -166,23 +193,36 @@ export function trackFeedScroll(y: number): void {
     if (topSettling) { feedChromeTop.stopAnimation(); topSettling = false; } // scroll overrides a settle
     feedChromeTop.setValue(nextTop);
   }
-  // Arm the "stuck half-open" resolver: reset every scroll event so it only fires
-  // ~0.75s after the scroll actually stops with the header resting partway.
-  if (topSettleTimer) { clearTimeout(topSettleTimer); topSettleTimer = null; }
-  if (nextTop > 0 && nextTop < 1) topSettleTimer = setTimeout(settleTopBar, TOP_SETTLE_MS);
+  // Arm the "stuck half-open" resolver — LAZY: scroll events just stamp the
+  // activity time; one pending timeout re-checks and re-arms with the remainder
+  // (see checkTopSettle), so it still only fires ~0.75s after the scroll truly
+  // stops with the header partway, without clearing + recreating a timer on
+  // every scroll frame. settleTopBar's own guard covers a header that resolved
+  // to fully-shown/hidden while the check was pending.
+  topLastScrollAt = now;
+  if (nextTop > 0 && nextTop < 1 && !topSettleTimer) {
+    topSettleTimer = setTimeout(checkTopSettle, TOP_SETTLE_MS);
+  }
 
-  // ── BOTTOM bar: 1:1 hide on scroll-down, speed-gated reveal on scroll-up ──
+  // ── BOTTOM bar: speed-gated BOTH ways — a hard fast down-flick condenses it to
+  // the circles, a hard fast up-flick brings the full bar back. A slow/short
+  // read-scroll leaves it exactly where it is (owner: shouldn't collapse easily).
   if (y < 60) {
     // Near the top the bottom bar always comes back.
     bottomArmed = false;
+    bottomHideArmed = false;
     glideBottom(0);
     return;
   }
   if (dy > 0) {
-    bottomArmed = false;
-    stopBottomGlide();
-    feedChrome.setValue(Math.min(1, botValue + dy / HIDE_DISTANCE));
+    bottomArmed = false; // scrolling down cancels a pending reveal
+    const downVelocity = (dy / dt) * 1000; // px per second
+    // Only a distinctly hard, fast down-flick condenses the bar (any distance) —
+    // a gentle read-scroll never arms it, so the full bar stays put.
+    if (!bottomHideArmed && downVelocity >= BOTTOM_HIDE_VELOCITY) bottomHideArmed = true;
+    if (bottomHideArmed) glideBottom(1);
   } else if (dy < 0) {
+    bottomHideArmed = false; // scrolling up cancels a pending collapse
     const upVelocity = (-dy / dt) * 1000; // px per second
     // Only a distinctly fast up-flick brings the full bar back (any distance).
     if (!bottomArmed && upVelocity >= BOTTOM_REVEAL_VELOCITY) bottomArmed = true;
@@ -197,6 +237,7 @@ export function trackFeedScroll(y: number): void {
 export function settleFeedChrome(): void {
   if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
   bottomArmed = false;
+  bottomHideArmed = false;
   if (!botGliding && botValue !== 0 && botValue !== 1) {
     Animated.timing(feedChrome, { toValue: 0, duration: 320, easing: EASE, useNativeDriver: true }).start();
   }
@@ -206,6 +247,7 @@ export function settleFeedChrome(): void {
 export function setFeedChromeHidden(next: boolean): void {
   const to = next ? 1 : 0;
   bottomArmed = false;
+  bottomHideArmed = false;
   suppressed = true; // ignore leftover momentum until the next real drag
   clearTopSettle();  // programmatic spring below owns the header now
   stopBottomGlide();

@@ -24,11 +24,26 @@ export function useTheme() {
   return useContext(ThemeContext);
 }
 
-// Build a StyleSheet from the active palette and memoize it per theme. Pass a
-// module-level factory: `const styles = useThemedStyles(makeStyles)`.
+// Build a StyleSheet from the active palette and memoize it per (factory,
+// palette) MODULE-WIDE — not per component instance. Pass a module-level
+// factory: `const styles = useThemedStyles(makeStyles)`. Per-instance useMemo
+// meant every card mounted mid-scroll re-ran its entire ~100-entry sheet; now
+// each sheet is built exactly once per theme, app-wide. (Inline factories
+// still work — they just fall back to rebuild-per-render, same as before.)
+const themedStylesCache = new WeakMap<(c: ThemePalette) => unknown, WeakMap<ThemePalette, unknown>>();
 export function useThemedStyles<T>(factory: (c: ThemePalette) => T): T {
   const { colors } = useTheme();
-  return useMemo(() => factory(colors), [factory, colors]);
+  let perPalette = themedStylesCache.get(factory as (c: ThemePalette) => unknown);
+  if (!perPalette) {
+    perPalette = new WeakMap();
+    themedStylesCache.set(factory as (c: ThemePalette) => unknown, perPalette);
+  }
+  let styles = perPalette.get(colors) as T | undefined;
+  if (styles === undefined) {
+    styles = factory(colors);
+    perPalette.set(colors, styles);
+  }
+  return styles;
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

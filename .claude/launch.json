@@ -12,6 +12,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["admin-console/serve.mjs"],
       "port": 5599
+    },
+    {
+      "name": "Laybell Phone",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start", "--", "--dev-client", "-p", "8082"],
+      "port": 8082
     }
   ]
 }

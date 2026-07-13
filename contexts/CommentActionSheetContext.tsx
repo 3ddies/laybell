@@ -8,6 +8,7 @@ import { useTheme, useThemedStyles } from './ThemeContext';
 import { useTranslation } from './LanguageContext';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { setCommentActionHandler, type CommentActionRequest } from '../lib/commentActions';
+import { selection } from '../lib/haptics';
 
 // Polished bottom action sheet for a long-pressed comment — replacing the old
 // long-press-to-delete. Reply always; Delete for your own comment; Report for
@@ -26,6 +27,7 @@ export function CommentActionSheetProvider({ children }: { children: React.React
 
   useEffect(() => {
     setCommentActionHandler((req) => {
+      selection(); // native tick as the long-press comment sheet opens
       reqRef.current = req;
       closingRef.current = false;
       setMounted(true);

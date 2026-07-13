@@ -1,5 +1,5 @@
 diff --git a/node_modules/react-native-pager-view/android/src/fabric/java/com/reactnativepagerview/PagerViewViewManager.kt b/node_modules/react-native-pager-view/android/src/fabric/java/com/reactnativepagerview/PagerViewViewManager.kt
-index 8ec286a..bddcbd0 100644
+index 8ec286a..5670638 100644
 --- a/node_modules/react-native-pager-view/android/src/fabric/java/com/reactnativepagerview/PagerViewViewManager.kt
 +++ b/node_modules/react-native-pager-view/android/src/fabric/java/com/reactnativepagerview/PagerViewViewManager.kt
 @@ -53,6 +53,10 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>(), RNCViewPa
@@ -13,21 +13,24 @@ index 8ec286a..bddcbd0 100644
                  override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
                      super.onPageScrolled(position, positionOffset, positionOffsetPixels)
                      UIManagerHelper.getEventDispatcherForReactTag(reactContext, host.id)?.dispatchEvent(
-@@ -62,6 +66,13 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>(), RNCViewPa
+@@ -62,6 +66,16 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>(), RNCViewPa
  
                  override fun onPageSelected(position: Int) {
                      super.onPageSelected(position)
 +                    // Laybell: haptic the instant a USER SWIPE commits to a new page.
 +                    // onPageSelected fires only on an actual page change (snap-backs
 +                    // don't), and userDragging gates out programmatic changes/taps.
-+                    if (userDragging) {
++                    // Only for pagers with MORE than 2 pages, so the 2-page
++                    // SwipeBackPager (pop-up dismissals) stays silent while the tab
++                    // bar / profile / multi-slide carousels keep their tick.
++                    if (userDragging && (vp.adapter?.itemCount ?: 0) > 2) {
 +                        vp.isHapticFeedbackEnabled = true
 +                        vp.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
 +                    }
                      UIManagerHelper.getEventDispatcherForReactTag(reactContext, host.id)?.dispatchEvent(
                              PageSelectedEvent(host.id, position)
                      )
-@@ -69,6 +80,11 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>(), RNCViewPa
+@@ -69,6 +83,11 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>(), RNCViewPa
  
                  override fun onPageScrollStateChanged(state: Int) {
                      super.onPageScrollStateChanged(state)
@@ -40,7 +43,7 @@ index 8ec286a..bddcbd0 100644
                          ViewPager2.SCROLL_STATE_IDLE -> "idle"
                          ViewPager2.SCROLL_STATE_DRAGGING -> "dragging"
 diff --git a/node_modules/react-native-pager-view/android/src/paper/java/com/reactnativepagerview/PagerViewViewManager.kt b/node_modules/react-native-pager-view/android/src/paper/java/com/reactnativepagerview/PagerViewViewManager.kt
-index 66ad7b6..5e90dfb 100644
+index 66ad7b6..e32f8da 100644
 --- a/node_modules/react-native-pager-view/android/src/paper/java/com/reactnativepagerview/PagerViewViewManager.kt
 +++ b/node_modules/react-native-pager-view/android/src/paper/java/com/reactnativepagerview/PagerViewViewManager.kt
 @@ -38,6 +38,10 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>() {
@@ -54,12 +57,15 @@ index 66ad7b6..5e90dfb 100644
                  override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
                      super.onPageScrolled(position, positionOffset, positionOffsetPixels)
                      eventDispatcher.dispatchEvent(
-@@ -46,12 +50,22 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>() {
+@@ -46,12 +50,25 @@ class PagerViewViewManager : ViewGroupManager<NestedScrollableHost>() {
  
                  override fun onPageSelected(position: Int) {
                      super.onPageSelected(position)
 +                    // Laybell: haptic the instant a USER SWIPE commits to a new page.
-+                    if (userDragging) {
++                    // Only for pagers with MORE than 2 pages, so the 2-page
++                    // SwipeBackPager (pop-up dismissals) stays silent while the tab
++                    // bar / profile / multi-slide carousels keep their tick.
++                    if (userDragging && (vp.adapter?.itemCount ?: 0) > 2) {
 +                        vp.isHapticFeedbackEnabled = true
 +                        vp.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
 +                    }
@@ -78,7 +84,7 @@ index 66ad7b6..5e90dfb 100644
                          ViewPager2.SCROLL_STATE_IDLE -> "idle"
                          ViewPager2.SCROLL_STATE_DRAGGING -> "dragging"
 diff --git a/node_modules/react-native-pager-view/ios/Fabric/RNCPagerViewComponentView.mm b/node_modules/react-native-pager-view/ios/Fabric/RNCPagerViewComponentView.mm
-index 067f92e..24786bc 100644
+index 067f92e..694cfca 100644
 --- a/node_modules/react-native-pager-view/ios/Fabric/RNCPagerViewComponentView.mm
 +++ b/node_modules/react-native-pager-view/ios/Fabric/RNCPagerViewComponentView.mm
 @@ -23,6 +23,9 @@ using namespace facebook::react;
@@ -105,7 +111,7 @@ index 067f92e..24786bc 100644
      const auto strongEventEmitter = *std::dynamic_pointer_cast<const RNCViewPagerEventEmitter>(_eventEmitter);
      strongEventEmitter.onPageScrollStateChanged(RNCViewPagerEventEmitter::OnPageScrollStateChanged{.pageScrollState =  RNCViewPagerEventEmitter::OnPageScrollStateChangedPageScrollState::Dragging });
  }
-@@ -294,7 +304,21 @@ using namespace facebook::react;
+@@ -294,7 +304,25 @@ using namespace facebook::react;
          }
      }
  
@@ -118,7 +124,11 @@ index 067f92e..24786bc 100644
 +    // overscroll (cropped to centre above) targets centre, so it stays silent.
 +    CGFloat centre = [self isHorizontal] ? scrollView.bounds.size.width : scrollView.bounds.size.height;
 +    CGFloat settleTarget = [self isHorizontal] ? targetContentOffset->x : targetContentOffset->y;
-+    if (centre > 0 && fabs(settleTarget - centre) > centre * 0.5) {
++    // Laybell: ...AND only for pagers with MORE than 2 pages. This silences the
++    // 2-page SwipeBackPager (every pop-up screen — post, shop, settings, … — is a
++    // dismiss-page + content pair), while the tab bar (6), the profile pager (4-5)
++    // and multi-slide carousels (3+) keep their swipe-land tick.
++    if (centre > 0 && fabs(settleTarget - centre) > centre * 0.5 && _nativeChildrenViewControllers.count > 2) {
 +        if (!_swipeHaptic) {
 +            _swipeHaptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
 +        }
@@ -129,7 +139,7 @@ index 067f92e..24786bc 100644
  
  - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
 diff --git a/node_modules/react-native-pager-view/ios/RNCPagerView.m b/node_modules/react-native-pager-view/ios/RNCPagerView.m
-index 19552ce..640c11e 100644
+index 19552ce..f5aefe4 100644
 --- a/node_modules/react-native-pager-view/ios/RNCPagerView.m
 +++ b/node_modules/react-native-pager-view/ios/RNCPagerView.m
 @@ -20,6 +20,10 @@
@@ -157,7 +167,7 @@ index 19552ce..640c11e 100644
      [self.eventDispatcher sendEvent:[[RCTOnPageScrollStateChanged alloc] initWithReactTag:self.reactTag state:@"dragging" coalescingKey:_coalescingKey++]];
  }
  
-@@ -392,6 +403,22 @@
+@@ -392,6 +403,24 @@
              [self.eventDispatcher sendEvent:[[RCTOnPageScrollStateChanged alloc] initWithReactTag:self.reactTag state:@"idle" coalescingKey:_coalescingKey++]];
          }
      }
@@ -170,7 +180,9 @@ index 19552ce..640c11e 100644
 +    // overscroll (cropped to centre above) targets centre, so it stays silent.
 +    CGFloat centre = [self isHorizontal] ? scrollView.bounds.size.width : scrollView.bounds.size.height;
 +    CGFloat settleTarget = [self isHorizontal] ? targetContentOffset->x : targetContentOffset->y;
-+    if (centre > 0 && fabs(settleTarget - centre) > centre * 0.5) {
++    // Laybell: ...AND only for pagers with MORE than 2 pages — silences the 2-page
++    // SwipeBackPager (pop-up screen dismissals) while multi-page pagers keep their tick.
++    if (centre > 0 && fabs(settleTarget - centre) > centre * 0.5 && self.reactSubviews.count > 2) {
 +        if (!self.swipeHaptic) {
 +            self.swipeHaptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
 +        }

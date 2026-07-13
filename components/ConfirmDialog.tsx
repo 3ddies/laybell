@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { notifyWarning } from '../lib/haptics';
 
 type Props = {
   visible: boolean;
@@ -49,6 +50,7 @@ export default function ConfirmDialog({
 
   useEffect(() => {
     if (visible) {
+      if (destructive) notifyWarning(); // iOS warning buzz when a destructive prompt appears
       setRender(true);
       anim.setValue(0);
       Animated.timing(anim, { toValue: 1, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();

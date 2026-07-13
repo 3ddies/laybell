@@ -313,7 +313,9 @@ export default function StoryViewerScreen() {
       toValue: 1,
       duration: Math.max(0, IMAGE_DURATION_MS * (1 - from)),
       easing: Easing.linear,
-      useNativeDriver: false,
+      // progressAnim drives a scaleX transform — native-driven, so the bar
+      // keeps gliding even while the story media is decoding on the JS thread.
+      useNativeDriver: true,
     });
     animRef.current = anim;
     anim.start(({ finished }) => { if (finished) { animRef.current = null; goNext(); } });
@@ -322,7 +324,7 @@ export default function StoryViewerScreen() {
   function animateProgressTo(toValue: number, duration: number) {
     stopProgressAnim();
     const anim = Animated.timing(progressAnim, {
-      toValue, duration, easing: Easing.linear, useNativeDriver: false,
+      toValue, duration, easing: Easing.linear, useNativeDriver: true,
     });
     animRef.current = anim;
     anim.start();

@@ -138,13 +138,26 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
   const jobsRef = useRef<Map<string, VideoJob>>(new Map());
   const prewarmRef = useRef<Map<string, PrewarmEntry>>(new Map());
 
+  // Upload-task progress callbacks fire once per chunk (hundreds of times on a
+  // long video) and `pending` flows into the Home feed's list data — unthrottled,
+  // every chunk re-rendered the ENTIRE feed. Progress-only patches are dropped
+  // unless they moved ≥2% or ≥100ms passed; phase changes always apply.
+  const lastProgress = useRef<Map<string, { p: number; t: number }>>(new Map());
   const update = useCallback((tempId: string, patch: Partial<PendingUpload>) => {
+    const keys = Object.keys(patch);
+    if (keys.length === 1 && keys[0] === 'progress' && typeof patch.progress === 'number' && patch.progress < 1) {
+      const now = Date.now();
+      const last = lastProgress.current.get(tempId);
+      if (last && patch.progress - last.p < 0.02 && now - last.t < 100) return;
+      lastProgress.current.set(tempId, { p: patch.progress, t: now });
+    }
     setPending((list) => list.map((p) => (p.tempId === tempId ? { ...p, ...patch } : p)));
   }, []);
 
   const remove = useCallback((tempId: string) => {
     setPending((list) => list.filter((p) => p.tempId !== tempId));
     jobsRef.current.delete(tempId);
+    lastProgress.current.delete(tempId);
   }, []);
 
   const run = useCallback(async (tempId: string, job: VideoJob) => {

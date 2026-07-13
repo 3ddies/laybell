@@ -124,6 +124,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     borderRadius: RADIUS.lg,
     padding: SPACING.md, borderWidth: 1, borderColor: colors.border, gap: SPACING.md,
+    // Opaque base under the gradient fill (invisible) — without it, iOS can't
+    // use the fast bounds shadowPath and computes the shadow from the layer's
+    // alpha: an offscreen pass per audio card while the feed scrolls.
+    backgroundColor: colors.surface,
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },

@@ -14,6 +14,7 @@ import { isAudioPost } from '../lib/genres';
 import { supabase } from '../lib/supabase';
 import { bumpBadge } from '../lib/badges';
 import { createNotification } from '../lib/createNotification';
+import { selection } from '../lib/haptics';
 import { useProfile } from './ProfileContext';
 import { useTranslation } from './LanguageContext';
 import { isReposted, addRepost, removeRepost } from '../lib/reposts';
@@ -80,7 +81,7 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
   // the sheet's overlay). {url, dur} of the source video, or null when closed.
   const [gifVideo, setGifVideo] = useState<{ url: string; dur: number; postId: string | null } | null>(null);
 
-  const show = (o: PostOptionsArgs) => { setOpts(o); setVisible(true); };
+  const show = (o: PostOptionsArgs) => { selection(); setOpts(o); setVisible(true); }; // native tick as the 3-dot / long-press sheet opens
 
   const sheets = (
     <>

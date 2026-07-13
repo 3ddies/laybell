@@ -30,19 +30,29 @@ const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
 
 // ─── Shared pulse ────────────────────────────────────────────────────────────
-// One module-level value, looped once, lazily. Each block reads the same value,
-// so they pulse together and we never spin up more than one native animation.
+// One module-level value, looped lazily. Each block reads the same value, so
+// they pulse together and we never spin up more than one native animation.
+// REF-COUNTED: the loop stops when the last skeleton unmounts — un-stopped it
+// kept the native display link ticking for the rest of the session (plus a
+// small JS re-arm every cycle) with zero skeletons on screen.
 const pulse = new Animated.Value(0);
-let pulseStarted = false;
-function ensurePulse() {
-  if (pulseStarted) return;
-  pulseStarted = true;
-  Animated.loop(
+let pulseUsers = 0;
+let pulseAnim: Animated.CompositeAnimation | null = null;
+function retainPulse() {
+  pulseUsers++;
+  if (pulseUsers > 1) return;
+  pulse.setValue(0);
+  pulseAnim = Animated.loop(
     Animated.sequence([
       Animated.timing(pulse, { toValue: 1, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       Animated.timing(pulse, { toValue: 0, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
     ]),
-  ).start();
+  );
+  pulseAnim.start();
+}
+function releasePulse() {
+  pulseUsers = Math.max(0, pulseUsers - 1);
+  if (pulseUsers === 0 && pulseAnim) { pulseAnim.stop(); pulseAnim = null; }
 }
 
 // A grey that reads clearly against each theme's background (the light theme's
@@ -66,7 +76,7 @@ export function Skeleton({
 }) {
   const { mode } = useTheme();
   const opacity = useRef(pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] })).current;
-  useEffect(() => { ensurePulse(); }, []);
+  useEffect(() => { retainPulse(); return releasePulse; }, []);
   return (
     <Animated.View
       style={[
