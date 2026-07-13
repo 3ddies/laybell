@@ -64,15 +64,22 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
     const nx = Math.min(Math.max(x, 0), maxX);
     startXRef.current = nx;
     setStartX(nx);
-    onChange((nx / trackW) * duration);
+    // Deliberately NO onChange here: it re-rendered the ENTIRE ~1800-line
+    // composer screen on every drag frame (trimStart is top-level post.tsx
+    // state that nothing renders live) — a literal "slider lags" reproducer.
+    // The trim window itself still tracks the finger 1:1 via local state.
   };
+  const commitTrim = () => onChange((startXRef.current / trackW) * duration);
 
   const pan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: () => { grabX.current = startXRef.current; },
     onPanResponderMove: (_e, g) => setStartFromX(grabX.current + g.dx),
-    onPanResponderRelease: () => { genFrame((startXRef.current / trackW) * duration); },
+    // Commit the trim once per gesture (release AND terminate — a responder
+    // steal mid-drag must still land the window where the finger left it).
+    onPanResponderRelease: () => { commitTrim(); genFrame((startXRef.current / trackW) * duration); },
+    onPanResponderTerminate: () => { commitTrim(); genFrame((startXRef.current / trackW) * duration); },
   })).current;
 
   return (

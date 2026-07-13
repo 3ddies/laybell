@@ -9,6 +9,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { aspectToNumber } from '../lib/aspectRatio';
 import SlideshowCarousel from './SlideshowCarousel';
 import { parseSlides, isSlideshow } from '../lib/slideshow';
+import { useCardPlayback } from '../lib/feedVideo';
 import type { AdMeta } from '../lib/ads';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -22,15 +23,16 @@ const MAX_VIDEO_H = SCREEN_W * 1.25;
 
 type Props = {
   item: any; // feed ad item: { id, type, media_url, slides, aspect_ratio, __ad }
-  // Mount the native video player only when the card is near-visible (same
-  // discipline as PostCard); defaults true so other hosts are unaffected.
-  isVisibleVideo?: boolean;
-  shouldPlayVideo: boolean;
   onCta: (item: any) => void;
   onOptions: (item: any) => void;
 };
 
-const SponsoredCard = memo(function SponsoredCard({ item, isVisibleVideo = true, shouldPlayVideo, onCta, onOptions }: Props) {
+// Playback flags come from the per-card store (lib/feedVideo) instead of props,
+// so a viewability/gate change re-renders only this card, never the whole list.
+// The home feed is this component's only host (ad ids never enter the warm set,
+// so isVisibleVideo here means exactly "this ad is the visible video").
+const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions }: Props) {
+  const { isVisibleVideo, shouldPlayVideo } = useCardPlayback(item.id);
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();

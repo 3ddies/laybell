@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -24,16 +24,26 @@ const AMBIENT_THRESHOLD_MS = 30_000;            // 30s of genuine listening → 
 const AMBIENT_WINDOW_MS = 24 * 60 * 60 * 1000;  // per-song cap window (matches the rest)
 const AMBIENT_KEY = 'ambient_stream_progress_v1';
 
-type PostMusicType = {
-  activeId: string | null;          // host post/story id whose song is playing
-  muted: boolean;
+type PostMusicActions = {
   toggleMuted: () => void;
   // Play `songId`'s audio for host `hostId`. mediaUrl optional (resolved + cached).
   playSong: (hostId: string, songId: string, mediaUrl?: string | null) => void;
   stop: (hostId?: string) => void;  // stop (optionally only if hostId is the active one)
 };
+type PostMusicType = PostMusicActions & {
+  activeId: string | null;          // host post/story id whose song is playing
+  muted: boolean;
+};
 
-const Ctx = createContext<PostMusicType | null>(null);
+// SPLIT contexts — this provider's value used to be one unmemoized object, so
+// every `activeId` flip (EVERY reel/feed swipe onto a song post) re-rendered
+// every usePostMusic() consumer app-wide — including the entire Home feed
+// sitting under the reels modal. Actions are identity-stable forever; `muted`
+// and `activeId` each get their own context so consumers subscribe to exactly
+// what they render (most hot paths need actions + muted, never activeId).
+const ActionsCtx = createContext<PostMusicActions | null>(null);
+const MutedCtx = createContext<boolean>(false);
+const ActiveIdCtx = createContext<string | null>(null);
 
 export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   const { isPlaying: mainPlaying } = useAudio();
@@ -211,15 +221,36 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   // Tidy up on unmount — persist ambient progress first so nothing is lost.
   useEffect(() => () => { saveAmbient(); teardown(); }, []);
 
+  // Stable forever: the functions close over refs + stable setters only.
+  const actions = useMemo(() => ({ toggleMuted, playSong, stop }), []);
+
   return (
-    <Ctx.Provider value={{ activeId, muted, toggleMuted, playSong, stop }}>
-      {children}
-    </Ctx.Provider>
+    <ActionsCtx.Provider value={actions}>
+      <MutedCtx.Provider value={muted}>
+        <ActiveIdCtx.Provider value={activeId}>
+          {children}
+        </ActiveIdCtx.Provider>
+      </MutedCtx.Provider>
+    </ActionsCtx.Provider>
   );
 }
 
-export function usePostMusic() {
-  const c = useContext(Ctx);
-  if (!c) throw new Error('usePostMusic must be used within PostMusicProvider');
+// Narrow hooks — use these on hot paths (feeds, reels, viewers):
+// actions never change identity; muted changes only on user mute-taps.
+export function usePostMusicActions(): PostMusicActions {
+  const c = useContext(ActionsCtx);
+  if (!c) throw new Error('usePostMusicActions must be used within PostMusicProvider');
   return c;
+}
+export function usePostMusicMuted(): boolean {
+  return useContext(MutedCtx);
+}
+
+// Full hook — subscribes to activeId too (re-renders per song-host change);
+// only for screens that actually render activeId (story-camera preview, shop).
+export function usePostMusic(): PostMusicType {
+  const actions = usePostMusicActions();
+  const muted = useContext(MutedCtx);
+  const activeId = useContext(ActiveIdCtx);
+  return useMemo(() => ({ ...actions, muted, activeId }), [actions, muted, activeId]);
 }

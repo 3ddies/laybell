@@ -35,6 +35,15 @@ export function usePagerSwiping(): boolean {
   return useSyncExternalStore(subscribeSwiping, () => swipingNow);
 }
 
+// Raw store access for OTHER module stores that need to fold the swipe flag
+// into their own derived state without a React hook (see lib/feedVideo.ts).
+export function subscribePagerSwiping(cb: () => void): () => void {
+  return subscribeSwiping(cb);
+}
+export function getPagerSwiping(): boolean {
+  return swipingNow;
+}
+
 // Lets a deep child temporarily turn the tab navigator's swipe off/on — e.g. a
 // horizontal slideshow carousel disables it while you swipe between slides so the
 // gesture doesn't bubble up and change tabs. Default is a no-op (outside the tabs,

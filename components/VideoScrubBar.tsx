@@ -72,13 +72,22 @@ export default forwardRef<VideoScrubBarHandle, Props>(function VideoScrubBar(
   };
   const endScrub = () => { draggingRef.current = false; setDragging(false); onScrubbingChange?.(false); };
 
+  // The visible line sits `bottomInset` up from the wrap's bottom, i.e. at
+  // local y ≈ reachAbove + 3. Touches near it claim INSTANTLY (tap-to-seek);
+  // the rest of the band claims only on HORIZONTAL movement — previously the
+  // whole ~50px bottom band start-captured every touch, so vertical page
+  // swipes that began there silently did nothing (a reels "dead zone").
+  const nearLineRef = useRef((locY: number) => Math.abs(locY - (reachAbove + 3)) <= 14);
+  nearLineRef.current = (locY: number) => Math.abs(locY - (reachAbove + 3)) <= 14;
   const pan = useRef(
     PanResponder.create({
-      // Claim the touch the instant it lands in the bar…
-      onStartShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponderCapture: () => true,
+      // Instant claim only near the visible line…
+      onStartShouldSetPanResponder: (e) => nearLineRef.current(e.nativeEvent.locationY),
+      onStartShouldSetPanResponderCapture: (e) => nearLineRef.current(e.nativeEvent.locationY),
+      // …elsewhere in the band, claim on horizontal intent (scrub drags),
+      // letting vertical swipes fall through to the pager.
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
+      onMoveShouldSetPanResponderCapture: (_e, g) => Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
       // …and REFUSE to hand it to the parent pager / swipe-to-dismiss, so a drag
       // here never leaks out as a sideways page swipe.
       onPanResponderTerminationRequest: () => false,

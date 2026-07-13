@@ -28,7 +28,7 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import { captionStickerTextStyle, resolveSticker } from '../../components/StickerLayer';
 import { useStories } from '../../contexts/StoriesContext';
 import { useProfile } from '../../contexts/ProfileContext';
-import { usePostMusic } from '../../contexts/PostMusicContext';
+import { usePostMusicActions, usePostMusicMuted } from '../../contexts/PostMusicContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { StorySkeleton, Skeleton } from '../../components/Skeleton';
 import Spinner from '../../components/Spinner';
@@ -50,7 +50,8 @@ export default function StoryViewerScreen() {
   const isFocused = useIsFocused();
   const { refresh: refreshStories, markSeen } = useStories();
   const { profile: myProfile } = useProfile();
-  const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
+  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted } = usePostMusicActions();
+  const songMuted = usePostMusicMuted();
   const { userId, users, src, story: storyParam, archived: archivedParam } = useLocalSearchParams<{ userId: string; users?: string; src?: string; story?: string; archived?: string }>();
 
   // Archived replay (from Settings → Archive): play ONE expired story back like

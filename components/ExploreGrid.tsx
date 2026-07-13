@@ -690,11 +690,13 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={[styles.scroll, bottomPad ? { paddingBottom: bottomPad } : null]}
+      // 16 is deliberate: the chrome is discrete (state picks + native glides),
+      // so nothing needs per-frame JS scroll events (see feedChrome).
       scrollEventThrottle={16}
       onScroll={e => {
         scrollY.current = e.nativeEvent.contentOffset.y;
         recomputeActive();
-        if (trackChrome) trackFeedScroll(e.nativeEvent.contentOffset.y);
+        if (trackChrome) trackFeedScroll(e.nativeEvent.contentOffset.y, e.nativeEvent.contentSize.height - e.nativeEvent.layoutMeasurement.height);
       }}
       onScrollBeginDrag={trackChrome ? feedDragStart : undefined}
       onScrollEndDrag={trackChrome ? feedDragEnd : undefined}

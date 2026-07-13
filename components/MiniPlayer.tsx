@@ -160,8 +160,11 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   // locked until AUDIO_AD_SKIP_MS; there's no close (the ad can't be dismissed).
   if (adState) {
     const bottomOffset = 68 + insets.bottom + 6;
-    const secsLeft = Math.max(1, Math.ceil((AUDIO_AD_SKIP_MS - adState.elapsedMs) / 1000));
-    const adProgress = adState.durationMs > 0 ? adState.elapsedMs / adState.durationMs : 0;
+    // Elapsed/duration come from the position channel (useAudioPosition above) —
+    // during an ad it carries the ad player's ticks, so only THIS bar re-renders
+    // per tick instead of every useAudio() consumer app-wide.
+    const secsLeft = Math.max(1, Math.ceil((AUDIO_AD_SKIP_MS - positionMs) / 1000));
+    const adProgress = durationMs > 0 ? positionMs / durationMs : 0;
     return (
       <Animated.View style={[styles.container, { bottom: bottomOffset, transform: [{ translateY: Animated.add(Animated.add(listenSlide, dockSlide), chromeSlide) }] }]}>
         {/* Progress fill (non-interactive — ads aren't seekable). */}

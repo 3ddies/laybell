@@ -60,10 +60,12 @@ export function parseAttachment(body: string): ParsedAttachment | null {
 // Returns null if the user cancels or denies permission.
 export async function pickImageAttachment(userId: string): Promise<Attachment | null> {
   const ImagePicker = await import('expo-image-picker');
-  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) return null;
+  // No permission gate: the system PHPicker needs none (SDK 54 docs — "No
+  // permissions request is necessary for launching the image library"). The
+  // old requestMediaLibraryPermissionsAsync added an IPC round-trip per open
+  // and a needless full-library prompt on fresh installs.
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    mediaTypes: ['images'],
     quality: 0.9,
   });
   if (result.canceled || !result.assets?.[0]) return null;

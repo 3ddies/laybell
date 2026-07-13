@@ -83,6 +83,39 @@ function Progress() {
   );
 }
 
+// Ad elapsed/duration ride the same position channel (the ad player's ticks
+// route through it while the music is paused) — scoped to these two small
+// blocks so the full player doesn't re-render 4×/sec during an ad (that
+// app-wide 4Hz re-render was a global "split-second lag" source).
+function AdProgress() {
+  const styles = useThemedStyles(makeStyles);
+  const { positionMs, durationMs } = useAudioPosition();
+  return (
+    <View style={[styles.progressBlock, { width: '100%' }]}>
+      <View style={styles.adProgressTrack}>
+        <View style={[styles.adProgressFill, { width: `${Math.round((durationMs > 0 ? positionMs / durationMs : 0) * 100)}%` }]} />
+      </View>
+      <View style={styles.times}>
+        <Text style={styles.timeText}>{formatMs(positionMs)}</Text>
+        <Text style={styles.timeText}>{durationMs > 0 ? formatMs(durationMs) : '--:--'}</Text>
+      </View>
+    </View>
+  );
+}
+
+function AdSkipButton({ canSkip, onSkip }: { canSkip: boolean; onSkip: () => void }) {
+  const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
+  const { positionMs } = useAudioPosition();
+  return (
+    <TouchableOpacity style={[styles.adSkipBtn, !canSkip && styles.adSkipDisabled]} disabled={!canSkip} onPress={onSkip}>
+      <Text style={styles.adSkipText}>
+        {canSkip ? t('nowPlaying.skipAd') : t('nowPlaying.skipIn', { secs: Math.max(1, Math.ceil((AUDIO_AD_SKIP_MS - positionMs) / 1000)) })}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 function Controls() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -404,15 +437,9 @@ export default function NowPlaying() {
             </View>
 
             {/* Ad progress (non-interactive — ads aren't seekable). */}
-            <View style={[styles.progressBlock, { width: '100%' }]}>
-              <View style={styles.adProgressTrack}>
-                <View style={[styles.adProgressFill, { width: `${Math.round((adState.durationMs > 0 ? adState.elapsedMs / adState.durationMs : 0) * 100)}%` }]} />
-              </View>
-              <View style={styles.times}>
-                <Text style={styles.timeText}>{formatMs(adState.elapsedMs)}</Text>
-                <Text style={styles.timeText}>{adState.durationMs > 0 ? formatMs(adState.durationMs) : '--:--'}</Text>
-              </View>
-            </View>
+            {/* Own position subscription (like Progress) — only this block
+                re-renders per ad tick. */}
+            <AdProgress />
 
             {!!adState.ctaUrl && (
               <TouchableOpacity
@@ -429,15 +456,7 @@ export default function NowPlaying() {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={[styles.adSkipBtn, !adState.canSkip && styles.adSkipDisabled]}
-              disabled={!adState.canSkip}
-              onPress={skipAudioAd}
-            >
-              <Text style={styles.adSkipText}>
-                {adState.canSkip ? t('nowPlaying.skipAd') : t('nowPlaying.skipIn', { secs: Math.max(1, Math.ceil((AUDIO_AD_SKIP_MS - adState.elapsedMs) / 1000)) })}
-              </Text>
-            </TouchableOpacity>
+            <AdSkipButton canSkip={adState.canSkip} onSkip={skipAudioAd} />
           </View>
         ) : (
         <KeyboardAvoidingView

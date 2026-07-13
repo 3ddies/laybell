@@ -140,10 +140,10 @@ export default function CreateAdScreen() {
   // ── Media picking ──────────────────────────────────────────────────────────
   async function pickPhotos(p: AdPlacement) {
     const ImagePicker = await import('expo-image-picker');
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert(t('adCreate.photosNeededTitle'), t('adCreate.photosNeededBody')); return; }
+    // No permission gate — the system PHPicker needs none (SDK 54 docs), and the
+    // old request added an IPC round-trip + a needless full-library prompt.
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsMultipleSelection: true,
       selectionLimit: 8,
       quality: 0.85,
@@ -183,10 +183,8 @@ export default function CreateAdScreen() {
   // plays like a song in the player.
   async function pickCover(p: AdPlacement) {
     const ImagePicker = await import('expo-image-picker');
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert(t('adCreate.photosNeededTitle'), t('adCreate.photosNeededBody')); return; }
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsMultipleSelection: false,
       quality: 0.85,
     });
@@ -200,10 +198,8 @@ export default function CreateAdScreen() {
   // this picker only appears when "This is a business" is on.
   async function pickBusinessAvatar() {
     const ImagePicker = await import('expo-image-picker');
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert(t('adCreate.photosNeededTitle'), t('adCreate.photosNeededBody')); return; }
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsMultipleSelection: false,
       allowsEditing: true,
       aspect: [1, 1],

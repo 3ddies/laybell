@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, ActivityIndicator,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, ActivityIndicator, Platform,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import * as MediaLibrary from 'expo-media-library';
@@ -9,12 +9,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { resolveAssetUri, evictAssetUri } from '../lib/assetInfoCache';
 
 const NUM_COLS = 4;
 const GAP = 2;
 const SCREEN_W = Dimensions.get('window').width;
 const CELL = (SCREEN_W - GAP * (NUM_COLS - 1)) / NUM_COLS;
+const ROW_H = CELL + GAP; // fixed row geometry (contentContainer gap) → getItemLayout
 const PAGE = 60;
+
+// Session cache of loaded pages, keyed by grid flavor. The grid UNMOUNTS every
+// time the composer advances to the details step (and on the audio sub-tab), so
+// without this every return to the picker re-ran the permission round-trip + a
+// fresh 60-asset fetch + re-decoded every thumbnail — the "grid takes a beat to
+// appear" feel. Remounts now paint instantly from cache while page 1 refreshes
+// underneath (new photos taken since the last visit appear at the top).
+type GridCache = { assets: MediaLibrary.Asset[]; endCursor?: string; hasNext: boolean };
+const gridCache = new Map<string, GridCache>();
 
 export type PickedMedia = {
   id: string;             // MediaLibrary asset id (or the uri for a fresh camera capture)
@@ -65,9 +76,11 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const [permission, requestPermission] = MediaLibrary.usePermissions();
-  const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
-  const [endCursor, setEndCursor] = useState<string | undefined>(undefined);
-  const [hasNext, setHasNext] = useState(true);
+  const cacheKey = videosOnly ? 'videos' : 'all';
+  const cached = gridCache.get(cacheKey);
+  const [assets, setAssets] = useState<MediaLibrary.Asset[]>(cached?.assets ?? []);
+  const [endCursor, setEndCursor] = useState<string | undefined>(cached?.endCursor);
+  const [hasNext, setHasNext] = useState(cached?.hasNext ?? true);
   const [loading, setLoading] = useState(false);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const loadingRef = useRef(false);
@@ -101,6 +114,8 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
         for (const a of page.assets) {
           if (!seen.has(a.id)) { seen.add(a.id); merged.push(a); }
         }
+        // Keep the session cache in lockstep so the next remount paints instantly.
+        gridCache.set(cacheKey, { assets: merged, endCursor: page.endCursor, hasNext: page.hasNextPage });
         return merged;
       });
       setEndCursor(page.endCursor);
@@ -110,7 +125,7 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     }
     loadingRef.current = false;
     setLoading(false);
-  }, [videosOnly]);
+  }, [videosOnly, cacheKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +133,10 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
       let p = permission;
       if (!p || !p.granted) p = await requestPermission();
       if (cancelled || !p?.granted) return;
-      setAssets([]); setEndCursor(undefined); setHasNext(true);
+      // Cached remount: keep painting the cached grid (list is at the top on a
+      // fresh mount, so the refresh below can safely replace it) — only a truly
+      // cold start wipes to empty first.
+      if (!gridCache.has(cacheKey)) { setAssets([]); setEndCursor(undefined); setHasNext(true); }
       loadPage(undefined);
     })();
     return () => { cancelled = true; };
@@ -128,14 +146,18 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     if (resolvingId) return;
     setResolvingId(asset.id);
     try {
-      const info = await MediaLibrary.getAssetInfoAsync(asset);
-      const uri = info.localUri || asset.uri;
+      // Cached across the session (lib/assetInfoCache): re-picking the same
+      // asset — very common while composing slideshows — is now instant, and
+      // the iCloud download only ever happens once per asset.
+      const uri = await resolveAssetUri(asset);
       const type: 'image' | 'video' = asset.mediaType === MediaLibrary.MediaType.video ? 'video' : 'image';
       // Video posters render reliably from the ph:// asset via expo-image.
       const posterUri = type === 'video' ? asset.uri : uri;
       onPick({ id: asset.id, uri, posterUri, width: asset.width, height: asset.height, duration: asset.duration, type });
     } catch {
-      // ignore — user can tap another
+      // A cached localUri can go stale if the asset was edited/deleted —
+      // evict so the next tap resolves fresh.
+      evictAssetUri(asset.id);
     } finally {
       setResolvingId(null);
     }
@@ -184,6 +206,14 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
       onMomentumScrollEnd={() => onScrollActive?.(false)}
       onEndReached={() => { if (hasNext && endCursor && !loadingRef.current) loadPage(endCursor); }}
       onEndReachedThreshold={0.6}
+      // Fixed-geometry virtualization: paint a full screen of cells in the first
+      // pass (default was 10 items ≈ 2.5 rows back-filling batch by batch) and
+      // skip async layout measurement entirely.
+      getItemLayout={(_, index) => ({ length: ROW_H, offset: ROW_H * Math.floor(index / NUM_COLS), index })}
+      initialNumToRender={NUM_COLS * 8}
+      maxToRenderPerBatch={NUM_COLS * 4}
+      windowSize={7}
+      removeClippedSubviews={Platform.OS === 'android'}
       ListFooterComponent={loading ? <ActivityIndicator color={colors.primary} style={{ margin: SPACING.md }} /> : null}
       renderItem={({ item }) => {
         if (item.id === '__camera__') {
@@ -207,6 +237,7 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
               style={styles.thumb}
               contentFit="cover"
               recyclingKey={item.id}
+              cachePolicy="memory-disk"
               transition={120}
             />
             {isVideo && item.duration > 0 && (

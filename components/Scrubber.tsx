@@ -33,13 +33,26 @@ export default function Scrubber({
   const dragging = useRef(false);
   const onSeekRef = useRef(onSeek);
   onSeekRef.current = onSeek;
+  // Post-seek hold: stamped at drag release so stale pre-seek progress ticks
+  // (the 4Hz position prop lags the seek by 1-2 ticks) can't flick the fill
+  // backward before the seek lands.
+  const seekGuard = useRef(0);
+  const seekRatio = useRef(0);
 
   // Glide toward the playback position when not actively dragging.
   useEffect(() => {
     if (dragging.current) return;
-    Animated.timing(anim, { toValue: clamp(progress), duration: 240, useNativeDriver: true }).start();
+    const p = clamp(progress);
+    // Hold at the release point until the reported position agrees (±2%) or
+    // 700ms passes — the fill lands where the finger dropped it and stays.
+    if (Date.now() - seekGuard.current < 700 && Math.abs(p - seekRatio.current) >= 0.02) return;
+    // Pre-measure (width 0): SEED silently instead of animating, so the bar
+    // appears already at position when it first lays out — previously opening
+    // NowPlaying mid-song showed the fill visibly gliding in from zero.
+    if (width === 0) { anim.setValue(p); return; }
+    Animated.timing(anim, { toValue: p, duration: 240, useNativeDriver: true }).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [progress]);
+  }, [progress, width]);
 
   const measure = () => ref.current?.measureInWindow((x, _y, w) => { layout.current = { x, w }; setWidth(w); });
   const ratioFor = (pageX: number) => clamp((pageX - layout.current.x) / (layout.current.w || 1));
@@ -51,8 +64,8 @@ export default function Scrubber({
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: e => { dragging.current = true; anim.stopAnimation(); anim.setValue(ratioFor(e.nativeEvent.pageX)); },
       onPanResponderMove: e => anim.setValue(ratioFor(e.nativeEvent.pageX)),
-      onPanResponderRelease: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); dragging.current = false; onSeekRef.current(r); },
-      onPanResponderTerminate: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); dragging.current = false; onSeekRef.current(r); },
+      onPanResponderRelease: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); dragging.current = false; seekGuard.current = Date.now(); seekRatio.current = r; onSeekRef.current(r); },
+      onPanResponderTerminate: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); dragging.current = false; seekGuard.current = Date.now(); seekRatio.current = r; onSeekRef.current(r); },
     })
   ).current;
 

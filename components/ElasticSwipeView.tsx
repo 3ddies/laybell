@@ -32,9 +32,13 @@ export default function ElasticSwipeView({ children, style, disabled = false }: 
   const pan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
     onStartShouldSetPanResponderCapture: () => false,
+    // 12px (not 6): a page swipe that starts with a slight sideways flick was
+    // getting claimed by the rubber-band, blocking the vertical pager for the
+    // whole gesture ("my swipe did nothing"). Real horizontal wobbles still
+    // clear 12px easily.
     onMoveShouldSetPanResponder: (_e, g) =>
       !disabledRef.current
-      && Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 4,
+      && Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 4,
     onMoveShouldSetPanResponderCapture: () => false,
     onPanResponderMove: (_e, g) => {
       translateX.setValue(Math.sign(g.dx) * rubber(Math.abs(g.dx)));

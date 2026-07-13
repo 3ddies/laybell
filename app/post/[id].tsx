@@ -18,7 +18,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import { useAudio } from '../../contexts/AudioContext';
-import { usePostMusic } from '../../contexts/PostMusicContext';
+import { usePostMusicActions, usePostMusicMuted } from '../../contexts/PostMusicContext';
 import { useIsFocused } from '@react-navigation/native';
 import Comments from '../../components/Comments';
 import MentionText from '../../components/MentionText';
@@ -80,7 +80,8 @@ export default function PostDetailScreen() {
   const initialSlide = indexParam ? (parseInt(indexParam, 10) || 0) : 0;
   const router = useRouter();
   const { currentTrack, isPlaying, play, stop } = useAudio();
-  const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
+  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted } = usePostMusicActions();
+  const songMuted = usePostMusicMuted();
   const isFocused = useIsFocused();
   const flatListRef = useRef<any>(null);
   const { dismiss, popInstant, backdropOpacity, contentStyle } = useExpandTransition();

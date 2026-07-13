@@ -10,7 +10,7 @@ import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
-import { usePostMusic } from '../contexts/PostMusicContext';
+import { usePostMusicActions } from '../contexts/PostMusicContext';
 import { uploadToStorageWithProgress } from '../lib/upload';
 import { makeGifFromVideo, type GifResult, type GifCrop } from '../lib/makeGif';
 import { addUserGif } from '../lib/userGifs';
@@ -42,7 +42,7 @@ export default function GifMakerModal({
   const insets = useSafeAreaInsets();
   const { width: SCREEN_W } = useWindowDimensions();
   const { suspend, resume } = useMediaSuspend();
-  const { stop: stopPostMusic } = usePostMusic();
+  const { stop: stopPostMusic } = usePostMusicActions();
 
   // While the maker is open, pause the post's video/audio playing behind it (and
   // the ambient attached song), so nothing bleeds through. Resume on close.

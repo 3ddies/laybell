@@ -541,14 +541,20 @@ export default function PostScreen() {
       );
       return;
     }
-    let thumb: string | null = null;
-    if (m.type === 'video') { try { const { uri } = await VideoThumbnails.getThumbnailAsync(m.uri, { time: 1000 }); thumb = uri; } catch {} }
+    // Append the slide IMMEDIATELY (the ph:// posterUri renders via expo-image),
+    // then swap in the generated file thumbnail when it lands — previously the
+    // slide didn't even appear until getThumbnailAsync finished.
     setSlides(prev => prev.length >= MAX_SLIDES ? prev
       : [...prev, {
           id: m.id, uri: m.uri, type: m.type, width: m.width, height: m.height,
           durationSec: m.type === 'video' ? m.duration ?? null : null,
-          thumbnailUri: thumb, posterUri: m.posterUri,
+          thumbnailUri: null, posterUri: m.posterUri,
         }]);
+    if (m.type === 'video') {
+      VideoThumbnails.getThumbnailAsync(m.uri, { time: 1000 })
+        .then(({ uri }) => setSlides(prev => prev.map(s => (s.id === m.id ? { ...s, thumbnailUri: uri } : s))))
+        .catch(() => {});
+    }
   }
   function removeSlideById(id: string) { setSlides(prev => prev.filter(s => s.id !== id)); }
   // Tabs: "Posts" returns from Music; "Music" is switchType('audio').

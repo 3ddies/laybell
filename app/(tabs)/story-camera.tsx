@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Alert, Image, TextInput, Linking, Dimensions, Pressable, KeyboardAvoidingView,
@@ -148,18 +148,9 @@ export default function StoryCameraScreen() {
   const [editingFont, setEditingFont] = useState<StickerFont>('classic');
   const [editingColor, setEditingColor] = useState('#FFFFFF');
   const [editingBg, setEditingBg] = useState<StickerBg>('none');
-  const [editingSize, setEditingSize] = useState(26);               // slider-chosen font size
-  const [editorTextH, setEditorTextH] = useState(0);                // measured input height (reliable growth)
-  // Vertical size slider (left edge of the text editor) — position → font size.
-  const sizeSliderPan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (e) => setEditingSize(sizeFromTrackY(e.nativeEvent.locationY)),
-      onPanResponderMove: (e) => setEditingSize(sizeFromTrackY(e.nativeEvent.locationY)),
-    }),
-  ).current;
+  // Last-used slider size: seeds new stickers + the editor (the editor owns the
+  // LIVE value while open — see StickerTextEditor — and commits it back here).
+  const [editingSize, setEditingSize] = useState(26);
   const [kbHeight, setKbHeight] = useState(0);                       // keyboard height (lifts the bottom caption)
   const stickerIdRef = useRef(0);
   const [song, setSong] = useState<PickedSong | null>(null);
@@ -182,7 +173,6 @@ export default function StoryCameraScreen() {
     }]);
     setEditingId(id);
     setEditingText('');
-    setEditorTextH(0);
   }
   function editSticker(id: string) {
     const s = stickers.find((x) => x.id === id);
@@ -193,22 +183,29 @@ export default function StoryCameraScreen() {
     setEditingColor(s?.color ?? '#FFFFFF');
     setEditingBg(s?.bg ?? 'none');
     setEditingSize(s?.size ?? 26);
-    setEditorTextH(0);
   }
   function manipulateSticker(id: string, style: CaptionStyle) {
     setStickers((prev) => prev.map((s) => (s.id === id ? { ...s, ...style } : s)));
   }
-  function finishEditing() {
+  // The editor overlay commits its working values here (Done / backdrop tap) —
+  // same fields, same timing as the old top-level finishEditing. The style also
+  // writes back into the editing* state so it seeds the NEXT sticker, exactly
+  // like the old always-live top-level state did.
+  const commitEditing = useCallback((vals: { text: string; font: StickerFont; color: string; bg: StickerBg; size: number }) => {
     setStickers((prev) =>
       prev
         .map((s) => (s.id === editingId
-          ? { ...s, text: editingText.trim(), font: editingFont, color: editingColor, bg: editingBg, size: editingSize }
+          ? { ...s, text: vals.text.trim(), font: vals.font, color: vals.color, bg: vals.bg, size: vals.size }
           : s))
         .filter((s) => s.text !== ''),
     );
+    setEditingFont(vals.font);
+    setEditingColor(vals.color);
+    setEditingBg(vals.bg);
+    setEditingSize(vals.size);
     setEditingId(null);
     setEditingText('');
-  }
+  }, [editingId]);
   // Drop-on-trash deletion: the zone is the bottom-center circle shown mid-drag.
   function inTrashZone(xNorm: number, yNorm: number) {
     const x = xNorm * SCREEN_W, y = yNorm * SCREEN_H;
@@ -494,7 +491,10 @@ export default function StoryCameraScreen() {
     recTimer.current = setInterval(() => { recSecsRef.current += 1; setRecSecs(recSecsRef.current); }, 1000);
     recProgress.setValue(0);
     Animated.timing(recProgress, {
-      toValue: 1, duration: VIDEO_MAX_SEC * 1000, easing: Easing.linear, useNativeDriver: false,
+      // Native-driven scaleX (same pattern as the story viewer's progress bar):
+      // as a JS width% animation this ran a JS-thread layout pass continuously
+      // for the entire recording, right while the camera loads the JS thread.
+      toValue: 1, duration: VIDEO_MAX_SEC * 1000, easing: Easing.linear, useNativeDriver: true,
     }).start();
     cameraRef.current?.recordAsync({ maxDuration: VIDEO_MAX_SEC })
       .then((video) => {
@@ -608,9 +608,19 @@ export default function StoryCameraScreen() {
   async function pickFromLibrary() {
     const ImagePicker = await import('expo-image-picker');
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: ['images', 'videos'],
       quality: 1,
       videoMaxDuration: VIDEO_MAX_SEC,
+      // iOS: hand back the ORIGINAL file instead of exporting/transcoding at
+      // pick time — the default 'automatic' mode re-encoded HEVC video (and
+      // HEIC stills) before returning, which was seconds of dead wait on the
+      // picker. Safe here: the story upload path re-encodes library images to
+      // JPEG itself (StoryUploadContext.uploadCaptured), and videos ride the
+      // existing compress-before-upload path. Together with quality:1 (and no
+      // editing) this also takes the picker's native fast path, which copies
+      // the bytes rather than re-encoding them.
+      preferredAssetRepresentationMode:
+        ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current,
     });
     if (result.canceled || !result.assets[0]) return;
     const a = result.assets[0];
@@ -693,8 +703,6 @@ export default function StoryCameraScreen() {
 
   // ─── Preview / edit ────────────────────────────────────────────────────────
   if (stage === 'preview' && captured) {
-    const editingPreview = resolveSticker({ font: editingFont, color: editingColor, bg: editingBg, size: editingSize });
-    const sliderKnobTop = ((SIZE_MAX - editingSize) / (SIZE_MAX - SIZE_MIN)) * SLIDER_H - 11;
     return (
       <View style={styles.container}>
         {captured.type === 'image' ? (
@@ -840,103 +848,21 @@ export default function StoryCameraScreen() {
         </View>
         )}
 
-        {/* Full-screen text editor — live-styled preview + font/color toolbar. */}
+        {/* Full-screen text editor — live-styled preview + font/color toolbar.
+            Extracted + memoized (module scope, below) so the size slider's
+            per-move setState re-renders ONLY the overlay, not the whole camera
+            screen. Keyed by sticker id: each editing session mounts fresh from
+            the seed values. */}
         {editingId && (
-          <KeyboardAvoidingView
-            style={[StyleSheet.absoluteFill, styles.stickerEditor]}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <Pressable style={StyleSheet.absoluteFill} onPress={finishEditing} />
-            <View style={[styles.stickerDoneRow, { top: insets.top + 8 }]} pointerEvents="box-none">
-              <TouchableOpacity style={styles.stickerDoneBtn} onPress={finishEditing} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                <Text style={styles.stickerDoneText}>{t('storyCamera.done')}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Size slider — drag to set the type size (how much fits per row) */}
-            <View style={[styles.sizeSlider, { top: SCREEN_H * 0.24 }]} {...sizeSliderPan.panHandlers}>
-              <View style={styles.sizeTrack} />
-              <View style={[styles.sizeKnob, { top: Math.max(0, Math.min(SLIDER_H - 22, sliderKnobTop)) }]} pointerEvents="none" />
-            </View>
-            <View style={styles.stickerInputWrap} pointerEvents="box-none">
-              <View style={[editingPreview.boxStyle, styles.editorBox]}>
-                {/* Deterministic layout: FIXED width (identical to the placed
-                    sticker's wrap width) and the height measured by an
-                    INVISIBLE mirror <Text> below — Text layout is exact, while
-                    a height-controlled iOS TextInput under-reports its own
-                    content (that's why wrapped lines were vanishing). The
-                    mirror is slightly NARROWER than the input to compensate
-                    for UITextView's internal caret padding, so it always wraps
-                    at-or-before the input does → never under-measures. */}
-                <TextInput
-                  style={[styles.stickerInput, editingPreview.textStyle, {
-                    height: (editorTextH > 0
-                      ? editorTextH
-                      : ((editingPreview.textStyle.lineHeight as number) ?? 34)) + 8,
-                    maxHeight: SCREEN_H * 0.45, // can never push itself off-screen
-                  }]}
-                  value={editingText}
-                  onChangeText={setEditingText}
-                  placeholder={t('storyCamera.typeSomething')}
-                  placeholderTextColor="rgba(255,255,255,0.55)"
-                  selectionColor="#FAB525"
-                  cursorColor="#FAB525"
-                  multiline
-                  scrollEnabled={false}
-                  autoFocus
-                  maxLength={200}
-                  textAlign="center"
-                />
-                <Text
-                  style={[styles.stickerInput, editingPreview.textStyle, styles.measureGhost]}
-                  onLayout={(e) => {
-                    const h = Math.ceil(e.nativeEvent.layout.height);
-                    setEditorTextH((prev) => (prev === h ? prev : h));
-                  }}
-                >
-                  {editingText.length === 0 ? ' ' : editingText.endsWith('\n') ? `${editingText} ` : editingText}
-                </Text>
-              </View>
-              <MentionSuggestions
-                query={getActiveMentionQuery(editingText, editingText.length)}
-                onPick={(u) => setEditingText(applyMention(editingText, editingText.length, u).text)}
-                style={{ marginTop: SPACING.md, alignSelf: 'center', minWidth: 240 }}
-                maxHeight={160}
-              />
-            </View>
-
-            {/* Style toolbar — colors, then background toggle + font pills. */}
-            <View style={styles.styleBar}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatchRow} keyboardShouldPersistTaps="always">
-                {STICKER_COLORS.map((c) => (
-                  <TouchableOpacity
-                    key={c}
-                    style={[styles.swatch, { backgroundColor: c }, editingColor === c && styles.swatchActive]}
-                    onPress={() => setEditingColor(c)}
-                  />
-                ))}
-              </ScrollView>
-              <View style={styles.fontRow}>
-                <TouchableOpacity
-                  style={[styles.bgToggle, editingBg !== 'none' && styles.bgToggleActive]}
-                  onPress={() => setEditingBg((b) => (b === 'none' ? 'soft' : b === 'soft' ? 'pill' : 'none'))}
-                >
-                  <Ionicons name="color-fill-outline" size={18} color="#fff" />
-                </TouchableOpacity>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.fontPills} keyboardShouldPersistTaps="always">
-                  {STICKER_FONTS.map((f) => (
-                    <TouchableOpacity
-                      key={f.key}
-                      style={[styles.fontPill, editingFont === f.key && styles.fontPillActive]}
-                      onPress={() => setEditingFont(f.key)}
-                    >
-                      <Text style={[styles.fontPillText, resolveStickerFontPreview(f.key)]}>{f.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
+          <StickerTextEditor
+            key={editingId}
+            initialText={editingText}
+            initialFont={editingFont}
+            initialColor={editingColor}
+            initialBg={editingBg}
+            initialSize={editingSize}
+            onCommit={commitEditing}
+          />
         )}
 
         <SongPickerModal
@@ -1017,7 +943,7 @@ export default function StoryCameraScreen() {
       {recording && (
         <View style={[styles.recBarTrack, { top: insets.top + 4 }]}>
           <Animated.View
-            style={[styles.recBarFill, { width: recProgress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]}
+            style={[styles.recBarFill, { transform: [{ scaleX: recProgress }] }]}
           />
         </View>
       )}
@@ -1166,6 +1092,150 @@ export default function StoryCameraScreen() {
   );
 }
 
+// ─── Sticker text editor overlay ─────────────────────────────────────────────
+// Extracted from the (~1200-line) screen component and memoized: the size
+// slider's PanResponder sets state on EVERY pan move (~30 discrete sizes per
+// sweep), and as top-level screen state each move re-rendered the ENTIRE
+// camera screen (viewfinder, rails, sticker layer) mid-gesture. The working
+// values (text, font, color, bg, size, measured height) live HERE — nothing
+// behind the overlay renders them live (StickerLayer hides the sticker being
+// edited until commit) — and flow back to the screen in one commit, with the
+// same fields and timing as the old finishEditing.
+const StickerTextEditor = memo(function StickerTextEditor({
+  initialText, initialFont, initialColor, initialBg, initialSize, onCommit,
+}: {
+  initialText: string;
+  initialFont: StickerFont;
+  initialColor: string;
+  initialBg: StickerBg;
+  initialSize: number;
+  onCommit: (vals: { text: string; font: StickerFont; color: string; bg: StickerBg; size: number }) => void;
+}) {
+  const { t } = useTranslation();
+  const styles = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+
+  const [text, setText] = useState(initialText);
+  const [font, setFont] = useState<StickerFont>(initialFont);
+  const [color, setColor] = useState(initialColor);
+  const [bg, setBg] = useState<StickerBg>(initialBg);
+  const [size, setSize] = useState(initialSize);   // slider-chosen font size
+  const [textH, setTextH] = useState(0);           // measured input height (reliable growth)
+
+  // Vertical size slider (left edge of the text editor) — position → font size.
+  const sizeSliderPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (e) => setSize(sizeFromTrackY(e.nativeEvent.locationY)),
+      onPanResponderMove: (e) => setSize(sizeFromTrackY(e.nativeEvent.locationY)),
+    }),
+  ).current;
+
+  const preview = resolveSticker({ font, color, bg, size });
+  const sliderKnobTop = ((SIZE_MAX - size) / (SIZE_MAX - SIZE_MIN)) * SLIDER_H - 11;
+  const finish = () => onCommit({ text, font, color, bg, size });
+
+  return (
+    <KeyboardAvoidingView
+      style={[StyleSheet.absoluteFill, styles.stickerEditor]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <Pressable style={StyleSheet.absoluteFill} onPress={finish} />
+      <View style={[styles.stickerDoneRow, { top: insets.top + 8 }]} pointerEvents="box-none">
+        <TouchableOpacity style={styles.stickerDoneBtn} onPress={finish} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={styles.stickerDoneText}>{t('storyCamera.done')}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Size slider — drag to set the type size (how much fits per row) */}
+      <View style={[styles.sizeSlider, { top: SCREEN_H * 0.24 }]} {...sizeSliderPan.panHandlers}>
+        <View style={styles.sizeTrack} />
+        <View style={[styles.sizeKnob, { top: Math.max(0, Math.min(SLIDER_H - 22, sliderKnobTop)) }]} pointerEvents="none" />
+      </View>
+      <View style={styles.stickerInputWrap} pointerEvents="box-none">
+        <View style={[preview.boxStyle, styles.editorBox]}>
+          {/* Deterministic layout: FIXED width (identical to the placed
+              sticker's wrap width) and the height measured by an
+              INVISIBLE mirror <Text> below — Text layout is exact, while
+              a height-controlled iOS TextInput under-reports its own
+              content (that's why wrapped lines were vanishing). The
+              mirror is slightly NARROWER than the input to compensate
+              for UITextView's internal caret padding, so it always wraps
+              at-or-before the input does → never under-measures. */}
+          <TextInput
+            style={[styles.stickerInput, preview.textStyle, {
+              height: (textH > 0
+                ? textH
+                : ((preview.textStyle.lineHeight as number) ?? 34)) + 8,
+              maxHeight: SCREEN_H * 0.45, // can never push itself off-screen
+            }]}
+            value={text}
+            onChangeText={setText}
+            placeholder={t('storyCamera.typeSomething')}
+            placeholderTextColor="rgba(255,255,255,0.55)"
+            selectionColor="#FAB525"
+            cursorColor="#FAB525"
+            multiline
+            scrollEnabled={false}
+            autoFocus
+            maxLength={200}
+            textAlign="center"
+          />
+          <Text
+            style={[styles.stickerInput, preview.textStyle, styles.measureGhost]}
+            onLayout={(e) => {
+              const h = Math.ceil(e.nativeEvent.layout.height);
+              setTextH((prev) => (prev === h ? prev : h));
+            }}
+          >
+            {text.length === 0 ? ' ' : text.endsWith('\n') ? `${text} ` : text}
+          </Text>
+        </View>
+        <MentionSuggestions
+          query={getActiveMentionQuery(text, text.length)}
+          onPick={(u) => setText(applyMention(text, text.length, u).text)}
+          style={{ marginTop: SPACING.md, alignSelf: 'center', minWidth: 240 }}
+          maxHeight={160}
+        />
+      </View>
+
+      {/* Style toolbar — colors, then background toggle + font pills. */}
+      <View style={styles.styleBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatchRow} keyboardShouldPersistTaps="always">
+          {STICKER_COLORS.map((c) => (
+            <TouchableOpacity
+              key={c}
+              style={[styles.swatch, { backgroundColor: c }, color === c && styles.swatchActive]}
+              onPress={() => setColor(c)}
+            />
+          ))}
+        </ScrollView>
+        <View style={styles.fontRow}>
+          <TouchableOpacity
+            style={[styles.bgToggle, bg !== 'none' && styles.bgToggleActive]}
+            onPress={() => setBg((b) => (b === 'none' ? 'soft' : b === 'soft' ? 'pill' : 'none'))}
+          >
+            <Ionicons name="color-fill-outline" size={18} color="#fff" />
+          </TouchableOpacity>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.fontPills} keyboardShouldPersistTaps="always">
+            {STICKER_FONTS.map((f) => (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.fontPill, font === f.key && styles.fontPillActive]}
+                onPress={() => setFont(f.key)}
+              >
+                <Text style={[styles.fontPillText, resolveStickerFontPreview(f.key)]}>{f.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </KeyboardAvoidingView>
+  );
+});
+
 // Tiny preview style for the font pills in the editor toolbar.
 function resolveStickerFontPreview(font: StickerFont) {
   switch (font) {
@@ -1247,7 +1317,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     position: 'absolute', left: SPACING.md, right: SPACING.md, height: 3,
     borderRadius: 1.5, backgroundColor: 'rgba(255,255,255,0.25)', overflow: 'hidden',
   },
-  recBarFill: { height: 3, borderRadius: 1.5, backgroundColor: colors.error },
+  // Full-width + left-anchored: the native scaleX drive reveals it exactly like
+  // the old width% animation (track's overflow:hidden clips the ends).
+  recBarFill: { width: '100%', height: 3, borderRadius: 1.5, backgroundColor: colors.error, transformOrigin: 'left' },
 
   recPill: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

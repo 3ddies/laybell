@@ -222,6 +222,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // timeout instead of hanging the player on a stuck ad.
   const adProgressedRef = useRef(false);
   const adWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One-shot guard: the canSkip unlock is the only per-ad setAdState after start
+  // (elapsed/duration ticks flow through the position channel instead).
+  const adCanSkipFiredRef = useRef(false);
 
   // Release an abandoned expo-audio player safely: pause now (sync — stops audio
   // immediately, no overlap) and defer remove() to the next tick, so we never call
@@ -286,12 +289,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         elapsedMs: 0, durationMs: 0, canSkip: false,
       });
       recordAdImpression(ad, 'audio', uidRef.current);
+      adCanSkipFiredRef.current = false;
+      emitPosition(0, 0); // bars start at zero, not the paused song's position
       adStatusSubRef.current = player.addListener('playbackStatusUpdate', (st: any) => {
         if (!st.isLoaded) return;
         const pos = (st.currentTime ?? 0) * 1000;   // expo-audio reports SECONDS
         const dur = (st.duration ?? 0) * 1000;
         if (pos > 0) adProgressedRef.current = true;
-        setAdState((prev) => (prev ? { ...prev, elapsedMs: pos, durationMs: dur, canSkip: pos >= AUDIO_AD_SKIP_MS } : prev));
+        // Ticks flow through the position channel (the music player is paused
+        // during an ad, so there's no conflict) — only the ad bars re-render.
+        // Per-tick setAdState here re-rendered EVERY useAudio() consumer
+        // app-wide 4×/s for the ad's whole duration ("split-second lag
+        // globally whenever an ad plays").
+        emitPosition(pos, dur);
+        // adState now changes only on the DISCRETE fact: the one-time skip unlock.
+        if (!adCanSkipFiredRef.current && pos >= AUDIO_AD_SKIP_MS) {
+          adCanSkipFiredRef.current = true;
+          setAdState((prev) => (prev ? { ...prev, canSkip: true } : prev));
+        }
         if (st.didJustFinish) finishAudioAd(false);
       });
       player.play();
@@ -327,7 +342,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // advance/close now instead of resuming a finished track.
       maybeRunDeferredFinish();
     } else if (soundRef.current) {
-      try { soundRef.current.play(); setIsPlaying(true); } catch {}
+      try {
+        soundRef.current.play(); setIsPlaying(true);
+        // Hand the position channel straight back to the music player so the
+        // song scrubber doesn't hold the ad's last tick until the next update.
+        const s: any = soundRef.current;
+        emitPosition((s.currentTime ?? 0) * 1000, (s.duration ?? 0) * 1000);
+      } catch {}
     }
   }
 
@@ -825,7 +846,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         if (!status.isLoaded) return;
         const pos = (status.currentTime ?? 0) * 1000;   // expo-audio reports SECONDS
         const dur = (status.duration ?? 0) * 1000;
-        emitPosition(pos, dur); // ticks go to useAudioPosition subscribers only
+        // During an audio ad the position channel belongs to the AD's ticks —
+        // the paused music player still emits one-shot pause/load status events
+        // that would briefly paint the song's position onto the ad bars.
+        if (!adPlayingRef.current) emitPosition(pos, dur); // ticks go to useAudioPosition subscribers only
         progressRef.current = dur > 0 ? pos / dur : 0;
         setIsBuffering(status.isBuffering ?? false);
 

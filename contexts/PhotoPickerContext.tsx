@@ -12,6 +12,7 @@ import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from './ThemeContext';
 import { useTranslation } from './LanguageContext';
 import { uploadToStorageWithProgress } from '../lib/upload';
+import { resolveAssetUri, evictAssetUri } from '../lib/assetInfoCache';
 import { setPhotoPickerHandler, type PhotoPickRequest } from '../lib/photoPicker';
 import type { Attachment } from '../lib/attachments';
 
@@ -60,7 +61,11 @@ export function PhotoPickerProvider({ children }: { children: React.ReactNode })
     setLoading(false);
   }, []);
 
-  // On open: ensure permission, then load the first page.
+  // On open: ensure permission, then load the first page. Assets from a prior
+  // open are deliberately KEPT (the provider is app-level, so they persist in
+  // state) — the grid paints instantly on reopen while loadPage() refreshes
+  // page 1 underneath. Previously every open cold-started behind a full-screen
+  // spinner: permission IPC → full 60-asset fetch → only then any pixels.
   useEffect(() => {
     if (!req) return;
     let active = true;
@@ -70,17 +75,15 @@ export function PhotoPickerProvider({ children }: { children: React.ReactNode })
       if (!granted && cur.canAskAgain) granted = (await MediaLibrary.requestPermissionsAsync()).granted;
       if (!active) return;
       setPerm(granted);
-      if (granted) { setAssets([]); setCursor(undefined); loadPage(); }
+      if (granted) loadPage(); // no-cursor load REPLACES page 1 — fresh photos appear at the top
     })();
     return () => { active = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [req]);
 
   function close() {
+    // Keep assets/cursor/hasNext — the next open reuses them (see above).
     setReq(null);
-    setAssets([]);
-    setCursor(undefined);
-    setHasNext(false);
     setUploadingId(null);
   }
 
@@ -88,8 +91,9 @@ export function PhotoPickerProvider({ children }: { children: React.ReactNode })
     if (uploadingId || !req) return;
     setUploadingId(asset.id);
     try {
-      const info = await MediaLibrary.getAssetInfoAsync(asset);
-      const localUri = info.localUri ?? asset.uri;
+      // Session-cached (lib/assetInfoCache) — re-picking skips the slow
+      // getAssetInfoAsync round-trip / iCloud download.
+      const localUri = await resolveAssetUri(asset);
       const isGif = (asset.filename ?? '').toLowerCase().endsWith('.gif');
       let uploadUri = localUri;
       let ext = 'jpg';
@@ -106,6 +110,7 @@ export function PhotoPickerProvider({ children }: { children: React.ReactNode })
       req.onPicked(att);
       close();
     } catch {
+      evictAssetUri(asset.id); // stale cached localUri (asset edited/deleted) — next tap resolves fresh
       setUploadingId(null);
     }
   }
@@ -125,7 +130,7 @@ export function PhotoPickerProvider({ children }: { children: React.ReactNode })
           <Text style={styles.hintTitle}>{t('photoPicker.permTitle')}</Text>
           <Text style={styles.hintBody}>{t('photoPicker.permBody')}</Text>
         </View>
-      ) : perm === null || (loading && assets.length === 0) ? (
+      ) : (perm === null || loading) && assets.length === 0 ? (
         <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
       ) : (
         <FlatList
@@ -134,13 +139,19 @@ export function PhotoPickerProvider({ children }: { children: React.ReactNode })
           numColumns={3}
           columnWrapperStyle={styles.col}
           contentContainerStyle={styles.grid}
+          // Fixed-geometry virtualization: paint a full screen of thumbnails in
+          // the first pass instead of back-filling 10 items at a time.
+          getItemLayout={(_, i) => ({ length: cell + SPACING.xs, offset: (cell + SPACING.xs) * Math.floor(i / 3), index: i })}
+          initialNumToRender={24}
+          maxToRenderPerBatch={12}
+          windowSize={7}
           onEndReachedThreshold={0.6}
           onEndReached={() => { if (hasNext && !loading) loadPage(cursor); }}
           ListEmptyComponent={!loading ? <View style={styles.center}><Text style={styles.hintBody}>{t('photoPicker.empty')}</Text></View> : null}
           ListFooterComponent={loading && assets.length > 0 ? <ActivityIndicator color={colors.primary} style={{ paddingVertical: SPACING.md }} /> : null}
           renderItem={({ item }) => (
             <TouchableOpacity activeOpacity={0.8} onPress={() => pick(item)} disabled={!!uploadingId}>
-              <Image source={{ uri: item.uri }} style={{ width: cell, height: cell, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight }} contentFit="cover" />
+              <Image source={{ uri: item.uri }} style={{ width: cell, height: cell, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight }} contentFit="cover" recyclingKey={item.id} cachePolicy="memory-disk" />
               {uploadingId === item.id && (
                 <View style={[StyleSheet.absoluteFill, styles.uploading]}>
                   <ActivityIndicator color="#fff" />

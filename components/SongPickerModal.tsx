@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { formatCount } from '../lib/format';
-import { usePostMusic } from '../contexts/PostMusicContext';
+import { usePostMusicActions } from '../contexts/PostMusicContext';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -36,7 +36,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
-  const { playSong, stop: stopSong } = usePostMusic();
+  const { playSong, stop: stopSong } = usePostMusicActions();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);

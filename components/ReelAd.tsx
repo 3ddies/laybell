@@ -37,11 +37,15 @@ export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, o
   // Accumulated genuine playback (not instantaneous position) — the creative is
   // looping, so a clip shorter than 5s would otherwise wrap to 0 and never let
   // Skip unlock. Sum positive deltas; ignore the negative jump on loop-wrap.
-  const [elapsedMs, setElapsedMs] = useState(0);
+  // Accumulates in a REF; state only changes when the DISPLAYED second flips —
+  // the old per-tick setState re-rendered the ad subtree 4×/s, including during
+  // the swipe frames into/out of the ad page.
+  const elapsedRef = useRef(0);
   const lastPosRef = useRef(0);
+  const [secsRemaining, setSecsRemaining] = useState(Math.ceil(AD_SKIP_MS / 1000));
 
-  const canSkip = elapsedMs >= AD_SKIP_MS;
-  const secsLeft = Math.max(1, Math.ceil((AD_SKIP_MS - elapsedMs) / 1000));
+  const canSkip = secsRemaining <= 0;
+  const secsLeft = Math.max(1, secsRemaining);
 
   return (
     <View style={{ width: SCREEN_W, height: SCREEN_H }}>
@@ -56,7 +60,11 @@ export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, o
         onProgress={(pos) => {
           const d = pos - lastPosRef.current;
           lastPosRef.current = pos;
-          if (d > 0 && d < 2000) setElapsedMs((e) => e + d);
+          if (d > 0 && d < 2000) {
+            elapsedRef.current += d;
+            const s = Math.max(0, Math.ceil((AD_SKIP_MS - elapsedRef.current) / 1000));
+            setSecsRemaining((prev) => (prev === s ? prev : s)); // renders ~1×/s, then never
+          }
         }}
       />
 

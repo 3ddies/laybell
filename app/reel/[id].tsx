@@ -5,7 +5,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, Animated,
   useWindowDimensions,
 } from 'react-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,7 +34,7 @@ import { trackVideoProgress } from '../../lib/viewTracker';
 import { timeAgo } from '../../lib/timeAgo';
 import SongAttribution from '../../components/SongAttribution';
 import { useAudio } from '../../contexts/AudioContext';
-import { usePostMusic } from '../../contexts/PostMusicContext';
+import { usePostMusicActions, usePostMusicMuted } from '../../contexts/PostMusicContext';
 import { useIsFocused } from '@react-navigation/native';
 import { useExpandTransition } from '../../hooks/useExpandTransition';
 import {
@@ -51,6 +51,230 @@ import { ReelSkeleton } from '../../components/Skeleton';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
+// Stable API handed to the memo'd page components: the object identity never
+// changes (see pageApi in ReelScreen), each call delegating to the freshest
+// screen closure through a ref.
+type ReelPageApi = {
+  toggleLike: (item: any) => void;
+  toggleSave: (item: any) => void;
+  share: (item: any) => void;
+  openComments: (item: any) => void;
+  showOptionsFor: (item: any) => void;
+  openProfile: (userId: string) => void;
+  dismiss: () => void;
+  toggleCapExpanded: () => void;
+  onZoomChange: (z: boolean) => void;
+  markGesture: () => void;
+  pressIn: () => void;
+  tapToggle: () => void;
+  setVideoRef: (id: string, r: any) => void;
+  setScrubRef: (id: string, r: any) => void;
+  setScrubbing: (s: boolean) => void;
+  seek: (id: string, sec: number) => void;
+  onProgress: (id: string, pos: number, dur: number) => void;
+};
+
+// Engagement overlay (bottom gradient + like/comment/save/share/options rail +
+// author/caption/song meta), shared by the vertical pages and the landscape
+// overlay. Module-scope + memo: a swipe re-renders at most the pages whose
+// props actually changed — never the whole mounted window. (Same treatment the
+// home feed got; reels had the identical re-render-burst failure mode.)
+const ReelControls = memo(function ReelControls({
+  item, isLiked, isSaved, spotlight, railBottom, metaBottom, compact = false, expandable = false, capExpanded = false, api,
+}: {
+  item: any; isLiked: boolean; isSaved: boolean; spotlight: boolean;
+  railBottom: number; metaBottom: number; compact?: boolean; expandable?: boolean; capExpanded?: boolean; api: ReelPageApi;
+}) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const likeCount = item.likes?.[0]?.count || 0;
+  const commentCount = item.comments?.[0]?.count || 0;
+  const saveCount = item.save_count || 0;
+  const shareCount = item.share_count || 0;
+  // Landscape: generous hit area on each button so a near-miss still fires it,
+  // and the rail/meta absorb stray taps in their region so tapping AROUND the
+  // buttons doesn't fall through and close the controls. Vertical is unchanged.
+  const railHit = compact ? { top: 10, bottom: 10, left: 20, right: 16 } : undefined;
+  const absorb = compact ? () => true : undefined;
+  return (
+    <>
+      {/* bottom gradient for legibility */}
+      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.bottomFade} pointerEvents="none" />
+
+      {/* Right action rail (bottom-anchored: options sits just above the bar) */}
+      <View
+        style={[styles.rail, compact && styles.railCompact, { bottom: railBottom }]}
+        onStartShouldSetResponder={absorb}
+        hitSlop={compact ? { left: 24, right: 8, top: 14, bottom: 14 } : undefined}
+      >
+        <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.toggleLike(item)}>
+          <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={32} color={isLiked ? colors.like : '#fff'} />
+          {likeCount > 0 && <Text style={styles.railText}>{formatCount(likeCount)}</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.openComments(item)}>
+          <Ionicons name="chatbubble-outline" size={30} color="#fff" />
+          {commentCount > 0 && <Text style={styles.railText}>{formatCount(commentCount)}</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.toggleSave(item)}>
+          <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={28} color="#fff" />
+          {saveCount > 0 && <Text style={styles.railText}>{formatCount(saveCount)}</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.share(item)}>
+          <Ionicons name="share-social-outline" size={28} color="#fff" />
+          {shareCount > 0 && <Text style={styles.railText}>{formatCount(shareCount)}</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => api.showOptionsFor(item)}>
+          <Ionicons name="ellipsis-horizontal" size={28} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Author + caption */}
+      <View style={[styles.meta, { bottom: metaBottom }]} onStartShouldSetResponder={absorb}>
+        <View style={styles.authorRow}>
+          <TouchableOpacity style={styles.author} onPress={() => api.openProfile(item.user_id)}>
+            <StoryAvatar
+              userId={item.user_id}
+              avatarUrl={item.profiles?.avatar_url}
+              name={item.profiles?.display_name}
+              size={32}
+              onPressProfile={() => api.openProfile(item.user_id)}
+            />
+            <Text style={styles.authorName} numberOfLines={1}>@{item.profiles?.username}</Text>
+            <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={12} />
+            {spotlight && <Ionicons name="sparkles" size={12} color={colors.primaryLight} style={styles.spotSparkle} />}
+            <Text style={styles.dot}>·</Text>
+            <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
+          </TouchableOpacity>
+          <FollowButton userId={item.user_id} />
+        </View>
+        {/* Caption + community hashtag on the same line (wraps below only when
+            the caption wraps). Taps through to that community. In expandable
+            (landscape) mode it collapses to one line with a Show more/less toggle. */}
+        {(!!item.caption || (item.community_tags?.length ?? 0) > 0) && (
+          <TranslatableText
+            text={item.caption ?? ''}
+            render={(s) => (
+              <View>
+                <View style={styles.captionRow}>
+                  {!!s && (
+                    <MentionText
+                      style={styles.caption}
+                      numberOfLines={expandable ? (capExpanded ? undefined : 1) : 2}
+                      text={s}
+                    />
+                  )}
+                  {(item.community_tags ?? []).map((ct: { id: string; hashtag: string }, i: number) => (
+                    <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} leading={i === 0 && !!s} />
+                  ))}
+                </View>
+                {expandable && (s.length > 38 || s.includes('\n')) && (
+                  <TouchableOpacity
+                    onPress={() => api.toggleCapExpanded()}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.moreBtn}>{capExpanded ? 'Show less' : 'Show more'}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          />
+        )}
+        {!!item.song_id && (
+          <SongAttribution
+            inline
+            style={{ marginTop: SPACING.xs }}
+            songId={item.song_id}
+            title={item.song_title}
+            artist={item.song_artist}
+            artistId={item.song_artist_id}
+            onNavigate={api.dismiss}
+          />
+        )}
+      </View>
+    </>
+  );
+});
+
+// One vertical reel page. Memo'd with primitive props so scroll-state changes
+// (visibleId at the viewability crossing, pause taps, scrub flags) re-render
+// only the affected page — the burst of re-running every mounted page's
+// gradient/caption-parse/translate work used to land exactly as the pager
+// snapped, which was the per-swipe hitch.
+const ReelPage = memo(function ReelPage({
+  item, active, playing, showPaused, zoomed, isLiked, isSaved, spotlight, insetsBottom, api,
+}: {
+  item: any; active: boolean; playing: boolean; showPaused: boolean; zoomed: boolean;
+  isLiked: boolean; isSaved: boolean; spotlight: boolean; insetsBottom: number; api: ReelPageApi;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  // Landscape/square videos show in full (letterboxed) so nothing is cut;
+  // portrait videos fill the screen edge-to-edge.
+  const landscape = aspectToNumber(item.aspect_ratio, 16 / 9) >= 1;
+  // Cached thumbnail shown while the video buffers — keeps the expand from
+  // revealing a black screen before the first frame is ready.
+  const poster = item.thumbnail_url ?? item.cover_url ?? null;
+  return (
+    <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }} disabled={zoomed}>
+      <TouchableOpacity
+        activeOpacity={1}
+        style={StyleSheet.absoluteFill}
+        onPressIn={api.pressIn}
+        onPress={api.tapToggle}
+      >
+        <ZoomableView
+          width={SCREEN_W}
+          height={SCREEN_H}
+          style={StyleSheet.absoluteFill}
+          active={active}
+          onZoomChange={api.onZoomChange}
+          onGesture={api.markGesture}
+        >
+        <AppVideo
+          ref={(r) => api.setVideoRef(item.id, r)}
+          source={{ uri: item.media_url }}
+          style={StyleSheet.absoluteFill}
+          contentFit={landscape ? 'contain' : 'cover'}
+          loop={item.trim_end == null}
+          active={playing}
+          muted={!!item.song_id}
+          poster={poster}
+          posterContentFit={landscape ? 'contain' : 'cover'}
+          trimStartSec={item.trim_start}
+          trimEndSec={item.trim_end}
+          onProgress={(pos, dur) => api.onProgress(item.id, pos, dur)}
+        />
+        </ZoomableView>
+      </TouchableOpacity>
+
+      {/* paused indicator */}
+      {showPaused && (
+        <View style={styles.pausedWrap} pointerEvents="none">
+          <Ionicons name="play" size={64} color="rgba(255,255,255,0.85)" />
+        </View>
+      )}
+
+      <ReelControls
+        item={item}
+        isLiked={isLiked}
+        isSaved={isSaved}
+        spotlight={spotlight}
+        railBottom={insetsBottom + 90}
+        metaBottom={insetsBottom + 24}
+        api={api}
+      />
+
+      {/* This reel's own progress bar — lives inside the page so it scrolls
+          away with the video rather than one shared bar floating across pages. */}
+      <VideoScrubBar
+        ref={(r) => api.setScrubRef(item.id, r)}
+        bottomInset={insetsBottom + 6}
+        onScrubbingChange={api.setScrubbing}
+        onSeek={(sec) => api.seek(item.id, sec)}
+      />
+    </ElasticSwipeView>
+  );
+});
+
 export default function ReelScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -63,7 +287,8 @@ export default function ReelScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { stop } = useAudio();
-  const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
+  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted } = usePostMusicActions();
+  const songMuted = usePostMusicMuted();
   const isFocused = useIsFocused();
   const { dismiss, backdropOpacity, contentStyle } = useExpandTransition();
 
@@ -90,7 +315,11 @@ export default function ReelScreen() {
   const myProfileRef = useRef(myProfile);
   myProfileRef.current = myProfile;
 
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
+  // 55 (not 80): at 80% the incoming reel only became "visible" near the very
+  // end of the gesture, so playback started AFTER the snap — a frozen-poster
+  // beat on every landing. At ~55% (Instagram-like) the player kicks off while
+  // the swipe is still settling.
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 55 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     const it = viewableItems[0]?.item;
     if (it) {
@@ -103,12 +332,18 @@ export default function ReelScreen() {
   useEffect(() => { stop(); setup(); }, [id]);
 
   // Auto-play the focused reel's attached song (the video itself is muted when a
-  // song is set); stop on swipe-away / blur / unmount.
+  // song is set); stop on swipe-away / blur / unmount. The start is DEFERRED
+  // ~160ms past the viewability commit: playSong tears down + creates a native
+  // audio player (plus a possible fetch), which used to land synchronously on
+  // the exact frame the pager snapped — and a fast swipe-through now never
+  // starts a song at all.
   const visibleItem = posts.find((p) => p.id === visibleId);
   useEffect(() => {
-    if (isFocused && visibleId && visibleItem?.song_id) playSong(visibleId, visibleItem.song_id);
-    else if (visibleId) stopSong(visibleId);
-    return () => { if (visibleId) stopSong(visibleId); };
+    if (!visibleId) return;
+    const songId = visibleItem?.song_id;
+    if (!isFocused || !songId) { stopSong(visibleId); return; }
+    const timer = setTimeout(() => playSong(visibleId, songId), 160);
+    return () => { clearTimeout(timer); stopSong(visibleId); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleId, visibleItem?.song_id, isFocused]);
 
@@ -376,141 +611,61 @@ export default function ReelScreen() {
     });
   }
 
-  // Shared engagement UI (bottom gradient + like/comment/save/share/options rail +
-  // author/caption/song meta), reused by the vertical reels and the landscape
-  // overlay. In landscape we pass lower anchors (near the scrub bar), compact rail
-  // spacing, and an expandable caption for the shorter viewport.
-  function reelControls(
-    item: any,
-    opts: { railBottom?: number; metaBottom?: number; compact?: boolean; expandable?: boolean } = {},
-  ) {
-    const railBottom = opts.railBottom ?? insets.bottom + 90;
-    const metaBottom = opts.metaBottom ?? insets.bottom + 24;
-    const { compact = false, expandable = false } = opts;
-    const isLiked = liked.has(item.id);
-    const isSaved = saved.has(item.id);
-    const likeCount = item.likes?.[0]?.count || 0;
-    const commentCount = item.comments?.[0]?.count || 0;
-    const saveCount = item.save_count || 0;
-    const shareCount = item.share_count || 0;
-    // Landscape: generous hit area on each button so a near-miss still fires it,
-    // and the rail/meta absorb stray taps in their region so tapping AROUND the
-    // buttons doesn't fall through and close the controls. Vertical is unchanged.
-    const railHit = compact ? { top: 10, bottom: 10, left: 20, right: 16 } : undefined;
-    const absorb = compact ? () => true : undefined;
-    return (
-      <>
-        {/* bottom gradient for legibility */}
-        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.bottomFade} pointerEvents="none" />
-
-        {/* Right action rail (bottom-anchored: options sits just above the bar) */}
-        <View
-          style={[styles.rail, compact && styles.railCompact, { bottom: railBottom }]}
-          onStartShouldSetResponder={absorb}
-          hitSlop={compact ? { left: 24, right: 8, top: 14, bottom: 14 } : undefined}
-        >
-          <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => toggleLike(item)}>
-            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={32} color={isLiked ? colors.like : '#fff'} />
-            {likeCount > 0 && <Text style={styles.railText}>{formatCount(likeCount)}</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => setCommentsFor({ id: item.id, ownerId: item.user_id })}>
-            <Ionicons name="chatbubble-outline" size={30} color="#fff" />
-            {commentCount > 0 && <Text style={styles.railText}>{formatCount(commentCount)}</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => toggleSave(item)}>
-            <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={28} color="#fff" />
-            {saveCount > 0 && <Text style={styles.railText}>{formatCount(saveCount)}</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.railBtn} hitSlop={railHit} onPress={() => share(item)}>
-            <Ionicons name="share-social-outline" size={28} color="#fff" />
-            {shareCount > 0 && <Text style={styles.railText}>{formatCount(shareCount)}</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.railBtn}
-            hitSlop={railHit}
-            onPress={() => showOptions({
-              postId: item.id,
-              isOwn: item.user_id === currentUserId,
-              authorId: item.user_id,
-              authorName: item.profiles?.username,
-              mediaType: item.type ?? 'video',
-              onEdit: () => router.push(`/edit-post/${item.id}`),
-              onDeleted: () => setPosts((prev) => prev.filter((p) => p.id !== item.id)),
-              onArchived: () => setPosts((prev) => prev.filter((p) => p.id !== item.id)),
-              onBlocked: () => setPosts((prev) => prev.filter((p) => p.user_id !== item.user_id)),
-            })}
-          >
-            <Ionicons name="ellipsis-horizontal" size={28} color="#fff" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Author + caption */}
-        <View style={[styles.meta, { bottom: metaBottom }]} onStartShouldSetResponder={absorb}>
-          <View style={styles.authorRow}>
-            <TouchableOpacity style={styles.author} onPress={() => router.push(`/profile/${item.user_id}`)}>
-              <StoryAvatar
-                userId={item.user_id}
-                avatarUrl={item.profiles?.avatar_url}
-                name={item.profiles?.display_name}
-                size={32}
-                onPressProfile={() => router.push(`/profile/${item.user_id}`)}
-              />
-              <Text style={styles.authorName} numberOfLines={1}>@{item.profiles?.username}</Text>
-              <BadgeEmblem profile={item.profiles} ownerId={item.user_id} size={12} />
-              {(!!item.__spotlight || spotlightIds.has(item.id)) && <Ionicons name="sparkles" size={12} color={colors.primaryLight} style={styles.spotSparkle} />}
-              <Text style={styles.dot}>·</Text>
-              <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
-            </TouchableOpacity>
-            <FollowButton userId={item.user_id} />
-          </View>
-          {/* Caption + community hashtag on the same line (wraps below only when
-              the caption wraps). Taps through to that community. In expandable
-              (landscape) mode it collapses to one line with a Show more/less toggle. */}
-          {(!!item.caption || (item.community_tags?.length ?? 0) > 0) && (
-            <TranslatableText
-              text={item.caption ?? ''}
-              render={(s) => (
-                <View>
-                  <View style={styles.captionRow}>
-                    {!!s && (
-                      <MentionText
-                        style={styles.caption}
-                        numberOfLines={expandable ? (capExpanded ? undefined : 1) : 2}
-                        text={s}
-                      />
-                    )}
-                    {(item.community_tags ?? []).map((ct: { id: string; hashtag: string }, i: number) => (
-                      <CommunityTag key={ct.id} communityId={ct.id} hashtag={ct.hashtag} leading={i === 0 && !!s} />
-                    ))}
-                  </View>
-                  {expandable && (s.length > 38 || s.includes('\n')) && (
-                    <TouchableOpacity
-                      onPress={() => setCapExpanded((v) => !v)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Text style={styles.moreBtn}>{capExpanded ? 'Show less' : 'Show more'}</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-            />
-          )}
-          {!!item.song_id && (
-            <SongAttribution
-              inline
-              style={{ marginTop: SPACING.xs }}
-              songId={item.song_id}
-              title={item.song_title}
-              artist={item.song_artist}
-              artistId={item.song_artist_id}
-              onNavigate={dismiss}
-            />
-          )}
-        </View>
-      </>
-    );
-  }
-
+  // Stable API for the memo'd ReelPage/ReelControls (module scope, above): the
+  // outer object NEVER changes identity, so it can't defeat their memo; each
+  // call delegates to the freshest screen closure through pageImplRef.
+  const pageImpl = {
+    toggleLike, toggleSave, share,
+    openComments: (item: any) => setCommentsFor({ id: item.id, ownerId: item.user_id }),
+    showOptionsFor: (item: any) => showOptions({
+      postId: item.id,
+      isOwn: item.user_id === currentUserId,
+      authorId: item.user_id,
+      authorName: item.profiles?.username,
+      mediaType: item.type ?? 'video',
+      onEdit: () => router.push(`/edit-post/${item.id}`),
+      onDeleted: () => setPosts((prev) => prev.filter((p) => p.id !== item.id)),
+      onArchived: () => setPosts((prev) => prev.filter((p) => p.id !== item.id)),
+      onBlocked: () => setPosts((prev) => prev.filter((p) => p.user_id !== item.user_id)),
+    }),
+    openProfile: (userId: string) => router.push(`/profile/${userId}`),
+    dismiss,
+    toggleCapExpanded: () => setCapExpanded((v) => !v),
+    onZoomChange,
+    markGesture: () => { gestureSincePressRef.current = true; },
+    pressIn: () => { gestureSincePressRef.current = false; },
+    tapToggle: () => { if (gestureSincePressRef.current) return; setPaused((p) => !p); },
+    setVideoRef: (pid: string, r: any) => { if (r) videoRefs.current.set(pid, r); else videoRefs.current.delete(pid); },
+    setScrubRef: (pid: string, r: any) => { if (r) scrubRefs.current.set(pid, r); else scrubRefs.current.delete(pid); },
+    setScrubbing,
+    seek: (pid: string, sec: number) => videoRefs.current.get(pid)?.seek(sec),
+    onProgress: (pid: string, pos: number, dur: number) => {
+      if (visibleIdRef.current === pid) positionRef.current = pos;
+      scrubRefs.current.get(pid)?.setProgress(pos, dur);
+      trackVideoProgress(pid, pos, dur);
+    },
+  };
+  const pageImplRef = useRef(pageImpl);
+  pageImplRef.current = pageImpl;
+  const pageApi = useRef<ReelPageApi>({
+    toggleLike: (i) => pageImplRef.current.toggleLike(i),
+    toggleSave: (i) => pageImplRef.current.toggleSave(i),
+    share: (i) => pageImplRef.current.share(i),
+    openComments: (i) => pageImplRef.current.openComments(i),
+    showOptionsFor: (i) => pageImplRef.current.showOptionsFor(i),
+    openProfile: (u) => pageImplRef.current.openProfile(u),
+    dismiss: () => pageImplRef.current.dismiss(),
+    toggleCapExpanded: () => pageImplRef.current.toggleCapExpanded(),
+    onZoomChange: (z) => pageImplRef.current.onZoomChange(z),
+    markGesture: () => pageImplRef.current.markGesture(),
+    pressIn: () => pageImplRef.current.pressIn(),
+    tapToggle: () => pageImplRef.current.tapToggle(),
+    setVideoRef: (id, r) => pageImplRef.current.setVideoRef(id, r),
+    setScrubRef: (id, r) => pageImplRef.current.setScrubRef(id, r),
+    setScrubbing: (s) => pageImplRef.current.setScrubbing(s),
+    seek: (id, sec) => pageImplRef.current.seek(id, sec),
+    onProgress: (id, pos, dur) => pageImplRef.current.onProgress(id, pos, dur),
+  }).current;
   function renderItem({ item, index }: { item: any; index: number }) {
     if (item.__ad) {
       return (
@@ -539,72 +694,23 @@ export default function ReelScreen() {
         />
       );
     }
-    // Landscape/square videos show in full (letterboxed) so nothing is cut;
-    // portrait videos fill the screen edge-to-edge.
-    const landscape = aspectToNumber(item.aspect_ratio, 16 / 9) >= 1;
-    // Cached thumbnail shown while the video buffers — keeps the expand from
-    // revealing a black screen before the first frame is ready.
-    const poster = item.thumbnail_url ?? item.cover_url ?? null;
-
     return (
-      <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }} disabled={zoomed}>
-        <TouchableOpacity
-          activeOpacity={1}
-          style={StyleSheet.absoluteFill}
-          onPressIn={() => { gestureSincePressRef.current = false; }}
-          onPress={() => { if (gestureSincePressRef.current) return; setPaused((p) => !p); }}
-        >
-          <ZoomableView
-            width={SCREEN_W}
-            height={SCREEN_H}
-            style={StyleSheet.absoluteFill}
-            active={visibleId === item.id}
-            onZoomChange={onZoomChange}
-            onGesture={() => { gestureSincePressRef.current = true; }}
-          >
-          <AppVideo
-            ref={(r) => { if (r) videoRefs.current.set(item.id, r); else videoRefs.current.delete(item.id); }}
-            source={{ uri: item.media_url }}
-            style={StyleSheet.absoluteFill}
-            contentFit={landscape ? 'contain' : 'cover'}
-            loop={item.trim_end == null}
-            // Gate on isFocused too: a reel is a transparentModal, so pushing
-            // another reel on top (e.g. a GIF's "go to original video") leaves this
-            // one mounted — without the focus check its audio would keep playing
-            // UNDER the new video. Blur pauses it; returning resumes.
-            active={isFocused && visibleId === item.id && !paused && !landscapeFullscreen && !scrubbing}
-            muted={!!item.song_id}
-            poster={poster}
-            posterContentFit={landscape ? 'contain' : 'cover'}
-            trimStartSec={item.trim_start}
-            trimEndSec={item.trim_end}
-            onProgress={(pos, dur) => {
-              if (visibleId === item.id) positionRef.current = pos;
-              scrubRefs.current.get(item.id)?.setProgress(pos, dur);
-              trackVideoProgress(item.id, pos, dur);
-            }}
-          />
-          </ZoomableView>
-        </TouchableOpacity>
-
-        {/* paused indicator */}
-        {visibleId === item.id && paused && (
-          <View style={styles.pausedWrap} pointerEvents="none">
-            <Ionicons name="play" size={64} color="rgba(255,255,255,0.85)" />
-          </View>
-        )}
-
-        {reelControls(item)}
-
-        {/* This reel's own progress bar — lives inside the page so it scrolls
-            away with the video rather than one shared bar floating across pages. */}
-        <VideoScrubBar
-          ref={(r) => { if (r) scrubRefs.current.set(item.id, r); else scrubRefs.current.delete(item.id); }}
-          bottomInset={insets.bottom + 6}
-          onScrubbingChange={setScrubbing}
-          onSeek={(sec) => videoRefs.current.get(item.id)?.seek(sec)}
-        />
-      </ElasticSwipeView>
+      <ReelPage
+        item={item}
+        active={visibleId === item.id}
+        // Gate on isFocused too: a reel is a transparentModal, so pushing
+        // another reel on top (e.g. a GIF's "go to original video") leaves this
+        // one mounted — without the focus check its audio would keep playing
+        // UNDER the new video. Blur pauses it; returning resumes.
+        playing={isFocused && visibleId === item.id && !paused && !landscapeFullscreen && !scrubbing}
+        showPaused={visibleId === item.id && paused}
+        zoomed={zoomed}
+        isLiked={liked.has(item.id)}
+        isSaved={saved.has(item.id)}
+        spotlight={!!item.__spotlight || spotlightIds.has(item.id)}
+        insetsBottom={insets.bottom}
+        api={pageApi}
+      />
     );
   }
 
@@ -675,6 +781,9 @@ export default function ReelScreen() {
               showsVerticalScrollIndicator={false}
               snapToInterval={SCREEN_H}
               snapToAlignment="start"
+              // One page per fling, Instagram-style: without this a hard fling
+              // sails past multiple reels and late-snaps to the nearest one.
+              disableIntervalMomentum
               decelerationRate="fast"
               getItemLayout={(_, i) => ({ length: SCREEN_H, offset: SCREEN_H * i, index: i })}
               onViewableItemsChanged={onViewableItemsChanged}
@@ -744,12 +853,18 @@ export default function ReelScreen() {
                   style={[StyleSheet.absoluteFill, { opacity: controlsOpacity }]}
                   pointerEvents={controlsVisible ? 'box-none' : 'none'}
                 >
-                  {reelControls(visibleItem, {
-                    railBottom: insets.bottom + 40,
-                    metaBottom: insets.bottom + 34,
-                    compact: true,
-                    expandable: true,
-                  })}
+                  <ReelControls
+                    item={visibleItem}
+                    isLiked={liked.has(visibleItem.id)}
+                    isSaved={saved.has(visibleItem.id)}
+                    spotlight={!!visibleItem.__spotlight || spotlightIds.has(visibleItem.id)}
+                    railBottom={insets.bottom + 40}
+                    metaBottom={insets.bottom + 34}
+                    compact
+                    expandable
+                    capExpanded={capExpanded}
+                    api={pageApi}
+                  />
                 </Animated.View>
               )}
               {/* One bar layered on top of the pager. Because it sits above the

@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAudio } from '../contexts/AudioContext';
-import { usePostMusic } from '../contexts/PostMusicContext';
+import { usePostMusicActions } from '../contexts/PostMusicContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
@@ -39,7 +39,7 @@ export default function SongAttribution({
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const { play, expand, currentTrack } = useAudio();
-  const { stop: stopPostMusic } = usePostMusic();
+  const { stop: stopPostMusic } = usePostMusicActions();
   const { show } = usePostOptions();
   const { profile } = useProfile();
   const busyRef = useRef(false); // guards against rapid re-taps piling up audio loads

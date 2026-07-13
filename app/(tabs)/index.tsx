@@ -6,8 +6,11 @@ import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
 import AppVideo from '../../components/AppVideo';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
-import { usePagerSwiping, isSwipeTap } from '../../contexts/PagerContext';
-import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, setFeedHeaderHeight, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
+import { isSwipeTap } from '../../contexts/PagerContext';
+import {
+  setVisibleVideoId, setWarmVideoIds, setFeedFastScrolling, setFeedFocused, resetFeedVideo, useCardPlayback,
+} from '../../lib/feedVideo';
+import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, FlatList,
@@ -80,7 +83,7 @@ import TaggedPeopleButton from '../../components/TaggedPeopleButton';
 import CommunityTag from '../../components/CommunityTag';
 import { parseSlides, isSlideshow } from '../../lib/slideshow';
 import { useStories } from '../../contexts/StoriesContext';
-import { usePostMusic } from '../../contexts/PostMusicContext';
+import { usePostMusicActions, usePostMusicMuted } from '../../contexts/PostMusicContext';
 import type { SourceRect } from '../../lib/stories';
 
 type Post = {
@@ -126,11 +129,6 @@ type PostCardProps = {
   audioActive: boolean;
   videoMuted: boolean;
   songMuted: boolean;
-  // isVisibleVideo → the centered card OR a near-viewport neighbor: mounts the
-  // player (so it pre-loads before the user arrives).
-  // shouldPlayVideo → mounted AND centered AND settled: actually plays.
-  isVisibleVideo: boolean;
-  shouldPlayVideo: boolean;
   onProfile: (item: Post) => void;
   onOptions: (item: Post) => void;
   onOpenPost: (item: Post, src?: SourceRect, index?: number) => void;
@@ -164,11 +162,17 @@ const FeedHeader = memo(function FeedHeader() {
 // from HomeScreen are referentially stable, and `item` keeps its reference for
 // unchanged posts, so React.memo's shallow compare skips them.
 const PostCard = memo(function PostCard({
-  item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted, isVisibleVideo, shouldPlayVideo,
+  item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted,
   onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive,
 }: PostCardProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  // Per-card playback subscription (lib/feedVideo): this card re-renders on a
+  // viewability/gate change ONLY when its own booleans flip — the rest of the
+  // list isn't touched (not even a memo compare).
+  // isVisibleVideo → centered OR near-viewport neighbor: mounts the player.
+  // shouldPlayVideo → mounted AND centered AND settled/focused: actually plays.
+  const { isVisibleVideo, shouldPlayVideo } = useCardPlayback(item.id);
   const likeCount = item.likes[0]?.count || 0;
   const commentCount = item.comments[0]?.count || 0;
   const saveCount = item.save_count || 0;
@@ -474,26 +478,41 @@ export default function HomeScreen() {
   // `item` rides along so a submitted comment on an ad can be counted as a tap.
   const [commentsFor, setCommentsFor] = useState<{ id: string; ownerId: string; item?: Post } | null>(null);
   const [playlistCount, setPlaylistCount] = useState(0);
-  const [visibleVideoId, setVisibleVideoId] = useState<string | null>(null);
-  // Video posts that keep a player MOUNTED: every on-screen video plus the
-  // nearest one above/below the viewport. Warm players sit paused but pre-load
-  // their stream, so the moment one becomes the visible video it plays with no
-  // perceptible delay. Stored as a joined key so an unchanged set never causes
-  // a re-render.
-  const [warmKey, setWarmKey] = useState('');
-  const warmVideoIds = useMemo(() => new Set(warmKey ? warmKey.split('|') : []), [warmKey]);
-  const [visibleMusicId, setVisibleMusicId] = useState<string | null>(null);
+  // visibleVideoId / warm set / play gate live in lib/feedVideo.ts (a per-card
+  // subscription store), NOT React state here — as state they were renderPost
+  // deps, so every viewability crossing and gate flip re-rendered every mounted
+  // cell at exactly the frames where the finger lands. Cards subscribe to their
+  // own booleans via useCardPlayback(id).
+  // Ambient song (most-visible music post) is IMPERATIVE, not React state: as
+  // state, every song-post crossing the 60% line re-rendered the HomeScreen
+  // shell mid-scroll. These refs + syncAmbientSong() drive PostMusicContext
+  // straight from the viewability handler — with this, a plain scroll causes
+  // ZERO React state changes anywhere in the feed.
+  const visibleMusicRef = useRef<{ id: string; songId: string } | null>(null);
   // Slideshow posts whose current video slide has its audio on — their attached
   // song pauses so it doesn't overlap the video. (Separate from the global mute.)
-  const [slideAudioActiveIds, setSlideAudioActiveIds] = useState<Set<string>>(new Set());
+  const slideAudioIdsRef = useRef<Set<string>>(new Set());
+  const ambientPlayingRef = useRef<string | null>(null);
+  const syncAmbientSongRef = useRef<() => void>(() => {});
   const { refresh: refreshStories } = useStories();
-  const { playSong, stop: stopSong, muted: songMuted, toggleMuted: toggleSongMuted } = usePostMusic();
+  // Narrow hooks: actions never change identity; muted flips only on user taps.
+  // (usePostMusic would re-render this whole screen on every activeId change —
+  // i.e. per song-post crossing — including while covered by the reels modal.)
+  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted } = usePostMusicActions();
+  const songMuted = usePostMusicMuted();
   const router = useRouter();
 
   // Only autoplay feed videos when this tab is focused — not while a swipe is
   // dragging the feed off-screen (saves rendering, matches "land first").
+  // Focus is PUBLISHED to the playback store; the swipe flag feeds it directly
+  // from PagerContext's module store (no HomeScreen re-render on swipes).
   const isFocused = useIsFocused();
-  const swiping = usePagerSwiping();
+  const isFocusedRef = useRef(isFocused);
+  isFocusedRef.current = isFocused;
+  useEffect(() => { setFeedFocused(isFocused); syncAmbientSongRef.current(); }, [isFocused]);
+  // Account-switch remounts start the store from a clean slate, exactly like
+  // the old fresh useState.
+  useEffect(() => () => resetFeedVideo(), []);
 
   // ── Scroll gate ─────────────────────────────────────────────────────────────
   // Videos autoplay the moment they're on screen — EXCEPT while the feed is
@@ -505,13 +524,10 @@ export default function HomeScreen() {
   // GATE_OUT, at which point the latest snapshot applies and the centered,
   // already-warmed video plays instantly. Only slow reading scrolls (under
   // GATE_OUT) keep playing live. Velocity is sampled per scroll event.
-  const [fastScrolling, setFastScrolling] = useState(false);
   const fastScrollRef = useRef(false);
   const scrollSample = useRef({ y: 0, t: 0 });
   const scrollStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current); }, []);
-
-  const canPlayVideo = isFocused && !swiping && !fastScrolling;
 
   // Latest values for the stable card callbacks below. Updating a ref (instead of
   // putting these in useCallback deps) lets the callbacks keep a constant identity
@@ -558,7 +574,7 @@ export default function HomeScreen() {
       if (below) ids.push(below);
       if (above) ids.push(above);
     }
-    setWarmKey(ids.join('|'));
+    setWarmVideoIds(ids);
   }).current;
   const onVideoViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     // Mid-fling snapshots are deferred (see setFastScroll) so a fast scroll
@@ -570,7 +586,8 @@ export default function HomeScreen() {
   // The most-visible post that carries an attached song — its track plays ambiently.
   const applyMusicViewables = useRef((viewableItems: any[]) => {
     const firstMusic = viewableItems.find(v => v.item?.song_id);
-    setVisibleMusicId(firstMusic ? firstMusic.item.id : null);
+    visibleMusicRef.current = firstMusic ? { id: firstMusic.item.id, songId: firstMusic.item.song_id } : null;
+    syncAmbientSongRef.current();
   }).current;
   const pendingMusicViewables = useRef<any[] | null>(null);
   const onImpressionViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
@@ -605,7 +622,7 @@ export default function HomeScreen() {
   const setFastScroll = (on: boolean) => {
     if (fastScrollRef.current === on) return;
     fastScrollRef.current = on;
-    setFastScrolling(on);
+    setFeedFastScrolling(on); // store publish — flips playback for ONLY the visible card, no list re-render
     if (!on && pendingVideoViewables.current) {
       const pending = pendingVideoViewables.current;
       pendingVideoViewables.current = null;
@@ -626,8 +643,17 @@ export default function HomeScreen() {
   const trackScrollVelocity = (y: number) => {
     const t = Date.now();
     const { y: py, t: pt } = scrollSample.current;
-    scrollSample.current = { y, t };
     const dt = t - pt;
+    // ≥12ms measurement windows: at scrollEventThrottle=1, coalesced 120Hz
+    // events can measure dt as 1-4ms while carrying a full frame's dy —
+    // apparent velocity inflated up to ~8x, which tripped GATE_IN mid
+    // reading-scroll and pause/play-flickered the playing video. Small-dt
+    // samples are NOT anchored (dy and dt accumulate into the next check).
+    if (dt >= 0 && dt < 12) {
+      if (!scrollStopTimer.current) scrollStopTimer.current = setTimeout(checkScrollStop, 130);
+      return;
+    }
+    scrollSample.current = { y, t };
     if (dt > 0 && dt < 200) { // >200ms gap = a new gesture, not a velocity sample
       const v = Math.abs(y - py) / dt;
       if (v >= GATE_IN) setFastScroll(true);
@@ -650,8 +676,20 @@ export default function HomeScreen() {
   // Measured height of the floating header — pads the feed underneath it and
   // sets how far it slides away when the reactive chrome hides.
   const [headerH, setHeaderH] = useState(0);
+  // Memoized so re-renders don't tear down + rebuild the native interpolation
+  // node graph (inline it rebuilt on every commit — native-animated churn that
+  // landed exactly at drag start). Created twice ever: mount + first onLayout.
+  const headerSlideStyle = useMemo(() => ({
+    transform: [{ translateY: feedChromeTop.interpolate({ inputRange: [0, 1], outputRange: [0, -(headerH || 140)] }) }],
+  }), [headerH]);
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  // Stable list-container style so FlatList's PureComponent can bail on shell
+  // re-renders (an inline array is a fresh identity every render).
+  const feedContentStyle = useMemo(
+    () => [styles.feedContent, { paddingTop: headerH, paddingBottom: 68 + insets.bottom + SPACING.xxl + 60 }],
+    [styles, headerH, insets.bottom],
+  );
 
   // Tapping the Home tab while ALREADY on Home scrolls the feed back to the
   // top (Instagram behavior) and brings the reactive chrome back.
@@ -761,13 +799,23 @@ export default function HomeScreen() {
   // Auto-play the attached song of the most-visible music post while the feed is
   // focused; stop when it scrolls away or you leave the tab. A slideshow whose
   // current video slide has its audio on pauses its song so they don't overlap.
-  const visibleMusicItem = posts.find((p) => p.id === visibleMusicId);
-  useEffect(() => {
-    if (isFocused && visibleMusicId && visibleMusicItem?.song_id && !slideAudioActiveIds.has(visibleMusicId)) playSong(visibleMusicId, visibleMusicItem.song_id);
-    else if (visibleMusicId) stopSong(visibleMusicId);
-    return () => { if (visibleMusicId) stopSong(visibleMusicId); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleMusicId, visibleMusicItem?.song_id, isFocused, slideAudioActiveIds]);
+  // Imperative (see visibleMusicRef above): called from the viewability handler,
+  // the focus effect, and onSlideAudioActive — never re-renders anything.
+  const musicCtl = useRef({ playSong, stopSong });
+  musicCtl.current = { playSong, stopSong };
+  function syncAmbientSong() {
+    const target = isFocusedRef.current ? visibleMusicRef.current : null;
+    const want = target && !slideAudioIdsRef.current.has(target.id) ? target : null;
+    const cur = ambientPlayingRef.current;
+    if (cur && cur !== want?.id) { musicCtl.current.stopSong(cur); ambientPlayingRef.current = null; }
+    if (want && ambientPlayingRef.current !== want.id) {
+      musicCtl.current.playSong(want.id, want.songId);
+      ambientPlayingRef.current = want.id;
+    }
+  }
+  syncAmbientSongRef.current = syncAmbientSong;
+  // Feed unmount (account switch): stop whatever ambient song is playing.
+  useEffect(() => () => { if (ambientPlayingRef.current) musicCtl.current.stopSong(ambientPlayingRef.current); }, []);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -1067,15 +1115,13 @@ export default function HomeScreen() {
   const onComments = useCallback((item: Post) => {
     setCommentsFor({ id: item.id, ownerId: item.user_id, item });
   }, []);
-  // Track which slideshows have their video audio on (idempotent — returns the same
-  // set when nothing changes so it never triggers an extra render).
+  // Track which slideshows have their video audio on (ref + imperative sync —
+  // never renders; idempotent so a repeated report is a no-op).
   const onSlideAudioActive = useCallback((item: Post, on: boolean) => {
-    setSlideAudioActiveIds(prev => {
-      if (on === prev.has(item.id)) return prev;
-      const n = new Set(prev);
-      if (on) n.add(item.id); else n.delete(item.id);
-      return n;
-    });
+    const set = slideAudioIdsRef.current;
+    if (on === set.has(item.id)) return;
+    if (on) set.add(item.id); else set.delete(item.id);
+    syncAmbientSongRef.current();
   }, []);
 
   // Playing a song from the feed queues ALL the feed's songs in relevance order
@@ -1149,8 +1195,6 @@ export default function HomeScreen() {
       {(item as any).__ad ? (
         <SponsoredCard
           item={item}
-          isVisibleVideo={visibleVideoId === item.id}
-          shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
           onCta={onAdCta}
           onOptions={onAdOptions}
         />
@@ -1163,8 +1207,6 @@ export default function HomeScreen() {
           audioActive={isPlaying && currentTrack?.id === item.id}
           videoMuted={videoMuted}
           songMuted={songMuted}
-          isVisibleVideo={visibleVideoId === item.id || warmVideoIds.has(item.id)}
-          shouldPlayVideo={canPlayVideo && visibleVideoId === item.id}
           onProfile={onProfile}
           onOptions={onOptions}
           onOpenPost={onOpenPost}
@@ -1181,7 +1223,11 @@ export default function HomeScreen() {
         />
       )}
     </ElasticSwipeView>
-  ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, songMuted, canPlayVideo, visibleVideoId, warmVideoIds,
+  // Scroll-varying playback state deliberately ABSENT from these deps (it lives
+  // in lib/feedVideo — cards subscribe directly): renderPost identity now only
+  // changes on user-initiated events (like/save, track change, mute), never
+  // during a plain scroll — so FlatList's mounted cells bail via PureComponent.
+  ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, songMuted,
       onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions]);
 
   if (loading) {
@@ -1202,9 +1248,9 @@ export default function HomeScreen() {
           styles.header,
           styles.headerFloat,
           Platform.OS === 'ios' && styles.headerGlass,
-          { transform: [{ translateY: feedChromeTop.interpolate({ inputRange: [0, 1], outputRange: [0, -(headerH || 140)] }) }] },
+          headerSlideStyle,
         ]}
-        onLayout={(e) => { const h = e.nativeEvent.layout.height; setHeaderH(h); setFeedHeaderHeight(h); }}
+        onLayout={(e) => { const h = e.nativeEvent.layout.height; setHeaderH(h); }}
       >
         {/* iOS: real frosted material behind the floating header (matches the tab
             bar), so the feed blurs through it instead of hiding under a flat slab. */}
@@ -1312,30 +1358,36 @@ export default function HomeScreen() {
         renderItem={renderPost}
         ListHeaderComponent={FeedHeader}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.feedContent, { paddingTop: headerH, paddingBottom: 68 + insets.bottom + SPACING.xxl + 60 }]}
-        // Drives the reactive chrome: the header/bar FOLLOW the scroll delta
-        // (slow drag = gradual tuck, fast fling = instant), settling to the
-        // nearest edge when the scroll comes to rest.
+        contentContainerStyle={feedContentStyle}
+        // Drives the reactive chrome (discrete state picks + native glides) and
+        // the velocity gate. The gate deliberately does NOT engage at drag
+        // start anymore: that was a 2026-06 patch that paused the playing
+        // video's native player at EVERY touch-down to mask a re-render burst
+        // whose root cause (renderPost identity churn) has since been fixed —
+        // Instagram-style, videos now keep playing through slow/medium scrolls
+        // and the gate engages only on real velocity (≥GATE_IN).
         onScroll={(e) => {
-          trackFeedScroll(e.nativeEvent.contentOffset.y);
+          trackFeedScroll(
+            e.nativeEvent.contentOffset.y,
+            e.nativeEvent.contentSize.height - e.nativeEvent.layoutMeasurement.height,
+          );
           trackScrollVelocity(e.nativeEvent.contentOffset.y);
         }}
-        // Engage the gate the INSTANT a drag begins — before velocity is even
-        // sampled — so the currently-playing video pauses and the warm-set churn
-        // defers immediately. Otherwise the most expensive moment (an active,
-        // decoding video + live viewability churn) lands right at scroll start,
-        // which is the choppiness felt when scrolling straight after a video
-        // plays. A slow reading scroll un-gates again on the first sub-GATE_OUT
-        // sample, so it still plays live.
-        onScrollBeginDrag={() => { feedDragStart(); setFastScroll(true); }}
+        onScrollBeginDrag={feedDragStart}
         onScrollEndDrag={feedDragEnd}
         onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); }}
+        // 16 is deliberate: the chrome is discrete now (no per-frame JS follow),
+        // so 60Hz sampling halves per-frame JS scroll work vs throttle 1 —
+        // headroom for cell mounts. Don't "fix" this back to 1.
         scrollEventThrottle={16}
         // Android-only: on iOS removeClippedSubviews is a known source of
         // flickering/blank cells with complex children (video posts) — one of
         // the "staticy" scroll artifacts — and iOS clips efficiently without it.
         removeClippedSubviews={Platform.OS === 'android'}
-        windowSize={5}
+        // 7 (not 5): heavy PostCards mount further from the viewport, so the
+        // mount cost lands while the card is still well offscreen instead of
+        // as it approaches the edge mid-scroll.
+        windowSize={7}
         maxToRenderPerBatch={5}
         initialNumToRender={5}
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
