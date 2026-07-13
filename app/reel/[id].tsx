@@ -340,17 +340,25 @@ export default function ReelScreen() {
   const visibleItem = posts.find((p) => p.id === visibleId);
   useEffect(() => {
     if (!visibleId) return;
+    if (!isFocused) { stopSong(); return; } // blur isn't gesture-time — stop now
     const songId = visibleItem?.song_id;
-    if (!isFocused || !songId) { stopSong(visibleId); return; }
-    // URL resolves in the background NOW; the native player starts only after
-    // the snap animation has fully settled (~300ms) — audio-session work at
-    // the snap frame was the "song reels hitch on landing" stall. Same-song
-    // handoffs (PostMusicContext fast-path) skip player churn entirely.
-    prefetchSong(songId);
-    const timer = setTimeout(() => playSong(visibleId, songId), 320);
-    return () => { clearTimeout(timer); stopSong(visibleId); };
+    if (songId) prefetchSong(songId); // URL resolves in the background NOW
+    // ALL player mutation lives in this ONE deferred timer (past the snap
+    // settle): start when the landed reel has a song, stop when it doesn't.
+    // The old cleanup-stop ran native audio work at the 55% viewability commit
+    // MID-SWIPE — and by destroying the player right before the deferred
+    // start, it also made the same-song handoff fast-path dead code. Now a
+    // swipe between posts sharing one song is a pure ref handoff (zero native
+    // churn), and different songs do a single internal replacement at +320ms.
+    const timer = setTimeout(() => {
+      if (songId) playSong(visibleId, songId);
+      else stopSong();
+    }, 320);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleId, visibleItem?.song_id, isFocused]);
+  // Unmount backstop — the timer-owned flow above never stops on unmount.
+  useEffect(() => () => stopSong(), []);
 
   // ── Horizontal (cinematic) reels: rotate the phone for true fullscreen ──────
   // The app is otherwise portrait-locked. While a horizontal video is the active

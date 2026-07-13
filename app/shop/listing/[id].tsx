@@ -15,7 +15,7 @@ import { useTranslation } from '../../../contexts/LanguageContext';
 import { useProfile } from '../../../contexts/ProfileContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { reactionPop } from '../../../lib/haptics';
-import { usePostMusic } from '../../../contexts/PostMusicContext';
+import { usePostMusicActions, useSongHostActive } from '../../../contexts/PostMusicContext';
 import { WEB_ORIGIN } from '../../../lib/appLinks';
 import { reportListing } from '../../../lib/postActions';
 import {
@@ -38,9 +38,10 @@ export default function ListingScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { profile } = useProfile();
-  const { playSong, stop: stopSong, activeId } = usePostMusic();
-  // Derived from the shared player, so the icon always matches what's audible.
-  const previewing = activeId === PREVIEW_HOST;
+  const { playSong, stop: stopSong } = usePostMusicActions();
+  // Derived from the shared player, so the icon always matches what's audible —
+  // per-host subscription re-renders this screen only when ITS preview flips.
+  const previewing = useSongHostActive(PREVIEW_HOST);
 
   const [listing, setListing] = useState<ShopListing | null>(null);
   const [order, setOrder] = useState<ShopOrder | null>(null);

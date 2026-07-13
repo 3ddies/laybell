@@ -25,7 +25,7 @@ import StickerLayer, {
 import { getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { useStories } from '../../contexts/StoriesContext';
 import { useStoryUpload } from '../../contexts/StoryUploadContext';
-import { usePostMusic } from '../../contexts/PostMusicContext';
+import { usePostMusicActions, useSongHostActive } from '../../contexts/PostMusicContext';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
@@ -157,8 +157,13 @@ export default function StoryCameraScreen() {
   const [showSongPicker, setShowSongPicker] = useState(false);
   // In-editor song preview (host id keys this screen's playback in the shared
   // post-music player, which fetches the track by song id on demand).
-  const { playSong, stop: stopSong, activeId: previewActiveId } = usePostMusic();
-  const previewing = previewActiveId === 'story-editor';
+  // Narrow subscription: this ALWAYS-MOUNTED camera screen used to consume the
+  // full usePostMusic() (activeId), so EVERY ambient song start/stop anywhere
+  // in the app re-rendered the whole camera — a heavy hidden cost that fired
+  // exactly when song posts scrolled by (even under the reels modal). Now it
+  // re-renders only when ITS OWN preview flips.
+  const { playSong, stop: stopSong } = usePostMusicActions();
+  const previewing = useSongHostActive('story-editor');
   const [showCaption, setShowCaption] = useState(false);            // caption input (opened from the rail)
   const [dragActive, setDragActive] = useState(false);              // a sticker is mid-drag → show trash
   const [overTrash, setOverTrash] = useState(false);

@@ -605,12 +605,11 @@ export default function HomeScreen() {
     // fire-and-forget RPC) and impression semantics must not change.
     const firstMusic = viewableItems.find(v => v.item?.song_id);
     if (firstMusic) musicCtl.current.prefetchSong(firstMusic.item.song_id);
-    if (scrollingRef.current || fastScrollRef.current) {
-      pendingMusicViewables.current = viewableItems;
-    } else {
-      pendingMusicViewables.current = null;
-      applyMusicViewables(viewableItems);
-    }
+    // ALWAYS park + (at rest) arm the deferred flush — a direct apply here
+    // could fire a second player create moments after the rest-flush one
+    // (this pair has minimumViewTime 90ms, so it can land just after rest).
+    pendingMusicViewables.current = viewableItems;
+    if (!scrollingRef.current && !fastScrollRef.current) armMusicFlush();
     // A spotlight card crossing the 60% visibility line counts as one
     // impression (deduped per campaign per session in lib/spotlight, owner
     // views never count).
@@ -637,30 +636,39 @@ export default function HomeScreen() {
       pendingVideoViewables.current = null;
       applyVideoViewables(pending);
     }
-    // Music stays parked until the scroll truly RESTS (see flushMusicAtRest) —
-    // clearing the fast gate mid-slow-scroll must not start a player early.
-    if (!on && !scrollingRef.current && pendingMusicViewables.current) {
-      const pendingMusic = pendingMusicViewables.current;
-      pendingMusicViewables.current = null;
-      applyMusicViewables(pendingMusic);
-    }
+    // Music stays parked until the scroll truly RESTS (armMusicFlush) — never
+    // applied from the gate transition.
   };
-  // The scroll came fully to rest: apply the parked ambient-song snapshot (the
-  // ONLY moment native audio players start/stop — never mid-gesture).
-  function flushMusicAtRest() {
-    scrollingRef.current = false;
-    if (pendingMusicViewables.current) {
-      const pendingMusic = pendingMusicViewables.current;
-      pendingMusicViewables.current = null;
-      applyMusicViewables(pendingMusic);
-    }
+  // Ambient-song application runs ~150ms AFTER the scroll rests: the rest frame
+  // already carries the landed video's play() and the list settle — spacing the
+  // native audio create/session work out of that burst keeps taps at rest
+  // responsive. Coalesced (re-armed by later at-rest snapshots), cancelled the
+  // moment scrolling resumes.
+  const musicFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function cancelMusicFlush() {
+    if (musicFlushTimer.current) { clearTimeout(musicFlushTimer.current); musicFlushTimer.current = null; }
   }
+  function armMusicFlush() {
+    cancelMusicFlush();
+    musicFlushTimer.current = setTimeout(() => {
+      musicFlushTimer.current = null;
+      if (pendingMusicViewables.current) {
+        const pendingMusic = pendingMusicViewables.current;
+        pendingMusicViewables.current = null;
+        applyMusicViewables(pendingMusic);
+      }
+    }, 150);
+  }
+  useEffect(() => () => cancelMusicFlush(), []);
   // dp per ms. GATE_IN ≈ 1.25 screens/s catches moderate scrolls (not just fast
   // flings) — that mid band was the choppy one; GATE_OUT ≈ 0.5 screens/s keeps
   // the gate engaged until the scroll has nearly stopped, so play resumes only
   // as you settle. The gap between them is hysteresis: a gentle reading scroll
   // (under GATE_OUT) never trips the gate and keeps videos playing live.
-  const GATE_IN = 1.0, GATE_OUT = 0.4;
+  // GATE_OUT raised 0.4 → 0.55: with the two-threshold flush below, play() at
+  // gate-exit is a cheap rate change on an ALREADY-MOUNTED, pre-buffering
+  // player — unlocking it earlier trims ~200-350ms of perceived start delay.
+  const GATE_IN = 1.0, GATE_OUT = 0.55;
   const trackScrollVelocity = (y: number) => {
     const t = Date.now();
     const { y: py, t: pt } = scrollSample.current;
@@ -671,26 +679,40 @@ export default function HomeScreen() {
     // reading-scroll and pause/play-flickered the playing video. Small-dt
     // samples are NOT anchored (dy and dt accumulate into the next check).
     if (dt >= 0 && dt < 12) {
-      if (!scrollStopTimer.current) scrollStopTimer.current = setTimeout(checkScrollStop, 130);
+      if (!scrollStopTimer.current) scrollStopTimer.current = setTimeout(checkScrollStop, 100);
       return;
     }
     scrollSample.current = { y, t };
     if (dt > 0 && dt < 200) { // >200ms gap = a new gesture, not a velocity sample
       const v = Math.abs(y - py) / dt;
       if (v >= GATE_IN) setFastScroll(true);
-      else if (v <= GATE_OUT) setFastScroll(false);
+      else {
+        // TWO-THRESHOLD flush: the moment a fling decays below GATE_IN, apply
+        // the parked video snapshot — the landed/warm players MOUNT (paused,
+        // under their posters) and start buffering their HLS streams through
+        // the last stretch of momentum. Playback still unlocks at GATE_OUT,
+        // where play() lands on an already-buffered player → instant start.
+        // (Before, mount AND play both waited for GATE_OUT: every fling landed
+        // on a cold stream — manifest + first segment AFTER the settle.)
+        if (fastScrollRef.current && pendingVideoViewables.current) {
+          const pendingV = pendingVideoViewables.current;
+          pendingVideoViewables.current = null;
+          applyVideoViewables(pendingV);
+        }
+        if (v <= GATE_OUT) setFastScroll(false);
+      }
     }
     // A fling's final events can still be fast — clear soon after events stop.
     // LAZY: one pending timeout re-arms itself with the remainder instead of
     // being cleared + recreated on every scroll frame (same pattern as
     // lib/feedChrome — per-frame timer churn was part of the staticy feel).
-    if (!scrollStopTimer.current) scrollStopTimer.current = setTimeout(checkScrollStop, 130);
+    if (!scrollStopTimer.current) scrollStopTimer.current = setTimeout(checkScrollStop, 100);
   };
   function checkScrollStop() {
     scrollStopTimer.current = null;
     const idle = Date.now() - scrollSample.current.t;
-    if (idle >= 130) { setFastScroll(false); flushMusicAtRest(); return; }
-    scrollStopTimer.current = setTimeout(checkScrollStop, 130 - idle);
+    if (idle >= 100) { setFastScroll(false); scrollingRef.current = false; armMusicFlush(); return; }
+    scrollStopTimer.current = setTimeout(checkScrollStop, 100 - idle);
   }
   const [feedMode, setFeedMode] = useState<'all' | 'following' | 'friends'>('all');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -827,11 +849,20 @@ export default function HomeScreen() {
   function syncAmbientSong() {
     const target = isFocusedRef.current ? visibleMusicRef.current : null;
     const want = target && !slideAudioIdsRef.current.has(target.id) ? target : null;
-    const cur = ambientPlayingRef.current;
-    if (cur && cur !== want?.id) { musicCtl.current.stopSong(cur); ambientPlayingRef.current = null; }
-    if (want && ambientPlayingRef.current !== want.id) {
-      musicCtl.current.playSong(want.id, want.songId);
-      ambientPlayingRef.current = want.id;
+    if (want) {
+      // PLAY-FIRST handoff: do NOT stop the old host before playSong —
+      // playSong replaces the player internally, and when consecutive posts
+      // share a song its fast-path transfers ownership with ZERO native churn.
+      // (Calling stop first nulled the song ref and destroyed the player, so
+      // that fast-path could never fire — every transition paid a full native
+      // teardown + create.)
+      if (ambientPlayingRef.current !== want.id) {
+        musicCtl.current.playSong(want.id, want.songId);
+        ambientPlayingRef.current = want.id;
+      }
+    } else if (ambientPlayingRef.current) {
+      musicCtl.current.stopSong(ambientPlayingRef.current);
+      ambientPlayingRef.current = null;
     }
   }
   syncAmbientSongRef.current = syncAmbientSong;
@@ -1394,9 +1425,9 @@ export default function HomeScreen() {
           );
           trackScrollVelocity(e.nativeEvent.contentOffset.y);
         }}
-        onScrollBeginDrag={() => { scrollingRef.current = true; feedDragStart(); }}
+        onScrollBeginDrag={() => { scrollingRef.current = true; cancelMusicFlush(); feedDragStart(); }}
         onScrollEndDrag={feedDragEnd}
-        onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); flushMusicAtRest(); }}
+        onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); scrollingRef.current = false; armMusicFlush(); }}
         // 16 is deliberate: the chrome is discrete now (no per-frame JS follow),
         // so 60Hz sampling halves per-frame JS scroll work vs throttle 1 —
         // headroom for cell mounts. Don't "fix" this back to 1.

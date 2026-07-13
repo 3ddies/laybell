@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -48,6 +48,38 @@ type PostMusicType = PostMusicActions & {
 const ActionsCtx = createContext<PostMusicActions | null>(null);
 const MutedCtx = createContext<boolean>(false);
 const ActiveIdCtx = createContext<string | null>(null);
+
+// ── Per-host "is my song active?" subscription (module store) ───────────────
+// story-camera (ALWAYS mounted as pager page 0, with a live CameraView) and the
+// shop listing preview only need "is MY host the active one?" — subscribing
+// them to ActiveIdCtx re-rendered the ENTIRE camera screen on every ambient
+// song start/stop/handoff, a heavy hidden cost paid only when song posts
+// scrolled by (it even fired underneath the reels modal).
+let activeIdNow: string | null = null;
+const activeSubs = new Map<string, Set<() => void>>();
+function publishActiveId(next: string | null) {
+  if (next === activeIdNow) return;
+  const prev = activeIdNow;
+  activeIdNow = next;
+  for (const id of [prev, next]) {
+    if (!id) continue;
+    const s = activeSubs.get(id);
+    if (s) for (const cb of s) cb();
+  }
+}
+// Re-renders the caller ONLY when `activeId === hostId` flips for ITS host.
+export function useSongHostActive(hostId: string): boolean {
+  const subscribe = useCallback((cb: () => void) => {
+    let s = activeSubs.get(hostId);
+    if (!s) { s = new Set(); activeSubs.set(hostId, s); }
+    s.add(cb);
+    return () => {
+      const set = activeSubs.get(hostId);
+      if (set) { set.delete(cb); if (!set.size) activeSubs.delete(hostId); }
+    };
+  }, [hostId]);
+  return useSyncExternalStore(subscribe, () => activeIdNow === hostId);
+}
 
 export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   const { isPlaying: mainPlaying } = useAudio();
@@ -151,7 +183,14 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     statusSubRef.current?.remove(); statusSubRef.current = null;
     const s = soundRef.current;
     soundRef.current = null;
-    if (s) { try { s.pause(); } catch {} setTimeout(() => { try { s.remove(); } catch {} }, 0); }
+    // Release the native player well AFTER the swap frames — remove() at
+    // setTimeout(0) executed in the very next JS tick, extending the burst.
+    if (s) { try { s.pause(); } catch {} setTimeout(() => { try { s.remove(); } catch {} }, 300); }
+  }
+
+  function setActiveHost(v: string | null) {
+    publishActiveId(v); // per-host subscribers (story-camera, shop) first
+    setActiveId(v);
   }
 
   function stop(hostId?: string) {
@@ -159,19 +198,36 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     tokenRef.current++; // cancel any in-flight load
     activeIdRef.current = null;
     activeSongRef.current = null;
-    setActiveId(null);
+    setActiveHost(null);
     teardown();
   }
 
   // Resolve (and cache) a song's audio URL without touching playback.
-  async function resolveSongUrl(songId: string, mediaUrl?: string | null): Promise<string | null> {
-    let url = mediaUrl ?? urlCache.get(songId) ?? null;
-    if (!url) {
-      const { data } = await supabase.from('posts').select('media_url').eq('id', songId).single();
-      url = (data as any)?.media_url ?? null;
-      if (url) urlCache.set(songId, url);
+  // IN-FLIGHT DEDUPED: viewability fires prefetchSong repeatedly while a song
+  // post is on screen — without the promise cache every event during the RTT
+  // window launched a DUPLICATE Supabase query on the JS thread mid-scroll,
+  // and playSong fired its own second round trip instead of reusing the
+  // prefetch. Now everyone shares one promise per song.
+  const inflightUrl = useRef(new Map<string, Promise<string | null>>()).current;
+  function resolveSongUrl(songId: string, mediaUrl?: string | null): Promise<string | null> {
+    if (mediaUrl) { urlCache.set(songId, mediaUrl); return Promise.resolve(mediaUrl); }
+    const hit = urlCache.get(songId);
+    if (hit) return Promise.resolve(hit);
+    let p = inflightUrl.get(songId);
+    if (!p) {
+      p = (async () => {
+        try {
+          const { data } = await supabase.from('posts').select('media_url').eq('id', songId).single();
+          const url = (data as any)?.media_url ?? null;
+          if (url) urlCache.set(songId, url);
+          return url;
+        } finally {
+          inflightUrl.delete(songId);
+        }
+      })();
+      inflightUrl.set(songId, p);
     }
-    return url;
+    return p;
   }
   function prefetchSong(songId: string, mediaUrl?: string | null) {
     resolveSongUrl(songId, mediaUrl).catch(() => {});
@@ -189,14 +245,14 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     if (activeSongRef.current === songId && soundRef.current) {
       tokenRef.current++; // abort any in-flight load for another song
       activeIdRef.current = hostId;
-      setActiveId(hostId);
+      setActiveHost(hostId);
       return;
     }
 
     const token = ++tokenRef.current;
     activeIdRef.current = hostId;
     activeSongRef.current = songId;
-    setActiveId(hostId);
+    setActiveHost(hostId);
 
     const url = await resolveSongUrl(songId, mediaUrl);
     if (!url || token !== tokenRef.current) return;
@@ -204,7 +260,8 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     statusSubRef.current?.remove(); statusSubRef.current = null;
     const existing = soundRef.current;
     soundRef.current = null;
-    if (existing) { try { existing.pause(); } catch {} setTimeout(() => { try { existing.remove(); } catch {} }, 0); }
+    // Deferred native release (see teardown) — keep it off the swap frames.
+    if (existing) { try { existing.pause(); } catch {} setTimeout(() => { try { existing.remove(); } catch {} }, 300); }
     if (token !== tokenRef.current) return;
 
     try {
