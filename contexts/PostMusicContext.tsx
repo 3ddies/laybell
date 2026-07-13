@@ -29,6 +29,10 @@ type PostMusicActions = {
   // Play `songId`'s audio for host `hostId`. mediaUrl optional (resolved + cached).
   playSong: (hostId: string, songId: string, mediaUrl?: string | null) => void;
   stop: (hostId?: string) => void;  // stop (optionally only if hostId is the active one)
+  // Resolve + cache the song's audio URL WITHOUT touching playback — feeds call
+  // this as a music post approaches so playSong at scroll-rest never waits on
+  // the network.
+  prefetchSong: (songId: string, mediaUrl?: string | null) => void;
 };
 type PostMusicType = PostMusicActions & {
   activeId: string | null;          // host post/story id whose song is playing
@@ -159,22 +163,42 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     teardown();
   }
 
-  async function playSong(hostId: string, songId: string, mediaUrl?: string | null) {
-    // Don't fight the user's chosen track in the mini-player.
-    if (mainPlayingRef.current) { stop(); return; }
-    if (activeIdRef.current === hostId && activeSongRef.current === songId && soundRef.current) return;
-
-    const token = ++tokenRef.current;
-    activeIdRef.current = hostId;
-    activeSongRef.current = songId;
-    setActiveId(hostId);
-
+  // Resolve (and cache) a song's audio URL without touching playback.
+  async function resolveSongUrl(songId: string, mediaUrl?: string | null): Promise<string | null> {
     let url = mediaUrl ?? urlCache.get(songId) ?? null;
     if (!url) {
       const { data } = await supabase.from('posts').select('media_url').eq('id', songId).single();
       url = (data as any)?.media_url ?? null;
       if (url) urlCache.set(songId, url);
     }
+    return url;
+  }
+  function prefetchSong(songId: string, mediaUrl?: string | null) {
+    resolveSongUrl(songId, mediaUrl).catch(() => {});
+  }
+
+  async function playSong(hostId: string, songId: string, mediaUrl?: string | null) {
+    // Don't fight the user's chosen track in the mini-player.
+    if (mainPlayingRef.current) { stop(); return; }
+    if (activeIdRef.current === hostId && activeSongRef.current === songId && soundRef.current) return;
+
+    // Same SONG already playing for a DIFFERENT host (consecutive posts sharing
+    // a song — common on a music app): transfer ownership and keep playing.
+    // Tearing down + recreating the native player for the identical stream was
+    // pure audio-session churn — a UI-thread stall at the exact swipe moment.
+    if (activeSongRef.current === songId && soundRef.current) {
+      tokenRef.current++; // abort any in-flight load for another song
+      activeIdRef.current = hostId;
+      setActiveId(hostId);
+      return;
+    }
+
+    const token = ++tokenRef.current;
+    activeIdRef.current = hostId;
+    activeSongRef.current = songId;
+    setActiveId(hostId);
+
+    const url = await resolveSongUrl(songId, mediaUrl);
     if (!url || token !== tokenRef.current) return;
 
     statusSubRef.current?.remove(); statusSubRef.current = null;
@@ -222,7 +246,7 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => () => { saveAmbient(); teardown(); }, []);
 
   // Stable forever: the functions close over refs + stable setters only.
-  const actions = useMemo(() => ({ toggleMuted, playSong, stop }), []);
+  const actions = useMemo(() => ({ toggleMuted, playSong, stop, prefetchSong }), []);
 
   return (
     <ActionsCtx.Provider value={actions}>

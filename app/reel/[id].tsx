@@ -287,7 +287,7 @@ export default function ReelScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { stop } = useAudio();
-  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted } = usePostMusicActions();
+  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted, prefetchSong } = usePostMusicActions();
   const songMuted = usePostMusicMuted();
   const isFocused = useIsFocused();
   const { dismiss, backdropOpacity, contentStyle } = useExpandTransition();
@@ -342,7 +342,12 @@ export default function ReelScreen() {
     if (!visibleId) return;
     const songId = visibleItem?.song_id;
     if (!isFocused || !songId) { stopSong(visibleId); return; }
-    const timer = setTimeout(() => playSong(visibleId, songId), 160);
+    // URL resolves in the background NOW; the native player starts only after
+    // the snap animation has fully settled (~300ms) — audio-session work at
+    // the snap frame was the "song reels hitch on landing" stall. Same-song
+    // handoffs (PostMusicContext fast-path) skip player churn entirely.
+    prefetchSong(songId);
+    const timer = setTimeout(() => playSong(visibleId, songId), 320);
     return () => { clearTimeout(timer); stopSong(visibleId); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleId, visibleItem?.song_id, isFocused]);

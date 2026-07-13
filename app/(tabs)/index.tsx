@@ -498,7 +498,7 @@ export default function HomeScreen() {
   // Narrow hooks: actions never change identity; muted flips only on user taps.
   // (usePostMusic would re-render this whole screen on every activeId change —
   // i.e. per song-post crossing — including while covered by the reels modal.)
-  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted } = usePostMusicActions();
+  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted, prefetchSong } = usePostMusicActions();
   const songMuted = usePostMusicMuted();
   const router = useRouter();
 
@@ -525,6 +525,11 @@ export default function HomeScreen() {
   // already-warmed video plays instantly. Only slow reading scrolls (under
   // GATE_OUT) keep playing live. Velocity is sampled per scroll event.
   const fastScrollRef = useRef(false);
+  // True from finger-down until the scroll fully rests (drag end + momentum/idle).
+  // Ambient-song application is parked while this is set: starting/stopping a
+  // native audio player (audio-session work) mid-scroll stalls the UI thread —
+  // the "1-in-3 swipes hitch, always on posts with Laybell music" symptom.
+  const scrollingRef = useRef(false);
   const scrollSample = useRef({ y: 0, t: 0 });
   const scrollStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current); }, []);
@@ -591,12 +596,16 @@ export default function HomeScreen() {
   }).current;
   const pendingMusicViewables = useRef<any[] | null>(null);
   const onImpressionViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
-    // Ambient-song selection tears down + creates a NATIVE audio player (plus a
-    // possible Supabase fetch), so mid-fling snapshots are deferred exactly like
-    // the video pair — the latest applies as the scroll slows (see setFastScroll).
+    // Ambient-song application is parked during ANY scrolling (not just fast) —
+    // it tears down + creates a NATIVE audio player, and that audio-session
+    // work stalls the UI thread mid-gesture. The latest snapshot applies when
+    // the scroll RESTS (flushMusicAtRest). The song URL is prefetched right
+    // away though, so the player starts instantly at rest.
     // The impression loop below stays live: it's cheap (in-memory dedupe +
     // fire-and-forget RPC) and impression semantics must not change.
-    if (fastScrollRef.current) {
+    const firstMusic = viewableItems.find(v => v.item?.song_id);
+    if (firstMusic) musicCtl.current.prefetchSong(firstMusic.item.song_id);
+    if (scrollingRef.current || fastScrollRef.current) {
       pendingMusicViewables.current = viewableItems;
     } else {
       pendingMusicViewables.current = null;
@@ -628,12 +637,24 @@ export default function HomeScreen() {
       pendingVideoViewables.current = null;
       applyVideoViewables(pending);
     }
-    if (!on && pendingMusicViewables.current) {
+    // Music stays parked until the scroll truly RESTS (see flushMusicAtRest) —
+    // clearing the fast gate mid-slow-scroll must not start a player early.
+    if (!on && !scrollingRef.current && pendingMusicViewables.current) {
       const pendingMusic = pendingMusicViewables.current;
       pendingMusicViewables.current = null;
       applyMusicViewables(pendingMusic);
     }
   };
+  // The scroll came fully to rest: apply the parked ambient-song snapshot (the
+  // ONLY moment native audio players start/stop — never mid-gesture).
+  function flushMusicAtRest() {
+    scrollingRef.current = false;
+    if (pendingMusicViewables.current) {
+      const pendingMusic = pendingMusicViewables.current;
+      pendingMusicViewables.current = null;
+      applyMusicViewables(pendingMusic);
+    }
+  }
   // dp per ms. GATE_IN ≈ 1.25 screens/s catches moderate scrolls (not just fast
   // flings) — that mid band was the choppy one; GATE_OUT ≈ 0.5 screens/s keeps
   // the gate engaged until the scroll has nearly stopped, so play resumes only
@@ -668,7 +689,7 @@ export default function HomeScreen() {
   function checkScrollStop() {
     scrollStopTimer.current = null;
     const idle = Date.now() - scrollSample.current.t;
-    if (idle >= 130) { setFastScroll(false); return; }
+    if (idle >= 130) { setFastScroll(false); flushMusicAtRest(); return; }
     scrollStopTimer.current = setTimeout(checkScrollStop, 130 - idle);
   }
   const [feedMode, setFeedMode] = useState<'all' | 'following' | 'friends'>('all');
@@ -801,8 +822,8 @@ export default function HomeScreen() {
   // current video slide has its audio on pauses its song so they don't overlap.
   // Imperative (see visibleMusicRef above): called from the viewability handler,
   // the focus effect, and onSlideAudioActive — never re-renders anything.
-  const musicCtl = useRef({ playSong, stopSong });
-  musicCtl.current = { playSong, stopSong };
+  const musicCtl = useRef({ playSong, stopSong, prefetchSong });
+  musicCtl.current = { playSong, stopSong, prefetchSong };
   function syncAmbientSong() {
     const target = isFocusedRef.current ? visibleMusicRef.current : null;
     const want = target && !slideAudioIdsRef.current.has(target.id) ? target : null;
@@ -1373,9 +1394,9 @@ export default function HomeScreen() {
           );
           trackScrollVelocity(e.nativeEvent.contentOffset.y);
         }}
-        onScrollBeginDrag={feedDragStart}
+        onScrollBeginDrag={() => { scrollingRef.current = true; feedDragStart(); }}
         onScrollEndDrag={feedDragEnd}
-        onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); }}
+        onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); flushMusicAtRest(); }}
         // 16 is deliberate: the chrome is discrete now (no per-frame JS follow),
         // so 60Hz sampling halves per-frame JS scroll work vs throttle 1 —
         // headroom for cell mounts. Don't "fix" this back to 1.
