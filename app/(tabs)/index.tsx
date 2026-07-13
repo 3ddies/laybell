@@ -531,6 +531,13 @@ export default function HomeScreen() {
   // the "1-in-3 swipes hitch, always on posts with Laybell music" symptom.
   const scrollingRef = useRef(false);
   const scrollSample = useRef({ y: 0, t: 0 });
+  // Tap-misread guard: a main-thread hiccup can delay gesture recognition so a
+  // swipe's touch-down registers as a TAP on whatever sits under the finger
+  // (the phantom "profile click" during a downward swipe). Navigation taps
+  // within 130ms of live scroll MOVEMENT are swallowed — a resting feed never
+  // blocks taps.
+  const lastScrollMoveAt = useRef(0);
+  const lastTapGuardY = useRef(0);
   const scrollStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current); }, []);
 
@@ -547,7 +554,9 @@ export default function HomeScreen() {
   // spotlight/ad impressions + ambient music keep the original deliberate
   // 60% + 90ms rule (impression semantics unchanged).
   const pendingVideoViewables = useRef<any[] | null>(null);
-  const applyVideoViewables = useRef((viewableItems: any[]) => {
+  // Supersession token for the deferred warm-set apply (see deferWarm below).
+  const warmFlushToken = useRef(0);
+  const applyVideoViewables = useRef((viewableItems: any[], deferWarm = false) => {
     // A video post, or a slideshow that contains at least one video slide, becomes
     // the "playing" item so its current video slide can autoplay.
     const firstVideo = viewableItems.find(v =>
@@ -579,7 +588,16 @@ export default function HomeScreen() {
       if (below) ids.push(below);
       if (above) ids.push(above);
     }
-    setWarmVideoIds(ids);
+    if (deferWarm) {
+      // Neighbor players mount ~120ms AFTER the landed card's own mount/play
+      // commit — 2-3 AVPlayer creations in a single main-thread burst was a
+      // freeze source. A newer snapshot supersedes this one via the token.
+      const tok = ++warmFlushToken.current;
+      setTimeout(() => { if (tok === warmFlushToken.current) setWarmVideoIds(ids); }, 120);
+    } else {
+      warmFlushToken.current++;
+      setWarmVideoIds(ids);
+    }
   }).current;
   const onVideoViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     // Mid-fling snapshots are deferred (see setFastScroll) so a fast scroll
@@ -634,7 +652,9 @@ export default function HomeScreen() {
     if (!on && pendingVideoViewables.current) {
       const pending = pendingVideoViewables.current;
       pendingVideoViewables.current = null;
-      applyVideoViewables(pending);
+      // deferWarm: the landed card mounts + plays now; neighbor players mount
+      // ~120ms later so multiple AVPlayer creations never share one frame.
+      applyVideoViewables(pending, true);
     }
     // Music stays parked until the scroll truly RESTS (armMusicFlush) — never
     // applied from the gate transition.
@@ -686,21 +706,13 @@ export default function HomeScreen() {
     if (dt > 0 && dt < 200) { // >200ms gap = a new gesture, not a velocity sample
       const v = Math.abs(y - py) / dt;
       if (v >= GATE_IN) setFastScroll(true);
-      else {
-        // TWO-THRESHOLD flush: the moment a fling decays below GATE_IN, apply
-        // the parked video snapshot — the landed/warm players MOUNT (paused,
-        // under their posters) and start buffering their HLS streams through
-        // the last stretch of momentum. Playback still unlocks at GATE_OUT,
-        // where play() lands on an already-buffered player → instant start.
-        // (Before, mount AND play both waited for GATE_OUT: every fling landed
-        // on a cold stream — manifest + first segment AFTER the settle.)
-        if (fastScrollRef.current && pendingVideoViewables.current) {
-          const pendingV = pendingVideoViewables.current;
-          pendingVideoViewables.current = null;
-          applyVideoViewables(pendingV);
-        }
-        if (v <= GATE_OUT) setFastScroll(false);
-      }
+      // NO player mounting mid-scroll — an earlier "mount while decelerating"
+      // optimization caused FULL-FRAME freezes midway through flicks (AVPlayer
+      // creation blocks the main thread; a frozen main thread also makes the
+      // gesture recognizer misread swipes as taps). Mount + play both happen
+      // at GATE_OUT (0.55 — earlier than the original 0.4), with neighbor
+      // mounts staggered off the play commit (see applyVideoViewables).
+      else if (v <= GATE_OUT) setFastScroll(false);
     }
     // A fling's final events can still be fast — clear soon after events stop.
     // LAZY: one pending timeout re-arms itself with the remainder instead of
@@ -708,6 +720,9 @@ export default function HomeScreen() {
     // lib/feedChrome — per-frame timer churn was part of the staticy feel).
     if (!scrollStopTimer.current) scrollStopTimer.current = setTimeout(checkScrollStop, 100);
   };
+  function isScrollTap() {
+    return Date.now() - lastScrollMoveAt.current < 130;
+  }
   function checkScrollStop() {
     scrollStopTimer.current = null;
     const idle = Date.now() - scrollSample.current.t;
@@ -1159,12 +1174,13 @@ export default function HomeScreen() {
 
   // isSwipeTap guards: a tab swipe gliding over the feed must not open
   // posts/reels/profiles (the swipe's touch can read as a tap on a card).
-  const onProfile = useCallback((item: Post) => { if (isSwipeTap()) return; live.current.router.push(`/profile/${item.user_id}`); }, []);
-  const onOpenPost = useCallback((item: Post, src?: SourceRect, index?: number) => { if (isSwipeTap()) return; live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}), ...(index != null ? { index: String(index) } : {}) } }); }, []);
-  const onOpenReel = useCallback((item: Post, src?: SourceRect) => { if (isSwipeTap()) return; live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }); }, []);
+  const onProfile = useCallback((item: Post) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push(`/profile/${item.user_id}`); }, []);
+  const onOpenPost = useCallback((item: Post, src?: SourceRect, index?: number) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push({ pathname: '/post/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}), ...(index != null ? { index: String(index) } : {}) } }); }, []);
+  const onOpenReel = useCallback((item: Post, src?: SourceRect) => { if (isSwipeTap() || isScrollTap()) return; live.current.router.push({ pathname: '/reel/[id]', params: { id: item.id, post: JSON.stringify(item), ...(src ? { src: JSON.stringify(src) } : {}) } }); }, []);
   // The spotlight tap is NOT recorded here — opening the sheet to read isn't
   // an engagement. It's counted in the sheet's onPosted, on actual submission.
   const onComments = useCallback((item: Post) => {
+    if (isScrollTap()) return;
     setCommentsFor({ id: item.id, ownerId: item.user_id, item });
   }, []);
   // Track which slideshows have their video audio on (ref + imperative sync —
@@ -1419,11 +1435,10 @@ export default function HomeScreen() {
         // Instagram-style, videos now keep playing through slow/medium scrolls
         // and the gate engages only on real velocity (≥GATE_IN).
         onScroll={(e) => {
-          trackFeedScroll(
-            e.nativeEvent.contentOffset.y,
-            e.nativeEvent.contentSize.height - e.nativeEvent.layoutMeasurement.height,
-          );
-          trackScrollVelocity(e.nativeEvent.contentOffset.y);
+          const y = e.nativeEvent.contentOffset.y;
+          if (Math.abs(y - lastTapGuardY.current) > 2) { lastTapGuardY.current = y; lastScrollMoveAt.current = Date.now(); }
+          trackFeedScroll(y, e.nativeEvent.contentSize.height - e.nativeEvent.layoutMeasurement.height);
+          trackScrollVelocity(y);
         }}
         onScrollBeginDrag={() => { scrollingRef.current = true; cancelMusicFlush(); feedDragStart(); }}
         onScrollEndDrag={feedDragEnd}
