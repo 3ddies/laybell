@@ -63,7 +63,23 @@ function recompute() {
   notify([visibleVideoId]);
 }
 
-export function setFeedFocused(on: boolean) { focused = on; recompute(); }
+const focusSubs = new Set<() => void>();
+export function setFeedFocused(on: boolean) {
+  if (focused !== on) {
+    focused = on;
+    for (const cb of focusSubs) cb();
+  }
+  recompute();
+}
+// FeedVideo subscribes so feed players fully DETACH + UNLOAD while the feed is
+// covered (reels modal, pushed screens): paused-but-loaded players kept
+// buffering under the modal, starving the reels player's bandwidth.
+export function useFeedFocused(): boolean {
+  return useSyncExternalStore(
+    (cb) => { focusSubs.add(cb); return () => { focusSubs.delete(cb); }; },
+    () => focused,
+  );
+}
 export function setFeedFastScrolling(on: boolean) { fastScrolling = on; recompute(); }
 // Module-lifetime subscription, mirroring PagerContext's own store pattern —
 // tab-swipe start/end now flips playback for ONLY the visible card instead of

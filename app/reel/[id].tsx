@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
+import ReelVideo from '../../components/ReelVideo';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -239,13 +240,17 @@ const ReelPage = memo(function ReelPage({
           <ExpoImage source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={landscape ? 'contain' : 'cover'} />
         ) : null}
         {mountPlayer ? (
-          <AppVideo
+          // POOLED player (lib/feedVideoPool reelPool): assignment is an async
+          // source swap — no creation, no freeze — which is what lets the NEXT
+          // reel pre-buffer while this one plays (warmNextId in ReelScreen).
+          // Landing on a pre-buffered reel plays the moment the swipe commits.
+          <ReelVideo
             ref={(r) => api.setVideoRef(item.id, r)}
-            source={{ uri: item.media_url }}
-            style={StyleSheet.absoluteFill}
+            id={item.id}
+            uri={item.media_url}
             contentFit={landscape ? 'contain' : 'cover'}
             loop={item.trim_end == null}
-            active={playing}
+            play={playing}
             muted={!!item.song_id}
             trimStartSec={item.trim_start}
             trimEndSec={item.trim_end}
@@ -391,6 +396,22 @@ export default function ReelScreen() {
     lingerTimer.current = setTimeout(() => { lingerTimer.current = null; setLingerId(null); }, 500);
   };
   useEffect(() => () => { if (lingerTimer.current) clearTimeout(lingerTimer.current); }, []);
+  // Pre-buffer the NEXT reel ~400ms after the current one settles (i.e. after
+  // its own playback is established, so the loads never compete): pooled
+  // assignment is replaceAsync — no creation, no freeze — so releasing your
+  // finger on the next swipe lands on an already-loaded player that simply
+  // plays. This is the Instagram "plays as soon as you let go" mechanic.
+  const [warmNextId, setWarmNextId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!settledId) return;
+    const t = setTimeout(() => {
+      const list = postsRef.current;
+      const idx = list.findIndex((p) => p.id === settledId);
+      const next = idx >= 0 ? list[idx + 1] : null;
+      setWarmNextId(next && !next.__ad && next.media_url ? next.id : null);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [settledId, posts]);
 
   // ── Horizontal (cinematic) reels: rotate the phone for true fullscreen ──────
   // The app is otherwise portrait-locked. While a horizontal video is the active
@@ -754,7 +775,7 @@ export default function ReelScreen() {
         isSaved={saved.has(item.id)}
         spotlight={!!item.__spotlight || spotlightIds.has(item.id)}
         insetsBottom={insets.bottom}
-        mountPlayer={settledId === item.id || lingerId === item.id}
+        mountPlayer={settledId === item.id || lingerId === item.id || warmNextId === item.id}
         api={pageApi}
       />
     );
