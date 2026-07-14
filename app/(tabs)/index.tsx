@@ -725,7 +725,11 @@ export default function HomeScreen() {
     if (!scrollStopTimer.current) scrollStopTimer.current = setTimeout(checkScrollStop, 100);
   };
   function isScrollTap() {
-    return Date.now() - lastScrollMoveAt.current < 130;
+    // scrollingRef covers the FREEZE case: during a main-thread stall no scroll
+    // events flow, so the 130ms movement window alone can expire mid-freeze and
+    // let the misread tap through. A scroll gesture that hasn't reached rest is
+    // never a real navigation tap (iOS wouldn't deliver one to children anyway).
+    return scrollingRef.current || Date.now() - lastScrollMoveAt.current < 130;
   }
   function checkScrollStop() {
     scrollStopTimer.current = null;
@@ -1459,7 +1463,10 @@ export default function HomeScreen() {
         // mount cost lands while the card is still well offscreen instead of
         // as it approaches the edge mid-scroll.
         windowSize={7}
-        maxToRenderPerBatch={5}
+        // 3 (not 5): smaller mount batches = shorter main-thread bursts per
+        // batch — a 5-card batch of heavy PostCards was long enough to read as
+        // a mid-scroll frame freeze on device.
+        maxToRenderPerBatch={3}
         initialNumToRender={5}
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
         refreshControl={

@@ -6,6 +6,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Image as ExpoImage } from 'expo-image';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -201,10 +202,10 @@ const ReelControls = memo(function ReelControls({
 // gradient/caption-parse/translate work used to land exactly as the pager
 // snapped, which was the per-swipe hitch.
 const ReelPage = memo(function ReelPage({
-  item, active, playing, showPaused, zoomed, isLiked, isSaved, spotlight, insetsBottom, api,
+  item, active, playing, showPaused, zoomed, isLiked, isSaved, spotlight, insetsBottom, mountPlayer, api,
 }: {
   item: any; active: boolean; playing: boolean; showPaused: boolean; zoomed: boolean;
-  isLiked: boolean; isSaved: boolean; spotlight: boolean; insetsBottom: number; api: ReelPageApi;
+  isLiked: boolean; isSaved: boolean; spotlight: boolean; insetsBottom: number; mountPlayer: boolean; api: ReelPageApi;
 }) {
   const styles = useThemedStyles(makeStyles);
   // Landscape/square videos show in full (letterboxed) so nothing is cut;
@@ -229,20 +230,30 @@ const ReelPage = memo(function ReelPage({
           onZoomChange={api.onZoomChange}
           onGesture={api.markGesture}
         >
-        <AppVideo
-          ref={(r) => api.setVideoRef(item.id, r)}
-          source={{ uri: item.media_url }}
-          style={StyleSheet.absoluteFill}
-          contentFit={landscape ? 'contain' : 'cover'}
-          loop={item.trim_end == null}
-          active={playing}
-          muted={!!item.song_id}
-          poster={poster}
-          posterContentFit={landscape ? 'contain' : 'cover'}
-          trimStartSec={item.trim_start}
-          trimEndSec={item.trim_end}
-          onProgress={(pos, dur) => api.onProgress(item.id, pos, dur)}
-        />
+        {mountPlayer ? (
+          <AppVideo
+            ref={(r) => api.setVideoRef(item.id, r)}
+            source={{ uri: item.media_url }}
+            style={StyleSheet.absoluteFill}
+            contentFit={landscape ? 'contain' : 'cover'}
+            loop={item.trim_end == null}
+            active={playing}
+            muted={!!item.song_id}
+            poster={poster}
+            posterContentFit={landscape ? 'contain' : 'cover'}
+            trimStartSec={item.trim_start}
+            trimEndSec={item.trim_end}
+            onProgress={(pos, dur) => api.onProgress(item.id, pos, dur)}
+          />
+        ) : poster ? (
+          // Poster-only page: non-landed/non-warmed pages carry NO native
+          // player — creating an AVPlayer as part of the page mount was the
+          // reels mid-swipe freeze (and idle neighbors' HLS fetches competed
+          // with the playing video's bandwidth → mid-play stalls). The player
+          // arrives when this page becomes the landed or pre-warmed one
+          // (warmReelId in ReelScreen).
+          <ExpoImage source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={landscape ? 'contain' : 'cover'} />
+        ) : null}
         </ZoomableView>
       </TouchableOpacity>
 
@@ -359,6 +370,21 @@ export default function ReelScreen() {
   }, [visibleId, visibleItem?.song_id, isFocused]);
   // Unmount backstop — the timer-owned flow above never stops on unmount.
   useEffect(() => () => stopSong(), []);
+
+  // Pre-warm ONLY the next reel's player, ~300ms after landing (off the swipe
+  // frames). Forward swipes always land on an already-warmed player; a
+  // back-swipe pays one quick poster→player start (the rare direction).
+  const [warmReelId, setWarmReelId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!visibleId) return;
+    const t = setTimeout(() => {
+      const list = postsRef.current;
+      const idx = list.findIndex((p) => p.id === visibleId);
+      const next = idx >= 0 ? list[idx + 1] : null;
+      setWarmReelId(next && !next.__ad ? next.id : null);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [visibleId, posts]);
 
   // ── Horizontal (cinematic) reels: rotate the phone for true fullscreen ──────
   // The app is otherwise portrait-locked. While a horizontal video is the active
@@ -722,6 +748,7 @@ export default function ReelScreen() {
         isSaved={saved.has(item.id)}
         spotlight={!!item.__spotlight || spotlightIds.has(item.id)}
         insetsBottom={insets.bottom}
+        mountPlayer={visibleId === item.id || warmReelId === item.id}
         api={pageApi}
       />
     );
