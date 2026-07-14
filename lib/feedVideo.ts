@@ -1,5 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import { subscribePagerSwiping, getPagerSwiping } from '../contexts/PagerContext';
+import { feedPool } from './feedVideoPool';
 
 // ── Per-card feed video playback store ───────────────────────────────────────
 // Which feed video is visible / warm / allowed to play, OUTSIDE React state.
@@ -39,6 +40,10 @@ export function setVisibleVideoId(next: string | null) {
   if (next === visibleVideoId) return;
   const prev = visibleVideoId;
   visibleVideoId = next;
+  // The WATCHED video's pool player must never be stolen by a neighbor's
+  // acquisition (naive LRU stealing froze every playing video once feed
+  // video density rose).
+  feedPool.setProtected(next);
   notify([prev, next]);
 }
 
@@ -68,6 +73,11 @@ export function setFeedFocused(on: boolean) {
   if (focused !== on) {
     focused = on;
     for (const cb of focusSubs) cb();
+    // Blurred (reels modal / pushed screen): after the FeedVideo components
+    // have detached + released (their focus effects run this same tick),
+    // dispose the idle players' loaded items — the ONLY safe moment for the
+    // disposal stall is when no feed video is on screen.
+    if (!on) setTimeout(() => { if (!focused) feedPool.unloadIdle(); }, 400);
   }
   recompute();
 }

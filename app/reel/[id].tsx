@@ -8,6 +8,7 @@ import {
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import ReelVideo from '../../components/ReelVideo';
+import { reelPool } from '../../lib/feedVideoPool';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -390,17 +391,27 @@ export default function ReelScreen() {
   const onReelSettled = () => {
     const landed = visibleIdRef.current;
     if (!landed || landed === settledIdRef.current) return;
+    reelPool.setProtected(landed); // the watched reel's player must never be stolen
     setLingerId(settledIdRef.current);
     setSettledId(landed);
     if (lingerTimer.current) clearTimeout(lingerTimer.current);
     lingerTimer.current = setTimeout(() => { lingerTimer.current = null; setLingerId(null); }, 500);
   };
-  useEffect(() => () => { if (lingerTimer.current) clearTimeout(lingerTimer.current); }, []);
-  // Pre-buffer the NEXT reel ~400ms after the current one settles (i.e. after
-  // its own playback is established, so the loads never compete): pooled
-  // assignment is replaceAsync — no creation, no freeze — so releasing your
-  // finger on the next swipe lands on an already-loaded player that simply
-  // plays. This is the Instagram "plays as soon as you let go" mechanic.
+  useEffect(() => {
+    // Seed protection for the reel we opened on; clear it when the viewer closes.
+    if (settledIdRef.current) reelPool.setProtected(settledIdRef.current);
+    return () => {
+      if (lingerTimer.current) clearTimeout(lingerTimer.current);
+      reelPool.setProtected(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Pre-buffer the NEXT reel ~600ms after the current one settles (well after
+  // its own playback is established, so the load — and any disposal of the
+  // reused entry's old item — never competes with the fresh first seconds):
+  // pooled assignment is replaceAsync — no creation, no freeze — so releasing
+  // your finger on the next swipe lands on an already-loaded player that
+  // simply plays. This is the Instagram "plays as soon as you let go" mechanic.
   const [warmNextId, setWarmNextId] = useState<string | null>(null);
   useEffect(() => {
     if (!settledId) return;
@@ -409,7 +420,7 @@ export default function ReelScreen() {
       const idx = list.findIndex((p) => p.id === settledId);
       const next = idx >= 0 ? list[idx + 1] : null;
       setWarmNextId(next && !next.__ad && next.media_url ? next.id : null);
-    }, 400);
+    }, 600);
     return () => clearTimeout(t);
   }, [settledId, posts]);
 

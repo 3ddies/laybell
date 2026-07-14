@@ -70,6 +70,7 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: 
         // Stolen (pool exhausted): detach so this card falls back to its thumbnail.
         () => { setPlayer(null); setReady(false); },
       );
+      if (!acq) return; // nothing stealable right now — stay on the thumbnail
       acquired = acq.player;
       setPlayer(acq.player);
       if (acq.alreadyLoaded) setReady(true);

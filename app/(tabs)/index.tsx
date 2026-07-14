@@ -577,17 +577,20 @@ export default function HomeScreen() {
       (isSlideshow(v.item?.type) && Array.isArray(v.item?.slides) && v.item.slides.some((s: any) => s?.type === 'video'))
     );
     setVisibleVideoId(firstVideo ? firstVideo.item.id : null);
-    // Players exist ONLY for on-screen videos, applied at rest. The old
-    // ±1-neighbor pre-warm is GONE: on-device evidence showed each neighbor
-    // AVPlayer creation freezes whatever is happening (staggering it merely
-    // moved the freeze to right after the landed video started playing — the
-    // "plays a split second then full-frame-freezes" pattern). All creations
-    // now happen in ONE at-rest commit, BEHIND the poster, BEFORE playback —
-    // a slightly longer poster beat instead of a mid-play freeze.
+    // STAGED loading (Instagram-style progressive unlock): only the VISIBLE
+    // video and the ONE below it hold live players/streams — everything
+    // deeper stays a poster until you approach it. Warming every on-screen
+    // video meant several concurrent streams: they starved the playing
+    // video's bandwidth (froze ~1s in) and piled up on cold open.
     const ids: string[] = [];
-    for (const v of viewableItems) {
-      const p = v.item;
-      if (p && !p.__ad && p.type === 'video' && p.media_url) ids.push(p.id);
+    if (firstVideo && !firstVideo.item.__ad && firstVideo.item.type === 'video' && firstVideo.item.media_url) {
+      ids.push(firstVideo.item.id);
+    }
+    if (firstVideo) {
+      const after = viewableItems
+        .slice(viewableItems.indexOf(firstVideo) + 1)
+        .find((v) => { const p = v.item; return p && !p.__ad && p.type === 'video' && p.media_url; });
+      if (after) ids.push(after.item.id);
     }
     setWarmVideoIds(ids);
   }).current;

@@ -2,27 +2,31 @@ import { createVideoPlayer, type VideoPlayer } from 'expo-video';
 
 // ── Pooled video players (Home feed + Reels) ────────────────────────────────
 // AVPlayer CREATION is heavy enough on-device to freeze a frame. Pools remove
-// creation from the picture: players are created ONCE, switching videos is
-// player.replaceAsync(source) — async, loaded off the UI thread. This is how
-// Instagram-class feeds work, and it makes video assignment safe mid-scroll.
+// creation: players are created ONCE, switching videos is replaceAsync —
+// async, loaded off the UI thread. Instagram-class feeds work this way.
 //
-// BANDWIDTH RULE (learned on device): an idle player whose source is still
-// loaded keeps buffering in the background and STARVES the playing video —
-// the "plays ~1 second then freezes" stall. Release therefore UNLOADS the
-// source (replaceAsync(null)); re-acquiring reloads (CDN/disk cache softens
-// the cost). Never keep more streams loading than the UX needs right now.
-//
-// Ownership: acquire by post id; when a pool is exhausted the least-recently-
-// acquired entry is STOLEN and its previous owner notified (onStolen) so it
-// detaches its VideoView.
+// HARD-LEARNED RULES (each from an on-device regression):
+// 1. NEVER steal the player of the video the user is WATCHING. The playing
+//    card is always the oldest acquisition, so naive LRU stealing froze every
+//    playing video the moment feed video density rose ("top 2 play fine, all
+//    below freeze"). Each pool protects one owner from stealing.
+// 2. NEVER unload (replaceAsync(null)) on release — item disposal stalls the
+//    main thread, and releases happen right after landings (the reels
+//    "freezes at the snap, stops after a split second"). Release = pause
+//    only; disposal happens lazily when an entry is reused, or via
+//    unloadIdle() at moments when nothing is on screen (feed blur).
+// 3. Keep the number of LIVE streams minimal (visible + one next) — idle
+//    loaded players still background-buffer and starve the playing video.
 
 type Entry = {
   player: VideoPlayer;
   owner: string | null;      // post id currently holding this player
   uri: string | null;        // source currently loaded into it
-  seq: number;               // acquisition order — steal the oldest
+  seq: number;               // acquisition order — steal the oldest stealable
   onStolen?: () => void;     // previous owner's detach callback
 };
+
+export type PoolAcquisition = { player: VideoPlayer; alreadyLoaded: boolean };
 
 export type PlayerPool = {
   acquire: (
@@ -30,13 +34,19 @@ export type PlayerPool = {
     uri: string,
     opts: { loop: boolean; muted: boolean; timeUpdateSec: number },
     onStolen: () => void,
-  ) => { player: VideoPlayer; alreadyLoaded: boolean };
+  ) => PoolAcquisition | null; // null = nothing stealable right now (stay on the poster)
   release: (ownerId: string, player: VideoPlayer) => void;
+  // The owner whose entry must never be stolen (the video being WATCHED).
+  setProtected: (ownerId: string | null) => void;
+  // Dispose idle entries' loaded items — call ONLY when no video is on screen
+  // (e.g. the feed just blurred), never during playback.
+  unloadIdle: () => void;
 };
 
 function makePool(size: number): PlayerPool {
   let entries: Entry[] | null = null;
   let seqCounter = 0;
+  let protectedOwner: string | null = null;
 
   function ensure(): Entry[] {
     if (!entries) {
@@ -52,10 +62,18 @@ function makePool(size: number): PlayerPool {
   return {
     acquire(ownerId, uri, opts, onStolen) {
       const pool = ensure();
-      const entry =
+      // Preference order: my own entry → a free EMPTY entry (no disposal cost)
+      // → a free loaded entry (disposal on reuse) → steal the oldest entry
+      // that is NOT the protected (playing) one.
+      let entry =
         pool.find((e) => e.owner === ownerId) ??
-        pool.find((e) => e.owner === null) ??
-        pool.reduce((a, b) => (a.seq <= b.seq ? a : b));
+        pool.find((e) => e.owner === null && e.uri === null) ??
+        pool.find((e) => e.owner === null);
+      if (!entry) {
+        const stealable = pool.filter((e) => e.owner !== protectedOwner);
+        if (!stealable.length) return null;
+        entry = stealable.reduce((a, b) => (a.seq <= b.seq ? a : b));
+      }
       if (entry.owner && entry.owner !== ownerId) entry.onStolen?.();
       entry.onStolen = onStolen;
       entry.owner = ownerId;
@@ -71,8 +89,7 @@ function makePool(size: number): PlayerPool {
           p.replaceAsync({ uri }).catch(() => {});
           return { player: p, alreadyLoaded: false };
         }
-        // Same source still loaded (steal-then-return race or remount): reveal
-        // immediately if it's already ready.
+        // Same source still loaded (re-acquired) — reveal immediately if ready.
         return { player: p, alreadyLoaded: p.status === 'readyToPlay' };
       } catch {
         return { player: p, alreadyLoaded: false };
@@ -84,17 +101,28 @@ function makePool(size: number): PlayerPool {
       if (!e || e.owner !== ownerId) return; // already stolen — new owner manages it
       e.owner = null;
       e.onStolen = undefined;
-      e.uri = null;
       try { player.pause(); } catch {}
-      // Unload — see the bandwidth rule above.
-      try { player.replaceAsync(null).catch(() => {}); } catch {}
+      // NO unload here (rule 2) — the loaded item stays until reuse/unloadIdle.
+    },
+    setProtected(ownerId) {
+      protectedOwner = ownerId;
+    },
+    unloadIdle() {
+      if (!entries) return;
+      for (const e of entries) {
+        if (e.owner === null && e.uri !== null) {
+          e.uri = null;
+          try { e.player.pause(); } catch {}
+          try { e.player.replaceAsync(null).catch(() => {}); } catch {}
+        }
+      }
     },
   };
 }
 
 // Separate pools per surface so reels can never steal the feed's players (the
 // feed stays mounted under the reels modal) and vice versa.
-const feedPool = makePool(3);
+export const feedPool = makePool(3);
 export const acquireFeedPlayer = feedPool.acquire;
 export const releaseFeedPlayer = feedPool.release;
 

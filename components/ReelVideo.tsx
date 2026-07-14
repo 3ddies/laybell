@@ -63,6 +63,7 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
       { loop, muted: mutedRef.current, timeUpdateSec: 0.25 },
       () => { setPlayer(null); setReady(false); },
     );
+    if (!acq) { setPlayer(null); return; } // nothing stealable — poster stays
     setPlayer(acq.player);
     if (acq.alreadyLoaded) setReady(true);
     const statusSub = acq.player.addListener('statusChange', ({ status }: any) => {
