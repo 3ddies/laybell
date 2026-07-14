@@ -82,7 +82,9 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions }: Pr
 
       {isSlideshow(item.type) && (
         <View>
+          {/* key: carousel local state must not carry across recycled ad cells. */}
           <SlideshowCarousel
+            key={item.id}
             slides={parseSlides(item)}
             width={SCREEN_W}
             aspectRatio={aspectToNumber(item.aspect_ratio, 1)}

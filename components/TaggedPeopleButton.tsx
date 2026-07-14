@@ -25,6 +25,17 @@ export default function TaggedPeopleButton({ userIds, style }: { userIds?: strin
   const [loading, setLoading] = useState(false);
 
   const ids = userIds ?? [];
+  // Recycling reset (FlashList reuses instances across items): `people` is
+  // cached after the first open, so a recycled card with different userIds
+  // would show the PREVIOUS post's tagged list. Render-phase reset on the ids.
+  const idsKey = ids.join(',');
+  const [lastIdsKey, setLastIdsKey] = useState(idsKey);
+  if (lastIdsKey !== idsKey) {
+    setLastIdsKey(idsKey);
+    setPeople([]);
+    setLoading(false);
+    setOpen(false);
+  }
   if (!ids.length) return null;
 
   async function openMenu() {

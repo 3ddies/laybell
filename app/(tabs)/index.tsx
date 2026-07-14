@@ -4,6 +4,13 @@ import {
 } from '../../lib/feedScorer';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
 import FeedVideo from '../../components/FeedVideo';
+// FlashList v2: RECYCLES card views instead of mounting/destroying them while
+// scrolling — the structural fix for mount-burst micro-hitches (same philosophy
+// as the video player pool). Recycling means components receive a NEW item
+// without remounting, so all cell-local state carries reset guards (see the
+// key={item.id} on SlideshowCarousel, resetKey on ElasticSwipeView, the
+// render-phase resets in FeedVideo/TaggedPeopleButton/useAutoTranslate).
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { isSwipeTap } from '../../contexts/PagerContext';
@@ -13,7 +20,7 @@ import {
 import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  View, Text, StyleSheet, FlatList,
+  View, Text, StyleSheet,
   TouchableOpacity, Platform,
   RefreshControl, Dimensions, Modal, Animated,
 } from 'react-native';
@@ -181,6 +188,9 @@ const PostCard = memo(function PostCard({
   const slideRef = useRef<any>(null);
   // Simple like pop: a quick scale bounce on the heart when tapped.
   const likeScale = useRef(new Animated.Value(1)).current;
+  // Recycling reset (FlashList reuses this instance across items): a mid-bounce
+  // like-pop must not ride onto the next post's heart.
+  useEffect(() => { likeScale.stopAnimation(); likeScale.setValue(1); }, [item.id, likeScale]);
   const popLike = () => {
     likeScale.setValue(1);
     Animated.sequence([
@@ -253,7 +263,12 @@ const PostCard = memo(function PostCard({
 
       {isSlideshow(item.type) && (
         <View ref={slideRef}>
+          {/* key={item.id}: the carousel holds REAL local state (slide index,
+              scroll-x, unmute) that must never carry onto a recycled cell's
+              new post. Keying just this subtree remounts only the carousel —
+              the rest of the card still recycles. */}
           <SlideshowCarousel
+            key={item.id}
             slides={parseSlides(item)}
             width={SCREEN_W}
             aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
@@ -460,7 +475,7 @@ export default function HomeScreen() {
   }, [completedTick]);
 
   // The just-posted confirmation was tapped — bring the pinned new post into view.
-  const feedListRef = useRef<FlatList>(null);
+  const feedListRef = useRef<FlashListRef<Post>>(null);
   useEffect(() => {
     if (homeScrollTick > 0) feedListRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, [homeScrollTick]);
@@ -728,7 +743,11 @@ export default function HomeScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   // Measured height of the floating header — pads the feed underneath it and
   // sets how far it slides away when the reactive chrome hides.
-  const [headerH, setHeaderH] = useState(0);
+  // Seeded with the header's real ~height (not 0): FlashList v2 keeps
+  // maintainVisibleContentPosition ON by default, and a 0→140 paddingTop flip
+  // after the first onLayout could be "compensated" away, leaving the first
+  // posts under the floating header. onLayout still corrects the exact value.
+  const [headerH, setHeaderH] = useState(140);
   // Memoized so re-renders don't tear down + rebuild the native interpolation
   // node graph (inline it rebuilt on every commit — native-animated churn that
   // landed exactly at drag start). Created twice ever: mount + first onLayout.
@@ -1254,7 +1273,7 @@ export default function HomeScreen() {
   }, []);
 
   const renderPost = useCallback(({ item }: { item: Post }) => (
-    <ElasticSwipeView>
+    <ElasticSwipeView resetKey={(item as any).__spotlight ? `spot:${(item as any).__spotlight.campaignId}` : item.id}>
       {(item as any).__ad ? (
         <SponsoredCard
           item={item}
@@ -1412,12 +1431,17 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </Modal>
 
-      <FlatList
+      <FlashList
         ref={feedListRef}
         data={feedData}
         // Spotlight instances key off their campaign so a promoted post can
         // never key-collide with itself (organic copies are filtered at merge).
+        // In v2 this is also the recycler's stable id — load-bearing.
         keyExtractor={(item) => (item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
+        // Recycle pools are per-type: an ad cell must never be recycled into a
+        // post cell (renderPost's root ternary would swap component trees —
+        // a full remount AND a polluted pool).
+        getItemType={(item) => ((item as any).__ad ? 'ad' : 'post')}
         renderItem={renderPost}
         ListHeaderComponent={FeedHeader}
         showsVerticalScrollIndicator={false}
@@ -1442,19 +1466,10 @@ export default function HomeScreen() {
         // so 60Hz sampling halves per-frame JS scroll work vs throttle 1 —
         // headroom for cell mounts. Don't "fix" this back to 1.
         scrollEventThrottle={16}
-        // Android-only: on iOS removeClippedSubviews is a known source of
-        // flickering/blank cells with complex children (video posts) — one of
-        // the "staticy" scroll artifacts — and iOS clips efficiently without it.
-        removeClippedSubviews={Platform.OS === 'android'}
-        // 7 (not 5): heavy PostCards mount further from the viewport, so the
-        // mount cost lands while the card is still well offscreen instead of
-        // as it approaches the edge mid-scroll.
-        windowSize={7}
-        // 3 (not 5): smaller mount batches = shorter main-thread bursts per
-        // batch — a 5-card batch of heavy PostCards was long enough to read as
-        // a mid-scroll frame freeze on device.
-        maxToRenderPerBatch={3}
-        initialNumToRender={5}
+        // (FlatList-era knobs — windowSize/maxToRenderPerBatch/
+        // initialNumToRender/removeClippedSubviews — don't exist in v2:
+        // recycling replaces batched mounting; drawDistance stays at its 250dp
+        // default, raise only if posters visibly pop in late.)
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
         refreshControl={
           <RefreshControl

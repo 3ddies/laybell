@@ -11,16 +11,25 @@ function rubber(drag: number, max = 38): number {
 // swipes left or right but that gesture doesn't map to an action in the parent.
 // Only claims clearly horizontal gestures (4:1 dx/dy ratio, min 6 px dx) so it
 // co-exists safely with surrounding vertical FlatLists and scroll views.
-export default function ElasticSwipeView({ children, style, disabled = false }: {
+export default function ElasticSwipeView({ children, style, disabled = false, resetKey }: {
   children: React.ReactNode;
   style?: any;
   // Suppress the elastic swipe entirely (e.g. while the content is pinch-zoomed,
   // so a zoom-pan doesn't rubber-band the whole view and reveal black edges).
   disabled?: boolean;
+  // Recycling reset (FlashList reuses instances across items): when the hosted
+  // item changes, kill any in-flight rubber-band so it can't carry over.
+  resetKey?: string | number;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
+  const firstResetRef = useRef(true);
+  useEffect(() => {
+    if (firstResetRef.current) { firstResetRef.current = false; return; }
+    translateX.stopAnimation();
+    translateX.setValue(0);
+  }, [resetKey, translateX]);
 
   // When zoom takes over, stop any in-flight rubber-band spring and zero the
   // offset — a running/settled native-animated transform here otherwise composites

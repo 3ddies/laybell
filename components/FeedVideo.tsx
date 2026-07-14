@@ -32,6 +32,18 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: 
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
 
+  // Recycling reset (FlashList reuses this instance across items): the id can
+  // change WITHOUT a remount, and until the acquire effect runs post-paint the
+  // old pool player (source still loaded, ready=true) would paint a frame of
+  // the PREVIOUS post's video. Render-phase reset drops to the thumbnail
+  // beneath until the new acquisition is ready.
+  const [lastId, setLastId] = useState(id);
+  if (lastId !== id) {
+    setLastId(id);
+    setPlayer(null);
+    setReady(false);
+  }
+
   useEffect(() => {
     setReady(false);
     const acq = acquireFeedPlayer(
