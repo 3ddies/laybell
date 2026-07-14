@@ -371,20 +371,28 @@ export default function ReelScreen() {
   // Unmount backstop — the timer-owned flow above never stops on unmount.
   useEffect(() => () => stopSong(), []);
 
-  // Pre-warm ONLY the next reel's player, ~300ms after landing (off the swipe
-  // frames). Forward swipes always land on an already-warmed player; a
-  // back-swipe pays one quick poster→player start (the rare direction).
-  const [warmReelId, setWarmReelId] = useState<string | null>(null);
-  useEffect(() => {
-    if (!visibleId) return;
-    const t = setTimeout(() => {
-      const list = postsRef.current;
-      const idx = list.findIndex((p) => p.id === visibleId);
-      const next = idx >= 0 ? list[idx + 1] : null;
-      setWarmReelId(next && !next.__ad ? next.id : null);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [visibleId, posts]);
+  // Players mount ONLY at snap-completion — never mid-swipe, never while the
+  // landed video is already playing. (The previous "pre-warm the next reel"
+  // design released the old player at the mid-swipe commit and created the
+  // following one right as the snap finished — the owner-reported "freezes
+  // every time at the perfect-fit snap".) settledId flips at
+  // onMomentumScrollEnd: the landed player is created behind its POSTER,
+  // before playback starts, so the creation cost is invisible; the previous
+  // reel's player lingers ~500ms so its release also stays off the landing.
+  const [settledId, setSettledId] = useState<string | null>(seed?.id ?? null);
+  const [lingerId, setLingerId] = useState<string | null>(null);
+  const settledIdRef = useRef(settledId);
+  settledIdRef.current = settledId;
+  const lingerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onReelSettled = () => {
+    const landed = visibleIdRef.current;
+    if (!landed || landed === settledIdRef.current) return;
+    setLingerId(settledIdRef.current);
+    setSettledId(landed);
+    if (lingerTimer.current) clearTimeout(lingerTimer.current);
+    lingerTimer.current = setTimeout(() => { lingerTimer.current = null; setLingerId(null); }, 500);
+  };
+  useEffect(() => () => { if (lingerTimer.current) clearTimeout(lingerTimer.current); }, []);
 
   // ── Horizontal (cinematic) reels: rotate the phone for true fullscreen ──────
   // The app is otherwise portrait-locked. While a horizontal video is the active
@@ -748,7 +756,7 @@ export default function ReelScreen() {
         isSaved={saved.has(item.id)}
         spotlight={!!item.__spotlight || spotlightIds.has(item.id)}
         insetsBottom={insets.bottom}
-        mountPlayer={visibleId === item.id || warmReelId === item.id}
+        mountPlayer={settledId === item.id || lingerId === item.id}
         api={pageApi}
       />
     );
@@ -826,6 +834,7 @@ export default function ReelScreen() {
               disableIntervalMomentum
               decelerationRate="fast"
               getItemLayout={(_, i) => ({ length: SCREEN_H, offset: SCREEN_H * i, index: i })}
+              onMomentumScrollEnd={onReelSettled}
               onViewableItemsChanged={onViewableItemsChanged}
               viewabilityConfig={viewabilityConfig}
               renderItem={renderItem}

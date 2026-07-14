@@ -137,6 +137,12 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     const sub = AppState.addEventListener('change', (s) => {
       appActiveRef.current = s === 'active';
       if (s !== 'active') saveAmbient();
+      // Ambient/attached-post audio must NEVER keep playing outside the app —
+      // only the MAIN player (mini-player / music tab) is allowed background
+      // playback with the iOS now-playing controls. Stop on true backgrounding
+      // ('inactive' is skipped: control-center pulls and the app switcher
+      // shouldn't kill the feed's ambient song).
+      if (s === 'background') stop();
     });
     return () => sub.remove();
   }, []);

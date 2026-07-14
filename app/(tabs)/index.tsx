@@ -554,9 +554,7 @@ export default function HomeScreen() {
   // spotlight/ad impressions + ambient music keep the original deliberate
   // 60% + 90ms rule (impression semantics unchanged).
   const pendingVideoViewables = useRef<any[] | null>(null);
-  // Supersession token for the deferred warm-set apply (see deferWarm below).
-  const warmFlushToken = useRef(0);
-  const applyVideoViewables = useRef((viewableItems: any[], deferWarm = false) => {
+  const applyVideoViewables = useRef((viewableItems: any[]) => {
     // A video post, or a slideshow that contains at least one video slide, becomes
     // the "playing" item so its current video slide can autoplay.
     const firstVideo = viewableItems.find(v =>
@@ -564,50 +562,38 @@ export default function HomeScreen() {
       (isSlideshow(v.item?.type) && Array.isArray(v.item?.slides) && v.item.slides.some((s: any) => s?.type === 'video'))
     );
     setVisibleVideoId(firstVideo ? firstVideo.item.id : null);
-    // Keep players mounted (paused) for every on-screen video plus the nearest
-    // one on each side of the viewport — see warmVideoIds above. Ads and
-    // slideshows manage their own players.
-    const data = feedDataRef.current;
+    // Players exist ONLY for on-screen videos, applied at rest. The old
+    // ±1-neighbor pre-warm is GONE: on-device evidence showed each neighbor
+    // AVPlayer creation freezes whatever is happening (staggering it merely
+    // moved the freeze to right after the landed video started playing — the
+    // "plays a split second then full-frame-freezes" pattern). All creations
+    // now happen in ONE at-rest commit, BEHIND the poster, BEFORE playback —
+    // a slightly longer poster beat instead of a mid-play freeze.
     const ids: string[] = [];
-    const idxs: number[] = [];
     for (const v of viewableItems) {
-      if (v.index != null) idxs.push(v.index);
       const p = v.item;
       if (p && !p.__ad && p.type === 'video' && p.media_url) ids.push(p.id);
     }
-    if (idxs.length) {
-      const findVideo = (from: number, step: number) => {
-        for (let k = from, seen = 0; k >= 0 && k < data.length && seen < 8; k += step, seen++) {
-          const p: any = data[k];
-          if (p && !p.__ad && p.type === 'video' && p.media_url) return p.id as string;
-        }
-        return null;
-      };
-      const below = findVideo(Math.max(...idxs) + 1, 1);
-      const above = findVideo(Math.min(...idxs) - 1, -1);
-      if (below) ids.push(below);
-      if (above) ids.push(above);
-    }
-    if (deferWarm) {
-      // Neighbor players mount ~240ms AFTER the landed card's own mount/play
-      // commit — 2-3 AVPlayer creations in a single main-thread burst was a
-      // freeze source, and neighbors kicking off HLS fetches right as the
-      // landed video starts steals its first-seconds bandwidth (playback
-      // stall). A newer snapshot supersedes this one via the token.
-      const tok = ++warmFlushToken.current;
-      setTimeout(() => { if (tok === warmFlushToken.current) setWarmVideoIds(ids); }, 240);
-    } else {
-      warmFlushToken.current++;
-      setWarmVideoIds(ids);
-    }
+    setWarmVideoIds(ids);
   }).current;
   const onVideoViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
-    // Mid-fling snapshots are deferred (see setFastScroll) so a fast scroll
-    // never churns players; the LATEST snapshot applies the moment it slows.
-    if (fastScrollRef.current) { pendingVideoViewables.current = viewableItems; return; }
+    // ALL scrolling parks the snapshot (not just fast flings): applying it
+    // live during a gentle scroll mounted a native player MID-GESTURE — the
+    // residual "minor mid-scroll freeze + misread tap" on Home. The latest
+    // snapshot applies at rest (flushVideoAtRest).
+    if (scrollingRef.current || fastScrollRef.current) { pendingVideoViewables.current = viewableItems; return; }
     pendingVideoViewables.current = null;
     applyVideoViewables(viewableItems);
   }).current;
+  // Scroll reached rest: apply the parked video snapshot — the ONLY moment
+  // video players are created/released. Runs before the music flush (+150ms).
+  function flushVideoAtRest() {
+    if (pendingVideoViewables.current) {
+      const pending = pendingVideoViewables.current;
+      pendingVideoViewables.current = null;
+      applyVideoViewables(pending);
+    }
+  }
   // The most-visible post that carries an attached song — its track plays ambiently.
   const applyMusicViewables = useRef((viewableItems: any[]) => {
     const firstMusic = viewableItems.find(v => v.item?.song_id);
@@ -651,15 +637,9 @@ export default function HomeScreen() {
     if (fastScrollRef.current === on) return;
     fastScrollRef.current = on;
     setFeedFastScrolling(on); // store publish — flips playback for ONLY the visible card, no list re-render
-    if (!on && pendingVideoViewables.current) {
-      const pending = pendingVideoViewables.current;
-      pendingVideoViewables.current = null;
-      // deferWarm: the landed card mounts + plays now; neighbor players mount
-      // ~120ms later so multiple AVPlayer creations never share one frame.
-      applyVideoViewables(pending, true);
-    }
-    // Music stays parked until the scroll truly RESTS (armMusicFlush) — never
-    // applied from the gate transition.
+    // BOTH video and music snapshots stay parked until the scroll truly RESTS
+    // (flushVideoAtRest / armMusicFlush) — the gate transition at GATE_OUT can
+    // still be mid-motion, and player creation mid-motion is a frame freeze.
   };
   // Ambient-song application runs ~150ms AFTER the scroll rests: the rest frame
   // already carries the landed video's play() and the list settle — spacing the
@@ -734,7 +714,7 @@ export default function HomeScreen() {
   function checkScrollStop() {
     scrollStopTimer.current = null;
     const idle = Date.now() - scrollSample.current.t;
-    if (idle >= 100) { setFastScroll(false); scrollingRef.current = false; armMusicFlush(); return; }
+    if (idle >= 100) { setFastScroll(false); scrollingRef.current = false; flushVideoAtRest(); armMusicFlush(); return; }
     scrollStopTimer.current = setTimeout(checkScrollStop, 100 - idle);
   }
   const [feedMode, setFeedMode] = useState<'all' | 'following' | 'friends'>('all');
@@ -1450,7 +1430,7 @@ export default function HomeScreen() {
         }}
         onScrollBeginDrag={() => { scrollingRef.current = true; cancelMusicFlush(); feedDragStart(); }}
         onScrollEndDrag={feedDragEnd}
-        onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); scrollingRef.current = false; armMusicFlush(); }}
+        onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); scrollingRef.current = false; flushVideoAtRest(); armMusicFlush(); }}
         // 16 is deliberate: the chrome is discrete now (no per-frame JS follow),
         // so 60Hz sampling halves per-frame JS scroll work vs throttle 1 —
         // headroom for cell mounts. Don't "fix" this back to 1.
