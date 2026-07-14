@@ -589,11 +589,13 @@ export default function HomeScreen() {
       if (above) ids.push(above);
     }
     if (deferWarm) {
-      // Neighbor players mount ~120ms AFTER the landed card's own mount/play
+      // Neighbor players mount ~240ms AFTER the landed card's own mount/play
       // commit — 2-3 AVPlayer creations in a single main-thread burst was a
-      // freeze source. A newer snapshot supersedes this one via the token.
+      // freeze source, and neighbors kicking off HLS fetches right as the
+      // landed video starts steals its first-seconds bandwidth (playback
+      // stall). A newer snapshot supersedes this one via the token.
       const tok = ++warmFlushToken.current;
-      setTimeout(() => { if (tok === warmFlushToken.current) setWarmVideoIds(ids); }, 120);
+      setTimeout(() => { if (tok === warmFlushToken.current) setWarmVideoIds(ids); }, 240);
     } else {
       warmFlushToken.current++;
       setWarmVideoIds(ids);
@@ -685,10 +687,12 @@ export default function HomeScreen() {
   // the gate engaged until the scroll has nearly stopped, so play resumes only
   // as you settle. The gap between them is hysteresis: a gentle reading scroll
   // (under GATE_OUT) never trips the gate and keeps videos playing live.
-  // GATE_OUT raised 0.4 → 0.55: with the two-threshold flush below, play() at
-  // gate-exit is a cheap rate change on an ALREADY-MOUNTED, pre-buffering
-  // player — unlocking it earlier trims ~200-350ms of perceived start delay.
-  const GATE_IN = 1.0, GATE_OUT = 0.55;
+  // GATE_OUT is deliberately 0.4 (owner-tuned) — NOT higher. A 0.55 experiment
+  // made playback unlock while the feed was still visibly moving: a medium
+  // scroll oscillating across the narrowed 0.55↔1.0 band pause/play-churned
+  // the visible video ("the video freezes sometimes"), and playing that early
+  // also left too little buffered stream (stall a second in). Play near rest.
+  const GATE_IN = 1.0, GATE_OUT = 0.4;
   const trackScrollVelocity = (y: number) => {
     const t = Date.now();
     const { y: py, t: pt } = scrollSample.current;
@@ -710,8 +714,8 @@ export default function HomeScreen() {
       // optimization caused FULL-FRAME freezes midway through flicks (AVPlayer
       // creation blocks the main thread; a frozen main thread also makes the
       // gesture recognizer misread swipes as taps). Mount + play both happen
-      // at GATE_OUT (0.55 — earlier than the original 0.4), with neighbor
-      // mounts staggered off the play commit (see applyVideoViewables).
+      // at GATE_OUT (near rest), with neighbor mounts staggered off the play
+      // commit (see applyVideoViewables).
       else if (v <= GATE_OUT) setFastScroll(false);
     }
     // A fling's final events can still be fast — clear soon after events stop.
