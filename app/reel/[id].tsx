@@ -230,6 +230,14 @@ const ReelPage = memo(function ReelPage({
           onZoomChange={api.onZoomChange}
           onGesture={api.markGesture}
         >
+        {/* Poster ALWAYS rendered underneath. Non-settled pages carry NO
+            native player (creating an AVPlayer during a page mount was the
+            reels mid-swipe freeze); when the player mounts at snap-settle,
+            AppVideo keeps its surface transparent until readyToPlay — so the
+            still becomes motion with no black flash at the handoff. */}
+        {poster ? (
+          <ExpoImage source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={landscape ? 'contain' : 'cover'} />
+        ) : null}
         {mountPlayer ? (
           <AppVideo
             ref={(r) => api.setVideoRef(item.id, r)}
@@ -239,20 +247,10 @@ const ReelPage = memo(function ReelPage({
             loop={item.trim_end == null}
             active={playing}
             muted={!!item.song_id}
-            poster={poster}
-            posterContentFit={landscape ? 'contain' : 'cover'}
             trimStartSec={item.trim_start}
             trimEndSec={item.trim_end}
             onProgress={(pos, dur) => api.onProgress(item.id, pos, dur)}
           />
-        ) : poster ? (
-          // Poster-only page: non-landed/non-warmed pages carry NO native
-          // player — creating an AVPlayer as part of the page mount was the
-          // reels mid-swipe freeze (and idle neighbors' HLS fetches competed
-          // with the playing video's bandwidth → mid-play stalls). The player
-          // arrives when this page becomes the landed or pre-warmed one
-          // (warmReelId in ReelScreen).
-          <ExpoImage source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={landscape ? 'contain' : 'cover'} />
         ) : null}
         </ZoomableView>
       </TouchableOpacity>

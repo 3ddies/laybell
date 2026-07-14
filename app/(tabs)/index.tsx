@@ -3,7 +3,7 @@ import {
   EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
 } from '../../lib/feedScorer';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
-import AppVideo from '../../components/AppVideo';
+import FeedVideo from '../../components/FeedVideo';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { isSwipeTap } from '../../contexts/PagerContext';
@@ -303,16 +303,16 @@ const PostCard = memo(function PostCard({
                 <ExpoImage source={{ uri: item.thumbnail_url }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
               )}
               {isVisibleVideo && (
-                <AppVideo
-                  source={{ uri: item.media_url }}
-                  style={StyleSheet.absoluteFill}
-                  contentFit="cover"
-                  poster={item.thumbnail_url}
-                  loop
+                // POOLED player (lib/feedVideoPool): assignment is a cheap
+                // source swap on a persistent player — no creation, no freeze —
+                // so it can happen while scrolling and starts feel instant.
+                // The card's thumbnail above stays visible until the first
+                // frame is ready (FeedVideo hides its surface until then).
+                <FeedVideo
+                  id={item.id}
+                  uri={item.media_url}
+                  play={shouldPlayVideo}
                   muted={item.song_id ? true : videoMuted}
-                  // Mounted while centered (pre-loads under the poster); only PLAYS
-                  // once the feed settles, so a fast scroll doesn't churn playback.
-                  active={shouldPlayVideo}
                   // Feed watching counts toward views (muted autoplay included) —
                   // the tracker accumulates genuine watch time across surfaces and
                   // the server enforces the per-user/device caps.
@@ -577,11 +577,11 @@ export default function HomeScreen() {
     setWarmVideoIds(ids);
   }).current;
   const onVideoViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
-    // ALL scrolling parks the snapshot (not just fast flings): applying it
-    // live during a gentle scroll mounted a native player MID-GESTURE — the
-    // residual "minor mid-scroll freeze + misread tap" on Home. The latest
-    // snapshot applies at rest (flushVideoAtRest).
-    if (scrollingRef.current || fastScrollRef.current) { pendingVideoViewables.current = viewableItems; return; }
+    // Gentle scrolls apply LIVE (Instagram-style — the video starts the moment
+    // you bring it into view): with the pooled players, assignment is a cheap
+    // async source swap, never a creation, so mid-gesture application is safe
+    // again. Only fast flings defer (no point churning sources mid-blur).
+    if (fastScrollRef.current) { pendingVideoViewables.current = viewableItems; return; }
     pendingVideoViewables.current = null;
     applyVideoViewables(viewableItems);
   }).current;
@@ -690,13 +690,20 @@ export default function HomeScreen() {
     if (dt > 0 && dt < 200) { // >200ms gap = a new gesture, not a velocity sample
       const v = Math.abs(y - py) / dt;
       if (v >= GATE_IN) setFastScroll(true);
-      // NO player mounting mid-scroll — an earlier "mount while decelerating"
-      // optimization caused FULL-FRAME freezes midway through flicks (AVPlayer
-      // creation blocks the main thread; a frozen main thread also makes the
-      // gesture recognizer misread swipes as taps). Mount + play both happen
-      // at GATE_OUT (near rest), with neighbor mounts staggered off the play
-      // commit (see applyVideoViewables).
-      else if (v <= GATE_OUT) setFastScroll(false);
+      else {
+        // Deceleration below GATE_IN: assign the landed video NOW. With the
+        // pooled players this is replaceAsync on a persistent player — loaded
+        // off the UI thread, zero creation, zero freeze — so its HLS stream
+        // buffers through the last stretch of momentum and play() at GATE_OUT
+        // lands on a ready stream. (The old CREATE-while-decelerating version
+        // froze frames; the pool is what makes this safe.)
+        if (fastScrollRef.current && pendingVideoViewables.current) {
+          const pendingV = pendingVideoViewables.current;
+          pendingVideoViewables.current = null;
+          applyVideoViewables(pendingV);
+        }
+        if (v <= GATE_OUT) setFastScroll(false);
+      }
     }
     // A fling's final events can still be fast — clear soon after events stop.
     // LAZY: one pending timeout re-arms itself with the remainder instead of

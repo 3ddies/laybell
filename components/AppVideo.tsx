@@ -125,6 +125,12 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   // The poster (still) shows until the player reports its first ready frame,
   // mirroring expo-av's usePoster. Kept deliberately simple.
   const [showPoster, setShowPoster] = useState(!!poster);
+  // Anti-black-flash: the native video surface renders BLACK from the moment
+  // it mounts until the first frame — a visible flash over whatever thumbnail
+  // sits beneath (the poster overlay needs its own decode, so it can't cover
+  // frame 1). Keep the surface transparent until readyToPlay: the still
+  // beneath simply becomes motion.
+  const [surfaceReady, setSurfaceReady] = useState(false);
 
   const player = useVideoPlayer({ uri }, (p) => {
     p.loop = loop;
@@ -169,10 +175,12 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
     trimSeekingRef.current = false;
     firedReadyRef.current = false;
     setShowPoster(!!poster);
+    setSurfaceReady(false);
     const statusSub = player.addListener('statusChange', ({ status }: any) => {
       if (status === 'readyToPlay') {
         retriesRef.current = 0;
         hasLoadedRef.current = true;
+        setSurfaceReady(true);
         setShowPoster(false);
         if (!firedReadyRef.current) { firedReadyRef.current = true; onReadyRef.current?.(); }
         if (!seededRef.current) {
@@ -226,7 +234,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   return (
     <View style={style}>
       <VideoView
-        style={StyleSheet.absoluteFill}
+        style={[StyleSheet.absoluteFill, !surfaceReady && styles.hiddenSurface]}
         player={player}
         contentFit={contentFit}
         nativeControls={nativeControls}
@@ -249,5 +257,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
     </View>
   );
 });
+
+const styles = StyleSheet.create({ hiddenSurface: { opacity: 0 } });
 
 export default AppVideo;
