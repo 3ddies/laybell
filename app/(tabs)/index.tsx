@@ -420,13 +420,13 @@ const PostCard = memo(function PostCard({
 const GATE_POSTS = 3;
 const FEED_GATE_BOUND_MS = 5000; // dwell AFTER the user reaches the bound
 
-// A simple bound — just a spinner, no fake post skeleton.
+// A slim, quiet bound — just a small neutral spinner, no dead space.
 function FeedGateCard({ onArm }: { onArm: () => void }) {
   const { colors } = useTheme();
   useEffect(() => { onArm(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <View style={{ height: 140, alignItems: 'center', justifyContent: 'center' }}>
-      <ActivityIndicator size="small" color={colors.primary} />
+    <View style={{ height: 64, alignItems: 'center', justifyContent: 'center' }}>
+      <ActivityIndicator size="small" color={colors.textSecondary} />
     </View>
   );
 }

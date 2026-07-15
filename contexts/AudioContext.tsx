@@ -143,10 +143,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // remains the engine for audio ADS only (adSoundRef below); ads and ambient
   // post music never touch the lock screen.
   const mainLoadedRef = useRef(false); // a track is loaded in the RNTP queue
-  // Status-listener subscriptions, removed synchronously when we tear a player down
-  // so a stray late 'playbackStatusUpdate' from an abandoned player can't fire.
-  const statusSubRef = useRef<{ remove: () => void } | null>(null);
+  // Ad status-listener subscription, removed synchronously on ad teardown (the
+  // ad plays on its own expo-audio sound). The MUSIC engine's listeners are
+  // GLOBAL — attached once at mount (see the engine-listeners effect below) —
+  // because the RNTP queue now advances natively.
   const adStatusSubRef = useRef<{ remove: () => void } | null>(null);
+  // Forward-delta accumulator for the ACTIVE track's accounting (reset on
+  // every track change — the old per-play closure equivalent).
+  const lastPosMsRef = useRef(0);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
   const queueLoaderRef = useRef<QueueLoader | null>(null);
@@ -279,7 +283,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // track. If it was an ad-first song move (the fresh track is loaded but
       // deliberately unstarted), start it now. Otherwise music is mid-play.
       if (pendingFinishRef.current) maybeRunDeferredFinish();
-      else if (mainLoadedRef.current) { TrackPlayer.play().catch(() => {}); setIsPlaying(true); }
+      else if (mainLoadedRef.current) {
+        // Boundary ads only ever pause a song at ~0:00 — restart it cleanly.
+        TrackPlayer.seekTo(0).then(() => TrackPlayer.play()).catch(() => {});
+        setIsPlaying(true);
+      }
       return;
     }
     adMetaRef.current = ad;
@@ -351,13 +359,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // advance/close now instead of resuming a finished track.
       maybeRunDeferredFinish();
     } else if (mainLoadedRef.current) {
-      TrackPlayer.play().catch(() => {});
+      // Ads only ever pause a song at its boundary (~0:00) — restart it from
+      // the top ("every fireAudioAd outcome starts it from 0:00").
+      TrackPlayer.seekTo(0).then(() => TrackPlayer.play()).catch(() => {});
       setIsPlaying(true);
-      // Hand the position channel straight back to the music player so the
-      // song scrubber doesn't hold the ad's last tick until the next update.
-      TrackPlayer.getProgress()
-        .then((pr) => emitPosition((pr.position ?? 0) * 1000, (pr.duration ?? 0) * 1000))
-        .catch(() => {});
+      // Hand the position channel back to the music player (the first progress
+      // tick fills in the real duration).
+      emitPosition(0, 0);
     }
   }
 
@@ -370,7 +378,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // Release native players + listeners on unmount (e.g. same-device account switch,
   // which remounts the whole per-user tree). expo-audio players are unmanaged.
   useEffect(() => () => {
-    statusSubRef.current?.remove();
     adStatusSubRef.current?.remove();
     if (adWatchdogRef.current) clearTimeout(adWatchdogRef.current);
     TrackPlayer.reset().catch(() => {});
@@ -462,7 +469,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     releaseSound(adSoundRef.current); adSoundRef.current = null;
     setAdState(null);
     playTokenRef.current++; // cancel any in-flight load
-    statusSubRef.current?.remove(); statusSubRef.current = null;
     TrackPlayer.reset().catch(() => {}); // stops audio + clears the lock-screen card
     mainLoadedRef.current = false;
     if (loadedIdRef.current) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
@@ -488,7 +494,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (mainLoadedRef.current) {
       // Pressing play supersedes a deferred song-end — the track isn't "finished" anymore.
       pendingFinishRef.current = false;
-      if (durationRef.current > 0 && positionRef.current >= durationRef.current - 250) {
+      // -600ms: covers both a true run-to-the-end AND the comment-hold pause,
+      // which now catches a finishing track ~450ms before its end.
+      if (durationRef.current > 0 && positionRef.current >= durationRef.current - 600) {
         // The track ran to the end and was held open for comments: replay from the
         // top (a fresh listen, so near-end engagement re-arms cleanly).
         engagedNearEndRef.current = false;
@@ -558,6 +566,19 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       if (fresh.length) {
         queueRef.current = [...queueRef.current, ...fresh];
         setQueueLength(queueRef.current.length);
+        // Mirror into the ENGINE queue: the lock screen's NEXT button and
+        // native auto-advance see the new tracks the moment we do.
+        if (mainLoadedRef.current) {
+          try {
+            const items = await Promise.all(fresh.map(async (t) => ({
+              url: (await resolveLocalUri(t.id, t.uri)) ?? t.uri,
+              title: t.caption || t.artist || 'Laybell',
+              artist: t.artist || '',
+              artwork: t.cover || undefined,
+            })));
+            await TrackPlayer.add(items);
+          } catch {}
+        }
         return true;
       }
       // Loader is dry — stop advertising "more" so the UI can settle.
@@ -568,12 +589,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     return false;
   }
 
-  // Advance to a (now-valid) queue index, running a due ad between songs first.
+  // Advance to a (now-valid) queue index — a native skip within the engine
+  // queue, so the lock-screen card follows instantly. A due ad fires at the
+  // boundary via the ActiveTrackChanged handler (pause at 0:00 → ad → restart).
   function advanceTo(ni: number) {
-    if (adDueRef.current) { proceedToNextTrack(); return; }
+    pendingFinishRef.current = false;
+    engagedNearEndRef.current = false;
     queueIndexRef.current = ni;
     setQueueIndex(ni);
-    play(queueRef.current[ni], true, true);
+    setIsPlaying(true);
+    setIsBuffering(true);
+    TrackPlayer.skip(ni).then(() => TrackPlayer.play()).catch(() => {});
   }
 
   function next() {
@@ -607,9 +633,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const q = queueRef.current;
     const pi = queueIndexRef.current - 1;
     if (positionRef.current < 3000 && q.length && pi >= 0) {
-      queueIndexRef.current = pi;
-      setQueueIndex(pi);
-      play(q[pi], true, true);
+      advanceTo(pi);
     } else {
       restartCurrent();
     }
@@ -622,7 +646,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsBuffering(false);
     setCurrentTrack(null);
     emitPosition(0, 0);
-    statusSubRef.current?.remove(); statusSubRef.current = null;
     TrackPlayer.reset().catch(() => {}); // clears the lock-screen card too
     mainLoadedRef.current = false;
     if (loadedIdRef.current) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
@@ -639,21 +662,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // (a playlist plays on), or close if this was the last one.
   function advanceOrEnd() {
     const nextIdx = queueIndexRef.current + 1;
-    const goTo = (idx: number) => {
-      queueIndexRef.current = idx;
-      setQueueIndex(idx);
-      // Drop the finished track's listeners; play() below replaces the RNTP
-      // queue (reset + add) — nothing is audibly playing at this point.
-      statusSubRef.current?.remove(); statusSubRef.current = null;
-      mainLoadedRef.current = false;
-      play(queueRef.current[idx], true, true);
-    };
-    if (nextIdx < queueRef.current.length) { goTo(nextIdx); return; }
+    if (nextIdx < queueRef.current.length) { advanceTo(nextIdx); return; }
     // Last loaded track finished — try to pull in more relevant songs so playback
-    // rolls on; only close the player if the loader is genuinely dry.
+    // rolls on (appendFromLoader extends the engine queue too); only close the
+    // player if the loader is genuinely dry.
     setIsBuffering(true);
     appendFromLoader().then((grew) => {
-      if (grew) goTo(queueIndexRef.current + 1);
+      if (grew) advanceTo(queueIndexRef.current + 1);
       else endQueue();
     });
   }
@@ -708,10 +723,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (adPlayingRef.current) return;
     if (pendingFinishRef.current && !holdForCommentRef.current && !engagedNearEndRef.current) {
       pendingFinishRef.current = false;
-      // Drop the finished-but-kept track's listeners before moving on; the
-      // next play() replaces the RNTP queue.
-      statusSubRef.current?.remove(); statusSubRef.current = null;
-      mainLoadedRef.current = false;
       proceedToNextTrack();
     }
   }
@@ -735,6 +746,251 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   function clearCommentEngagement() {
     engagedNearEndRef.current = false;
     maybeRunDeferredFinish();
+  }
+
+  // Bookkeeping for the track that just became ACTIVE — initial load, native
+  // auto-advance, next/previous, lock-screen skips ALL pass through the
+  // ActiveTrackChanged event, so this is the one arming path.
+  function armTrack(track: Track) {
+    // Every main-player listen accrues toward ad breaks — resolve the ad
+    // viewer once per session, on the first real play.
+    if (!adViewerRef.current) armAdViewer();
+    // Music-badge accounting: reset the per-song 10-min cap only when the SONG
+    // changes (loops/replays of the same song keep sharing its budget).
+    // Eligibility defaults OFF until ownership resolves — only OTHER
+    // creators' songs count (no self-loop farming).
+    if (badgeSongIdRef.current !== track.id) {
+      badgeSongIdRef.current = track.id;
+      badgeSongMsRef.current = 0;
+    }
+    badgeEligibleRef.current = false;
+    // Swap the offline in-use lock to the new track.
+    if (loadedIdRef.current && loadedIdRef.current !== track.id) clearInUse(loadedIdRef.current);
+    loadedIdRef.current = track.id;
+    markInUse(track.id);
+    (async () => {
+      try {
+        const u = (await supabase.auth.getUser()).data.user;
+        if (u) uidRef.current = u.id;
+        const { data: ownerRow } = await supabase.from('posts').select('user_id, downloadable').eq('id', track.id).single();
+        badgeEligibleRef.current = !!u && !!ownerRow && ownerRow.user_id !== u.id;
+        // Layer-0 safety net: opportunistically cache this track for offline.
+        void autoCache(track.id, track.uri, {
+          title: track.caption, artist: track.artist, cover: track.cover,
+          downloadable: (ownerRow as any)?.downloadable !== false,
+        });
+        // Deliberate main-player plays feed the local listen history that
+        // drives offline prefetch (the ambient feed-song player never counts).
+        if (u) void recordListen(u.id,
+          { id: track.id, uri: track.uri, title: track.caption, artist: track.artist, cover: track.cover ?? null },
+          (ownerRow as any)?.downloadable !== false);
+      } catch { badgeEligibleRef.current = false; }
+    })();
+  }
+
+  // Route a stream credit through the offline outbox (records now when online,
+  // queues for replay on reconnect when offline).
+  const recordStreamFor = (postId: string) => {
+    const uid = uidRef.current;
+    if (uid) recordStreamDurable(uid, postId, deviceIdRef.current);
+    else supabase.rpc('record_stream', { p_post_id: postId, p_device_id: deviceIdRef.current }).then(undefined, () => {});
+  };
+
+  // ── GLOBAL engine listeners (attached ONCE) ─────────────────────────────────
+  // The RNTP queue advances natively (that's what keeps the lock screen and
+  // Laybell on the SAME queue, foreground or not), so these listeners are
+  // permanent instead of per-play — no attach/detach races.
+  useEffect(() => {
+    const progressSub = TrackPlayer.addEventListener(TPEvent.PlaybackProgressUpdated, (e) => {
+      const pos = (e.position ?? 0) * 1000;   // RNTP reports SECONDS
+      const dur = (e.duration ?? 0) * 1000;
+      // During an audio ad the position channel belongs to the AD's ticks.
+      if (!adPlayingRef.current) emitPosition(pos, dur);
+      progressRef.current = dur > 0 ? pos / dur : 0;
+
+      // Comment-hold: with native advance, a finishing track must be CAUGHT
+      // just before its end (the engine won't wait for JS) — pause it and
+      // defer the advance, exactly like the old didJustFinish hold. resume()
+      // treats this near-end pause as "finished" (replay-from-top rule).
+      if ((holdForCommentRef.current || engagedNearEndRef.current)
+        && dur > 0 && pos >= dur - 450
+        && !pendingFinishRef.current && !adPlayingRef.current) {
+        pendingFinishRef.current = true;
+        TrackPlayer.pause().catch(() => {});
+        setIsPlaying(false);
+        setIsBuffering(false);
+        saveProgress();
+        flushBadgeMs();
+        return;
+      }
+
+      // --- Stream counting policy (unchanged semantics) ---
+      // Accumulate genuine forward listen time (ignore seeks, rewinds and the
+      // jump on finish), then credit streams as cumulative listening crosses
+      // this track's duration-scaled thresholds. The server (record_stream)
+      // stays the authority on eligibility.
+      const id = loadedIdRef.current;
+      if (uidRef.current && id && dur > 0) {
+        const delta = pos - lastPosMsRef.current;
+        if (delta > 0 && delta < 1500) {
+          // Daily music badge: only OTHER creators' songs (badgeEligibleRef),
+          // capped per song (badgeSongMsRef) so loops can't farm it.
+          if (badgeEligibleRef.current && badgeSongMsRef.current < BADGE_SONG_CAP_MS) {
+            const credit = Math.min(delta, BADGE_SONG_CAP_MS - badgeSongMsRef.current);
+            badgeSongMsRef.current += credit;
+            badgeMsRef.current += credit;
+            if (badgeMsRef.current >= 15000) flushBadgeMs();
+          }
+          // Audio-ad clock: every genuine main-player listen ms counts,
+          // session-wide. Crossing the threshold marks a break DUE — it fires
+          // at the next song boundary, never mid-play.
+          if (!adPlayingRef.current) {
+            adListenMsRef.current += delta;
+            if (adListenMsRef.current >= adNextThresholdRef.current) adDueRef.current = true;
+          }
+          // Reset a post's accounting once its 24h window elapses (mirrors the
+          // server cap window).
+          const ws = windowStartRef.current[id];
+          if (ws == null || Date.now() - ws >= STREAM_WINDOW_MS) {
+            windowStartRef.current[id] = Date.now();
+            listenMsRef.current[id] = 0;
+            streamsAwardedRef.current[id] = 0;
+          }
+          const listened = (listenMsRef.current[id] || 0) + delta;
+          listenMsRef.current[id] = listened;
+          const awarded = streamsAwardedRef.current[id] || 0;
+          const { t1, t2, t3 } = playThresholds(dur / 1000);
+          if (awarded === 0 && listened >= t1 * 1000) {
+            streamsAwardedRef.current[id] = 1;
+            recordStreamFor(id);
+            saveProgress();
+          } else if (awarded === 1 && listened >= t2 * 1000) {
+            streamsAwardedRef.current[id] = 2;
+            recordStreamFor(id);
+            saveProgress();
+          } else if (awarded === 2 && listened >= t3 * 1000) {
+            // 3rd stream — credited by the server only for accounts >24h old.
+            streamsAwardedRef.current[id] = 3;
+            recordStreamFor(id);
+            saveProgress();
+          }
+        }
+      }
+      lastPosMsRef.current = pos;
+    });
+
+    // Buffering + play/pause mirrored from the ENGINE, so lock-screen taps and
+    // call interruptions (autoHandleInterruptions) keep the in-app buttons in
+    // sync with what's actually audible.
+    const stateSub = TrackPlayer.addEventListener(TPEvent.PlaybackState, (e) => {
+      setIsBuffering(e.state === TPState.Buffering || e.state === TPState.Loading);
+      if (e.state === TPState.Playing) setIsPlaying(true);
+      else if (e.state === TPState.Paused && !adPlayingRef.current && !pendingFinishRef.current) setIsPlaying(false);
+    });
+
+    // A different track became active — native auto-advance, next/previous, a
+    // lock-screen skip, or the initial load. Sync Laybell to the ENGINE (the
+    // engine is the source of truth for "which track"), arm the new track's
+    // accounting, run a due ad at this boundary, and keep the queue extended.
+    const trackSub = TrackPlayer.addEventListener(TPEvent.PlaybackActiveTrackChanged, (e: any) => {
+      const idx = typeof e?.index === 'number' ? e.index : -1;
+      if (idx < 0 || idx >= queueRef.current.length) return;
+      queueIndexRef.current = idx;
+      setQueueIndex(idx);
+      const t = queueRef.current[idx];
+      if (!t) return;
+      setCurrentTrack(t);
+      armTrack(t);
+      // Fresh per-track edge state + accounting deltas.
+      pendingFinishRef.current = false;
+      engagedNearEndRef.current = false;
+      progressRef.current = 0;
+      positionRef.current = 0;
+      lastPosMsRef.current = 0;
+      if (!adPlayingRef.current) emitPosition(0, 0);
+      // A due break fires HERE, at the song boundary (never mid-play): the
+      // just-changed track is still at ~0:00 — pause it, play the ad, and
+      // finishAudioAd restarts it from the top.
+      if (adDueRef.current && !adPlayingRef.current) {
+        adDueRef.current = false;
+        TrackPlayer.pause().catch(() => {});
+        setIsPlaying(false);
+        fireAudioAd();
+      }
+      // Keep the lock screen's NEXT button alive: extend the queue before the
+      // engine runs out of tracks (appendFromLoader mirrors into RNTP).
+      if (idx >= queueRef.current.length - 2 && queueLoaderRef.current) void appendFromLoader();
+    });
+
+    // The queue genuinely ran out (last track played to its end). GENUINE-END
+    // GUARD: iOS can fire this spuriously at track load — trusting it blindly
+    // "finished" a fresh song ~0.2s in. Only a playhead at the end counts.
+    const endSub = TrackPlayer.addEventListener(TPEvent.PlaybackQueueEnded, () => {
+      const dur = durationRef.current;
+      const pos = positionRef.current;
+      if (dur <= 0 || pos < Math.min(dur - 2000, dur * 0.95)) return;
+      saveProgress();
+      flushBadgeMs();
+      handleTrackFinished();
+    });
+
+    return () => { progressSub.remove(); stateSub.remove(); trackSub.remove(); endSub.remove(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load the CURRENT queueRef into the engine and start at startIndex. From
+  // here the ENGINE owns the whole queue — native auto-advance and lock-screen
+  // next/previous stay aligned with queueRef by index.
+  async function startQueue(startIndex: number) {
+    const token = ++playTokenRef.current;
+    const tracks = queueRef.current;
+    const startTrack = tracks[startIndex];
+    if (!startTrack) return;
+    // Captured BEFORE any await: the ActiveTrackChanged handler arms the new
+    // track (and overwrites loadedIdRef) as soon as the engine loads it.
+    const previousSongId = loadedIdRef.current;
+    setCurrentTrack(startTrack);
+    setIsPlaying(true);
+    setIsBuffering(true);
+    emitPosition(0, 0);
+    setVideoMuted(true); // a song is playing → mute feed video to avoid overlap
+    try {
+      // Offline: per track, play the verified local copy when present;
+      // otherwise stream the remote URL.
+      const items = await Promise.all(tracks.map(async (t) => ({
+        url: (await resolveLocalUri(t.id, t.uri)) ?? t.uri,
+        title: t.caption || t.artist || 'Laybell',
+        artist: t.artist || '',
+        artwork: t.cover || undefined,
+      })));
+      if (token !== playTokenRef.current) return;
+      await ensurePlayerSetup();
+      if (token !== playTokenRef.current) return;
+      await TrackPlayer.reset();
+      if (token !== playTokenRef.current) return;
+      await TrackPlayer.add(items);
+      if (token !== playTokenRef.current) { TrackPlayer.reset().catch(() => {}); return; }
+      if (startIndex > 0) await TrackPlayer.skip(startIndex);
+      if (token !== playTokenRef.current) { TrackPlayer.reset().catch(() => {}); return; }
+      mainLoadedRef.current = true;
+      // A break is due and the user just MOVED to a different song: the ad
+      // plays FIRST — the fresh track is loaded but never started, and every
+      // fireAudioAd outcome (finish, skip, failure, no inventory) starts it
+      // from 0:00. (Restarting the SAME song isn't a move; it stays ad-free.)
+      const adFirst = adDueRef.current && !adPlayingRef.current && previousSongId !== startTrack.id;
+      if (adFirst) {
+        adDueRef.current = false;
+        setIsPlaying(false);
+        fireAudioAd();
+      } else {
+        TrackPlayer.play().catch(() => {});
+      }
+    } catch (err) {
+      console.log('audio error:', err);
+      setIsPlaying(false);
+      setIsBuffering(false);
+      setCurrentTrack(null);
+    }
   }
 
   async function play(track: Track, fromQueue = false, suppressToggle = false) {
@@ -761,221 +1017,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       await stop();
       return;
     }
-
-    // Each play gets a token; if a newer play starts before this one finishes
-    // loading, the older one bails and unloads itself (prevents overlap).
-    const token = ++playTokenRef.current;
-
-    // Tear down the current track's listeners and silence it now (no overlap
-    // while the new source resolves); the RNTP queue is rebuilt below.
-    statusSubRef.current?.remove(); statusSubRef.current = null;
-    if (mainLoadedRef.current) TrackPlayer.pause().catch(() => {});
-    // Release the previous track's offline in-use lock (the new track locks below).
-    if (loadedIdRef.current && loadedIdRef.current !== track.id) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
-
-    setCurrentTrack(track);
-    setIsPlaying(true);
-    setIsBuffering(true);
-    emitPosition(0, 0);
-    setVideoMuted(true); // a song is playing → mute feed video to avoid overlap
-
-    // Every main-player listen accrues toward ad breaks — resolve the ad viewer
-    // once per session, on the first real play.
-    if (!adViewerRef.current) armAdViewer();
-
-    // Music-badge accounting: reset the per-song 10-min cap only when the SONG
-    // changes (loops/replays of the same song keep sharing its budget). Eligibility
-    // defaults OFF until ownership resolves below — only OTHER creators' songs count.
-    if (badgeSongIdRef.current !== track.id) {
-      badgeSongIdRef.current = track.id;
-      badgeSongMsRef.current = 0;
+    if (!fromQueue || !queueRef.current.length) {
+      // Single track → a one-track engine queue.
+      queueRef.current = [track];
+      queueIndexRef.current = 0;
+      setQueueLength(1);
+      setQueueIndex(0);
+    } else {
+      // Playing out of the existing queue (playQueue start, resume reload):
+      // align the index to the requested track.
+      const qi = queueRef.current.findIndex((t) => t.id === track.id);
+      if (qi >= 0) queueIndexRef.current = qi;
+      setQueueIndex(queueIndexRef.current);
     }
-    badgeEligibleRef.current = false;
-
-    // --- Stream counting policy ---
-    // Credit streams by cumulative listen time, scaled by duration (see
-    // streamThresholds): the 1st stream at the tier's 1st threshold, the 2nd once
-    // combined listening reaches the 2nd threshold. Genuine forward listen time is
-    // accumulated per post across replays this session. The server (record_stream)
-    // is the authority on eligibility — it credits the owner's OWN listen exactly
-    // once (lifetime), and caps everyone else per the age/device rules.
-    // canCount is resolved in the background so playback never waits on the network.
-    let canCount = false;
-    (async () => {
-      try {
-        const u = (await supabase.auth.getUser()).data.user;
-        canCount = !!u;
-        if (u) uidRef.current = u.id;
-        // Badge eligibility: only OTHER creators' songs count (no self-loop farming).
-        // Resolve this track's owner once; a non-post track (e.g. an ad) returns null
-        // and stays ineligible. Per-post stream credit (canCount) is unaffected — the
-        // server's record_stream enforces its own self-stream rule.
-        const { data: ownerRow } = await supabase.from('posts').select('user_id, downloadable').eq('id', track.id).single();
-        badgeEligibleRef.current = !!u && !!ownerRow && ownerRow.user_id !== u.id;
-        // Layer-0 safety net: opportunistically cache this track for offline. The
-        // engine gates on prefs/network/dedupe and never blocks playback; we pass
-        // downloadable from the same row so an opted-out track is never auto-cached.
-        void autoCache(track.id, track.uri, {
-          title: track.caption, artist: track.artist, cover: track.cover,
-          downloadable: (ownerRow as any)?.downloadable !== false,
-        });
-        // Log this deliberate play to the local listen history that drives the
-        // offline prefetch (top-played + recent). Main-player plays only — the
-        // ambient feed-song player doesn't count.
-        if (u) void recordListen(u.id,
-          { id: track.id, uri: track.uri, title: track.caption, artist: track.artist, cover: track.cover ?? null },
-          (ownerRow as any)?.downloadable !== false);
-      } catch { badgeEligibleRef.current = false; }
-    })();
-    const recordStream = () => {
-      // Route through the offline outbox: it records now when online, and queues the
-      // event for replay on reconnect when offline (so an offline listen still
-      // credits the creator). Falls back to a direct RPC until the uid resolves.
-      const uid = uidRef.current;
-      if (uid) recordStreamDurable(uid, track.id, deviceIdRef.current);
-      else supabase.rpc('record_stream', { p_post_id: track.id, p_device_id: deviceIdRef.current }).then(undefined, () => {});
-    };
-    let lastPosMs = 0; // previous reported position, for forward-delta accumulation
-
-    try {
-      // Offline: play the local file when we have a verified, non-stale copy of this
-      // track; otherwise stream the remote URL. A failed remote stream just means the
-      // next play retries — that lazy fallback IS our offline detection.
-      const playUri = (await resolveLocalUri(track.id, track.uri)) ?? track.uri;
-      // A newer play started during the (async) offline-uri resolve → bail
-      // before touching the player, so we never overlap.
-      if (token !== playTokenRef.current) return;
-      // MAIN engine = react-native-track-player: a one-track queue (this
-      // context owns queue/advance logic) that also paints the iOS lock-screen
-      // / Control Center card — title, artist, artwork and live position — and
-      // whose remote commands run the same handlers as the in-app buttons.
-      await ensurePlayerSetup();
-      if (token !== playTokenRef.current) return;
-      await TrackPlayer.reset();
-      if (token !== playTokenRef.current) return;
-      await TrackPlayer.add({
-        url: playUri,
-        title: track.caption || track.artist || 'Laybell',
-        artist: track.artist || '',
-        artwork: track.cover || undefined,
-      });
-      if (token !== playTokenRef.current) { TrackPlayer.reset().catch(() => {}); return; }
-      mainLoadedRef.current = true;
-      const previousSongId = loadedIdRef.current;
-      loadedIdRef.current = track.id;
-      markInUse(track.id);  // protect this file from removal/eviction while it's loaded
-
-      // A break is due and the user just MOVED to a different song (picked from
-      // a list, feed, shop preview promotion…): the ad plays FIRST. The fresh
-      // track is loaded but NEVER started — not even for a beat — and every
-      // fireAudioAd outcome (finish, skip, load failure, no inventory) starts
-      // it from 0:00. (Restarting the SAME song isn't a move; it stays ad-free.)
-      const adFirst = adDueRef.current && !adPlayingRef.current && previousSongId !== track.id;
-      if (adFirst) {
-        adDueRef.current = false;
-        setIsPlaying(false);
-        fireAudioAd();
-      } else {
-        TrackPlayer.play().catch(() => {});
-      }
-
-      const progressSub = TrackPlayer.addEventListener(TPEvent.PlaybackProgressUpdated, (e) => {
-        const pos = (e.position ?? 0) * 1000;   // RNTP reports SECONDS
-        const dur = (e.duration ?? 0) * 1000;
-        // During an audio ad the position channel belongs to the AD's ticks —
-        // stray events from the paused music player must not paint the song's
-        // position onto the ad bars.
-        if (!adPlayingRef.current) emitPosition(pos, dur); // ticks go to useAudioPosition subscribers only
-        progressRef.current = dur > 0 ? pos / dur : 0;
-
-        // Accumulate genuine forward listen time (ignore seeks, rewinds and the
-        // jump on finish), then credit the 1st/2nd stream as cumulative listening
-        // crosses this track's duration-scaled thresholds.
-        if (canCount && dur > 0) {
-          const delta = pos - lastPosMs;
-          if (delta > 0 && delta < 1500) {
-            // Daily music badge: accrue this genuine forward delta (across all
-            // posts, independent of the per-post stream window) and flush in chunks.
-            // ONLY counts OTHER creators' songs (badgeEligibleRef — no self-loop
-            // farming), and at most BADGE_SONG_CAP_MS per song (badgeSongMsRef), so
-            // looping one track past 10 min stops adding to badge progress until a
-            // different song plays.
-            if (badgeEligibleRef.current && badgeSongMsRef.current < BADGE_SONG_CAP_MS) {
-              const credit = Math.min(delta, BADGE_SONG_CAP_MS - badgeSongMsRef.current);
-              badgeSongMsRef.current += credit;
-              badgeMsRef.current += credit;
-              if (badgeMsRef.current >= 15000) flushBadgeMs();
-            }
-            // Audio-ad clock: EVERY genuine main-player listen ms counts,
-            // session-wide across songs and stops. Crossing the threshold marks
-            // an ad DUE — it does NOT fire here (ads never interrupt a song
-            // mid-play). The break plays at the next song boundary: finish,
-            // skip, or the user picking a different song.
-            if (!adPlayingRef.current) {
-              adListenMsRef.current += delta;
-              if (adListenMsRef.current >= adNextThresholdRef.current) adDueRef.current = true;
-            }
-            const id = track.id;
-            // Reset a post's accounting once its 24h window elapses so a genuine
-            // listener can earn again the next day (mirrors the server cap window).
-            const ws = windowStartRef.current[id];
-            if (ws == null || Date.now() - ws >= STREAM_WINDOW_MS) {
-              windowStartRef.current[id] = Date.now();
-              listenMsRef.current[id] = 0;
-              streamsAwardedRef.current[id] = 0;
-            }
-            const listened = (listenMsRef.current[id] || 0) + delta;
-            listenMsRef.current[id] = listened;
-            const awarded = streamsAwardedRef.current[id] || 0;
-            const { t1, t2, t3 } = playThresholds(dur / 1000);
-            if (awarded === 0 && listened >= t1 * 1000) {
-              streamsAwardedRef.current[id] = 1;
-              recordStream();
-              saveProgress();
-            } else if (awarded === 1 && listened >= t2 * 1000) {
-              streamsAwardedRef.current[id] = 2;
-              recordStream();
-              saveProgress();
-            } else if (awarded === 2 && listened >= t3 * 1000) {
-              // 3rd stream — credited by the server only for accounts >24h old.
-              streamsAwardedRef.current[id] = 3;
-              recordStream();
-              saveProgress();
-            }
-          }
-        }
-        lastPosMs = pos;
-      });
-      // Buffering + play/pause mirrored from the ENGINE, so lock-screen taps
-      // and call interruptions (autoHandleInterruptions) keep the in-app
-      // buttons in sync with what's actually audible.
-      const stateSub = TrackPlayer.addEventListener(TPEvent.PlaybackState, (e) => {
-        setIsBuffering(e.state === TPState.Buffering || e.state === TPState.Loading);
-        if (e.state === TPState.Playing) setIsPlaying(true);
-        else if (e.state === TPState.Paused && !adPlayingRef.current && !pendingFinishRef.current) setIsPlaying(false);
-      });
-      // The one-track queue ending IS this track finishing (expo-audio's old
-      // didJustFinish). Listeners are removed before every reset(), so a
-      // teardown can never masquerade as a finish. GENUINE-END GUARD: iOS can
-      // fire this event spuriously right as a track LOADS — trusting it blindly
-      // "finished" a fresh song ~0.2s in, which advanced/closed the player and
-      // cut the audio (the "plays for a split second then stops" regression).
-      // Only a playhead actually at the end counts.
-      const endSub = TrackPlayer.addEventListener(TPEvent.PlaybackQueueEnded, () => {
-        const dur = durationRef.current;
-        const pos = positionRef.current;
-        if (dur <= 0 || pos < Math.min(dur - 2000, dur * 0.95)) return;
-        saveProgress();
-        flushBadgeMs();
-        handleTrackFinished();
-      });
-      statusSubRef.current = { remove: () => { progressSub.remove(); stateSub.remove(); endSub.remove(); } };
-    } catch (err) {
-      console.log('audio error:', err);
-      setIsPlaying(false);
-      setIsBuffering(false);
-      setCurrentTrack(null);
-    }
+    await startQueue(queueIndexRef.current);
   }
 
   return (
