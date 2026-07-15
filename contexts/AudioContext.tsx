@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
+import { AppState } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import TrackPlayer, { Event as TPEvent, State as TPState } from 'react-native-track-player';
 import { ensurePlayerSetup, setRemoteHandlers } from '../lib/trackPlayerService';
@@ -387,6 +388,25 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (adWatchdogRef.current) clearTimeout(adWatchdogRef.current);
     TrackPlayer.reset().catch(() => {});
     try { adSoundRef.current?.remove(); } catch {}
+  }, []);
+
+  // Self-healing lock-screen card: if ANYTHING wipes the now-playing info
+  // while a track is loaded (a stray native session touch — see the
+  // patches/expo-video patch — or an OS hiccup), re-push the current track's
+  // metadata on every return to the foreground. Streaming in Laybell must
+  // ALWAYS have its iOS card.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active' || !mainLoadedRef.current) return;
+      const t = queueRef.current[queueIndexRef.current];
+      if (!t) return;
+      TrackPlayer.updateNowPlayingMetadata({
+        title: t.caption || t.artist || 'Laybell',
+        artist: t.artist || '',
+        artwork: t.cover || undefined,
+      }).catch(() => {});
+    });
+    return () => sub.remove();
   }, []);
 
   // Lock-screen / Control Center commands drive the SAME functions as the

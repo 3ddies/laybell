@@ -1,0 +1,39 @@
+diff --git a/node_modules/expo-video/ios/NowPlayingManager.swift b/node_modules/expo-video/ios/NowPlayingManager.swift
+index 414c01a..14736d4 100644
+--- a/node_modules/expo-video/ios/NowPlayingManager.swift
++++ b/node_modules/expo-video/ios/NowPlayingManager.swift
+@@ -42,6 +42,14 @@ class NowPlayingManager: VideoPlayerObserverDelegate {
+   }
+ 
+   func unregisterPlayer(_ player: VideoPlayer) {
++    // PATCH(laybell): a player that never REGISTERED (this app never uses
++    // showNowPlayingNotification) must not touch the now-playing widget —
++    // unguarded, every VideoPlayer deinit hit the empty-registry branch below
++    // and wiped MPNowPlayingInfo while react-native-track-player was
++    // streaming music (the lock-screen card vanished mid-song).
++    guard players.contains(player) else {
++      return
++    }
+     players.remove(player)
+     player.observer?.unregisterDelegate(delegate: self)
+ 
+diff --git a/node_modules/expo-video/ios/VideoManager.swift b/node_modules/expo-video/ios/VideoManager.swift
+index 8ef093e..704038e 100644
+--- a/node_modules/expo-video/ios/VideoManager.swift
++++ b/node_modules/expo-video/ios/VideoManager.swift
+@@ -82,6 +82,15 @@ class VideoManager {
+       player.showNowPlayingNotification
+     }
+ 
++    // PATCH(laybell): SILENT video (muted feed/grid previews) must never
++    // reconfigure the shared audio session. The auto-mix branch below inserted
++    // .mixWithOthers whenever every player was muted — and iOS strips
++    // now-playing eligibility from mixable apps, so the music engine's
++    // lock-screen card vanished the moment a muted preview started playing.
++    if !isOutputtingAudio && !anyPlayerShowsNotification {
++      return
++    }
++
+     let shouldMixOverride = audioMixingMode == .mixWithOthers
+     let doNotMixOverride = audioMixingMode == .doNotMix
+     let shouldDuckOthers = audioMixingMode == .duckOthers && isOutputtingAudio
