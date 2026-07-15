@@ -905,7 +905,13 @@ export default function StoryCameraScreen() {
           {...(Platform.OS === 'ios' && facing === 'back' && hasUltraWide
             ? { selectedLens: ultraWide ? 'builtInUltraWideCamera' : 'builtInWideAngleCamera' }
             : {})}
-          mute={!micPermission?.granted}
+          // Mic engages only when the camera screen is actually FOCUSED.
+          // The swipe pre-activation (cameraActive) fires on EVERY swipe that
+          // starts on Home — with the mic attached it claimed the iOS
+          // record audio session and PAUSED the main player's music on every
+          // tab swipe. Video-only capture never touches the audio session;
+          // landing on the camera flips the mic in (recording needs it).
+          mute={!micPermission?.granted || !isFocused}
           active={cameraActive}
           onCameraReady={probeLenses}
         />
