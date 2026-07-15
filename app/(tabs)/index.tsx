@@ -246,6 +246,9 @@ const PostCard = memo(function PostCard({
               multi-MP original — memory spikes + dropped frames mid-scroll). */}
           <ExpoImage
             source={{ uri: item.media_url }}
+            // Recycled cells must never flash the PREVIOUS post's image while
+            // the new one decodes — recyclingKey clears the view on reuse.
+            recyclingKey={item.id}
             style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
             contentFit="cover"
             cachePolicy="memory-disk"
@@ -316,7 +319,7 @@ const PostCard = memo(function PostCard({
                   so fast scrolling never spins up a player per row while landing
                   on a video still plays instantly. */}
               {!!item.thumbnail_url && (
-                <ExpoImage source={{ uri: item.thumbnail_url }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
+                <ExpoImage source={{ uri: item.thumbnail_url }} recyclingKey={item.id} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
               )}
               {isVisibleVideo && (
                 // POOLED player (lib/feedVideoPool): assignment is a cheap

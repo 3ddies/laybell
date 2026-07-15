@@ -73,6 +73,9 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions }: Pr
         <TouchableOpacity activeOpacity={0.95} onPress={() => onCta(item)}>
           <ExpoImage
             source={{ uri: item.media_url }}
+            // Ad cells recycle within their own pool — never flash the
+            // previous campaign's creative while the new one decodes.
+            recyclingKey={item.id}
             style={[styles.media, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
             contentFit="cover"
             cachePolicy="memory-disk"
