@@ -296,7 +296,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     flushBadgeMs();
     try {
       adProgressedRef.current = false;
-      const player = createAudioPlayer({ uri: ad.uri }, { updateInterval: 250 });
+      // keepAudioSessionActive: the ad player's pause/finish must never
+      // deactivate the shared AVAudioSession — the MUSIC (track-player)
+      // resumes on that same session right after the ad.
+      const player = createAudioPlayer({ uri: ad.uri }, { updateInterval: 250, keepAudioSessionActive: true });
       adSoundRef.current = player;
       setAdState({
         campaignId: ad.campaignId, creativeId: ad.creativeId, ownerId: ad.ownerId,

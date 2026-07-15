@@ -201,7 +201,11 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   function ensurePlayer(): AudioPlayer {
     let p = soundRef.current;
     if (p) return p;
-    p = createAudioPlayer(null, { updateInterval: 500 });
+    // keepAudioSessionActive: expo-audio's native pause() otherwise DEACTIVATES
+    // the app-wide AVAudioSession — and this player pauses exactly when the
+    // main player takes over and when the app backgrounds, which killed the
+    // main player's (track-player) audio mid-song / on background.
+    p = createAudioPlayer(null, { updateInterval: 500, keepAudioSessionActive: true });
     p.loop = true;
     p.muted = mutedRef.current;
     soundRef.current = p;

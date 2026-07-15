@@ -852,9 +852,16 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   // Stable list-container style so FlatList's PureComponent can bail on shell
   // re-renders (an inline array is a fresh identity every render).
+  const feedGatedNow = !feedGateUnlocked && feedData.length > GATE_POSTS;
   const feedContentStyle = useMemo(
-    () => [styles.feedContent, { paddingTop: headerH, paddingBottom: 68 + insets.bottom + SPACING.xxl + 60 }],
-    [styles, headerH, insets.bottom],
+    () => [styles.feedContent, {
+      paddingTop: headerH,
+      // While the gate is the last item the feed ends RIGHT under the spinner
+      // (just tab-bar clearance) — the full breathing-room padding only
+      // belongs under a real end-of-feed.
+      paddingBottom: feedGatedNow ? 68 + insets.bottom : 68 + insets.bottom + SPACING.xxl + 60,
+    }],
+    [styles, headerH, insets.bottom, feedGatedNow],
   );
 
   // Tapping the Home tab while ALREADY on Home scrolls the feed back to the
