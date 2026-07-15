@@ -53,6 +53,13 @@ function makePool(size: number): PlayerPool {
       entries = Array.from({ length: size }, () => {
         const player = createVideoPlayer(null);
         player.timeUpdateEventInterval = 0;
+        // Cap forward buffering (AVPlayerItem.preferredForwardBufferDuration).
+        // Raw MP4 posts otherwise buffer UNBOUNDED at full throttle, so a
+        // pre-warming neighbor/next player starves the PLAYING video's stream
+        // mid-watch — the screen-recorded "plays a second, then freezes for
+        // seconds" rebuffer. ~8s keeps playback smooth while making every
+        // warm download bounded and polite.
+        try { (player as any).bufferOptions = { preferredForwardBufferDuration: 8 }; } catch {}
         return { player, owner: null, uri: null, seq: 0 };
       });
     }

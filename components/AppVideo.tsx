@@ -136,6 +136,9 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
     p.loop = loop;
     p.muted = muted;
     p.timeUpdateEventInterval = intervalSec;
+    // Bounded forward buffer (same cap as the pools): unbounded raw-MP4
+    // buffering is how one player starves another's stream mid-watch.
+    try { (p as any).bufferOptions = { preferredForwardBufferDuration: 8 }; } catch {}
     if (shouldPlay) p.play();
   });
 

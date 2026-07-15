@@ -422,7 +422,7 @@ export default function ReelScreen() {
       // Ads warm too (ReelAd is pooled now) — an unwarmed ad page used to
       // cold-start at the swipe, which reads as "reel N+1 is broken".
       setWarmNextId(next && next.media_url ? next.id : null);
-    }, 600);
+    }, 900); // was 600 — give the settled reel's stream a longer solo head start
     return () => clearTimeout(t);
   }, [settledId, posts]);
 

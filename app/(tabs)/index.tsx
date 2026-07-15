@@ -17,6 +17,7 @@ import { isSwipeTap } from '../../contexts/PagerContext';
 import {
   setVisibleVideoId, setWarmVideoIds, setFeedFastScrolling, setFeedFocused, resetFeedVideo, useCardPlayback,
 } from '../../lib/feedVideo';
+import { acquireFeedPlayer } from '../../lib/feedVideoPool';
 import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -522,6 +523,15 @@ export default function HomeScreen() {
     if (feedGateUnlockedRef.current || gateUnlockTimer.current) return;
     runFeedGatePrefetch(true);
     try { musicCtl.current.warmSongPlayer(); } catch {}
+    // Pre-buffer the first upcoming VIDEO's stream into the pool while the
+    // gate dwells — this is the one moment bandwidth is guaranteed idle, so
+    // scrolling past the gate lands on an already-loaded player (its FeedVideo
+    // re-acquires the same entry by id and reveals instantly).
+    try {
+      const nextVid = (feedDataRef.current.slice(GATE_POSTS, GATE_POSTS + 8) as any[])
+        .find((p) => !p.__ad && p.type === 'video' && p.media_url);
+      if (nextVid) acquireFeedPlayer(nextVid.id, nextVid.media_url, { loop: true, muted: true, timeUpdateSec: 0.25 }, () => {});
+    } catch {}
     gateUnlockTimer.current = setTimeout(() => {
       gateUnlockTimer.current = null;
       setFeedGateUnlocked(true);

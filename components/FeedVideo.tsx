@@ -24,7 +24,12 @@ type Props = {
   onProgress?: (currentTimeMs: number, durationMs: number) => void;
 };
 
-const NEIGHBOR_LOAD_DELAY_MS = 500;
+// 1100ms (was 500): the playing video's first seconds are its most fragile —
+// the owner's screen recording showed neighbor pre-loads starving them into a
+// multi-second rebuffer on fat raw-MP4 posts. With the pool's buffer caps
+// bounding every download, a longer head start costs nothing visible
+// (neighbors sit behind their thumbnails) and protects the watched stream.
+const NEIGHBOR_LOAD_DELAY_MS = 1100;
 
 const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: Props) {
   const [player, setPlayer] = useState<VideoPlayer | null>(null);
