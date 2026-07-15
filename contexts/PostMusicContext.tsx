@@ -33,6 +33,9 @@ type PostMusicActions = {
   // this as a music post approaches so playSong at scroll-rest never waits on
   // the network.
   prefetchSong: (songId: string, mediaUrl?: string | null) => void;
+  // Pre-create the session's ONE ambient player at a safe idle moment (the
+  // feed gate) so the first song tap never pays a native player construction.
+  warmSongPlayer: () => void;
 };
 type PostMusicType = PostMusicActions & {
   activeId: string | null;          // host post/story id whose song is playing
@@ -185,13 +188,43 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  function teardown() {
+  // ── ONE persistent ambient player for the whole session ────────────────────
+  // createAudioPlayer() is a synchronous NATIVE construction — doing it inside
+  // playSong (the moment a song card is tapped, or scroll-rest lands on a song
+  // post) froze the video playing underneath EVERY time. This is the audio
+  // version of the video pools' rule #1 (lib/feedVideoPool): never create OR
+  // dispose a player mid-interaction. The player is created once — lazily, or
+  // ahead of time by the feed gate via warmSongPlayer() — then every song
+  // change is a replace() source swap and stop() is pause-only. The native
+  // player is fully released only when the provider unmounts.
+  const lastPosRef = useRef(0);
+  function ensurePlayer(): AudioPlayer {
+    let p = soundRef.current;
+    if (p) return p;
+    p = createAudioPlayer(null, { updateInterval: 500 });
+    p.loop = true;
+    p.muted = mutedRef.current;
+    soundRef.current = p;
+    // ONE listener for the player's lifetime — which song it accrues toward
+    // follows activeSongRef; lastPos resets on every source swap. The loop
+    // seam reads as a negative/large jump and is ignored, as is muted or
+    // background time.
+    statusSubRef.current = p.addListener('playbackStatusUpdate', (st: any) => {
+      const sid = activeSongRef.current;
+      if (!sid || !st.isLoaded) return;
+      const pos = (st.currentTime ?? 0) * 1000;   // expo-audio reports SECONDS
+      const delta = pos - lastPosRef.current;
+      lastPosRef.current = pos;
+      if (delta > 0 && delta < 1500 && !mutedRef.current && appActiveRef.current) accrueAmbient(sid, delta);
+    });
+    return p;
+  }
+  function warmSongPlayer() { try { ensurePlayer(); } catch {} }
+  function destroyPlayer() {
     statusSubRef.current?.remove(); statusSubRef.current = null;
     const s = soundRef.current;
     soundRef.current = null;
-    // Release the native player well AFTER the swap frames — remove() at
-    // setTimeout(0) executed in the very next JS tick, extending the burst.
-    if (s) { try { s.pause(); } catch {} setTimeout(() => { try { s.remove(); } catch {} }, 300); }
+    if (s) { try { s.pause(); } catch {} try { s.remove(); } catch {} }
   }
 
   function setActiveHost(v: string | null) {
@@ -205,7 +238,9 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     activeIdRef.current = null;
     activeSongRef.current = null;
     setActiveHost(null);
-    teardown();
+    // Pause-only — the persistent player (and its loaded source) survives, so
+    // the next playSong is a cheap replace(), never a create.
+    try { soundRef.current?.pause(); } catch {}
   }
 
   // Resolve (and cache) a song's audio URL without touching playback.
@@ -263,32 +298,14 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     const url = await resolveSongUrl(songId, mediaUrl);
     if (!url || token !== tokenRef.current) return;
 
-    statusSubRef.current?.remove(); statusSubRef.current = null;
-    const existing = soundRef.current;
-    soundRef.current = null;
-    // Deferred native release (see teardown) — keep it off the swap frames.
-    if (existing) { try { existing.pause(); } catch {} setTimeout(() => { try { existing.remove(); } catch {} }, 300); }
-    if (token !== tokenRef.current) return;
-
     try {
-      // createAudioPlayer is synchronous (we token-checked above); loop + mute are
-      // native, writable properties in expo-audio.
-      const player = createAudioPlayer({ uri: url }, { updateInterval: 500 });
-      player.loop = true;
+      // Persistent player: this path never creates, never disposes — replace()
+      // is a native source swap, so a song tap over a playing video can't
+      // stall the frame anymore.
+      const player = ensurePlayer();
+      lastPosRef.current = 0;
+      player.replace({ uri: url });
       player.muted = mutedRef.current;
-      soundRef.current = player;
-      // Accrue genuine forward listen time for this song toward the 30s → 1 ambient
-      // stream. `lastPos` is per-sound, so reloading on a scroll to another post with
-      // the same song starts fresh while the PER-SONG tally persists; the loop seam
-      // reads as a negative/large jump and is ignored, as is muted/background time.
-      let lastPos = 0;
-      statusSubRef.current = player.addListener('playbackStatusUpdate', (st: any) => {
-        if (!st.isLoaded) return;
-        const pos = (st.currentTime ?? 0) * 1000;   // expo-audio reports SECONDS
-        const delta = pos - lastPos;
-        lastPos = pos;
-        if (delta > 0 && delta < 1500 && !mutedRef.current && appActiveRef.current) accrueAmbient(songId, delta);
-      });
       player.play();
     } catch {}
   }
@@ -306,10 +323,10 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (mainPlaying) stop(); /* eslint-disable-next-line */ }, [mainPlaying]);
 
   // Tidy up on unmount — persist ambient progress first so nothing is lost.
-  useEffect(() => () => { saveAmbient(); teardown(); }, []);
+  useEffect(() => () => { saveAmbient(); destroyPlayer(); }, []);
 
   // Stable forever: the functions close over refs + stable setters only.
-  const actions = useMemo(() => ({ toggleMuted, playSong, stop, prefetchSong }), []);
+  const actions = useMemo(() => ({ toggleMuted, playSong, stop, prefetchSong, warmSongPlayer }), []);
 
   return (
     <ActionsCtx.Provider value={actions}>

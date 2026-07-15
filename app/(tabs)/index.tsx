@@ -24,7 +24,7 @@ import {
   TouchableOpacity, Platform,
   RefreshControl, Dimensions, Modal, Animated, ActivityIndicator,
 } from 'react-native';
-import { FeedSkeleton, PostCardSkeleton } from '../../components/Skeleton';
+import { FeedSkeleton } from '../../components/Skeleton';
 
 const SCREEN_W = Dimensions.get('window').width;
 const MAX_VIDEO_H = SCREEN_W * 1.25; // cap feed video at 4:5 so tall (9:16) clips aren't too long
@@ -405,27 +405,24 @@ const PostCard = memo(function PostCard({
 
 // ── The feed gate ────────────────────────────────────────────────────────────
 // Instagram-style progressive unlock: only the first GATE_POSTS posts exist in
-// the list until this card (pinned to the bottom of post 3) has run the feed's
-// optimization pass — prefetching the upcoming posts' stills/avatars and
-// warming their songs — behind a short, deliberate loading phase. Everything
-// below the gate literally does not render, mount, or buffer until then, so
-// the opening posts settle with ZERO competition (players, images, song
-// resolution), and the unlocked feed scrolls into pre-warmed content.
+// the list until the gate has run the feed's optimization pass. TWO phases
+// (owner design): background prep starts the moment the gate card is drawn
+// (FlashList draws ahead, so this overlaps the user finishing post 3), and the
+// visible 4–6s loading dwell starts only when the user actually HITS the
+// bottom bound. Everything below the gate literally does not render, mount, or
+// buffer until unlock, so the opening posts settle with ZERO competition and
+// the unlocked feed scrolls into pre-warmed content. Pull-to-refresh RE-GATES:
+// fresh content gets a fresh pass every time.
 const GATE_POSTS = 3;
-const FEED_GATE_MIN_MS = 4500; // the visible "loading phase" floor (~4–6s feel)
+const FEED_GATE_BOUND_MS = 5000; // dwell AFTER the user reaches the bound
 
+// A simple bound — just a spinner, no fake post skeleton.
 function FeedGateCard({ onArm }: { onArm: () => void }) {
   const { colors } = useTheme();
-  // Arm exactly once, as the card first mounts — FlashList draws it while the
-  // user approaches the bottom of post 3, so the pass runs as they finish the
-  // post above and the dwell rarely blocks them at full length.
   useEffect(() => { onArm(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <View style={{ paddingTop: SPACING.md }}>
-      <View style={{ alignItems: 'center', paddingVertical: SPACING.lg }}>
-        <ActivityIndicator size="small" color={colors.primary} />
-      </View>
-      <PostCardSkeleton />
+    <View style={{ height: 140, alignItems: 'center', justifyContent: 'center' }}>
+      <ActivityIndicator size="small" color={colors.primary} />
     </View>
   );
 }
@@ -481,20 +478,19 @@ export default function HomeScreen() {
   feedDataRef.current = feedData;
 
   // Feed gate (see FeedGateCard): the list is capped at GATE_POSTS + the gate
-  // sentinel until the optimization pass has run. Unlock is one-way for the
-  // session — refreshes and feed-mode switches never re-gate.
+  // sentinel until the pass has run. Pull-to-refresh re-gates (onRefresh).
   const [feedGateUnlocked, setFeedGateUnlocked] = useState(false);
-  const gateRanRef = useRef(false);
+  const feedGateUnlockedRef = useRef(false); feedGateUnlockedRef.current = feedGateUnlocked;
+  const gateArmedRef = useRef(false);
+  const gateUnlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gatedFeedData = useMemo(() => {
     if (feedGateUnlocked || feedData.length <= GATE_POSTS) return feedData;
     return [...feedData.slice(0, GATE_POSTS), { id: '__feed_gate__', __gate: true } as unknown as Post];
   }, [feedData, feedGateUnlocked]);
-  const runFeedGate = useCallback(() => {
-    if (gateRanRef.current) return;
-    gateRanRef.current = true;
-    const started = Date.now();
+  // The optimization pass: warm everything the next user actions will touch.
+  const runFeedGatePrefetch = useCallback((deep: boolean) => {
     try {
-      const upcoming = feedDataRef.current.slice(GATE_POSTS, GATE_POSTS + 12) as any[];
+      const upcoming = feedDataRef.current.slice(GATE_POSTS, GATE_POSTS + (deep ? 24 : 12)) as any[];
       const stills: string[] = [];
       let songWarms = 0;
       for (const p of upcoming) {
@@ -503,16 +499,34 @@ export default function HomeScreen() {
         const avatar = p.profiles?.avatar_url || p.avatar_url;
         if (avatar) stills.push(avatar);
         // Song URL resolution is the slow half of a song post's first play —
-        // resolve the next few during the gate (prefetchSong dedupes inflight).
-        if (p.song_id && songWarms < 4) { songWarms++; try { musicCtl.current.prefetchSong(p.song_id); } catch {} }
+        // resolve the upcoming ones now (prefetchSong dedupes inflight).
+        if (p.song_id && songWarms < (deep ? 8 : 4)) { songWarms++; try { musicCtl.current.prefetchSong(p.song_id); } catch {} }
       }
       // Warm the disk/memory image cache for every upcoming still + avatar so
       // post-gate scrolling decodes from cache instead of the network.
       if (stills.length) { try { ExpoImage.prefetch(stills); } catch {} }
     } catch {}
-    const wait = Math.max(1200, FEED_GATE_MIN_MS - (Date.now() - started));
-    setTimeout(() => setFeedGateUnlocked(true), wait);
   }, []);
+  // Phase A — the gate card mounted (drawn ahead as the user nears the bottom
+  // of post 3): background work starts immediately, no dwell yet.
+  const onGateArm = useCallback(() => {
+    if (gateArmedRef.current) return;
+    gateArmedRef.current = true;
+    runFeedGatePrefetch(false);
+  }, [runFeedGatePrefetch]);
+  // Phase B — the user actually HIT the bound (gate card crossed the 60%
+  // impression threshold): deeper pass + pre-create the ambient song player
+  // (so a song tap never constructs a native player over a playing video),
+  // then the deliberate 4–6s dwell before unlock.
+  const onGateBoundHit = useCallback(() => {
+    if (feedGateUnlockedRef.current || gateUnlockTimer.current) return;
+    runFeedGatePrefetch(true);
+    try { musicCtl.current.warmSongPlayer(); } catch {}
+    gateUnlockTimer.current = setTimeout(() => {
+      gateUnlockTimer.current = null;
+      setFeedGateUnlocked(true);
+    }, FEED_GATE_BOUND_MS);
+  }, [runFeedGatePrefetch]);
 
   // Fetch the pinned posts' full rows (so a pin still shows even when the active feed
   // mode wouldn't include your own post).
@@ -574,7 +588,7 @@ export default function HomeScreen() {
   // Narrow hooks: actions never change identity; muted flips only on user taps.
   // (usePostMusic would re-render this whole screen on every activeId change —
   // i.e. per song-post crossing — including while covered by the reels modal.)
-  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted, prefetchSong } = usePostMusicActions();
+  const { playSong, stop: stopSong, toggleMuted: toggleSongMuted, prefetchSong, warmSongPlayer } = usePostMusicActions();
   const songMuted = usePostMusicMuted();
   const router = useRouter();
 
@@ -703,6 +717,9 @@ export default function HomeScreen() {
       // A sponsored ad card crossing 60% visibility counts one impression
       // (deduped per campaign/placement/session + per-hour server-side).
       if (v.item?.__ad) recordAdImpression(v.item, 'feed', live.current.currentUserId);
+      // The gate card crossing 60% = the user hit the bottom bound → start the
+      // gate's visible dwell (phase B). Idempotent while the timer runs.
+      if (v.item?.__gate) onGateBoundHit();
     }
   }).current;
   const viewabilityConfigCallbackPairs = useRef([
@@ -937,8 +954,8 @@ export default function HomeScreen() {
   // current video slide has its audio on pauses its song so they don't overlap.
   // Imperative (see visibleMusicRef above): called from the viewability handler,
   // the focus effect, and onSlideAudioActive — never re-renders anything.
-  const musicCtl = useRef({ playSong, stopSong, prefetchSong });
-  musicCtl.current = { playSong, stopSong, prefetchSong };
+  const musicCtl = useRef({ playSong, stopSong, prefetchSong, warmSongPlayer });
+  musicCtl.current = { playSong, stopSong, prefetchSong, warmSongPlayer };
   function syncAmbientSong() {
     const target = isFocusedRef.current ? visibleMusicRef.current : null;
     const want = target && !slideAudioIdsRef.current.has(target.id) ? target : null;
@@ -1337,7 +1354,7 @@ export default function HomeScreen() {
   }, []);
 
   const renderPost = useCallback(({ item }: { item: Post }) => (
-    (item as any).__gate ? <FeedGateCard onArm={runFeedGate} /> :
+    (item as any).__gate ? <FeedGateCard onArm={onGateArm} /> :
     <ElasticSwipeView resetKey={(item as any).__spotlight ? `spot:${(item as any).__spotlight.campaignId}` : item.id}>
       {(item as any).__ad ? (
         <SponsoredCard
@@ -1375,7 +1392,7 @@ export default function HomeScreen() {
   // changes on user-initiated events (like/save, track change, mute), never
   // during a plain scroll — so FlatList's mounted cells bail via PureComponent.
   ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, songMuted,
-      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, runFeedGate]);
+      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, onGateArm]);
 
   if (loading) {
     return (
@@ -1546,6 +1563,12 @@ export default function HomeScreen() {
             onRefresh={async () => {
               impactLight(); // tactile confirm the pull-to-refresh caught
               setRefreshing(true);
+              // RE-GATE (owner design): a refresh brings fresh content, so the
+              // optimization pass must repeat — the gate returns at the bottom
+              // of the new post 3 and re-arms/prefetches for the new list.
+              if (gateUnlockTimer.current) { clearTimeout(gateUnlockTimer.current); gateUnlockTimer.current = null; }
+              gateArmedRef.current = false;
+              setFeedGateUnlocked(false);
               refreshStories();
               // Release any pinned just-posted posts so they fall into natural rank.
               clearPinned();
