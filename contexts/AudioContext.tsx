@@ -956,8 +956,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       });
       // The one-track queue ending IS this track finishing (expo-audio's old
       // didJustFinish). Listeners are removed before every reset(), so a
-      // teardown can never masquerade as a finish.
+      // teardown can never masquerade as a finish. GENUINE-END GUARD: iOS can
+      // fire this event spuriously right as a track LOADS — trusting it blindly
+      // "finished" a fresh song ~0.2s in, which advanced/closed the player and
+      // cut the audio (the "plays for a split second then stops" regression).
+      // Only a playhead actually at the end counts.
       const endSub = TrackPlayer.addEventListener(TPEvent.PlaybackQueueEnded, () => {
+        const dur = durationRef.current;
+        const pos = positionRef.current;
+        if (dur <= 0 || pos < Math.min(dur - 2000, dur * 0.95)) return;
         saveProgress();
         flushBadgeMs();
         handleTrackFinished();
