@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import AppVideo from './AppVideo';
+import FeedVideo from './FeedVideo';
 import { Ionicons } from '@expo/vector-icons';
 import { memo } from 'react';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
@@ -97,20 +97,15 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions }: Pr
 
       {item.type === 'video' && !!item.media_url && (
         <TouchableOpacity activeOpacity={0.95} onPress={() => onCta(item)}>
-          {isVisibleVideo ? (
-            <AppVideo
-              source={{ uri: item.media_url }}
-              style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
-              contentFit="cover"
-              loop
-              muted
-              active={shouldPlayVideo}
-            />
-          ) : (
-            // Off-screen: hold the slot without a live AVPlayer (ads carry no
-            // poster asset). The player mounts as the card approaches 40% visible.
-            <View style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]} />
-          )}
+          {/* POOLED surface (lib/feedVideoPool): assignment is an async source
+              swap, never a player creation — an ad card scrolling into view can
+              no longer stall the frame the way the old created-at-visible
+              AppVideo did. The black slot holds layout until readyToPlay. */}
+          <View style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}>
+            {isVisibleVideo && (
+              <FeedVideo id={item.id} uri={item.media_url} play={shouldPlayVideo} muted />
+            )}
+          </View>
         </TouchableOpacity>
       )}
 

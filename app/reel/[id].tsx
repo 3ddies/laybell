@@ -419,7 +419,9 @@ export default function ReelScreen() {
       const list = postsRef.current;
       const idx = list.findIndex((p) => p.id === settledId);
       const next = idx >= 0 ? list[idx + 1] : null;
-      setWarmNextId(next && !next.__ad && next.media_url ? next.id : null);
+      // Ads warm too (ReelAd is pooled now) — an unwarmed ad page used to
+      // cold-start at the swipe, which reads as "reel N+1 is broken".
+      setWarmNextId(next && next.media_url ? next.id : null);
     }, 600);
     return () => clearTimeout(t);
   }, [settledId, posts]);
@@ -750,6 +752,7 @@ export default function ReelScreen() {
           item={item}
           visible={visibleId === item.id}
           paused={paused}
+          mountPlayer={settledId === item.id || lingerId === item.id || warmNextId === item.id}
           insets={insets}
           onSkip={() => {
             recordAdSkip(item, 'reels', currentUserId);

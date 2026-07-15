@@ -76,6 +76,15 @@ export default function SlideshowCarousel({
 
   const current = Math.min(Math.max(index, 0), Math.max(0, slides.length - 1));
   const currentIsVideo = slides[current]?.type === 'video';
+  // Video players mount only after the carousel FIRST becomes active (feed:
+  // this card is the visible video at scroll rest; full viewer: focused).
+  // Cards entering the feed's render window mid-scroll would otherwise CREATE
+  // AVPlayers during the scroll — a main-thread freeze (lib/feedVideoPool
+  // header rule #1). Once engaged the players stay mounted (paused) so
+  // scrolling away doesn't pay a disposal either; they release on unmount,
+  // which the key={item.id} recycle remount already handles.
+  const [engaged, setEngaged] = useState(!!active);
+  if (active && !engaged) setEngaged(true);
   const videoAudioActive = currentIsVideo && videoAudioOn;
 
   // Swiping to a non-video slide drops the unmute (so the song resumes there).
@@ -118,7 +127,7 @@ export default function SlideshowCarousel({
           const body = (
             <View style={{ width, height, backgroundColor: '#000' }}>
               {isVideo ? (
-                Math.abs(i - current) <= 1 ? (
+                engaged && Math.abs(i - current) <= 1 ? (
                   <SlideVideo
                     uri={s.url}
                     poster={s.thumbnail_url}

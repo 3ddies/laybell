@@ -22,9 +22,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet,
   TouchableOpacity, Platform,
-  RefreshControl, Dimensions, Modal, Animated,
+  RefreshControl, Dimensions, Modal, Animated, ActivityIndicator,
 } from 'react-native';
-import { FeedSkeleton } from '../../components/Skeleton';
+import { FeedSkeleton, PostCardSkeleton } from '../../components/Skeleton';
 
 const SCREEN_W = Dimensions.get('window').width;
 const MAX_VIDEO_H = SCREEN_W * 1.25; // cap feed video at 4:5 so tall (9:16) clips aren't too long
@@ -403,6 +403,33 @@ const PostCard = memo(function PostCard({
   );
 });
 
+// ── The feed gate ────────────────────────────────────────────────────────────
+// Instagram-style progressive unlock: only the first GATE_POSTS posts exist in
+// the list until this card (pinned to the bottom of post 3) has run the feed's
+// optimization pass — prefetching the upcoming posts' stills/avatars and
+// warming their songs — behind a short, deliberate loading phase. Everything
+// below the gate literally does not render, mount, or buffer until then, so
+// the opening posts settle with ZERO competition (players, images, song
+// resolution), and the unlocked feed scrolls into pre-warmed content.
+const GATE_POSTS = 3;
+const FEED_GATE_MIN_MS = 4500; // the visible "loading phase" floor (~4–6s feel)
+
+function FeedGateCard({ onArm }: { onArm: () => void }) {
+  const { colors } = useTheme();
+  // Arm exactly once, as the card first mounts — FlashList draws it while the
+  // user approaches the bottom of post 3, so the pass runs as they finish the
+  // post above and the dwell rarely blocks them at full length.
+  useEffect(() => { onArm(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <View style={{ paddingTop: SPACING.md }}>
+      <View style={{ alignItems: 'center', paddingVertical: SPACING.lg }}>
+        <ActivityIndicator size="small" color={colors.primary} />
+      </View>
+      <PostCardSkeleton />
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const { show: showOptions } = usePostOptions();
   const { colors, mode } = useTheme();
@@ -452,6 +479,40 @@ export default function HomeScreen() {
   // viewport for upcoming videos to pre-warm without re-subscribing.
   const feedDataRef = useRef<Post[]>([]);
   feedDataRef.current = feedData;
+
+  // Feed gate (see FeedGateCard): the list is capped at GATE_POSTS + the gate
+  // sentinel until the optimization pass has run. Unlock is one-way for the
+  // session — refreshes and feed-mode switches never re-gate.
+  const [feedGateUnlocked, setFeedGateUnlocked] = useState(false);
+  const gateRanRef = useRef(false);
+  const gatedFeedData = useMemo(() => {
+    if (feedGateUnlocked || feedData.length <= GATE_POSTS) return feedData;
+    return [...feedData.slice(0, GATE_POSTS), { id: '__feed_gate__', __gate: true } as unknown as Post];
+  }, [feedData, feedGateUnlocked]);
+  const runFeedGate = useCallback(() => {
+    if (gateRanRef.current) return;
+    gateRanRef.current = true;
+    const started = Date.now();
+    try {
+      const upcoming = feedDataRef.current.slice(GATE_POSTS, GATE_POSTS + 12) as any[];
+      const stills: string[] = [];
+      let songWarms = 0;
+      for (const p of upcoming) {
+        const still = p.thumbnail_url || p.cover_url || (p.type === 'image' ? p.media_url : null);
+        if (still) stills.push(still);
+        const avatar = p.profiles?.avatar_url || p.avatar_url;
+        if (avatar) stills.push(avatar);
+        // Song URL resolution is the slow half of a song post's first play —
+        // resolve the next few during the gate (prefetchSong dedupes inflight).
+        if (p.song_id && songWarms < 4) { songWarms++; try { musicCtl.current.prefetchSong(p.song_id); } catch {} }
+      }
+      // Warm the disk/memory image cache for every upcoming still + avatar so
+      // post-gate scrolling decodes from cache instead of the network.
+      if (stills.length) { try { ExpoImage.prefetch(stills); } catch {} }
+    } catch {}
+    const wait = Math.max(1200, FEED_GATE_MIN_MS - (Date.now() - started));
+    setTimeout(() => setFeedGateUnlocked(true), wait);
+  }, []);
 
   // Fetch the pinned posts' full rows (so a pin still shows even when the active feed
   // mode wouldn't include your own post).
@@ -1276,6 +1337,7 @@ export default function HomeScreen() {
   }, []);
 
   const renderPost = useCallback(({ item }: { item: Post }) => (
+    (item as any).__gate ? <FeedGateCard onArm={runFeedGate} /> :
     <ElasticSwipeView resetKey={(item as any).__spotlight ? `spot:${(item as any).__spotlight.campaignId}` : item.id}>
       {(item as any).__ad ? (
         <SponsoredCard
@@ -1313,7 +1375,7 @@ export default function HomeScreen() {
   // changes on user-initiated events (like/save, track change, mute), never
   // during a plain scroll — so FlatList's mounted cells bail via PureComponent.
   ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, songMuted,
-      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions]);
+      onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, runFeedGate]);
 
   if (loading) {
     return (
@@ -1436,7 +1498,7 @@ export default function HomeScreen() {
 
       <FlashList
         ref={feedListRef}
-        data={feedData}
+        data={gatedFeedData}
         // Spotlight instances key off their campaign so a promoted post can
         // never key-collide with itself (organic copies are filtered at merge).
         // In v2 this is also the recycler's stable id — load-bearing.
@@ -1444,7 +1506,7 @@ export default function HomeScreen() {
         // Recycle pools are per-type: an ad cell must never be recycled into a
         // post cell (renderPost's root ternary would swap component trees —
         // a full remount AND a polluted pool).
-        getItemType={(item) => ((item as any).__ad ? 'ad' : 'post')}
+        getItemType={(item) => ((item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
         renderItem={renderPost}
         ListHeaderComponent={FeedHeader}
         showsVerticalScrollIndicator={false}

@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Image } from 'react-native';
-import AppVideo from './AppVideo';
+import { Image as ExpoImage } from 'expo-image';
+import ReelVideo from './ReelVideo';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRef, useState } from 'react';
@@ -21,13 +22,17 @@ type Props = {
   item: any; // reel ad item: { media_url, aspect_ratio, thumbnail_url, __ad }
   visible: boolean;
   paused: boolean;
+  // Same settle/linger/warm gating as ReelPage (reel/[id] renderItem): the
+  // pooled player mounts only at rest or as the pre-buffered NEXT page —
+  // never mid-swipe.
+  mountPlayer: boolean;
   insets: { top: number; bottom: number };
   onSkip: () => void;
   onCta: () => void;
   onOptions: () => void;
 };
 
-export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, onOptions }: Props) {
+export default function ReelAd({ item, visible, paused, mountPlayer, insets, onSkip, onCta, onOptions }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
@@ -48,25 +53,40 @@ export default function ReelAd({ item, visible, paused, insets, onSkip, onCta, o
   const secsLeft = Math.max(1, secsRemaining);
 
   return (
-    <View style={{ width: SCREEN_W, height: SCREEN_H }}>
-      <AppVideo
-        source={{ uri: item.media_url }}
-        style={StyleSheet.absoluteFill}
-        contentFit={landscape ? 'contain' : 'cover'}
-        loop
-        active={visible && !paused}
-        poster={poster}
-        posterContentFit={landscape ? 'contain' : 'cover'}
-        onProgress={(pos) => {
-          const d = pos - lastPosRef.current;
-          lastPosRef.current = pos;
-          if (d > 0 && d < 2000) {
-            elapsedRef.current += d;
-            const s = Math.max(0, Math.ceil((AD_SKIP_MS - elapsedRef.current) / 1000));
-            setSecsRemaining((prev) => (prev === s ? prev : s)); // renders ~1×/s, then never
-          }
-        }}
-      />
+    <View style={{ width: SCREEN_W, height: SCREEN_H, backgroundColor: '#000' }}>
+      {/* Poster ALWAYS underneath; the pooled surface stays opacity-0 until
+          readyToPlay (still → motion, no black flash). POOLED player (reelPool):
+          the old AppVideo CREATED an AVPlayer the moment this page entered the
+          FlatList render window — i.e. mid-swipe while the previous reel was
+          playing. That main-thread creation freeze is exactly what made reels
+          "break" from the first ad position (page 3) onward. */}
+      {poster ? (
+        <ExpoImage
+          source={{ uri: poster }}
+          style={StyleSheet.absoluteFill}
+          contentFit={landscape ? 'contain' : 'cover'}
+          cachePolicy="memory-disk"
+        />
+      ) : null}
+      {mountPlayer && !!item.media_url && (
+        <ReelVideo
+          id={item.id}
+          uri={item.media_url}
+          play={visible && !paused}
+          muted={false}
+          loop
+          contentFit={landscape ? 'contain' : 'cover'}
+          onProgress={(pos) => {
+            const d = pos - lastPosRef.current;
+            lastPosRef.current = pos;
+            if (d > 0 && d < 2000) {
+              elapsedRef.current += d;
+              const s = Math.max(0, Math.ceil((AD_SKIP_MS - elapsedRef.current) / 1000));
+              setSecsRemaining((prev) => (prev === s ? prev : s)); // renders ~1×/s, then never
+            }
+          }}
+        />
+      )}
 
       {/* Sponsored label (top-left, below the back button area) */}
       <View style={[styles.sponsoredTag, { top: insets.top + 12 }]}>
