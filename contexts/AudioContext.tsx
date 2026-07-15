@@ -15,7 +15,7 @@ import {
   firstAudioGateMs, nextAudioGateMs, AUDIO_AD_SKIP_MS,
   type AdViewer, type AudioAd,
 } from '../lib/ads';
-import { buildAffinityProfile, EMPTY_PROFILE } from '../lib/feedScorer';
+import { buildAffinityProfile, EMPTY_PROFILE, scorePost } from '../lib/feedScorer';
 
 // Per-post listen progress persists for a rolling 24h window (matches the
 // server's per-user/post stream cap) so force-quitting can't reset it.
@@ -543,12 +543,43 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Universal "the music keeps going" loader: when a song starts WITHOUT a
+  // curated loader (a post card, an Explore tile, a profile row, a playlist
+  // that ran dry…), this pulls in more relevant songs — so next/previous (in
+  // app AND on the lock screen) ALWAYS have somewhere to go. Same recipe as
+  // the home feed's loader: recent public songs, affinity-scored. Reuses the
+  // ad viewer's cached affinity profile (armed on the first real play).
+  const defaultSongLoader: QueueLoader = async (excludeIds) => {
+    const { data } = await supabase
+      .from('posts')
+      .select(`*, profiles!posts_user_id_fkey (username, display_name)`)
+      .eq('type', 'audio').eq('is_public', true)
+      .order('created_at', { ascending: false })
+      .limit(120);
+    const now = Date.now();
+    const affinity = adViewerRef.current?.affinity ?? EMPTY_PROFILE;
+    return (data ?? [])
+      .filter((p: any) => p.media_url && !p.archived_at && !excludeIds.has(p.id))
+      .map((p: any) => ({ p, s: scorePost(p, affinity, new Set(), new Set(), now) }))
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 40)
+      .map(({ p }): Track => ({
+        id: p.id,
+        uri: p.media_url,
+        caption: p.caption ?? '',
+        artist: p.profiles?.display_name ?? p.profiles?.username ?? '',
+        cover: p.cover_url ?? null,
+      }));
+  };
+
   async function playQueue(tracks: Track[], startIndex = 0, loadMore?: QueueLoader) {
     if (!tracks.length) return;
     queueRef.current = tracks;
     queueIndexRef.current = startIndex;
-    queueLoaderRef.current = loadMore ?? null;
-    setHasMore(!!loadMore);
+    // No curated loader → fall back to the universal one, so even a finished
+    // playlist rolls on into related songs instead of dead-ending.
+    queueLoaderRef.current = loadMore ?? defaultSongLoader;
+    setHasMore(true);
     setQueueLength(tracks.length);
     setQueueIndex(startIndex);
     // The session-wide ad clock keeps running — play() arms the viewer and
@@ -1011,8 +1042,19 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       releaseSound(adSoundRef.current); adSoundRef.current = null;
       setAdState(null);
     }
-    // Single-track taps clear the queue but never the session ad clock.
-    if (!fromQueue) { queueRef.current = []; queueIndexRef.current = 0; setQueueLength(0); setQueueIndex(0); }
+    // Single-track taps clear the queue but never the session ad clock — and
+    // ALWAYS get the universal loader, so every song tapped anywhere in
+    // Laybell has a real path forward: the queue extends immediately (the
+    // ActiveTrackChanged pre-extension fires on load) and next/previous work
+    // in app and on the lock screen.
+    if (!fromQueue) {
+      queueRef.current = [];
+      queueIndexRef.current = 0;
+      setQueueLength(0);
+      setQueueIndex(0);
+      queueLoaderRef.current = defaultSongLoader;
+      setHasMore(true);
+    }
     // Tapping the already-playing track in a list toggles it off. Queue navigation
     // (next / previous / restart / advance) must always play its target — never
     // stop and close the player — so it passes suppressToggle to skip this.
