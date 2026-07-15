@@ -1,7 +1,7 @@
 {
   "name": "laybell",
   "version": "1.0.0",
-  "main": "expo-router/entry",
+  "main": "index.js",
   "dependencies": {
     "@config-plugins/react-native-webrtc": "^15.0.1",
     "@expo/vector-icons": "^15.0.3",

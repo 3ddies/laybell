@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
+import TrackPlayer, { Event as TPEvent, State as TPState } from 'react-native-track-player';
+import { ensurePlayerSetup, setRemoteHandlers } from '../lib/trackPlayerService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDeviceId } from '../lib/deviceId';
@@ -133,7 +135,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   };
   // Feed video audio. ON at app open; auto-muted once a song plays (no overlap).
   const [videoMuted, setVideoMuted] = useState(false);
-  const soundRef = useRef<AudioPlayer | null>(null);
+  // Main-player engine = react-native-track-player. Its queue always holds
+  // exactly ONE track (this context owns queue/advance logic); RNTP owns the
+  // audio + the iOS lock-screen / Control Center now-playing card, whose
+  // controls route back into this context via lib/trackPlayerService — so the
+  // lock screen and the in-app buttons are the SAME controls. expo-audio
+  // remains the engine for audio ADS only (adSoundRef below); ads and ambient
+  // post music never touch the lock screen.
+  const mainLoadedRef = useRef(false); // a track is loaded in the RNTP queue
   // Status-listener subscriptions, removed synchronously when we tear a player down
   // so a stray late 'playbackStatusUpdate' from an abandoned player can't fire.
   const statusSubRef = useRef<{ remove: () => void } | null>(null);
@@ -270,11 +279,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // track. If it was an ad-first song move (the fresh track is loaded but
       // deliberately unstarted), start it now. Otherwise music is mid-play.
       if (pendingFinishRef.current) maybeRunDeferredFinish();
-      else if (soundRef.current) { try { soundRef.current.play(); setIsPlaying(true); } catch {} }
+      else if (mainLoadedRef.current) { TrackPlayer.play().catch(() => {}); setIsPlaying(true); }
       return;
     }
     adMetaRef.current = ad;
-    try { soundRef.current?.pause(); } catch {}
+    TrackPlayer.pause().catch(() => {});
     setIsPlaying(false);
     flushBadgeMs();
     try {
@@ -341,14 +350,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // The track ended WHILE the ad played (handleTrackFinished deferred it) —
       // advance/close now instead of resuming a finished track.
       maybeRunDeferredFinish();
-    } else if (soundRef.current) {
-      try {
-        soundRef.current.play(); setIsPlaying(true);
-        // Hand the position channel straight back to the music player so the
-        // song scrubber doesn't hold the ad's last tick until the next update.
-        const s: any = soundRef.current;
-        emitPosition((s.currentTime ?? 0) * 1000, (s.duration ?? 0) * 1000);
-      } catch {}
+    } else if (mainLoadedRef.current) {
+      TrackPlayer.play().catch(() => {});
+      setIsPlaying(true);
+      // Hand the position channel straight back to the music player so the
+      // song scrubber doesn't hold the ad's last tick until the next update.
+      TrackPlayer.getProgress()
+        .then((pr) => emitPosition((pr.position ?? 0) * 1000, (pr.duration ?? 0) * 1000))
+        .catch(() => {});
     }
   }
 
@@ -364,8 +373,25 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     statusSubRef.current?.remove();
     adStatusSubRef.current?.remove();
     if (adWatchdogRef.current) clearTimeout(adWatchdogRef.current);
-    try { soundRef.current?.remove(); } catch {}
+    TrackPlayer.reset().catch(() => {});
     try { adSoundRef.current?.remove(); } catch {}
+  }, []);
+
+  // Lock-screen / Control Center commands drive the SAME functions as the
+  // in-app buttons (lib/trackPlayerService routes them here) — the two
+  // surfaces can never drift. The ref indirection keeps the registered
+  // handlers stable while always calling the latest closures.
+  const remoteRef = useRef({ resume, pause, next, previous, seekTo });
+  remoteRef.current = { resume, pause, next, previous, seekTo };
+  useEffect(() => {
+    setRemoteHandlers({
+      play: () => remoteRef.current.resume(),
+      pause: () => remoteRef.current.pause(),
+      next: () => remoteRef.current.next(),
+      previous: () => remoteRef.current.previous(),
+      seekTo: (ms: number) => remoteRef.current.seekTo(ms),
+    });
+    return () => setRemoteHandlers(null);
   }, []);
 
   // Resolve the device id once so it's ready to attach to stream records.
@@ -437,8 +463,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setAdState(null);
     playTokenRef.current++; // cancel any in-flight load
     statusSubRef.current?.remove(); statusSubRef.current = null;
-    releaseSound(soundRef.current);
-    soundRef.current = null;
+    TrackPlayer.reset().catch(() => {}); // stops audio + clears the lock-screen card
+    mainLoadedRef.current = false;
     if (loadedIdRef.current) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
     setExpanded(false);
     setIsPlaying(false);
@@ -448,8 +474,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function pause() {
-    if (soundRef.current) {
-      try { soundRef.current.pause(); } catch {}
+    if (mainLoadedRef.current) {
+      TrackPlayer.pause().catch(() => {});
       setIsPlaying(false);
       saveProgress();
       flushBadgeMs();
@@ -457,8 +483,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function resume() {
-    const s = soundRef.current;
-    if (s) {
+    // Locked during an audio ad — this also covers the lock-screen play button.
+    if (adPlayingRef.current) return;
+    if (mainLoadedRef.current) {
       // Pressing play supersedes a deferred song-end — the track isn't "finished" anymore.
       pendingFinishRef.current = false;
       if (durationRef.current > 0 && positionRef.current >= durationRef.current - 250) {
@@ -467,14 +494,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         engagedNearEndRef.current = false;
         progressRef.current = 0;
         positionRef.current = 0;
-        s.seekTo(0).then(() => s.play()).catch(() => {});   // expo-audio: reset then play
+        TrackPlayer.seekTo(0).then(() => TrackPlayer.play()).catch(() => {});
       } else {
         // Mid-track (incl. after the user scrubbed back) — resume from here.
-        try { s.play(); } catch {}
+        TrackPlayer.play().catch(() => {});
       }
       setIsPlaying(true);
     } else if (currentTrack) {
-      // Sound already released — reload and replay the current track from the top.
+      // Track already torn down — reload and replay the current track from the top.
       pendingFinishRef.current = false;
       await play(currentTrack, true, true);
     }
@@ -493,7 +520,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   async function seekTo(ms: number) {
     if (adPlayingRef.current) return; // controls are locked during an audio ad
-    if (soundRef.current) {
+    if (mainLoadedRef.current) {
       emitPosition(ms, durationRef.current); // reflect immediately so the scrubber doesn't snap back
       progressRef.current = durationRef.current > 0 ? ms / durationRef.current : 0;
       // A scrub/rewind resets the edge case: near-end engagement clears and any
@@ -501,7 +528,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // and must be re-engaged past 80% to hold the song open.
       engagedNearEndRef.current = false;
       pendingFinishRef.current = false;
-      soundRef.current.seekTo(ms / 1000).catch(() => {});   // expo-audio uses SECONDS
+      TrackPlayer.seekTo(ms / 1000).catch(() => {});   // RNTP uses SECONDS
     }
   }
 
@@ -560,14 +587,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // Restart the current track from the top — used by the Spotify-style "previous"
   // rule below (and when there's no earlier track to go to).
   function restartCurrent() {
-    const s = soundRef.current;
-    if (s) {
+    if (mainLoadedRef.current) {
       pendingFinishRef.current = false;
       engagedNearEndRef.current = false;
       progressRef.current = 0;
       emitPosition(0, durationRef.current);
       setIsPlaying(true);
-      s.seekTo(0).then(() => s.play()).catch(() => {});   // expo-audio: reset then play
+      TrackPlayer.seekTo(0).then(() => TrackPlayer.play()).catch(() => {});
     } else if (currentTrack) {
       play(currentTrack, true, true);
     }
@@ -597,8 +623,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setCurrentTrack(null);
     emitPosition(0, 0);
     statusSubRef.current?.remove(); statusSubRef.current = null;
-    releaseSound(soundRef.current);
-    soundRef.current = null;
+    TrackPlayer.reset().catch(() => {}); // clears the lock-screen card too
+    mainLoadedRef.current = false;
     if (loadedIdRef.current) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
     queueRef.current = [];
     queueIndexRef.current = 0;
@@ -616,11 +642,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const goTo = (idx: number) => {
       queueIndexRef.current = idx;
       setQueueIndex(idx);
-      // Release the just-finished player (we're inside its status callback, so the
-      // listener goes now and the player itself is freed on the next tick).
+      // Drop the finished track's listeners; play() below replaces the RNTP
+      // queue (reset + add) — nothing is audibly playing at this point.
       statusSubRef.current?.remove(); statusSubRef.current = null;
-      releaseSound(soundRef.current);
-      soundRef.current = null;
+      mainLoadedRef.current = false;
       play(queueRef.current[idx], true, true);
     };
     if (nextIdx < queueRef.current.length) { goTo(nextIdx); return; }
@@ -683,11 +708,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (adPlayingRef.current) return;
     if (pendingFinishRef.current && !holdForCommentRef.current && !engagedNearEndRef.current) {
       pendingFinishRef.current = false;
-      // Release the finished-but-kept sound before moving on (safe here — we're not
-      // inside its own playback-status callback).
+      // Drop the finished-but-kept track's listeners before moving on; the
+      // next play() replaces the RNTP queue.
       statusSubRef.current?.remove(); statusSubRef.current = null;
-      releaseSound(soundRef.current);
-      soundRef.current = null;
+      mainLoadedRef.current = false;
       proceedToNextTrack();
     }
   }
@@ -742,11 +766,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     // loading, the older one bails and unloads itself (prevents overlap).
     const token = ++playTokenRef.current;
 
-    // Tear down the existing sound (grab+null first so concurrent calls don't double-release).
+    // Tear down the current track's listeners and silence it now (no overlap
+    // while the new source resolves); the RNTP queue is rebuilt below.
     statusSubRef.current?.remove(); statusSubRef.current = null;
-    const existing = soundRef.current;
-    soundRef.current = null;
-    releaseSound(existing);   // pause now (no overlap) + free on next tick
+    if (mainLoadedRef.current) TrackPlayer.pause().catch(() => {});
     // Release the previous track's offline in-use lock (the new track locks below).
     if (loadedIdRef.current && loadedIdRef.current !== track.id) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
 
@@ -819,11 +842,25 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // track; otherwise stream the remote URL. A failed remote stream just means the
       // next play retries — that lazy fallback IS our offline detection.
       const playUri = (await resolveLocalUri(track.id, track.uri)) ?? track.uri;
-      // A newer play started during the (async) offline-uri resolve → bail before
-      // creating a player, so we never overlap. (createAudioPlayer itself is sync.)
+      // A newer play started during the (async) offline-uri resolve → bail
+      // before touching the player, so we never overlap.
       if (token !== playTokenRef.current) return;
-      const player = createAudioPlayer({ uri: playUri }, { updateInterval: 250 });
-      soundRef.current = player;
+      // MAIN engine = react-native-track-player: a one-track queue (this
+      // context owns queue/advance logic) that also paints the iOS lock-screen
+      // / Control Center card — title, artist, artwork and live position — and
+      // whose remote commands run the same handlers as the in-app buttons.
+      await ensurePlayerSetup();
+      if (token !== playTokenRef.current) return;
+      await TrackPlayer.reset();
+      if (token !== playTokenRef.current) return;
+      await TrackPlayer.add({
+        url: playUri,
+        title: track.caption || track.artist || 'Laybell',
+        artist: track.artist || '',
+        artwork: track.cover || undefined,
+      });
+      if (token !== playTokenRef.current) { TrackPlayer.reset().catch(() => {}); return; }
+      mainLoadedRef.current = true;
       const previousSongId = loadedIdRef.current;
       loadedIdRef.current = track.id;
       markInUse(track.id);  // protect this file from removal/eviction while it's loaded
@@ -839,19 +876,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         setIsPlaying(false);
         fireAudioAd();
       } else {
-        player.play();
+        TrackPlayer.play().catch(() => {});
       }
 
-      statusSubRef.current = player.addListener('playbackStatusUpdate', (status: any) => {
-        if (!status.isLoaded) return;
-        const pos = (status.currentTime ?? 0) * 1000;   // expo-audio reports SECONDS
-        const dur = (status.duration ?? 0) * 1000;
+      const progressSub = TrackPlayer.addEventListener(TPEvent.PlaybackProgressUpdated, (e) => {
+        const pos = (e.position ?? 0) * 1000;   // RNTP reports SECONDS
+        const dur = (e.duration ?? 0) * 1000;
         // During an audio ad the position channel belongs to the AD's ticks —
-        // the paused music player still emits one-shot pause/load status events
-        // that would briefly paint the song's position onto the ad bars.
+        // stray events from the paused music player must not paint the song's
+        // position onto the ad bars.
         if (!adPlayingRef.current) emitPosition(pos, dur); // ticks go to useAudioPosition subscribers only
         progressRef.current = dur > 0 ? pos / dur : 0;
-        setIsBuffering(status.isBuffering ?? false);
 
         // Accumulate genuine forward listen time (ignore seeks, rewinds and the
         // jump on finish), then credit the 1st/2nd stream as cumulative listening
@@ -910,13 +945,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           }
         }
         lastPosMs = pos;
-
-        if (status.didJustFinish) {
-          saveProgress();
-          flushBadgeMs();
-          handleTrackFinished();
-        }
       });
+      // Buffering + play/pause mirrored from the ENGINE, so lock-screen taps
+      // and call interruptions (autoHandleInterruptions) keep the in-app
+      // buttons in sync with what's actually audible.
+      const stateSub = TrackPlayer.addEventListener(TPEvent.PlaybackState, (e) => {
+        setIsBuffering(e.state === TPState.Buffering || e.state === TPState.Loading);
+        if (e.state === TPState.Playing) setIsPlaying(true);
+        else if (e.state === TPState.Paused && !adPlayingRef.current && !pendingFinishRef.current) setIsPlaying(false);
+      });
+      // The one-track queue ending IS this track finishing (expo-audio's old
+      // didJustFinish). Listeners are removed before every reset(), so a
+      // teardown can never masquerade as a finish.
+      const endSub = TrackPlayer.addEventListener(TPEvent.PlaybackQueueEnded, () => {
+        saveProgress();
+        flushBadgeMs();
+        handleTrackFinished();
+      });
+      statusSubRef.current = { remove: () => { progressSub.remove(); stateSub.remove(); endSub.remove(); } };
     } catch (err) {
       console.log('audio error:', err);
       setIsPlaying(false);
