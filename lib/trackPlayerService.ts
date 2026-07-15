@@ -34,29 +34,38 @@ export async function playbackService() {
 
 // Lazy one-time native setup — called on the FIRST main-player play, never at
 // app launch (no native player construction on the startup path). Deduped via
-// the promise so racing plays share one setup.
+// the promise so racing plays share one setup. A genuinely FAILED setup (e.g.
+// the first tap raced an interruption) is NOT cached: it retries on the next
+// play — a cached failure used to mean audio played all session with NO
+// lock-screen card until an app restart.
+let setupDone = false;
 let setupPromise: Promise<void> | null = null;
 export function ensurePlayerSetup(): Promise<void> {
+  if (setupDone) return Promise.resolve();
   if (!setupPromise) {
     setupPromise = (async () => {
       try {
         // Phone calls / Siri interruptions auto-pause and auto-resume.
         await TrackPlayer.setupPlayer({ autoHandleInterruptions: true });
-      } catch {
-        // "player already initialized" (Fast Refresh, account switch) — fine.
+        setupDone = true;
+      } catch (e: any) {
+        // "player already initialized" (Fast Refresh, account switch) = done.
+        if (String(e?.message ?? e).toLowerCase().includes('already')) setupDone = true;
       }
-      try {
-        await TrackPlayer.updateOptions({
-          capabilities: [
-            Capability.Play, Capability.Pause,
-            Capability.SkipToNext, Capability.SkipToPrevious,
-            Capability.SeekTo,
-          ],
-          compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext],
-          progressUpdateEventInterval: 0.25, // matches the old expo-audio tick rate
-        });
-      } catch {}
-    })();
+      if (setupDone) {
+        try {
+          await TrackPlayer.updateOptions({
+            capabilities: [
+              Capability.Play, Capability.Pause,
+              Capability.SkipToNext, Capability.SkipToPrevious,
+              Capability.SeekTo,
+            ],
+            compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext],
+            progressUpdateEventInterval: 0.25, // matches the old expo-audio tick rate
+          });
+        } catch {}
+      }
+    })().finally(() => { if (!setupDone) setupPromise = null; });
   }
   return setupPromise;
 }

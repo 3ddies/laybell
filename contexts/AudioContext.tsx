@@ -151,6 +151,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // Forward-delta accumulator for the ACTIVE track's accounting (reset on
   // every track change — the old per-play closure equivalent).
   const lastPosMsRef = useRef(0);
+  // Buffering-UI debounce (see the engine state listener).
+  const bufferingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
   const queueLoaderRef = useRef<QueueLoader | null>(null);
@@ -915,9 +917,23 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
     // Buffering + play/pause mirrored from the ENGINE, so lock-screen taps and
     // call interruptions (autoHandleInterruptions) keep the in-app buttons in
-    // sync with what's actually audible.
+    // sync with what's actually audible. Buffering is DEBOUNCED: streaming
+    // tops its buffer up in short bursts, and flashing the buffering UI (and
+    // the card's rate) for every sub-second blip made the player visibly
+    // "flash every few seconds" — only SUSTAINED buffering (>600ms) shows.
     const stateSub = TrackPlayer.addEventListener(TPEvent.PlaybackState, (e) => {
-      setIsBuffering(e.state === TPState.Buffering || e.state === TPState.Loading);
+      const buffering = e.state === TPState.Buffering || e.state === TPState.Loading;
+      if (buffering) {
+        if (!bufferingDebounceRef.current) {
+          bufferingDebounceRef.current = setTimeout(() => {
+            bufferingDebounceRef.current = null;
+            setIsBuffering(true);
+          }, 600);
+        }
+      } else {
+        if (bufferingDebounceRef.current) { clearTimeout(bufferingDebounceRef.current); bufferingDebounceRef.current = null; }
+        setIsBuffering(false);
+      }
       if (e.state === TPState.Playing) setIsPlaying(true);
       else if (e.state === TPState.Paused && !adPlayingRef.current && !pendingFinishRef.current) setIsPlaying(false);
     });
@@ -929,10 +945,18 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const trackSub = TrackPlayer.addEventListener(TPEvent.PlaybackActiveTrackChanged, (e: any) => {
       const idx = typeof e?.index === 'number' ? e.index : -1;
       if (idx < 0 || idx >= queueRef.current.length) return;
-      queueIndexRef.current = idx;
-      setQueueIndex(idx);
       const t = queueRef.current[idx];
       if (!t) return;
+      // IDEMPOTENT: iOS can re-emit this for the SAME track (buffer/seek
+      // edges). A re-arm here snapped the scrubber to 0 and re-ran per-track
+      // bookkeeping — a visible flash. Same-track re-emissions only keep the
+      // queue-extension check alive (covers replaying a single track too).
+      if (idx === queueIndexRef.current && loadedIdRef.current === t.id) {
+        if (idx >= queueRef.current.length - 2 && queueLoaderRef.current) void appendFromLoader();
+        return;
+      }
+      queueIndexRef.current = idx;
+      setQueueIndex(idx);
       setCurrentTrack(t);
       armTrack(t);
       // Fresh per-track edge state + accounting deltas.
@@ -968,7 +992,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       handleTrackFinished();
     });
 
-    return () => { progressSub.remove(); stateSub.remove(); trackSub.remove(); endSub.remove(); };
+    return () => {
+      progressSub.remove(); stateSub.remove(); trackSub.remove(); endSub.remove();
+      if (bufferingDebounceRef.current) { clearTimeout(bufferingDebounceRef.current); bufferingDebounceRef.current = null; }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
