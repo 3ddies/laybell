@@ -134,3 +134,9 @@ export const acquireFeedPlayer = feedPool.acquire;
 export const releaseFeedPlayer = feedPool.release;
 
 export const reelPool = makePool(3);
+
+// Explore grid (looping tile previews + the Laybell-TV banner): 2 concurrent
+// tile previews + the always-live banner + 1 slack entry so a preview handoff
+// mid-scroll (new tile acquires before the old one's release effect runs)
+// never has to steal the banner's player.
+export const explorePool = makePool(4);

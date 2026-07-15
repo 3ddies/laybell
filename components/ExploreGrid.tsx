@@ -1,8 +1,12 @@
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions, RefreshControl,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, RefreshControl,
 } from 'react-native';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
-import AppVideo from './AppVideo';
+// expo-image everywhere (NOT RN Image): decodes at DISPLAYED size with a
+// memory+disk cache — grid thumbnails paint instantly on revisit instead of
+// re-decoding multi-MP originals mid-scroll.
+import { Image as ExpoImage } from 'expo-image';
+import GridVideo from './GridVideo';
 import { feedDragEnd, feedDragStart, settleFeedChrome, trackFeedScroll } from '../lib/feedChrome';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -179,10 +183,15 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     router.push({ pathname, params: { id: p.id, post: JSON.stringify(p), ...(src ? { src } : {}) } });
   };
 
-  // Videos that currently overlap the viewport (these play). Off-screen videos
-  // stay mounted but paused, so scrolling back resumes smoothly.
+  // Videos that currently overlap the viewport (these play). Playback runs on
+  // POOLED players (lib/feedVideoPool explorePool via GridVideo) — scrolling
+  // away releases the player back to the pool (pause-only), scrolling back
+  // re-acquires; the thumbnail always sits underneath.
   const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
-  const mountedIds = useRef<Set<string>>(new Set()); // once visible, keep the <Video> mounted
+  // Laybell-TV banner live-loop gate: plays whenever the banner is within a
+  // screen of the viewport (pre-rolled, so it's ALWAYS moving when seen).
+  const [bannerLive, setBannerLive] = useState(false);
+  const bannerPos = useRef({ y: 0, h: 0 });
   const scrollY = useRef(0);
   const viewportH = useRef(0);
   // Video onLayout y is COLUMN-relative. The grid is split into two sections (above
@@ -206,7 +215,6 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       const { y, h } = videoPos.current[id];
       const cy = (bottomVideoIds.has(id) ? off.bottom : off.top) + y; // → scroll-content coords
       if (cy < bottom && cy + h > top) {
-        mountedIds.current.add(id);
         overlapping.push({ id, dist: Math.abs(cy + h / 2 - center) });
       }
     }
@@ -216,6 +224,11 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       if (prev.size === next.size && [...next].every(id => prev.has(id))) return prev;
       return next;
     });
+    // Banner live-loop: pre-roll a full screen out so the preview is already
+    // playing by the time it scrolls into view.
+    const bp = bannerPos.current;
+    const liveNow = bp.h > 0 && bp.y < bottom + SCREEN_H && bp.y + bp.h > top - SCREEN_H;
+    setBannerLive(prev => (prev === liveNow ? prev : liveNow));
   };
 
   // The masonry layout depends only on the posts and the songTiles mode, not on
@@ -447,7 +460,6 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       );
     }
     if (p.type === 'video') {
-      const mounted = mountedIds.current.has(p.id);
       const playing = visibleIds.has(p.id);
       return (
         <TouchableOpacity
@@ -457,21 +469,17 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           onPress={(e: any) => openMedia(p, e)}
           onLayout={e => { videoPos.current[p.id] = { y: e.nativeEvent.layout.y, h: cell.height }; recomputeActive(); }}
         >
-          {mounted ? (
-            <AppVideo
-              source={{ uri: p.media_url }}
-              style={styles.mediaImage}
-              contentFit="cover"
-              loop
-              muted
-              active={playing}
-              // Muted grid autoplay counts toward views — genuine watch time
-              // accumulates app-wide; the server enforces the fairness caps.
-              onProgress={(pos, dur) => trackVideoProgress(p.id, pos, dur)}
-            />
-          ) : (
-            <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
-          )}
+          {/* POOLED preview (explorePool): no player creation at scroll time,
+              thumbnail underneath, no black flash. Muted grid autoplay counts
+              toward views — the server enforces the fairness caps. */}
+          <GridVideo
+            id={p.id}
+            uri={p.media_url}
+            thumbnailUrl={p.thumbnail_url}
+            play={playing}
+            style={styles.mediaImage}
+            onProgress={(pos, dur) => trackVideoProgress(p.id, pos, dur)}
+          />
           <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
             <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
@@ -492,7 +500,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           onLongPress={longPressFor(p)}
         >
           {p.cover_url ? (
-            <Image source={{ uri: p.cover_url }} style={styles.mediaImage} resizeMode="cover" />
+            <ExpoImage source={{ uri: p.cover_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.mediaImage}>
               <Ionicons name="musical-notes" size={28} color={colors.primary} />
@@ -517,7 +525,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           onPress={(e: any) => openMedia(p, e)}
         >
           {thumb ? (
-            <Image source={{ uri: thumb }} style={styles.mediaImage} resizeMode="cover" />
+            <ExpoImage source={{ uri: thumb }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
           ) : (
             <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
               <Ionicons name="copy" size={28} color={colors.primary} />
@@ -537,7 +545,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
         activeOpacity={0.9}
         onPress={(e: any) => openMedia(p, e)}
       >
-        <Image source={{ uri: p.media_url }} style={styles.mediaImage} resizeMode="cover" />
+        <ExpoImage source={{ uri: p.media_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.mediaOverlay}>
           <Text style={styles.mediaUser} numberOfLines={1}>@{p.profiles?.username}</Text>
         </LinearGradient>
@@ -580,7 +588,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
               >
                 {s.cover_url ? (
                   <View style={styles.songIcon}>
-                    <Image source={{ uri: s.cover_url }} style={styles.songCoverImg} />
+                    <ExpoImage source={{ uri: s.cover_url }} style={styles.songCoverImg} contentFit="cover" cachePolicy="memory-disk" />
                     {active && (
                       <View style={styles.songCoverOverlay}>
                         <Ionicons name="stop" size={15} color={colors.text} />
@@ -615,9 +623,21 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   // shows @username (consistent with every other grid tile); the caption sits
   // UNDER the preview as its own line.
   const renderTVBanner = (p: GridPost) => (
-    <View style={styles.tvBannerWrap}>
+    <View
+      style={styles.tvBannerWrap}
+      onLayout={e => { bannerPos.current = { y: e.nativeEvent.layout.y, h: BANNER_H }; recomputeActive(); }}
+    >
       <TouchableOpacity style={styles.tvBanner} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
-        <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
+        {/* ALWAYS a live loop (owner spec): pooled preview that pre-rolls a
+            full screen before entering the viewport, thumbnail underneath. */}
+        <GridVideo
+          id={p.id}
+          uri={p.media_url}
+          thumbnailUrl={p.thumbnail_url}
+          play={bannerLive}
+          style={styles.mediaImage}
+          onProgress={(pos, dur) => trackVideoProgress(p.id, pos, dur)}
+        />
         <View style={styles.tvTag}><Ionicons name="tv" size={13} color="#fff" /><Text style={styles.tvTagText}>Laybell TV</Text></View>
         <View style={styles.playBadge}><Ionicons name="play" size={14} color="#fff" /></View>
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.78)']} style={styles.mediaOverlay}>
@@ -642,7 +662,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           onLongPress={longPressFor(p)}
         >
           {p.cover_url ? (
-            <Image source={{ uri: p.cover_url }} style={styles.mediaImage} resizeMode="cover" />
+            <ExpoImage source={{ uri: p.cover_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.mediaImage}>
               <Ionicons name="musical-notes" size={24} color={colors.primary} />
@@ -668,7 +688,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       return (
         <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
           {thumb ? (
-            <Image source={{ uri: thumb }} style={styles.mediaImage} resizeMode="cover" />
+            <ExpoImage source={{ uri: thumb }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
           ) : (
             <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.mediaImage}>
               <Ionicons name="copy" size={24} color={colors.primary} />
@@ -680,7 +700,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     }
     return (
       <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
-        <Image source={{ uri: p.media_url }} style={styles.mediaImage} resizeMode="cover" />
+        <ExpoImage source={{ uri: p.media_url }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} />
       </TouchableOpacity>
     );
   };

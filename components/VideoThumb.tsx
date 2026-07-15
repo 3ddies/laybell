@@ -53,7 +53,7 @@ export default function VideoThumb({ thumbnailUrl, mediaUrl, style }: {
     return () => { cancelled = true; };
   }, [thumbnailUrl, mediaUrl]);
 
-  if (uri) return <ExpoImage source={{ uri }} style={style} contentFit="cover" />;
+  if (uri) return <ExpoImage source={{ uri }} style={style} contentFit="cover" cachePolicy="memory-disk" />;
   return (
     <LinearGradient colors={['#1C0E06', '#120A04']} style={[style, styles.fallback]}>
       <Ionicons name="videocam" size={24} color={colors.primary} />
