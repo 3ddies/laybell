@@ -23,6 +23,12 @@ export type RemoteHandlers = {
 let handlers: RemoteHandlers | null = null;
 export function setRemoteHandlers(h: RemoteHandlers | null) { handlers = h; }
 
+// Imperative pause for non-React call sites that must not subscribe to the
+// audio context (e.g. the always-mounted story camera pausing music before it
+// claims the mic). Same synchronized path as the lock-screen pause command —
+// in-app state and the iOS card always agree. Safe no-op when nothing plays.
+export function pauseMainPlayer() { try { handlers?.pause(); } catch {} }
+
 // Registered once from the app entry (index.js); lives for the app's lifetime.
 export async function playbackService() {
   TrackPlayer.addEventListener(Event.RemotePlay, () => { try { handlers?.play(); } catch {} });

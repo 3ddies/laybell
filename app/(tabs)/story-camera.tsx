@@ -27,6 +27,7 @@ import { useStories } from '../../contexts/StoriesContext';
 import { useStoryUpload } from '../../contexts/StoryUploadContext';
 import { usePostMusicActions, useSongHostActive } from '../../contexts/PostMusicContext';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
+import { pauseMainPlayer } from '../../lib/trackPlayerService';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -61,6 +62,13 @@ export default function StoryCameraScreen() {
   // camera DURING the drag — without activating it on unrelated tab swipes.
   const focusedTab = useNavigationState((s: any) => s?.routes?.[s.index]?.name);
   const cameraActive = isFocused || (swiping && focusedTab === 'index');
+  // Mic attaches ONLY while a recording is active/imminent (see
+  // beginRecording): a live mic claims the iOS record audio session, which
+  // force-pauses the main player's music and desyncs the lock-screen card.
+  // Browsing the camera — and the swipe pre-activation — stays video-only,
+  // so music keeps playing until the user actually records.
+  const [micLive, setMicLive] = useState(false);
+  const micLiveRef = useRef(false); micLiveRef.current = micLive;
   const { refresh: refreshStories } = useStories();
   const { prewarmStory, enqueueStory, discardPrewarm } = useStoryUpload();
 
@@ -294,6 +302,7 @@ export default function StoryCameraScreen() {
         pressActiveRef.current = false;
         photoHoldRef.current = false;
         setRecording(false);
+        setMicLive(false); // release the mic's session claim on leave
         setRecSecs(0);
         recProgress.setValue(0);
         setCountdown(null);
@@ -487,9 +496,20 @@ export default function StoryCameraScreen() {
   // no retry. Photos still work because iOS keeps the photo output alive in video
   // mode. `photoHold` just remembers to flip the UI label back to PHOTO after a
   // hold-to-record that started from photo mode.
-  function beginRecording() {
+  async function beginRecording() {
     if (recordingRef.current) return;
     recordingRef.current = true;
+    // Recording owns audio: pause the song through the app's OWN player
+    // BEFORE the mic claims the session — the in-app buttons and the iOS
+    // card stay in sync (the OS interruption path left them disagreeing).
+    pauseMainPlayer();
+    if (micPermission?.granted && !micLiveRef.current) {
+      setMicLive(true);
+      // The native session needs a beat to attach the audio input —
+      // recordAsync in the same tick races the reconfiguration and can
+      // produce a soundless first recording.
+      await new Promise((r) => setTimeout(r, 350));
+    }
     setRecording(true);
     setRecSecs(0);
     recSecsRef.current = 0;
@@ -905,13 +925,11 @@ export default function StoryCameraScreen() {
           {...(Platform.OS === 'ios' && facing === 'back' && hasUltraWide
             ? { selectedLens: ultraWide ? 'builtInUltraWideCamera' : 'builtInWideAngleCamera' }
             : {})}
-          // Mic engages only when the camera screen is actually FOCUSED.
-          // The swipe pre-activation (cameraActive) fires on EVERY swipe that
-          // starts on Home — with the mic attached it claimed the iOS
-          // record audio session and PAUSED the main player's music on every
-          // tab swipe. Video-only capture never touches the audio session;
-          // landing on the camera flips the mic in (recording needs it).
-          mute={!micPermission?.granted || !isFocused}
+          // Mic engages only while recording (micLive, armed in
+          // beginRecording). A muted CameraView never touches the audio
+          // session, so neither swipe pre-activation nor browsing the camera
+          // can interrupt the main player's music.
+          mute={!micPermission?.granted || !micLive}
           active={cameraActive}
           onCameraReady={probeLenses}
         />
