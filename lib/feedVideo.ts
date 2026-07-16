@@ -36,12 +36,6 @@ function notify(ids: Iterable<string | null>) {
   }
 }
 
-// Imperative read for non-React consumers (the feed's ambient-music picker
-// must know which video is ACTUALLY playing at apply time).
-export function getVisibleVideoId(): string | null {
-  return visibleVideoId;
-}
-
 export function setVisibleVideoId(next: string | null) {
   if (next === visibleVideoId) return;
   const prev = visibleVideoId;
