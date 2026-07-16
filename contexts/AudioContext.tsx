@@ -154,6 +154,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const lastPosMsRef = useRef(0);
   // Buffering-UI debounce (see the engine state listener).
   const bufferingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // While a queue start is IN FLIGHT (add → skip startIndex), the engine
+  // momentarily reports track 0 as active before the skip lands — mirroring
+  // that flashed the WRONG song on the mini-player for a frame. Until the
+  // intended start index arrives, track-change events are ignored.
+  const pendingStartIndexRef = useRef<number | null>(null);
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
   const queueLoaderRef = useRef<QueueLoader | null>(null);
@@ -494,6 +499,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     releaseSound(adSoundRef.current); adSoundRef.current = null;
     setAdState(null);
     playTokenRef.current++; // cancel any in-flight load
+    pendingStartIndexRef.current = null;
     TrackPlayer.reset().catch(() => {}); // stops audio + clears the lock-screen card
     mainLoadedRef.current = false;
     if (loadedIdRef.current) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
@@ -651,6 +657,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   function advanceTo(ni: number) {
     pendingFinishRef.current = false;
     engagedNearEndRef.current = false;
+    pendingStartIndexRef.current = null; // a manual skip supersedes any in-flight start
     queueIndexRef.current = ni;
     setQueueIndex(ni);
     setIsPlaying(true);
@@ -702,6 +709,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsBuffering(false);
     setCurrentTrack(null);
     emitPosition(0, 0);
+    pendingStartIndexRef.current = null;
     TrackPlayer.reset().catch(() => {}); // clears the lock-screen card too
     mainLoadedRef.current = false;
     if (loadedIdRef.current) { clearInUse(loadedIdRef.current); loadedIdRef.current = null; }
@@ -965,6 +973,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const trackSub = TrackPlayer.addEventListener(TPEvent.PlaybackActiveTrackChanged, (e: any) => {
       const idx = typeof e?.index === 'number' ? e.index : -1;
       if (idx < 0 || idx >= queueRef.current.length) return;
+      // Queue start in flight: swallow the intermediate index-0 load event;
+      // only the intended start index unlatches (see pendingStartIndexRef).
+      const pending = pendingStartIndexRef.current;
+      if (pending != null) {
+        if (idx !== pending) return;
+        pendingStartIndexRef.current = null;
+      }
       const t = queueRef.current[idx];
       if (!t) return;
       // IDEMPOTENT: iOS can re-emit this for the SAME track (buffer/seek
@@ -1049,6 +1064,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       if (token !== playTokenRef.current) return;
       await TrackPlayer.reset();
       if (token !== playTokenRef.current) return;
+      // Latch BEFORE add: loading the queue emits an index-0 track-change
+      // before the skip below lands — the handler ignores it (wrong-song
+      // flash on the mini-player otherwise).
+      pendingStartIndexRef.current = startIndex;
       await TrackPlayer.add(items);
       if (token !== playTokenRef.current) { TrackPlayer.reset().catch(() => {}); return; }
       if (startIndex > 0) await TrackPlayer.skip(startIndex);
@@ -1068,6 +1087,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       console.log('audio error:', err);
+      pendingStartIndexRef.current = null; // failed load must not latch the handler shut
       setIsPlaying(false);
       setIsBuffering(false);
       setCurrentTrack(null);
