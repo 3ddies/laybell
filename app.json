@@ -112,7 +112,9 @@
           "receiverAppId": "CC1AD845",
           "iosDisableDiscoveryAutostart": true
         }
-      ]
+      ],
+      "expo-font",
+      "expo-asset"
     ],
     "extra": {
       "router": {},
