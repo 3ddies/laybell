@@ -27,6 +27,11 @@
     },
     "android": {
       "package": "com.laybell.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#FF0A00",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
       "softwareKeyboardLayoutMode": "pan",
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
