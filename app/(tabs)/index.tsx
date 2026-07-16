@@ -15,7 +15,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { isSwipeTap } from '../../contexts/PagerContext';
 import {
-  setVisibleVideoId, setWarmVideoIds, setFeedFastScrolling, setFeedFocused, resetFeedVideo, useCardPlayback,
+  setVisibleVideoId, getVisibleVideoId, setWarmVideoIds, setFeedFastScrolling, setFeedFocused, resetFeedVideo, useCardPlayback,
 } from '../../lib/feedVideo';
 import { acquireFeedPlayer, releaseFeedPlayer } from '../../lib/feedVideoPool';
 import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
@@ -709,8 +709,19 @@ export default function HomeScreen() {
     }
   }
   // The most-visible post that carries an attached song — its track plays ambiently.
+  // A VIDEO post's song only qualifies while that post IS the playing video:
+  // the video (40%) and music (60%) viewability systems pick independently, so
+  // two short horizontal videos stacked could leave post A's song audible
+  // while post A sat paused and post B's video played — the audible song must
+  // always belong to the post that's actually playing. Image/slideshow posts
+  // (no competing playback of their own) qualify as before.
   const applyMusicViewables = useRef((viewableItems: any[]) => {
-    const firstMusic = viewableItems.find(v => v.item?.song_id);
+    const firstMusic = viewableItems.find(v => {
+      const p = v.item;
+      if (!p?.song_id) return false;
+      if (p.type === 'video' && p.id !== getVisibleVideoId()) return false;
+      return true;
+    });
     visibleMusicRef.current = firstMusic ? { id: firstMusic.item.id, songId: firstMusic.item.song_id } : null;
     syncAmbientSongRef.current();
   }).current;
