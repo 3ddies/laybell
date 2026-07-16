@@ -28,3 +28,22 @@ export const STORE_URLS = {
 export function profileShareUrl(userId: string): string {
   return `${WEB_ORIGIN}/open.html?p=${encodeURIComponent('profile/' + userId)}`;
 }
+
+// ── Rich share pages (server-rendered Open Graph) ───────────────────────────
+// Links shared OUTSIDE the app point at the `share-page` Supabase Edge
+// Function, which serves real OG tags — the post's thumbnail, title and
+// author — so iMessage/WhatsApp/Discord/X unfurl a rich preview card,
+// Instagram/TikTok-style (a bare laybell.app/post link has no page behind it
+// on the static site, so chats rendered it as dead text). Humans who tap are
+// bounced through open.html into the app or on to the store. If laybell.app
+// ever gains serverless routing, alias these paths onto the domain and only
+// this constant changes.
+export const SHARE_PAGE_BASE = 'https://wawpaokvtptfmuygjnns.supabase.co/functions/v1/share-page';
+
+export function postShareUrl(postId: string): string {
+  return `${SHARE_PAGE_BASE}?t=post&id=${encodeURIComponent(postId)}`;
+}
+
+export function profileRichShareUrl(userId: string): string {
+  return `${SHARE_PAGE_BASE}?t=profile&id=${encodeURIComponent(userId)}`;
+}

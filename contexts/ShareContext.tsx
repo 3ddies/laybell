@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabase';
 import { useProfile } from './ProfileContext';
 import { useTranslation } from './LanguageContext';
 import { createNotification } from '../lib/createNotification';
+import { postShareUrl } from '../lib/appLinks';
 import { tg, countLabel } from '../lib/i18n';
 import VideoThumb from '../components/VideoThumb';
 import { AvatarRowSkeleton } from '../components/Skeleton';
@@ -71,7 +72,12 @@ function rubber(drag: number, max = 32): number {
 const WEB_BASE = 'https://laybell.app';
 
 function buildShareText(p: SharePayload) {
-  const link = `${WEB_BASE}/post/${p.postId}`;
+  // External link = the server-rendered OG share page (lib/appLinks): chats
+  // outside the app unfurl a rich thumbnail card instead of dead text.
+  const link = postShareUrl(p.postId);
+  // In-app DMs keep the canonical laybell.app/post form — the chat renders
+  // its OWN rich preview card by parsing this exact pattern.
+  const dmLink = `${WEB_BASE}/post/${p.postId}`;
   const handle = p.username ? `@${p.username}` : '';
   const text = p.caption
     ? tg('share.textCaption', { caption: p.caption, handle })
@@ -79,7 +85,7 @@ function buildShareText(p: SharePayload) {
       ? tg('share.textPlain', { handle })
       : tg('share.textPlainNoUser');
   const title = p.caption || (handle ? tg('share.titleUser', { handle }) : 'Laybell');
-  return { link, title, message: `${text}\n${link}` };
+  return { link, dmLink, title, message: `${text}\n${link}` };
 }
 
 const enc = encodeURIComponent;
@@ -260,10 +266,10 @@ export function ShareSheet({ visible, payload, onClose }: {
     setSending(true);
     // Send just the post link as the body — the chat renders it as a rich
     // preview card (thumbnail + author + caption), Instagram-style.
-    const { link } = buildShareText(payload);
+    const { dmLink } = buildShareText(payload);
     const ids = Array.from(selected);
     await Promise.all(ids.map(async (rid) => {
-      const { error } = await supabase.from('messages').insert({ sender_id: uid, receiver_id: rid, body: link });
+      const { error } = await supabase.from('messages').insert({ sender_id: uid, receiver_id: rid, body: dmLink });
       if (!error) createNotification({ userId: rid, actorId: uid, type: 'message' });
     }));
     bumpShare();
