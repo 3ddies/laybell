@@ -528,6 +528,11 @@ export default function ReelScreen() {
     visibleIdRef.current = it.id;
     setOverlayId(it.id);
     setVisibleId(it.id);
+    // Landing on a page IS a settle: the portrait scrollToIndex below is
+    // non-animated (no momentum-end), so without this the pooled portrait
+    // player never mounted for the new reel — rotating back landed on a
+    // frozen poster until the user manually swiped.
+    onReelSettled();
     setPaused(false);
     // Keep the vertical feed positioned on this reel so rotating back lands here.
     const idx = postsRef.current.findIndex((p) => p.id === it.id);
@@ -542,6 +547,13 @@ export default function ReelScreen() {
       setOverlayId(visibleId);
     } else {
       setOverlayId(null);
+      // Rotating back to portrait: carry the overlay's playhead into the
+      // pooled portrait player — without this the reel visibly jumped back
+      // to wherever it was when the phone was first rotated in.
+      const vid = visibleIdRef.current;
+      if (vid && positionRef.current > 0) {
+        try { videoRefs.current.get(vid)?.seek(positionRef.current / 1000); } catch {}
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landscapeFullscreen]);
@@ -652,7 +664,16 @@ export default function ReelScreen() {
       affinity: profile,
     };
     fetchReelAds(adViewer)
-      .then((pool) => { if (pool.length) setPosts(weaveReelAds(ordered, pool)); })
+      .then((pool) => {
+        if (!pool.length) return;
+        // Weave only while the user is still ABOVE the first ad slot (index
+        // 2): inserting once they're deeper shifts every index under them and
+        // swaps the reel they're WATCHING mid-play. Slow ad inventory just
+        // sits this session out.
+        const idx = postsRef.current.findIndex((p) => p.id === visibleIdRef.current);
+        if (idx > 1) return;
+        setPosts(weaveReelAds(ordered, pool));
+      })
       .catch(() => {});
   }
 
