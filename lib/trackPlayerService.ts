@@ -1,4 +1,4 @@
-import TrackPlayer, { Capability, Event } from 'react-native-track-player';
+import TrackPlayer, { AppKilledPlaybackBehavior, Capability, Event } from 'react-native-track-player';
 
 // Lock-screen / Control Center bridge for the MAIN player (contexts/AudioContext).
 // react-native-track-player is the playback engine for main-player songs ONLY —
@@ -61,6 +61,12 @@ export function ensurePlayerSetup(): Promise<void> {
       if (setupDone) {
         try {
           await TrackPlayer.updateOptions({
+            android: {
+              // Swiping Laybell out of recents keeps the music + its
+              // notification alive (the Spotify behavior). Explicit so a
+              // library default change can never silently regress it.
+              appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+            },
             capabilities: [
               Capability.Play, Capability.Pause,
               Capability.SkipToNext, Capability.SkipToPrevious,
