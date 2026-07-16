@@ -300,7 +300,13 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     setActiveHost(hostId);
 
     const url = await resolveSongUrl(songId, mediaUrl);
-    if (!url || token !== tokenRef.current) return;
+    if (token !== tokenRef.current) return;
+    if (!url) {
+      // Unplayable song (deleted post, resolve failure): SILENCE — the
+      // previous song must not keep looping under a post it doesn't belong to.
+      stop();
+      return;
+    }
 
     try {
       // Persistent player: this path never creates, never disposes — replace()

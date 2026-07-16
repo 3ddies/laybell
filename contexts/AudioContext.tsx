@@ -282,6 +282,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const viewer = adViewerRef.current ?? { id: uidRef.current, profile: null, affinity: EMPTY_PROFILE };
     let ad: AudioAd | null = null;
     try { ad = await pickAudioAd(viewer); } catch {}
+    // stop() or a fresh play() tore the ad state down while we were picking —
+    // never resurrect a break over the NEW playback state.
+    if (!adPlayingRef.current) return;
     if (!ad) {
       // No matching inventory — push the next break out (randomized 3-5 min).
       adPlayingRef.current = false;

@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, RefreshControl,
 } from 'react-native';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 // expo-image everywhere (NOT RN Image): decodes at DISPLAYED size with a
 // memory+disk cache — grid thumbnails paint instantly on revisit instead of
 // re-decoding multi-MP originals mid-scroll.
@@ -424,6 +424,20 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     return { topCols: top.cols, bottomCols: bottom.cols, bannerPost: usedBanner, playableSet, bottomVideoIds, topShortCol, topPadTop };
   }, [posts, songTiles, songClusters, t]);
 
+  // GHOST-ENTRY PRUNE: ids that leave the list (refresh, relevance reorder,
+  // All↔genre switch) would otherwise keep their stale coordinates in
+  // videoPos forever — aliasing the viewport and silently stealing the
+  // MAX_CONCURRENT autoplay slots from REAL on-screen tiles (frozen previews
+  // after every refresh). Only current playable ids may compete.
+  useEffect(() => {
+    for (const k of Object.keys(videoPos.current)) {
+      if (!playableSet.has(k)) delete videoPos.current[k];
+    }
+    if (!bannerPost) bannerPos.current = { y: 0, h: 0 };
+    recomputeActive();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playableSet, bannerPost]);
+
   if (!posts || posts.length === 0) {
     return (
       <ScrollView
@@ -437,14 +451,14 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     );
   }
 
-  const renderMedia = (cell: Cell & { kind: 'media' }) => {
+  const renderMedia = (cell: Cell & { kind: 'media' }, padTop = 0) => {
     const p = cell.post;
     if (p.type === 'video' && !playableSet.has(p.id)) {
       // Still thumbnail — never plays.
       return (
         <TouchableOpacity
           key={cell.key}
-          style={[styles.mediaCard, { height: cell.height }]}
+          style={[styles.mediaCard, { height: cell.height }, padTop ? { marginTop: padTop } : null]}
           activeOpacity={0.9}
           onPress={(e: any) => openMedia(p, e)}
         >
@@ -464,7 +478,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       return (
         <TouchableOpacity
           key={cell.key}
-          style={[styles.mediaCard, { height: cell.height }]}
+          style={[styles.mediaCard, { height: cell.height }, padTop ? { marginTop: padTop } : null]}
           activeOpacity={0.9}
           onPress={(e: any) => openMedia(p, e)}
           onLayout={e => { videoPos.current[p.id] = { y: e.nativeEvent.layout.y, h: cell.height }; recomputeActive(); }}
@@ -494,7 +508,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       return (
         <TouchableOpacity
           key={cell.key}
-          style={[styles.mediaCard, { height: cell.height }]}
+          style={[styles.mediaCard, { height: cell.height }, padTop ? { marginTop: padTop } : null]}
           activeOpacity={0.9}
           onPress={() => play({ id: p.id, uri: p.media_url, caption: p.caption, artist: p.profiles?.display_name ?? '', cover: p.cover_url })}
           onLongPress={longPressFor(p)}
@@ -520,7 +534,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
       return (
         <TouchableOpacity
           key={cell.key}
-          style={[styles.mediaCard, { height: cell.height }]}
+          style={[styles.mediaCard, { height: cell.height }, padTop ? { marginTop: padTop } : null]}
           activeOpacity={0.9}
           onPress={(e: any) => openMedia(p, e)}
         >
@@ -541,7 +555,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     return (
       <TouchableOpacity
         key={cell.key}
-        style={[styles.mediaCard, { height: cell.height }]}
+        style={[styles.mediaCard, { height: cell.height }, padTop ? { marginTop: padTop } : null]}
         activeOpacity={0.9}
         onPress={(e: any) => openMedia(p, e)}
       >
@@ -553,10 +567,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     );
   };
 
-  const renderCell = (cell: Cell) => {
+  const renderCell = (cell: Cell, padTop = 0) => {
     if (cell.kind === 'music') {
       return (
-        <View key={cell.key} style={[styles.musicCard, { height: cell.height }]}>
+        <View key={cell.key} style={[styles.musicCard, { height: cell.height }, padTop ? { marginTop: padTop } : null]}>
           {/* Genre word on a silvery "plate": a bright sheen up top fading to a
               soft silver, so the pure-white letters read brighter than the card.
               White fill + black outline. */}
@@ -614,7 +628,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
         </View>
       );
     }
-    return renderMedia(cell);
+    return renderMedia(cell, padTop);
   };
 
   // Full-width Laybell-TV hero banner: a big 16:9 thumbnail of the top trending
@@ -738,11 +752,12 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
             {topCols.map((col, ci) => (
               <View key={ci} style={styles.col}>
                 {col.map((cell, ri) =>
-                  // Center the shorter column's last tile in the leftover space so
-                  // a residual gap under the song card splits above/below it.
-                  ci === topShortCol && ri === col.length - 1 && topPadTop > 0
-                    ? <View key={cell.key} style={{ marginTop: topPadTop }}>{renderCell(cell)}</View>
-                    : renderCell(cell)
+                  // Center the shorter column's last tile in the leftover space
+                  // (the residual gap splits above/below it). The pad rides ON
+                  // the cell itself as a margin — a wrapper View re-parented
+                  // onLayout, so a video here reported y=0 and corrupted
+                  // videoPos (phantom off-screen autoplay + frozen on-screen).
+                  renderCell(cell, ci === topShortCol && ri === col.length - 1 ? topPadTop : 0)
                 )}
               </View>
             ))}

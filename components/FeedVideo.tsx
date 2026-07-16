@@ -72,8 +72,17 @@ const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: 
         id,
         uri,
         { loop: true, muted: mutedRef.current, timeUpdateSec: 0.25 },
-        // Stolen (pool exhausted): detach so this card falls back to its thumbnail.
-        () => { setPlayer(null); setReady(false); },
+        // Stolen (pool exhausted): fully detach — listeners INCLUDED, or this
+        // card's watch-time tracking and play() kicks would keep firing on the
+        // player now loading the THIEF's video — and clear `acquired` so a
+        // later shouldPlay promotion can re-acquire instead of being blocked.
+        () => {
+          subs.forEach((s) => s.remove());
+          subs.length = 0;
+          acquired = null;
+          setPlayer(null);
+          setReady(false);
+        },
       );
       if (!acq) return; // nothing stealable right now — stay on the thumbnail
       acquired = acq.player;

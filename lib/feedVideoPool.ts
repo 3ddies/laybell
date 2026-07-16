@@ -24,6 +24,7 @@ type Entry = {
   uri: string | null;        // source currently loaded into it
   seq: number;               // acquisition order — steal the oldest stealable
   onStolen?: () => void;     // previous owner's detach callback
+  loading?: boolean;         // replaceAsync in flight — old item may still report readyToPlay
 };
 
 export type PoolAcquisition = { player: VideoPlayer; alreadyLoaded: boolean };
@@ -69,11 +70,13 @@ function makePool(size: number): PlayerPool {
   return {
     acquire(ownerId, uri, opts, onStolen) {
       const pool = ensure();
-      // Preference order: my own entry → a free EMPTY entry (no disposal cost)
-      // → a free loaded entry (disposal on reuse) → steal the oldest entry
-      // that is NOT the protected (playing) one.
+      // Preference order: my own entry → a free entry that STILL HOLDS MY
+      // SOURCE (scroll-away/scroll-back resumes instantly, no reload, no
+      // disposal) → a free EMPTY entry (no disposal cost) → a free loaded
+      // entry (disposal on reuse) → steal the oldest non-protected entry.
       let entry =
         pool.find((e) => e.owner === ownerId) ??
+        pool.find((e) => e.owner === null && e.uri === uri) ??
         pool.find((e) => e.owner === null && e.uri === null) ??
         pool.find((e) => e.owner === null);
       if (!entry) {
@@ -93,11 +96,27 @@ function makePool(size: number): PlayerPool {
         if (entry.uri !== uri) {
           try { p.pause(); } catch {}
           entry.uri = uri;
-          p.replaceAsync({ uri }).catch(() => {});
+          entry.loading = true;
+          p.replaceAsync({ uri })
+            .then(() => { if (entry.uri === uri) entry.loading = false; })
+            // A failed load must not poison the entry: clearing uri makes the
+            // next acquire RETRY (fresh Cloudflare posts 404 while encoding;
+            // one transient error used to mean a stuck thumbnail all session).
+            .catch(() => { if (entry.uri === uri) { entry.uri = null; entry.loading = false; } });
+          return { player: p, alreadyLoaded: false };
+        }
+        // Same source re-acquired but the player ERRORED on it — retry now.
+        if (p.status === 'error') {
+          entry.loading = true;
+          p.replaceAsync({ uri })
+            .then(() => { if (entry.uri === uri) entry.loading = false; })
+            .catch(() => { if (entry.uri === uri) { entry.uri = null; entry.loading = false; } });
           return { player: p, alreadyLoaded: false };
         }
         // Same source still loaded (re-acquired) — reveal immediately if ready.
-        return { player: p, alreadyLoaded: p.status === 'readyToPlay' };
+        // NEVER while a swap is in flight: the OLD item still reports
+        // readyToPlay, and trusting it revealed the previous post's video.
+        return { player: p, alreadyLoaded: !entry.loading && p.status === 'readyToPlay' };
       } catch {
         return { player: p, alreadyLoaded: false };
       }

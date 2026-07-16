@@ -17,7 +17,7 @@ import { isSwipeTap } from '../../contexts/PagerContext';
 import {
   setVisibleVideoId, setWarmVideoIds, setFeedFastScrolling, setFeedFocused, resetFeedVideo, useCardPlayback,
 } from '../../lib/feedVideo';
-import { acquireFeedPlayer } from '../../lib/feedVideoPool';
+import { acquireFeedPlayer, releaseFeedPlayer } from '../../lib/feedVideoPool';
 import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -533,7 +533,15 @@ export default function HomeScreen() {
     try {
       const nextVid = (feedDataRef.current.slice(GATE_POSTS, GATE_POSTS + 8) as any[])
         .find((p) => !p.__ad && p.type === 'video' && p.media_url);
-      if (nextVid) acquireFeedPlayer(nextVid.id, nextVid.media_url, { loop: true, muted: true, timeUpdateSec: 0.25 }, () => {});
+      if (nextVid) {
+        // Acquire-then-release: the load keeps buffering in the (paused)
+        // entry, but ownership returns to the pool immediately — the card's
+        // own FeedVideo re-acquires the SAME loaded entry by uri later
+        // (instant reveal), and an orphan owner can never pin the entry
+        // against unloadIdle if the user never scrolls to it.
+        const acq = acquireFeedPlayer(nextVid.id, nextVid.media_url, { loop: true, muted: true, timeUpdateSec: 0.25 }, () => {});
+        if (acq) releaseFeedPlayer(nextVid.id, acq.player);
+      }
     } catch {}
     gateUnlockTimer.current = setTimeout(() => {
       gateUnlockTimer.current = null;

@@ -57,23 +57,39 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
     setReady(false);
     seededRef.current = false;
     trimSeekingRef.current = false;
+    const subs: { remove: () => void }[] = [];
     const acq = reelPool.acquire(
       id,
       uri,
       { loop, muted: mutedRef.current, timeUpdateSec: 0.25 },
-      () => { setPlayer(null); setReady(false); },
+      // Stolen: fully detach, listeners included — a leftover timeUpdate
+      // listener would run trim loop-back seeks against the THIEF's video.
+      () => {
+        subs.forEach((s) => s.remove());
+        subs.length = 0;
+        setPlayer(null);
+        setReady(false);
+      },
     );
     if (!acq) { setPlayer(null); return; } // nothing stealable — poster stays
     setPlayer(acq.player);
-    if (acq.alreadyLoaded) setReady(true);
+    if (acq.alreadyLoaded) {
+      // The loaded source is already positioned (this reel played before) —
+      // mark it seeded so a transient status flap can't snap the playhead
+      // back to trimStart mid-watch.
+      seededRef.current = true;
+      setReady(true);
+    }
     const statusSub = acq.player.addListener('statusChange', ({ status }: any) => {
       if (status === 'readyToPlay') {
-        setReady(true);
+        // Seed BEFORE revealing — revealing first flashed frame 0 for a beat
+        // on trimmed clips before the jump to trimStart.
         if (!seededRef.current) {
           seededRef.current = true;
           const ts = trimStartRef.current;
           if (ts != null && ts > 0) { try { acq.player.currentTime = ts; } catch {} }
         }
+        setReady(true);
         if (playRef.current) { try { acq.player.play(); } catch {} }
       }
     });
@@ -90,9 +106,10 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
         }
       }
     });
+    subs.push(statusSub, timeSub);
     return () => {
-      statusSub.remove();
-      timeSub.remove();
+      subs.forEach((s) => s.remove());
+      subs.length = 0;
       reelPool.release(id, acq.player);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

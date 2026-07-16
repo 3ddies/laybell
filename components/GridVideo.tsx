@@ -28,15 +28,33 @@ const GridVideo = memo(function GridVideo({ id, uri, thumbnailUrl, play, style, 
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
 
+  // The banner's GridVideo keeps its instance when the banner POST changes
+  // (refresh brings a new top pick): drop straight to the new thumbnail —
+  // one render with the old post's player under the new overlays is a flash.
+  const [lastId, setLastId] = useState(id);
+  if (lastId !== id) {
+    setLastId(id);
+    setPlayer(null);
+    setReady(false);
+  }
+
   useEffect(() => {
     if (!play) return;
     setReady(false);
+    const subs: { remove: () => void }[] = [];
     const acq = explorePool.acquire(
       id,
       uri,
       { loop: true, muted: true, timeUpdateSec: 0.5 },
-      // Stolen (pool exhausted) — fall back to the thumbnail underneath.
-      () => { setPlayer(null); setReady(false); },
+      // Stolen (pool exhausted) — fully detach (listeners included, so this
+      // tile's view tracking can't fire on the thief's video) and fall back
+      // to the thumbnail underneath.
+      () => {
+        subs.forEach((s) => s.remove());
+        subs.length = 0;
+        setPlayer(null);
+        setReady(false);
+      },
     );
     if (!acq) return; // nothing stealable right now — stay on the thumbnail
     setPlayer(acq.player);
@@ -54,9 +72,10 @@ const GridVideo = memo(function GridVideo({ id, uri, thumbnailUrl, play, style, 
       const dur = acq.player.duration || 0;
       onProgressRef.current?.(currentTime * 1000, dur * 1000);
     });
+    subs.push(statusSub, timeSub);
     return () => {
-      statusSub.remove();
-      timeSub.remove();
+      subs.forEach((s) => s.remove());
+      subs.length = 0;
       explorePool.release(id, acq.player);
       setPlayer(null);
       setReady(false);
