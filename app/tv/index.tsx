@@ -104,8 +104,10 @@ export default function LaybellTVScreen() {
     selection(); // a tick as the video leaves the phone for the TV
     cast.cast(item, queue);
   };
-  // Returns true if it cast (RTMP lives only — WebRTC lives can't cast, so the
-  // caller falls back to the on-phone live viewer).
+  // Returns true if it cast. Encoder (RTMP) lives cast via their live HLS
+  // manifest; phone (WHIP) lives have no HLS during Cloudflare's WebRTC beta
+  // (see lib/cast.liveHlsUrl), so those return false and the caller falls
+  // back to the on-phone live viewer.
   const castLive = (live: LiveStream): boolean => {
     const item = liveToCastItem(live);
     if (!item) return false;
@@ -262,8 +264,9 @@ export default function LaybellTVScreen() {
               <TouchableOpacity
                 style={styles.liveCard}
                 onPress={() => {
-                  // Cast RTMP lives to the TV when connected; WebRTC lives can't
-                  // cast, so those still open the on-phone live viewer.
+                  // With a TV connected, encoder lives cast like regular videos
+                  // (live HLS fills the screen); phone lives — no HLS during
+                  // Cloudflare's beta — open the on-phone viewer instead.
                   if (cast.connected && castLive(item)) return;
                   router.push({ pathname: '/live', params: { streamId: item.id } });
                 }}

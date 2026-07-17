@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { GRADIENTS, type ThemePalette } from '../../constants/theme';
@@ -17,6 +18,9 @@ import {
   markLive, type LiveOrientation, type LiveStream, type LiveStreamKeys,
 } from '../../lib/live';
 import { WhipPublisher, getRTCView, webrtcAvailable } from '../../lib/whip';
+import { rtmpAvailable, getRtmpView, type RtmpPublisherHandle } from '../../lib/rtmp';
+import { displayedTier } from '../../lib/badges';
+import LiveChatOverlay, { useBufferedChat } from '../../components/LiveChatOverlay';
 import { fetchDonationEarnings, fmtCents } from '../../lib/donations';
 import { isPremium } from '../../lib/entitlements';
 
@@ -51,7 +55,33 @@ export default function GoLiveScreen() {
   const [error, setError] = useState<string | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [viewers, setViewers] = useState(0);
+  // Viewer comments, shown over the broadcast so the host can follow the room.
+  // Burst-buffered (see LiveChatOverlay) so a busy chat stays smooth on-camera.
+  const { messages: chat, push: pushChat } = useBufferedChat();
+  // A horizontal phone broadcast is set up and filmed in landscape: once the
+  // camera preview starts, rotate the screen so the host frames the shot the
+  // way viewers (and Laybell TV) will see it — and back to portrait on exit.
+  // 'vertical' broadcasts keep the normal portrait setup.
+  const wantLandscape =
+    mode === 'webrtc' && orientation === 'horizontal' && (phase === 'preview' || phase === 'live');
+  useEffect(() => {
+    ScreenOrientation.lockAsync(
+      wantLandscape
+        ? ScreenOrientation.OrientationLock.LANDSCAPE
+        : ScreenOrientation.OrientationLock.PORTRAIT_UP,
+    ).catch(() => { /* simulator / missing native module */ });
+  }, [wantLandscape]);
+  // Never leave the app stuck in landscape if the screen unmounts mid-broadcast.
+  useEffect(() => () => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // True when this phone broadcast publishes RTMPS (horizontal + native lib
+  // present): Cloudflare then serves live HLS, so the stream can cast to real
+  // TVs and gets recorded. Vertical lives keep WHIP (sub-second, feed-only);
+  // pre-rebuild binaries fall back to WHIP for horizontal too. Decided once in
+  // prepare() so a mid-flow orientation change can't split the pipeline.
+  const [phoneRtmpActive, setPhoneRtmpActive] = useState(false);
   // Premium hosts earn donations (lib/donations); take-home total, polled while live.
   const [earnedCents, setEarnedCents] = useState(0);
   const canEarn = isPremium();
@@ -70,10 +100,12 @@ export default function GoLiveScreen() {
   const streamRef = useRef<LiveStream | null>(null);
   const keysRef = useRef<LiveStreamKeys | null>(null);
   const publisherRef = useRef<WhipPublisher | null>(null);
+  const rtmpRef = useRef<RtmpPublisherHandle | null>(null);
   const channelRef = useRef<ReturnType<typeof joinLiveChannel> | null>(null);
   const viewerPeak = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const RTCView = getRTCView();
+  const RtmpView = getRtmpView();
 
   useEffect(() => () => { cleanup(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -81,6 +113,7 @@ export default function GoLiveScreen() {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     channelRef.current?.leave();
     channelRef.current = null;
+    try { rtmpRef.current?.stopStreaming(); } catch { /* not streaming */ }
     await publisherRef.current?.stop().catch(() => {});
     publisherRef.current = null;
     const stream = streamRef.current;
@@ -100,16 +133,25 @@ export default function GoLiveScreen() {
     setBusy(true);
     setError(null);
     try {
-      // Orientation only applies to phone (webrtc) broadcasts; encoders set
-      // their own framing, so those default to vertical bookkeeping.
-      const { stream, keys } = await createLiveStream(title.trim(), mode, mode === 'webrtc' ? orientation : 'vertical');
+      // Horizontal phone lives publish RTMPS when the native engine is in this
+      // binary — the row becomes mode 'rtmp' (live HLS: TV-castable, recorded,
+      // played by the feed's existing AppVideo path).
+      const usePhoneRtmp = mode === 'webrtc' && orientation === 'horizontal' && rtmpAvailable();
+      const ingest: Mode = mode === 'rtmp' || usePhoneRtmp ? 'rtmp' : 'webrtc';
+      // Orientation only applies to phone broadcasts; encoders set their own
+      // framing, so those default to vertical bookkeeping.
+      const { stream, keys } = await createLiveStream(title.trim(), ingest, mode === 'webrtc' ? orientation : 'vertical');
       streamRef.current = stream;
       keysRef.current = keys;
       if (mode === 'webrtc') {
-        const pub = new WhipPublisher();
-        publisherRef.current = pub;
-        const media = await pub.openMedia('front');
-        setPreviewUrl(media.toURL());
+        setPhoneRtmpActive(usePhoneRtmp);
+        if (!usePhoneRtmp) {
+          const pub = new WhipPublisher();
+          publisherRef.current = pub;
+          const media = await pub.openMedia('front');
+          setPreviewUrl(media.toURL());
+        }
+        // RTMP path: the RtmpView renders its own camera preview once mounted.
         setPhase('preview');
       } else {
         setPhase('waiting');
@@ -135,7 +177,14 @@ export default function GoLiveScreen() {
     setBusy(true);
     setError(null);
     try {
-      if (stream.mode === 'webrtc') {
+      if (phoneRtmpActive) {
+        // Publish RTMPS straight from the phone; resolves once connected.
+        const ok = await rtmpRef.current?.startStreaming(
+          keysRef.current?.rtmpsStreamKey ?? '',
+          keysRef.current?.rtmpsUrl,
+        );
+        if (!ok) throw new Error(t('live.connectionLost'));
+      } else if (stream.mode === 'webrtc') {
         await publisherRef.current?.publish(keysRef.current?.whipUrl ?? '');
       }
       await markLive(stream.id);
@@ -146,9 +195,10 @@ export default function GoLiveScreen() {
           userId: profile.id,
           name: profile.display_name || profile.username || '',
           avatarUrl: profile.avatar_url ?? null,
+          tier: displayedTier(profile),
           isHost: true,
           onViewers: (n) => { viewerPeak.current = Math.max(viewerPeak.current, n); setViewers(n); },
-          onChat: () => {},
+          onChat: pushChat,
         });
       }
     } catch (e) {
@@ -173,9 +223,27 @@ export default function GoLiveScreen() {
   return (
     <SwipeBackPager scrollEnabled={!live}>
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
-        {/* Camera preview behind everything in phone mode */}
-        {mode === 'webrtc' && previewUrl && RTCView && (
+        {/* Camera preview behind everything in phone mode. WHIP path shows the
+            local WebRTC stream; the RTMP path's view IS the camera preview and
+            the publisher in one (mounted through preview + live so the outgoing
+            stream never loses its surface). */}
+        {mode === 'webrtc' && !phoneRtmpActive && previewUrl && RTCView && (
           <RTCView streamURL={previewUrl} objectFit="cover" mirror style={StyleSheet.absoluteFill} />
+        )}
+        {mode === 'webrtc' && phoneRtmpActive && RtmpView && (phase === 'preview' || phase === 'live') && (
+          <RtmpView
+            ref={rtmpRef}
+            style={StyleSheet.absoluteFill}
+            camera="front"
+            video={{ fps: 30, resolution: '720p' }}
+            audio={{ bitrate: 128000, sampleRate: 44100, isStereo: true }}
+            enablePinchedZoom
+            onConnectionFailed={(code: string) => { setError(String(code || t('live.connectionLost'))); setPhase('preview'); }}
+            onDisconnect={() => {
+              if (phaseRef.current === 'live') { setError(t('live.connectionLost')); setPhase('preview'); }
+            }}
+            onPermissionsDenied={() => setError(t('live.permissionsNeeded'))}
+          />
         )}
 
         {/* Header */}
@@ -245,10 +313,11 @@ export default function GoLiveScreen() {
                 <View style={styles.orientWrap}>
                   <Text style={styles.orientLabel}>{t('live.orientationLabel')}</Text>
                   <View style={styles.orientRow}>
+                    {/* 'both' was retired as a choice — horizontal IS the TV-bound
+                        option (legacy 'both' rows still play everywhere). */}
                     {([
                       { key: 'vertical' as const, icon: 'phone-portrait-outline', label: t('live.orientVertical') },
                       { key: 'horizontal' as const, icon: 'phone-landscape-outline', label: t('live.orientHorizontal') },
-                      { key: 'both' as const, icon: 'swap-horizontal', label: t('live.orientBoth') },
                     ]).map((o) => (
                       <TouchableOpacity
                         key={o.key}
@@ -263,7 +332,12 @@ export default function GoLiveScreen() {
                   {orientation !== 'vertical' && (
                     <View style={styles.tvNote}>
                       <Ionicons name="tv-outline" size={13} color={colors.textTertiary} />
-                      <Text style={styles.tvNoteText}>{t('live.tvNote')}</Text>
+                      {/* With the RTMP engine in this binary, horizontal phone
+                          lives ARE TV-castable; without it (pre-rebuild), be
+                          honest that a real TV needs the Studio encoder. */}
+                      <Text style={styles.tvNoteText}>
+                        {t('live.tvNote')}{rtmpAvailable() ? '' : ` ${t('live.tvPhoneNote')}`}
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -285,9 +359,9 @@ export default function GoLiveScreen() {
 
           {phase === 'preview' && (
             <View style={styles.previewControls}>
-              <TouchableOpacity style={styles.roundBtn} onPress={() => publisherRef.current?.switchCamera()}>
-                <Ionicons name="camera-reverse-outline" size={22} color="#fff" />
-              </TouchableOpacity>
+              {/* Camera-flip button removed: switching cameras mid-session upset
+                  the capture orientation on-device, so broadcasts stay on the
+                  front camera and the picture stays regular. */}
               {!!error && <Text style={styles.error}>{error}</Text>}
               <TouchableOpacity onPress={goLiveNow} disabled={busy} activeOpacity={0.85} style={styles.primaryBtn}>
                 <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnBg}>
@@ -322,11 +396,7 @@ export default function GoLiveScreen() {
 
           {live && (
             <View style={styles.previewControls}>
-              {mode === 'webrtc' && (
-                <TouchableOpacity style={styles.roundBtn} onPress={() => publisherRef.current?.switchCamera()}>
-                  <Ionicons name="camera-reverse-outline" size={22} color="#fff" />
-                </TouchableOpacity>
-              )}
+              <LiveChatOverlay messages={chat} style={styles.hostChat} />
               <TouchableOpacity onPress={() => setConfirmEnd(true)} activeOpacity={0.85} style={styles.endBtn}>
                 <Text style={styles.endBtnText}>{t('live.end')}</Text>
               </TouchableOpacity>
@@ -383,7 +453,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   primaryBtnBg: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 13 },
   primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   previewControls: { alignItems: 'center', gap: 14 },
-  roundBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.25)' },
+  // previewControls centers its children, so the chat strip must stretch back
+  // to full width to read like the viewer-side overlay.
+  hostChat: { alignSelf: 'stretch' },
   endBtn: { alignSelf: 'stretch', borderRadius: 24, backgroundColor: '#F43F5E', alignItems: 'center', paddingVertical: 13 },
   endBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   waitTitle: { color: c.text, fontSize: 15, fontWeight: '700' },

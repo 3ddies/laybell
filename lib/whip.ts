@@ -38,7 +38,7 @@ export function getRTCView(): Webrtc['RTCView'] | null {
   }
 }
 
-type Facing = 'front' | 'back';
+export type Facing = 'front' | 'back';
 
 const ICE = { iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] };
 
@@ -91,10 +91,12 @@ async function hangUp(pc: RTCPeerConnection | null, resource: string | null) {
 export class WhipPublisher {
   private pc: RTCPeerConnection | null = null;
   private resource: string | null = null;
+  private facing: Facing = 'front';
   stream: MediaStream | null = null;
 
   /** Opens the camera+mic and returns the local preview stream (not publishing yet). */
   async openMedia(facing: Facing = 'front'): Promise<MediaStream> {
+    this.facing = facing;
     this.stream = await webrtc().mediaDevices.getUserMedia({
       audio: true,
       video: {
@@ -107,9 +109,42 @@ export class WhipPublisher {
     return this.stream;
   }
 
-  switchCamera(): void {
-    const track = this.stream?.getVideoTracks()[0] as { _switchCamera?: () => void } | undefined;
-    track?._switchCamera?.();
+  /**
+   * Flips between the front and back camera and resolves with the facing the
+   * publisher is ACTUALLY on afterwards — the flip is only committed when the
+   * switch succeeds, so callers can trust the result (e.g. for preview
+   * mirroring) and a failed switch changes nothing on screen.
+   *
+   * We track facing ourselves and apply it explicitly: the fork's
+   * _switchCamera() derives the flip from the track's native settings, which
+   * don't reliably report facingMode — it then "switches" to the front camera
+   * it's already on, forever, which is exactly a dead flip button.
+   */
+  async switchCamera(): Promise<Facing> {
+    const track = this.stream?.getVideoTracks()[0] as unknown as {
+      applyConstraints?: (c: Record<string, unknown>) => Promise<unknown>;
+      _switchCamera?: () => void;
+    } | undefined;
+    if (!track) return this.facing;
+    const next: Facing = this.facing === 'front' ? 'back' : 'front';
+    try {
+      if (track.applyConstraints) {
+        // Restate the full constraint set — applyConstraints resets any
+        // omitted property to its default.
+        await track.applyConstraints({
+          facingMode: next === 'front' ? 'user' : 'environment',
+          width: 1280,
+          height: 720,
+          frameRate: 30,
+        });
+      } else if (track._switchCamera) {
+        track._switchCamera();
+      } else {
+        return this.facing;
+      }
+      this.facing = next;
+    } catch { /* switch failed (single-camera device?) — stay put */ }
+    return this.facing;
   }
 
   setMicEnabled(on: boolean): void {

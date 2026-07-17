@@ -4,6 +4,7 @@
 // chat ride a Supabase Realtime presence/broadcast channel — nothing persisted.
 
 import { supabase } from './supabase';
+import type { Tier } from './badges';
 
 export type LiveProfile = {
   id: string;
@@ -13,6 +14,11 @@ export type LiveProfile = {
   // Drives the live donation lock — only a Premium host (premium_until in the
   // future) can receive tips (lib/donations hostCanReceive).
   premium_until: string | null;
+  // Badge display fields (badges.sql) — color the host's name on the live feed
+  // by their displayed tier. Optional: absent on a pre-badges database.
+  badge_tier?: string | null;
+  badge_show?: boolean | null;
+  profile_theme?: string | null;
 };
 
 // Broadcast orientation (phone go-live choice). 'horizontal' and 'both'
@@ -46,15 +52,27 @@ export type LiveChatMessage = {
   avatarUrl: string | null;
   text: string;
   at: number;
+  // Sender's displayed badge tier, stamped at send time — colors their name in
+  // the chat overlay. Absent/null (older clients, no badge) → default white.
+  tier?: Tier | null;
 };
 
 async function attachProfiles<T extends { user_id: string }>(rows: T[]): Promise<(T & { profile?: LiveProfile })[]> {
   const ids = [...new Set(rows.map((r) => r.user_id))];
   if (!ids.length) return rows;
-  const { data } = await supabase
+  // The badge columns arrive with badges.sql — on a pre-badges database this
+  // select errors, so retry with the base column set rather than losing the
+  // host profiles entirely.
+  let data: LiveProfile[] | null = (await supabase
     .from('profiles')
-    .select('id, username, display_name, avatar_url, premium_until')
-    .in('id', ids);
+    .select('id, username, display_name, avatar_url, premium_until, badge_tier, badge_show, profile_theme')
+    .in('id', ids)).data;
+  if (!data) {
+    data = (await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url, premium_until')
+      .in('id', ids)).data;
+  }
   const byId = new Map((data ?? []).map((p) => [p.id, p as LiveProfile]));
   return rows.map((r) => ({ ...r, profile: byId.get(r.user_id) }));
 }
@@ -183,6 +201,9 @@ export function joinLiveChannel(opts: {
   userId: string;
   name: string;
   avatarUrl: string | null;
+  // The joiner's displayed badge tier — rides along on every chat message they
+  // send so other viewers can tier-color their name.
+  tier?: Tier | null;
   isHost?: boolean;
   onViewers: (count: number) => void;
   onChat: (msg: LiveChatMessage) => void;
@@ -213,6 +234,7 @@ export function joinLiveChannel(opts: {
         avatarUrl: opts.avatarUrl,
         text: text.slice(0, 300),
         at: Date.now(),
+        tier: opts.tier ?? null,
       };
       channel.send({ type: 'broadcast', event: 'chat', payload: msg }).catch(() => {});
       return msg;

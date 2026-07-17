@@ -274,7 +274,17 @@ export default function OnboardingScreen() {
 
           <View style={styles.welcomeContent}>
             <Image source={require('../assets/icon.png')} style={styles.logoMark} resizeMode="cover" />
-            <Text style={styles.welcomeTitle}>{t('onboarding.welcomeTitle', { brand: 'Laybell™' })}</Text>
+            <Text style={styles.welcomeTitle}>
+              {/* Split on the raw {brand} placeholder (t() leaves it intact when
+                  no vars are passed) so the ™ can render small and light instead
+                  of at full title size — works wherever a language places it. */}
+              {t('onboarding.welcomeTitle').split('{brand}').map((part, i, arr) => (
+                <Text key={i}>
+                  {part}
+                  {i < arr.length - 1 && <>Laybell<Text style={styles.welcomeTm}>™</Text></>}
+                </Text>
+              ))}
+            </Text>
             <Text style={styles.welcomeSub}>{t('onboarding.welcomeSub')}</Text>
 
             <View style={styles.featureList}>
@@ -695,6 +705,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     color: colors.text, fontSize: 40, fontWeight: '800',
     textAlign: 'center', lineHeight: 48,
   },
+  // Small, light ™ beside the wordmark (sits on the baseline) — matches the
+  // discreet mark on the login/signup screens and home header.
+  welcomeTm: { fontSize: 15, fontWeight: '400', color: colors.primaryLight },
   welcomeSub: {
     color: colors.textSecondary, fontSize: 16,
     textAlign: 'center', lineHeight: 24, paddingHorizontal: SPACING.md,

@@ -1,13 +1,12 @@
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text, TextInput, TouchableOpacity, Image,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { useState } from 'react';
 import { Link, useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 
@@ -43,11 +42,27 @@ export default function SignupScreen() {
     if (!agreed) { setError(t('auth.acceptTerms')); return; }
 
     setLoading(true); setError('');
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data, error: signUpError } = await supabase.auth.signUp({
       email: email.trim(), password,
       options: { data: { username: uname.toLowerCase(), display_name: displayName.trim() } },
     });
-    if (signUpError) setError(signUpError.message);
+    if (signUpError) {
+      if (/already registered/i.test(signUpError.message)) setError(t('auth.emailInUse'));
+      else if (/rate|security purposes/i.test(signUpError.message)) setError(t('auth.rateLimited'));
+      else setError(signUpError.message);
+    } else if (data.user && !data.session) {
+      // Email confirmation is required. Supabase obfuscates repeat signups (a
+      // fake user with no identities, and no email is sent) — surface that as
+      // "already registered" instead of sending the user to wait on a code
+      // that will never arrive.
+      if ((data.user.identities?.length ?? 0) === 0) {
+        setError(t('auth.emailInUse'));
+      } else {
+        router.push({ pathname: '/(auth)/verify-email', params: { email: email.trim() } });
+      }
+    }
+    // With confirmation disabled a session arrives right away and the root
+    // auth listener routes into onboarding — nothing to do here.
     setLoading(false);
   }
 
@@ -64,10 +79,11 @@ export default function SignupScreen() {
       <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
         <View style={styles.logoSection}>
-          <LinearGradient colors={GRADIENTS.primary} style={styles.logoMark}>
-            <Ionicons name="musical-notes" size={32} color={colors.text} />
-          </LinearGradient>
-          <Text style={styles.logo}>Laybell™</Text>
+          <Image source={require('../../assets/icon.png')} style={styles.logoMark} resizeMode="cover" />
+          <View style={styles.logoWrap}>
+            <Text style={styles.logo}>Laybell</Text>
+            <Text style={styles.tm}>™</Text>
+          </View>
           <Text style={styles.tagline}>{t('auth.signupTagline')}</Text>
         </View>
 
@@ -151,8 +167,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg, paddingVertical: SPACING.xxl },
 
   logoSection: { alignItems: 'center', marginBottom: SPACING.xl, gap: SPACING.sm },
-  logoMark: { width: 72, height: 72, borderRadius: RADIUS.xl, alignItems: 'center', justifyContent: 'center' },
+  logoMark: { width: 72, height: 72, borderRadius: RADIUS.xl },
   logo: { fontSize: 36, fontWeight: '800', color: colors.text, letterSpacing: 1 },
+  // Wordmark + ™ tucked into the bottom-right corner — matches login/home header.
+  logoWrap: { flexDirection: 'row', alignItems: 'flex-end' },
+  tm: { fontSize: 11, fontWeight: '400', color: colors.primaryLight, marginLeft: 1, marginBottom: 4 },
   tagline: { fontSize: 14, color: colors.textSecondary },
 
   form: { gap: SPACING.md },

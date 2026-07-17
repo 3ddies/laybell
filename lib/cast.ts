@@ -8,8 +8,9 @@
 // Cast SDK).
 //
 // SCOPE: only Laybell TV content is ever castable — landscape video posts (HLS
-// via Cloudflare Stream) and RTMP/HLS lives. WebRTC (low-latency) lives are NOT
-// castable to a Chromecast receiver, so liveToCastItem returns null for them.
+// via Cloudflare Stream) and RTMP-ingested lives. Chromecast can't speak WHEP,
+// and Cloudflare's WebRTC beta can't serve WHIP broadcasts over HLS/DASH
+// either (see liveHlsUrl), so phone lives are not castable yet.
 
 import { aspectToNumber } from './aspectRatio';
 import type { LiveStream } from './live';
@@ -76,16 +77,30 @@ export function isCastableVideo(p: any): boolean {
 }
 
 /**
- * A live stream → castable item. ONLY RTMP lives carry an HLS playback_url a
- * Chromecast can play; WebRTC (WHEP) lives are low-latency-only and can't cast,
- * so those return null and the UI hides the cast affordance for them.
+ * The live HLS manifest for a stream — only RTMP-ingested lives have one.
+ * Cloudflare's WebRTC beta explicitly does NOT support "streaming using WHIP
+ * and playing using HLS or DASH" (developers.cloudflare.com/stream/webrtc-beta),
+ * so a phone (WHIP) live has no manifest a TV receiver could load — casting one
+ * shows the title card and never plays. When Cloudflare ships WHIP→HLS
+ * ("coming soon"), deriving `origin/<cf_input_uid>/manifest/video.m3u8` from
+ * the stored WHEP url here makes phone lives castable with no other change.
+ */
+export function liveHlsUrl(l: LiveStream): string | null {
+  return l.mode === 'rtmp' && l.playback_url ? l.playback_url : null;
+}
+
+/**
+ * A live stream → castable item, via its live HLS manifest — a Chromecast
+ * plays that like any other video, full-screen. Phone (WHIP) lives have no
+ * HLS (see liveHlsUrl) → null, and the UI falls back to the on-phone viewer.
  */
 export function liveToCastItem(l: LiveStream): CastItem | null {
-  if (l.mode !== 'rtmp' || !l.playback_url) return null;
+  const url = liveHlsUrl(l);
+  if (!url) return null;
   const username = l.profile?.username ? `@${l.profile.username}` : undefined;
   return {
     id: l.id,
-    url: l.playback_url,
+    url,
     title: l.title || l.profile?.display_name || username || 'Laybell Live',
     subtitle: username,
     poster: l.profile?.avatar_url ?? null,

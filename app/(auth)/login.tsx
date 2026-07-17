@@ -1,13 +1,12 @@
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text, TextInput, TouchableOpacity, Image,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useState } from 'react';
-import { Link } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 
@@ -15,6 +14,7 @@ export default function LoginScreen() {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,7 +25,21 @@ export default function LoginScreen() {
     if (!email || !password) { setError(t('auth.fillAllFields')); return; }
     setLoading(true); setError('');
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) setError(error.message);
+    if (error) {
+      if (/email not confirmed/i.test(error.message)) {
+        // Their password is right but the address was never verified — send a
+        // fresh confirmation email and take them to the code screen instead of
+        // dead-ending on an error.
+        supabase.auth.resend({ type: 'signup', email: email.trim() }).catch(() => {});
+        router.push({ pathname: '/(auth)/verify-email', params: { email: email.trim() } });
+      } else if (/invalid login credentials/i.test(error.message)) {
+        setError(t('auth.invalidCredentials'));
+      } else if (/rate|security purposes/i.test(error.message)) {
+        setError(t('auth.rateLimited'));
+      } else {
+        setError(error.message);
+      }
+    }
     setLoading(false);
   }
 
@@ -34,9 +48,7 @@ export default function LoginScreen() {
       <View style={styles.inner}>
         {/* Logo */}
         <View style={styles.logoSection}>
-          <LinearGradient colors={GRADIENTS.primary} style={styles.logoMark}>
-            <Ionicons name="musical-notes" size={32} color={colors.text} />
-          </LinearGradient>
+          <Image source={require('../../assets/icon.png')} style={styles.logoMark} resizeMode="cover" />
           <View style={styles.logoWrap}>
             <Text style={styles.logo}>Laybell</Text>
             <Text style={styles.tm}>™</Text>
@@ -108,12 +120,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   inner: { flex: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
 
   logoSection: { alignItems: 'center', marginBottom: SPACING.xxl, gap: SPACING.sm },
-  logoMark: { width: 72, height: 72, borderRadius: RADIUS.xl, alignItems: 'center', justifyContent: 'center' },
+  logoMark: { width: 72, height: 72, borderRadius: RADIUS.xl },
   logo: { fontSize: 40, fontWeight: '800', color: colors.text, letterSpacing: 1 },
   // Wordmark + ™ tucked into the bottom-right corner — matches the home header
-  // (app/(tabs)/index.tsx), scaled up to sit beside the larger login logo.
+  // (app/(tabs)/index.tsx). Kept small and light so it reads as a discreet mark.
   logoWrap: { flexDirection: 'row', alignItems: 'flex-end' },
-  tm: { fontSize: 14, fontWeight: '700', color: colors.primaryLight, marginLeft: 1, marginBottom: 4 },
+  tm: { fontSize: 11, fontWeight: '400', color: colors.primaryLight, marginLeft: 1, marginBottom: 5 },
   tagline: { fontSize: 14, color: colors.textSecondary },
 
   form: { gap: SPACING.md },

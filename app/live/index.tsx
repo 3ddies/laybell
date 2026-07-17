@@ -8,6 +8,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import { GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
@@ -15,9 +16,11 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { supabase } from '../../lib/supabase';
 import {
-  fetchLiveStreams, joinLiveChannel, type LiveChatMessage, type LiveStream,
+  fetchLiveStreams, joinLiveChannel, type LiveStream,
 } from '../../lib/live';
 import { hostCanReceive, fmtCents } from '../../lib/donations';
+import { displayedTier } from '../../lib/badges';
+import LiveChatOverlay, { nameColor, useBufferedChat } from '../../components/LiveChatOverlay';
 import LiveDonateModal from '../../components/LiveDonateModal';
 import { WhepPlayer, getRTCView, webrtcAvailable } from '../../lib/whip';
 import AppVideo from '../../components/AppVideo';
@@ -30,8 +33,9 @@ import { Skeleton, SkeletonCircle } from '../../components/Skeleton';
 // manifest through the normal AppVideo pipeline. Only the visible card runs a
 // player, mirroring the home feed's one-player rule.
 
-// Plays a webrtc-mode broadcast. Mounted ONLY for the visible card.
-function WhepView({ url, style }: { url: string; style: object }) {
+// Plays a webrtc-mode broadcast. Mounted ONLY for the visible card. `contain`
+// letterboxes instead of cropping — used for horizontal broadcasts.
+function WhepView({ url, style, contain }: { url: string; style: object; contain?: boolean }) {
   const [streamURL, setStreamURL] = useState<string | null>(null);
   const RTCView = getRTCView();
   useEffect(() => {
@@ -46,15 +50,18 @@ function WhepView({ url, style }: { url: string; style: object }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
   if (!RTCView || !streamURL) return <View style={[style, { backgroundColor: '#000' }]} />;
-  return <RTCView streamURL={streamURL} objectFit="cover" style={style} />;
+  return <RTCView streamURL={streamURL} objectFit={contain ? 'contain' : 'cover'} style={style} />;
 }
 
 function LiveCard({
-  stream, height, active, onOpenProfile,
+  stream, height, active, ended, onOpenProfile,
 }: {
   stream: LiveStream;
   height: number;
   active: boolean;
+  // The broadcast officially ended while the viewer was on this card — show
+  // the "livestream ended" screen instead of yanking the page away.
+  ended?: boolean;
   onOpenProfile: (userId: string) => void;
 }) {
   const styles = useThemedStyles(makeStyles);
@@ -62,7 +69,9 @@ function LiveCard({
   const { profile } = useProfile();
   const insets = useSafeAreaInsets();
   const [viewers, setViewers] = useState(0);
-  const [chat, setChat] = useState<LiveChatMessage[]>([]);
+  // Burst-buffered chat (see LiveChatOverlay) — busy rooms coalesce into a few
+  // renders per second instead of one per message.
+  const { messages: chat, push: pushChat, clear: clearChat } = useBufferedChat();
   const [draft, setDraft] = useState('');
   const [donateOpen, setDonateOpen] = useState(false);
   const channelRef = useRef<ReturnType<typeof joinLiveChannel> | null>(null);
@@ -77,12 +86,13 @@ function LiveCard({
       userId: profile.id,
       name: profile.display_name || profile.username || 'Someone',
       avatarUrl: profile.avatar_url ?? null,
+      tier: displayedTier(profile),
       onViewers: setViewers,
-      onChat: (msg) => setChat((prev) => [...prev.slice(-40), msg]),
+      onChat: pushChat,
     });
     channelRef.current = handle;
-    return () => { handle.leave(); channelRef.current = null; setChat([]); setViewers(0); };
-  }, [active, stream.id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url]);
+    return () => { handle.leave(); channelRef.current = null; clearChat(); setViewers(0); };
+  }, [active, stream.id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url, pushChat, clearChat]);
 
   const send = () => {
     const text = draft.trim();
@@ -92,13 +102,38 @@ function LiveCard({
   };
 
   const name = stream.profile?.display_name || stream.profile?.username || '';
+  const hostTier = displayedTier(stream.profile);
+  // Horizontal broadcasts letterbox (black bars top/bottom, like vertical
+  // Laybell TV playback) instead of cover-cropping into a fake vertical.
+  // 'vertical' and 'both' are framed for the portrait feed, so they still fill.
+  const letterbox = stream.orientation === 'horizontal';
+
+  // After all hooks so the hook order never changes when a live ends mid-view.
+  if (ended) {
+    return (
+      <View style={{ height, backgroundColor: '#000' }}>
+        <View style={[StyleSheet.absoluteFill, styles.center]}>
+          {stream.profile?.avatar_url ? (
+            <Image source={{ uri: stream.profile.avatar_url }} style={styles.endedAvatar} />
+          ) : (
+            <LinearGradient colors={GRADIENTS.primary} style={styles.endedAvatar}>
+              <Text style={styles.endedInitial}>{(name || '?').charAt(0).toUpperCase()}</Text>
+            </LinearGradient>
+          )}
+          <Text style={[styles.endedHost, nameColor(hostTier)]} numberOfLines={1}>{name}</Text>
+          <Text style={styles.endedTitle}>{t('live.endedTitle')}</Text>
+          <Text style={styles.endedSub}>{t('live.endedSub')}</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={{ height, backgroundColor: '#000' }}>
       {active && (
         stream.mode === 'webrtc' ? (
           webrtcAvailable() ? (
-            <WhepView url={stream.playback_url} style={StyleSheet.absoluteFill} />
+            <WhepView url={stream.playback_url} style={StyleSheet.absoluteFill} contain={letterbox} />
           ) : (
             <View style={[StyleSheet.absoluteFill, styles.center]}>
               <Ionicons name="cloud-offline-outline" size={34} color="rgba(255,255,255,0.6)" />
@@ -109,7 +144,7 @@ function LiveCard({
           <AppVideo
             source={{ uri: stream.playback_url }}
             style={StyleSheet.absoluteFill}
-            contentFit="cover"
+            contentFit={letterbox ? 'contain' : 'cover'}
             active={active}
           />
         )
@@ -125,7 +160,7 @@ function LiveCard({
               <Text style={styles.hostInitial}>{(name || '?').charAt(0).toUpperCase()}</Text>
             </LinearGradient>
           )}
-          <Text style={styles.hostName} numberOfLines={1}>{name}</Text>
+          <Text style={[styles.hostName, nameColor(hostTier)]} numberOfLines={1}>{name}</Text>
         </TouchableOpacity>
         <View style={styles.livePill}>
           <Text style={styles.livePillText}>{t('live.live')}</Text>
@@ -142,35 +177,33 @@ function LiveCard({
         )}
       </View>
 
-      {/* Bottom overlay: title + chat + input */}
+      {/* Bottom overlay: title + chat + input. iOS KAV 'padding' REPLACES its
+          own style's paddingBottom with the keyboard height (0 when closed) —
+          so the real bottom padding, including the home-indicator inset, must
+          live on the inner view or the input row renders under the system bar. */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.bottomWrap}
         pointerEvents="box-none"
       >
-        {!!stream.title && <Text style={styles.title} numberOfLines={2}>{stream.title}</Text>}
-        <View style={styles.chatList} pointerEvents="none">
-          {chat.slice(-6).map((m) => (
-            <Text key={m.id} style={styles.chatLine} numberOfLines={2}>
-              <Text style={styles.chatName}>{m.name}  </Text>
-              {m.text}
-            </Text>
-          ))}
-        </View>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, { color: '#fff' }]}
-            placeholder={t('live.chatPlaceholder')}
-            placeholderTextColor="rgba(255,255,255,0.55)"
-            value={draft}
-            onChangeText={setDraft}
-            onSubmitEditing={send}
-            returnKeyType="send"
-            maxLength={300}
-          />
-          <TouchableOpacity onPress={send} style={styles.sendBtn} disabled={!draft.trim()}>
-            <Ionicons name="arrow-up" size={18} color={draft.trim() ? '#fff' : 'rgba(255,255,255,0.4)'} />
-          </TouchableOpacity>
+        <View style={[styles.bottomInner, { paddingBottom: insets.bottom + 14 }]} pointerEvents="box-none">
+          {!!stream.title && <Text style={styles.title} numberOfLines={2}>{stream.title}</Text>}
+          <LiveChatOverlay messages={chat} />
+          <View style={styles.inputRow}>
+            <TextInput
+              style={[styles.input, { color: '#fff' }]}
+              placeholder={t('live.chatPlaceholder')}
+              placeholderTextColor="rgba(255,255,255,0.55)"
+              value={draft}
+              onChangeText={setDraft}
+              onSubmitEditing={send}
+              returnKeyType="send"
+              maxLength={300}
+            />
+            <TouchableOpacity onPress={send} style={styles.sendBtn} disabled={!draft.trim()}>
+              <Ionicons name="arrow-up" size={18} color={draft.trim() ? '#fff' : 'rgba(255,255,255,0.4)'} />
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
 
@@ -202,16 +235,75 @@ export default function LiveScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [visibleId, setVisibleId] = useState<string | null>(null);
   const [pageH, setPageH] = useState(0);
+  // Streams whose broadcast officially ended (status → 'ended') while this feed
+  // was open. The card being watched stays mounted, flagged, and shows the
+  // "livestream ended" screen instead of vanishing mid-view. Refs mirror the
+  // state so load()'s stable closure reads current values.
+  const [endedIds, setEndedIds] = useState<Set<string>>(() => new Set());
+  const endedRef = useRef(endedIds);
+  const visibleRef = useRef<string | null>(null);
+  useEffect(() => { visibleRef.current = visibleId; }, [visibleId]);
+
+  // Watching a horizontal broadcast lets the viewer turn the phone — sensor
+  // rotation unlocks (same as landscape reels) so the letterboxed stream can go
+  // fullscreen-landscape. Any other card (or an ended one) locks portrait, and
+  // leaving the screen always restores portrait.
+  const visibleStream = streams.find((s) => s.id === visibleId);
+  const visibleHorizontal =
+    !!visibleStream && visibleStream.orientation === 'horizontal' && !endedIds.has(visibleStream.id);
+  useEffect(() => {
+    if (isFocused && visibleHorizontal) ScreenOrientation.unlockAsync().catch(() => {});
+    else ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, [isFocused, visibleHorizontal]);
+  useEffect(() => () => { ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {}); }, []);
+
+  // Rotating swaps the pager's page height while the scroll offset stays in
+  // pixels — re-align the list to the card being watched so it never lands
+  // half-way between two streams after a turn.
+  const listRef = useRef<FlatList<LiveStream>>(null);
+  useEffect(() => {
+    if (!pageH || !visibleRef.current) return;
+    const idx = streams.findIndex((s) => s.id === visibleRef.current);
+    if (idx > 0) listRef.current?.scrollToOffset({ offset: idx * pageH, animated: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageH]);
+
+  const markEnded = useCallback((id: string) => {
+    setEndedIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      endedRef.current = next;
+      return next;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     try {
       const rows = await fetchLiveStreams();
-      setStreams(rows);
+      setStreams((prev) => {
+        // Keep the card the viewer is actually watching in the list after its
+        // broadcast ends (it drops out of the live-only fetch). Re-inserting at
+        // its previous index keeps the pager's scroll position on the same card.
+        const keepId = visibleRef.current;
+        if (keepId && endedRef.current.has(keepId) && !rows.some((r) => r.id === keepId)) {
+          const kept = prev.find((r) => r.id === keepId);
+          if (kept) {
+            const next = [...rows];
+            const idx = prev.findIndex((r) => r.id === keepId);
+            next.splice(Math.max(0, Math.min(idx, next.length)), 0, kept);
+            return next;
+          }
+        }
+        return rows;
+      });
       setVisibleId((cur) => {
         // First load from TV: honor the requested stream if it's live.
         const want = startStreamId.current;
         if (want && rows.some((r) => r.id === want)) { startStreamId.current = null; return want; }
-        return cur && rows.some((r) => r.id === cur) ? cur : rows[0]?.id ?? null;
+        // An ended-but-kept card stays current until the viewer moves on.
+        if (cur && (rows.some((r) => r.id === cur) || endedRef.current.has(cur))) return cur;
+        return rows[0]?.id ?? null;
       });
     } catch { /* offline / pre-migration */ }
     setLoading(false);
@@ -223,10 +315,16 @@ export default function LiveScreen() {
     // Streams starting/ending while you're here update the rail live.
     const channel = supabase
       .channel('live-streams-feed')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_streams' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_streams' }, (payload: any) => {
+        // An official end (host tapped End, status flips to 'ended') — or the
+        // row being deleted — flags the card before the refetch prunes it.
+        const id = payload?.new?.id ?? payload?.old?.id;
+        if (id && (payload?.eventType === 'DELETE' || payload?.new?.status === 'ended')) markEnded(id);
+        load();
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [isFocused, load]);
+  }, [isFocused, load, markEnded]);
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item: LiveStream }> }) => {
@@ -263,6 +361,7 @@ export default function LiveScreen() {
         ) : (
           pageH > 0 && (
             <FlatList
+              ref={listRef}
               data={streams}
               keyExtractor={(s) => s.id}
               pagingEnabled
@@ -288,7 +387,8 @@ export default function LiveScreen() {
                 <LiveCard
                   stream={item}
                   height={pageH}
-                  active={isFocused && item.id === visibleId}
+                  active={isFocused && item.id === visibleId && !endedIds.has(item.id)}
+                  ended={endedIds.has(item.id)}
                   onOpenProfile={openProfile}
                 />
               )}
@@ -335,11 +435,15 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   viewerText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   donatePill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.primary, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
   donateText: { color: '#fff', fontSize: 11, fontWeight: '800' },
-  bottomWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 14, paddingBottom: 14, gap: 8 },
+  bottomWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  bottomInner: { paddingHorizontal: 14, gap: 8 },
+  // "Livestream ended" screen (host avatar + name over black).
+  endedAvatar: { width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  endedInitial: { color: '#fff', fontSize: 28, fontWeight: '700' },
+  endedHost: { color: '#fff', fontSize: 15, fontWeight: '700', maxWidth: '80%' },
+  endedTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 4 },
+  endedSub: { color: 'rgba(255,255,255,0.6)', fontSize: 13, textAlign: 'center', paddingHorizontal: 40 },
   title: { color: '#fff', fontSize: 14, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
-  chatList: { gap: 5 },
-  chatLine: { color: 'rgba(255,255,255,0.92)', fontSize: 13, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
-  chatName: { fontWeight: '700', color: '#fff' },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   input: { flex: 1, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 10 : 7, fontSize: 14 },
   sendBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
