@@ -24,7 +24,9 @@ const MIN_DURATION_MS = 20_000;
 // full-player font), so 4000 leaves a wide margin (and covers long credit rows).
 const MEASURE_W = 4000;
 
-function Marquee({ centered, children }: { centered?: boolean; children: ReactNode }) {
+// Exported: the TV remote reuses this for long video titles (scroll-through,
+// pause, snap back — same behavior as the song card).
+export function Marquee({ centered, children }: { centered?: boolean; children: ReactNode }) {
   const [boxW, setBoxW] = useState(0);
   const [contentW, setContentW] = useState(0);
   const x = useRef(new Animated.Value(0)).current;

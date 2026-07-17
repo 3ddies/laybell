@@ -16,6 +16,27 @@ import type { LiveStream } from './live';
 
 // HLS mime — tells the default media receiver to use its HLS player.
 export const HLS_CONTENT_TYPE = 'application/x-mpegURL';
+export const DASH_CONTENT_TYPE = 'application/dash+xml';
+
+// Cloudflare Stream serves every VOD as BOTH `manifest/video.m3u8` (HLS) and
+// `manifest/video.mpd` (DASH) from the same base URL, plus a poster frame at
+// `thumbnails/thumbnail.jpg`.
+const CF_HLS_SUFFIX = /\/manifest\/video\.m3u8(\?.*)?$/;
+
+export function isCfStreamHls(url: string): boolean {
+  return url.includes('cloudflarestream.com') && CF_HLS_SUFFIX.test(url);
+}
+
+/** The same Cloudflare Stream video as a DASH manifest. */
+export function toCfDash(url: string): string {
+  return url.replace(CF_HLS_SUFFIX, '/manifest/video.mpd');
+}
+
+/** Poster frame for a Cloudflare Stream video (fallback when a post has no thumbnail). */
+export function cfStreamThumbnail(url: string): string | null {
+  if (!isCfStreamHls(url)) return null;
+  return url.replace(CF_HLS_SUFFIX, '/thumbnails/thumbnail.jpg?height=720');
+}
 
 export type CastItem = {
   /** The Laybell post/stream id — used to de-dupe and to map back to the queue. */
@@ -26,6 +47,8 @@ export type CastItem = {
   subtitle?: string;
   /** Poster/thumbnail shown on the TV before the first frame + in the remote. */
   poster?: string | null;
+  /** The post's author — the remote's like/comment actions notify them. */
+  authorId?: string | null;
   isLive?: boolean;
 };
 
@@ -39,7 +62,10 @@ export function postToCastItem(p: any): CastItem | null {
     url: p.media_url,
     title,
     subtitle: username,
-    poster: p.thumbnail_url ?? null,
+    // Callers that haven't resolved the post's thumbnail yet (or old posts
+    // without one) still get a poster — Cloudflare serves a frame per video.
+    poster: p.thumbnail_url ?? cfStreamThumbnail(p.media_url),
+    authorId: p.user_id ?? null,
     isLive: false,
   };
 }
@@ -73,10 +99,22 @@ export function liveToCastItem(l: LiveStream): CastItem | null {
  * so this module never has to import the native package's types.
  */
 export function buildMediaInfo(item: CastItem): any {
+  // VOD prefers the DASH manifest: Cloudflare's fMP4 HLS starts a few seconds
+  // into the clip on the Default Media Receiver (the first fragment's
+  // timestamps don't begin at zero, and HLS leaves the join point to the
+  // player), while the DASH timeline is explicit and zero-based, so playback
+  // starts at the true 0:00. Lives stay HLS (that's their only manifest).
+  const dash = !item.isLive && isCfStreamHls(item.url);
   return {
-    contentUrl: item.url,
-    contentType: HLS_CONTENT_TYPE,
+    contentUrl: dash ? toCfDash(item.url) : item.url,
+    contentType: dash ? DASH_CONTENT_TYPE : HLS_CONTENT_TYPE,
     streamType: item.isLive ? 'live' : 'buffered',
+    // Non-Cloudflare VOD HLS (shouldn't exist, but stay safe): declare CMAF
+    // segments — the receiver otherwise assumes MPEG-TS, "loads" the item
+    // (title + poster show) and then silently never plays. Lives are left to
+    // the receiver's default: Stream Live segment format is unverified, and
+    // mis-flagging breaks it the same way.
+    ...(item.isLive || dash ? {} : { hlsSegmentFormat: 'FMP4', hlsVideoSegmentFormat: 'FMP4' }),
     metadata: {
       type: 'movie',
       title: item.title,

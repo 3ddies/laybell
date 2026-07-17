@@ -19,8 +19,12 @@ import { useProfile } from './ProfileContext';
 import { useTranslation } from './LanguageContext';
 import { isReposted, addRepost, removeRepost } from '../lib/reposts';
 import { useDownloadAction } from '../hooks/useDownloadAction';
+import { aspectToNumber } from '../lib/aspectRatio';
+import { postToCastItem, type CastItem } from '../lib/cast';
+import { useCast } from './CastContext';
 import AddToPlaylistModal from '../components/AddToPlaylistModal';
 import GifMakerModal from '../components/GifMakerModal';
+import TVConnectModal from '../components/TVConnectModal';
 
 export type PostOptionsArgs = {
   // postId is optional: omit it to show a profile-only (user) menu — e.g. the
@@ -73,6 +77,7 @@ export function usePostOptions() {
 
 export function PostOptionsProvider({ children }: { children: React.ReactNode }) {
   const { profile } = useProfile();
+  const cast = useCast();
   const [opts, setOpts] = useState<PostOptionsArgs | null>(null);
   const [visible, setVisible] = useState(false);
   // "Add to playlist" opens a modal owned here (so it works from any 3-dot menu).
@@ -80,6 +85,9 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
   // "Make GIF" opens the maker on the tapped video (owned here so it floats above
   // the sheet's overlay). {url, dur} of the source video, or null when closed.
   const [gifVideo, setGifVideo] = useState<{ url: string; dur: number; postId: string | null } | null>(null);
+  // "Laybell TV" on a landscape video with no session up yet: the video waits
+  // here while the connect wizard runs, then plays the moment the TV connects.
+  const [tvConnect, setTvConnect] = useState<CastItem | null>(null);
 
   const show = (o: PostOptionsArgs) => { selection(); setOpts(o); setVisible(true); }; // native tick as the 3-dot / long-press sheet opens
 
@@ -91,6 +99,12 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
         onClose={() => { setVisible(false); opts?.onDismiss?.(); }}
         onAddToPlaylist={setPlaylistPostId}
         onMakeGif={(url, dur, postId) => setGifVideo({ url, dur, postId: postId ?? null })}
+        onLaybellTv={(item) => {
+          // Already casting → throw it straight to the TV; otherwise run the
+          // guided connect wizard with this video queued up.
+          if (cast.connected) cast.cast(item);
+          else setTvConnect(item);
+        }}
       />
       <AddToPlaylistModal
         visible={!!playlistPostId}
@@ -117,6 +131,11 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
           native-modal swipe-back screens (playlist viewer, settings, …) —
           otherwise it opens invisibly behind them. */}
       {Platform.OS === 'ios' ? <FullWindowOverlay>{sheets}</FullWindowOverlay> : sheets}
+      {/* The TV connect wizard is a REAL native Modal, so it must live OUTSIDE
+          the FullWindowOverlay (presenting a Modal from the overlay's window
+          deadlocks iOS — see the sheet's presentation note). The 3-dot sheet is
+          already dismissed by the time this opens, so nothing overlaps. */}
+      <TVConnectModal visible={!!tvConnect} onClose={() => setTvConnect(null)} pendingItem={tvConnect} />
     </PostOptionsContext.Provider>
   );
 }
@@ -139,12 +158,13 @@ type Opt = {
   onPress: () => void;
 };
 
-export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMakeGif }: {
+export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMakeGif, onLaybellTv }: {
   visible: boolean;
   opts: PostOptionsArgs | null;
   onClose: () => void;
   onAddToPlaylist: (postId: string) => void;
   onMakeGif: (videoUrl: string, durationSec: number, postId?: string | null) => void;
+  onLaybellTv: (item: CastItem) => void;
 }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -173,6 +193,12 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   // Creator opt-out: when the video's owner turned off "Allow GIFs" at posting,
   // hide the Make GIF option. Defaults true (opt-out only, safe pre-migration).
   const [allowGifs, setAllowGifs] = useState(true);
+  // Laybell TV eligibility (landscape video — mirrors lib/tv.isHorizontalVideo)
+  // + the caption/thumbnail the cast payload shows on the TV. Back-filled by the
+  // same lazy video fetch; null aspect (pre-fetch) keeps the option hidden.
+  const [vidAspect, setVidAspect] = useState<any>(null);
+  const [vidCaption, setVidCaption] = useState<string | null>(null);
+  const [vidThumb, setVidThumb] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -218,19 +244,26 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
       } else {
         setDlUrl(null); setDlCover(null); setDownloadable(true); setDlTitle('');
       }
-      // Video posts: resolve media_url + duration so "Make GIF" can open the maker.
+      // Video posts: resolve media_url + duration so "Make GIF" can open the
+      // maker, plus aspect/caption/thumbnail so "Laybell TV" can appear on
+      // landscape videos and cast with the right title/poster.
       if (o?.postId && o.mediaType === 'video') {
         setVidUrl(o.mediaUrl ?? null); setVidDur(0); setAllowGifs(true);
-        supabase.from('posts').select('media_url, duration_seconds, allow_gifs').eq('id', o.postId).maybeSingle()
+        setVidAspect(null); setVidCaption(null); setVidThumb(null);
+        supabase.from('posts').select('media_url, duration_seconds, allow_gifs, aspect_ratio, caption, thumbnail_url').eq('id', o.postId).maybeSingle()
           .then(({ data }) => {
             const d = data as any;
             if (!d) return;
             setVidUrl(d.media_url ?? o.mediaUrl ?? null);
             setVidDur(Number(d.duration_seconds) || 0);
             setAllowGifs(d.allow_gifs !== false);
+            setVidAspect(d.aspect_ratio ?? null);
+            setVidCaption(d.caption ?? null);
+            setVidThumb(d.thumbnail_url ?? null);
           }, () => {});
       } else {
         setVidUrl(null); setVidDur(0); setAllowGifs(true);
+        setVidAspect(null); setVidCaption(null); setVidThumb(null);
       }
     }
   }, [visible]);
@@ -370,6 +403,28 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
       options.push({ key: 'artist', label: t('postOptions.artist'), icon: 'person-outline',
         onPress: () => { const o = optsRef.current; dismissThen(() => { o?.onNavigate?.(); if (o?.authorId) router.push(`/profile/${o.authorId}`); }); } });
     }
+  }
+
+  // ── Laybell TV (landscape videos, any viewer) ──────────────────────────────
+  // Same eligibility as the Laybell TV hub (aspect > 1; null pre-fetch aspect
+  // stays hidden). Casting already? The video goes straight to the TV. Not yet?
+  // The connect wizard opens with this video queued — it plays on connect.
+  if (hasPost && opts?.mediaType === 'video' && aspectToNumber(vidAspect, 9 / 16) > 1) {
+    options.push({ key: 'laybelltv', label: t('tv.title'), icon: 'tv-outline',
+      onPress: () => {
+        const o = optsRef.current;
+        const url = vidUrl ?? o?.mediaUrl ?? null;
+        if (!o?.postId || !url) { dismiss(); return; }
+        const item = postToCastItem({
+          id: o.postId,
+          media_url: url,
+          caption: vidCaption,
+          thumbnail_url: vidThumb,
+          user_id: o.authorId,
+          profiles: { username: o.authorName },
+        });
+        dismissThen(() => { if (item) onLaybellTv(item); });
+      } });
   }
 
   // ── Make GIF (any video, any viewer — unless the creator opted out) ────────

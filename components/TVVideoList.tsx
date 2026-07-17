@@ -36,7 +36,7 @@ const COL_THUMB_H = COL_W * (9 / 16);
 const FEAT_W = Math.round((SCREEN_W - H_PADDING * 2) * 0.42);
 const FEAT_H = Math.round(FEAT_W * 1.3);
 
-export default function TVVideoList({ posts, featured, currentUserId, refreshing, onRefresh, bottomPad, emptyText, onPostDeleted, castActive, onCast }: {
+export default function TVVideoList({ posts, featured, currentUserId, refreshing, onRefresh, bottomPad, emptyText, onPostDeleted, castActive, onCast, castingId }: {
   posts: TVPost[];
   // Personalized top picks shown as portrait tiles above the grid (omit/empty to
   // hide the row — e.g. while searching).
@@ -51,6 +51,8 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
   // instead of opening the on-phone reel viewer.
   castActive?: boolean;
   onCast?: (post: TVPost) => void;
+  // The post currently playing on the TV — its tile gets an "On TV" badge.
+  castingId?: string | null;
 }) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -68,6 +70,18 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
       : undefined;
     router.push({ pathname: '/reel/[id]', params: { id: p.id, post: JSON.stringify(p), ...(src ? { src } : {}) } });
   };
+
+  // Corner badge: the tile playing on the TV right now gets a labeled "On TV"
+  // chip; everything else keeps the plain play glyph.
+  const badgeFor = (p: TVPost) =>
+    castingId === p.id ? (
+      <View style={styles.onTvBadge}>
+        <Ionicons name="tv" size={10} color="#fff" />
+        <Text style={styles.onTvText}>{t('tv.onTv')}</Text>
+      </View>
+    ) : (
+      <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
+    );
 
   const longPressFor = (p: TVPost) =>
     currentUserId
@@ -102,7 +116,7 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
             onLongPress={longPressFor(p)}
           >
             <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.featThumb} />
-            <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
+            {badgeFor(p)}
             <LinearGradient colors={['transparent', 'rgba(0,0,0,0.78)']} style={styles.featOverlay}>
               {!!p.profiles?.username && <Text style={styles.featUser} numberOfLines={1}>@{p.profiles.username}</Text>}
             </LinearGradient>
@@ -137,7 +151,7 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
           >
             <View style={styles.thumbWrap}>
               <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.thumb} />
-              <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
+              {badgeFor(p)}
               <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
             </View>
             <Text style={styles.caption} numberOfLines={2}>{title}</Text>
@@ -189,6 +203,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     position: 'absolute', top: 7, left: 7, width: 24, height: 24, borderRadius: 12,
     backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
   },
+  onTvBadge: {
+    position: 'absolute', top: 7, left: 7, height: 24, borderRadius: 12,
+    backgroundColor: c.primary, flexDirection: 'row', alignItems: 'center',
+    gap: 4, paddingHorizontal: 8,
+  },
+  onTvText: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
   empty: { alignItems: 'center', gap: 10, marginTop: 40 },
   emptyText: { color: c.textTertiary, fontSize: 13, textAlign: 'center', paddingHorizontal: 30 },
 });

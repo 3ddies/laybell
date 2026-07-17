@@ -15,9 +15,9 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchHorizontalVideos, matchesQuery, rankVideosForUser } from '../../lib/tv';
 import { fetchLiveStreams, type LiveStream } from '../../lib/live';
+import { selection } from '../../lib/haptics';
 import { useCast } from '../../contexts/CastContext';
-import CastButton from '../../components/CastButton';
-import AirPlayButton from '../../components/AirPlayButton';
+import TVConnectModal from '../../components/TVConnectModal';
 import { postToCastItem, liveToCastItem, type CastItem } from '../../lib/cast';
 
 // Laybell TV — a horizontal-only video hub. It adds NO new media types: the
@@ -48,6 +48,7 @@ export default function LaybellTVScreen() {
   const [tab, setTab] = useState<Tab>('videos');
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [connectOpen, setConnectOpen] = useState(false);
 
   const [videos, setVideos] = useState<any[]>([]);
   // `ranked` = videos in personalized relevance order (drives the Recommended row
@@ -91,6 +92,7 @@ export default function LaybellTVScreen() {
     if (!item) return;
     const queue = (searching ? gridVideos : ranked)
       .map(postToCastItem).filter(Boolean) as CastItem[];
+    selection(); // a tick as the video leaves the phone for the TV
     cast.cast(item, queue);
   };
   // Returns true if it cast (RTMP lives only — WebRTC lives can't cast, so the
@@ -99,6 +101,7 @@ export default function LaybellTVScreen() {
     const item = liveToCastItem(live);
     if (!item) return false;
     const queue = lives.map(liveToCastItem).filter(Boolean) as CastItem[];
+    selection();
     cast.cast(item, queue);
     return true;
   };
@@ -116,15 +119,45 @@ export default function LaybellTVScreen() {
             <Text style={styles.headerTitle}>{t('tv.title')}</Text>
           </View>
           <View style={styles.headerRight}>
-            {/* AirPlay (iOS → Apple TV / AirPlay-2 TVs) + Google Cast (Chromecast /
-                Google TV). Each self-hides when its transport isn't available. */}
-            <AirPlayButton size={24} tint={colors.text} />
-            <CastButton size={24} tint={colors.text} />
-            <TouchableOpacity onPress={() => router.push('/live/go-live')} style={styles.headerBtn}>
-              <Ionicons name="radio-outline" size={20} color={colors.text} />
+            {/* The SAME live button as the Home header (tv glyph + red LIVE
+                disc) → the live feed. All connect affordances live in the
+                "Watch on TV" banner below — one obvious way in, no icon soup. */}
+            <TouchableOpacity style={styles.liveBtn} onPress={() => router.push('/live')} activeOpacity={0.7}>
+              <Ionicons name="tv-outline" size={30} color={colors.text} />
+              <View style={styles.liveDisc}>
+                <Text style={styles.liveDiscText}>LIVE</Text>
+              </View>
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* "Watch on TV" — the ALWAYS-VISIBLE way in. The old affordances (the
+            AirPlay/Cast header icons) only appear once a device is discovered,
+            which reads as "the feature doesn't exist" — this banner opens the
+            guided connect wizard no matter what, and flips to a live "casting
+            to" state once a session is up. */}
+        <TouchableOpacity onPress={() => setConnectOpen(true)} activeOpacity={0.9} style={styles.tvBannerWrap}>
+          {cast.connected ? (
+            <View style={[styles.tvBanner, styles.tvBannerConnected]}>
+              <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+              <Text style={styles.tvBannerConnectedText} numberOfLines={1}>
+                {t('tv.cast.castingTo', { device: cast.deviceName || t('tv.cast.yourTv') })}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </View>
+          ) : (
+            <LinearGradient
+              colors={GRADIENTS.primary}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.tvBanner}
+            >
+              <Ionicons name="tv" size={18} color="#fff" />
+              <Text style={styles.tvBannerText}>{t('tv.setup.watchOnTv')}</Text>
+              <Ionicons name="chevron-forward" size={16} color="#fff" />
+            </LinearGradient>
+          )}
+        </TouchableOpacity>
 
         {/* Segmented tabs + search circle */}
         <View style={styles.tabRow}>
@@ -193,6 +226,7 @@ export default function LaybellTVScreen() {
               emptyText={query.trim() ? t('tv.noResults') : t('tv.noVideos')}
               castActive={cast.connected}
               onCast={castVideo}
+              castingId={cast.current?.id ?? null}
               onPostDeleted={(id) => {
                 setVideos((prev) => prev.filter((p) => p.id !== id));
                 setRanked((prev) => prev.filter((p) => p.id !== id));
@@ -252,6 +286,8 @@ export default function LaybellTVScreen() {
             }
           />
         )}
+
+        <TVConnectModal visible={connectOpen} onClose={() => setConnectOpen(false)} />
       </View>
     </SwipeBackPager>
   );
@@ -261,9 +297,28 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: c.background },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 6 },
+  // Mirrors the Home header's live button (tv glyph + red LIVE disc on its screen).
+  liveBtn: { position: 'relative', padding: 2, marginTop: 2 },
+  liveDisc: {
+    position: 'absolute',
+    top: 7, left: 8.5, width: 17, height: 17, borderRadius: 8.5,
+    backgroundColor: '#F43F5E', alignItems: 'center', justifyContent: 'center',
+  },
+  liveDiscText: { color: '#fff', fontSize: 5.5, fontWeight: '800', letterSpacing: 0.2 },
   titleWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   headerTitle: { color: c.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  tvBannerWrap: { marginHorizontal: SPACING.md, marginTop: 6 },
+  tvBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderRadius: RADIUS.full, paddingVertical: 11, paddingHorizontal: 16,
+  },
+  tvBannerText: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: -0.1 },
+  tvBannerConnected: {
+    backgroundColor: c.surfaceLight,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+  },
+  tvBannerConnectedText: { flex: 1, color: c.text, fontSize: 13.5, fontWeight: '700' },
   tabRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, marginTop: 4, marginBottom: 10 },
   segment: { flex: 1, flexDirection: 'row', backgroundColor: c.surfaceLight, borderRadius: RADIUS.full, padding: 3 },
   segmentBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: RADIUS.full },

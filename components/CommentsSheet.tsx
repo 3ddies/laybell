@@ -21,13 +21,16 @@ function rubber(excess: number, max = 38): number {
 // Drag the grab bar UP to expand, DOWN to collapse, further DOWN to dismiss.
 // Transparent so a playing reel stays visible behind it; the comment list scrolls
 // on its own (only the top bar is the drag grip).
-export default function CommentsSheet({ visible, postId, ownerId, onClose, onPosted }: {
+export default function CommentsSheet({ visible, postId, ownerId, onClose, onPosted, inOverlay }: {
   visible: boolean;
   postId: string;
   ownerId?: string | null;
   onClose: () => void;
   // Forwarded to Comments — fires when a comment is actually submitted.
   onPosted?: () => void;
+  // True when hosted inside the iOS FullWindowOverlay (the TV remote) — renders
+  // as a plain view instead of a real Modal (see the return-site comment).
+  inOverlay?: boolean;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -164,8 +167,7 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose, onPos
     }
   }
 
-  return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent supportedOrientations={['portrait', 'landscape']}>
+  const content = (
       <View style={styles.overlay}>
         <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
           {/* While typing, a tap outside the keyboard ONLY dismisses the keyboard
@@ -202,6 +204,19 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose, onPos
         </Animated.View>
         </Animated.View>
       </View>
+  );
+
+  // Hosted inside the iOS FullWindowOverlay (the TV remote): a real <Modal>
+  // presented from an overlay window deadlocks, and one presented from the main
+  // window can't show over native-modal routes (/tv itself) — so the overlay
+  // host renders the sheet as a plain absolute-fill view, stacked above the
+  // remote by z-order. Everywhere else keeps the real Modal.
+  if (inOverlay && Platform.OS === 'ios') {
+    return visible ? <View style={[StyleSheet.absoluteFill, { zIndex: 80 }]}>{content}</View> : null;
+  }
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent supportedOrientations={['portrait', 'landscape']}>
+      {content}
     </Modal>
   );
 }
