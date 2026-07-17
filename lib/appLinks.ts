@@ -23,10 +23,16 @@ export const STORE_URLS = {
   android: 'https://play.google.com/store/apps/details?id=com.laybell.app',
 } as const;
 
+// Where the static landing pages actually LIVE right now: GitHub Pages
+// auto-publishes web/ on every push. laybell.app (GoDaddy builder) can't host
+// these files — open.html 404s there — so QR/share links must use this origin
+// until the domain is mapped onto Pages (go-live checklist item).
+export const STATIC_WEB_ORIGIN = 'https://3ddies.github.io/laybell';
+
 // The QR/share URL for a user's profile. `userId` is the profiles.id used by the
 // in-app /profile/[id] route.
 export function profileShareUrl(userId: string): string {
-  return `${WEB_ORIGIN}/open.html?p=${encodeURIComponent('profile/' + userId)}`;
+  return `${STATIC_WEB_ORIGIN}/open.html?p=${encodeURIComponent('profile/' + userId)}`;
 }
 
 // ── Rich share pages (server-rendered Open Graph) ───────────────────────────

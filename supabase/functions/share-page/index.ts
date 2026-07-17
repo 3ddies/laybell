@@ -18,7 +18,11 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_ANON_KEY') ?? '',
 );
 
-const WEB = 'https://laybell.app';
+// Where the static web pages actually LIVE. laybell.app is currently a
+// GoDaddy builder site that can't host these files (open.html/logo.png 404
+// there) — GitHub Pages auto-publishes the repo's web/ folder instead. When
+// the laybell.app domain is mapped onto Pages, flip this back.
+const WEB = 'https://3ddies.github.io/laybell';
 const LOGO = `${WEB}/logo.png`;
 const AUDIO_TYPES = ['audio', 'podcast', 'audiobook'];
 
