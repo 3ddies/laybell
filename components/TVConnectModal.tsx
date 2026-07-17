@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, Animated, Easing, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,6 +8,7 @@ import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../constants/them
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { castNativeAvailable, useCast } from '../contexts/CastContext';
+import { selection } from '../lib/haptics';
 import {
   TV_BRANDS, brandById, loadSavedBrandId, saveBrandId, transportsFor, type TVBrand, type TVTransport,
 } from '../lib/tvSetup';
@@ -93,6 +94,21 @@ export default function TVConnectModal({ visible, onClose, pendingItem }: {
     saveBrandId(b.id);
   };
 
+  // "Connecting…" screen pulse — the beat between picking a device in the
+  // native dialog and the session coming up is SECONDS long; without this the
+  // wizard just sits on screen 2 and the tap feels like it did nothing.
+  const pulse = useRef(new Animated.Value(0)).current;
+  const connecting = visible && cast.connecting && !cast.connected;
+  useEffect(() => {
+    if (!connecting) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [connecting, pulse]);
+
   const airplaySupported = Platform.OS === 'ios' && !!VideoAirPlayButton;
   const CastNativeButton = castNativeAvailable ? RNGC?.CastButton : null;
 
@@ -136,6 +152,22 @@ export default function TVConnectModal({ visible, onClose, pendingItem }: {
               <TouchableOpacity onPress={cast.disconnect} style={styles.linkBtn}>
                 <Text style={styles.linkText}>{t('tv.setup.disconnect')}</Text>
               </TouchableOpacity>
+            </View>
+          ) : connecting ? (
+            /* ── Screen 2.5: connecting — the device is picked, the session is
+                coming up. A pulsing TV + excited copy so the seconds-long
+                handshake reads as "it's happening!" instead of a dead app. */
+            <View style={styles.doneWrap}>
+              <Animated.View
+                style={{ transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }] }}
+              >
+                <LinearGradient colors={GRADIENTS.primary} style={styles.doneCircle}>
+                  <Ionicons name="tv" size={40} color="#fff" />
+                </LinearGradient>
+              </Animated.View>
+              <Text style={styles.doneTitle}>{t('tv.setup.connectingTitle')}</Text>
+              <Text style={styles.doneBody}>{t('tv.setup.connectingBody')}</Text>
+              <ActivityIndicator size="small" color={colors.primary} style={styles.connectingSpinner} />
             </View>
           ) : !brand ? (
             /* ── Screen 1: which TV? ───────────────────────────────────────── */
@@ -197,7 +229,11 @@ export default function TVConnectModal({ visible, onClose, pendingItem }: {
                 {transports.map((tr) => {
                   if (tr === 'airplay') {
                     return airplaySupported ? (
-                      <View key="airplay" style={styles.primaryWrap}>
+                      /* onTouchStart: the tap lands on the INVISIBLE native
+                         button, so nothing in our JS acknowledges it — a
+                         haptic tick is the instant "got it" while the system
+                         picker spins up. */
+                      <View key="airplay" style={styles.primaryWrap} onTouchStart={() => selection()}>
                         <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtn}>
                           <Ionicons name="tv-outline" size={18} color="#fff" />
                           <Text style={styles.primaryText}>{t('tv.setup.connectAirplay')}</Text>
@@ -223,7 +259,9 @@ export default function TVConnectModal({ visible, onClose, pendingItem }: {
                   }
                   // tr === 'cast'
                   return CastNativeButton ? (
-                    <View key="cast" style={styles.primaryWrap}>
+                    /* onTouchStart: same instant haptic ack as the AirPlay
+                       pill — the native Cast dialog can take a beat to show. */
+                    <View key="cast" style={styles.primaryWrap} onTouchStart={() => selection()}>
                       <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtn}>
                         <Ionicons name="logo-google" size={18} color="#fff" />
                         <Text style={styles.primaryText}>{t('tv.setup.connectCast')}</Text>
@@ -345,8 +383,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   troubleTitle: { color: c.text, fontSize: 13, fontWeight: '700' },
   troubleBody: { color: c.textTertiary, fontSize: 12.5, lineHeight: 18 },
 
-  // Done screen
+  // Done + connecting screens
   doneWrap: { alignItems: 'center', paddingTop: 40, gap: 10 },
+  connectingSpinner: { marginTop: 6 },
   doneCircle: { width: 84, height: 84, borderRadius: 42, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   doneTitle: { color: c.text, fontSize: 20, fontWeight: '800' },
   doneBody: { color: c.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', paddingHorizontal: 20 },

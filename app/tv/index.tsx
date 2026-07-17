@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Image, RefreshControl, Dimensions,
 } from 'react-native';
@@ -74,6 +74,15 @@ export default function LaybellTVScreen() {
 
   useEffect(() => { loadVideos(); loadLives(); }, [loadVideos, loadLives]);
 
+  // Leaving the Laybell TV area ends the TV session too — the cast connection
+  // shouldn't outlive the hub that owns it. Only a real exit (back-swipe /
+  // chevron) unmounts this screen; pushing deeper (/live, a reel) keeps it
+  // mounted, so those don't disconnect. Ref: the cleanup must see the LIVE
+  // cast state at exit time, not the mount-time snapshot.
+  const castRef = useRef(cast);
+  castRef.current = cast;
+  useEffect(() => () => { if (castRef.current.connected) castRef.current.disconnect(); }, []);
+
   // Searching flattens to a single 2-up grid of matches. Otherwise the top 4
   // personalized picks become the Recommended row and the rest fill the grid.
   const searching = query.trim().length > 0;
@@ -138,12 +147,14 @@ export default function LaybellTVScreen() {
             to" state once a session is up. */}
         <TouchableOpacity onPress={() => setConnectOpen(true)} activeOpacity={0.9} style={styles.tvBannerWrap}>
           {cast.connected ? (
+            /* Connected reads as GO: solid green bubble, white text — the same
+               visual weight as the gradient "Watch on TV" pill it replaces. */
             <View style={[styles.tvBanner, styles.tvBannerConnected]}>
-              <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+              <Ionicons name="checkmark-circle" size={18} color="#fff" />
               <Text style={styles.tvBannerConnectedText} numberOfLines={1}>
                 {t('tv.cast.castingTo', { device: cast.deviceName || t('tv.cast.yourTv') })}
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+              <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.85)" />
             </View>
           ) : (
             <LinearGradient
@@ -314,11 +325,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     borderRadius: RADIUS.full, paddingVertical: 11, paddingHorizontal: 16,
   },
   tvBannerText: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: -0.1 },
-  tvBannerConnected: {
-    backgroundColor: c.surfaceLight,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
-  },
-  tvBannerConnectedText: { flex: 1, color: c.text, fontSize: 13.5, fontWeight: '700' },
+  tvBannerConnected: { backgroundColor: c.success },
+  tvBannerConnectedText: { flex: 1, color: '#fff', fontSize: 13.5, fontWeight: '700' },
   tabRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, marginTop: 4, marginBottom: 10 },
   segment: { flex: 1, flexDirection: 'row', backgroundColor: c.surfaceLight, borderRadius: RADIUS.full, padding: 3 },
   segmentBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: RADIUS.full },

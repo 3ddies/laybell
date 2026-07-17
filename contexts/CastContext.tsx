@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NativeModules } from 'react-native';
-import { buildMediaInfo, type CastItem } from '../lib/cast';
+import { buildMediaInfo, buildSplashMediaInfo, TV_SPLASH_MS, type CastItem } from '../lib/cast';
+import type { SharePayload } from './ShareContext';
 
 // ─── Laybell TV casting (Google Cast / Chromecast) ───────────────────────────
 //
@@ -39,6 +40,9 @@ export type CastValue = {
   available: boolean;
   /** A Cast session is live — the phone is now a remote. */
   connected: boolean;
+  /** A session is being established (device picked, handshake running) — the
+      connect wizard shows its "connecting" excitement screen off this. */
+  connecting: boolean;
   /** Friendly name of the connected device, when known. */
   deviceName: string | null;
   /** What's currently loaded on the TV. */
@@ -90,6 +94,15 @@ export type CastValue = {
   commentsFor: { postId: string; ownerId: string | null } | null;
   openComments: () => void;
   closeComments: () => void;
+  /**
+   * Share sheet for the on-TV post — hosted by CastBar with the same inOverlay
+   * pattern as the comments. Owned here so that, like the comments, an open
+   * share sheet holds queue auto-advance: the finished video loops until the
+   * sheet closes (see the autoplay-next effect).
+   */
+  shareFor: SharePayload | null;
+  openShare: (payload: SharePayload) => void;
+  closeShare: () => void;
   /** Disconnect from the TV (ends the session). */
   disconnect: () => void;
   /** Open the device picker (used by a manual "cast" affordance). */
@@ -105,7 +118,7 @@ export type CastValue = {
 };
 
 const INERT: CastValue = {
-  supported: false, available: false, connected: false, deviceName: null,
+  supported: false, available: false, connected: false, connecting: false, deviceName: null,
   current: null, isPlaying: false, playerState: 'idle', mediaError: false,
   ended: false, nextItem: null,
   positionSec: 0, durationSec: 0,
@@ -114,6 +127,7 @@ const INERT: CastValue = {
   retry: () => {}, showRemote: () => {},
   remoteOpen: false, openRemote: () => {}, closeRemote: () => {},
   commentsFor: null, openComments: () => {}, closeComments: () => {},
+  shareFor: null, openShare: () => {}, closeShare: () => {},
   disconnect: () => {}, showPicker: () => {}, startDiscovery: () => {},
 };
 
@@ -153,28 +167,53 @@ function RealCastProvider({ children }: { children: ReactNode }) {
   // Comments for the on-TV video (see the CastValue doc). While set, the remote
   // hides; closing restores it.
   const [commentsFor, setCommentsFor] = useState<{ postId: string; ownerId: string | null } | null>(null);
+  // Share sheet for the on-TV post (see the CastValue doc) — held here so an
+  // open sheet holds queue auto-advance exactly like the comments do.
+  const [shareFor, setShareFor] = useState<SharePayload | null>(null);
+  // Mirrors for the autoplay-next effect: while the viewer is in the comments
+  // or the share sheet, a finished video LOOPS instead of advancing.
+  const holdAdvanceRef = useRef(false);
+  holdAdvanceRef.current = !!commentsFor || !!shareFor;
   // Last position the receiver actually reported — the revive path (seek on an
   // ended/idle item) anchors relative skips here, since an idle receiver
   // reports no position at all.
   const lastPosRef = useRef(0);
   if (streamPosition != null) lastPosRef.current = streamPosition;
 
-  const loadIndex = useCallback((i: number, startSec = 0) => {
+  // Pending splash→video handoff (see loadIndex's splash param). Also read by
+  // the autoplay/error/ended plumbing: while it's set, the TV is showing the
+  // Laybell card, and receiver states from the CARD must not be mistaken for
+  // states of the real item.
+  const transitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadIndex = useCallback((i: number, startSec = 0, splash = false) => {
     const item = queueRef.current[i];
     if (!item || !client) return;
     indexRef.current = i;
     advancedRef.current = false;
     setCurrent(item);
+    // A new load supersedes any in-flight splash handoff.
+    if (transitionRef.current) { clearTimeout(transitionRef.current); transitionRef.current = null; }
+    const loadReal = () => {
+      try {
+        // An explicit startTime pins VOD to a real position (0 = the actual
+        // beginning — without it the receiver picks its own join point a few
+        // seconds in). Lives omit it so the receiver joins at the live edge.
+        client.loadMedia({
+          mediaInfo: buildMediaInfo(item),
+          autoplay: true,
+          ...(item.isLive ? {} : { startTime: Math.max(0, startSec) }),
+        });
+      } catch { /* client torn down mid-call */ }
+    };
+    if (!splash) { loadReal(); return; }
+    // Moving between posts: flash the Laybell card on the TV for a beat, then
+    // load the item. TV-only by design — the phone remote shows the incoming
+    // item (loading state) for the whole handoff.
     try {
-      // An explicit startTime pins VOD to a real position (0 = the actual
-      // beginning — without it the receiver picks its own join point a few
-      // seconds in). Lives omit it so the receiver joins at the live edge.
-      client.loadMedia({
-        mediaInfo: buildMediaInfo(item),
-        autoplay: true,
-        ...(item.isLive ? {} : { startTime: Math.max(0, startSec) }),
-      });
-    } catch { /* client torn down mid-call */ }
+      client.loadMedia({ mediaInfo: buildSplashMediaInfo(), autoplay: true });
+      transitionRef.current = setTimeout(() => { transitionRef.current = null; loadReal(); }, TV_SPLASH_MS);
+    } catch { loadReal(); }
   }, [client]);
 
   const cast = useCallback((item: CastItem, queue?: CastItem[]) => {
@@ -211,21 +250,34 @@ function RealCastProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!connected) {
       setCurrent(null); queueRef.current = []; indexRef.current = 0; pendingRef.current = null;
+      if (transitionRef.current) { clearTimeout(transitionRef.current); transitionRef.current = null; }
       setRemoteOpen(false);
       setCommentsFor(null);
+      setShareFor(null);
     }
   }, [connected]);
 
   // Autoplay-next: when the receiver goes idle because the clip FINISHED, roll
   // to the next queued item (YouTube-style). Other idle reasons (user stop,
   // interrupted) do nothing.
+  //
+  // EXCEPT while the phone's comments or share sheet is open: the viewer is
+  // mid-read/mid-send, so the finished video LOOPS on the TV instead of
+  // advancing out from under them. Each replay re-checks — the playthrough
+  // that's running when they close the sheet completes its full loop, then
+  // the queue advances as normal.
   useEffect(() => {
     const st = mediaStatus?.playerState;
     const reason = mediaStatus?.idleReason;
+    // Statuses reported while the Laybell splash card is up belong to the
+    // CARD, not the item — acting on them would double-advance the queue.
+    if (transitionRef.current) return;
     if (st === 'idle' && reason === 'finished' && !advancedRef.current) {
       advancedRef.current = true;
+      // Loop replays stay seamless (no splash) — the card marks a POST CHANGE.
+      if (holdAdvanceRef.current) { loadIndex(indexRef.current); return; }
       const nextI = indexRef.current + 1;
-      if (nextI < queueRef.current.length) loadIndex(nextI);
+      if (nextI < queueRef.current.length) loadIndex(nextI, 0, true);
     }
   }, [mediaStatus, loadIndex]);
 
@@ -255,12 +307,28 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     if (idleNow()) { loadIndex(indexRef.current, lastPosRef.current + deltaSec); return; }
     try { client?.seek({ position: deltaSec, relative: true }); } catch {}
   }, [client, idleNow, loadIndex]);
-  const next = useCallback(() => { if (indexRef.current + 1 < queueRef.current.length) loadIndex(indexRef.current + 1); }, [loadIndex]);
-  const prev = useCallback(() => { if (indexRef.current - 1 >= 0) loadIndex(indexRef.current - 1); }, [loadIndex]);
+  // Manual queue moves get the branded splash too — same post-change moment.
+  const next = useCallback(() => { if (indexRef.current + 1 < queueRef.current.length) loadIndex(indexRef.current + 1, 0, true); }, [loadIndex]);
+  const prev = useCallback(() => { if (indexRef.current - 1 >= 0) loadIndex(indexRef.current - 1, 0, true); }, [loadIndex]);
   const disconnect = useCallback(() => {
     try { GCast?.getSessionManager?.()?.endCurrentSession?.(true); } catch {}
   }, []);
   const showPicker = useCallback(() => { try { GCast?.showCastDialog?.(); } catch {} }, []);
+  // Stable identities for the overlay chrome. The context value is rebuilt on
+  // every 0.5s position tick, so anything memoized against these (the comments
+  // sheet, most importantly) must not see a new function each tick.
+  const currentRef = useRef<CastItem | null>(null);
+  currentRef.current = current;
+  const openRemote = useCallback(() => setRemoteOpen(true), []);
+  const closeRemote = useCallback(() => setRemoteOpen(false), []);
+  const openComments = useCallback(() => {
+    const c = currentRef.current;
+    if (!c) return;
+    setCommentsFor({ postId: c.id, ownerId: c.authorId ?? null });
+  }, []);
+  const closeComments = useCallback(() => setCommentsFor(null), []);
+  const openShare = useCallback((payload: SharePayload) => setShareFor(payload), []);
+  const closeShare = useCallback(() => setShareFor(null), []);
   const startDiscovery = useCallback(() => {
     // No-op on Android (discovery is automatic); on iOS this is what makes
     // devices appear given discovery autostart is disabled at launch.
@@ -272,16 +340,20 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     supported: true,
     available,
     connected,
+    connecting: castState === 'connecting',
     deviceName: device?.friendlyName ?? null,
     current,
     isPlaying: playerState === 'playing',
     playerState,
     // idle+error with something loaded = the receiver rejected the stream (bad
     // manifest, unsupported segments, network) — CastBar shows a retry state.
-    mediaError: !!current && playerState === 'idle' && mediaStatus?.idleReason === 'error',
+    // Splash handoff pending → any idle state belongs to the Laybell card
+    // (e.g. the image failing to fetch), not the item: stay calm, the timer
+    // loads the real thing momentarily.
+    mediaError: !!current && !transitionRef.current && playerState === 'idle' && mediaStatus?.idleReason === 'error',
     // Finished with nothing queued after it (with a next item, autoplay-next
     // rolls on before anyone sees this) — the UI flips play into replay.
-    ended: !!current && playerState === 'idle' && mediaStatus?.idleReason === 'finished',
+    ended: !!current && !transitionRef.current && playerState === 'idle' && mediaStatus?.idleReason === 'finished',
     nextItem: queueRef.current[indexRef.current + 1] ?? null,
     positionSec: streamPosition ?? 0,
     durationSec: mediaStatus?.mediaInfo?.streamDuration ?? 0,
@@ -290,16 +362,14 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     hasPrev: indexRef.current > 0,
     retry, showRemote,
     remoteOpen,
-    openRemote: () => setRemoteOpen(true),
-    closeRemote: () => setRemoteOpen(false),
+    openRemote,
+    closeRemote,
     commentsFor,
     // The sheet stacks ABOVE the remote in the same overlay window, so the
     // remote just stays put underneath — closing reveals it exactly as left.
-    openComments: () => {
-      if (!current) return;
-      setCommentsFor({ postId: current.id, ownerId: current.authorId ?? null });
-    },
-    closeComments: () => setCommentsFor(null),
+    openComments,
+    closeComments,
+    shareFor, openShare, closeShare,
     disconnect, showPicker, startDiscovery,
   };
 

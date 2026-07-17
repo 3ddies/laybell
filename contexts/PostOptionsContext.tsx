@@ -47,6 +47,9 @@ export type PostOptionsArgs = {
   mediaUrl?: string | null;
   cover?: string | null;
   downloadable?: boolean;
+  // The item is already playing on the TV (menu opened from the cast remote) —
+  // hides the "Laybell TV" option, which would restart it and drop the queue.
+  hideLaybellTv?: boolean;
   onEdit?: () => void;
   onDeleted?: () => void;
   onArchived?: () => void;
@@ -409,7 +412,7 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   // Same eligibility as the Laybell TV hub (aspect > 1; null pre-fetch aspect
   // stays hidden). Casting already? The video goes straight to the TV. Not yet?
   // The connect wizard opens with this video queued — it plays on connect.
-  if (hasPost && opts?.mediaType === 'video' && aspectToNumber(vidAspect, 9 / 16) > 1) {
+  if (hasPost && opts?.mediaType === 'video' && !opts?.hideLaybellTv && aspectToNumber(vidAspect, 9 / 16) > 1) {
     options.push({ key: 'laybelltv', label: t('tv.title'), icon: 'tv-outline',
       onPress: () => {
         const o = optsRef.current;

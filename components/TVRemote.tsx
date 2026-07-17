@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Animated, Easing, Image, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +11,7 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { useCast } from '../contexts/CastContext';
+import { usePostOptions } from '../contexts/PostOptionsContext';
 import { useOptimisticSeek } from '../hooks/useOptimisticSeek';
 import { selection } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
@@ -17,6 +19,7 @@ import { bumpBadge } from '../lib/badges';
 import { createNotification } from '../lib/createNotification';
 import { formatCount } from '../lib/format';
 import Scrubber from './Scrubber';
+import FollowButton from './FollowButton';
 import { Marquee } from './SongCardTitle';
 
 // The full-screen TV remote — opened by tapping the CastBar. Big, thumb-sized
@@ -38,12 +41,14 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { profile } = useProfile();
+  const postOptions = usePostOptions();
   const {
     connected, current, deviceName, isPlaying, playerState, mediaError, ended, nextItem,
     positionSec, durationSec,
     play, pause, seekTo, skip, next, prev, hasNext, hasPrev, retry, disconnect,
-    commentsFor, openComments,
+    commentsFor, openComments, openShare,
   } = useCast();
   // The scrubber/time show where the user just seeked IMMEDIATELY; the receiver
   // truth takes over once it catches up (raw positions snap back for a beat).
@@ -58,14 +63,21 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
   const [saved, setSaved] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [commentCount, setCommentCount] = useState(0);
+  // The post's real caption (CastItem.title falls back to the author's name) —
+  // the share payload wants the true caption or nothing.
+  const [caption, setCaption] = useState<string | null>(null);
+  // Reset + fetch ONLY when the on-TV post changes. commentsFor must NOT be a
+  // dep here: resetting on every sheet open/close blanked all the icons for a
+  // beat (the "flash") — the close-refetch below updates counts in place.
   useEffect(() => {
     if (!postId) return;
     let alive = true;
-    setLiked(false); setSaved(false); setLikeCount(0); setCommentCount(0);
-    supabase.from('posts').select('likes(count), comments(count)').eq('id', postId).maybeSingle()
+    setLiked(false); setSaved(false); setLikeCount(0); setCommentCount(0); setCaption(null);
+    supabase.from('posts').select('caption, likes(count), comments(count)').eq('id', postId).maybeSingle()
       .then(({ data }) => {
         if (!alive || !data) return;
         const d = data as any;
+        setCaption(d.caption ?? null);
         setLikeCount(d.likes?.[0]?.count ?? 0);
         setCommentCount(d.comments?.[0]?.count ?? 0);
       }, () => {});
@@ -76,9 +88,22 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
         .then(({ data }) => { if (alive) setSaved(!!data); }, () => {});
     }
     return () => { alive = false; };
-    // commentsFor: refetch counts when the comments sheet closes (they may have
-    // just posted one).
-  }, [postId, uid, commentsFor]);
+  }, [postId, uid]);
+
+  // Comments sheet just CLOSED → they may have posted; refresh the comment
+  // count in place, without touching the other icons' state.
+  const hadComments = useRef(false);
+  useEffect(() => {
+    const closed = hadComments.current && !commentsFor;
+    hadComments.current = !!commentsFor;
+    if (!closed || !postId) return;
+    let alive = true;
+    supabase.from('posts').select('comments(count)').eq('id', postId).maybeSingle()
+      .then(({ data }) => {
+        if (alive && data) setCommentCount((data as any).comments?.[0]?.count ?? 0);
+      }, () => {});
+    return () => { alive = false; };
+  }, [commentsFor, postId]);
 
   const toggleLike = async () => {
     if (!postId || !uid) return;
@@ -103,6 +128,52 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
     setSaved(nextSaved); // optimistic
     if (nextSaved) await supabase.from('saves').insert({ post_id: postId, user_id: uid });
     else await supabase.from('saves').delete().eq('post_id', postId).eq('user_id', uid);
+  };
+  // Opens the share sheet for the on-TV post — hosted by CastBar (inOverlay,
+  // like the comments sheet, stacking above the remote). State lives in
+  // CastContext so the open sheet holds queue auto-advance (the video loops).
+  const doShare = () => {
+    if (!postId || !current) return;
+    selection();
+    openShare({
+      postId,
+      caption,
+      username: current.subtitle?.startsWith('@') ? current.subtitle.slice(1) : current.subtitle ?? null,
+      cover: current.poster ?? null,
+      type: 'video',
+      mediaUrl: current.url,
+    });
+  };
+  // Tap the @username → the author's profile. The remote collapses first so
+  // the pushed screen isn't hidden underneath this overlay.
+  const goToProfile = () => {
+    if (!current?.authorId) return;
+    selection();
+    onClose();
+    router.push(`/profile/${current.authorId}`);
+  };
+  // The 3-dot hub for the on-TV item — the app-wide PostOptionsSheet presents
+  // in its own FullWindowOverlay, which stacks above this one (same way the
+  // Now Playing 3-dot works). Lives have no post row, so they get the
+  // profile-only menu (report/block the host) when the author is known.
+  const openOptions = () => {
+    if (!current) return;
+    // After a delete/archive the on-TV item is gone — roll to the next queued
+    // video, or end the session when nothing is left to play.
+    const skipGone = () => { if (hasNext) next(); else disconnect(); };
+    postOptions.show({
+      postId: postId ?? undefined,
+      isOwn: !!uid && !!current.authorId && current.authorId === uid,
+      authorId: current.authorId ?? undefined,
+      authorName: current.subtitle?.startsWith('@') ? current.subtitle.slice(1) : current.subtitle,
+      mediaType: postId ? 'video' : undefined,
+      mediaUrl: postId ? current.url : undefined,
+      hideLaybellTv: true, // it's already ON the TV
+      onNavigate: onClose, // collapse the remote so the pushed screen shows
+      onEdit: () => { onClose(); router.push(`/edit-post/${current.id}`); },
+      onDeleted: skipGone,
+      onArchived: skipGone,
+    });
   };
 
   const slide = useRef(new Animated.Value(0)).current;
@@ -149,7 +220,13 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
             {t('tv.cast.castingTo', { device })}
           </Text>
         </View>
-        <View style={styles.headerBtn} />
+        {postId || current.authorId ? (
+          <TouchableOpacity onPress={openOptions} hitSlop={10} style={styles.headerBtn}>
+            <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerBtn} />
+        )}
       </View>
 
       {/* Poster */}
@@ -164,12 +241,29 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
       </View>
 
       {/* Title — long titles marquee (scroll through, pause, snap back), same
-          behavior as the song card. Keyed so measurement re-runs per video. */}
+          behavior as the song card. Keyed so measurement re-runs per video.
+          Below it: the author row — @username taps through to their profile,
+          with the app-wide follow pill beside it (hides itself on own posts). */}
       <View style={styles.meta}>
         <Marquee key={current.id}>
           <Text style={styles.title}>{current.title}</Text>
         </Marquee>
-        {!!current.subtitle && <Text style={styles.subtitle} numberOfLines={1}>{current.subtitle}</Text>}
+        {(!!current.subtitle || !!current.authorId) && (
+          <View style={styles.authorRow}>
+            {!!current.subtitle && (
+              <TouchableOpacity
+                onPress={goToProfile}
+                disabled={!current.authorId}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+                style={styles.authorTap}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.subtitle} numberOfLines={1}>{current.subtitle}</Text>
+              </TouchableOpacity>
+            )}
+            <FollowButton userId={current.authorId} />
+          </View>
+        )}
       </View>
 
       {/* Social row — the on-TV video is still a Laybell post: like, comment
@@ -186,6 +280,15 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
           </TouchableOpacity>
           <TouchableOpacity onPress={toggleSave} hitSlop={8} style={styles.socialBtn}>
             <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={22} color={saved ? colors.primary : colors.text} />
+          </TouchableOpacity>
+          {/* Share — right-aligned, mirroring the feed's action row. */}
+          <TouchableOpacity
+            onPress={doShare}
+            hitSlop={8}
+            style={[styles.socialBtn, styles.socialBtnRight]}
+            accessibilityLabel={t('share.title')}
+          >
+            <Ionicons name="share-social-outline" size={22} color={colors.text} />
           </TouchableOpacity>
         </View>
       )}
@@ -314,11 +417,16 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 10,
   },
   poster: { width: '100%', aspectRatio: 16 / 9, alignItems: 'center', justifyContent: 'center', backgroundColor: c.surfaceLight },
-  meta: { marginTop: SPACING.lg, gap: 3 },
-  title: { color: c.text, fontSize: 20, fontWeight: '800', lineHeight: 26 },
-  subtitle: { color: c.textTertiary, fontSize: 13.5 },
+  meta: { marginTop: SPACING.lg, gap: 5 },
+  title: { color: c.text, fontSize: 22, fontWeight: '800', lineHeight: 28 },
+  authorRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  // shrink (not flex:1) so the follow pill hugs the username instead of
+  // being pushed to the far edge, while long handles still truncate.
+  authorTap: { flexShrink: 1 },
+  subtitle: { color: c.textSecondary, fontSize: 15.5, fontWeight: '600' },
   socialRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.lg, marginTop: SPACING.md },
   socialBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
+  socialBtnRight: { marginLeft: 'auto' },
   socialCount: { color: c.textSecondary, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
   flexSpace: { flex: 1 },
   scrubBlock: { marginBottom: SPACING.sm },

@@ -89,7 +89,27 @@ export function liveToCastItem(l: LiveStream): CastItem | null {
     title: l.title || l.profile?.display_name || username || 'Laybell Live',
     subtitle: username,
     poster: l.profile?.avatar_url ?? null,
+    // Lives have no post row (no like/comment/save), but the remote's 3-dot
+    // uses the host's id for the profile-only menu (report/block).
+    authorId: l.user_id ?? null,
     isLive: true,
+  };
+}
+
+// ─── Between-posts splash ─────────────────────────────────────────────────────
+// Moving to the next queue item flashes a Laybell-branded card on the TV for a
+// beat (TV-only — the phone remote already shows the incoming item). The card
+// is web/tv-splash.png, auto-published to GitHub Pages by deploy-legal.yml.
+export const TV_SPLASH_URL = 'https://3ddies.github.io/laybell/tv-splash.png';
+export const TV_SPLASH_MS = 1400;
+
+/** The Laybell interstitial card as receiver-loadable media (a photo). */
+export function buildSplashMediaInfo(): any {
+  return {
+    contentUrl: TV_SPLASH_URL,
+    contentType: 'image/png',
+    streamType: 'none',
+    metadata: { type: 'photo', title: 'Laybell' },
   };
 }
 

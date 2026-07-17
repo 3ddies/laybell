@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity, Keyboard, Platform,
   Pressable, useWindowDimensions, Animated, PanResponder, Easing,
@@ -21,7 +21,13 @@ function rubber(excess: number, max = 38): number {
 // Drag the grab bar UP to expand, DOWN to collapse, further DOWN to dismiss.
 // Transparent so a playing reel stays visible behind it; the comment list scrolls
 // on its own (only the top bar is the drag grip).
-export default function CommentsSheet({ visible, postId, ownerId, onClose, onPosted, inOverlay }: {
+//
+// memo(): hosts that re-render at a clip (CastBar re-renders on every 0.5s
+// cast-position tick) must not drag the whole sheet — comment list, TextInput —
+// with them; a re-render storm under an active TextInput drops/jumps typing.
+// Callers with stable props (CastBar) get the bail-out; inline-arrow callers
+// behave exactly as before.
+function CommentsSheet({ visible, postId, ownerId, onClose, onPosted, inOverlay }: {
   visible: boolean;
   postId: string;
   ownerId?: string | null;
@@ -220,6 +226,8 @@ export default function CommentsSheet({ visible, postId, ownerId, onClose, onPos
     </Modal>
   );
 }
+
+export default memo(CommentsSheet);
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },

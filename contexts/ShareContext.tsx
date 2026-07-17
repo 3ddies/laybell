@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity, Pressable,
   Animated, PanResponder, Easing, ScrollView, Image, Share, ActivityIndicator,
@@ -138,10 +138,14 @@ const EXTERNAL_APPS: ExternalApp[] = [
   },
 ];
 
-export function ShareSheet({ visible, payload, onClose }: {
+export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, inOverlay }: {
   visible: boolean;
   payload: SharePayload | null;
   onClose: () => void;
+  // True when hosted inside the iOS FullWindowOverlay (the TV remote, via
+  // CastBar) — renders as a plain view instead of a real Modal, exactly like
+  // CommentsSheet (see its return-site note for why a Modal can't work there).
+  inOverlay?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const { profile } = useProfile();
@@ -303,8 +307,7 @@ export function ShareSheet({ visible, payload, onClose }: {
     nativeShare(message, link);
   }
 
-  return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent supportedOrientations={['portrait', 'landscape']}>
+  const content = (
       <View style={styles.overlay}>
         <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
@@ -402,12 +405,28 @@ export function ShareSheet({ visible, payload, onClose }: {
           </ScrollView>
         </Animated.View>
       </View>
+  );
+
+  // Hosted inside the iOS FullWindowOverlay (the TV remote): render as a plain
+  // absolute-fill view stacked above the remote by z-order — a real Modal can
+  // neither present from the overlay window (deadlock) nor from the main
+  // window over the native-modal /tv route (never appears). Everywhere else
+  // (and on Android) keeps the real Modal.
+  if (inOverlay && Platform.OS === 'ios') {
+    return visible ? <View style={[StyleSheet.absoluteFill, styles.overlayHost]}>{content}</View> : null;
+  }
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent supportedOrientations={['portrait', 'landscape']}>
+      {content}
     </Modal>
   );
-}
+});
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
+  // Above the TV remote (70) and level with the comments sheet (80) — the two
+  // are never open at once (both launch from the remote, which sits beneath).
+  overlayHost: { zIndex: 80 },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
     backgroundColor: COLORS.surface,

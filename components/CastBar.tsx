@@ -11,6 +11,7 @@ import { selection } from '../lib/haptics';
 import Scrubber from './Scrubber';
 import TVRemote from './TVRemote';
 import CommentsSheet from './CommentsSheet';
+import { ShareSheet } from '../contexts/ShareContext';
 
 // The phone-as-remote controller for Laybell TV casting. Visible for the WHOLE
 // life of a Cast session — not just while media plays — so the phone always
@@ -34,7 +35,9 @@ export default function CastBar() {
     positionSec, durationSec,
     play, pause, next, prev, hasNext, hasPrev, seekTo, retry, disconnect,
     // Remote visibility lives in CastContext so casting a video auto-expands it.
-    remoteOpen, openRemote, closeRemote, commentsFor, closeComments,
+    // Comments + share state live there too — an open sheet holds queue
+    // auto-advance (the finished video loops), so the context must know.
+    remoteOpen, openRemote, closeRemote, commentsFor, closeComments, shareFor, closeShare,
   } = useCast();
   // Show seeks where the finger dropped them immediately (receiver positions
   // lag by up to a tick and would snap the fill back).
@@ -64,7 +67,9 @@ export default function CastBar() {
         ownerId={commentsFor?.ownerId ?? null}
         onClose={closeComments}
       />
-      {remoteOpen || commentsFor ? null : (
+      {/* Share for the on-TV post — same inOverlay hosting as the comments. */}
+      <ShareSheet inOverlay visible={!!shareFor} payload={shareFor} onClose={closeShare} />
+      {remoteOpen || commentsFor || shareFor ? null : (
     <View style={[styles.wrap, { bottom: insets.bottom + 8 }]} pointerEvents="box-none">
       <View style={styles.card}>
         {!current ? (
