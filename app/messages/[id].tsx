@@ -626,7 +626,7 @@ export default function ChatScreen() {
       </Animated.View>
 
       <GifPickerModal visible={gifOpen} userId={currentUserId} onClose={() => setGifOpen(false)} onSelect={(g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h, src: g.src })} />
-      <ImageViewerModal url={viewerUrl} onClose={() => setViewerUrl(null)} />
+      <ImageViewerModal state={viewerUrl ? { url: viewerUrl } : null} onClose={() => setViewerUrl(null)} />
 
       {/* Reaction picker — a floating tapback pill over a dimmed backdrop. */}
       <Modal visible={pickerFor !== null} transparent animationType="fade" onRequestClose={() => setPickerFor(null)}>

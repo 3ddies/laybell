@@ -412,13 +412,16 @@ const PostCard = memo(function PostCard({
 // the list until the gate has run the feed's optimization pass. TWO phases
 // (owner design): background prep starts the moment the gate card is drawn
 // (FlashList draws ahead, so this overlaps the user finishing post 3), and the
-// visible 4–6s loading dwell starts only when the user actually HITS the
+// visible ~3.5s loading dwell starts only when the user actually HITS the
 // bottom bound. Everything below the gate literally does not render, mount, or
 // buffer until unlock, so the opening posts settle with ZERO competition and
 // the unlocked feed scrolls into pre-warmed content. Pull-to-refresh RE-GATES:
 // fresh content gets a fresh pass every time.
 const GATE_POSTS = 3;
-const FEED_GATE_BOUND_MS = 5000; // dwell AFTER the user reaches the bound
+// Dwell AFTER the user reaches the bound. Pure pacing — the prefetch passes
+// are fire-and-forget and never awaited, so shortening this only trims how
+// long the warm-up gets to run (trimmed 5s → 3.5s for snappier unlock).
+const FEED_GATE_BOUND_MS = 3500;
 
 // A slim, quiet bound — just a small neutral spinner, no dead space.
 function FeedGateCard({ onArm }: { onArm: () => void }) {
@@ -521,7 +524,7 @@ export default function HomeScreen() {
   // Phase B — the user actually HIT the bound (gate card crossed the 60%
   // impression threshold): deeper pass + pre-create the ambient song player
   // (so a song tap never constructs a native player over a playing video),
-  // then the deliberate 4–6s dwell before unlock.
+  // then the deliberate ~3.5s dwell before unlock.
   const onGateBoundHit = useCallback(() => {
     if (feedGateUnlockedRef.current || gateUnlockTimer.current) return;
     runFeedGatePrefetch(true);

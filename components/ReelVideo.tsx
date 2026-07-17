@@ -2,6 +2,7 @@ import { forwardRef, memo, useEffect, useImperativeHandle, useRef, useState } fr
 import { StyleSheet } from 'react-native';
 import { VideoView, type VideoPlayer } from 'expo-video';
 import { reelPool } from '../lib/feedVideoPool';
+import { useMediaSuspend } from '../contexts/MediaSuspendContext';
 
 // Pooled video surface for reel pages (see lib/feedVideoPool). No player is
 // ever CREATED at swipe time — the pool assigns sources via replaceAsync
@@ -35,8 +36,14 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
   const [ready, setReady] = useState(false);
   const playerRef = useRef<VideoPlayer | null>(null);
   playerRef.current = player;
-  const playRef = useRef(play);
-  playRef.current = play;
+  // A full-screen takeover (GIF maker) or an active Cast session globally
+  // suspends background media so the phone doesn't keep playing under it — a
+  // reel cast to the TV must not loop with audio behind the remote. Mirrors
+  // FeedVideo; opting a reel out is never wanted, so there's no ignoreSuspend.
+  const { suspended } = useMediaSuspend();
+  const shouldPlay = play && !suspended;
+  const playRef = useRef(shouldPlay);
+  playRef.current = shouldPlay;
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
   const mutedRef = useRef(muted);
@@ -122,9 +129,9 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
 
   useEffect(() => {
     if (!player) return;
-    if (play) { try { player.play(); } catch {} }
+    if (shouldPlay) { try { player.play(); } catch {} }
     else { try { player.pause(); } catch {} }
-  }, [play, player]);
+  }, [shouldPlay, player]);
 
   if (!player) return null;
   return (

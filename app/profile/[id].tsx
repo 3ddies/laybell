@@ -26,6 +26,7 @@ import TrackRow from '../../components/TrackRow';
 import { applyMusicOrder, parseMusicOrder } from '../../lib/musicOrder';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import StoryAvatar from '../../components/StoryAvatar';
+import { openAvatarViewer } from '../../lib/imageViewer';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import ProfileQRModal from '../../components/ProfileQRModal';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
@@ -553,6 +554,11 @@ export default function PublicProfileScreen() {
             name={profile?.display_name}
             size={88}
             badgeRing={specialRingTier(ownerTier) ? ringColors : undefined}
+            // With an active story, tapping opens it (StoryAvatar's default).
+            // Otherwise tap expands the profile picture as a large circle — only
+            // when there's a real avatar (a placeholder initial isn't worth
+            // expanding).
+            onPressProfile={profile?.avatar_url ? () => openAvatarViewer(profile.avatar_url!) : undefined}
           />
         </View>
 

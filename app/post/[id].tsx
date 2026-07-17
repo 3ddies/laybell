@@ -79,7 +79,7 @@ export default function PostDetailScreen() {
   const { id, post: postParam, index: indexParam } = useLocalSearchParams<{ id: string; post?: string; index?: string }>();
   const initialSlide = indexParam ? (parseInt(indexParam, 10) || 0) : 0;
   const router = useRouter();
-  const { currentTrack, isPlaying, play, stop } = useAudio();
+  const { currentTrack, isPlaying, play, stop, pause, resume } = useAudio();
   const { playSong, stop: stopSong, toggleMuted: toggleSongMuted } = usePostMusicActions();
   const songMuted = usePostMusicMuted();
   const isFocused = useIsFocused();
@@ -121,14 +121,79 @@ export default function PostDetailScreen() {
 
   useEffect(() => { setup(); }, [id]);
 
-  // Auto-play the song attached to this image/video post (ambient); stop on
-  // blur/close. The media's own audio (video) is muted while a song is set.
+  // Live mirrors so the async song promotion below reads current values, not the
+  // stale closure from when the effect last ran.
+  const currentTrackRef = useRef(currentTrack); currentTrackRef.current = currentTrack;
+  const isPlayingRef = useRef(isPlaying); isPlayingRef.current = isPlaying;
+
+  // IMAGE & SLIDESHOW posts: the attached song TAKES OVER the main player, so it
+  // owns the iOS now-playing console + the mini-player card and keeps playing
+  // like any other song once the user leaves the post. VIDEO posts keep the
+  // ambient, feed-style song (same as reels — which the owner calls "perfect").
+  const isSongTakeover = !!post?.song_id && (post?.type === 'image' || isSlideshow(post?.type));
+
+  // Promote the attached song into the MAIN player (react-native-track-player).
+  // The post row only denormalizes the song's title/artist, so fetch its audio +
+  // cover (mirrors SongAttribution's tap-to-play, minus opening the full player).
+  // Re-entry guarded; a no-op when it's already the current track — just resume
+  // if a slide-video pause left it idle.
+  const promotingRef = useRef<string | null>(null);
+  async function promoteAttachedSong(songId: string) {
+    if (currentTrackRef.current?.id === songId) {
+      if (!isPlayingRef.current) resume();
+      return;
+    }
+    if (promotingRef.current === songId) return;
+    promotingRef.current = songId;
+    try {
+      stopSong(); // silence any ambient post song first
+      const { data } = await supabase
+        .from('posts')
+        .select('id, media_url, caption, cover_url, profiles!posts_user_id_fkey(display_name)')
+        .eq('id', songId)
+        .single();
+      const d: any = data;
+      if (d?.media_url) {
+        play({
+          id: d.id, uri: d.media_url,
+          caption: d.caption ?? post?.song_title ?? '',
+          artist: d.profiles?.display_name ?? post?.song_artist ?? '',
+          cover: d.cover_url,
+        });
+      }
+    } catch { /* leave whatever was playing */ } finally {
+      promotingRef.current = null;
+    }
+  }
+
+  // Play the post's attached song. The media's own audio (video) is muted while
+  // a song is set. Image/slideshow → promote to the main player; video → ambient.
   useEffect(() => {
-    if (isFocused && post?.id && post?.song_id && !slideAudioActive) playSong(post.id, post.song_id);
-    else if (post?.id) stopSong(post.id);
-    return () => { if (post?.id) stopSong(post.id); };
+    const songId = post?.song_id;
+    if (isFocused && post?.id && songId) {
+      if (isSongTakeover) {
+        // A slideshow's video slide has its own audio on → pause the song so
+        // they don't overlap; otherwise (re)take the main player.
+        if (slideAudioActive) {
+          if (currentTrackRef.current?.id === songId && isPlayingRef.current) pause();
+        } else {
+          promoteAttachedSong(songId);
+        }
+      } else if (!slideAudioActive) {
+        playSong(post.id, songId); // video post → ambient
+      } else {
+        stopSong(post.id);
+      }
+    } else if (post?.id) {
+      stopSong(post.id);
+    }
+    return () => {
+      // Ambient (video) song stops when leaving; a promoted MAIN-player song
+      // keeps playing like any regular track (that's the point).
+      if (post?.id && !isSongTakeover) stopSong(post.id);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [post?.id, post?.song_id, isFocused, slideAudioActive]);
+  }, [post?.id, post?.song_id, post?.type, isFocused, slideAudioActive, isSongTakeover]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();

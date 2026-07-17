@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDeviceId } from '../lib/deviceId';
 import { useAudio } from './AudioContext';
+import { useMediaSuspend } from './MediaSuspendContext';
 
 // Ambient post music: plays the attached song of the currently-FOCUSED image/video
 // post or story (separate from the main mini-player). Looping, with a global mute
@@ -85,9 +86,17 @@ export function useSongHostActive(hostId: string): boolean {
 }
 
 export function PostMusicProvider({ children }: { children: React.ReactNode }) {
-  const { isPlaying: mainPlaying } = useAudio();
+  const { isPlaying: mainPlaying, currentTrack: mainTrack } = useAudio();
+  const { suspended } = useMediaSuspend();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
+
+  // The last playSong() swallowed because the mini-player was busy. If the user
+  // CLOSES their track while still on that host (post viewer, feed post, story),
+  // the attached song takes over — no confusing silence, and what's audible
+  // always matches what's on screen. Cleared whenever the host bows out
+  // (stop(hostId)) or ambient is stopped globally, so it can never fire stale.
+  const deferredRef = useRef<{ hostId: string; songId: string; mediaUrl: string | null } | null>(null);
 
   const soundRef = useRef<AudioPlayer | null>(null);
   const statusSubRef = useRef<{ remove: () => void } | null>(null);
@@ -237,7 +246,15 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   }
 
   function stop(hostId?: string) {
-    if (hostId && activeIdRef.current !== hostId) return;
+    if (hostId && activeIdRef.current !== hostId) {
+      // Not the active host — but a host leaving must still withdraw its own
+      // DEFERRED claim (its playSong was swallowed while the mini-player
+      // played), or closing the bar later could start a song for a post the
+      // user already left.
+      if (deferredRef.current?.hostId === hostId) deferredRef.current = null;
+      return;
+    }
+    deferredRef.current = null;
     tokenRef.current++; // cancel any in-flight load
     activeIdRef.current = null;
     activeSongRef.current = null;
@@ -279,8 +296,14 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function playSong(hostId: string, songId: string, mediaUrl?: string | null) {
-    // Don't fight the user's chosen track in the mini-player.
-    if (mainPlayingRef.current) { stop(); return; }
+    // Don't fight the user's chosen track in the mini-player — but REMEMBER
+    // the request (after stop(), which clears any previous claim): if the user
+    // closes their track while still on this host, its song starts (below).
+    if (mainPlayingRef.current) {
+      stop();
+      deferredRef.current = { hostId, songId, mediaUrl: mediaUrl ?? null };
+      return;
+    }
     if (activeIdRef.current === hostId && activeSongRef.current === songId && soundRef.current) return;
 
     // Same SONG already playing for a DIFFERENT host (consecutive posts sharing
@@ -328,9 +351,52 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     });
   }
 
-  // When the main player starts (e.g. the user tapped a song name → it's promoted),
-  // stop ambient so the two don't overlap.
-  useEffect(() => { if (mainPlaying) stop(); /* eslint-disable-next-line */ }, [mainPlaying]);
+  // When the main player starts (e.g. the user tapped a song name → it's
+  // promoted), stop ambient so the two don't overlap — but capture what was
+  // interrupted as the deferred claim first. Without this, the common feed
+  // sequence "resting on a song post (ambient audible) → start my own track →
+  // later close it" ended in silence: the feed's dedupe still believed the
+  // post was claimed and never re-asked. stop() wipes deferredRef, so the
+  // capture is written after; a claim that predates a mere pause/resume cycle
+  // (no interrupted ambient to capture) is preserved rather than lost.
+  useEffect(() => {
+    if (!mainPlaying) return;
+    const h = activeIdRef.current, s = activeSongRef.current;
+    const prior = deferredRef.current;
+    stop();
+    deferredRef.current = h && s ? { hostId: h, songId: s, mediaUrl: null } : prior;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mainPlaying]);
+
+  // The main track went away entirely (× on the bar/chip, or the queue ended —
+  // NOT a pause): hand off to the deferred attached song, so a post with a
+  // song never sits silent after the user exits their own music while on it.
+  const hadMainTrackRef = useRef(false);
+  useEffect(() => {
+    const has = !!mainTrack;
+    if (!has && hadMainTrackRef.current) {
+      const d = deferredRef.current;
+      if (d) { deferredRef.current = null; playSong(d.hostId, d.songId, d.mediaUrl); }
+    }
+    hadMainTrackRef.current = has;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mainTrack]);
+
+  // Global media suspend (a Cast session, the GIF maker, …): pause the ambient
+  // post song so the phone falls silent behind the takeover — casting a video
+  // to the TV must not leave its attached song looping on the phone — then
+  // resume the SAME song when the suspend lifts. Only touches a song WE paused,
+  // so it never revives one the user stopped, and never fights the main player.
+  const suspendPausedRef = useRef(false);
+  useEffect(() => {
+    const p = soundRef.current;
+    if (suspended) {
+      if (p && activeSongRef.current) { try { p.pause(); } catch {} suspendPausedRef.current = true; }
+    } else if (suspendPausedRef.current) {
+      suspendPausedRef.current = false;
+      if (p && activeSongRef.current && !mainPlayingRef.current) { try { p.play(); } catch {} }
+    }
+  }, [suspended]);
 
   // Tidy up on unmount — persist ambient progress first so nothing is lost.
   useEffect(() => () => { saveAmbient(); destroyPlayer(); }, []);

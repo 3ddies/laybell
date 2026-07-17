@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NativeModules } from 'react-native';
 import { buildMediaInfo, buildSplashMediaInfo, TV_SPLASH_MS, type CastItem } from '../lib/cast';
+import { useMediaSuspend } from './MediaSuspendContext';
 import type { SharePayload } from './ShareContext';
 
 // ─── Laybell TV casting (Google Cast / Chromecast) ───────────────────────────
@@ -151,6 +152,23 @@ function RealCastProvider({ children }: { children: ReactNode }) {
   const connected = castState === 'connected';
   const available = castState !== 'noDevicesAvailable';
 
+  // While a Cast session is live (or coming up) the phone is a remote, not a
+  // second screen — globally suspend background media so a cast video (and its
+  // attached song) stops looping with audio on the phone behind the TV
+  // controller. AppVideo / FeedVideo / ReelVideo and the ambient post player all
+  // honor this; the main music player (the user's deliberate track) is left
+  // alone. Covering `connecting` too keeps the phone quiet continuously from the
+  // moment a device is picked — no gap between connecting and connected — and
+  // ref-counting composes with other suspenders, releasing only when the session
+  // fully ends.
+  const { suspend, resume } = useMediaSuspend();
+  const castingActive = castState === 'connected' || castState === 'connecting';
+  useEffect(() => {
+    if (!castingActive) return;
+    suspend();
+    return () => resume();
+  }, [castingActive, suspend, resume]);
+
   // Local queue drives next/prev + autoplay-next, so we don't depend on the
   // receiver's own queue model (which differs across receiver types).
   const queueRef = useRef<CastItem[]>([]);
@@ -226,12 +244,19 @@ function RealCastProvider({ children }: { children: ReactNode }) {
       // Choosing a video while connected expands straight into the remote.
       setRemoteOpen(true);
     } else {
-      // Not connected yet — remember the pick and open the device picker; the
-      // effect below loads it once a client exists.
+      // No media client yet — stash the pick; the client-ready effect below
+      // loads it as soon as the client exists.
       pendingRef.current = item;
-      try { GCast?.showCastDialog?.(); } catch {}
+      // Only summon the device picker when there is genuinely NO session. The
+      // 3-dot path fires cast() the instant `connected` flips true — before the
+      // media client is wired up this render — and popping the picker again
+      // there is the spurious second iOS dialog. Worse, that dialog jostles the
+      // session state, which momentarily lifts the media-suspend and lets the
+      // phone reel's audio resume behind the TV. When already connected, just
+      // wait for the client (no dialog); the tab path already behaves this way.
+      if (!connected) { try { GCast?.showCastDialog?.(); } catch {} }
     }
-  }, [client, loadIndex]);
+  }, [client, loadIndex, connected]);
 
   // When a client appears and something was queued pre-connection, load it —
   // and expand the remote, so "connect → your video is playing, here are the

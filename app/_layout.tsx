@@ -66,14 +66,19 @@ function AppContent() {
   const { colors } = useTheme();
   const { failedJob, retryFailed, dismissFailed } = useStoryUpload();
   const segments = useSegments();
-  // Full-screen media viewers stay immersive — no floating mini player there.
-  const immersive = segments[0] === 'story' || segments[0] === 'post' || segments[0] === 'reel';
+  // Full-screen media viewers with their OWN audio (stories, reels) stay
+  // immersive — no floating mini player there. The post/slideshow viewer is
+  // different: its attached-song card must never be mistaken for what's
+  // audible, so a playing track migrates there as the story-camera-style side
+  // chip instead of silently vanishing.
+  const immersive = segments[0] === 'story' || segments[0] === 'reel';
+  const inPostViewer = segments[0] === 'post';
   // On the Create tab the player migrates to a compact top-right card so the
   // song rides along instead of dying when the tab is swiped past; the post
   // DETAILS step then stops it (see post.tsx). On the story camera it docks
   // as a simplified side chip so the viewfinder stays clear.
   const tab = segments[0] === '(tabs)' ? (segments as string[])[1] : undefined;
-  const playerVariant = tab === 'post' ? 'compact' as const : tab === 'story-camera' ? 'side' as const : 'bar' as const;
+  const playerVariant = inPostViewer ? 'side' as const : tab === 'post' ? 'compact' as const : tab === 'story-camera' ? 'side' as const : 'bar' as const;
   // The bottom tab bar only exists on the main (tabs) routes. On pushed screens
   // (another user's profile, settings, etc.) the player should sit at the true
   // bottom — so it docks down there, except the DM chat which has its own input

@@ -105,7 +105,7 @@ export default function GifsScreen() {
           />
         )}
 
-        <ImageViewerModal url={viewerUrl} onClose={() => setViewerUrl(null)} />
+        <ImageViewerModal state={viewerUrl ? { url: viewerUrl } : null} onClose={() => setViewerUrl(null)} />
       </View>
     </SwipeBackPager>
   );
