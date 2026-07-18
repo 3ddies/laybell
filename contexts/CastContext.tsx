@@ -203,12 +203,17 @@ function RealCastProvider({ children }: { children: ReactNode }) {
   // Laybell card, and receiver states from the CARD must not be mistaken for
   // states of the real item.
   const transitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True once THIS session has loaded any real media — the branded-idle effect
+  // below must never clobber a load that happened in the same commit (state
+  // `current` lags loadIndex by a render).
+  const hasLoadedRef = useRef(false);
 
   const loadIndex = useCallback((i: number, startSec = 0, splash = false) => {
     const item = queueRef.current[i];
     if (!item || !client) return;
     indexRef.current = i;
     advancedRef.current = false;
+    hasLoadedRef.current = true;
     setCurrent(item);
     // A new load supersedes any in-flight splash handoff.
     if (transitionRef.current) { clearTimeout(transitionRef.current); transitionRef.current = null; }
@@ -271,11 +276,24 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     }
   }, [client, loadIndex]);
 
+  // Branded idle: a session with a client but nothing to play shows the Laybell
+  // card instead of the receiver's stock "ready to cast" screen — and fetching
+  // the card NOW warms the receiver's HTTP cache, so the between-video splash
+  // appears instantly later instead of grey while the PNG downloads. Declared
+  // AFTER the pending-item effect on purpose: effects run in order, so by the
+  // time this one fires, a pending video has already loaded and hasLoadedRef
+  // (set synchronously in loadIndex) keeps the card from clobbering it.
+  useEffect(() => {
+    if (!client || current || pendingRef.current || hasLoadedRef.current) return;
+    try { client.loadMedia({ mediaInfo: buildSplashMediaInfo(), autoplay: true }); } catch {}
+  }, [client, current]);
+
   // Session ended (disconnected): clear what we thought was playing.
   useEffect(() => {
     if (!connected) {
       setCurrent(null); queueRef.current = []; indexRef.current = 0; pendingRef.current = null;
       if (transitionRef.current) { clearTimeout(transitionRef.current); transitionRef.current = null; }
+      hasLoadedRef.current = false;
       setRemoteOpen(false);
       setCommentsFor(null);
       setShareFor(null);

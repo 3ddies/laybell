@@ -116,7 +116,11 @@ export function liveToCastItem(l: LiveStream): CastItem | null {
 // beat (TV-only — the phone remote already shows the incoming item). The card
 // is web/tv-splash.png, auto-published to GitHub Pages by deploy-legal.yml.
 export const TV_SPLASH_URL = 'https://3ddies.github.io/laybell/tv-splash.png';
-export const TV_SPLASH_MS = 1400;
+// How long the card holds before the next video's load starts. The card and
+// the video load are strictly SERIAL on the receiver (it plays one thing at a
+// time), so every ms here adds to the total between-video gap — 1000ms reads
+// clearly as branding without dragging the transition.
+export const TV_SPLASH_MS = 1000;
 
 /** The Laybell interstitial card as receiver-loadable media (a photo). */
 export function buildSplashMediaInfo(): any {
