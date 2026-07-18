@@ -114,7 +114,7 @@
       [
         "react-native-google-cast",
         {
-          "receiverAppId": "CC1AD845",
+          "receiverAppId": "B03FA181",
           "iosDisableDiscoveryAutostart": true
         }
       ],

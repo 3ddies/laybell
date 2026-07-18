@@ -6,14 +6,13 @@
  * idle background, the loading screens behind media metadata, and the progress
  * bar all take Laybell orange instead of the stock grey.
  *
- * To activate (one-time, ~10 minutes):
- *   1. https://cast.google.com/publish → pay the one-time $5 registration.
- *   2. Add New Application → "Styled Media Receiver".
- *   3. Skin URL: https://3ddies.github.io/laybell/cast-receiver.css
- *   4. Save → copy the App ID → replace "CC1AD845" (receiverAppId) in
- *      app.json with it → rebuild the dev client.
- *   5. While the receiver is unpublished, register the TV's serial number
- *      under "Devices" on the same console (or just publish it).
+ * ACTIVE: registered as Styled Media Receiver App ID B03FA181 (set as
+ * receiverAppId in app.json). This skin URL is configured in the Cast console:
+ *   https://3ddies.github.io/laybell/cast-receiver.css
+ *
+ * While the receiver is UNPUBLISHED, every TV that tests it must be registered
+ * by serial number under "Devices" at https://cast.google.com/publish (or
+ * publish the receiver to skip per-device registration).
  *
  * Assets referenced here deploy automatically with web/ via deploy-legal.yml.
  */
