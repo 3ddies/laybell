@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Image, RefreshControl, Dimensions,
 } from 'react-native';
@@ -74,14 +74,10 @@ export default function LaybellTVScreen() {
 
   useEffect(() => { loadVideos(); loadLives(); }, [loadVideos, loadLives]);
 
-  // Leaving the Laybell TV area ends the TV session too — the cast connection
-  // shouldn't outlive the hub that owns it. Only a real exit (back-swipe /
-  // chevron) unmounts this screen; pushing deeper (/live, a reel) keeps it
-  // mounted, so those don't disconnect. Ref: the cleanup must see the LIVE
-  // cast state at exit time, not the mount-time snapshot.
-  const castRef = useRef(cast);
-  castRef.current = cast;
-  useEffect(() => () => { if (castRef.current.connected) castRef.current.disconnect(); }, []);
+  // NOTE: the cast session deliberately OUTLIVES this screen. Leaving Laybell TV
+  // keeps the TV playing and the CastBar rides along app-wide (cast-and-browse);
+  // the session only ends on a manual disconnect or a receiver/network drop. Do
+  // NOT re-add a disconnect-on-unmount here.
 
   // Searching flattens to a single 2-up grid of matches. Otherwise the top 4
   // personalized picks become the Recommended row and the rest fill the grid.

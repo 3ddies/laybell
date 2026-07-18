@@ -22,6 +22,7 @@ import {
   fetchListing, formatPrice, getDeliverableUrl, myOrderForListing, requestToBuy,
   setOrderStatus, updateListing, type ShopListing, type ShopOrder,
 } from '../../../lib/shop';
+import { addToCart, removeFromCart, useInCart, useShopCart } from '../../../lib/shopCart';
 
 const PREVIEW_HOST = 'shop-preview';
 
@@ -42,6 +43,8 @@ export default function ListingScreen() {
   // Derived from the shared player, so the icon always matches what's audible —
   // per-host subscription re-renders this screen only when ITS preview flips.
   const previewing = useSongHostActive(PREVIEW_HOST);
+  const { count: cartCount } = useShopCart();
+  const inCart = useInCart(id);
 
   const [listing, setListing] = useState<ShopListing | null>(null);
   const [order, setOrder] = useState<ShopOrder | null>(null);
@@ -142,23 +145,31 @@ export default function ListingScreen() {
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>{listing?.title ?? t('shop.title')}</Text>
-          {listing ? (
-            <TouchableOpacity
-              style={styles.headerBtn}
-              onPress={() =>
-                Share.share({
-                  message: `${t('shop.shareMsg', {
-                    title: listing.title,
-                    price: listing.price_cents <= 0 ? t('shop.free') : formatPrice(listing.price_cents, listing.currency),
-                  })}\n${WEB_ORIGIN}/open.html?p=shop/listing/${listing.id}`,
-                }).catch(() => {})
-              }
-            >
-              <Ionicons name="share-outline" size={21} color={colors.text} />
+          <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/shop/cart')} accessibilityLabel={t('shop.cart.title')}>
+              <Ionicons name="cart-outline" size={22} color={colors.text} />
+              {cartCount > 0 && (
+                <View style={styles.cartBadge}>
+                  <Text style={styles.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
-          ) : (
-            <View style={styles.headerBtn} />
-          )}
+            {listing && (
+              <TouchableOpacity
+                style={styles.headerBtn}
+                onPress={() =>
+                  Share.share({
+                    message: `${t('shop.shareMsg', {
+                      title: listing.title,
+                      price: listing.price_cents <= 0 ? t('shop.free') : formatPrice(listing.price_cents, listing.currency),
+                    })}\n${WEB_ORIGIN}/open.html?p=shop/listing/${listing.id}`,
+                  }).catch(() => {})
+                }
+              >
+                <Ionicons name="share-outline" size={21} color={colors.text} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {loading || !listing ? (
@@ -281,16 +292,28 @@ export default function ListingScreen() {
                     <Text style={styles.pendingBtnText}>{t('shop.requested')}</Text>
                   </TouchableOpacity>
                 ) : listing.status === 'active' ? (
-                  <TouchableOpacity style={styles.greenBtn} onPress={buy} disabled={busy} activeOpacity={0.85}>
-                    {busy ? <ActivityIndicator color="#fff" /> : (
-                      <>
-                        <Ionicons name="bag-check-outline" size={18} color="#fff" />
-                        <Text style={styles.greenBtnText}>
-                          {listing.price_cents <= 0 ? t('shop.get') : t('shop.requestToBuy')}
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                  <>
+                    <TouchableOpacity style={styles.greenBtn} onPress={buy} disabled={busy} activeOpacity={0.85}>
+                      {busy ? <ActivityIndicator color="#fff" /> : (
+                        <>
+                          <Ionicons name="flash" size={18} color="#fff" />
+                          <Text style={styles.greenBtnText}>
+                            {listing.price_cents <= 0 ? t('shop.get') : t('shop.buyNow')}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.cartBtn, inCart && styles.cartBtnActive]}
+                      onPress={() => { reactionPop(); inCart ? removeFromCart(listing.id) : addToCart(listing); }}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name={inCart ? 'checkmark' : 'cart-outline'} size={17} color={inCart ? colors.success : colors.text} />
+                      <Text style={[styles.cartBtnText, inCart && { color: colors.success }]}>
+                        {inCart ? t('shop.inCart') : t('shop.addToCart')}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
                 ) : (
                   <View style={styles.pendingBtn}>
                     <Text style={styles.pendingBtnText}>{t('shop.unavailable')}</Text>
@@ -348,7 +371,19 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   flex: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 6 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerRight: { flexDirection: 'row', alignItems: 'center' },
   headerTitle: { flex: 1, textAlign: 'center', color: c.text, fontSize: 16, fontWeight: '700' },
+  cartBadge: {
+    position: 'absolute', top: 4, right: 4, minWidth: 15, height: 15, borderRadius: 7.5,
+    paddingHorizontal: 3, backgroundColor: c.success, alignItems: 'center', justifyContent: 'center',
+  },
+  cartBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  cartBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    borderWidth: 1, borderColor: c.border, borderRadius: RADIUS.full, paddingVertical: 12,
+  },
+  cartBtnActive: { borderColor: c.success, backgroundColor: c.success + '14' },
+  cartBtnText: { color: c.text, fontSize: 14, fontWeight: '600' },
   content: { padding: SPACING.md, gap: 12, paddingBottom: 44 },
   coverWrap: { borderRadius: RADIUS.lg, overflow: 'hidden', aspectRatio: 1, backgroundColor: c.surfaceLight },
   cover: { width: '100%', height: '100%' },

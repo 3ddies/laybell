@@ -91,6 +91,7 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
           authorId: p.user_id,
           authorName: p.profiles?.username ?? undefined,
           mediaType: p.type,
+          hideMakeGif: true, // Laybell TV surface — GIF preview can't load here
           onEdit: () => router.push(`/edit-post/${p.id}`),
           onDeleted: () => onPostDeleted?.(p.id),
           onArchived: () => onPostDeleted?.(p.id),

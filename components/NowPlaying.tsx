@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
+import { useCast } from '../contexts/CastContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
@@ -147,6 +148,42 @@ function Controls() {
           <Ionicons name="play-skip-forward" size={28} color={canNext ? colors.text : colors.textTertiary} />
         </TouchableOpacity>
       )}
+    </View>
+  );
+}
+
+// Laybell TV card for the music player: when a cast session runs alongside the
+// music, show the on-TV video + a play/pause so it can be seen and controlled
+// without leaving the Spotify-style view. Its OWN component so the 0.5s cast
+// position ticks (which rebuild the cast value) re-render only this small card,
+// not the heavy player sheet + comments around it.
+function NowPlayingTVCard() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
+  const { connected, current, deviceName, isPlaying, play, pause } = useCast();
+  if (!connected || !current) return null;
+  return (
+    <View style={styles.tvCard}>
+      {current.poster ? (
+        <Image source={{ uri: current.poster }} style={styles.tvCardPoster} />
+      ) : (
+        <LinearGradient colors={GRADIENTS.primarySoft} style={styles.tvCardPoster}>
+          <Ionicons name="tv" size={18} color={colors.primary} />
+        </LinearGradient>
+      )}
+      <View style={styles.tvCardInfo}>
+        <View style={styles.tvCardLabelRow}>
+          <Ionicons name="tv" size={11} color={colors.primary} />
+          <Text style={styles.tvCardLabel} numberOfLines={1}>
+            {t('tv.cast.castingTo', { device: deviceName || t('tv.cast.yourTv') })}
+          </Text>
+        </View>
+        <Text style={styles.tvCardTitle} numberOfLines={1}>{current.title}</Text>
+      </View>
+      <TouchableOpacity onPress={() => (isPlaying ? pause() : play())} hitSlop={10} style={styles.tvCardBtn}>
+        <Ionicons name={isPlaying ? 'pause' : 'play'} size={22} color={colors.text} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -529,6 +566,11 @@ export default function NowPlaying() {
                     <Text style={styles.tapStatNum}>{formatCount(saves)}</Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* Laybell TV card — mirror of the music card in the TV remote.
+                    Isolated component so its per-tick cast re-renders don't drag
+                    the whole player sheet with them. */}
+                <NowPlayingTVCard />
               </>
             }
           />
@@ -579,6 +621,18 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   playGlyphNudge: { marginLeft: 4 },
 
   statBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: SPACING.md },
+  // Laybell TV cast card (shown in the player while a session is live).
+  tvCard: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.md,
+    backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.md, padding: SPACING.sm,
+    borderWidth: 1, borderColor: colors.primary + '55',
+  },
+  tvCardPoster: { width: 44, height: 44, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: colors.surface },
+  tvCardInfo: { flex: 1, minWidth: 0 },
+  tvCardLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  tvCardLabel: { flex: 1, color: colors.primary, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  tvCardTitle: { color: colors.text, fontSize: 14, fontWeight: '700', marginTop: 1 },
+  tvCardBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   tapStat: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
     paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm + 2,

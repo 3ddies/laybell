@@ -12,7 +12,8 @@ import { selection } from '../lib/haptics';
 import {
   TV_BRANDS, brandById, loadSavedBrandId, saveBrandId, transportsFor, type TVBrand, type TVTransport,
 } from '../lib/tvSetup';
-import type { CastItem } from '../lib/cast';
+import { postToCastItem, type CastItem } from '../lib/cast';
+import { fetchHorizontalVideos } from '../lib/tv';
 
 // Laybell TV — the "Watch on TV" connect wizard. Three friendly screens:
 //
@@ -54,6 +55,25 @@ export default function TVConnectModal({ visible, onClose, pendingItem }: {
 
   const [brand, setBrand] = useState<TVBrand | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [starting, setStarting] = useState(false);
+
+  // "Browse videos" from the connected screen: start playing on the TV right
+  // away (top of the Laybell TV feed, whole feed queued for up-next) so the TV
+  // is never sitting idle, then close the wizard — cast() expands the
+  // full-screen remote, so the user lands straight on the playing video's
+  // controls. If a video is ALREADY on the TV (the 3-dot pending item), don't
+  // replace it — just close.
+  async function browseAndPlay() {
+    if (cast.current) { onClose(); return; }
+    setStarting(true);
+    try {
+      const vids = await fetchHorizontalVideos(20);
+      const items = vids.map(postToCastItem).filter(Boolean) as CastItem[];
+      if (items.length) cast.cast(items[0], items);
+    } catch { /* offline — just close */ }
+    setStarting(false);
+    onClose();
+  }
 
   // Remembered TV: skip the brand grid on every open after the first.
   useEffect(() => {
@@ -143,10 +163,16 @@ export default function TVConnectModal({ visible, onClose, pendingItem }: {
               <Text style={styles.doneBody}>
                 {t('tv.setup.connectedBody', { device: cast.deviceName || t('tv.cast.yourTv') })}
               </Text>
-              <TouchableOpacity onPress={onClose} activeOpacity={0.9} style={styles.primaryWrap}>
+              <TouchableOpacity onPress={browseAndPlay} disabled={starting} activeOpacity={0.9} style={styles.primaryWrap}>
                 <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtn}>
-                  <Ionicons name="play" size={18} color="#fff" />
-                  <Text style={styles.primaryText}>{t('tv.setup.browse')}</Text>
+                  {starting ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="play" size={18} color="#fff" />
+                      <Text style={styles.primaryText}>{t('tv.setup.browse')}</Text>
+                    </>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
               <TouchableOpacity onPress={cast.disconnect} style={styles.linkBtn}>

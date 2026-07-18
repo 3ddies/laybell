@@ -75,10 +75,12 @@ function AppContent() {
   const inPostViewer = segments[0] === 'post';
   // On the Create tab the player migrates to a compact top-right card so the
   // song rides along instead of dying when the tab is swiped past; the post
-  // DETAILS step then stops it (see post.tsx). On the story camera it docks
-  // as a simplified side chip so the viewfinder stays clear.
+  // DETAILS step then stops it (see post.tsx). On the story camera AND the Live
+  // section it docks as a simplified side chip so those bottom controls (shutter
+  // / Go Live) stay clear — matching the cast controller's chip on those screens.
+  const onLive = segments[0] === 'live';
   const tab = segments[0] === '(tabs)' ? (segments as string[])[1] : undefined;
-  const playerVariant = inPostViewer ? 'side' as const : tab === 'post' ? 'compact' as const : tab === 'story-camera' ? 'side' as const : 'bar' as const;
+  const playerVariant = inPostViewer || onLive ? 'side' as const : tab === 'post' ? 'compact' as const : tab === 'story-camera' ? 'side' as const : 'bar' as const;
   // The bottom tab bar only exists on the main (tabs) routes. On pushed screens
   // (another user's profile, settings, etc.) the player should sit at the true
   // bottom — so it docks down there, except the DM chat which has its own input
@@ -86,6 +88,15 @@ function AppContent() {
   const onTabs = segments[0] === '(tabs)';
   const inChat = segments[0] === 'messages' && (segments as string[]).length > 1;
   const bottomDock = !onTabs && !inChat;
+  // A live cast session PERSISTS across navigation (cast-and-browse) — the
+  // CastBar rides along as the now-playing controller so the TV keeps playing
+  // while the user scrolls elsewhere; disconnect is a deliberate tap.
+  //
+  // EXCEPT two screens own the exact bottom slot the bar wants: the story-camera
+  // (capture button) and the Live section (Go Live button). There the cast
+  // controller shrinks to a compact side chip (like the music side chip) so it
+  // stays visible + controllable without covering those controls.
+  const castChip = tab === 'story-camera' || segments[0] === 'live';
 
   // One-time welcome tour: onboarding arms a flag then drops the user onto the
   // tabs, so the live app is already mounted. The first time we land on the tabs
@@ -107,8 +118,12 @@ function AppContent() {
   const overlays = (
     <>
       {!immersive && <MiniPlayer variant={playerVariant} bottomDock={bottomDock} />}
-      {/* Laybell TV cast controller — self-hides unless a Cast session is live. */}
-      <CastBar />
+      {/* Laybell TV cast controller — self-hides unless a Cast session is live.
+          Same dock logic as the MiniPlayer: sits in the now-playing slot above
+          the tab bar on tab/chat screens, drops to the true bottom on tab-less
+          pushed screens (like /tv, where it's placed perfectly already). On the
+          story-camera + Live screens it shrinks to a compact side chip. */}
+      <CastBar bottomDock={bottomDock} variant={castChip ? 'chip' : 'bar'} />
       {/* Tap-to-retry after a failed background story post — in the overlay so it
           stays above native pushed-screen modals. */}
       {failedJob && <StoryFailedBanner onRetry={retryFailed} onDismiss={dismissFailed} />}
@@ -177,7 +192,7 @@ function AppContent() {
             the route itself must not animate (iOS ignores slide_from_right on
             modal presentations and would slide up from the bottom instead). The
             stack's own back gesture stays off — the pager owns the swipe. */}
-        {['messages/index', 'notifications', 'settings', 'saved', 'gifs', 'analytics', 'spotlight', 'ad-manager/index', 'ad-manager/create', 'ad-manager/[id]', 'badges', 'permissions', 'playlists', 'playlist/[id]', 'downloads', 'premium', 'follower-insights', 'communities/index', 'communities/create', 'communities/edit', 'communities/[id]', 'privacy-policy', 'terms-of-service', 'community-guidelines', 'advertiser-terms', 'privacy-center', 'live/index', 'live/go-live', 'studio/index', 'studio/[id]', 'shop/index', 'shop/[userId]', 'shop/listing/[id]', 'shop/new-listing', 'tv/index'].map((name) => (
+        {['messages/index', 'notifications', 'settings', 'saved', 'gifs', 'analytics', 'spotlight', 'ad-manager/index', 'ad-manager/create', 'ad-manager/[id]', 'badges', 'permissions', 'playlists', 'playlist/[id]', 'downloads', 'premium', 'follower-insights', 'communities/index', 'communities/create', 'communities/edit', 'communities/[id]', 'privacy-policy', 'terms-of-service', 'community-guidelines', 'advertiser-terms', 'privacy-center', 'live/index', 'live/go-live', 'studio/index', 'studio/[id]', 'shop/index', 'shop/[userId]', 'shop/listing/[id]', 'shop/new-listing', 'shop/cart', 'tv/index'].map((name) => (
           <Stack.Screen
             key={name}
             name={name}

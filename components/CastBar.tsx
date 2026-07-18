@@ -1,4 +1,4 @@
-import { ActivityIndicator, View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { ActivityIndicator, Animated, View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,6 +6,7 @@ import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../constants/them
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useCast } from '../contexts/CastContext';
+import { feedChrome } from '../lib/feedChrome';
 import { useOptimisticSeek } from '../hooks/useOptimisticSeek';
 import { selection } from '../lib/haptics';
 import Scrubber from './Scrubber';
@@ -25,11 +26,23 @@ import { ShareSheet } from '../contexts/ShareContext';
 // Tapping the poster/title opens the Cast SDK's full-screen remote (expanded
 // controls). The TV's own remote drives the same session independently.
 
-export default function CastBar() {
+export default function CastBar({ bottomDock = false, variant = 'bar' }: { bottomDock?: boolean; variant?: 'bar' | 'chip' }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  // Match the MiniPlayer's now-playing slot: above the tab bar on tab/chat
+  // screens (bottomDock false), at the true bottom on tab-less pushed screens
+  // (bottomDock true, e.g. /tv — its perfect placement is unchanged).
+  const barBottom = bottomDock ? insets.bottom + 8 : 68 + insets.bottom + 6;
+  // Ride the home feed's reactive chrome (native-driven, shared with the
+  // MiniPlayer): when the tab bar condenses into chips and drops toward the
+  // edge, the cast bar slides down with it so it always hugs the bottom
+  // elements. Zero off the home feed (feedChrome resets on tab change).
+  const chromeSlide = feedChrome.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, (insets.bottom > 0 ? insets.bottom - 2 : 12) + (bottomDock ? -8 : 6)],
+  });
   const {
     connected, current, deviceName, isPlaying, playerState, mediaError, ended,
     positionSec, durationSec,
@@ -69,8 +82,35 @@ export default function CastBar() {
       />
       {/* Share for the on-TV post — same inOverlay hosting as the comments. */}
       <ShareSheet inOverlay visible={!!shareFor} payload={shareFor} onClose={closeShare} />
-      {remoteOpen || commentsFor || shareFor ? null : (
-    <View style={[styles.wrap, { bottom: insets.bottom + 8 }]} pointerEvents="box-none">
+      {remoteOpen || commentsFor || shareFor ? null : variant === 'chip' ? (
+        // Compact side chip for screens whose own controls own the bottom slot
+        // (story camera, Live) — mirrors the music side chip: poster (tap opens
+        // the remote) + play/pause + disconnect, a vertical pill on the edge.
+        <View style={styles.chip}>
+          <TouchableOpacity onPress={openRemote} style={styles.chipPosterWrap} activeOpacity={0.85}>
+            {current?.poster ? (
+              <Image source={{ uri: current.poster }} style={styles.chipPoster} />
+            ) : (
+              <LinearGradient colors={GRADIENTS.primarySoft} style={styles.chipPoster}>
+                <Ionicons name="tv" size={14} color={colors.primary} />
+              </LinearGradient>
+            )}
+            <View style={styles.chipBadge}><Ionicons name="tv" size={8} color="#fff" /></View>
+          </TouchableOpacity>
+          {current && (
+            <TouchableOpacity onPress={() => { selection(); if (ended) retry(); else if (isPlaying) pause(); else play(); }} hitSlop={8}>
+              <Ionicons
+                name={busy ? 'hourglass' : ended ? 'refresh-circle' : isPlaying ? 'pause-circle' : 'play-circle'}
+                size={28} color={colors.primary}
+              />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.chipClose} onPress={disconnect} hitSlop={8}>
+            <Ionicons name="close" size={12} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+    <Animated.View style={[styles.wrap, { bottom: barBottom, transform: [{ translateY: chromeSlide }] }]} pointerEvents="box-none">
       <View style={styles.card}>
         {!current ? (
           /* Session up, nothing loaded yet — say so instead of hiding. */
@@ -171,7 +211,7 @@ export default function CastBar() {
           </>
         )}
       </View>
-    </View>
+    </Animated.View>
       )}
     </>
   );
@@ -179,6 +219,29 @@ export default function CastBar() {
 
 const makeStyles = (c: ThemePalette) => StyleSheet.create({
   wrap: { position: 'absolute', left: SPACING.md, right: SPACING.md, zIndex: 60 },
+  // Compact side chip (story camera / Live) — a vertical pill on the right edge,
+  // sat ABOVE the music side chip (top 42%) so the two stack without overlap.
+  chip: {
+    position: 'absolute', right: 8, top: '28%',
+    alignItems: 'center', gap: 8,
+    backgroundColor: c.surfaceElevated,
+    borderRadius: RADIUS.full,
+    borderWidth: 0.5, borderColor: c.primary + '77',
+    paddingVertical: 8, paddingHorizontal: 6,
+    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 8,
+    zIndex: 100,
+  },
+  chipPosterWrap: { width: 30, height: 30, borderRadius: 15, overflow: 'hidden' },
+  chipPoster: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  chipBadge: {
+    position: 'absolute', bottom: -1, right: -1, width: 14, height: 14, borderRadius: 7,
+    backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: c.surfaceElevated,
+  },
+  chipClose: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: c.surfaceLight, alignItems: 'center', justifyContent: 'center',
+  },
   card: {
     backgroundColor: c.surfaceElevated,
     borderRadius: RADIUS.lg,

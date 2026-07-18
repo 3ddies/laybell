@@ -20,6 +20,7 @@ import {
   sellerEarningsCents, setOrderStatus, updateShop,
   type ExploreSort, type ListingCategory, type Shop, type ShopListing, type ShopOrder,
 } from '../../lib/shop';
+import { useShopCart } from '../../lib/shopCart';
 
 // The Shop hub — Laybell's marketplace for digital goods.
 //   Explore  — browse/search every active listing (the marketplace feed)
@@ -37,6 +38,7 @@ export default function ShopHubScreen() {
   const { profile } = useProfile();
   const params = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<Tab>(params.tab === 'mine' ? 'mine' : params.tab === 'orders' ? 'orders' : 'explore');
+  const { count: cartCount } = useShopCart();
   // Buy requests waiting on you — surfaces as a green count on the Orders tab.
   const [pendingCount, setPendingCount] = useState(0);
   useEffect(() => {
@@ -51,7 +53,14 @@ export default function ShopHubScreen() {
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('shop.title')}</Text>
-          <View style={styles.headerBtn} />
+          <TouchableOpacity onPress={() => router.push('/shop/cart')} style={styles.headerBtn} accessibilityLabel={t('shop.cart.title')}>
+            <Ionicons name="cart-outline" size={23} color={colors.text} />
+            {cartCount > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Segmented tabs */}
@@ -553,6 +562,11 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { flex: 1, textAlign: 'center', color: c.text, fontSize: 17, fontWeight: '700' },
+  cartBadge: {
+    position: 'absolute', top: 4, right: 3, minWidth: 15, height: 15, borderRadius: 7.5,
+    paddingHorizontal: 3, backgroundColor: c.success, alignItems: 'center', justifyContent: 'center',
+  },
+  cartBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   segment: {
     flexDirection: 'row', marginHorizontal: SPACING.md, marginTop: 4, marginBottom: 10,
     backgroundColor: c.surfaceLight, borderRadius: RADIUS.full, padding: 3,

@@ -154,6 +154,13 @@ export function buildMediaInfo(item: CastItem): any {
     // the receiver's default: Stream Live segment format is unverified, and
     // mis-flagging breaks it the same way.
     ...(item.isLive || dash ? {} : { hlsSegmentFormat: 'FMP4', hlsVideoSegmentFormat: 'FMP4' }),
+    // Poster = the item's OWN thumbnail (Cloudflare — same CDN as the video, so
+    // it resolves as fast as the stream itself). Do NOT put the GitHub-Pages
+    // splash image here: the receiver fetches the poster as part of loading the
+    // media, and if the TV's network reaches GitHub Pages slowly, playback
+    // stalls waiting on it (a multi-minute hang was exactly that). The
+    // between-video grey-before-logo is cosmetic and NOT worth risking the
+    // load path — leave the splash card to warm via the idle screen only.
     metadata: {
       type: 'movie',
       title: item.title,

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
-  Modal, View, Text, StyleSheet, TouchableOpacity,
+  Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions,
   Pressable, Animated, PanResponder, Easing, Platform, ActivityIndicator,
 } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
@@ -50,6 +50,10 @@ export type PostOptionsArgs = {
   // The item is already playing on the TV (menu opened from the cast remote) —
   // hides the "Laybell TV" option, which would restart it and drop the queue.
   hideLaybellTv?: boolean;
+  // Opened from a Laybell TV surface — hides "Make GIF". The GIF maker's preview
+  // is an on-phone video player, which a live cast session suspends (background
+  // media is silenced behind the TV), so the frame preview never loads there.
+  hideMakeGif?: boolean;
   onEdit?: () => void;
   onDeleted?: () => void;
   onArchived?: () => void;
@@ -170,6 +174,11 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   onLaybellTv: (item: CastItem) => void;
 }) {
   const insets = useSafeAreaInsets();
+  // Cap the sheet so it never exceeds the screen — in landscape the option list
+  // is taller than the short viewport, which used to run off the top (clipped).
+  // The list scrolls within this cap instead.
+  const { height: winH } = useWindowDimensions();
+  const sheetMaxHeight = winH - insets.top - SPACING.xl;
   const router = useRouter();
   const { profile } = useProfile();
   const { t } = useTranslation();
@@ -431,7 +440,7 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   }
 
   // ── Make GIF (any video, any viewer — unless the creator opted out) ────────
-  if (hasPost && opts?.mediaType === 'video' && allowGifs) {
+  if (hasPost && opts?.mediaType === 'video' && allowGifs && !opts?.hideMakeGif) {
     options.push({ key: 'makegif', label: t('postOptions.makeGif'), icon: 'film-outline',
       onPress: () => {
         const o = optsRef.current;
@@ -494,37 +503,41 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
       <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
       </Animated.View>
-      <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.sm, transform: [{ translateY }] }]}>
+      <Animated.View style={[styles.sheet, { maxHeight: sheetMaxHeight, paddingBottom: insets.bottom + SPACING.sm, transform: [{ translateY }] }]}>
         <View style={styles.grab} {...pan.panHandlers}>
           <View style={styles.handle} />
         </View>
         <View style={styles.divider} />
-        {options.map((opt, i) => (
-          <TouchableOpacity
-            key={opt.key}
-            style={[styles.option, i < options.length - 1 && styles.optionBorder]}
-            onPress={opt.onPress}
-            activeOpacity={0.7}
-            accessibilityLabel={opt.accessibilityLabel}
-          >
-            <View style={[
-              styles.iconWrap,
-              opt.destructive && styles.iconWrapDestructive,
-              opt.active && { backgroundColor: (opt.activeColor ?? COLORS.primary) + '1A' },
-            ]}>
-              {opt.loading ? (
-                <ActivityIndicator size="small" color={COLORS.text} />
-              ) : (
-                <Ionicons
-                  name={opt.icon}
-                  size={20}
-                  color={opt.active ? (opt.activeColor ?? COLORS.primary) : opt.destructive ? COLORS.error : COLORS.text}
-                />
-              )}
-            </View>
-            <Text style={[styles.optionLabel, opt.destructive && styles.destructive]}>{opt.label}</Text>
-          </TouchableOpacity>
-        ))}
+        {/* flexShrink lets the list scroll within the sheet's maxHeight instead
+            of overflowing the top when there are many options (landscape). */}
+        <ScrollView style={styles.optionsScroll} bounces={false} showsVerticalScrollIndicator={false}>
+          {options.map((opt, i) => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.option, i < options.length - 1 && styles.optionBorder]}
+              onPress={opt.onPress}
+              activeOpacity={0.7}
+              accessibilityLabel={opt.accessibilityLabel}
+            >
+              <View style={[
+                styles.iconWrap,
+                opt.destructive && styles.iconWrapDestructive,
+                opt.active && { backgroundColor: (opt.activeColor ?? COLORS.primary) + '1A' },
+              ]}>
+                {opt.loading ? (
+                  <ActivityIndicator size="small" color={COLORS.text} />
+                ) : (
+                  <Ionicons
+                    name={opt.icon}
+                    size={20}
+                    color={opt.active ? (opt.activeColor ?? COLORS.primary) : opt.destructive ? COLORS.error : COLORS.text}
+                  />
+                )}
+              </View>
+              <Text style={[styles.optionLabel, opt.destructive && styles.destructive]}>{opt.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </Animated.View>
     </View>
   );
@@ -555,6 +568,7 @@ const styles = StyleSheet.create({
   grab: { alignItems: 'center', paddingVertical: SPACING.sm },
   handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: COLORS.border },
   divider: { height: 0.5, backgroundColor: COLORS.border },
+  optionsScroll: { flexShrink: 1 },
   option: {
     flexDirection: 'row',
     alignItems: 'center',

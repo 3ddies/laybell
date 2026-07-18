@@ -14,6 +14,7 @@ import { useLinkGuard } from '../contexts/LinkGuardContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useCast } from '../contexts/CastContext';
 import { Ionicons } from '@expo/vector-icons';
 import Scrubber from './Scrubber';
 
@@ -36,6 +37,12 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   const { currentTrack, isPlaying, isBuffering, pause, resume, stop, seekTo, expanded, expand, adState, skipAudioAd } = useAudio();
   const { positionMs, durationMs } = useAudioPosition(); // tick subscription (4×/sec) — small tree, cheap
   const insets = useSafeAreaInsets();
+  // When a Laybell TV session is live, the CastBar takes the now-playing slot
+  // (see CastBar's barBottom) and the song bar STACKS above it. The CastBar card
+  // is ~74px tall, so lift the song bar by that + a gap so the two never
+  // overlap — on both tab screens (both in the slot) and docked screens (both
+  // shift down together, so the same offset holds).
+  const castLift = useCast().connected ? 84 : 0;
   const { listenMode } = useListenMode();
   const linkGuard = useLinkGuard();
   const router = useRouter();
@@ -159,7 +166,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   // ad view — the user moves between mini bar and full player freely. Skip is
   // locked until AUDIO_AD_SKIP_MS; there's no close (the ad can't be dismissed).
   if (adState) {
-    const bottomOffset = 68 + insets.bottom + 6;
+    const bottomOffset = 68 + insets.bottom + 6 + castLift;
     // Elapsed/duration come from the position channel (useAudioPosition above) —
     // during an ad it carries the ad player's ticks, so only THIS bar re-renders
     // per tick instead of every useAudio() consumer app-wide.
@@ -282,7 +289,8 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
 
   // Sit just above the tab bar (68 + bottom inset), clearing the ~4px the center
   // "+" button now protrudes above it (its pop-up was reduced in the tab bar).
-  const bottomOffset = 68 + insets.bottom + 6;
+  // castLift raises it over the Laybell TV cast bar while a session is live.
+  const bottomOffset = 68 + insets.bottom + 6 + castLift;
 
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
 

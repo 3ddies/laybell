@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NativeModules } from 'react-native';
-import { buildMediaInfo, buildSplashMediaInfo, TV_SPLASH_MS, type CastItem } from '../lib/cast';
+import { buildMediaInfo, buildSplashMediaInfo, postToCastItem, TV_SPLASH_MS, type CastItem } from '../lib/cast';
+import { fetchHorizontalVideos } from '../lib/tv';
 import { useMediaSuspend } from './MediaSuspendContext';
 import type { SharePayload } from './ShareContext';
 
@@ -61,7 +62,8 @@ export type CastValue = {
   nextItem: CastItem | null;
   positionSec: number;
   durationSec: number;
-  /** Throw an item to the TV (optionally with a queue for next/prev + autoplay-next). */
+  /** Throw an item to the TV (optionally with a queue for next/prev +
+      autoplay-next). Always expands the full-screen remote. */
   cast: (item: CastItem, queue?: CastItem[]) => void;
   play: () => void;
   pause: () => void;
@@ -180,6 +182,11 @@ function RealCastProvider({ children }: { children: ReactNode }) {
   const advancedRef = useRef(false);
 
   const [current, setCurrent] = useState<CastItem | null>(null);
+  // Bumped whenever the queue is mutated OUTSIDE a setCurrent (i.e. the async
+  // up-next backfill) so hasNext/nextItem — derived from queueRef at render —
+  // refresh immediately instead of waiting for the next 0.5s position tick.
+  const [, setQueueVersion] = useState(0);
+  const bumpQueue = useCallback(() => setQueueVersion((v) => v + 1), []);
   // Full-screen in-app remote visibility — see the CastValue doc for the rules.
   const [remoteOpen, setRemoteOpen] = useState(false);
   // Comments for the on-TV video (see the CastValue doc). While set, the remote
@@ -222,11 +229,15 @@ function RealCastProvider({ children }: { children: ReactNode }) {
         // An explicit startTime pins VOD to a real position (0 = the actual
         // beginning — without it the receiver picks its own join point a few
         // seconds in). Lives omit it so the receiver joins at the live edge.
+        // .catch: loadMedia returns a Promise that REJECTS "disconnected from
+        // receiver" if the session ends before it settles; the synchronous
+        // try/catch can't see that, so it'd surface as an unhandled rejection
+        // in the LogBox. Swallow it — every client call below does the same.
         client.loadMedia({
           mediaInfo: buildMediaInfo(item),
           autoplay: true,
           ...(item.isLive ? {} : { startTime: Math.max(0, startSec) }),
-        });
+        })?.catch?.(() => {});
       } catch { /* client torn down mid-call */ }
     };
     if (!splash) { loadReal(); return; }
@@ -234,16 +245,40 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     // load the item. TV-only by design — the phone remote shows the incoming
     // item (loading state) for the whole handoff.
     try {
-      client.loadMedia({ mediaInfo: buildSplashMediaInfo(), autoplay: true });
+      client.loadMedia({ mediaInfo: buildSplashMediaInfo(), autoplay: true })?.catch?.(() => {});
       transitionRef.current = setTimeout(() => { transitionRef.current = null; loadReal(); }, TV_SPLASH_MS);
     } catch { loadReal(); }
   }, [client]);
+
+  // Backfill an "up next" queue from the Laybell TV feed when a video was cast
+  // on its OWN (the post 3-dot path passes no queue), so the remote always has a
+  // next video and autoplay-next flows into more Laybell TV — same as browsing
+  // TV videos on the phone. Best-effort: offline / no other videos just leaves
+  // the single item, no harm. Lives don't flow into VOD, so they're skipped.
+  const enrichQueue = useCallback(async (item: CastItem) => {
+    if (item.isLive) return;
+    try {
+      const vids = await fetchHorizontalVideos(40);
+      const others = (vids.map(postToCastItem).filter(Boolean) as CastItem[])
+        .filter((x) => x.id !== item.id);
+      if (!others.length) return;
+      // Only apply while we're still on the item we enriched for — if the user
+      // already tapped next or cast something else, don't clobber their queue.
+      if (queueRef.current.length > 1 || queueRef.current[0]?.id !== item.id) return;
+      queueRef.current = [item, ...others];
+      indexRef.current = 0;
+      bumpQueue();
+    } catch { /* pre-migration / offline — remote just has no up-next */ }
+  }, [bumpQueue]);
 
   const cast = useCallback((item: CastItem, queue?: CastItem[]) => {
     const q = queue && queue.length ? queue : [item];
     const idx = Math.max(0, q.findIndex((x) => x.id === item.id));
     queueRef.current = q;
     indexRef.current = idx;
+    // No real queue supplied (single-item cast, e.g. a post's 3-dot) → pull the
+    // TV feed in behind it so there's always a next video to roll into.
+    if (!queue || queue.length <= 1) enrichQueue(item);
     if (client) {
       loadIndex(idx);
       // Choosing a video while connected expands straight into the remote.
@@ -261,7 +296,7 @@ function RealCastProvider({ children }: { children: ReactNode }) {
       // wait for the client (no dialog); the tab path already behaves this way.
       if (!connected) { try { GCast?.showCastDialog?.(); } catch {} }
     }
-  }, [client, loadIndex, connected]);
+  }, [client, loadIndex, connected, enrichQueue]);
 
   // When a client appears and something was queued pre-connection, load it —
   // and expand the remote, so "connect → your video is playing, here are the
@@ -285,7 +320,7 @@ function RealCastProvider({ children }: { children: ReactNode }) {
   // (set synchronously in loadIndex) keeps the card from clobbering it.
   useEffect(() => {
     if (!client || current || pendingRef.current || hasLoadedRef.current) return;
-    try { client.loadMedia({ mediaInfo: buildSplashMediaInfo(), autoplay: true }); } catch {}
+    try { client.loadMedia({ mediaInfo: buildSplashMediaInfo(), autoplay: true })?.catch?.(() => {}); } catch {}
   }, [client, current]);
 
   // Session ended (disconnected): clear what we thought was playing.
@@ -335,26 +370,26 @@ function RealCastProvider({ children }: { children: ReactNode }) {
 
   const play = useCallback(() => {
     if (idleNow()) { loadIndex(indexRef.current); return; } // ended → play = replay
-    try { client?.play(); } catch {}
+    try { client?.play()?.catch?.(() => {}); } catch {}
   }, [client, idleNow, loadIndex]);
-  const pause = useCallback(() => { try { client?.pause(); } catch {} }, [client]);
+  const pause = useCallback(() => { try { client?.pause()?.catch?.(() => {}); } catch {} }, [client]);
   const retry = useCallback(() => { loadIndex(indexRef.current); }, [loadIndex]);
   const showRemote = useCallback(() => { try { GCast?.showExpandedControls?.(); } catch {} }, []);
   const seekTo = useCallback((sec: number) => {
     if (idleNow()) { loadIndex(indexRef.current, sec); return; } // revive at the target
-    try { client?.seek({ position: Math.max(0, sec) }); } catch {}
+    try { client?.seek({ position: Math.max(0, sec) })?.catch?.(() => {}); } catch {}
   }, [client, idleNow, loadIndex]);
   // Relative seek — the receiver clamps to [0, duration], and keeping it
   // relative avoids racing the stream-position ticks.
   const skip = useCallback((deltaSec: number) => {
     if (idleNow()) { loadIndex(indexRef.current, lastPosRef.current + deltaSec); return; }
-    try { client?.seek({ position: deltaSec, relative: true }); } catch {}
+    try { client?.seek({ position: deltaSec, relative: true })?.catch?.(() => {}); } catch {}
   }, [client, idleNow, loadIndex]);
   // Manual queue moves get the branded splash too — same post-change moment.
   const next = useCallback(() => { if (indexRef.current + 1 < queueRef.current.length) loadIndex(indexRef.current + 1, 0, true); }, [loadIndex]);
   const prev = useCallback(() => { if (indexRef.current - 1 >= 0) loadIndex(indexRef.current - 1, 0, true); }, [loadIndex]);
   const disconnect = useCallback(() => {
-    try { GCast?.getSessionManager?.()?.endCurrentSession?.(true); } catch {}
+    try { GCast?.getSessionManager?.()?.endCurrentSession?.(true)?.catch?.(() => {}); } catch {}
   }, []);
   const showPicker = useCallback(() => { try { GCast?.showCastDialog?.(); } catch {} }, []);
   // Stable identities for the overlay chrome. The context value is rebuilt on

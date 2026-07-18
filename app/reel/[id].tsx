@@ -83,10 +83,10 @@ type ReelPageApi = {
 // props actually changed — never the whole mounted window. (Same treatment the
 // home feed got; reels had the identical re-render-burst failure mode.)
 const ReelControls = memo(function ReelControls({
-  item, isLiked, isSaved, spotlight, railBottom, metaBottom, compact = false, expandable = false, capExpanded = false, api,
+  item, isLiked, isSaved, spotlight, railBottom, metaBottom, railRight = SPACING.sm, compact = false, expandable = false, capExpanded = false, api,
 }: {
   item: any; isLiked: boolean; isSaved: boolean; spotlight: boolean;
-  railBottom: number; metaBottom: number; compact?: boolean; expandable?: boolean; capExpanded?: boolean; api: ReelPageApi;
+  railBottom: number; metaBottom: number; railRight?: number; compact?: boolean; expandable?: boolean; capExpanded?: boolean; api: ReelPageApi;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -106,7 +106,7 @@ const ReelControls = memo(function ReelControls({
 
       {/* Right action rail (bottom-anchored: options sits just above the bar) */}
       <View
-        style={[styles.rail, compact && styles.railCompact, { bottom: railBottom }]}
+        style={[styles.rail, compact && styles.railCompact, { bottom: railBottom, right: railRight }]}
         onStartShouldSetResponder={absorb}
         hitSlop={compact ? { left: 24, right: 8, top: 14, bottom: 14 } : undefined}
       >
@@ -435,6 +435,13 @@ export default function ReelScreen() {
   const visibleLandscape = !!visibleItem && !visibleItem.__ad
     && aspectToNumber(visibleItem.aspect_ratio, 16 / 9) > 1;
   const landscapeFullscreen = isFocused && visibleLandscape && deviceLandscape;
+  // Which landscape rotation we're in — needed to place the action rail relative
+  // to the notch. Safe-area insets can't tell the two landscape directions apart
+  // (they report the notch inset on BOTH sides), so we read the real device
+  // orientation from expo-screen-orientation instead. `notchOnRailSide` = the
+  // notch/Dynamic Island is on the rail's (right) edge → shift the rail in;
+  // otherwise the rail sits on the notch-free "bottom" edge → keep it tight.
+  const [notchOnRailSide, setNotchOnRailSide] = useState(false);
   // Latest playback position (ms) of the active reel, so the fullscreen overlay
   // resumes roughly where the vertical player left off.
   const positionRef = useRef(0);
@@ -591,6 +598,18 @@ export default function ReelScreen() {
   }, [isFocused, visibleLandscape]);
   // Always restore the portrait lock when leaving the reel viewer.
   useEffect(() => () => { ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {}); }, []);
+
+  // Track the notch side while in the landscape overlay. On this device
+  // LANDSCAPE_LEFT is the rotation that puts the notch on the rail's right edge.
+  useEffect(() => {
+    if (!landscapeFullscreen) return;
+    const apply = (o: ScreenOrientation.Orientation) => {
+      setNotchOnRailSide(o === ScreenOrientation.Orientation.LANDSCAPE_LEFT);
+    };
+    ScreenOrientation.getOrientationAsync().then(apply).catch(() => {});
+    const sub = ScreenOrientation.addOrientationChangeListener((e) => apply(e.orientationInfo.orientation));
+    return () => ScreenOrientation.removeOrientationChangeListener(sub);
+  }, [landscapeFullscreen]);
 
   async function setup() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -963,6 +982,12 @@ export default function ReelScreen() {
                     spotlight={!!visibleItem.__spotlight || spotlightIds.has(visibleItem.id)}
                     railBottom={insets.bottom + 40}
                     metaBottom={insets.bottom + 34}
+                    // Notch side → shift the rail in to clear the Dynamic Island
+                    // with a comfortable margin (SPACING.xl on top of the inset);
+                    // notch-free "bottom" side → original tight placement. Driven
+                    // by the real orientation (see notchOnRailSide) because insets
+                    // report the notch on both sides in landscape.
+                    railRight={notchOnRailSide ? insets.right + SPACING.xl : SPACING.sm}
                     compact
                     expandable
                     capExpanded={capExpanded}

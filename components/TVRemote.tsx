@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Animated, Easing, Image, StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, Animated, Easing, Image, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { COLORS, GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../consta
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useProfile } from '../contexts/ProfileContext';
+import { useAudio } from '../contexts/AudioContext';
 import { useCast } from '../contexts/CastContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { useOptimisticSeek } from '../hooks/useOptimisticSeek';
@@ -50,6 +51,10 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
     play, pause, seekTo, skip, next, prev, hasNext, hasPrev, retry, disconnect,
     commentsFor, openComments, openShare,
   } = useCast();
+  // Phone music playing alongside the TV → a compact now-playing card fills the
+  // remote's empty slot (portrait) so the user sees their song + controls it
+  // without leaving the TV remote. MUST be above the early return (a hook).
+  const { currentTrack, isPlaying: musicPlaying, pause: pauseMusic, resume: resumeMusic } = useAudio();
   // The scrubber/time show where the user just seeked IMMEDIATELY; the receiver
   // truth takes over once it catches up (raw positions snap back for a beat).
   const [shownPos, noteSeek] = useOptimisticSeek(positionSec);
@@ -169,6 +174,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
       mediaType: postId ? 'video' : undefined,
       mediaUrl: postId ? current.url : undefined,
       hideLaybellTv: true, // it's already ON the TV
+      hideMakeGif: true, // GIF preview needs the on-phone player, suspended while casting
       onNavigate: onClose, // collapse the remote so the pushed screen shows
       onEdit: () => { onClose(); router.push(`/edit-post/${current.id}`); },
       onDeleted: skipGone,
@@ -186,6 +192,11 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
     }).start();
   }, [visible, slide]);
 
+  // Orientation for the two-column landscape remote (see the layout below). MUST
+  // stay ABOVE the early return — a hook can never run conditionally.
+  const { width: winW, height: winH } = useWindowDimensions();
+  const landscape = winW > winH;
+
   if (!visible || !connected || !current) return null;
 
   const device = deviceName || t('tv.cast.yourTv');
@@ -196,6 +207,200 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
 
   const doSeek = (sec: number) => { selection(); noteSeek(sec); seekTo(sec); };
   const doSkip = (delta: number) => { selection(); noteSeek(shownPos + delta); skip(delta); };
+
+  // ── Reusable pieces, arranged one-column (portrait) or two-column (landscape).
+  const posterEl = (
+    <View style={styles.posterWrap}>
+      {current.poster ? (
+        <Image source={{ uri: current.poster }} style={styles.poster} resizeMode="cover" />
+      ) : (
+        <LinearGradient colors={GRADIENTS.primarySoft} style={styles.poster}>
+          <Ionicons name="tv" size={56} color={colors.primary} />
+        </LinearGradient>
+      )}
+    </View>
+  );
+
+  // Title marquee + author row (@username → profile, follow pill beside it).
+  const metaEl = (
+    <View style={styles.meta}>
+      <Marquee key={current.id}>
+        <Text style={styles.title}>{current.title}</Text>
+      </Marquee>
+      {(!!current.subtitle || !!current.authorId) && (
+        <View style={styles.authorRow}>
+          {!!current.subtitle && (
+            <TouchableOpacity
+              onPress={goToProfile}
+              disabled={!current.authorId}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+              style={styles.authorTap}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.subtitle} numberOfLines={1}>{current.subtitle}</Text>
+            </TouchableOpacity>
+          )}
+          <FollowButton userId={current.authorId} />
+        </View>
+      )}
+    </View>
+  );
+
+  // Social row — the on-TV video is still a Laybell post. Lives skip this.
+  const socialEl = postId ? (
+    <View style={styles.socialRow}>
+      <TouchableOpacity onPress={toggleLike} hitSlop={8} style={styles.socialBtn}>
+        <Ionicons name={liked ? 'heart' : 'heart-outline'} size={24} color={liked ? COLORS.like : colors.text} />
+        {likeCount > 0 && <Text style={styles.socialCount}>{formatCount(likeCount)}</Text>}
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => { selection(); openComments(); }} hitSlop={8} style={styles.socialBtn}>
+        <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
+        {commentCount > 0 && <Text style={styles.socialCount}>{formatCount(commentCount)}</Text>}
+      </TouchableOpacity>
+      <TouchableOpacity onPress={toggleSave} hitSlop={8} style={styles.socialBtn}>
+        <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={22} color={saved ? colors.primary : colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={doShare}
+        hitSlop={8}
+        style={[styles.socialBtn, styles.socialBtnRight]}
+        accessibilityLabel={t('share.title')}
+      >
+        <Ionicons name="share-social-outline" size={22} color={colors.text} />
+      </TouchableOpacity>
+    </View>
+  ) : null;
+
+  // Scrubber/LIVE + transport controls + up-next (or the error/retry state).
+  const transportEl = mediaError ? (
+    <View style={styles.errorWrap}>
+      <Ionicons name="alert-circle" size={30} color="#F43F5E" />
+      <Text style={styles.errorText}>{t('tv.cast.error')}</Text>
+      <TouchableOpacity onPress={retry} activeOpacity={0.9}>
+        <LinearGradient colors={GRADIENTS.primary} style={styles.retryBtn}>
+          <Ionicons name="refresh" size={16} color="#fff" />
+          <Text style={styles.retryText}>{t('tv.cast.retry')}</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </View>
+  ) : (
+    <>
+      {isLive ? (
+        <View style={styles.liveRow}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveText}>{t('live.live')}</Text>
+        </View>
+      ) : (
+        <View style={styles.scrubBlock}>
+          <Scrubber
+            progress={progress}
+            onSeek={(r) => doSeek(r * durationSec)}
+            height={26} trackHeight={5} thumbSize={16}
+          />
+          <View style={styles.timeRow}>
+            <Text style={styles.time}>{fmtTime(ended ? durationSec : shownPos)}</Text>
+            <Text style={styles.time}>{durationSec > 0 ? fmtTime(durationSec) : '–:––'}</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Transport: prev · −10s · play/pause/replay · +10s · next */}
+      <View style={styles.controls}>
+        <TouchableOpacity onPress={() => { selection(); prev(); }} disabled={!hasPrev} hitSlop={10} style={styles.sideBtn}>
+          <Ionicons name="play-skip-back" size={26} color={hasPrev ? colors.text : colors.textTertiary} />
+        </TouchableOpacity>
+        {!isLive && (
+          <TouchableOpacity onPress={() => doSkip(-10)} hitSlop={10} style={styles.skipBtn}>
+            <Ionicons name="play-back" size={22} color={colors.text} />
+            <Text style={styles.skipLabel}>10</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          onPress={() => { selection(); if (ended) retry(); else if (isPlaying) pause(); else play(); }}
+          disabled={busy}
+          activeOpacity={0.85}
+          accessibilityLabel={ended ? t('tv.cast.replay') : undefined}
+        >
+          <LinearGradient colors={GRADIENTS.primary} style={styles.playBtn}>
+            {busy ? (
+              <ActivityIndicator size="large" color="#fff" />
+            ) : (
+              <Ionicons
+                name={ended ? 'refresh' : isPlaying ? 'pause' : 'play'}
+                size={38}
+                color="#fff"
+                style={ended || isPlaying ? undefined : { marginLeft: 4 }}
+              />
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
+        {!isLive && (
+          <TouchableOpacity onPress={() => doSkip(10)} hitSlop={10} style={styles.skipBtn}>
+            <Ionicons name="play-forward" size={22} color={colors.text} />
+            <Text style={styles.skipLabel}>10</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity onPress={() => { selection(); next(); }} disabled={!hasNext} hitSlop={10} style={styles.sideBtn}>
+          <Ionicons name="play-skip-forward" size={26} color={hasNext ? colors.text : colors.textTertiary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Up next — tap to jump straight to it */}
+      {nextItem && (
+        <TouchableOpacity style={styles.upNext} activeOpacity={0.8} onPress={() => { selection(); next(); }}>
+          {nextItem.poster ? (
+            <Image source={{ uri: nextItem.poster }} style={styles.upNextThumb} />
+          ) : (
+            <View style={[styles.upNextThumb, styles.upNextThumbEmpty]}>
+              <Ionicons name="play" size={12} color={colors.textTertiary} />
+            </View>
+          )}
+          <View style={styles.upNextInfo}>
+            <Text style={styles.upNextLabel}>{t('tv.cast.upNext')}</Text>
+            <Text style={styles.upNextTitle} numberOfLines={1}>{nextItem.title}</Text>
+          </View>
+          <Ionicons name="play-skip-forward" size={16} color={colors.textSecondary} />
+        </TouchableOpacity>
+      )}
+    </>
+  );
+
+  const disconnectEl = (
+    <TouchableOpacity onPress={() => { selection(); disconnect(); }} style={styles.disconnectBtn} activeOpacity={0.8}>
+      <Ionicons name="power" size={15} color={colors.textSecondary} />
+      <Text style={styles.disconnectText}>{t('tv.setup.disconnect')}</Text>
+    </TouchableOpacity>
+  );
+
+  // Now-playing music card (only when a song is playing on the phone alongside
+  // the TV). Cover + title/artist + play-pause, labelled so it's clearly the
+  // PHONE's music, distinct from the TV content above it.
+  const musicCardEl = currentTrack ? (
+    <View style={styles.musicCard}>
+      {currentTrack.cover ? (
+        <Image source={{ uri: currentTrack.cover }} style={styles.musicCover} />
+      ) : (
+        <LinearGradient colors={GRADIENTS.primary} style={styles.musicCover}>
+          <Ionicons name="musical-note" size={18} color="#fff" />
+        </LinearGradient>
+      )}
+      <View style={styles.musicInfo}>
+        <View style={styles.musicLabelRow}>
+          <Ionicons name="musical-notes" size={11} color={colors.primary} />
+          <Text style={styles.musicLabel}>{t('tv.cast.musicOnPhone')}</Text>
+        </View>
+        <Text style={styles.musicTitle} numberOfLines={1}>{currentTrack.caption}</Text>
+        {!!currentTrack.artist && <Text style={styles.musicArtist} numberOfLines={1}>{currentTrack.artist}</Text>}
+      </View>
+      <TouchableOpacity
+        onPress={() => { selection(); musicPlaying ? pauseMusic() : resumeMusic(); }}
+        hitSlop={10}
+        style={styles.musicPlayBtn}
+      >
+        <Ionicons name={musicPlaying ? 'pause' : 'play'} size={22} color={colors.text} />
+      </TouchableOpacity>
+    </View>
+  ) : null;
 
   return (
     <Animated.View
@@ -209,7 +414,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
         },
       ]}
     >
-      {/* Header: collapse chevron + destination */}
+      {/* Header: collapse chevron + destination + 3-dot */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onClose} hitSlop={10} style={styles.headerBtn}>
           <Ionicons name="chevron-down" size={26} color={colors.text} />
@@ -229,172 +434,32 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
         )}
       </View>
 
-      {/* Poster */}
-      <View style={styles.posterWrap}>
-        {current.poster ? (
-          <Image source={{ uri: current.poster }} style={styles.poster} resizeMode="cover" />
-        ) : (
-          <LinearGradient colors={GRADIENTS.primarySoft} style={styles.poster}>
-            <Ionicons name="tv" size={56} color={colors.primary} />
-          </LinearGradient>
-        )}
-      </View>
-
-      {/* Title — long titles marquee (scroll through, pause, snap back), same
-          behavior as the song card. Keyed so measurement re-runs per video.
-          Below it: the author row — @username taps through to their profile,
-          with the app-wide follow pill beside it (hides itself on own posts). */}
-      <View style={styles.meta}>
-        <Marquee key={current.id}>
-          <Text style={styles.title}>{current.title}</Text>
-        </Marquee>
-        {(!!current.subtitle || !!current.authorId) && (
-          <View style={styles.authorRow}>
-            {!!current.subtitle && (
-              <TouchableOpacity
-                onPress={goToProfile}
-                disabled={!current.authorId}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
-                style={styles.authorTap}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.subtitle} numberOfLines={1}>{current.subtitle}</Text>
-              </TouchableOpacity>
-            )}
-            <FollowButton userId={current.authorId} />
+      {landscape ? (
+        // Two columns: poster + title on the left, controls on the right.
+        <View style={styles.lsBody}>
+          <View style={styles.lsLeft}>
+            {posterEl}
+            {metaEl}
           </View>
-        )}
-      </View>
-
-      {/* Social row — the on-TV video is still a Laybell post: like, comment
-          (opens the app's comments sheet), save. Lives skip this. */}
-      {postId && (
-        <View style={styles.socialRow}>
-          <TouchableOpacity onPress={toggleLike} hitSlop={8} style={styles.socialBtn}>
-            <Ionicons name={liked ? 'heart' : 'heart-outline'} size={24} color={liked ? COLORS.like : colors.text} />
-            {likeCount > 0 && <Text style={styles.socialCount}>{formatCount(likeCount)}</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => { selection(); openComments(); }} hitSlop={8} style={styles.socialBtn}>
-            <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
-            {commentCount > 0 && <Text style={styles.socialCount}>{formatCount(commentCount)}</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={toggleSave} hitSlop={8} style={styles.socialBtn}>
-            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={22} color={saved ? colors.primary : colors.text} />
-          </TouchableOpacity>
-          {/* Share — right-aligned, mirroring the feed's action row. */}
-          <TouchableOpacity
-            onPress={doShare}
-            hitSlop={8}
-            style={[styles.socialBtn, styles.socialBtnRight]}
-            accessibilityLabel={t('share.title')}
-          >
-            <Ionicons name="share-social-outline" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <View style={styles.flexSpace} />
-
-      {mediaError ? (
-        /* Receiver rejected the stream — say it big, offer retry. */
-        <View style={styles.errorWrap}>
-          <Ionicons name="alert-circle" size={30} color="#F43F5E" />
-          <Text style={styles.errorText}>{t('tv.cast.error')}</Text>
-          <TouchableOpacity onPress={retry} activeOpacity={0.9}>
-            <LinearGradient colors={GRADIENTS.primary} style={styles.retryBtn}>
-              <Ionicons name="refresh" size={16} color="#fff" />
-              <Text style={styles.retryText}>{t('tv.cast.retry')}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          <ScrollView style={styles.lsRight} contentContainerStyle={styles.lsRightContent} showsVerticalScrollIndicator={false}>
+            {socialEl}
+            {transportEl}
+            {disconnectEl}
+          </ScrollView>
         </View>
       ) : (
         <>
-          {/* Scrubber + times (VOD) / LIVE pill */}
-          {isLive ? (
-            <View style={styles.liveRow}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText}>{t('live.live')}</Text>
-            </View>
-          ) : (
-            <View style={styles.scrubBlock}>
-              <Scrubber
-                progress={progress}
-                onSeek={(r) => doSeek(r * durationSec)}
-                height={26} trackHeight={5} thumbSize={16}
-              />
-              <View style={styles.timeRow}>
-                <Text style={styles.time}>{fmtTime(ended ? durationSec : shownPos)}</Text>
-                <Text style={styles.time}>{durationSec > 0 ? fmtTime(durationSec) : '–:––'}</Text>
-              </View>
-            </View>
-          )}
-
-          {/* Transport: prev · −10s · play/pause/replay · +10s · next */}
-          <View style={styles.controls}>
-            <TouchableOpacity onPress={() => { selection(); prev(); }} disabled={!hasPrev} hitSlop={10} style={styles.sideBtn}>
-              <Ionicons name="play-skip-back" size={26} color={hasPrev ? colors.text : colors.textTertiary} />
-            </TouchableOpacity>
-            {!isLive && (
-              <TouchableOpacity onPress={() => doSkip(-10)} hitSlop={10} style={styles.skipBtn}>
-                <Ionicons name="play-back" size={22} color={colors.text} />
-                <Text style={styles.skipLabel}>10</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              onPress={() => { selection(); if (ended) retry(); else if (isPlaying) pause(); else play(); }}
-              disabled={busy}
-              activeOpacity={0.85}
-              accessibilityLabel={ended ? t('tv.cast.replay') : undefined}
-            >
-              <LinearGradient colors={GRADIENTS.primary} style={styles.playBtn}>
-                {busy ? (
-                  <ActivityIndicator size="large" color="#fff" />
-                ) : (
-                  <Ionicons
-                    name={ended ? 'refresh' : isPlaying ? 'pause' : 'play'}
-                    size={38}
-                    color="#fff"
-                    style={ended || isPlaying ? undefined : { marginLeft: 4 }}
-                  />
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-            {!isLive && (
-              <TouchableOpacity onPress={() => doSkip(10)} hitSlop={10} style={styles.skipBtn}>
-                <Ionicons name="play-forward" size={22} color={colors.text} />
-                <Text style={styles.skipLabel}>10</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={() => { selection(); next(); }} disabled={!hasNext} hitSlop={10} style={styles.sideBtn}>
-              <Ionicons name="play-skip-forward" size={26} color={hasNext ? colors.text : colors.textTertiary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Up next — tap to jump straight to it */}
-          {nextItem && (
-            <TouchableOpacity style={styles.upNext} activeOpacity={0.8} onPress={() => { selection(); next(); }}>
-              {nextItem.poster ? (
-                <Image source={{ uri: nextItem.poster }} style={styles.upNextThumb} />
-              ) : (
-                <View style={[styles.upNextThumb, styles.upNextThumbEmpty]}>
-                  <Ionicons name="play" size={12} color={colors.textTertiary} />
-                </View>
-              )}
-              <View style={styles.upNextInfo}>
-                <Text style={styles.upNextLabel}>{t('tv.cast.upNext')}</Text>
-                <Text style={styles.upNextTitle} numberOfLines={1}>{nextItem.title}</Text>
-              </View>
-              <Ionicons name="play-skip-forward" size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
-          )}
+          {posterEl}
+          {metaEl}
+          {socialEl}
+          {/* Empty slot between the post meta and the transport controls — the
+              phone's now-playing music card lives here, centered, when a song is
+              playing; otherwise it's just breathing room. */}
+          <View style={styles.musicSlot}>{musicCardEl}</View>
+          {transportEl}
+          {disconnectEl}
         </>
       )}
-
-      {/* Disconnect */}
-      <TouchableOpacity onPress={() => { selection(); disconnect(); }} style={styles.disconnectBtn} activeOpacity={0.8}>
-        <Ionicons name="power" size={15} color={colors.textSecondary} />
-        <Text style={styles.disconnectText}>{t('tv.setup.disconnect')}</Text>
-      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -417,6 +482,11 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 10,
   },
   poster: { width: '100%', aspectRatio: 16 / 9, alignItems: 'center', justifyContent: 'center', backgroundColor: c.surfaceLight },
+  // Landscape two-column body: poster/title left, scrolling controls right.
+  lsBody: { flex: 1, flexDirection: 'row', gap: SPACING.lg, marginTop: SPACING.xs },
+  lsLeft: { width: '46%', justifyContent: 'center', gap: SPACING.sm },
+  lsRight: { flex: 1 },
+  lsRightContent: { flexGrow: 1, justifyContent: 'center', gap: SPACING.xs },
   meta: { marginTop: SPACING.lg, gap: 5 },
   title: { color: c.text, fontSize: 22, fontWeight: '800', lineHeight: 28 },
   authorRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
@@ -429,6 +499,20 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   socialBtnRight: { marginLeft: 'auto' },
   socialCount: { color: c.textSecondary, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
   flexSpace: { flex: 1 },
+  // Music card slot: the same flexible gap, but centers the card when present.
+  musicSlot: { flex: 1, justifyContent: 'center' },
+  musicCard: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: c.surfaceLight, borderRadius: RADIUS.md, padding: SPACING.sm,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+  },
+  musicCover: { width: 46, height: 46, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: c.surface },
+  musicInfo: { flex: 1, minWidth: 0 },
+  musicLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  musicLabel: { color: c.primary, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  musicTitle: { color: c.text, fontSize: 14, fontWeight: '700', marginTop: 1 },
+  musicArtist: { color: c.textTertiary, fontSize: 12 },
+  musicPlayBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   scrubBlock: { marginBottom: SPACING.sm },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
   time: { color: c.textTertiary, fontSize: 12, fontVariant: ['tabular-nums'] },
