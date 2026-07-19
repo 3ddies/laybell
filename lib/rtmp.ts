@@ -25,7 +25,17 @@ export type RtmpPublisherHandle = {
   setZoomRatio: (zoomRatio: number) => void;
 };
 
+// KILL SWITCH — the api.video native view hard-crashes the app on iOS when a
+// horizontal phone go-live starts (reproduced on Eddie's device; NOT the
+// rotation race — delaying the view mount changed nothing, so it's a native
+// incompatibility inside the lib on this new-arch build). While the crash is
+// diagnosed from a real crash log, force this OFF so horizontal phone lives fall
+// back to WHIP (stable, sub-second, phone-only — the pre-RTMP behavior). Flip to
+// true once the native issue is fixed to re-enable TV-castable phone lives.
+const RTMP_LIVE_ENABLED = false;
+
 export function rtmpAvailable(): boolean {
+  if (!RTMP_LIVE_ENABLED) return false;
   try {
     // The view manager is registered by the native lib on both architectures;
     // a binary without it answers false and callers fall back to WHIP.
