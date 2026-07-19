@@ -80,6 +80,23 @@ async function attachProfiles<T extends { user_id: string }>(rows: T[]): Promise
 const LIVE_COLS = 'id, user_id, title, mode, orientation, cf_input_uid, playback_url, status, started_at, viewer_peak';
 
 /**
+ * A frame of the live from Cloudflare's thumbnail endpoint
+ * (`<origin>/<uid>/thumbnails/thumbnail.jpg`). Cloudflare generates these from
+ * the HLS/recording pipeline, which RTMP/SRT inputs run — so encoder lives get a
+ * real preview frame. WHIP (phone/WebRTC) inputs have no such pipeline during
+ * Cloudflare's beta, so the URL 404s there and callers fall back to the host
+ * avatar. Origin is reused from playback_url (WHEP or HLS both carry it).
+ */
+export function liveThumbnailUrl(l: Pick<LiveStream, 'playback_url' | 'cf_input_uid'>): string | null {
+  try {
+    if (!l.cf_input_uid || !l.playback_url) return null;
+    return `${new URL(l.playback_url).origin}/${l.cf_input_uid}/thumbnails/thumbnail.jpg?height=720`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Broadcasts currently live, newest first. `horizontalOnly` (Laybell TV's Lives
  * tab) keeps only orientation 'horizontal'|'both'. Falls back gracefully if the
  * orientation column isn't migrated yet (the filter no-ops → all lives shown).

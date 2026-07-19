@@ -5,6 +5,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import TVVideoList from '../../components/TVVideoList';
@@ -14,7 +15,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchHorizontalVideos, matchesQuery, rankVideosForUser } from '../../lib/tv';
-import { fetchLiveStreams, type LiveStream } from '../../lib/live';
+import { fetchLiveStreams, liveThumbnailUrl, type LiveStream } from '../../lib/live';
 import { selection } from '../../lib/haptics';
 import { useCast } from '../../contexts/CastContext';
 import TVConnectModal from '../../components/TVConnectModal';
@@ -268,15 +269,31 @@ export default function LaybellTVScreen() {
                 }}
                 activeOpacity={0.85}
               >
-                {item.profile?.avatar_url ? (
-                  <Image source={{ uri: item.profile.avatar_url }} style={styles.liveAvatar} />
-                ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.liveAvatar}>
+                {/* Landscape frame: a captured Cloudflare live thumbnail (encoder
+                    lives) layered over an avatar/gradient fallback, so phone lives
+                    — which have no thumbnail during Cloudflare's beta — still show
+                    the host. LIVE pill sits on the frame. */}
+                <View style={styles.liveThumb}>
+                  {item.profile?.avatar_url ? (
+                    <Image source={{ uri: item.profile.avatar_url }} style={StyleSheet.absoluteFill} blurRadius={8} />
+                  ) : (
+                    <LinearGradient colors={GRADIENTS.primary} style={StyleSheet.absoluteFill} />
+                  )}
+                  {!item.profile?.avatar_url && (
                     <Text style={styles.liveInitial}>
                       {(item.profile?.display_name || item.profile?.username || '?').charAt(0).toUpperCase()}
                     </Text>
-                  </LinearGradient>
-                )}
+                  )}
+                  {liveThumbnailUrl(item) && (
+                    <ExpoImage
+                      source={{ uri: liveThumbnailUrl(item)! }}
+                      style={StyleSheet.absoluteFill}
+                      contentFit="cover"
+                      transition={150}
+                    />
+                  )}
+                  <View style={styles.liveThumbPill}><Text style={styles.livePillText}>{t('live.live')}</Text></View>
+                </View>
                 <View style={styles.liveInfo}>
                   <Text style={styles.liveTitle} numberOfLines={1}>
                     {item.title || item.profile?.display_name || item.profile?.username || t('tv.liveUntitled')}
@@ -285,7 +302,9 @@ export default function LaybellTVScreen() {
                     {item.profile?.display_name || item.profile?.username || ''}
                   </Text>
                 </View>
-                <View style={styles.livePill}><Text style={styles.livePillText}>{t('live.live')}</Text></View>
+                {cast.connected && item.mode === 'rtmp' && (
+                  <Ionicons name="tv" size={18} color={colors.primary} style={{ marginRight: 4 }} />
+                )}
               </TouchableOpacity>
             )}
             ListEmptyComponent={
@@ -353,12 +372,19 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     backgroundColor: c.surface, borderRadius: RADIUS.md,
     borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 10,
   },
-  liveAvatar: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  liveInitial: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  // Landscape live frame (16:9-ish tile leading the card).
+  liveThumb: {
+    width: 96, height: 54, borderRadius: RADIUS.sm, overflow: 'hidden',
+    backgroundColor: c.surfaceLight, alignItems: 'center', justifyContent: 'center',
+  },
+  liveInitial: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  liveThumbPill: {
+    position: 'absolute', bottom: 4, left: 4,
+    backgroundColor: '#F43F5E', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2,
+  },
   liveInfo: { flex: 1, gap: 2 },
   liveTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
   liveHost: { color: c.textTertiary, fontSize: 12 },
-  livePill: { backgroundColor: '#F43F5E', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   livePillText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
   empty: { alignItems: 'center', gap: 10, marginTop: 40 },
   emptyText: { color: c.textTertiary, fontSize: 13, textAlign: 'center', paddingHorizontal: 30 },

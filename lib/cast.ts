@@ -13,7 +13,7 @@
 // either (see liveHlsUrl), so phone lives are not castable yet.
 
 import { aspectToNumber } from './aspectRatio';
-import type { LiveStream } from './live';
+import { liveThumbnailUrl, type LiveStream } from './live';
 
 // HLS mime — tells the default media receiver to use its HLS player.
 export const HLS_CONTENT_TYPE = 'application/x-mpegURL';
@@ -103,7 +103,9 @@ export function liveToCastItem(l: LiveStream): CastItem | null {
     url,
     title: l.title || l.profile?.display_name || username || 'Laybell Live',
     subtitle: username,
-    poster: l.profile?.avatar_url ?? null,
+    // The live frame (RTMP inputs) makes a far better TV poster than the avatar;
+    // falls back to the avatar when Cloudflare has no thumbnail (WHIP/pre-frame).
+    poster: liveThumbnailUrl(l) ?? l.profile?.avatar_url ?? null,
     // Lives have no post row (no like/comment/save), but the remote's 3-dot
     // uses the host's id for the profile-only menu (report/block).
     authorId: l.user_id ?? null,
