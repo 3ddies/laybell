@@ -75,6 +75,18 @@ export default function GoLiveScreen() {
   useEffect(() => () => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
   }, []);
+  // Mount the RTMP camera view only AFTER the landscape rotation has settled.
+  // The api.video engine (HaishinKit on iOS) spins up an AVCaptureSession the
+  // instant its view mounts; doing that WHILE the interface is mid-rotation
+  // races the capture/preview-layer setup and hard-crashes the app. A short
+  // settle after the orientation lock avoids the collision. Reset when leaving
+  // landscape so the next horizontal go-live delays again.
+  const [rtmpCamReady, setRtmpCamReady] = useState(false);
+  useEffect(() => {
+    if (!wantLandscape) { setRtmpCamReady(false); return; }
+    const timer = setTimeout(() => setRtmpCamReady(true), 550);
+    return () => clearTimeout(timer);
+  }, [wantLandscape]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   // True when this phone broadcast publishes RTMPS (horizontal + native lib
   // present): Cloudflare then serves live HLS, so the stream can cast to real
@@ -230,7 +242,7 @@ export default function GoLiveScreen() {
         {mode === 'webrtc' && !phoneRtmpActive && previewUrl && RTCView && (
           <RTCView streamURL={previewUrl} objectFit="cover" mirror style={StyleSheet.absoluteFill} />
         )}
-        {mode === 'webrtc' && phoneRtmpActive && RtmpView && (phase === 'preview' || phase === 'live') && (
+        {mode === 'webrtc' && phoneRtmpActive && rtmpCamReady && RtmpView && (phase === 'preview' || phase === 'live') && (
           <RtmpView
             ref={rtmpRef}
             style={StyleSheet.absoluteFill}
