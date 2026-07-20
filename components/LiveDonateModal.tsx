@@ -5,11 +5,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import {
-  donate, donationBreakdown, hostCanReceive, fmtCents,
+  donate, donationBreakdown, hostCanReceive, hostFeeRate, fmtCents,
   DONATION_PRESETS_CENTS, DONATION_MIN_CENTS, DONATION_MAX_CENTS,
 } from '../lib/donations';
 import type { LiveStream } from '../lib/live';
@@ -23,7 +23,7 @@ export default function LiveDonateModal({ visible, stream, onClose, onDonated }:
   visible: boolean;
   stream: LiveStream;
   onClose: () => void;
-  onDonated: (amountCents: number) => void;
+  onDonated: (amountCents: number, message: string) => void;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -31,12 +31,13 @@ export default function LiveDonateModal({ visible, stream, onClose, onDonated }:
 
   const [amount, setAmount] = useState<number>(DONATION_PRESETS_CENTS[1]); // default $2
   const [customText, setCustomText] = useState('');
+  const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const hostName = stream.profile?.display_name || stream.profile?.username || t('live.donate.host');
   const canReceive = hostCanReceive(stream.profile?.premium_until);
-  const b = donationBreakdown(amount);
+  const b = donationBreakdown(amount, hostFeeRate(stream.profile?.premium_until));
   const validAmount = amount >= DONATION_MIN_CENTS && amount <= DONATION_MAX_CENTS;
 
   function pickPreset(cents: number) {
@@ -55,10 +56,12 @@ export default function LiveDonateModal({ visible, stream, onClose, onDonated }:
   async function confirm() {
     if (!validAmount || busy) return;
     setBusy(true);
-    const res = await donate(stream.id, amount);
+    const msg = message.trim();
+    const res = await donate(stream.id, amount, msg);
     setBusy(false);
     if (res.ok) {
-      onDonated(amount);
+      onDonated(amount, msg);
+      setMessage('');
       onClose();
     } else {
       const key =
@@ -121,6 +124,20 @@ export default function LiveDonateModal({ visible, stream, onClose, onDonated }:
                   </View>
                 </View>
 
+                {/* Message shown live to the host + room with the tip. */}
+                <View style={styles.msgWrap}>
+                  <TextInput
+                    style={styles.msgInput}
+                    placeholder={t('live.donate.messagePlaceholder')}
+                    placeholderTextColor={colors.textTertiary}
+                    value={message}
+                    onChangeText={setMessage}
+                    maxLength={200}
+                    multiline
+                  />
+                  {message.length > 0 && <Text style={styles.msgCount}>{200 - message.length}</Text>}
+                </View>
+
                 {/* Split so the donor sees exactly what the host takes home. */}
                 <View style={styles.breakdown}>
                   <Row k={t('live.donate.hostGets', { name: hostName })} v={fmtCents(b.payoutCents)} styles={styles} strong />
@@ -138,7 +155,8 @@ export default function LiveDonateModal({ visible, stream, onClose, onDonated }:
                   disabled={!validAmount || busy}
                   activeOpacity={0.85}
                 >
-                  <LinearGradient colors={GRADIENTS.primary as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.ctaInner}>
+                  {/* Green (money) to match the donate button, not the orange brand. */}
+                  <LinearGradient colors={['#22C55E', '#16A34A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.ctaInner}>
                     {busy ? (
                       <ActivityIndicator color="#fff" size="small" />
                     ) : (
@@ -200,6 +218,13 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   },
   dollar: { color: c.textSecondary, fontSize: 15, fontWeight: '700' },
   customInput: { flex: 1, color: c.text, fontSize: 15, fontWeight: '700', padding: 0 },
+
+  msgWrap: {
+    borderRadius: RADIUS.md, borderWidth: 1, borderColor: c.border, backgroundColor: c.surfaceLight,
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
+  },
+  msgInput: { color: c.text, fontSize: 14, minHeight: 38, maxHeight: 90, padding: 0, textAlignVertical: 'top' },
+  msgCount: { alignSelf: 'flex-end', color: c.textTertiary, fontSize: 11, marginTop: 2 },
 
   breakdown: {
     backgroundColor: c.surfaceLight, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: c.border,

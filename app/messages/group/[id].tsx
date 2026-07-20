@@ -49,6 +49,10 @@ export default function GroupChatScreen() {
   const bubbleBlue = ['#1FA0FF', '#0A7CFF'] as const;
 
   const flatListRef = useRef<FlatList>(null);
+  // Auto-scroll to the newest message ONLY when already at the bottom — so a
+  // reaction growing a bubble (or an incoming message while reading history)
+  // doesn't yank the transcript (the glitchy shift). Sending forces it true.
+  const stickToBottomRef = useRef(true);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [members, setMembers] = useState<GroupProfile[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -138,7 +142,7 @@ export default function GroupChatScreen() {
           // My own sends are appended optimistically; skip the echo.
           if (String(msg.sender_id) === String(currentUserId)) return;
           setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
-          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+          // onContentSizeChange follows the bottom only if already there.
           markGroupRead(String(id), currentUserId);
         }
       )
@@ -219,8 +223,9 @@ export default function GroupChatScreen() {
       .select('id, body, sender_id, conversation_id, created_at').single();
     if (!error && data) {
       impactLight(); // soft confirming tap on a sent message
+      stickToBottomRef.current = true; // always follow your own sent message
       setMessages(prev => [...prev, data as Message]);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      // Single scroll via onContentSizeChange (no second timed jump).
       // Notify the other members (fire-and-forget).
       members.filter(m => m.id !== currentUserId).forEach(m =>
         createNotification({ userId: m.id, actorId: currentUserId, type: 'message' }));
@@ -304,8 +309,8 @@ export default function GroupChatScreen() {
         .insert({ sender_id: currentUserId, conversation_id: id, body: renameEventBody(trimmed) })
         .select('id, body, sender_id, conversation_id, created_at').single();
       if (data) {
+        stickToBottomRef.current = true;
         setMessages(prev => [...prev, data as Message]);
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       }
     }
   }
@@ -386,7 +391,14 @@ export default function GroupChatScreen() {
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[styles.messagesList, { paddingBottom: insets.bottom + 76 }]}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            stickToBottomRef.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120;
+          }}
+          // Follow the bottom only when already there — a blanket scrollToEnd
+          // jumped the list on every reaction/incoming message (the glitchy shift).
+          onContentSizeChange={() => { if (stickToBottomRef.current) flatListRef.current?.scrollToEnd({ animated: false }); }}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>{t('groups.startConversation')}</Text>

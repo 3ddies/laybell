@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ActivityIndicator, Alert, Platform, useWindowDimensions, Animated, Easing } from 'react-native';
-import { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ActivityIndicator, Alert, Platform, useWindowDimensions, Animated, Easing, Image as RNImage } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,7 @@ import { useMediaSuspend } from '../contexts/MediaSuspendContext';
 import { usePostMusicActions } from '../contexts/PostMusicContext';
 import { uploadToStorageWithProgress } from '../lib/upload';
 import { makeGifFromVideo, type GifResult, type GifCrop } from '../lib/makeGif';
+import { isCfStreamHls, cfStreamFrameUrl } from '../lib/cast';
 import { addUserGif } from '../lib/userGifs';
 import AppVideo from './AppVideo';
 import GifTrimBar from './GifTrimBar';
@@ -82,6 +83,21 @@ export default function GifMakerModal({
   useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
 
   const dur = durationSec && durationSec > 0 ? durationSec : 15;
+  // Cloudflare Stream source → frames come from CF's thumbnail endpoint (HLS
+  // can't be frame-grabbed on-device). Height 640 for render frames; a smaller
+  // one drives the trim strip.
+  const isCf = !!videoUrl && isCfStreamHls(videoUrl);
+  // Memoized (stable identity) — the render frame provider (height 640) and a
+  // smaller one for the trim strip (160). Stable so the trim bar's frame effect
+  // doesn't re-run every render.
+  const cfFrameAt = useMemo(
+    () => (isCf && videoUrl ? (timeSec: number) => cfStreamFrameUrl(videoUrl, timeSec, 640) : null),
+    [isCf, videoUrl],
+  );
+  const cfStripAt = useMemo(
+    () => (isCf && videoUrl ? (timeSec: number) => cfStreamFrameUrl(videoUrl, timeSec, 160) : undefined),
+    [isCf, videoUrl],
+  );
 
   // Square crop frame; the video is sized to its natural aspect so its short side
   // fills the frame and the long side overflows (pannable). See computeCrop.
@@ -165,14 +181,32 @@ export default function GifMakerModal({
       setLoadingVideo(true); setLocalUri(null); setResult(null); setUploadedUrl(null); setStart(0); setLoopStart(0); setGifDur(GIF_MAX_SEC);
       resetTransform();
       try {
-        const dest = `${FileSystem.cacheDirectory}gifsrc_${Date.now()}.mp4`;
-        const dl = await FileSystem.downloadAsync(videoUrl, dest);
+        // Cloudflare Stream (and any HLS) media_url is a .m3u8 MANIFEST — downloading
+        // it just saves the playlist text, not the video, so the preview + every
+        // frame extraction end up on a broken local file (black screen). expo-video
+        // and expo-video-thumbnails both handle HLS URLs directly (the feed plays
+        // these exact URLs), so use the URL as-is for HLS. Only DIRECT mp4s (legacy
+        // posts) get downloaded, for faster local frame seeking.
+        const isHls = /\.m3u8(\?|$)/i.test(videoUrl) || videoUrl.includes('cloudflarestream.com');
+        const src = isHls
+          ? videoUrl
+          : (await FileSystem.downloadAsync(videoUrl, `${FileSystem.cacheDirectory}gifsrc_${Date.now()}.mp4`)).uri;
         if (!active) return;
         try {
-          const probe = await VideoThumbnails.getThumbnailAsync(dl.uri, { time: 0, quality: 0.3 });
-          if (active && probe.width && probe.height) { setVidW(probe.width); setVidH(probe.height); }
+          // Dimensions drive the crop math, so they must match the frames we
+          // extract. CF: measure a CF thumbnail (same source as the render
+          // frames). Local mp4: probe the file.
+          const cf0 = isCf && videoUrl ? cfStreamFrameUrl(videoUrl, 0, 640) : null;
+          if (cf0) {
+            const size = await new Promise<{ w: number; h: number }>((res, rej) =>
+              RNImage.getSize(cf0, (w, h) => res({ w, h }), rej));
+            if (active && size.w && size.h) { setVidW(size.w); setVidH(size.h); }
+          } else {
+            const probe = await VideoThumbnails.getThumbnailAsync(src, { time: 0, quality: 0.3 });
+            if (active && probe.width && probe.height) { setVidW(probe.width); setVidH(probe.height); }
+          }
         } catch { /* keep defaults */ }
-        if (active) setLocalUri(dl.uri);
+        if (active) setLocalUri(src);
       } catch {
         if (active) { Alert.alert(t('gif.make.loadFailed')); onClose(); }
       }
@@ -201,7 +235,7 @@ export default function GifMakerModal({
     try {
       const gif = await makeGifFromVideo(
         localUri,
-        { startMs: Math.round(start * 1000), durationMs: Math.round(Math.min(gifDur, dur) * 1000), fps: 12, width: 288, crop: computeCrop() },
+        { startMs: Math.round(start * 1000), durationMs: Math.round(Math.min(gifDur, dur) * 1000), fps: 12, width: 288, crop: computeCrop(), cfFrameUrl: cfFrameAt },
         onProg,
       );
       // Ensure the ring visibly completes before revealing the result.
@@ -334,6 +368,7 @@ export default function GifMakerModal({
 
           <GifTrimBar
             uri={localUri}
+            frameUrlAt={cfStripAt}
             duration={dur}
             minDur={GIF_MIN_SEC}
             maxDur={Math.min(GIF_MAX_SEC, dur)}

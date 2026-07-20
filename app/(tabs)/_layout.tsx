@@ -28,14 +28,17 @@ const SCREEN_W = Dimensions.get('window').width;
 // must use the SAME curve so a landed tab's active value never dips (no blink).
 const HANDOFF_MS = 200;
 
-// How long after the tab tree (re)mounts we still treat an UNGESTURED multi-page
-// jump as the native-pager "login teleport" glitch and snap it back. The tree
-// remounts on every login / account switch (app/_layout keys it by user id),
-// which is exactly when the freshly re-created pager mis-fires. Long enough to
-// cover the mount/layout race; short enough that it can't touch real navigation
-// (the only programmatic multi-tab jumps come from stack screens that fire long
-// after this window, and in-tab steps are always adjacent).
-const MOUNT_GUARD_MS = 1500;
+// Backstop window after the tab tree (re)mounts during which an UNGESTURED
+// multi-page jump is treated as the native-pager "login teleport" glitch and
+// snapped back. The tree remounts on every login / account switch (app/_layout
+// keys it by user id), which is exactly when the freshly re-created pager
+// mis-fires. This is now only a SECONDARY guard — the primary signal is
+// "has the user actually driven the pager yet?" (hasInteractedRef): a pure
+// wall-clock window was the leak, because a slow login could push the spurious
+// first settle PAST the window, at which point it was accepted as the real page
+// and the user landed on Profile. Kept (and widened) as belt-and-suspenders for
+// the rare case where a glitch fires just after the user's first real touch.
+const MOUNT_GUARD_MS = 2500;
 
 // Wrap the Material Top Tabs navigator so Expo Router drives it with file-based
 // routes. Material Top Tabs is backed by the native react-native-pager-view, so
@@ -467,6 +470,13 @@ export default function TabLayout() {
   // emits `tabPress`; a native-pager teleport does not — so this lets the guard
   // tell an intentional multi-tab bar jump apart from the glitch.
   const lastTabPressAt = useRef(0);
+  // True once the user has ACTUALLY driven the pager (a real swipe or a bar
+  // press). Until then there has been no input that could produce a legit
+  // multi-tab move, so ANY far ungestured jump is the mount glitch — regardless
+  // of how long the (slow) login took to settle. Legit programmatic far-jumps
+  // only ever come from stack screens the user reached by interacting, so they
+  // always land after this flips true and stay exempt.
+  const hasInteractedRef = useRef(false);
 
   return (
      <TabSwipeContext.Provider value={setSwipeEnabled}>
@@ -486,12 +496,12 @@ export default function TabLayout() {
           // settles. noteTabSwipe feeds the guardPress() tap suppressor — taps
           // are filtered at the press handlers, NEVER by blocking touches, so
           // rapid consecutive swipes always reach the pager.
-          swipeStart: () => { swipingRef.current = true; noteTabSwipe(true); Keyboard.dismiss(); setFeedChromeHidden(false); },
+          swipeStart: () => { swipingRef.current = true; hasInteractedRef.current = true; noteTabSwipe(true); Keyboard.dismiss(); setFeedChromeHidden(false); },
           swipeEnd: () => { swipingRef.current = false; lastSwipeEndAt.current = Date.now(); noteTabSwipe(false); },
           // The bar (drag-release AND tap) navigates by emitting tabPress, so mark
           // the moment — a real bar-driven multi-tab jump must stay exempt from the
           // spurious-jump guard below.
-          tabPress: () => { lastTabPressAt.current = Date.now(); },
+          tabPress: () => { lastTabPressAt.current = Date.now(); hasInteractedRef.current = true; },
           state: (e) => {
             // Any tab change brings the reactive chrome back (a hidden bar on
             // Explore/Music would just look broken).
@@ -505,12 +515,23 @@ export default function TabLayout() {
             const justMounted = Date.now() - mountedAt.current < MOUNT_GUARD_MS;
             const prev = settledIndexRef.current;
 
-            // First settle after (re)mount MUST be Home. A freshly re-created native
-            // pager occasionally reports a far page here (the login "teleport"); snap
-            // straight back to Home before it becomes our reference point. (An
-            // adjacent first settle is left alone — that's just the initial layout.)
+            // Was this settle actually driven by the user? A finger swipe emits
+            // swipeStart/End; the bar (tap AND drag-release) emits tabPress. A
+            // native-pager teleport emits NEITHER — that's what marks it spurious.
+            const swipeDriven = swipingRef.current || Date.now() - lastSwipeEndAt.current < 600;
+            const barDriven = Date.now() - lastTabPressAt.current < 700;
+
+            // First settle after (re)mount MUST be Home (that's initialRouteName,
+            // and a single swipe can only reach an ADJACENT page). So a FAR first
+            // settle with no bar tap and no swipe is the native-pager "login
+            // teleport" (it lands on Profile). Snap straight to Home before it
+            // becomes our reference point — UNCONDITIONALLY, not just inside the
+            // mount window: a slow login can push this first settle past the window,
+            // and that stale timing check was the leak that let the glitch through.
+            // An adjacent first settle (initial layout) or a real gesture/tap is
+            // left alone.
             if (prev == null) {
-              if (justMounted && homeIndex >= 0 && Math.abs(newIndex - homeIndex) > 1) {
+              if (homeIndex >= 0 && Math.abs(newIndex - homeIndex) > 1 && !barDriven && !swipeDriven) {
                 settledIndexRef.current = homeIndex;
                 navigation.navigate(names[homeIndex]);
               } else {
@@ -523,8 +544,6 @@ export default function TabLayout() {
             const delta = newIndex - prev;
             if (Math.abs(delta) <= 1) return; // a normal single-page move
 
-            const swipeDriven = swipingRef.current || Date.now() - lastSwipeEndAt.current < 600;
-            const barDriven = Date.now() - lastTabPressAt.current < 700;
             if (barDriven) {
               // Intentional bar navigation (tap or drag-release) — checked FIRST:
               // a tabPress is a stronger intent signal than a ≤600ms-old swipe.
@@ -537,12 +556,14 @@ export default function TabLayout() {
               const intended = Math.max(0, Math.min(names.length - 1, prev + Math.sign(delta)));
               settledIndexRef.current = intended;
               navigation.navigate(names[intended]);
-            } else if (justMounted) {
-              // A multi-page jump with NO gesture and NO bar press, moments after
-              // the (re)mount = the spurious native-pager teleport (the login glitch
-              // that lands on Profile). Revert to where we actually were (Home).
-              // Intentional multi-tab bar jumps (barDriven) and every jump after the
-              // window stay untouched.
+            } else if (justMounted || !hasInteractedRef.current) {
+              // A multi-page jump with NO gesture and NO bar press — during the
+              // mount window OR before the user has touched anything at all — is the
+              // spurious native-pager teleport (the login glitch that lands on
+              // Profile). Revert to where we actually were (Home). The !hasInteracted
+              // half is what makes this survive a slow login: the glitch is caught by
+              // intent, not by a stopwatch. Legit programmatic far-jumps only fire
+              // AFTER the user has interacted, so they stay untouched.
               settledIndexRef.current = prev;
               navigation.navigate(names[prev]);
             }

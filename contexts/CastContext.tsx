@@ -2,6 +2,7 @@ import { createContext, useContext, useCallback, useEffect, useRef, useState, ty
 import { NativeModules } from 'react-native';
 import { buildMediaInfo, buildSplashMediaInfo, postToCastItem, TV_SPLASH_MS, type CastItem } from '../lib/cast';
 import { fetchHorizontalVideos } from '../lib/tv';
+import { recordAdImpression, adSkipAfterMs } from '../lib/ads';
 import { useMediaSuspend } from './MediaSuspendContext';
 import type { SharePayload } from './ShareContext';
 
@@ -222,10 +223,20 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     advancedRef.current = false;
     hasLoadedRef.current = true;
     setCurrent(item);
+    // A sponsor reaching the TV counts as a TV-placement impression (deduped per
+    // campaign for the session).
+    if (item.isAd && item.ad) recordAdImpression({ __ad: item.ad }, 'tv');
     // A new load supersedes any in-flight splash handoff.
     if (transitionRef.current) { clearTimeout(transitionRef.current); transitionRef.current = null; }
     const loadReal = () => {
       try {
+        const mi = buildMediaInfo(item);
+        // Dev-only probe for the open cast-TV sponsor issue: shows exactly what
+        // the receiver was handed (and whether it rejected it).
+        if (__DEV__) {
+          console.log('[ADDEBUG] loadReal idx=', i, item.isAd ? 'AD' : 'video',
+            'contentType=', mi.contentType, 'url=', String(mi.contentUrl).slice(0, 110));
+        }
         // An explicit startTime pins VOD to a real position (0 = the actual
         // beginning — without it the receiver picks its own join point a few
         // seconds in). Lives omit it so the receiver joins at the live edge.
@@ -234,11 +245,11 @@ function RealCastProvider({ children }: { children: ReactNode }) {
         // try/catch can't see that, so it'd surface as an unhandled rejection
         // in the LogBox. Swallow it — every client call below does the same.
         client.loadMedia({
-          mediaInfo: buildMediaInfo(item),
+          mediaInfo: mi,
           autoplay: true,
           ...(item.isLive ? {} : { startTime: Math.max(0, startSec) }),
-        })?.catch?.(() => {});
-      } catch { /* client torn down mid-call */ }
+        })?.catch?.((e: any) => { if (__DEV__) console.log('[ADDEBUG] loadMedia REJECTED', item.isAd ? 'AD' : 'video', String(e?.message ?? e)); });
+      } catch (e: any) { if (__DEV__) console.log('[ADDEBUG] loadMedia THREW', String(e?.message ?? e)); }
     };
     if (!splash) { loadReal(); return; }
     // Moving between posts: flash the Laybell card on the TV for a beat, then
@@ -359,6 +370,18 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     }
   }, [mediaStatus, loadIndex]);
 
+  // Dev-only probe: what the receiver reports while a sponsor is the current
+  // item. Separates load-vs-play (idle+error = rejected stream, idle+finished =
+  // bailed instantly, buffering/playing = actually fine) for the open cast-TV
+  // sponsor issue. Delete once that's confirmed working on hardware.
+  useEffect(() => {
+    if (!__DEV__ || !current?.isAd) return;
+    console.log('[ADDEBUG] AD on receiver: playerState=', mediaStatus?.playerState,
+      'idleReason=', mediaStatus?.idleReason,
+      'dur=', mediaStatus?.mediaInfo?.streamDuration,
+      'splashPending=', !!transitionRef.current);
+  }, [current, mediaStatus]);
+
   // Seeks and play on IDLE media silently fail (the receiver has unloaded it) —
   // exactly what happens when someone rewinds a video in its final seconds and
   // it finishes before the seek lands. Detect idle and RELOAD the item at the
@@ -376,18 +399,38 @@ function RealCastProvider({ children }: { children: ReactNode }) {
   const retry = useCallback(() => { loadIndex(indexRef.current); }, [loadIndex]);
   const showRemote = useCallback(() => { try { GCast?.showExpandedControls?.(); } catch {} }, []);
   const seekTo = useCallback((sec: number) => {
+    // A sponsor can't be scrubbed on the TV (no fast-forward/rewind).
+    if (queueRef.current[indexRef.current]?.isAd) return;
     if (idleNow()) { loadIndex(indexRef.current, sec); return; } // revive at the target
     try { client?.seek({ position: Math.max(0, sec) })?.catch?.(() => {}); } catch {}
   }, [client, idleNow, loadIndex]);
   // Relative seek — the receiver clamps to [0, duration], and keeping it
   // relative avoids racing the stream-position ticks.
+  // True while the current sponsor still can't be skipped past — for an
+  // 'unskippable' ad that's until it finishes (auto-advances), for 'skip15' until
+  // 15s of playback have elapsed. Reads lastPosRef (seconds) so it's live.
+  const adSkipLockedNow = () => {
+    const it = queueRef.current[indexRef.current];
+    if (!it?.isAd) return false;
+    return (lastPosRef.current * 1000) < adSkipAfterMs('tv', it.ad?.skipMode);
+  };
   const skip = useCallback((deltaSec: number) => {
+    // A sponsor can't be fast-forwarded past until its skip threshold (rewind is
+    // fine). The ad auto-advances to the next video when it ends.
+    if (deltaSec > 0 && adSkipLockedNow()) return;
     if (idleNow()) { loadIndex(indexRef.current, lastPosRef.current + deltaSec); return; }
     try { client?.seek({ position: deltaSec, relative: true })?.catch?.(() => {}); } catch {}
   }, [client, idleNow, loadIndex]);
   // Manual queue moves get the branded splash too — same post-change moment.
-  const next = useCallback(() => { if (indexRef.current + 1 < queueRef.current.length) loadIndex(indexRef.current + 1, 0, true); }, [loadIndex]);
-  const prev = useCallback(() => { if (indexRef.current - 1 >= 0) loadIndex(indexRef.current - 1, 0, true); }, [loadIndex]);
+  // next/prev are blocked while the sponsor's skip threshold hasn't passed.
+  const next = useCallback(() => {
+    if (adSkipLockedNow()) return;
+    if (indexRef.current + 1 < queueRef.current.length) loadIndex(indexRef.current + 1, 0, true);
+  }, [loadIndex]);
+  const prev = useCallback(() => {
+    if (adSkipLockedNow()) return;
+    if (indexRef.current - 1 >= 0) loadIndex(indexRef.current - 1, 0, true);
+  }, [loadIndex]);
   const disconnect = useCallback(() => {
     try { GCast?.getSessionManager?.()?.endCurrentSession?.(true)?.catch?.(() => {}); } catch {}
   }, []);
@@ -436,8 +479,11 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     positionSec: streamPosition ?? 0,
     durationSec: mediaStatus?.mediaInfo?.streamDuration ?? 0,
     cast, play, pause, seekTo, skip, next, prev,
-    hasNext: indexRef.current + 1 < queueRef.current.length,
-    hasPrev: indexRef.current > 0,
+    // A sponsor blocks prev/next until its skip threshold passes (unskippable →
+    // until it finishes; skip15 → 15s) — reflect that in the affordances so the
+    // remote's next button enables at the right moment.
+    hasNext: !(current?.isAd && ((streamPosition ?? 0) * 1000) < adSkipAfterMs('tv', current.ad?.skipMode)) && indexRef.current + 1 < queueRef.current.length,
+    hasPrev: !(current?.isAd && ((streamPosition ?? 0) * 1000) < adSkipAfterMs('tv', current.ad?.skipMode)) && indexRef.current > 0,
     retry, showRemote,
     remoteOpen,
     openRemote,

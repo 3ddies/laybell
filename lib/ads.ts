@@ -73,17 +73,73 @@ export const AD_SKIP_MS = 5_000;
 // between tracks and only become skippable after this much playback.
 export const AUDIO_AD_SKIP_MS = 10_000;
 
+// How many Laybell TV videos play between sponsors — used by BOTH the landscape
+// interstitial cadence (reel/[id]) and the cast auto-advance injection
+// (CastContext) so the on-phone and on-TV ad frequency stay identical.
+export const TV_AD_EVERY_VIDEOS = 4;
+
+// Advertiser-chosen skip mode (Laybell TV + music ads only): a short spot that
+// plays FULLY through with no skip ('unskippable', creative must be ≤15s), or a
+// longer spot that becomes skippable after 15s ('skip15', creative must be >15s).
+// Named for the MODE ('skip15'), not the value: a skippable TV/music ad becomes
+// skippable after this much play — 11s.
+export const AD_SKIP15_MS = 11_000;
+// Create-flow duration bounds. Unskippable creatives must be ≤16s (SHOWN as
+// "15s" — the extra second absorbs clips that report a few hundred ms over 15);
+// skippable creatives must be >15s.
+export const AD_UNSKIPPABLE_MAX_SEC = 16;
+export const AD_SKIP_LONG_MIN_SEC = 15;
+export type AdSkipMode = 'unskippable' | 'skip15';
+
+/**
+ * Ms of genuine playback before an ad may be skipped — Infinity means it plays
+ * fully (no skip). 'unskippable' → Infinity; 'skip15' → 15s. With no mode set
+ * (regular reels, or legacy ads) fall back to the placement default.
+ */
+export function adSkipAfterMs(placement: AdPlacement, skipMode?: string | null): number {
+  if (skipMode === 'unskippable') return Infinity;
+  if (skipMode === 'skip15') return AD_SKIP15_MS;
+  if (placement === 'reels') return AD_SKIP_MS;
+  if (placement === 'audio') return AUDIO_AD_SKIP_MS;
+  return Infinity; // Laybell TV default: play fully
+}
+
 // Storage bucket the Ad Manager uploads creatives to. Reuses the existing
 // public 'posts' bucket (same one the composer uploads to) so no extra bucket
 // setup is needed — ad creatives are just media files under the user's folder.
 export const AD_CREATIVE_BUCKET = 'posts';
 
-// Sensible default CPM for the create flow ($5.00 per 1,000 impressions).
-export const AD_DEFAULT_CPM_CENTS = 500;
+// Flat platform CPM for the create flow — $10.00 per 1,000 impressions, i.e.
+// $5 per 500 views. The bid is no longer advertiser-set (it confused people);
+// every campaign uses this rate and amount-paid → views is budget ÷ this × 1,000.
+export const AD_DEFAULT_CPM_CENTS = 1000;
+
+// Music + Laybell TV are premium UNSKIPPABLE placements — they cost 20% more per
+// view (the surcharge is Laybell's). Applied server-side in record_ad_event; the
+// create flow surfaces it as a note. Keep in sync with the RPC in ad_ecosystem.sql.
+export const AD_PREMIUM_RATE = 0.2;
+export function isPremiumPlacement(p: AdPlacement): boolean {
+  return p === 'tv' || p === 'audio';
+}
+
+// Volume bonus: bigger budgets stretch FURTHER (more views per dollar) to reward
+// higher spend. Applied as an effective-CPM discount server-side in
+// record_ad_event, mirrored here for the create-flow estimate. Tiered + hard-
+// capped at +25% so it's noticeable but can't be abused (a $10k budget gets the
+// same 25% as a $1k one). KEEP THESE TIERS IN SYNC with the RPC in ad_ecosystem.sql.
+export const AD_VOLUME_BONUS_MAX_PCT = 25;
+export function adVolumeBonus(budgetCents: number): number {
+  if (budgetCents >= 100_000) return 1.25; // $1,000+
+  if (budgetCents >=  50_000) return 1.20; // $500+
+  if (budgetCents >=  25_000) return 1.15; // $250+
+  if (budgetCents >=  10_000) return 1.10; // $100+
+  if (budgetCents >=   5_000) return 1.05; // $50+
+  return 1.0;
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type AdPlacement = 'feed' | 'reels' | 'audio';
+export type AdPlacement = 'feed' | 'reels' | 'audio' | 'tv';
 export type AdMediaType = 'image' | 'video' | 'slideshow' | 'audio';
 export type AdObjective = 'awareness' | 'traffic' | 'engagement';
 export type AdStatus = 'pending' | 'active' | 'paused' | 'ended' | 'canceled';
@@ -103,6 +159,9 @@ export type AdCreative = {
   body?: string | null;
   cta_label?: string | null;
   cta_url?: string | null;
+  // Laybell TV + music ads only: 'unskippable' (plays fully, ≤15s) or 'skip15'
+  // (skippable after 15s, >15s). Null on reels (fixed 5s) and legacy creatives.
+  skip_mode?: string | null;
 };
 
 export type AdCampaign = {
@@ -147,6 +206,8 @@ export type AdMeta = {
   ctaLabel: string;
   ctaUrl: string | null;
   placement: AdPlacement;
+  // Advertiser skip mode for TV/music ads ('unskippable' | 'skip15'); null else.
+  skipMode?: string | null;
 };
 
 // What the audio scheduler needs to play and bill an audio ad.
@@ -162,6 +223,8 @@ export type AudioAd = {
   uri: string;
   cover?: string | null;
   durationSeconds?: number | null;
+  // 'unskippable' (plays fully) | 'skip15' (skippable after 15s) | null (10s).
+  skipMode?: string | null;
 };
 
 // A {campaign, creative} pair the reel weaver turns into full-screen ad items.
@@ -275,6 +338,7 @@ function metaFor(c: AdCampaign, cr: AdCreative, placement: AdPlacement): AdMeta 
     ctaLabel: cr.cta_label ?? tg('sponsoredCard.learnMore'),
     ctaUrl: normalizeUrl(cr.cta_url),
     placement,
+    skipMode: cr.skip_mode ?? null,
   };
 }
 
@@ -321,6 +385,30 @@ export function reelItemFor(src: AdSource, slot: number): any {
   };
 }
 
+// Shape a Laybell TV ad like a LANDSCAPE video post so it drops into the TV
+// video grid alongside real horizontal videos (aspect > 1 keeps it in the TV
+// surface). One entry per slot to avoid key collisions.
+export function tvItemFor(src: AdSource, slot: number): any {
+  const { c, cr } = src;
+  return {
+    id: `ad:${c.id}:tv:${slot}`,
+    type: 'video',
+    media_url: cr.media_url,
+    // Horizontal by contract; fall back to 16:9 if the creative didn't record it.
+    aspect_ratio: cr.aspect_ratio ?? '1.7777777777777777',
+    thumbnail_url: cr.thumbnail_url ?? null,
+    cover_url: cr.cover_url ?? null,
+    caption: cr.headline ?? '',
+    user_id: c.user_id,
+    profiles: {
+      username: c.advertiser_name ?? tg('ad.sponsored'),
+      display_name: c.advertiser_name ?? tg('ad.sponsored'),
+      avatar_url: c.advertiser_avatar_url ?? null,
+    },
+    __ad: metaFor(c, cr, 'tv'),
+  };
+}
+
 function normalizeUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   const t = url.trim();
@@ -339,7 +427,7 @@ const CAMPAIGN_SELECT = `
   impression_count, click_count, advertiser_name, advertiser_avatar_url, is_business, objective, placements,
   target_age_min, target_age_max, target_gender, target_genres,
   target_lat, target_lng, target_radius_km, created_at,
-  ad_creatives ( id, campaign_id, placement, media_type, media_url, slides, thumbnail_url, cover_url, aspect_ratio, duration_seconds, headline, body, cta_label, cta_url )
+  ad_creatives ( id, campaign_id, placement, media_type, media_url, slides, thumbnail_url, cover_url, aspect_ratio, duration_seconds, headline, body, cta_label, cta_url, skip_mode )
 `;
 
 // Live, eligible ad campaigns for this viewer — applies budget, schedule,
@@ -405,6 +493,17 @@ export async function fetchReelAds(viewer: AdViewer): Promise<AdSource[]> {
   return out;
 }
 
+// Laybell TV ad pool — landscape video ads to weave into the TV video grid.
+export async function fetchTvAds(viewer: AdViewer): Promise<AdSource[]> {
+  const campaigns = await fetchEligibleCampaigns(viewer);
+  const out: AdSource[] = [];
+  for (const c of campaigns) {
+    const cr = creativeFor(c, 'tv');
+    if (cr) out.push({ c, cr });
+  }
+  return out;
+}
+
 // Pick one audio ad for the next break (rotates across calls so the same break
 // doesn't always serve the same advertiser).
 let audioRotation = 0;
@@ -428,6 +527,7 @@ export async function pickAudioAd(viewer: AdViewer): Promise<AudioAd | null> {
         uri: cr.media_url,
         cover: cr.cover_url ?? cr.thumbnail_url ?? null,
         durationSeconds: cr.duration_seconds ?? null,
+        skipMode: cr.skip_mode ?? null,
       });
     }
   }
@@ -618,6 +718,7 @@ export type NewCreativeInput = {
   body?: string | null;
   cta_label?: string | null;
   cta_url?: string | null;
+  skip_mode?: string | null;
 };
 
 export type NewCampaignInput = {
@@ -657,40 +758,54 @@ export async function purchaseAdCampaign(input: NewCampaignInput): Promise<strin
     // Create as `pending` first; flip to `active` only once creatives land, so a
     // failed/half-failed creative insert can never leave a live-but-empty
     // campaign serving (a pending campaign is excluded from serving by RLS).
-    const { data: campaign, error } = await supabase
-      .from('ad_campaigns')
-      .insert({
-        user_id: user.id,
-        kind: 'ad',
-        status: 'pending',
-        objective: input.objective,
-        advertiser_name: input.advertiserName,
-        advertiser_avatar_url: input.advertiserAvatarUrl ?? null,
-        is_business: input.isBusiness,
-        placements: input.placements,
-        budget_cents_total: input.budgetCentsTotal,
-        budget_cents_daily: input.budgetCentsDaily ?? null,
-        bid_cpm_cents: input.bidCpmCents,
-        price_cents: 0,
-        spent_cents: 0,
-        starts_at: input.startsAt ?? nowIso,
-        ends_at: input.endsAt,
-        policy_accepted_at: nowIso,
-        target_age_min: input.targeting.ageMin ?? null,
-        target_age_max: input.targeting.ageMax ?? null,
-        target_gender: input.targeting.gender ?? null,
-        target_genres: input.targeting.genres?.length ? input.targeting.genres.map((g) => g.toLowerCase()) : null,
-        target_lat: input.targeting.lat ?? null,
-        target_lng: input.targeting.lng ?? null,
-        target_radius_km: input.targeting.radiusKm ?? null,
-      })
-      .select('id')
-      .single();
+    const insertRow: Record<string, any> = {
+      user_id: user.id,
+      kind: 'ad',
+      status: 'pending',
+      objective: input.objective,
+      advertiser_name: input.advertiserName,
+      advertiser_avatar_url: input.advertiserAvatarUrl ?? null,
+      is_business: input.isBusiness,
+      placements: input.placements,
+      budget_cents_total: input.budgetCentsTotal,
+      budget_cents_daily: input.budgetCentsDaily ?? null,
+      bid_cpm_cents: input.bidCpmCents,
+      price_cents: 0,
+      spent_cents: 0,
+      starts_at: input.startsAt ?? nowIso,
+      ends_at: input.endsAt,
+      policy_accepted_at: nowIso,
+      target_age_min: input.targeting.ageMin ?? null,
+      target_age_max: input.targeting.ageMax ?? null,
+      target_gender: input.targeting.gender ?? null,
+      target_genres: input.targeting.genres?.length ? input.targeting.genres.map((g) => g.toLowerCase()) : null,
+      target_lat: input.targeting.lat ?? null,
+      target_lng: input.targeting.lng ?? null,
+      target_radius_km: input.targeting.radiusKm ?? null,
+    };
+    let { data: campaign, error } = await supabase
+      .from('ad_campaigns').insert(insertRow).select('id').single();
+    // Resilience: an older ad_ecosystem.sql may lack the (cosmetic, nullable)
+    // advertiser_avatar_url column — rather than hard-block the whole launch on
+    // one missing column, drop it and retry. Re-running ad_ecosystem.sql adds it
+    // back and future ads carry the avatar again.
+    if (error && /advertiser_avatar_url/i.test(error.message ?? '')) {
+      delete insertRow.advertiser_avatar_url;
+      ({ data: campaign, error } = await supabase
+        .from('ad_campaigns').insert(insertRow).select('id').single());
+    }
     if (error || !campaign) return null;
 
     const rows = input.creatives.map((cr) => ({ ...cr, campaign_id: campaign.id }));
     if (rows.length) {
-      const { error: crErr } = await supabase.from('ad_creatives').insert(rows);
+      let { error: crErr } = await supabase.from('ad_creatives').insert(rows);
+      // Resilience: an older ad_ecosystem.sql lacks the (nullable) skip_mode
+      // column — strip it and retry so a launch never hard-blocks on the pending
+      // migration (the ad just falls back to its placement-default skip timing).
+      if (crErr && /skip_mode/i.test(crErr.message ?? '')) {
+        const stripped = rows.map(({ skip_mode, ...rest }) => rest);
+        ({ error: crErr } = await supabase.from('ad_creatives').insert(stripped));
+      }
       if (crErr) {
         // Roll back the pending campaign; if even this fails the row stays
         // `pending` and never serves, so nothing broken goes live.

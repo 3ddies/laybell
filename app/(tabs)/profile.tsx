@@ -64,12 +64,27 @@ const TABS = [
 const TAB_KEYS = TABS.map(t => t.key);
 const SCREEN_W = Dimensions.get('window').width;
 
+// Black or white, whichever reads on a given background — so a SOLID accent pill
+// (light-mode active tab) stays legible whether the badge color is a light metal
+// (gold/silver → dark text) or a saturated hue (→ white text).
+function readableOn(hex: string): string {
+  const h = hex.replace('#', '');
+  if (h.length < 6) return '#FFFFFF';
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.62 ? '#16161A' : '#FFFFFF';
+}
+
 export default function ProfileScreen() {
   const { show: showOptions } = usePostOptions();
   const { profile: liveProfile } = useProfile();
   const { isPremium } = usePremium();
   const { openCamera } = useStories();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  // Inactive category tabs used textTertiary, which reads too faint on white
+  // next to the badge-tinted active-tab pill. In light mode step them up to the
+  // stronger secondary gray so the tab row looks balanced; dark/grey stay put.
+  const inactiveTabTint = mode === 'light' ? colors.textSecondary : colors.textTertiary;
   const { t } = useTranslation();
   const linkGuard = useLinkGuard();
   const styles = useThemedStyles(makeStyles);
@@ -257,10 +272,22 @@ export default function ProfileScreen() {
   // The custom Posts-grid layout, if the user has one AND still qualifies for its
   // tier (activeLayout re-checks earned tier + resolves blocks against live posts).
   const pageLayout = activeLayout(badgeProfile, userPosts);
-  const activeTabDyn = {
-    backgroundColor: tabAccent + '1F', borderColor: tabAccent + '4D',
-    shadowColor: tabAccent, shadowOpacity: 0.28, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 2,
-  };
+  // Light mode: a SOLID accent pill so the active tab clearly separates from the
+  // white background (a faint tint let light/metallic badge colors blend in).
+  // Dark/grey keep the softer tinted pill (they already read fine).
+  const solidActive = mode === 'light';
+  const activeTabDyn = solidActive
+    ? {
+        backgroundColor: tabAccent, borderColor: tabAccent,
+        shadowColor: tabAccent, shadowOpacity: 0.32, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 3,
+      }
+    : {
+        backgroundColor: tabAccent + '1F', borderColor: tabAccent + '4D',
+        shadowColor: tabAccent, shadowOpacity: 0.28, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 2,
+      };
+  // On the solid pill, text/icon flip to black/white for contrast; otherwise the
+  // accent color on the tinted pill (unchanged).
+  const activeContent = solidActive ? readableOn(tabAccent) : tabAccent;
 
   function dataForTab(key: string) {
     switch (key) {
@@ -703,9 +730,12 @@ export default function ProfileScreen() {
               <Ionicons
                 name={activeTab === tab.key ? tab.icon.replace('-outline', '') as any : tab.icon as any}
                 size={16}
-                color={activeTab === tab.key ? tabAccent : colors.textTertiary}
+                color={activeTab === tab.key ? activeContent : inactiveTabTint}
               />
-              <Text style={[styles.tabText, activeTab === tab.key && { color: tabAccent, fontWeight: '700' }]}>
+              <Text style={[
+                styles.tabText,
+                activeTab === tab.key ? { color: activeContent, fontWeight: '700' } : { color: inactiveTabTint },
+              ]}>
                 {t(`profile.tab.${tab.key}`)}
               </Text>
             </TouchableOpacity>

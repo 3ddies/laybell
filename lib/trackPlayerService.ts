@@ -1,10 +1,13 @@
 import TrackPlayer, { AppKilledPlaybackBehavior, Capability, Event } from 'react-native-track-player';
 
 // Lock-screen / Control Center bridge for the MAIN player (contexts/AudioContext).
-// react-native-track-player is the playback engine for main-player songs ONLY —
-// ambient post music and audio ads stay on expo-audio and must NEVER surface on
-// the lock screen (ambient is also killed on backgrounding; only the main
-// player is allowed background playback).
+// react-native-track-player is the playback ENGINE for main-player songs ONLY —
+// ambient post music and audio ads stay on expo-audio (ambient is also killed on
+// backgrounding; only the main player is allowed background playback). NOTE: an
+// audio AD still plays on expo-audio, but while it runs AudioContext repaints
+// this track-player card with the ad's metadata + a live scrubber (see
+// pushAdNowPlaying) so a background listener sees the ad on the lock screen
+// instead of the frozen paused song. Ambient post music never touches the card.
 //
 // The playback service (registered from index.js at app entry) receives the
 // iOS lock-screen / Control Center remote commands and routes them into

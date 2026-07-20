@@ -241,6 +241,12 @@ export default function SettingsScreen() {
       onPress: () => router.push('/friends'),
     },
     {
+      icon: 'wallet-outline',
+      label: t('account.wallet'),
+      subtitle: t('account.walletSub'),
+      onPress: () => router.push('/wallet'),
+    },
+    {
       icon: 'person-remove-outline',
       label: t('account.followerInsights'),
       subtitle: t('account.followerInsightsSub'),

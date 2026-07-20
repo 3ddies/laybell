@@ -13,10 +13,11 @@ import { recordListen } from '../lib/listenHistory';
 import { recordStream as recordStreamDurable } from '../lib/streamOutbox';
 import {
   pickAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
-  firstAudioGateMs, nextAudioGateMs, AUDIO_AD_SKIP_MS,
+  firstAudioGateMs, nextAudioGateMs, adSkipAfterMs,
   type AdViewer, type AudioAd,
 } from '../lib/ads';
 import { buildAffinityProfile, EMPTY_PROFILE, scorePost } from '../lib/feedScorer';
+import { tg } from '../lib/i18n';
 
 // Per-post listen progress persists for a rolling 24h window (matches the
 // server's per-user/post stream cap) so force-quitting can't reset it.
@@ -231,6 +232,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const adNextThresholdRef = useRef(firstAudioGateMs());
   const adSoundRef = useRef<AudioPlayer | null>(null);
   const adPlayingRef = useRef(false);
+  // Throttle + last-known progress for the ad's iOS lock-screen / Control Center
+  // card (updated ~1×/s from the ad status listener; also used to repaint the
+  // card if the app is foregrounded mid-ad).
+  const adCardSecRef = useRef(-1);
+  const adCardPosRef = useRef(0);
+  const adCardDurRef = useRef(0);
   const adMetaRef = useRef<AudioAd | null>(null);
   const adViewerRef = useRef<AdViewer | null>(null);
   // An ad break came due (a listening threshold was crossed) but ads NEVER
@@ -322,6 +329,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       recordAdImpression(ad, 'audio', uidRef.current);
       adCanSkipFiredRef.current = false;
       emitPosition(0, 0); // bars start at zero, not the paused song's position
+      // Swap the iOS lock-screen card over to the ad (track-player is paused, so
+      // it won't move the card itself — see pushAdNowPlaying).
+      adCardSecRef.current = -1;
+      adCardPosRef.current = 0;
+      adCardDurRef.current = (ad.durationSeconds ?? 0) * 1000;
+      pushAdNowPlaying(ad, 0, adCardDurRef.current);
       adStatusSubRef.current = player.addListener('playbackStatusUpdate', (st: any) => {
         if (!st.isLoaded) return;
         const pos = (st.currentTime ?? 0) * 1000;   // expo-audio reports SECONDS
@@ -333,8 +346,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         // app-wide 4×/s for the ad's whole duration ("split-second lag
         // globally whenever an ad plays").
         emitPosition(pos, dur);
-        // adState now changes only on the DISCRETE fact: the one-time skip unlock.
-        if (!adCanSkipFiredRef.current && pos >= AUDIO_AD_SKIP_MS) {
+        // Advance the lock-screen card's scrubber ~1×/s (cheap native call; the
+        // audio is on expo-audio, so track-player won't move the card on its own).
+        adCardPosRef.current = pos;
+        adCardDurRef.current = dur;
+        const adSec = Math.floor(pos / 1000);
+        if (adSec !== adCardSecRef.current) { adCardSecRef.current = adSec; pushAdNowPlaying(ad, pos, dur); }
+        // adState changes only on the DISCRETE fact: the one-time skip unlock.
+        // Threshold now honors the advertiser's skip mode — 'unskippable' → never
+        // (Infinity, plays fully), 'skip15' → 15s, legacy/none → 10s default.
+        if (!adCanSkipFiredRef.current && pos >= adSkipAfterMs('audio', ad.skipMode)) {
           adCanSkipFiredRef.current = true;
           setAdState((prev) => (prev ? { ...prev, canSkip: true } : prev));
         }
@@ -380,10 +401,43 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // Hand the position channel back to the music player (the first progress
       // tick fills in the real duration).
       emitPosition(0, 0);
+      // Repaint the card as the SONG — we overwrote its metadata with the ad,
+      // and resuming the same paused track won't necessarily restore it.
+      pushCurrentTrackNowPlaying();
     }
   }
 
   function skipAudioAd() { finishAudioAd(true); }
+
+  // Paint the iOS lock-screen / Control Center card with the CURRENTLY playing
+  // audio ad. Audio ads run on a separate expo-audio player (track-player is
+  // paused during a break), so without this the card sits frozen on the paused
+  // song while the ad plays — especially jarring for someone streaming in the
+  // background. track-player stays the card's owner; we just overwrite its
+  // now-playing info with the ad's title / advertiser / cover and push a live
+  // elapsedTime so the scrubber advances in step with the ad.
+  function pushAdNowPlaying(ad: AudioAd, elapsedMs: number, durMs: number) {
+    const sponsored = tg('ad.sponsored');
+    TrackPlayer.updateNowPlayingMetadata({
+      title: (ad.headline && ad.headline.trim()) || ad.advertiserName || sponsored,
+      artist: ad.advertiserName ? `${sponsored} · ${ad.advertiserName}` : sponsored,
+      artwork: ad.cover ?? ad.avatarUrl ?? undefined,
+      duration: durMs > 0 ? durMs / 1000 : undefined,
+      elapsedTime: Math.max(0, elapsedMs / 1000),
+    }).catch(() => {});
+  }
+
+  // Restore the card to the current music track after an ad ends — resuming the
+  // same paused song doesn't necessarily repaint the metadata we overwrote.
+  function pushCurrentTrackNowPlaying() {
+    const t = queueRef.current[queueIndexRef.current];
+    if (!t) return;
+    TrackPlayer.updateNowPlayingMetadata({
+      title: t.caption || t.artist || 'Laybell',
+      artist: t.artist || '',
+      artwork: t.cover || undefined,
+    }).catch(() => {});
+  }
 
   // Configure the audio session once up front so the first tap plays immediately
   // (a cold session previously made the first createAsync fail to start).
@@ -405,14 +459,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // ALWAYS have its iOS card.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
-      if (s !== 'active' || !mainLoadedRef.current) return;
-      const t = queueRef.current[queueIndexRef.current];
-      if (!t) return;
-      TrackPlayer.updateNowPlayingMetadata({
-        title: t.caption || t.artist || 'Laybell',
-        artist: t.artist || '',
-        artwork: t.cover || undefined,
-      }).catch(() => {});
+      if (s !== 'active') return;
+      // Mid-ad: keep the card on the AD, not the paused song underneath it (the
+      // ad status ticks would re-correct within ~1s anyway, but repaint now so
+      // there's no flash of the song).
+      if (adPlayingRef.current && adMetaRef.current) {
+        pushAdNowPlaying(adMetaRef.current, adCardPosRef.current, adCardDurRef.current);
+        return;
+      }
+      if (!mainLoadedRef.current) return;
+      pushCurrentTrackNowPlaying();
     });
     return () => sub.remove();
   }, []);

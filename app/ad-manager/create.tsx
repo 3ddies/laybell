@@ -4,18 +4,21 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../../lib/supabase';
 import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/upload';
+import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl } from '../../lib/streamUpload';
 import { probeAudioDurationSec } from '../../lib/audioProbe';
 import {
   purchaseAdCampaign, estimatedImpressions, fmtPrice,
-  AD_DEFAULT_CPM_CENTS, AD_CREATIVE_BUCKET,
-  type AdPlacement, type AdObjective, type AdMediaType, type NewCreativeInput,
+  AD_DEFAULT_CPM_CENTS, AD_CREATIVE_BUCKET, AD_UNSKIPPABLE_MAX_SEC, AD_SKIP_LONG_MIN_SEC, AD_PREMIUM_RATE, isPremiumPlacement,
+  adVolumeBonus, AD_VOLUME_BONUS_MAX_PCT,
+  type AdPlacement, type AdObjective, type AdMediaType, type NewCreativeInput, type AdSkipMode,
 } from '../../lib/ads';
 import { analyzeUrl, scanText } from '../../lib/linkSafety';
+import { saveAdDraft, loadAdDraft, clearAdDraft, isMeaningfulAdDraft, type AdDraft } from '../../lib/adDrafts';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { useProfile } from '../../contexts/ProfileContext';
 import SwipeBackPager from '../../components/SwipeBackPager';
@@ -44,6 +47,7 @@ const OBJECTIVES: { key: AdObjective; icon: any }[] = [
 const PLACEMENTS: { key: AdPlacement; icon: any }[] = [
   { key: 'feed', icon: 'home-outline' },
   { key: 'reels', icon: 'film-outline' },
+  { key: 'tv', icon: 'tv-outline' },
   { key: 'audio', icon: 'musical-notes-outline' },
 ];
 
@@ -57,9 +61,12 @@ const GENDERS: { key: string; label: string }[] = [
 type Pick = { uri: string; width?: number; height?: number; kind: 'image' | 'video' | 'audio'; durationSec?: number | null; name?: string; mime?: string };
 // `cover` is an optional image used as the audio ad's "album art" — it plays
 // like a song in the player, so advertisers can upload cover art for it.
-type CreativeDraft = { picks: Pick[]; cover?: Pick | null; headline: string; body: string; ctaLabel: string; ctaUrl: string };
+// `skipMode` is only meaningful for TV + music ads: 'unskippable' plays fully
+// (creative ≤15s), 'skip15' is skippable after 15s (creative >15s).
+type CreativeDraft = { picks: Pick[]; cover?: Pick | null; headline: string; body: string; ctaLabel: string; ctaUrl: string; skipMode: AdSkipMode };
 
-const emptyDraft = (t: TFn): CreativeDraft => ({ picks: [], headline: '', body: '', ctaLabel: t('adCreate.ctaDefault'), ctaUrl: '' });
+const emptyDraft = (t: TFn): CreativeDraft => ({ picks: [], headline: '', body: '', ctaLabel: t('adCreate.ctaDefault'), ctaUrl: '', skipMode: 'unskippable' });
+
 
 function extOf(uri: string, fallback: string): string {
   const m = uri.split('?')[0].match(/\.([a-zA-Z0-9]+)$/);
@@ -115,6 +122,63 @@ export default function CreateAdScreen() {
   const [uploadLabel, setUploadLabel] = useState('');
   const publishingRef = useRef(false);
 
+  // ── Draft resume + autosave ────────────────────────────────────────────────
+  // `hydrated` gates autosave until we've decided whether to resume an existing
+  // draft, so the first render can't overwrite it before the user chooses.
+  const [hydrated, setHydrated] = useState(false);
+
+  function applyDraft(d: AdDraft) {
+    setStep((STEPS.includes(d.step as Step) ? d.step : 'basics') as Step);
+    setObjective(d.objective as AdObjective);
+    setAdvertiserName(d.advertiserName ?? '');
+    setIsBusiness(!!d.isBusiness);
+    setBusinessAvatar(d.businessAvatar ?? null);
+    setPlacements((d.placements ?? []) as AdPlacement[]);
+    setDrafts((d.drafts ?? {}) as Record<string, CreativeDraft>);
+    setAgeMin(d.ageMin ?? ''); setAgeMax(d.ageMax ?? ''); setGender(d.gender ?? 'Any');
+    setGenres(d.genres ?? []); setUseLocation(!!d.useLocation); setRadiusKm(d.radiusKm ?? '50');
+    setBudget(d.budget ?? '20'); setDailyCap(d.dailyCap ?? ''); setCpm(d.cpm ?? String(AD_DEFAULT_CPM_CENTS / 100));
+    setDays(d.days ?? '7');
+  }
+
+  // On open: offer to resume an unfinished ad (or start fresh).
+  useEffect(() => {
+    let alive = true;
+    loadAdDraft().then((d) => {
+      if (!alive) return;
+      if (isMeaningfulAdDraft(d)) {
+        Alert.alert(
+          t('adDraft.resumeTitle'),
+          t('adDraft.resumeBody'),
+          [
+            { text: t('adDraft.startOver'), style: 'destructive', onPress: () => { clearAdDraft(); setHydrated(true); } },
+            { text: t('adDraft.resume'), onPress: () => { applyDraft(d as AdDraft); setHydrated(true); } },
+          ],
+          { cancelable: false },
+        );
+      } else {
+        setHydrated(true);
+      }
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Autosave the whole form (debounced) so leaving mid-build loses nothing.
+  useEffect(() => {
+    if (!hydrated) return;
+    const id = setTimeout(() => {
+      saveAdDraft({
+        step, objective, advertiserName, isBusiness, businessAvatar,
+        placements, drafts, ageMin, ageMax, gender, genres, useLocation, radiusKm,
+        budget, dailyCap, cpm, days,
+      });
+    }, 500);
+    return () => clearTimeout(id);
+  }, [hydrated, step, objective, advertiserName, isBusiness, businessAvatar,
+      placements, drafts, ageMin, ageMax, gender, genres, useLocation, radiusKm,
+      budget, dailyCap, cpm, days]);
+
   // Which placement the library video grid is currently picking for.
   const [videoPickerFor, setVideoPickerFor] = useState<AdPlacement | null>(null);
 
@@ -165,6 +229,14 @@ export default function CreateAdScreen() {
     const p = videoPickerFor;
     setVideoPickerFor(null);
     if (!p || m.type !== 'video') return;
+    // Laybell TV is a landscape surface (watchable on a real TV), so a vertical
+    // clip would sit in pillarboxes and defeat the placement. Reject a portrait
+    // video and ask for a horizontal one — but only when we actually know the
+    // dimensions (unknown dims fall through and default to 16:9 downstream).
+    if (p === 'tv' && m.width && m.height && m.height > m.width) {
+      Alert.alert(t('adCreate.tvVerticalTitle'), t('adCreate.tvVerticalBody'));
+      return;
+    }
     patchDraft(p, {
       picks: [{ uri: m.uri, width: m.width, height: m.height, kind: 'video', durationSec: m.duration ? Math.round(m.duration) : null }],
     });
@@ -218,6 +290,22 @@ export default function CreateAdScreen() {
       for (const p of placements) {
         const d = drafts[p];
         if (!d || d.picks.length === 0) return t('adCreate.errCreative', { placement: labelFor(p) });
+        // Laybell TV is landscape-only — backstop the pick-time reject (e.g. a
+        // resumed draft, or dims that weren't known when picked) so a vertical
+        // clip can never launch as a TV ad.
+        if (p === 'tv') {
+          const v = d.picks[0];
+          if (v?.width && v?.height && v.height > v.width) return t('adCreate.tvVerticalBody');
+        }
+        // Skip mode ↔ duration contract (TV + music ads): unskippable spots must
+        // be ≤15s (they play fully), skippable-after-15s spots must be >15s.
+        if (p === 'tv' || p === 'audio') {
+          const dur = d.picks[0]?.durationSec ?? null;
+          if (dur != null) {
+            if (d.skipMode === 'unskippable' && dur > AD_UNSKIPPABLE_MAX_SEC) return t('adCreate.errSkipTooLong', { placement: labelFor(p) });
+            if (d.skipMode === 'skip15' && dur <= AD_SKIP_LONG_MIN_SEC) return t('adCreate.errSkipTooShort', { placement: labelFor(p) });
+          }
+        }
         if (!d.headline.trim()) return t('adCreate.errHeadline', { placement: labelFor(p) });
         if (!d.ctaUrl.trim()) return t('adCreate.errLink', { placement: labelFor(p) });
         // Link safety: never let a campaign go live with a dangerous destination
@@ -229,7 +317,6 @@ export default function CreateAdScreen() {
     }
     if (s === 'budget') {
       if (!(parseFloat(budget) > 0)) return t('adCreate.errBudget');
-      if (!(parseFloat(cpm) > 0)) return t('adCreate.errCpm');
       if (!(parseInt(days, 10) > 0)) return t('adCreate.errDays');
     }
     return null;
@@ -254,6 +341,16 @@ export default function CreateAdScreen() {
   async function uploadOne(uid: string, pick: Pick): Promise<{ url: string; thumb?: string | null }> {
     if (pick.kind === 'video') {
       const compressed = await compressVideoIfPossible(pick.uri);
+      // Route video creatives through Cloudflare Stream (transcoded to H.264 HLS)
+      // — the SAME pipeline as regular video posts — so the ad CASTS to a real TV.
+      // A raw MP4 in Supabase (often HEVC from an iPhone) loads on the Chromecast
+      // but never plays. Falls back to a direct MP4 if Stream is unavailable
+      // (still plays on the phone; just may not cast).
+      try {
+        const vuid = await uploadVideoToStream(compressed);
+        const sub = await resolveStreamSubdomain(vuid);
+        if (sub) return { url: streamHlsUrl(sub, vuid), thumb: streamPosterUrl(sub, vuid) };
+      } catch { /* fall through to the direct upload */ }
       const url = await uploadToStorageWithProgress(AD_CREATIVE_BUCKET, uid, compressed, 'mp4', 'video/mp4');
       let thumb: string | null = null;
       try {
@@ -287,6 +384,8 @@ export default function CreateAdScreen() {
       body: d.body.trim() || null,
       cta_label: d.ctaLabel.trim() || t('adCreate.ctaDefault'),
       cta_url: d.ctaUrl.trim() || null,
+      // Skip mode applies to Laybell TV + music ads only; null everywhere else.
+      skip_mode: (p === 'tv' || p === 'audio') ? d.skipMode : null,
     };
 
     if (mt === 'slideshow') {
@@ -369,8 +468,8 @@ export default function CreateAdScreen() {
         placements,
         creatives,
         budgetCentsTotal: Math.round(parseFloat(budget) * 100),
-        budgetCentsDaily: dailyCap ? Math.round(parseFloat(dailyCap) * 100) : null,
-        bidCpmCents: Math.round(parseFloat(cpm) * 100),
+        budgetCentsDaily: null,          // no manual daily cap — the run length paces it
+        bidCpmCents: AD_DEFAULT_CPM_CENTS, // flat platform rate (no advertiser bid)
         startsAt: null,
         endsAt,
         targeting: {
@@ -388,6 +487,8 @@ export default function CreateAdScreen() {
         Alert.alert(t('adCreate.couldNotLaunchTitle'), t('adCreate.couldNotLaunchBody'));
         return;
       }
+      // Launched — the draft is done; drop it so a fresh ad starts clean.
+      clearAdDraft();
       const r = router as any;
       if (typeof r.replace === 'function') r.replace(`/ad-manager/${id}`);
       else r.back();
@@ -407,8 +508,11 @@ export default function CreateAdScreen() {
     : (profile?.display_name || profile?.username || '').trim();
 
   const budgetCents = Math.round((parseFloat(budget) || 0) * 100);
-  const cpmCents = Math.round((parseFloat(cpm) || 0) * 100);
-  const estImps = estimatedImpressions(budgetCents, cpmCents);
+  // Flat platform rate, stretched by the volume bonus (bigger budgets go further).
+  const volumeBonus = adVolumeBonus(budgetCents);
+  const estImps = Math.round(estimatedImpressions(budgetCents, AD_DEFAULT_CPM_CENTS) * volumeBonus);
+  const bonusPct = Math.round((volumeBonus - 1) * 100);
+  const hasPremiumPlacement = placements.some(isPremiumPlacement);
 
   const stepTitle: Record<Step, string> = {
     basics: t('adCreate.stepBasics'),
@@ -470,7 +574,7 @@ export default function CreateAdScreen() {
               </TouchableOpacity>
             </>
           )}
-          {p === 'reels' && (
+          {(p === 'reels' || p === 'tv') && (
             <TouchableOpacity style={styles.pickBtn} onPress={() => pickVideo(p)}>
               <Ionicons name="videocam-outline" size={16} color={colors.text} />
               <Text style={styles.pickBtnText}>{d.picks.length ? t('adCreate.changeVideo') : t('adCreate.addVideo')}</Text>
@@ -489,6 +593,30 @@ export default function CreateAdScreen() {
             </>
           )}
         </View>
+
+        {/* Skip behavior — Laybell TV + music ads only. */}
+        {(p === 'tv' || p === 'audio') && (
+          <View style={styles.skipModeWrap}>
+            <Text style={styles.skipModeTitle}>{t('adCreate.skipMode.title')}</Text>
+            {(['unskippable', 'skip15'] as AdSkipMode[]).map((mode) => {
+              const on = d.skipMode === mode;
+              return (
+                <TouchableOpacity
+                  key={mode}
+                  style={[styles.skipModeOpt, on && styles.skipModeOptOn]}
+                  onPress={() => patchDraft(p, { skipMode: mode })}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name={on ? 'radio-button-on' : 'radio-button-off'} size={18} color={on ? colors.primary : colors.textTertiary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.skipModeOptTitle, on && { color: colors.primary }]}>{t(`adCreate.skipMode.${mode}.title`)}</Text>
+                    <Text style={styles.skipModeOptSub}>{t(`adCreate.skipMode.${mode}.sub`)}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
         <TextInput
           style={styles.input}
@@ -719,23 +847,32 @@ export default function CreateAdScreen() {
               <>
                 <Text style={styles.lead}>{t('adCreate.budgetLead')}</Text>
 
+                {/* Just two clear knobs: how much you pay, and for how long. The
+                    rate is fixed ($5 / 1,000 views) so the amount-paid → views
+                    correlation is simple; no CPM bid or daily cap to puzzle over. */}
                 <Text style={styles.label}>{t('adCreate.totalBudgetLabel')}</Text>
                 <TextInput style={styles.input} placeholder="20" placeholderTextColor={colors.textTertiary} value={budget} onChangeText={setBudget} keyboardType="decimal-pad" />
-
-                <Text style={styles.label}>{t('adCreate.dailyCapLabel')}</Text>
-                <TextInput style={styles.input} placeholder={t('adCreate.noCap')} placeholderTextColor={colors.textTertiary} value={dailyCap} onChangeText={setDailyCap} keyboardType="decimal-pad" />
-
-                <Text style={styles.label}>{t('adCreate.cpmLabel')}</Text>
-                <TextInput style={styles.input} placeholder="5.00" placeholderTextColor={colors.textTertiary} value={cpm} onChangeText={setCpm} keyboardType="decimal-pad" />
 
                 <Text style={styles.label}>{t('adCreate.runLengthLabel')}</Text>
                 <TextInput style={styles.input} placeholder="7" placeholderTextColor={colors.textTertiary} value={days} onChangeText={setDays} keyboardType="number-pad" maxLength={3} />
 
                 <View style={styles.estimateCard}>
-                  <Ionicons name="bar-chart-outline" size={18} color={colors.primary} />
-                  <Text style={styles.estimateText}>
-                    {t('adCreate.estimate', { views: estImps.toLocaleString(), days: parseInt(days, 10) || 0 })}
-                  </Text>
+                  <Ionicons name="eye-outline" size={20} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.estimateBig}>{t('adCreate.estViewsBig', { views: estImps.toLocaleString() })}</Text>
+                    <Text style={styles.estimateSub}>
+                      {t('adCreate.estExplain', { budget: fmtPrice(budgetCents), views: estImps.toLocaleString(), days: parseInt(days, 10) || 0, rate: fmtPrice(AD_DEFAULT_CPM_CENTS / 2) })}
+                    </Text>
+                    {bonusPct > 0 && (
+                      <Text style={styles.estimateBonus}>{t('adCreate.volumeBonus', { pct: bonusPct })}</Text>
+                    )}
+                    {bonusPct < AD_VOLUME_BONUS_MAX_PCT && (
+                      <Text style={styles.estimateHint}>{t('adCreate.volumeBonusHint', { max: AD_VOLUME_BONUS_MAX_PCT })}</Text>
+                    )}
+                    {hasPremiumPlacement && (
+                      <Text style={styles.estimatePremium}>{t('adCreate.premiumNote', { pct: Math.round(AD_PREMIUM_RATE * 100) })}</Text>
+                    )}
+                  </View>
                 </View>
               </>
             )}
@@ -747,10 +884,10 @@ export default function CreateAdScreen() {
                   <ReviewRow k={t('adCreate.reviewObjective')} v={t(`adCreate.objective.${objective}.label`)} styles={styles} />
                   <ReviewRow k={t('adCreate.reviewPlacements')} v={placements.map(labelFor).join(', ') || '—'} styles={styles} />
                   <ReviewRow k={t('adCreate.reviewBudget')} v={fmtPrice(budgetCents)} styles={styles} />
-                  {!!dailyCap && <ReviewRow k={t('adCreate.reviewDailyCap')} v={fmtPrice(Math.round(parseFloat(dailyCap) * 100))} styles={styles} />}
-                  <ReviewRow k={t('adCreate.reviewCpm')} v={fmtPrice(cpmCents)} styles={styles} />
                   <ReviewRow k={t('adCreate.reviewRunLength')} v={`${parseInt(days, 10) || 0} ${t('adCreate.daysUnit')}`} styles={styles} />
                   <ReviewRow k={t('adCreate.reviewEstViews')} v={`~${estImps.toLocaleString()}`} styles={styles} />
+                  {bonusPct > 0 && <ReviewRow k={t('adCreate.reviewBonus')} v={t('adCreate.bonusValue', { pct: bonusPct })} styles={styles} />}
+                  {hasPremiumPlacement && <ReviewRow k={t('adCreate.reviewPremium')} v={t('adCreate.premiumValue', { pct: Math.round(AD_PREMIUM_RATE * 100) })} styles={styles} />}
                   {(ageMin || ageMax || gender !== 'Any' || genres.length > 0 || (useLocation && hasLocation)) ? (
                     <ReviewRow
                       k={t('adCreate.reviewTargeting')}
@@ -926,6 +1063,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.full, paddingVertical: SPACING.sm,
   },
   pickBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  skipModeWrap: { gap: SPACING.sm, marginTop: SPACING.xs },
+  skipModeTitle: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
+  skipModeOpt: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md,
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.sm + 2,
+  },
+  skipModeOptOn: { borderColor: colors.primary, backgroundColor: colors.surfaceLight },
+  skipModeOptTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  skipModeOptSub: { color: colors.textTertiary, fontSize: 12, marginTop: 1 },
   ctaRow: { flexDirection: 'row', gap: SPACING.sm },
 
   // Targeting chips
@@ -942,10 +1089,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   chipTextOn: { color: colors.primary },
 
   estimateCard: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.md,
+    flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm, marginTop: SPACING.md,
     backgroundColor: colors.primary + '14', borderRadius: RADIUS.lg, padding: SPACING.md,
   },
   estimateText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  estimateBig: { color: colors.text, fontSize: 18, fontWeight: '800' },
+  estimateSub: { color: colors.textSecondary, fontSize: 13, fontWeight: '500', marginTop: 2, lineHeight: 18 },
+  estimateBonus: { color: colors.success, fontSize: 13, fontWeight: '800', marginTop: 6 },
+  estimateHint: { color: colors.textTertiary, fontSize: 12, fontWeight: '600', marginTop: 3 },
+  estimatePremium: { color: colors.primary, fontSize: 12.5, fontWeight: '700', marginTop: 6 },
 
   // Review
   reviewTitle: { color: colors.text, fontSize: 16, fontWeight: '800', marginBottom: SPACING.xs },

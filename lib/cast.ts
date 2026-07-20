@@ -14,6 +14,7 @@
 
 import { aspectToNumber } from './aspectRatio';
 import { liveThumbnailUrl, type LiveStream } from './live';
+import { type AdMeta } from './ads';
 
 // HLS mime — tells the default media receiver to use its HLS player.
 export const HLS_CONTENT_TYPE = 'application/x-mpegURL';
@@ -39,6 +40,17 @@ export function cfStreamThumbnail(url: string): string | null {
   return url.replace(CF_HLS_SUFFIX, '/thumbnails/thumbnail.jpg?height=720');
 }
 
+/**
+ * A frame of a Cloudflare Stream video at a specific time — the ONLY way to grab
+ * frames from a Stream video on-device: AVAssetImageGenerator (expo-video-
+ * thumbnails) can't seek HLS, so the GIF maker + trim strip fetch these instead.
+ * Same `height` for every frame keeps the pixel space consistent for cropping.
+ */
+export function cfStreamFrameUrl(url: string, timeSec: number, height = 640): string | null {
+  if (!isCfStreamHls(url)) return null;
+  return url.replace(CF_HLS_SUFFIX, `/thumbnails/thumbnail.jpg?time=${Math.max(0, timeSec).toFixed(2)}s&height=${height}`);
+}
+
 export type CastItem = {
   /** The Laybell post/stream id — used to de-dupe and to map back to the queue. */
   id: string;
@@ -51,7 +63,28 @@ export type CastItem = {
   /** The post's author — the remote's like/comment actions notify them. */
   authorId?: string | null;
   isLive?: boolean;
+  /** A woven Laybell TV ad — can't be skipped past until it finishes on the TV. */
+  isAd?: boolean;
+  /** Ad meta (advertiser/CTA/campaign) for a sponsored cast item. */
+  ad?: AdMeta;
 };
+
+/** A Laybell TV ad item (lib/ads.tvItemFor) → a castable, unskippable sponsor. */
+export function adToCastItem(adItem: any): CastItem | null {
+  const meta: AdMeta | undefined = adItem?.__ad;
+  if (!adItem?.media_url || !meta) return null;
+  return {
+    id: adItem.id,
+    url: adItem.media_url,
+    title: meta.headline || meta.advertiserName || 'Sponsored',
+    subtitle: meta.advertiserName,
+    poster: adItem.thumbnail_url ?? null,
+    authorId: null,
+    isLive: false,
+    isAd: true,
+    ad: meta,
+  };
+}
 
 /** A horizontal video post → castable item. Returns null if it has no playable URL. */
 export function postToCastItem(p: any): CastItem | null {
@@ -146,16 +179,19 @@ export function buildMediaInfo(item: CastItem): any {
   // player), while the DASH timeline is explicit and zero-based, so playback
   // starts at the true 0:00. Lives stay HLS (that's their only manifest).
   const dash = !item.isLive && isCfStreamHls(item.url);
+  // A LEGACY ad creative is a progressive MP4 (uploaded straight to the posts
+  // bucket) — flag it video/mp4. Newer ad creatives go through Cloudflare Stream
+  // (isCfStreamHls → dash above), so they cast exactly like a normal video.
+  const mp4 = !!item.isAd && !item.isLive && !isCfStreamHls(item.url);
   return {
     contentUrl: dash ? toCfDash(item.url) : item.url,
-    contentType: dash ? DASH_CONTENT_TYPE : HLS_CONTENT_TYPE,
+    contentType: mp4 ? 'video/mp4' : (dash ? DASH_CONTENT_TYPE : HLS_CONTENT_TYPE),
     streamType: item.isLive ? 'live' : 'buffered',
     // Non-Cloudflare VOD HLS (shouldn't exist, but stay safe): declare CMAF
     // segments — the receiver otherwise assumes MPEG-TS, "loads" the item
-    // (title + poster show) and then silently never plays. Lives are left to
-    // the receiver's default: Stream Live segment format is unverified, and
-    // mis-flagging breaks it the same way.
-    ...(item.isLive || dash ? {} : { hlsSegmentFormat: 'FMP4', hlsVideoSegmentFormat: 'FMP4' }),
+    // (title + poster show) and then silently never plays. Lives + MP4 ads are
+    // left to the receiver's default.
+    ...(item.isLive || dash || mp4 ? {} : { hlsSegmentFormat: 'FMP4', hlsVideoSegmentFormat: 'FMP4' }),
     // Poster = the item's OWN thumbnail (Cloudflare — same CDN as the video, so
     // it resolves as fast as the stream itself). Do NOT put the GitHub-Pages
     // splash image here: the receiver fetches the poster as part of loading the

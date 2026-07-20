@@ -108,3 +108,38 @@ returns table (total_cents bigint, donation_count bigint) language sql stable se
   where streamer_id = auth.uid() and status = 'succeeded';
 $$;
 grant execute on function public.donation_earnings() to authenticated;
+
+-- ── v2 (2026-07-19): donor message + tiered "Earn More" fee ───────────────────
+-- Supersedes the guard above (re-run this whole file to apply). Two changes:
+--   1. `message` column — the donor's note; rides the live broadcast channel for
+--      the real-time alert, recorded here and clamped to 200 chars.
+--   2. NO MORE PREMIUM LOCK. Every host can now receive tips; the Premium perk is
+--      "Earn More" — Laybell takes 8% from Premium hosts vs 35% from everyone
+--      else (tax still added on top, donor-paid). Rates mirror lib/donations.
+alter table public.donations add column if not exists message text;
+
+create or replace function public.donation_guard()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_host uuid;
+begin
+  select user_id into v_host from public.live_streams where id = new.stream_id;
+  if v_host is null then
+    raise exception 'stream_not_found';
+  end if;
+  new.streamer_id := v_host;
+
+  if new.donor_id = v_host then
+    raise exception 'cannot_donate_to_self';
+  end if;
+
+  -- Tiered platform fee — the Premium "Earn More" perk (8% Premium, 35% standard).
+  new.laybell_fee_cents     := round(new.amount_cents * (case when public.is_premium(v_host) then 0.08 else 0.35 end));
+  new.tax_cents             := round(new.amount_cents * 0.06);
+  new.streamer_payout_cents := new.amount_cents - new.laybell_fee_cents;
+  new.provider              := coalesce(new.provider, 'simulated');
+  new.status                := coalesce(new.status, 'succeeded');
+  new.processed_at          := now();
+  new.message               := nullif(left(trim(coalesce(new.message, '')), 200), '');
+  return new;
+end; $$;

@@ -1,9 +1,9 @@
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Image } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import ReelVideo from './ReelVideo';
+import ReelVideo, { type ReelVideoHandle } from './ReelVideo';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -30,9 +30,18 @@ type Props = {
   onSkip: () => void;
   onCta: () => void;
   onOptions: () => void;
+  // Fired when the skip countdown crosses zero (canSkip flips) so the host can
+  // release the reel swipe-lock at the exact moment the Skip button unlocks.
+  onSkippableChange?: (canSkip: boolean) => void;
+  // True when this ad was already watched/scrolled past — Skip is available
+  // immediately and the countdown never runs (no restart on scroll-back).
+  startSkippable?: boolean;
+  // The creative played all the way through and the viewer never hit Skip — the
+  // host rolls on to the next reel. This is a COMPLETION, not a user skip.
+  onComplete?: () => void;
 };
 
-export default function ReelAd({ item, visible, paused, mountPlayer, insets, onSkip, onCta, onOptions }: Props) {
+export default function ReelAd({ item, visible, paused, mountPlayer, insets, onSkip, onCta, onOptions, onSkippableChange, startSkippable = false, onComplete }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
@@ -47,10 +56,32 @@ export default function ReelAd({ item, visible, paused, mountPlayer, insets, onS
   // the swipe frames into/out of the ad page.
   const elapsedRef = useRef(0);
   const lastPosRef = useRef(0);
-  const [secsRemaining, setSecsRemaining] = useState(Math.ceil(AD_SKIP_MS / 1000));
+  // Fires once when the creative wraps (= it played all the way through).
+  const completedRef = useRef(false);
+  // Already-seen ads start at 0 (Skip ready, no countdown); fresh ads count down.
+  const [secsRemaining, setSecsRemaining] = useState(startSkippable ? 0 : Math.ceil(AD_SKIP_MS / 1000));
 
   const canSkip = secsRemaining <= 0;
   const secsLeft = Math.max(1, secsRemaining);
+
+  // Tell the host when Skip unlocks (releases the swipe-lock in reel/[id]).
+  useEffect(() => { onSkippableChange?.(canSkip); }, [canSkip]);
+
+  // EVERY appearance of a sponsor restarts at 0. The player is pooled and the
+  // same creative can fill more than one slot, so a second showing could hand
+  // back a retained playhead — which desynced the skip countdown (elapsed no
+  // longer matched what was on screen) and made the wrap-detector fire
+  // immediately, auto-skipping the ad the moment it appeared.
+  const videoRef = useRef<ReelVideoHandle>(null);
+  useEffect(() => {
+    if (!visible) return;
+    try { videoRef.current?.seek(0); } catch {}
+    lastPosRef.current = 0;
+    elapsedRef.current = 0;
+    completedRef.current = false;
+    if (!startSkippable) setSecsRemaining(Math.ceil(AD_SKIP_MS / 1000));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, item.id]);
 
   return (
     <View style={{ width: SCREEN_W, height: SCREEN_H, backgroundColor: '#000' }}>
@@ -70,6 +101,7 @@ export default function ReelAd({ item, visible, paused, mountPlayer, insets, onS
       ) : null}
       {mountPlayer && !!item.media_url && (
         <ReelVideo
+          ref={videoRef}
           id={item.id}
           uri={item.media_url}
           play={visible && !paused}
@@ -79,6 +111,16 @@ export default function ReelAd({ item, visible, paused, mountPlayer, insets, onS
           onProgress={(pos) => {
             const d = pos - lastPosRef.current;
             lastPosRef.current = pos;
+            // A BACKWARD jump means the creative wrapped — it played all the way
+            // through. The viewer never hit Skip, so roll on by ourselves instead
+            // of leaving them parked on a looping ad. Counts as a COMPLETION.
+            if (d < -500 && !completedRef.current) {
+              completedRef.current = true;
+              onComplete?.();
+              return;
+            }
+            // Seen ad → Skip is already unlocked; never run the countdown again.
+            if (startSkippable) return;
             if (d > 0 && d < 2000) {
               elapsedRef.current += d;
               const s = Math.max(0, Math.ceil((AD_SKIP_MS - elapsedRef.current) / 1000));

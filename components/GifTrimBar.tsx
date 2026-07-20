@@ -14,9 +14,12 @@ import { useTheme } from '../contexts/ThemeContext';
 const FRAMES = 8;
 
 export default function GifTrimBar({
-  uri, duration, minDur, maxDur, width, height = 64, initialStart = 0, initialDur, onChange,
+  uri, frameUrlAt, duration, minDur, maxDur, width, height = 64, initialStart = 0, initialDur, onChange,
 }: {
   uri: string;
+  // Cloudflare Stream: a per-time frame URL (HLS can't be frame-grabbed on-device),
+  // used directly as the thumbnail source instead of expo-video-thumbnails.
+  frameUrlAt?: ((timeSec: number) => string | null) | null;
   duration: number;
   minDur: number;
   maxDur: number;
@@ -49,15 +52,21 @@ export default function GifTrimBar({
       for (let i = 0; i < FRAMES; i++) {
         const at = (duration * (i + 0.5)) / FRAMES;
         try {
-          const r = await VideoThumbnails.getThumbnailAsync(uri, { time: Math.floor(at * 1000), quality: 0.3 });
-          if (r?.uri) out[i] = r.uri;
+          // CF Stream: use the frame URL directly (the <Image> loads it). Local
+          // mp4: extract with expo-video-thumbnails.
+          if (frameUrlAt) {
+            out[i] = frameUrlAt(at) ?? '';
+          } else {
+            const r = await VideoThumbnails.getThumbnailAsync(uri, { time: Math.floor(at * 1000), quality: 0.3 });
+            if (r?.uri) out[i] = r.uri;
+          }
         } catch { /* leave blank */ }
         if (!active) return;
         setFrames([...out]);
       }
     })();
     return () => { active = false; };
-  }, [uri, duration]);
+  }, [uri, duration, frameUrlAt]);
 
   // DRAG anywhere → move the window (duration fixed).
   function onPanEvent(e: any) {

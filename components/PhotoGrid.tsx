@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, memo, forwardRef, useImperativeHandle } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, ActivityIndicator, Platform,
 } from 'react-native';
@@ -47,6 +47,58 @@ function formatDur(s: number) {
 // pick, so the collapsing preview re-expands and shows the chosen media).
 export type PhotoGridHandle = { scrollToTop: () => void };
 
+// A single memoized grid cell. Pulling it out of an inline renderItem (and
+// keeping its props primitives + STABLE callbacks) is what keeps deep scrolling
+// smooth: a page append or a `loading`/`resolvingId` toggle re-renders the grid,
+// but only the handful of cells whose own props changed actually re-render —
+// instead of every mounted thumbnail decoding again. onSelect/onRemove come in
+// as stable refs from PhotoGrid so this memo isn't defeated on every render.
+const GridCell = memo(function GridCell({
+  item, selected, selIndex, isVideo, numbered, isResolving, onSelect, onRemove, styles, spinnerColor,
+}: {
+  item: MediaLibrary.Asset;
+  selected: boolean;
+  selIndex: number;
+  isVideo: boolean;
+  numbered: boolean;
+  isResolving: boolean;
+  onSelect: (a: MediaLibrary.Asset) => void;
+  onRemove?: (id: string) => void;
+  styles: any;
+  spinnerColor: string;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.cell}
+      activeOpacity={0.85}
+      onPress={() => (selected ? onRemove?.(item.id) : onSelect(item))}
+    >
+      <ExpoImage
+        source={{ uri: item.uri }}
+        style={styles.thumb}
+        contentFit="cover"
+        recyclingKey={item.id}
+        cachePolicy="memory-disk"
+        transition={120}
+      />
+      {isVideo && item.duration > 0 && (
+        <Text style={styles.dur}>{formatDur(item.duration)}</Text>
+      )}
+      {selected && <View style={styles.selOverlay} pointerEvents="none" />}
+      {selected && (
+        <View style={styles.selBadge}>
+          {numbered
+            ? <Text style={styles.selBadgeText}>{selIndex + 1}</Text>
+            : <Ionicons name="checkmark" size={14} color="#fff" />}
+        </View>
+      )}
+      {isResolving && (
+        <View style={styles.resolving}><ActivityIndicator color={spinnerColor} /></View>
+      )}
+    </TouchableOpacity>
+  );
+});
+
 type PhotoGridProps = {
   onPick: (m: PickedMedia) => void;
   onRemove?: (id: string) => void;
@@ -85,10 +137,43 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const loadingRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
+  // Persistent id set so page appends dedupe in O(new-assets) instead of
+  // rebuilding a Set over the whole (growing) list every page — that O(N) merge
+  // is a big part of why the grid hitched more the deeper you scrolled.
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  // Stable refs so the memoized cell's onSelect/onRemove never change identity.
+  const onPickRef = useRef(onPick); onPickRef.current = onPick;
+  const onRemoveRef = useRef(onRemove); onRemoveRef.current = onRemove;
+  const resolvingRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
     scrollToTop: () => flatListRef.current?.scrollToOffset({ offset: 0, animated: true }),
   }), []);
+
+  // Stable across renders (read live values through refs) — passed to every cell.
+  const handleSelect = useCallback(async (asset: MediaLibrary.Asset) => {
+    if (resolvingRef.current) return;
+    resolvingRef.current = true;
+    setResolvingId(asset.id);
+    try {
+      // Cached across the session (lib/assetInfoCache): re-picking the same asset
+      // — common while composing slideshows — is instant, and the iCloud download
+      // only ever happens once per asset.
+      const uri = await resolveAssetUri(asset);
+      const type: 'image' | 'video' = asset.mediaType === MediaLibrary.MediaType.video ? 'video' : 'image';
+      // Video posters render reliably from the ph:// asset via expo-image.
+      const posterUri = type === 'video' ? asset.uri : uri;
+      onPickRef.current({ id: asset.id, uri, posterUri, width: asset.width, height: asset.height, duration: asset.duration, type });
+    } catch {
+      // A cached localUri can go stale if the asset was edited/deleted — evict so
+      // the next tap resolves fresh.
+      evictAssetUri(asset.id);
+    } finally {
+      resolvingRef.current = false;
+      setResolvingId(null);
+    }
+  }, []);
+  const handleRemove = useCallback((id: string) => onRemoveRef.current?.(id), []);
 
   const loadPage = useCallback(async (after?: string) => {
     if (loadingRef.current) return;
@@ -106,10 +191,13 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
       // Dedupe by asset id: expo-media-library can return the SAME asset across
       // pages (iCloud / edited / shared photos), which would give the numColumns
       // FlatList two cells with the same key → a React "two children with the same
-      // key" warning. Drop anything already in the list (and intra-page repeats).
+      // key" warning. A persistent seenIdsRef makes each append O(new assets); a
+      // fresh load (no cursor) resets it so page 1 re-seeds from scratch.
       setAssets(prev => {
-        const base = after ? prev : [];
-        const seen = new Set(base.map(a => a.id));
+        const fresh = !after;
+        const base = fresh ? [] : prev;
+        if (fresh) seenIdsRef.current = new Set();
+        const seen = seenIdsRef.current;
         const merged = base.slice();
         for (const a of page.assets) {
           if (!seen.has(a.id)) { seen.add(a.id); merged.push(a); }
@@ -142,27 +230,6 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     return () => { cancelled = true; };
   }, []);
 
-  async function selectAsset(asset: MediaLibrary.Asset) {
-    if (resolvingId) return;
-    setResolvingId(asset.id);
-    try {
-      // Cached across the session (lib/assetInfoCache): re-picking the same
-      // asset — very common while composing slideshows — is now instant, and
-      // the iCloud download only ever happens once per asset.
-      const uri = await resolveAssetUri(asset);
-      const type: 'image' | 'video' = asset.mediaType === MediaLibrary.MediaType.video ? 'video' : 'image';
-      // Video posters render reliably from the ph:// asset via expo-image.
-      const posterUri = type === 'video' ? asset.uri : uri;
-      onPick({ id: asset.id, uri, posterUri, width: asset.width, height: asset.height, duration: asset.duration, type });
-    } catch {
-      // A cached localUri can go stale if the asset was edited/deleted —
-      // evict so the next tap resolves fresh.
-      evictAssetUri(asset.id);
-    } finally {
-      setResolvingId(null);
-    }
-  }
-
   async function openCamera() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return;
@@ -189,7 +256,14 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     );
   }
 
-  const data: any[] = videosOnly ? [...assets] : [{ id: '__camera__' }, ...assets];
+  // Rebuilt only when the asset list actually changes — NOT on every render (a
+  // scroll-driven parent re-render, a loading/resolving toggle), so the FlatList
+  // isn't handed a fresh data array (and forced to re-diff the whole list) each
+  // time. The spread was also O(N) on every render as the list grew.
+  const data = useMemo<any[]>(
+    () => (videosOnly ? assets : [{ id: '__camera__' } as any, ...assets]),
+    [assets, videosOnly],
+  );
 
   return (
     <FlatList
@@ -224,37 +298,19 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
           );
         }
         const selIndex = selectedIds.indexOf(item.id);
-        const selected = selIndex >= 0;
-        const isVideo = item.mediaType === MediaLibrary.MediaType.video;
         return (
-          <TouchableOpacity
-            style={styles.cell}
-            activeOpacity={0.85}
-            onPress={() => (selected ? onRemove?.(item.id) : selectAsset(item))}
-          >
-            <ExpoImage
-              source={{ uri: item.uri }}
-              style={styles.thumb}
-              contentFit="cover"
-              recyclingKey={item.id}
-              cachePolicy="memory-disk"
-              transition={120}
-            />
-            {isVideo && item.duration > 0 && (
-              <Text style={styles.dur}>{formatDur(item.duration)}</Text>
-            )}
-            {selected && <View style={styles.selOverlay} pointerEvents="none" />}
-            {selected && (
-              <View style={styles.selBadge}>
-                {numbered
-                  ? <Text style={styles.selBadgeText}>{selIndex + 1}</Text>
-                  : <Ionicons name="checkmark" size={14} color="#fff" />}
-              </View>
-            )}
-            {resolvingId === item.id && (
-              <View style={styles.resolving}><ActivityIndicator color={colors.text} /></View>
-            )}
-          </TouchableOpacity>
+          <GridCell
+            item={item}
+            selected={selIndex >= 0}
+            selIndex={selIndex}
+            isVideo={item.mediaType === MediaLibrary.MediaType.video}
+            numbered={numbered}
+            isResolving={resolvingId === item.id}
+            onSelect={handleSelect}
+            onRemove={handleRemove}
+            styles={styles}
+            spinnerColor={colors.text}
+          />
         );
       }}
     />

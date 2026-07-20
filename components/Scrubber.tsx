@@ -18,11 +18,14 @@ const clamp = (n: number) => Math.max(0, Math.min(1, n));
 // gradient counter-slides so it stays fixed in track space. Pixel-identical
 // to the old width reveal, but it runs entirely on the native driver.
 export default function Scrubber({
-  progress, onSeek, height = 20, trackHeight = 4, thumbSize = 14,
+  progress, onSeek, height = 20, trackHeight = 4, thumbSize = 14, disabled = false,
 }: {
   progress: number;            // 0..1
   onSeek: (ratio: number) => void;
   height?: number; trackHeight?: number; thumbSize?: number;
+  // Read-only: still shows the progress fill but can't be dragged (and hides the
+  // thumb). Used for ads on the TV remote — a sponsor can't be scrubbed.
+  disabled?: boolean;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -33,6 +36,8 @@ export default function Scrubber({
   const dragging = useRef(false);
   const onSeekRef = useRef(onSeek);
   onSeekRef.current = onSeek;
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
   // Post-seek hold: stamped at drag release so stale pre-seek progress ticks
   // (the 4Hz position prop lags the seek by 1-2 ticks) can't flick the fill
   // backward before the seek lands.
@@ -59,8 +64,8 @@ export default function Scrubber({
 
   const pan = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => !disabledRef.current,
+      onMoveShouldSetPanResponder: () => !disabledRef.current,
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: e => { dragging.current = true; anim.stopAnimation(); anim.setValue(ratioFor(e.nativeEvent.pageX)); },
       onPanResponderMove: e => anim.setValue(ratioFor(e.nativeEvent.pageX)),
@@ -94,12 +99,14 @@ export default function Scrubber({
           </Animated.View>
         </Animated.View>
       </View>
-      <Animated.View
-        style={[styles.thumb, {
-          width: thumbSize, height: thumbSize, borderRadius: thumbSize / 2,
-          top: (height - thumbSize) / 2, left: 0, transform: [{ translateX: thumbX }],
-        }]}
-      />
+      {!disabled && (
+        <Animated.View
+          style={[styles.thumb, {
+            width: thumbSize, height: thumbSize, borderRadius: thumbSize / 2,
+            top: (height - thumbSize) / 2, left: 0, transform: [{ translateX: thumbX }],
+          }]}
+        />
+      )}
     </View>
   );
 }

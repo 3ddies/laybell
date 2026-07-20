@@ -44,15 +44,22 @@ import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, EMPTY_PROFILE,
 } from '../../lib/feedScorer';
 import {
-  fetchReelAds, weaveReelAds, recordAdImpression, recordAdClick, recordAdSkip, type AdViewer,
+  fetchReelAds, weaveReelAds, fetchTvAds, tvItemFor, recordAdImpression, recordAdClick, recordAdSkip, recordAdComplete, AD_SKIP_MS, TV_AD_EVERY_VIDEOS, type AdViewer,
 } from '../../lib/ads';
 import { openAdOptions } from '../../contexts/AdOptionsContext';
 import ReelAd from '../../components/ReelAd';
+import TVAdOverlay from '../../components/TVAdOverlay';
+import RotateHint from '../../components/RotateHint';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import { ReelSkeleton } from '../../components/Skeleton';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+// Minimum breathing room between ANY two sponsors across the vertical and
+// horizontal surfaces. A slot that comes due inside this window is simply
+// skipped (not queued), so rotating right after an ad can't chain a second one.
+const AD_MIN_GAP_MS = 45_000;
 
 // Stable API handed to the memo'd page components: the object identity never
 // changes (see pageApi in ReelScreen), each call delegating to the freshest
@@ -216,6 +223,13 @@ const ReelPage = memo(function ReelPage({
   // Cached thumbnail shown while the video buffers — keeps the expand from
   // revealing a black screen before the first frame is ready.
   const poster = item.thumbnail_url ?? item.cover_url ?? null;
+  // Letterbox geometry for the rotate hint: a `contain` landscape video is
+  // SCREEN_W wide, so the black band above it is half the leftover height. Park
+  // the hint just above the video's top edge, and only when the band is tall
+  // enough to hold it clear of the back button.
+  const videoH = SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9);
+  const band = (SCREEN_H - videoH) / 2;
+  const showRotateHint = landscape && active && !zoomed && band >= 130;
   return (
     <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }} disabled={zoomed}>
       <TouchableOpacity
@@ -260,6 +274,9 @@ const ReelPage = memo(function ReelPage({
         ) : null}
         </ZoomableView>
       </TouchableOpacity>
+
+      {/* "Turn your phone" nudge, in the empty letterbox band above the video. */}
+      <RotateHint visible={showRotateHint} top={band - 52} />
 
       {/* paused indicator */}
       {showPaused && (
@@ -326,6 +343,38 @@ export default function ReelScreen() {
   const listRef = useRef<FlatList>(null);
   // Read by the frozen onViewableItemsChanged callback (which can't see state).
   const currentUserIdRef = useRef<string | null>(null);
+  // Reel-ad swipe lock, in refs so the frozen onViewableItemsChanged can touch
+  // them: lockedAdIdRef = the ad currently trapping the pager (set the INSTANT it
+  // becomes visible — before the momentum settle — so a fast double-swipe can't
+  // outrun it; cleared when Skip unlocks). adUnlockedRef mirrors the adUnlocked
+  // state set for that same frozen callback.
+  const lockedAdIdRef = useRef<string | null>(null);
+  const adUnlockedRef = useRef<Set<string>>(new Set());
+  // Last playhead of the visible PORTRAIT reel — a backward jump means it wrapped
+  // (played through), which drives autoplay-next. Declared up here so the frozen
+  // onViewableItemsChanged below can reset it on every page change.
+  const portraitLastPosRef = useRef(0);
+  // Only ONE auto-advance may be in flight. The outgoing clip keeps emitting
+  // progress for the whole animated scroll, so without this it wraps again mid-
+  // scroll and chain-skips several posts. Cleared when the next page actually
+  // commits (viewability), with a timeout so a failed scroll can't wedge it.
+  const portraitAdvancingRef = useRef(false);
+  const portraitAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True while the USER is dragging. Auto-advance must never fire into a manual
+  // swipe — mixing the two is exactly what feels glitchy.
+  const portraitDraggingRef = useRef(false);
+  // Rotating between portrait and the landscape overlay SEEKS the incoming player
+  // to the outgoing one's playhead. A backward seek is indistinguishable from a
+  // loop-wrap, so without a settle window the rotation itself fires autoplay-next
+  // — that's the violent multi-skip when turning the phone. Both pagers ignore
+  // wrap signals until this passes.
+  const rotationSettleUntilRef = useRef(0);
+  // When ANY sponsor last played, vertical or horizontal. The two cadences are
+  // independent (reel ads are woven positionally, TV covers are counted), so
+  // without a shared marker they can land back-to-back — finish a vertical ad,
+  // rotate, and immediately eat a horizontal one. Nothing frustrates viewers
+  // faster than two ads in a row.
+  const lastAdAtRef = useRef(0);
   const { profile: myProfile } = useProfile();
   const myProfileRef = useRef(myProfile);
   myProfileRef.current = myProfile;
@@ -337,10 +386,35 @@ export default function ReelScreen() {
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 55 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     const it = viewableItems[0]?.item;
-    if (it) {
-      setVisibleId(it.id);
-      setPaused(false);
-      if (it.__ad) recordAdImpression(it, 'reels', currentUserIdRef.current);
+    if (!it) return;
+    // Hard freeze on a locked ad: if ANY other page starts to come into view while
+    // the ad is still locked (a fast double-swipe that outran the scrollEnabled
+    // lock), snap straight back to the ad INSTANTLY (animated:false) and here at
+    // the viewability commit — early enough that the next reel barely appears and
+    // with no scroll-back animation, so it reads as "you can't leave the ad".
+    const locked = lockedAdIdRef.current;
+    if (locked && it.id !== locked && !adUnlockedRef.current.has(locked)) {
+      const adIndex = postsRef.current.findIndex((p) => p.id === locked);
+      if (adIndex >= 0) { try { listRef.current?.scrollToIndex({ index: adIndex, animated: false }); } catch {} }
+      return; // ignore the bypass page — the ad is still the visible reel
+    }
+    setVisibleId(it.id);
+    setPaused(false);
+    // New page → forget the previous clip's playhead, otherwise landing at ~0
+    // reads as a backward jump and would instantly autoplay-next.
+    portraitLastPosRef.current = 0;
+    // A page committed, so any auto-advance is done — release the lock. This also
+    // covers MANUAL swipes: they land here too, which resets the state cleanly so
+    // hand-driven and automatic paging can't desync.
+    portraitAdvancingRef.current = false;
+    if (portraitAdvanceTimer.current) { clearTimeout(portraitAdvanceTimer.current); portraitAdvanceTimer.current = null; }
+    if (it.__ad) {
+      lastAdAtRef.current = Date.now(); // feeds the cross-surface ad spacing
+      recordAdImpression(it, 'reels', currentUserIdRef.current);
+      // Arm the swipe lock the moment the ad is the visible page — well before the
+      // momentum settle. Only SET here (never clear): unlockAd clears it when Skip
+      // unlocks.
+      if (!adUnlockedRef.current.has(it.id)) lockedAdIdRef.current = it.id;
     }
   }).current;
 
@@ -469,6 +543,30 @@ export default function ReelScreen() {
   postsRef.current = posts;
   const [scrubbing, setScrubbing] = useState(false);
 
+  // ── Reel-ad swipe lock ───────────────────────────────────────────────────────
+  // While an ad is the current page and its Skip button hasn't unlocked yet,
+  // freeze paging so the user can't just swipe past the ad (which made Skip
+  // pointless). Two layers: scrollEnabled (below) blocks the common case at the
+  // settle, and lockedAdIdRef + the onReelSettled bounce-back catch a fast
+  // double-swipe that outruns the scrollEnabled re-render. Unlocks the instant
+  // the ad reports skippable (ReelAd's playback-driven countdown — same signal as
+  // the Skip button), plus a wall-clock safety so a stalled/broken creative can
+  // never trap the user.
+  const [adUnlocked, setAdUnlocked] = useState<Set<string>>(new Set());
+  adUnlockedRef.current = adUnlocked;
+  const unlockAd = (adId: string) => {
+    if (lockedAdIdRef.current === adId) lockedAdIdRef.current = null;
+    setAdUnlocked((prev) => (prev.has(adId) ? prev : new Set(prev).add(adId)));
+  };
+  const settledIsLockedAd =
+    !!settledId && !!postsRef.current.find((p) => p.id === settledId)?.__ad && !adUnlocked.has(settledId);
+  useEffect(() => {
+    if (!settledIsLockedAd || !settledId) return;
+    const trapped = settledId;
+    const timer = setTimeout(() => unlockAd(trapped), AD_SKIP_MS + 7000);
+    return () => clearTimeout(timer);
+  }, [settledIsLockedAd, settledId]);
+
   // ── Landscape fullscreen: horizontal pager over landscape-only reels ─────────
   const overlayRefs = useRef<Map<string, AppVideoHandle>>(new Map());
   // Single bar layered ON TOP of the horizontal pager (not inside its items) so
@@ -479,6 +577,78 @@ export default function ReelScreen() {
   const overlayListRef = useRef<FlatList>(null);
   const enteredFromIdRef = useRef<string | null>(null); // reel we rotated from (resume its position)
   const [overlayId, setOverlayId] = useState<string | null>(null);
+  // ── Laybell TV ads in the landscape ("horizontal scrolling") mode ─────────────
+  // Shown as a full-screen INTERSTITIAL COVER over the pager — NOT a swipeable
+  // page. Weaving the ad into the pager and enforcing an unskippable lock meant
+  // toggling scrollEnabled / calling scrollToIndex on the horizontal overlay,
+  // which froze it mid-scroll between two posts (the reported glitch). The cover
+  // never touches the pager: it blocks swipes while up, then dismisses when the
+  // ad finishes (or the skip15 Skip button), and the pager continues untouched.
+  const [tvAds, setTvAds] = useState<any[]>([]);
+  const tvAdsRef = useRef<any[]>([]);
+  tvAdsRef.current = tvAds;
+  const [overlayAd, setOverlayAd] = useState<any | null>(null);
+  const overlayAdRef = useRef<any | null>(null);
+  overlayAdRef.current = overlayAd;
+  const overlayViewCountRef = useRef(0);      // NEW reels seen in landscape (ad cadence)
+  const overlayAdRotationRef = useRef(0);     // which ad to show next
+  // Reels already counted toward the cadence. Back-scrolling over them must not
+  // advance the count, so a spent ad slot never fires again.
+  const countedReelsRef = useRef<Set<string>>(new Set());
+  // Dismissing is ALL that's needed: the cover sits over a reel the viewer hasn't
+  // watched yet, so clearing overlayAd un-gates that reel's AppVideo `active` and
+  // it starts playing. Deliberately no auto-advance — that would skip it.
+  const dismissOverlayAd = () => { overlayAdRef.current = null; setOverlayAd(null); };
+
+  // ── Autoplay-next for the landscape pager (mirrors the Cast/TV behaviour) ────
+  // On the TV a finished clip rolls to the next queued item, EXCEPT while the
+  // viewer is mid-interaction (sheet open / paused), where it loops instead —
+  // and the last item loops rather than dead-ending. Same rules here, with the
+  // pager itself as the queue. The videos keep `loop` on, so "don't advance"
+  // costs nothing: it simply replays, exactly like the receiver does.
+  const overlayLastPosRef = useRef(0);
+  // Same runaway/manual-swipe guards as the portrait pager (see those refs).
+  const overlayAdvancingRef = useRef(false);
+  const overlayAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const overlayDraggingRef = useRef(false);
+  const maybeAdvanceOverlay = () => {
+    if (!landscapeFullscreen) return;                          // overlay isn't the active surface
+    if (Date.now() < rotationSettleUntilRef.current) return;    // mid-rotation
+    if (overlayAdvancingRef.current || overlayDraggingRef.current) return; // already moving
+    if (paused || scrubbing || overlayAdRef.current) return;   // viewer is driving
+    if (commentsFor != null || sheetsOpen) return;             // mid-read → loop
+    const idx = landscapeReels.findIndex((p) => p.id === overlayIdRef.current);
+    if (idx < 0 || idx + 1 >= landscapeReels.length) return;   // last one → loop
+    overlayAdvancingRef.current = true;
+    overlayLastPosRef.current = 0; // outgoing clip can't re-trigger on its next wrap
+    if (overlayAdvanceTimer.current) clearTimeout(overlayAdvanceTimer.current);
+    overlayAdvanceTimer.current = setTimeout(() => { overlayAdvancingRef.current = false; }, 1500);
+    try { overlayListRef.current?.scrollToIndex({ index: idx + 1, animated: true }); }
+    catch { overlayAdvancingRef.current = false; }
+  };
+
+  // Same autoplay-next rules for the VERTICAL pager. Extra gates it needs that
+  // the landscape one doesn't: the landscape overlay owns playback while it's up,
+  // and a reel AD must never be auto-advanced past — it has its own skip lock, so
+  // rolling on would defeat the whole unskippable window.
+  const maybeAdvancePortrait = () => {
+    if (Date.now() < rotationSettleUntilRef.current) return;    // mid-rotation
+    if (portraitAdvancingRef.current || portraitDraggingRef.current) return; // already moving
+    if (!isFocused || landscapeFullscreen) return;             // not the active surface
+    if (paused || scrubbing || zoomed) return;                 // viewer is driving
+    if (commentsFor != null || sheetsOpen) return;             // mid-read → loop
+    const list = postsRef.current;
+    const idx = list.findIndex((p) => p.id === visibleIdRef.current);
+    if (idx < 0 || idx + 1 >= list.length) return;             // last one → loop
+    if (list[idx]?.__ad) return;                               // ads own their exit
+    portraitAdvancingRef.current = true;
+    // Neutralise the outgoing clip's playhead so its next wrap can't re-trigger.
+    portraitLastPosRef.current = 0;
+    if (portraitAdvanceTimer.current) clearTimeout(portraitAdvanceTimer.current);
+    portraitAdvanceTimer.current = setTimeout(() => { portraitAdvancingRef.current = false; }, 1500);
+    try { listRef.current?.scrollToIndex({ index: idx + 1, animated: true }); }
+    catch { portraitAdvancingRef.current = false; }
+  };
   // Engagement controls (rail + author/caption) for the landscape overlay: shown
   // when a horizontal reel is landed on, then auto-faded after ~1s so the
   // cinematic view is unobstructed. Kept visible while paused for easy tapping.
@@ -524,6 +694,8 @@ export default function ReelScreen() {
     if (controlsVisibleRef.current) hideControls();
     else revealControls();
   };
+  // The landscape pager holds ORGANIC landscape reels only — the TV ad is a cover
+  // (see overlayAd), never a page — so the pager is never scroll-manipulated.
   const landscapeReels = useMemo(
     () => posts.filter((p) => !p.__ad && aspectToNumber(p.aspect_ratio, 16 / 9) > 1),
     [posts],
@@ -532,28 +704,83 @@ export default function ReelScreen() {
     const it = viewableItems[0]?.item;
     if (!it) return;
     overlayIdRef.current = it.id;
-    visibleIdRef.current = it.id;
     setOverlayId(it.id);
+    setPaused(false);
+    // New page → forget the previous clip's playhead, otherwise landing on a reel
+    // at position ~0 reads as a backward jump and instantly autoplay-nexts.
+    overlayLastPosRef.current = 0;
+    // A page committed (auto OR manual) → release the advance lock.
+    overlayAdvancingRef.current = false;
+    if (overlayAdvanceTimer.current) { clearTimeout(overlayAdvanceTimer.current); overlayAdvanceTimer.current = null; }
+    visibleIdRef.current = it.id;
     setVisibleId(it.id);
     // Landing on a page IS a settle: the portrait scrollToIndex below is
     // non-animated (no momentum-end), so without this the pooled portrait
     // player never mounted for the new reel — rotating back landed on a
     // frozen poster until the user manually swiped.
     onReelSettled();
-    setPaused(false);
     // Keep the vertical feed positioned on this reel so rotating back lands here.
     const idx = postsRef.current.findIndex((p) => p.id === it.id);
     if (idx >= 0) { try { listRef.current?.scrollToIndex({ index: idx, animated: false }); } catch {} }
+    // Interstitial cadence: after every few landscape reels, drop a TV ad COVER
+    // over the pager (blocks swipes, dismisses when done). No pager scroll ops.
+    //
+    // Each reel counts exactly ONCE (countedReelsRef). Scrolling BACK over reels
+    // you've already passed must not advance the cadence — otherwise an ad you
+    // already sat through pops up again. An ad belongs to its slot; once that
+    // slot is spent, the next one only comes after N genuinely-new reels.
+    if (!overlayAdRef.current && !countedReelsRef.current.has(it.id)) {
+      countedReelsRef.current.add(it.id);
+      overlayViewCountRef.current += 1;
+      const ads = tvAdsRef.current;
+      // NEVER stack two sponsors. A reel ad may already be the current item in the
+      // vertical feed underneath (its own cadence is independent), and a TV cover
+      // on top of that is two ads at once. The counted slot is still consumed, so
+      // this one is simply skipped rather than queued up behind the reel ad.
+      const portraitAdActive = !!postsRef.current.find((p) => p.id === visibleIdRef.current)?.__ad;
+      // …and even once it's gone, keep a minimum gap after ANY recent sponsor.
+      const tooSoon = Date.now() - lastAdAtRef.current < AD_MIN_GAP_MS;
+      if (!portraitAdActive && !tooSoon && ads.length && overlayViewCountRef.current % TV_AD_EVERY_VIDEOS === 0) {
+        const ad = ads[overlayAdRotationRef.current % ads.length];
+        overlayAdRotationRef.current += 1;
+        overlayAdRef.current = ad;
+        setOverlayAd(ad);
+        lastAdAtRef.current = Date.now(); // feeds the cross-surface ad spacing
+        recordAdImpression(ad, 'tv', currentUserIdRef.current);
+      }
+    }
   }).current;
 
   // Seed the overlay's current reel + remember which one to resume when entering.
   useEffect(() => {
+    // Crossing between the two pagers re-seeks players and re-mounts pages, which
+    // produces backward playhead jumps that look exactly like a finished clip.
+    // Mute autoplay-next until it settles, and clear both pagers' tracking so
+    // neither carries a stale playhead across the rotation.
+    rotationSettleUntilRef.current = Date.now() + 1200;
+    portraitLastPosRef.current = 0;
+    overlayLastPosRef.current = 0;
+    portraitAdvancingRef.current = false;
+    overlayAdvancingRef.current = false;
+    portraitDraggingRef.current = false;
+    overlayDraggingRef.current = false;
+    // The horizontal ad cadence is per UNBROKEN landscape session: leaving to
+    // vertical (or coming back) starts the count over. Otherwise a count left
+    // sitting at the threshold fires the instant you rotate in — which is how a
+    // vertical ad could be followed immediately by a horizontal one. Earning an
+    // ad requires N horizontal reels in ONE continuous sideways run.
+    overlayViewCountRef.current = 0;
+    countedReelsRef.current.clear();
     if (landscapeFullscreen) {
       enteredFromIdRef.current = visibleId;
       overlayIdRef.current = visibleId;
       setOverlayId(visibleId);
     } else {
       setOverlayId(null);
+      // Rotating back to portrait dismisses any TV ad cover (it's a landscape-only
+      // interstitial) so it doesn't reappear on the next rotate.
+      overlayAdRef.current = null;
+      setOverlayAd(null);
       // Rotating back to portrait: carry the overlay's playhead into the
       // pooled portrait player — without this the reel visibly jumped back
       // to wherever it was when the phone was first rotated in.
@@ -573,11 +800,12 @@ export default function ReelScreen() {
   // Reveal the controls for their initial 2s when a horizontal reel is landed on
   // (or re-entering landscape). Whether they then fade is governed by holdControls.
   useEffect(() => {
-    if (!landscapeFullscreen) { clearFadeTimer(); controlsOpacity.setValue(0); setControlsVisible(false); return; }
+    // The TV ad cover has its own overlay — keep the reel's engagement rail hidden while it's up.
+    if (!landscapeFullscreen || overlayAd) { clearFadeTimer(); controlsOpacity.setValue(0); setControlsVisible(false); return; }
     revealControls();
     return clearFadeTimer;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [landscapeFullscreen, overlayId]);
+  }, [landscapeFullscreen, overlayId, overlayAd]);
 
   // When hold changes, only adjust ALREADY-VISIBLE controls: pin them (pause /
   // sheet open) or resume the 2s fade (unpaused & closed). Never reveal from
@@ -593,9 +821,18 @@ export default function ReelScreen() {
   useEffect(() => { setCapExpanded(false); }, [overlayId]);
 
   useEffect(() => {
-    if (isFocused && visibleLandscape) ScreenOrientation.unlockAsync().catch(() => {});
-    else ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
-  }, [isFocused, visibleLandscape]);
+    if (isFocused && overlayAd) {
+      // A horizontal TV ad is playing → LOCK to landscape so the user can't
+      // rotate back to portrait to exit (and thereby skip) the ad. LANDSCAPE
+      // still allows flipping left↔right, just never portrait. The lock is
+      // released the moment the ad dismisses (overlayAd → null re-runs this).
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+    } else if (isFocused && visibleLandscape) {
+      ScreenOrientation.unlockAsync().catch(() => {});
+    } else {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    }
+  }, [isFocused, visibleLandscape, overlayAd]);
   // Always restore the portrait lock when leaving the reel viewer.
   useEffect(() => () => { ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {}); }, []);
 
@@ -694,6 +931,12 @@ export default function ReelScreen() {
         setPosts(weaveReelAds(ordered, pool));
       })
       .catch(() => {});
+
+    // Laybell TV (horizontal) ads — shaped as landscape video items and woven
+    // into the landscape pager only (see landscapeReels). Best-effort.
+    fetchTvAds(adViewer)
+      .then((pool) => { if (pool.length) setTvAds(pool.map((s, i) => tvItemFor(s, i))); })
+      .catch(() => {});
   }
 
   async function toggleLike(item: any) {
@@ -759,7 +1002,13 @@ export default function ReelScreen() {
     setScrubbing,
     seek: (pid: string, sec: number) => videoRefs.current.get(pid)?.seek(sec),
     onProgress: (pid: string, pos: number, dur: number) => {
-      if (visibleIdRef.current === pid) positionRef.current = pos;
+      if (visibleIdRef.current === pid) {
+        // Backward jump = the clip wrapped (played through) → autoplay-next, the
+        // same signal + rules the landscape pager and the TV receiver use.
+        if (pos < portraitLastPosRef.current - 0.5) maybeAdvancePortrait();
+        portraitLastPosRef.current = pos;
+        positionRef.current = pos;
+      }
       scrubRefs.current.get(pid)?.setProgress(pos, dur);
       trackVideoProgress(pid, pos, dur);
     },
@@ -794,10 +1043,23 @@ export default function ReelScreen() {
           paused={paused}
           mountPlayer={settledId === item.id || lingerId === item.id || warmNextId === item.id}
           insets={insets}
+          // Already seen this ad (scrolled past once) → Skip is immediately
+          // available; don't restart the countdown when scrolling back to it.
+          startSkippable={adUnlocked.has(item.id)}
           onSkip={() => {
             recordAdSkip(item, 'reels', currentUserId);
             listRef.current?.scrollToIndex({ index: index + 1, animated: true });
           }}
+          // Played all the way through and never skipped → bill a COMPLETE (not a
+          // skip), release the lock, and roll on, so nobody sits on a looping ad.
+          onComplete={() => {
+            recordAdComplete(item, 'reels', currentUserId);
+            unlockAd(item.id);
+            listRef.current?.scrollToIndex({ index: index + 1, animated: true });
+          }}
+          // The ad's Skip countdown reached zero — release the swipe lock so the
+          // user can page past (the same moment the Skip button becomes tappable).
+          onSkippableChange={(can) => { if (can) unlockAd(item.id); }}
           onCta={() => {
             const url = item.__ad?.ctaUrl;
             if (!url) return;
@@ -835,6 +1097,20 @@ export default function ReelScreen() {
     );
   }
 
+  const onOverlayAdCta = (item: any) => {
+    const url = item.__ad?.ctaUrl;
+    if (!url) return;
+    linkGuard.open(url, {
+      context: 'ad',
+      sourceName: item.__ad?.advertiserName,
+      onProceed: () => recordAdClick(item, 'tv', currentUserId),
+    });
+  };
+  const onOverlayAdReport = (item: any) => {
+    const ad = item.__ad;
+    if (ad) openAdOptions({ campaignId: ad.campaignId, creativeId: ad.creativeId, advertiserName: ad.advertiserName });
+  };
+
   // A single page of the landscape fullscreen pager: the video filling the
   // sideways screen (letterboxed via contain) with tap-to-pause. Only the reel
   // we rotated from resumes its position; freshly-swiped ones start at 0.
@@ -863,7 +1139,7 @@ export default function ReelScreen() {
             style={StyleSheet.absoluteFill}
             contentFit="contain"
             loop={item.trim_end == null}
-            active={overlayId === item.id && !paused && !scrubbing}
+            active={overlayId === item.id && !paused && !scrubbing && !overlayAd}
             muted={!!item.song_id}
             poster={poster}
             posterContentFit="contain"
@@ -872,6 +1148,13 @@ export default function ReelScreen() {
             startPositionSec={resume}
             onProgress={(pos, dur) => {
               if (overlayIdRef.current === item.id) {
+                // A BACKWARD jump means the clip just played through and wrapped
+                // (either `loop`, or trimEnd seeking back to trimStart). That's
+                // the reliable "finished" signal — a single near-end sample is
+                // easy to miss at ~4 ticks/sec. Treat it as the TV does: roll to
+                // the next video, or keep looping if the viewer is mid-action.
+                if (pos < overlayLastPosRef.current - 0.5) maybeAdvanceOverlay();
+                overlayLastPosRef.current = pos;
                 positionRef.current = pos;
                 overlayScrubRef.current?.setProgress(pos, dur);
               }
@@ -896,9 +1179,10 @@ export default function ReelScreen() {
               data={posts}
               keyExtractor={(p) => p.id}
               pagingEnabled
-              // Freeze paging while the progress bar is being dragged (scrub) or the
-              // video is pinch-zoomed, so neither leaks into scrolling reels.
-              scrollEnabled={!scrubbing && !zoomed}
+              // Freeze paging while the progress bar is being dragged (scrub), the
+              // video is pinch-zoomed, or an unskippable ad is the settled page
+              // (can't swipe past the ad until Skip unlocks — see settledIsLockedAd).
+              scrollEnabled={!scrubbing && !zoomed && !settledIsLockedAd}
               showsVerticalScrollIndicator={false}
               snapToInterval={SCREEN_H}
               snapToAlignment="start"
@@ -907,7 +1191,11 @@ export default function ReelScreen() {
               disableIntervalMomentum
               decelerationRate="fast"
               getItemLayout={(_, i) => ({ length: SCREEN_H, offset: SCREEN_H * i, index: i })}
-              onMomentumScrollEnd={onReelSettled}
+              // Hand-driven paging suppresses auto-advance for the duration of the
+              // gesture, so a manual swipe and an autoplay-next can never stack.
+              onScrollBeginDrag={() => { portraitDraggingRef.current = true; }}
+              onScrollEndDrag={() => { portraitDraggingRef.current = false; }}
+              onMomentumScrollEnd={() => { portraitDraggingRef.current = false; onReelSettled(); }}
               onViewableItemsChanged={onViewableItemsChanged}
               viewabilityConfig={viewabilityConfig}
               renderItem={renderItem}
@@ -946,11 +1234,21 @@ export default function ReelScreen() {
                 keyExtractor={(p) => p.id}
                 horizontal
                 pagingEnabled
-                // No paging while pinch-zoomed — zoom fully owns the gesture.
+                // No paging while pinch-zoomed. (The TV ad is a COVER, not a page,
+                // so there's no ad-lock scrollEnabled toggle here — that's exactly
+                // what froze the pager mid-scroll between two posts.)
                 scrollEnabled={!zoomed}
+                // Hand-driven paging suppresses auto-advance for the gesture, so a
+                // manual sideways swipe and an autoplay-next can never stack.
+                onScrollBeginDrag={() => { overlayDraggingRef.current = true; }}
+                onScrollEndDrag={() => { overlayDraggingRef.current = false; }}
+                onMomentumScrollEnd={() => { overlayDraggingRef.current = false; }}
                 showsHorizontalScrollIndicator={false}
                 snapToInterval={winW}
                 snapToAlignment="start"
+                // One page per fling (same as the portrait pager): without this a
+                // hard sideways fling sails PAST a reel and late-snaps two away.
+                disableIntervalMomentum
                 decelerationRate="fast"
                 getItemLayout={(_, i) => ({ length: winW, offset: winW * i, index: i })}
                 initialScrollIndex={Math.max(0, landscapeReels.findIndex((p) => p.id === visibleId))}
@@ -998,20 +1296,45 @@ export default function ReelScreen() {
               {/* One bar layered on top of the pager. Because it sits above the
                   FlatList (not inside it), the whole bottom band is scrub-only —
                   taps there never page, and no scrollEnabled toggle is needed so
-                  the video never shifts/flashes while scrubbing. */}
-              <VideoScrubBar
-                ref={overlayScrubRef}
-                bottomInset={insets.bottom + 6}
-                reachAbove={16}
-                onScrubbingChange={setScrubbing}
-                onSeek={(sec) => overlayRefs.current.get(overlayIdRef.current ?? '')?.seek(sec)}
-              />
+                  the video never shifts/flashes while scrubbing. Hidden while the
+                  TV ad cover is up. */}
+              {!overlayAd && (
+                <VideoScrubBar
+                  ref={overlayScrubRef}
+                  bottomInset={insets.bottom + 6}
+                  reachAbove={16}
+                  onScrubbingChange={setScrubbing}
+                  onSeek={(sec) => overlayRefs.current.get(overlayIdRef.current ?? '')?.seek(sec)}
+                />
+              )}
               <TouchableOpacity
                 style={[styles.back, { top: insets.top + 8 }]}
                 onPress={() => ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {})}
               >
                 <Ionicons name="chevron-back" size={28} color="#fff" />
               </TouchableOpacity>
+
+              {/* TV ad INTERSTITIAL COVER — full-screen over the pager. It captures
+                  all touches (blocks swipes), so the ad is unskippable-until-done
+                  WITHOUT any pager scroll manipulation. Dismisses when the ad
+                  finishes (onDone), or on the skip15 Skip button (onSkip). */}
+              {overlayAd && (
+                <TVAdOverlay
+                  item={overlayAd}
+                  active={isFocused && !!overlayAd}
+                  insets={insets}
+                  // Played through → just close. The reel UNDERNEATH hasn't been
+                  // watched yet (the cover dropped onto it), so advancing would
+                  // make the viewer miss it entirely. Dismissing un-gates its
+                  // AppVideo `active` and it starts playing. The slot is spent, so
+                  // back-scrolling won't bring the ad back (countedReelsRef).
+                  onDone={() => dismissOverlayAd()}
+                  // skip15 Skip → same: reveal and play the video underneath.
+                  onSkip={() => dismissOverlayAd()}
+                  onReport={() => onOverlayAdReport(overlayAd)}
+                  onCta={() => onOverlayAdCta(overlayAd)}
+                />
+              )}
             </View>
           )}
 

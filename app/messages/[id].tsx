@@ -66,6 +66,11 @@ export default function ChatScreen() {
     }, 4000);
   };
   const flatListRef = useRef<FlatList>(null);
+  // Auto-scroll to the newest message ONLY when the user is already at the bottom.
+  // Otherwise a reaction (which grows a bubble) or an incoming message while
+  // they're reading history would yank the transcript — the "glitchy shift".
+  // Sending forces it true (you always follow your own sent message).
+  const stickToBottomRef = useRef(true);
   const [messages, setMessages] = useState<Message[]>([]);
   // Reactions keyed by message id. Loaded with the thread, kept live via realtime,
   // and updated optimistically the instant the user taps an emoji.
@@ -165,7 +170,8 @@ export default function ChatScreen() {
           const msg = payload.new as Message;
           if (String(msg.sender_id) === String(id)) {
             setMessages(prev => [...prev, msg]);
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+            // onContentSizeChange follows the bottom only if already there, so an
+            // incoming message while reading history won't yank the view.
             // Already viewing this conversation — mark it read immediately
             supabase.from('messages').update({ read: true }).eq('id', msg.id);
           }
@@ -331,8 +337,10 @@ export default function ChatScreen() {
       .select().single();
     if (!error && data) {
       impactLight(); // soft confirming tap on a sent message
+      stickToBottomRef.current = true; // always follow your own sent message
+      // Single scroll via onContentSizeChange — a second timed scrollToEnd here
+      // double-jumped the list (part of the glitchy shift on send).
       setMessages(prev => [...prev, data]);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       // Notify recipient — only on first message of session to avoid spam
       if (messages.filter(m => m.sender_id === currentUserId).length === 0) {
         createNotification({ userId: String(id), actorId: currentUserId, type: 'message' });
@@ -451,7 +459,15 @@ export default function ChatScreen() {
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.messagesList, { paddingBottom: insets.bottom + 76 }]}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+          stickToBottomRef.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120;
+        }}
+        // Follow the bottom only when we were already there. A blanket scrollToEnd
+        // here jumped the list whenever a reaction grew a bubble (or an off-screen
+        // message arrived) — that jump was the glitchy screen shift.
+        onContentSizeChange={() => { if (stickToBottomRef.current) flatListRef.current?.scrollToEnd({ animated: false }); }}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>{t('messages.startConversation', { name: otherUser?.display_name ?? '' })}</Text>

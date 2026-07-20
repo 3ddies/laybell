@@ -19,7 +19,9 @@ import { fetchLiveStreams, liveThumbnailUrl, type LiveStream } from '../../lib/l
 import { selection } from '../../lib/haptics';
 import { useCast } from '../../contexts/CastContext';
 import TVConnectModal from '../../components/TVConnectModal';
-import { postToCastItem, liveToCastItem, type CastItem } from '../../lib/cast';
+import { postToCastItem, liveToCastItem, adToCastItem, type CastItem } from '../../lib/cast';
+import { fetchTvAds, tvItemFor, TV_AD_EVERY_VIDEOS, type AdViewer } from '../../lib/ads';
+import { EMPTY_PROFILE, buildAffinityProfile } from '../../lib/feedScorer';
 
 // Laybell TV — a horizontal-only video hub. It adds NO new media types: the
 // Videos tab is the existing reel-explore grid filtered to landscape videos,
@@ -27,6 +29,30 @@ import { postToCastItem, liveToCastItem, type CastItem } from '../../lib/cast';
 // the already-built viewers (/reel/[id], /live).
 
 type Tab = 'videos' | 'lives';
+
+// Weave sponsored Laybell TV cards into the ranked grid AFTER the Recommended
+// row (indices 0-3 stay organic). First ad a couple of grid videos in, then
+// spaced out; a small ad pool rotates and is capped so it never floods the grid.
+function weaveTvAds(videos: any[], adItems: any[]): any[] {
+  if (!adItems.length || !videos.length) return videos;
+  const FEATURED = 4;     // Recommended row — kept ad-free
+  const FIRST_GRID = 2;   // first ad after 2 grid videos
+  const EVERY = 6;        // then one every 6 grid videos
+  const MAX = adItems.length * 3;
+  const out: any[] = [];
+  let placed = 0;
+  let gridIdx = 0;
+  for (let i = 0; i < videos.length; i++) {
+    out.push(videos[i]);
+    if (i < FEATURED) continue;
+    gridIdx++;
+    if (placed < MAX && gridIdx >= FIRST_GRID && (gridIdx - FIRST_GRID) % EVERY === 0) {
+      out.push(adItems[placed % adItems.length]);
+      placed++;
+    }
+  }
+  return out;
+}
 
 // Loading-skeleton geometry — mirrors TVVideoList (a portrait Recommended row +
 // a 2-up landscape grid).
@@ -55,6 +81,14 @@ export default function LaybellTVScreen() {
   // `ranked` = videos in personalized relevance order (drives the Recommended row
   // + the grid order); `videos` stays newest-first for search.
   const [ranked, setRanked] = useState<any[]>([]);
+  // The RAW eligible TV sponsors, kept independent of the grid weave. The cast
+  // queue MUST use this — not `ranked.filter(v => v.__ad)`. weaveTvAds is a
+  // LAYOUT concern (skips the 4 Recommended tiles, first ad only at the 6th
+  // video, capped), so deriving the cast pool from it meant the TV inherited the
+  // grid's layout rules and could get zero sponsors even while plenty were
+  // eligible. Every other surface holds its own pool straight from fetchTvAds —
+  // this makes casting consistent with them.
+  const [tvAdItems, setTvAdItems] = useState<any[]>([]);
   const [lives, setLives] = useState<LiveStream[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(true);
   const [loadingLives, setLoadingLives] = useState(true);
@@ -64,10 +98,35 @@ export default function LaybellTVScreen() {
     try {
       const vids = await fetchHorizontalVideos();
       setVideos(vids);
-      setRanked(await rankVideosForUser(vids, profile?.id ?? null));
+      const rankedVids = await rankVideosForUser(vids, profile?.id ?? null);
+      // Fetch the eligible TV sponsors ONCE, then use them two independent ways:
+      //   • tvAdItems  — the raw pool the CAST queue weaves from (see castVideo)
+      //   • weaveTvAds — a LAYOUT-only pass for the on-phone grid
+      // The affinity profile is REQUIRED, not an optimization: targetingMatch
+      // hard-fails any campaign with `target_genres` when the viewer's top genres
+      // are empty, so EMPTY_PROFILE here silently dropped genre-targeted ads and
+      // made this surface behave differently from every other one.
+      let withAds = rankedVids;
+      try {
+        const uid = profile?.id ?? null;
+        const affinity = uid ? await buildAffinityProfile(uid) : EMPTY_PROFILE;
+        const viewer: AdViewer = {
+          id: uid,
+          profile: profile ? {
+            age: (profile as any).age, gender: (profile as any).gender,
+            latitude: (profile as any).latitude, longitude: (profile as any).longitude,
+          } : null,
+          affinity,
+        };
+        const ads = await fetchTvAds(viewer);
+        const items = ads.map((s, i) => tvItemFor(s, i));
+        setTvAdItems(items);
+        if (items.length) withAds = weaveTvAds(rankedVids, items);
+      } catch { /* ads are best-effort — never block the grid */ }
+      setRanked(withAds);
     } catch { /* pre-migration / offline */ }
     setLoadingVideos(false);
-  }, [profile?.id]);
+  }, [profile]);
   const loadLives = useCallback(async () => {
     try { setLives(await fetchLiveStreams(true)); } catch { /* offline */ }
     setLoadingLives(false);
@@ -96,8 +155,43 @@ export default function LaybellTVScreen() {
   const castVideo = (post: any) => {
     const item = postToCastItem(post);
     if (!item) return;
-    const queue = (searching ? gridVideos : ranked)
-      .map(postToCastItem).filter(Boolean) as CastItem[];
+    const source = searching ? gridVideos : ranked;
+    const realVideos = source.filter((v) => !v.__ad);
+    // Use the RAW sponsor pool, NOT `source.filter(v => v.__ad)`. The grid's
+    // woven ads are a layout artifact (skips the 4 Recommended tiles, first ad
+    // only at the 6th video, capped) — inheriting that meant the TV could get
+    // zero sponsors while plenty were eligible. tvAdItems is the same pool every
+    // other surface uses.
+    const adPool = tvAdItems;
+    // Order from the TAPPED video so the ad cadence counts from here, then BAKE a
+    // sponsor into the queue after every TV_AD_EVERY_VIDEOS videos. Pre-weaving
+    // (vs injecting on video-finish) is what makes ads show whether the user lets
+    // videos auto-advance OR taps "next" on the remote — the finish-only path
+    // never fired for next-taps, so ads never got queued.
+    const startIdx = Math.max(0, realVideos.findIndex((v) => v.id === post.id));
+    const ordered = [...realVideos.slice(startIdx), ...realVideos.slice(0, startIdx)];
+    const queue: CastItem[] = [];
+    let adRot = 0;
+    for (let i = 0; i < ordered.length; i++) {
+      const ci = postToCastItem(ordered[i]);
+      if (ci) queue.push(ci);
+      if (adPool.length && (i + 1) % TV_AD_EVERY_VIDEOS === 0) {
+        const ad = adToCastItem(adPool[adRot % adPool.length]);
+        if (ad) { queue.push(ad); adRot++; }
+      }
+    }
+    // Dev-only probe for the open "sponsors never reach a real cast TV" issue —
+    // shows whether ads made it into the queue at all. Kept behind __DEV__ so it
+    // costs nothing in production; delete once that's confirmed working.
+    if (__DEV__) {
+      console.log('[ADDEBUG] castVideo realVideos=', realVideos.length,
+        'rawAdPool=', adPool.length,
+        'adsWovenInGrid=', source.filter((v: any) => v.__ad).length,
+        'queue=', queue.length,
+        'adsInQueue=', queue.filter((c) => c.isAd).length,
+        'shape=', queue.slice(0, 12).map((c) => (c.isAd ? 'AD' : 'v')).join(''));
+      if (adPool.length === 0) console.log('[ADDEBUG] !! no __ad items — fetchTvAds produced none');
+    }
     selection(); // a tick as the video leaves the phone for the TV
     cast.cast(item, queue);
   };

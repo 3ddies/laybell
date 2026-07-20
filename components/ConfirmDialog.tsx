@@ -15,6 +15,9 @@ type Props = {
   icon?: keyof typeof Ionicons.glyphMap;
   /** Tint the icon + confirm button with the error color (for delete/remove). */
   destructive?: boolean;
+  /** Override the accent (icon + confirm button) — e.g. money-green for a payout.
+      Ignored when `destructive` (error red always wins for destructive prompts). */
+  accentColor?: string;
   /** Optional middle action (e.g. a softer alternative) shown between confirm and cancel. */
   secondaryLabel?: string;
   onSecondary?: () => void;
@@ -35,6 +38,7 @@ export default function ConfirmDialog({
   cancelLabel,
   icon = 'alert-circle',
   destructive = false,
+  accentColor,
   secondaryLabel,
   onSecondary,
   secondaryDestructive = false,
@@ -62,7 +66,7 @@ export default function ConfirmDialog({
   }, [visible]);
 
   if (!render) return null;
-  const accent = destructive ? colors.error : colors.primary;
+  const accent = destructive ? colors.error : (accentColor ?? colors.primary);
 
   return (
     <View style={styles.root}>

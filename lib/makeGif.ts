@@ -55,7 +55,13 @@ export type GifCrop = { originX: number; originY: number; width: number; height:
 
 export async function makeGifFromVideo(
   videoUri: string,
-  opts: { startMs: number; durationMs: number; fps?: number; width?: number; crop?: GifCrop | null },
+  opts: {
+    startMs: number; durationMs: number; fps?: number; width?: number; crop?: GifCrop | null;
+    // Cloudflare Stream frame provider — AVAssetImageGenerator can't grab frames
+    // from HLS, so when the source is a Stream video we fetch each frame from
+    // CF's thumbnail endpoint (time in SECONDS) instead of getThumbnailAsync.
+    cfFrameUrl?: ((timeSec: number) => string | null) | null;
+  },
   onProgress?: (fraction: number) => void,
 ): Promise<GifResult> {
   const fps = opts.fps ?? 12;      // smoother than the old 8fps
@@ -73,10 +79,19 @@ export async function makeGifFromVideo(
 
   for (let i = 0; i < frames; i++) {
     const timeMs = Math.round(opts.startMs + span * i);
-    // quality 1.0 frames → less JPEG grain feeding the quantizer.
-    const thumb = await VideoThumbnails.getThumbnailAsync(videoUri, { time: timeMs, quality: 1 });
+    // Get this frame as a local JPEG. Cloudflare Stream: download CF's thumbnail
+    // at this time (HLS can't be frame-grabbed on-device). Otherwise (local mp4):
+    // AVAssetImageGenerator via expo-video-thumbnails, quality 1.0 (less grain).
+    let frameUri: string;
+    const cfUrl = opts.cfFrameUrl?.(timeMs / 1000);
+    if (cfUrl) {
+      const dl = await FileSystem.downloadAsync(cfUrl, `${FileSystem.cacheDirectory}gifframe_${Date.now()}_${i}.jpg`);
+      frameUri = dl.uri;
+    } else {
+      frameUri = (await VideoThumbnails.getThumbnailAsync(videoUri, { time: timeMs, quality: 1 })).uri;
+    }
     const small = await ImageManipulator.manipulateAsync(
-      thumb.uri,
+      frameUri,
       [...(crop ? [{ crop }] : []), { resize: { width } }],
       { compress: 1, format: ImageManipulator.SaveFormat.JPEG, base64: true },
     );
@@ -86,7 +101,7 @@ export async function makeGifFromVideo(
     const index = applyPalette(data, palette);
     gif.writeFrame(index, fw, fh, { palette, delay });
     // Drop the temp frame files as we go so the cache doesn't balloon.
-    FileSystem.deleteAsync(thumb.uri, { idempotent: true }).catch(() => {});
+    FileSystem.deleteAsync(frameUri, { idempotent: true }).catch(() => {});
     if (small.uri) FileSystem.deleteAsync(small.uri, { idempotent: true }).catch(() => {});
     onProgress?.((i + 1) / frames);
   }

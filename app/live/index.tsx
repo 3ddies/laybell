@@ -16,12 +16,13 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { supabase } from '../../lib/supabase';
 import {
-  fetchLiveStreams, joinLiveChannel, type LiveStream,
+  fetchLiveStreams, joinLiveChannel, type LiveStream, type LiveDonationEvent,
 } from '../../lib/live';
-import { hostCanReceive, fmtCents } from '../../lib/donations';
+import { hostCanReceive } from '../../lib/donations';
 import { displayedTier } from '../../lib/badges';
 import LiveChatOverlay, { nameColor, useBufferedChat } from '../../components/LiveChatOverlay';
 import LiveDonateModal from '../../components/LiveDonateModal';
+import LiveDonationAlerts from '../../components/LiveDonationAlerts';
 import { WhepPlayer, getRTCView, webrtcAvailable } from '../../lib/whip';
 import AppVideo from '../../components/AppVideo';
 import { Skeleton, SkeletonCircle } from '../../components/Skeleton';
@@ -74,6 +75,8 @@ function LiveCard({
   const { messages: chat, push: pushChat, clear: clearChat } = useBufferedChat();
   const [draft, setDraft] = useState('');
   const [donateOpen, setDonateOpen] = useState(false);
+  // Latest donation broadcast → drives the Twitch-style alert overlay.
+  const [donationEvent, setDonationEvent] = useState<LiveDonationEvent | null>(null);
   const channelRef = useRef<ReturnType<typeof joinLiveChannel> | null>(null);
   // Donations unlock only for a Premium host (also enforced server-side).
   const canDonate = hostCanReceive(stream.profile?.premium_until);
@@ -89,6 +92,7 @@ function LiveCard({
       tier: displayedTier(profile),
       onViewers: setViewers,
       onChat: pushChat,
+      onDonation: setDonationEvent,
     });
     channelRef.current = handle;
     return () => { handle.leave(); channelRef.current = null; clearChat(); setViewers(0); };
@@ -149,6 +153,9 @@ function LiveCard({
           />
         )
       )}
+
+      {/* Twitch-style donation alert — plays over the stream for the whole room. */}
+      <LiveDonationAlerts event={donationEvent} />
 
       {/* Top overlay: broadcaster + LIVE pill + viewers (inset right of the back button) */}
       <View style={[styles.topRow, { top: insets.top + 12 }]}>
@@ -212,8 +219,9 @@ function LiveCard({
           visible={donateOpen}
           stream={stream}
           onClose={() => setDonateOpen(false)}
-          // Announce the tip in chat so the host + room see it (uses the donor's name).
-          onDonated={(cents) => channelRef.current?.sendChat(t('live.donate.chat', { amount: fmtCents(cents) }))}
+          // Broadcast the tip to the room — the host + every viewer (and the
+          // donor, self:true) get the emphasized alert overlay.
+          onDonated={(cents, message) => channelRef.current?.sendDonation(cents, message)}
         />
       )}
     </View>
@@ -433,7 +441,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   livePillText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
   viewerPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
   viewerText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  donatePill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.primary, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  donatePill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.success, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
   donateText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   bottomWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   bottomInner: { paddingHorizontal: 14, gap: 8 },

@@ -255,7 +255,9 @@ const PostCard = memo(function PostCard({
           />
           {!!item.song_id && (
             <TouchableOpacity style={styles.videoAudioBtn} onPress={onToggleSongMute}>
-              <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color={colors.text} />
+              {/* On a dark media pill — always white, never the theme text color
+                  (which is black in light mode → the button looked blacked out). */}
+              <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
             </TouchableOpacity>
           )}
           {!!item.song_id && (
@@ -341,7 +343,7 @@ const PostCard = memo(function PostCard({
             </View>
           </TouchableOpacity>
           <TouchableOpacity style={styles.videoAudioBtn} onPress={item.song_id ? onToggleSongMute : onToggleMuted}>
-            <Ionicons name={(item.song_id ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color={colors.text} />
+            <Ionicons name={(item.song_id ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
           </TouchableOpacity>
           {!!item.song_id && (
             <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />

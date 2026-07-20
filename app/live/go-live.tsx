@@ -15,14 +15,15 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import {
   createLiveStream, discardLiveStream, endLiveStream, isInputConnected, joinLiveChannel,
-  markLive, type LiveOrientation, type LiveStream, type LiveStreamKeys,
+  markLive, type LiveOrientation, type LiveStream, type LiveStreamKeys, type LiveDonationEvent,
 } from '../../lib/live';
 import { WhipPublisher, getRTCView, webrtcAvailable } from '../../lib/whip';
 import { rtmpAvailable, getRtmpView, type RtmpPublisherHandle } from '../../lib/rtmp';
 import { displayedTier } from '../../lib/badges';
 import LiveChatOverlay, { useBufferedChat } from '../../components/LiveChatOverlay';
-import { fetchDonationEarnings, fmtCents } from '../../lib/donations';
-import { isPremium } from '../../lib/entitlements';
+import LiveDonationAlerts from '../../components/LiveDonationAlerts';
+import LiveEarnedOverlay from '../../components/LiveEarnedOverlay';
+import { fetchDonationEarnings, fetchStreamEarnings, fmtCents } from '../../lib/donations';
 
 // Go Live: two broadcast paths off one Cloudflare live input.
 //  • Phone — camera+mic published straight from the device over WHIP; viewers
@@ -58,6 +59,8 @@ export default function GoLiveScreen() {
   // Viewer comments, shown over the broadcast so the host can follow the room.
   // Burst-buffered (see LiveChatOverlay) so a busy chat stays smooth on-camera.
   const { messages: chat, push: pushChat } = useBufferedChat();
+  // Live donation alerts land on the host's own broadcast screen too.
+  const [donationEvent, setDonationEvent] = useState<LiveDonationEvent | null>(null);
   // A horizontal phone broadcast is set up and filmed in landscape: once the
   // camera preview starts, rotate the screen so the host frames the shot the
   // way viewers (and Laybell TV) will see it — and back to portrait on exit.
@@ -94,12 +97,16 @@ export default function GoLiveScreen() {
   // pre-rebuild binaries fall back to WHIP for horizontal too. Decided once in
   // prepare() so a mid-flow orientation change can't split the pipeline.
   const [phoneRtmpActive, setPhoneRtmpActive] = useState(false);
-  // Premium hosts earn donations (lib/donations); take-home total, polled while live.
+  // EVERY host earns donations now (Premium just lowers the fee — the "Earn More"
+  // perk); take-home total, polled while live.
   const [earnedCents, setEarnedCents] = useState(0);
-  const canEarn = isPremium();
+  const canEarn = true;
+  // After End: if the stream made money, this holds the total and shows the
+  // celebratory "You Earned $X" overlay (with a cash-out shortcut) before exit.
+  const [endedEarnings, setEndedEarnings] = useState<number | null>(null);
 
-  // While live (and Premium), poll the donation take-home so the host sees tips
-  // roll in. Cheap RPC every 15s; stops the moment the broadcast ends.
+  // While live, poll the donation take-home so the host sees tips roll in. Cheap
+  // RPC every 15s; stops the moment the broadcast ends.
   useEffect(() => {
     if (phase !== 'live' || !canEarn || !profile?.id) return;
     let alive = true;
@@ -211,6 +218,7 @@ export default function GoLiveScreen() {
           isHost: true,
           onViewers: (n) => { viewerPeak.current = Math.max(viewerPeak.current, n); setViewers(n); },
           onChat: pushChat,
+          onDonation: setDonationEvent,
         });
       }
     } catch (e) {
@@ -222,12 +230,16 @@ export default function GoLiveScreen() {
   async function endNow() {
     const stream = streamRef.current;
     setConfirmEnd(false);
+    // Total THIS stream earned (freshest read, before we tear the row down).
+    const earned = stream ? await fetchStreamEarnings(stream.id).catch(() => 0) : 0;
     if (stream) {
       await endLiveStream(stream.id, stream.cf_input_uid, viewerPeak.current).catch(() => {});
       streamRef.current = null;
     }
     await cleanup(true);
-    router.back();
+    // Made money → celebrate + offer a cash-out shortcut; otherwise just exit.
+    if (earned > 0) setEndedEarnings(earned);
+    else router.back();
   }
 
   const live = phase === 'live';
@@ -406,6 +418,7 @@ export default function GoLiveScreen() {
             </View>
           )}
 
+          {live && <LiveDonationAlerts event={donationEvent} />}
           {live && (
             <View style={styles.previewControls}>
               <LiveChatOverlay messages={chat} style={styles.hostChat} />
@@ -426,6 +439,14 @@ export default function GoLiveScreen() {
           onConfirm={endNow}
           onCancel={() => setConfirmEnd(false)}
         />
+
+        {endedEarnings != null && (
+          <LiveEarnedOverlay
+            amountCents={endedEarnings}
+            onCashOut={() => { setEndedEarnings(null); router.replace('/wallet'); }}
+            onDone={() => { setEndedEarnings(null); router.back(); }}
+          />
+        )}
       </View>
     </SwipeBackPager>
   );

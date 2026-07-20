@@ -58,7 +58,7 @@ end $$;
 -- leave them at their defaults (kind = 'spotlight'). Ads set kind = 'ad'.
 alter table public.ad_campaigns add column if not exists kind            text not null default 'spotlight';
 alter table public.ad_campaigns add column if not exists objective       text;          -- 'awareness' | 'traffic' | 'engagement'
-alter table public.ad_campaigns add column if not exists placements      text[];        -- subset of {'feed','reels','audio'}
+alter table public.ad_campaigns add column if not exists placements      text[];        -- subset of {'feed','reels','audio','tv'}
 alter table public.ad_campaigns add column if not exists budget_cents_total integer;
 alter table public.ad_campaigns add column if not exists budget_cents_daily integer;
 alter table public.ad_campaigns add column if not exists spent_cents     integer not null default 0;
@@ -86,10 +86,13 @@ alter table public.ad_campaigns add column if not exists target_radius_km double
 -- Relax the Spotlight-only constraints so ad rows can omit them. These ONLY
 -- widen the rules (… is null or <old check>) — every existing Spotlight insert
 -- still passes. Drop-then-add keeps the whole file idempotent across re-runs.
+-- NOTE: the list MUST stay a superset of spotlight.sql's package keys
+-- ('12h','1d','3d','7d'); omitting '12h' here made a re-run reject existing
+-- 12-hour Spotlight rows (ad_campaigns_package_key_check violation).
 alter table public.ad_campaigns alter column package_key   drop not null;
 alter table public.ad_campaigns drop constraint if exists ad_campaigns_package_key_check;
 alter table public.ad_campaigns add  constraint ad_campaigns_package_key_check
-  check (package_key is null or package_key in ('1d', '3d', '7d'));
+  check (package_key is null or package_key in ('12h', '1d', '3d', '7d'));
 
 alter table public.ad_campaigns alter column duration_days drop not null;
 alter table public.ad_campaigns drop constraint if exists ad_campaigns_duration_days_check;
@@ -141,7 +144,7 @@ create policy "Scheduled ads hidden until start"
 create table if not exists public.ad_creatives (
   id               uuid primary key default gen_random_uuid(),
   campaign_id      uuid not null references public.ad_campaigns(id) on delete cascade,
-  placement        text not null check (placement in ('feed', 'reels', 'audio')),
+  placement        text not null check (placement in ('feed', 'reels', 'audio', 'tv')),
   media_type       text not null check (media_type in ('image', 'video', 'slideshow', 'audio')),
   media_url        text,
   slides           jsonb,          -- same Slide[] shape as posts.slides (feed slideshows)
@@ -153,8 +156,16 @@ create table if not exists public.ad_creatives (
   body             text,
   cta_label        text,
   cta_url          text,
+  -- Laybell TV + music ads: 'unskippable' (plays fully, ≤15s) or 'skip15'
+  -- (skippable after 15s, >15s). Null = placement default (reels 5s). No CHECK
+  -- constraint on purpose — validated client-side, kept free so a value change
+  -- never needs a constraint migration.
+  skip_mode        text,
   created_at       timestamptz not null default now()
 );
+
+-- Additive migration for installs created before skip_mode existed.
+alter table public.ad_creatives add column if not exists skip_mode text;
 
 create index if not exists ad_creatives_campaign_idx on public.ad_creatives (campaign_id);
 create index if not exists ad_creatives_placement_idx on public.ad_creatives (placement);
@@ -234,7 +245,7 @@ create table if not exists public.ad_events (
   campaign_id  uuid not null references public.ad_campaigns(id) on delete cascade,
   creative_id  uuid references public.ad_creatives(id) on delete set null,
   viewer_id    uuid references auth.users(id) on delete set null,
-  placement    text not null check (placement in ('feed', 'reels', 'audio')),
+  placement    text not null check (placement in ('feed', 'reels', 'audio', 'tv')),
   kind         text not null check (kind in ('impression', 'click', 'skip', 'complete')),
   hour_bucket  bigint not null,
   created_at   timestamptz not null default now()
@@ -245,6 +256,36 @@ create index if not exists ad_events_campaign_idx on public.ad_events (campaign_
 -- placement, hour). Clicks/skips/completes are deduped client-side per session.
 create unique index if not exists ad_events_impression_dedup
   on public.ad_events (campaign_id, viewer_id, placement, hour_bucket) where kind = 'impression';
+
+-- ─── Migration: allow the 'tv' placement on ALREADY-APPLIED installs ──────────
+-- `create table if not exists` above never rewrites an existing table's inline
+-- CHECK, so a DB created before Laybell TV ads still rejects placement='tv'.
+-- Drop whatever check constrains each placement column and re-add one that
+-- includes 'tv'. Idempotent — safe to re-run (fresh installs just rename the
+-- inline check to the named one).
+do $$
+declare r record;
+begin
+  for r in
+    select conname from pg_constraint
+    where conrelid = 'public.ad_creatives'::regclass and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%placement%'
+  loop
+    execute format('alter table public.ad_creatives drop constraint %I', r.conname);
+  end loop;
+  alter table public.ad_creatives
+    add constraint ad_creatives_placement_chk check (placement in ('feed', 'reels', 'audio', 'tv'));
+
+  for r in
+    select conname from pg_constraint
+    where conrelid = 'public.ad_events'::regclass and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%placement%'
+  loop
+    execute format('alter table public.ad_events drop constraint %I', r.conname);
+  end loop;
+  alter table public.ad_events
+    add constraint ad_events_placement_chk check (placement in ('feed', 'reels', 'audio', 'tv'));
+end $$;
 
 alter table public.ad_events enable row level security;
 
@@ -276,7 +317,7 @@ declare
   v_budget integer;
   v_spent_milli bigint;
   v_kind   text := case when p_kind in ('impression', 'click', 'skip', 'complete') then p_kind else 'impression' end;
-  v_place  text := case when p_placement in ('feed', 'reels', 'audio') then p_placement else 'feed' end;
+  v_place  text := case when p_placement in ('feed', 'reels', 'audio', 'tv') then p_placement else 'feed' end;
   v_hour   bigint := floor(extract(epoch from now()) * 1000 / 3600000)::bigint;
   v_ins    integer;
 begin
@@ -291,6 +332,24 @@ begin
      and (starts_at is null or starts_at <= now())
      and (ends_at  is null or ends_at  > now());
   if v_owner is null or v_owner = v_uid then return; end if;
+
+  -- Music + Laybell TV are PREMIUM unskippable placements: they cost the
+  -- advertiser 20% more per view (that surcharge is Laybell's), so their
+  -- impressions accrue spend 20% faster than feed/reels.
+  if v_place in ('audio', 'tv') then
+    v_cpm := round(v_cpm * 1.2);
+  end if;
+
+  -- Volume bonus: bigger budgets stretch further (more views per dollar), a
+  -- tiered effective-CPM discount capped at +25%. KEEP IN SYNC with
+  -- lib/ads.adVolumeBonus. Applied AFTER the premium so both compose.
+  if    v_budget >= 100000 then v_cpm := round(v_cpm / 1.25);
+  elsif v_budget >=  50000 then v_cpm := round(v_cpm / 1.20);
+  elsif v_budget >=  25000 then v_cpm := round(v_cpm / 1.15);
+  elsif v_budget >=  10000 then v_cpm := round(v_cpm / 1.10);
+  elsif v_budget >=   5000 then v_cpm := round(v_cpm / 1.05);
+  end if;
+  if v_cpm < 1 then v_cpm := 1; end if; -- never zero (would never end)
 
   if v_kind = 'impression' then
     insert into public.ad_events (campaign_id, creative_id, viewer_id, placement, kind, hour_bucket)

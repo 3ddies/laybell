@@ -13,11 +13,14 @@ import { useProfile } from '../contexts/ProfileContext';
 import { useAudio } from '../contexts/AudioContext';
 import { useCast } from '../contexts/CastContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
+import { openAdOptions } from '../contexts/AdOptionsContext';
+import { useLinkGuard } from '../contexts/LinkGuardContext';
 import { useOptimisticSeek } from '../hooks/useOptimisticSeek';
 import { selection } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
 import { bumpBadge } from '../lib/badges';
 import { createNotification } from '../lib/createNotification';
+import { recordAdClick } from '../lib/ads';
 import { formatCount } from '../lib/format';
 import Scrubber from './Scrubber';
 import FollowButton from './FollowButton';
@@ -45,6 +48,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
   const router = useRouter();
   const { profile } = useProfile();
   const postOptions = usePostOptions();
+  const linkGuard = useLinkGuard();
   const {
     connected, current, deviceName, isPlaying, playerState, mediaError, ended, nextItem,
     positionSec, durationSec,
@@ -63,7 +67,9 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
   // (like/comment/save), so watching on the TV doesn't cost the post its
   // engagement. Lives aren't posts and get no row.
   const uid = profile?.id ?? null;
-  const postId = !current?.isLive ? current?.id ?? null : null;
+  // Ads are NOT real posts — exclude them so the like/comment/save social row and
+  // its post/likes fetches never run on the sponsor's synthetic id.
+  const postId = (!current?.isLive && !current?.isAd) ? current?.id ?? null : null;
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
@@ -163,6 +169,11 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
   // profile-only menu (report/block the host) when the author is known.
   const openOptions = () => {
     if (!current) return;
+    // A sponsor → the ad options/report sheet (not the post/profile menu).
+    if (current.isAd && current.ad) {
+      openAdOptions({ campaignId: current.ad.campaignId, creativeId: current.ad.creativeId, advertiserName: current.ad.advertiserName });
+      return;
+    }
     // After a delete/archive the on-TV item is gone — roll to the next queued
     // video, or end the session when nothing is left to play.
     const skipGone = () => { if (hasNext) next(); else disconnect(); };
@@ -224,6 +235,12 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
   // Title marquee + author row (@username → profile, follow pill beside it).
   const metaEl = (
     <View style={styles.meta}>
+      {current.isAd && (
+        <View style={styles.sponsoredRow}>
+          <Ionicons name="megaphone" size={11} color={colors.primary} />
+          <Text style={styles.sponsoredLabel}>{t('ad.sponsored')}</Text>
+        </View>
+      )}
       <Marquee key={current.id}>
         <Text style={styles.title}>{current.title}</Text>
       </Marquee>
@@ -271,6 +288,24 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
     </View>
   ) : null;
 
+  // For a sponsor there's no like/comment — instead the remote offers a big
+  // "Learn More" CTA the viewer can tap on the phone while the ad plays on the TV.
+  const openAdCta = () => {
+    const ad = current.ad;
+    if (!ad?.ctaUrl) return;
+    linkGuard.open(ad.ctaUrl, {
+      context: 'ad',
+      sourceName: ad.advertiserName,
+      onProceed: () => recordAdClick({ __ad: ad }, 'tv', uid),
+    });
+  };
+  const adCtaEl = current.isAd && current.ad?.ctaUrl ? (
+    <TouchableOpacity style={styles.adCta} onPress={openAdCta} activeOpacity={0.85}>
+      <Text style={styles.adCtaText}>{current.ad.ctaLabel || t('reelAd.learnMore')}</Text>
+      <Ionicons name="arrow-forward" size={16} color={colors.text} />
+    </TouchableOpacity>
+  ) : null;
+
   // Scrubber/LIVE + transport controls + up-next (or the error/retry state).
   const transportEl = mediaError ? (
     <View style={styles.errorWrap}>
@@ -296,6 +331,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
             progress={progress}
             onSeek={(r) => doSeek(r * durationSec)}
             height={26} trackHeight={5} thumbSize={16}
+            disabled={current.isAd}
           />
           <View style={styles.timeRow}>
             <Text style={styles.time}>{fmtTime(ended ? durationSec : shownPos)}</Text>
@@ -335,9 +371,9 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
           </LinearGradient>
         </TouchableOpacity>
         {!isLive && (
-          <TouchableOpacity onPress={() => doSkip(10)} hitSlop={10} style={styles.skipBtn}>
-            <Ionicons name="play-forward" size={22} color={colors.text} />
-            <Text style={styles.skipLabel}>10</Text>
+          <TouchableOpacity onPress={() => doSkip(10)} disabled={!!current.isAd} hitSlop={10} style={styles.skipBtn}>
+            <Ionicons name="play-forward" size={22} color={current.isAd ? colors.textTertiary : colors.text} />
+            <Text style={[styles.skipLabel, !!current.isAd && { color: colors.textTertiary }]}>10</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity onPress={() => { selection(); next(); }} disabled={!hasNext} hitSlop={10} style={styles.sideBtn}>
@@ -356,7 +392,9 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
             </View>
           )}
           <View style={styles.upNextInfo}>
-            <Text style={styles.upNextLabel}>{t('tv.cast.upNext')}</Text>
+            <Text style={[styles.upNextLabel, nextItem.isAd && { color: colors.primary }]}>
+              {nextItem.isAd ? t('ad.sponsored') : t('tv.cast.upNext')}
+            </Text>
             <Text style={styles.upNextTitle} numberOfLines={1}>{nextItem.title}</Text>
           </View>
           <Ionicons name="play-skip-forward" size={16} color={colors.textSecondary} />
@@ -443,6 +481,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
           </View>
           <ScrollView style={styles.lsRight} contentContainerStyle={styles.lsRightContent} showsVerticalScrollIndicator={false}>
             {socialEl}
+            {adCtaEl}
             {transportEl}
             {disconnectEl}
           </ScrollView>
@@ -452,6 +491,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
           {posterEl}
           {metaEl}
           {socialEl}
+          {adCtaEl}
           {/* Empty slot between the post meta and the transport controls — the
               phone's now-playing music card lives here, centered, when a song is
               playing; otherwise it's just breathing room. */}
@@ -488,6 +528,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   lsRight: { flex: 1 },
   lsRightContent: { flexGrow: 1, justifyContent: 'center', gap: SPACING.xs },
   meta: { marginTop: SPACING.lg, gap: 5 },
+  sponsoredRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  sponsoredLabel: { color: c.primary, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
   title: { color: c.text, fontSize: 22, fontWeight: '800', lineHeight: 28 },
   authorRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   // shrink (not flex:1) so the follow pill hugs the username instead of
@@ -497,6 +539,13 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   socialRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.lg, marginTop: SPACING.md },
   socialBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   socialBtnRight: { marginLeft: 'auto' },
+  // Sponsor "Learn More" CTA on the remote (replaces the social row for ads).
+  adCta: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: SPACING.md, backgroundColor: c.primary, borderRadius: RADIUS.full,
+    paddingVertical: SPACING.sm + 3, paddingHorizontal: SPACING.lg,
+  },
+  adCtaText: { color: c.text, fontSize: 15, fontWeight: '800' },
   socialCount: { color: c.textSecondary, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
   flexSpace: { flex: 1 },
   // Music card slot: the same flexible gap, but centers the card when present.

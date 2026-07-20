@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { emblemGradient, badgeRim, badgeGlow, displayedTier, type Tier, type ProfileBadgeFields } from '../lib/badges';
 import { useProfile } from '../contexts/ProfileContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 // A specular sheen that sweeps diagonally across the DIAMOND emblem on a loop
 // (the "diamond shine" — the one tier that earns a live animation). Clipped to
@@ -67,8 +68,17 @@ function checkColor(tier: Tier): string {
 function BadgeEmblem({ profile, tier, ownerId, size = 14, style }: Props) {
   const router = useRouter();
   const { profile: me } = useProfile();
+  const { mode } = useTheme();
   const t = tier !== undefined ? tier : displayedTier(profile);
   if (!t) return null;
+
+  // The bright tier fills (silver/diamond near-white) blend into a white
+  // background — the tier rim is a LIGHT highlight, invisible there. In light
+  // mode swap in a dark hairline so the emblem's edge stays crisp; dark themes
+  // keep the luminous rim they're designed for.
+  const lightEdge = mode === 'light'
+    ? { borderWidth: (badgeRim(t)?.borderWidth ?? 0) || 0.75, borderColor: 'rgba(0,0,0,0.28)' }
+    : null;
 
   const node = (
     <LinearGradient
@@ -81,6 +91,7 @@ function BadgeEmblem({ profile, tier, ownerId, size = 14, style }: Props) {
         { width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center' },
         badgeRim(t),
         badgeGlow(t),
+        lightEdge,
         style,
       ]}
     >

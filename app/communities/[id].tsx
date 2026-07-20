@@ -38,9 +38,12 @@ const SCREEN_W = Dimensions.get('window').width;
 
 export default function CommunityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
+  // success green (#22C55E) is tuned for dark bg — on white the "Joined" pill
+  // reads low-contrast, so use a darker green in light mode.
+  const joinedColor = mode === 'light' ? '#15803D' : colors.success;
   const router = useRouter();
   const { profile } = useProfile();
   const userId = profile?.id ?? null;
@@ -222,9 +225,13 @@ export default function CommunityDetailScreen() {
               <Text style={styles.bannedText}>{t('communities.banned')}</Text>
             </View>
           ) : isMember ? (
-            <TouchableOpacity style={[styles.actionBtn, styles.joinedBtn]} onPress={() => setMenuOpen(true)} disabled={busy}>
-              <Ionicons name="checkmark" size={16} color={colors.success} />
-              <Text style={styles.joinedText}>{t('communities.joined')}</Text>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.joinedBtn, mode === 'light' && { backgroundColor: joinedColor + '1A', borderColor: joinedColor + '66' }]}
+              onPress={() => setMenuOpen(true)}
+              disabled={busy}
+            >
+              <Ionicons name="checkmark" size={16} color={joinedColor} />
+              <Text style={[styles.joinedText, mode === 'light' && { color: joinedColor }]}>{t('communities.joined')}</Text>
             </TouchableOpacity>
           ) : myStatus !== 'invited' && community.status === 'live' ? (
             <TouchableOpacity style={[styles.actionBtn, styles.primaryBtn]} onPress={onJoin} disabled={busy}>

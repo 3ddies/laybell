@@ -1,15 +1,17 @@
 import { supabase } from './supabase';
 
-// Laybell Live donations — viewers tip a live host; PREMIUM hosts get paid. The
-// money split + the premium lock are enforced SERVER-SIDE by the donation_guard
-// trigger (supabase/sql/donations.sql); the rates here MUST match that trigger.
-// Everything degrades gracefully: if the SQL isn't applied (or the host isn't
-// Premium) the insert rejects and donate() returns a typed failure — the caller
-// shows a message and the live viewer keeps working.
+// Laybell Live donations — viewers tip a live host. EVERY host can receive tips;
+// the Premium "Earn More" perk just lowers Laybell's cut. The money split is
+// computed SERVER-SIDE by the donation_guard trigger (supabase/sql/donations.sql)
+// from the host's plan; the rates here MUST match that trigger. Degrades
+// gracefully: if the SQL isn't applied the insert fails and donate() returns a
+// typed failure — the caller shows a message and the live viewer keeps working.
 
-// Laybell takes 15% of every donation. Estimated tax is added ON TOP (the donor's
-// cost, Poshmark-style, like the shop) so it never reduces the host's take-home.
-export const DONATION_FEE_RATE = 0.15;
+// Laybell's cut depends on the host's plan — this IS the Premium "Earn More"
+// perk. Estimated tax is added ON TOP (the donor's cost, Poshmark-style, like the
+// shop) so it never reduces the host's take-home.
+export const DONATION_FEE_RATE_PREMIUM = 0.08;   // Premium hosts keep 92%
+export const DONATION_FEE_RATE_STANDARD = 0.35;  // everyone else keeps 65%
 export const DONATION_TAX_RATE = 0.06; // estimate for display; real tax varies by location/provider
 
 // Quick-pick tip amounts (cents).
@@ -17,12 +19,21 @@ export const DONATION_PRESETS_CENTS = [100, 200, 500, 1000, 2000, 5000];
 export const DONATION_MIN_CENTS = 100;
 export const DONATION_MAX_CENTS = 50000;
 
-export function donationFeeCents(amountCents: number): number {
-  return Math.round(amountCents * DONATION_FEE_RATE);
+/** True while `premium_until` is in the future. */
+export function hostIsPremium(premiumUntil?: string | null): boolean {
+  return !!premiumUntil && new Date(premiumUntil).getTime() > Date.now();
 }
-/** What the host keeps after Laybell's 15% fee. */
-export function donationPayoutCents(amountCents: number): number {
-  return Math.max(0, amountCents - donationFeeCents(amountCents));
+/** Laybell's fee RATE for a host by plan — 8% Premium, 35% standard. */
+export function hostFeeRate(premiumUntil?: string | null): number {
+  return hostIsPremium(premiumUntil) ? DONATION_FEE_RATE_PREMIUM : DONATION_FEE_RATE_STANDARD;
+}
+
+export function donationFeeCents(amountCents: number, feeRate: number): number {
+  return Math.round(amountCents * feeRate);
+}
+/** What the host keeps after Laybell's fee. */
+export function donationPayoutCents(amountCents: number, feeRate: number): number {
+  return Math.max(0, amountCents - donationFeeCents(amountCents, feeRate));
 }
 /** Estimated tax added on top of the tip (the donor's extra cost). */
 export function donationTaxCents(amountCents: number): number {
@@ -41,12 +52,12 @@ export type DonationBreakdown = {
   totalChargeCents: number;
 };
 
-export function donationBreakdown(amountCents: number): DonationBreakdown {
+export function donationBreakdown(amountCents: number, feeRate: number): DonationBreakdown {
   return {
     amountCents,
-    feeCents: donationFeeCents(amountCents),
+    feeCents: donationFeeCents(amountCents, feeRate),
     taxCents: donationTaxCents(amountCents),
-    payoutCents: donationPayoutCents(amountCents),
+    payoutCents: donationPayoutCents(amountCents, feeRate),
     totalChargeCents: donationTotalChargeCents(amountCents),
   };
 }
@@ -55,9 +66,11 @@ export function fmtCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-/** True while `premium_until` is in the future — the host can receive donations. */
-export function hostCanReceive(premiumUntil?: string | null): boolean {
-  return !!premiumUntil && new Date(premiumUntil).getTime() > Date.now();
+/** Donations are open to EVERY live host now — Premium only lowers the fee (the
+    "Earn More" perk). Kept as a function so the callers that gate on it stay
+    unchanged; the fee tier comes from hostFeeRate(). */
+export function hostCanReceive(_premiumUntil?: string | null): boolean {
+  return true;
 }
 
 export type DonateResult =
@@ -69,7 +82,7 @@ export type DonateResult =
  * enforces the premium lock, and computes the fee/tax/payout — so we only send the
  * donor, stream, and amount. Maps the server's error strings to a typed reason.
  */
-export async function donate(streamId: string, amountCents: number): Promise<DonateResult> {
+export async function donate(streamId: string, amountCents: number, message = ''): Promise<DonateResult> {
   const amount = Math.round(amountCents);
   if (!(amount >= DONATION_MIN_CENTS)) return { ok: false, reason: 'unavailable' };
   try {
@@ -82,6 +95,7 @@ export async function donate(streamId: string, amountCents: number): Promise<Don
       streamer_id: user.id,
       stream_id: streamId,
       amount_cents: amount,
+      message: message.trim().slice(0, 200) || null,
     });
     if (!error) return { ok: true };
     const msg = `${error.message ?? ''}`.toLowerCase();
@@ -90,6 +104,22 @@ export async function donate(streamId: string, amountCents: number): Promise<Don
     return { ok: false, reason: 'unavailable' };
   } catch {
     return { ok: false, reason: 'unavailable' };
+  }
+}
+
+/** This stream's take-home for the host (sum of succeeded donation payouts) —
+    powers the post-stream "You Earned $X" screen. RLS lets the host read their
+    own donations, so this is scoped to the caller's stream. */
+export async function fetchStreamEarnings(streamId: string): Promise<number> {
+  try {
+    const { data } = await supabase
+      .from('donations')
+      .select('streamer_payout_cents')
+      .eq('stream_id', streamId)
+      .eq('status', 'succeeded');
+    return (data ?? []).reduce((sum, d: any) => sum + (d.streamer_payout_cents ?? 0), 0);
+  } catch {
+    return 0;
   }
 }
 

@@ -35,6 +35,7 @@ const statusLabel = (t: TFn): Record<AdStatus, string> => ({
 const PLACEMENT_ICON: Record<AdPlacement, any> = {
   feed: 'home-outline',
   reels: 'film-outline',
+  tv: 'tv-outline',
   audio: 'musical-notes-outline',
 };
 

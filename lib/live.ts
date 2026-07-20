@@ -57,6 +57,20 @@ export type LiveChatMessage = {
   tier?: Tier | null;
 };
 
+// A donation, broadcast over the SAME live channel as chat (ephemeral — the DB
+// row in `donations` is the record of truth; this is just the real-time alert
+// payload). Every joiner incl. the host and the donor themselves receives it
+// (broadcast self:true) and shows the Twitch-style alert overlay.
+export type LiveDonationEvent = {
+  id: string;
+  donorId: string;
+  name: string;
+  avatarUrl: string | null;
+  amountCents: number;
+  message: string;
+  at: number;
+};
+
 async function attachProfiles<T extends { user_id: string }>(rows: T[]): Promise<(T & { profile?: LiveProfile })[]> {
   const ids = [...new Set(rows.map((r) => r.user_id))];
   if (!ids.length) return rows;
@@ -224,6 +238,7 @@ export function joinLiveChannel(opts: {
   isHost?: boolean;
   onViewers: (count: number) => void;
   onChat: (msg: LiveChatMessage) => void;
+  onDonation?: (d: LiveDonationEvent) => void;
 }) {
   const channel = supabase.channel(`live:${opts.streamId}`, {
     config: {
@@ -237,6 +252,9 @@ export function joinLiveChannel(opts: {
   });
   channel.on('broadcast', { event: 'chat' }, ({ payload }) => {
     if (payload) opts.onChat(payload as LiveChatMessage);
+  });
+  channel.on('broadcast', { event: 'donation' }, ({ payload }) => {
+    if (payload) opts.onDonation?.(payload as LiveDonationEvent);
   });
   channel.subscribe((status) => {
     if (status === 'SUBSCRIBED') channel.track({ at: Date.now() }).catch(() => {});
@@ -255,6 +273,21 @@ export function joinLiveChannel(opts: {
       };
       channel.send({ type: 'broadcast', event: 'chat', payload: msg }).catch(() => {});
       return msg;
+    },
+    // Broadcast a donation to the room (the alert overlay). The DB insert (lib/
+    // donations.donate) is separate — this is only the real-time notification.
+    sendDonation(amountCents: number, message: string) {
+      const d: LiveDonationEvent = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        donorId: opts.userId,
+        name: opts.name,
+        avatarUrl: opts.avatarUrl,
+        amountCents,
+        message: message.slice(0, 200),
+        at: Date.now(),
+      };
+      channel.send({ type: 'broadcast', event: 'donation', payload: d }).catch(() => {});
+      return d;
     },
     leave() {
       supabase.removeChannel(channel);

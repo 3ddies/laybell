@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView, Dimensions, RefreshControl } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView, Dimensions, RefreshControl, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,7 +8,11 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isSwipeTap } from '../contexts/PagerContext';
+import { openAdOptions } from '../contexts/AdOptionsContext';
+import { recordAdImpression, type AdMeta } from '../lib/ads';
 import VideoThumb from './VideoThumb';
+import AppVideo from './AppVideo';
+import TVAdViewer from './TVAdViewer';
 import ThumbStat from './ThumbStat';
 
 // Laybell TV — Videos tab. Two shapes on one screen:
@@ -24,6 +29,8 @@ type TVPost = {
   thumbnail_url?: string | null; aspect_ratio?: string | null;
   view_count?: number; stream_count?: number; user_id?: string;
   profiles?: { username?: string | null; display_name?: string | null } | null;
+  // Present on woven Laybell TV sponsored cards (lib/ads.tvItemFor).
+  __ad?: AdMeta;
 };
 
 const H_PADDING = SPACING.md;
@@ -59,6 +66,20 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const { show: showOptions } = usePostOptions();
+  // Tapping a sponsored card opens it fullscreen (dismissable) — the user chose
+  // to watch, so it's optional (not forced) and the CTA lives inside the viewer.
+  const [adViewer, setAdViewer] = useState<TVPost | null>(null);
+
+  // Which sponsored cards are on screen — only those autoplay their video (so a
+  // few muted ads play at a time, never every mounted one). Frozen callback +
+  // set-equality check so scrolling through organic tiles doesn't re-render.
+  const [visibleAdIds, setVisibleAdIds] = useState<Set<string>>(new Set());
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
+    const ids = new Set<string>();
+    for (const v of viewableItems) if (v.item?.__ad) ids.add(v.item.id);
+    setVisibleAdIds((prev) => (prev.size === ids.size && [...ids].every((x) => prev.has(x)) ? prev : ids));
+  }).current;
 
   const openVideo = (p: TVPost, e?: any, w = COL_W, h = COL_THUMB_H) => {
     if (isSwipeTap()) return; // a tab swipe gliding over a card must not open the viewer
@@ -130,6 +151,7 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
   ) : null;
 
   return (
+    <>
     <FlatList
       data={posts}
       keyExtractor={(p) => p.id}
@@ -138,10 +160,15 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
       contentContainerStyle={[styles.content, { paddingBottom: (bottomPad ?? 0) + SPACING.xxl }]}
       showsVerticalScrollIndicator={false}
       ListHeaderComponent={header}
+      onViewableItemsChanged={onViewableItemsChanged}
+      viewabilityConfig={viewabilityConfig}
       refreshControl={
         onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined
       }
       renderItem={({ item: p }) => {
+        // Woven sponsored card — autoplays its video while on screen; tapping opens
+        // it fullscreen to watch (optional, dismissable), not the reel viewer.
+        if (p.__ad) return <TVAdCard ad={p} active={visibleAdIds.has(p.id)} styles={styles} colors={colors} t={t} uid={currentUserId ?? null} onPress={() => setAdViewer(p)} />;
         const title = p.caption?.trim() || p.profiles?.display_name || (p.profiles?.username ? `@${p.profiles.username}` : t('tv.title'));
         return (
           <TouchableOpacity
@@ -167,6 +194,69 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
         </View>
       }
     />
+    <TVAdViewer item={adViewer} uid={currentUserId ?? null} onClose={() => setAdViewer(null)} />
+    </>
+  );
+}
+
+// Sponsored landscape card woven into the TV grid. Unlike organic tiles (static
+// thumbnails), the ad AUTOPLAYS its video inline (muted, looping) so it actually
+// "plays" like the reel ad — but only while on screen (active), so off-screen
+// ads don't burn video decoders. Sponsored pill + CTA chip mark it as an ad;
+// bills one impression on mount.
+function TVAdCard({ ad, active, styles, colors, t, uid, onPress }: {
+  ad: TVPost; active: boolean; styles: any; colors: ThemePalette;
+  t: (k: string, v?: any) => string; uid: string | null; onPress: () => void;
+}) {
+  const meta = ad.__ad!;
+  const progress = useRef(new Animated.Value(0)).current;
+  useEffect(() => { recordAdImpression(ad, 'tv', uid); }, [ad.id]);
+  return (
+    <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={onPress}>
+      <View style={styles.thumbWrap}>
+        {/* Thumbnail underneath for an instant frame; the video fades in over it. */}
+        <VideoThumb thumbnailUrl={ad.thumbnail_url} mediaUrl={ad.media_url} style={StyleSheet.absoluteFill} />
+        {!!ad.media_url && (
+          <AppVideo
+            source={{ uri: ad.media_url }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            active={active}
+            loop
+            muted
+            poster={ad.thumbnail_url ?? undefined}
+            posterContentFit="cover"
+            onProgress={(pos, dur) => { if (dur > 0) progress.setValue(Math.min(1, pos / dur)); }}
+          />
+        )}
+        <View style={styles.sponsoredPill}>
+          <Ionicons name="megaphone" size={9} color="#fff" />
+          <Text style={styles.sponsoredText}>{t('ad.sponsored')}</Text>
+        </View>
+        {/* 3-dot report — tap it (not the card) to open the ad options sheet. */}
+        <TouchableOpacity
+          style={styles.adOptBtn}
+          onPress={() => openAdOptions({ campaignId: meta.campaignId, creativeId: meta.creativeId, advertiserName: meta.advertiserName })}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="ellipsis-horizontal" size={16} color="#fff" />
+        </TouchableOpacity>
+        {/* Inline video progress. */}
+        <View style={styles.adProgressTrack}>
+          <Animated.View style={[styles.adProgressFill, { width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
+        </View>
+      </View>
+      <Text style={styles.caption} numberOfLines={2}>{meta.headline || meta.advertiserName}</Text>
+      <View style={styles.adFootRow}>
+        <Text style={styles.adAdvertiser} numberOfLines={1}>{meta.advertiserName}</Text>
+        {!!meta.ctaUrl && (
+          <View style={styles.adCtaChip}>
+            <Text style={styles.adCtaText} numberOfLines={1}>{meta.ctaLabel}</Text>
+            <Ionicons name="arrow-forward" size={10} color={colors.primary} />
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -210,6 +300,24 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     gap: 4, paddingHorizontal: 8,
   },
   onTvText: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
+
+  // Sponsored TV card
+  sponsoredPill: {
+    position: 'absolute', top: 7, left: 7, flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3,
+  },
+  sponsoredText: { color: '#fff', fontSize: 9, fontWeight: '800', letterSpacing: 0.3 },
+  adOptBtn: {
+    position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
+  },
+  adProgressTrack: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 2.5, backgroundColor: 'rgba(255,255,255,0.25)' },
+  adProgressFill: { height: 2.5, backgroundColor: c.primary },
+  adFootRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 1 },
+  adAdvertiser: { flex: 1, color: c.textTertiary, fontSize: 11 },
+  adCtaChip: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  adCtaText: { color: c.primary, fontSize: 11, fontWeight: '700' },
+
   empty: { alignItems: 'center', gap: 10, marginTop: 40 },
   emptyText: { color: c.textTertiary, fontSize: 13, textAlign: 'center', paddingHorizontal: 30 },
 });
