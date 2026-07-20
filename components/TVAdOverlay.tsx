@@ -60,26 +60,26 @@ export default function TVAdOverlay({ item, active, insets, onDone, onSkip, onRe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onProgress = (pos: number, dur: number) => {
-    if (dur > 0) progress.setValue(Math.min(1, pos / dur));
-    const posMs = pos * 1000;
+  // NOTE: pos/dur arrive in MILLISECONDS (AppVideo emits currentTimeMs/durationMs).
+  const onProgress = (posMs: number, durMs: number) => {
+    if (durMs > 0) progress.setValue(Math.min(1, posMs / durMs));
     // skip15: countdown to the Skip button (unskippable ads have none).
     if (isSkip15) {
       const remain = Math.max(0, Math.ceil((AD_SKIP15_MS - posMs) / 1000));
       setSecsRemaining((prev) => (prev === remain ? prev : remain)); // ~1×/s
     }
     // Once the true duration is known, arm a precise end timer as a backstop.
-    if (dur > 0 && !armedRef.current) {
+    if (durMs > 0 && !armedRef.current) {
       armedRef.current = true;
       if (endTimerRef.current) clearTimeout(endTimerRef.current);
-      endTimerRef.current = setTimeout(finish, Math.max(600, (dur - pos) * 1000 + 1200));
+      endTimerRef.current = setTimeout(finish, Math.max(600, (durMs - posMs) + 1200));
     }
     // Did it play through? Accept EITHER signal — a single near-end sample is easy
     // to miss at ~4 ticks/sec, and `loop` snaps pos back to 0 at the end, so a
     // BACKWARD jump is the most reliable "a full play completed" marker.
-    const wrapped = pos < lastPosRef.current - 0.5;
-    lastPosRef.current = pos;
-    if (wrapped || (dur > 0 && pos >= dur - 0.5)) finish();
+    const wrapped = posMs < lastPosRef.current - 1000;
+    lastPosRef.current = posMs;
+    if (wrapped || (durMs > 0 && posMs >= durMs - 500)) finish();
   };
 
   return (

@@ -61,6 +61,11 @@ const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 // skipped (not queued), so rotating right after an ad can't chain a second one.
 const AD_MIN_GAP_MS = 45_000;
 
+// A clip "wrapped" (played through) when its playhead jumps BACK by at least
+// this much. onProgress reports MILLISECONDS — an undersized threshold here
+// treats ordinary sub-second jitter as a finished video and auto-skips wildly.
+const WRAP_BACKJUMP_MS = 1_000;
+
 // Stable API handed to the memo'd page components: the object identity never
 // changes (see pageApi in ReelScreen), each call delegating to the freshest
 // screen closure through a ref.
@@ -369,6 +374,29 @@ export default function ReelScreen() {
   // — that's the violent multi-skip when turning the phone. Both pagers ignore
   // wrap signals until this passes.
   const rotationSettleUntilRef = useRef(0);
+  // Scrolling BACK to a reel reads as "I want to watch this again", so autoplay-
+  // next is switched off for it — a re-watch shouldn't get yanked away. Only
+  // sticks if they actually stay on it ~2s, so a quick back-swipe THROUGH a reel
+  // doesn't permanently opt it out. (Clips under ~2s wrap before that and still
+  // auto-advance, which is the intended "plays for more than 2 seconds" line.)
+  const portraitPrevIndexRef = useRef(-1);
+  const overlayPrevIndexRef = useRef(-1);
+  // The clip we're leaving, so it can be rewound off-screen (see the viewability
+  // handlers) instead of paying a seek on arrival.
+  const portraitPrevVisibleIdRef = useRef<string | null>(null);
+  const overlayPrevVisibleIdRef = useRef<string | null>(null);
+  const manualOnlyRef = useRef<Set<string>>(new Set());
+  const manualMarkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markManualIfWentBack = (id: string, newIdx: number, prevRef: { current: number }) => {
+    const wentBack = prevRef.current >= 0 && newIdx >= 0 && newIdx < prevRef.current;
+    prevRef.current = newIdx;
+    if (manualMarkTimerRef.current) { clearTimeout(manualMarkTimerRef.current); manualMarkTimerRef.current = null; }
+    if (!wentBack) return;
+    manualMarkTimerRef.current = setTimeout(() => {
+      // Still here 2s later → they're re-watching it on purpose.
+      if (visibleIdRef.current === id || overlayIdRef.current === id) manualOnlyRef.current.add(id);
+    }, 2000);
+  };
   // When ANY sponsor last played, vertical or horizontal. The two cadences are
   // independent (reel ads are woven positionally, TV covers are counted), so
   // without a shared marker they can land back-to-back — finish a vertical ad,
@@ -408,6 +436,20 @@ export default function ReelScreen() {
     // hand-driven and automatic paging can't desync.
     portraitAdvancingRef.current = false;
     if (portraitAdvanceTimer.current) { clearTimeout(portraitAdvanceTimer.current); portraitAdvanceTimer.current = null; }
+    // Scrolled BACKWARD onto this reel? Then it's a re-watch — opt it out of
+    // autoplay-next (see markManualIfWentBack).
+    markManualIfWentBack(it.id, postsRef.current.findIndex((p) => p.id === it.id), portraitPrevIndexRef);
+    // Reels always restart from the top — but rewind the clip we're LEAVING, not
+    // the one we're arriving at. Seeking on arrival forced a seek + re-buffer at
+    // the exact moment the frame was needed, which is the lag when flicking back
+    // and forth. Rewinding on exit pays that cost off-screen, so returning finds
+    // the clip already at 0 with nothing to do. Rotation is exempt — it
+    // deliberately carries the playhead between orientations.
+    const prevId = portraitPrevVisibleIdRef.current;
+    portraitPrevVisibleIdRef.current = it.id;
+    if (prevId && prevId !== it.id && Date.now() >= rotationSettleUntilRef.current) {
+      try { videoRefs.current.get(prevId)?.seek(0); } catch {}
+    }
     if (it.__ad) {
       lastAdAtRef.current = Date.now(); // feeds the cross-surface ad spacing
       recordAdImpression(it, 'reels', currentUserIdRef.current);
@@ -614,6 +656,7 @@ export default function ReelScreen() {
   const maybeAdvanceOverlay = () => {
     if (!landscapeFullscreen) return;                          // overlay isn't the active surface
     if (Date.now() < rotationSettleUntilRef.current) return;    // mid-rotation
+    if (manualOnlyRef.current.has(overlayIdRef.current ?? '')) return; // re-watch → manual only
     if (overlayAdvancingRef.current || overlayDraggingRef.current) return; // already moving
     if (paused || scrubbing || overlayAdRef.current) return;   // viewer is driving
     if (commentsFor != null || sheetsOpen) return;             // mid-read → loop
@@ -633,6 +676,7 @@ export default function ReelScreen() {
   // rolling on would defeat the whole unskippable window.
   const maybeAdvancePortrait = () => {
     if (Date.now() < rotationSettleUntilRef.current) return;    // mid-rotation
+    if (manualOnlyRef.current.has(visibleIdRef.current ?? '')) return; // re-watch → manual only
     if (portraitAdvancingRef.current || portraitDraggingRef.current) return; // already moving
     if (!isFocused || landscapeFullscreen) return;             // not the active surface
     if (paused || scrubbing || zoomed) return;                 // viewer is driving
@@ -700,6 +744,9 @@ export default function ReelScreen() {
     () => posts.filter((p) => !p.__ad && aspectToNumber(p.aspect_ratio, 16 / 9) > 1),
     [posts],
   );
+  // Live mirror for the frozen onOverlayViewable below (it can't read render values).
+  const landscapeReelsRef = useRef<any[]>([]);
+  landscapeReelsRef.current = landscapeReels;
   const onOverlayViewable = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     const it = viewableItems[0]?.item;
     if (!it) return;
@@ -712,6 +759,19 @@ export default function ReelScreen() {
     // A page committed (auto OR manual) → release the advance lock.
     overlayAdvancingRef.current = false;
     if (overlayAdvanceTimer.current) { clearTimeout(overlayAdvanceTimer.current); overlayAdvanceTimer.current = null; }
+    // Same two rules as the vertical pager: a backward swipe means "re-watch"
+    // (opt out of autoplay-next), and a freshly-landed clip always restarts.
+    markManualIfWentBack(it.id, landscapeReelsRef.current.findIndex((p: any) => p.id === it.id), overlayPrevIndexRef);
+    // The rotation resume is for the ROTATED-INTO clip only. Once they scroll off
+    // it, drop the marker so coming back later starts from 0 like anything else.
+    if (it.id !== enteredFromIdRef.current) enteredFromIdRef.current = null;
+    // Rewind the clip we're LEAVING (off-screen) rather than the one we're
+    // arriving at — same snappiness reason as the vertical pager.
+    const prevOverlayId = overlayPrevVisibleIdRef.current;
+    overlayPrevVisibleIdRef.current = it.id;
+    if (prevOverlayId && prevOverlayId !== it.id && Date.now() >= rotationSettleUntilRef.current) {
+      try { overlayRefs.current.get(prevOverlayId)?.seek(0); } catch {}
+    }
     visibleIdRef.current = it.id;
     setVisibleId(it.id);
     // Landing on a page IS a settle: the portrait scrollToIndex below is
@@ -997,6 +1057,8 @@ export default function ReelScreen() {
     markGesture: () => { gestureSincePressRef.current = true; },
     pressIn: () => { gestureSincePressRef.current = false; },
     tapToggle: () => { if (gestureSincePressRef.current) return; setPaused((p) => !p); },
+    // No seek-on-mount here: clips are rewound as they're LEFT (see the
+    // viewability handlers), so an arriving one is already at 0 and needs nothing.
     setVideoRef: (pid: string, r: any) => { if (r) videoRefs.current.set(pid, r); else videoRefs.current.delete(pid); },
     setScrubRef: (pid: string, r: any) => { if (r) scrubRefs.current.set(pid, r); else scrubRefs.current.delete(pid); },
     setScrubbing,
@@ -1005,7 +1067,7 @@ export default function ReelScreen() {
       if (visibleIdRef.current === pid) {
         // Backward jump = the clip wrapped (played through) → autoplay-next, the
         // same signal + rules the landscape pager and the TV receiver use.
-        if (pos < portraitLastPosRef.current - 0.5) maybeAdvancePortrait();
+        if (pos < portraitLastPosRef.current - WRAP_BACKJUMP_MS) maybeAdvancePortrait();
         portraitLastPosRef.current = pos;
         positionRef.current = pos;
       }
@@ -1153,7 +1215,7 @@ export default function ReelScreen() {
                 // the reliable "finished" signal — a single near-end sample is
                 // easy to miss at ~4 ticks/sec. Treat it as the TV does: roll to
                 // the next video, or keep looping if the viewer is mid-action.
-                if (pos < overlayLastPosRef.current - 0.5) maybeAdvanceOverlay();
+                if (pos < overlayLastPosRef.current - WRAP_BACKJUMP_MS) maybeAdvanceOverlay();
                 overlayLastPosRef.current = pos;
                 positionRef.current = pos;
                 overlayScrubRef.current?.setProgress(pos, dur);
