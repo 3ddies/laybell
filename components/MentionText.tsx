@@ -1,5 +1,5 @@
 import { Text, type StyleProp, type TextStyle } from 'react-native';
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { COLORS } from '../constants/theme';
@@ -7,6 +7,8 @@ import { COLORS } from '../constants/theme';
 // Renders caption / comment text with @mentions as tappable, highlighted spans
 // that open the mentioned user's profile. Drop-in replacement for a plain <Text>.
 // Resolves username → id on tap (usernames are stored lowercase; matched ci).
+
+const styles_underline = { textDecorationLine: 'underline' } as const;
 
 type Seg = { t: 'x' | 'm'; v: string; u?: string };
 
@@ -46,6 +48,9 @@ export default function MentionText({
   onBeforeNavigate?: () => void;
 }) {
   const router = useRouter();
+  // Which mention span is currently held — drives a brief press underline (a clean
+  // link-style tap cue, matching the name tap feedback in the live chat).
+  const [pressedIdx, setPressedIdx] = useState<number | null>(null);
   if (!text) return suffix ? <Text style={style} numberOfLines={numberOfLines}>{suffix}</Text> : null;
 
   const segs = parse(text);
@@ -63,7 +68,14 @@ export default function MentionText({
     <Text style={style} numberOfLines={numberOfLines} onPress={onPress} suppressHighlighting>
       {segs.map((s, i) =>
         s.t === 'm' ? (
-          <Text key={i} style={[{ color: COLORS.primary, fontWeight: '600' }, mentionStyle]} onPress={() => go(s.u!)} suppressHighlighting>
+          <Text
+            key={i}
+            style={[{ color: COLORS.primary, fontWeight: '600' }, mentionStyle, pressedIdx === i && styles_underline]}
+            onPressIn={() => setPressedIdx(i)}
+            onPressOut={() => setPressedIdx(null)}
+            onPress={() => go(s.u!)}
+            suppressHighlighting
+          >
             {s.v}
           </Text>
         ) : (

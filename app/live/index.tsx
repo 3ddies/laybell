@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Image, TextInput,
-  KeyboardAvoidingView, Platform, RefreshControl,
+  KeyboardAvoidingView, Platform, RefreshControl, Keyboard, useWindowDimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
@@ -16,7 +16,8 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { supabase } from '../../lib/supabase';
 import {
-  fetchLiveStreams, joinLiveChannel, type LiveStream, type LiveDonationEvent,
+  fetchLiveStreams, joinLiveChannel, endMyStaleLiveStreams,
+  type LiveStream, type LiveDonationEvent, type LiveChatMessage,
 } from '../../lib/live';
 import { hostCanReceive } from '../../lib/donations';
 import { displayedTier } from '../../lib/badges';
@@ -69,15 +70,41 @@ function LiveCard({
   const { t } = useTranslation();
   const { profile } = useProfile();
   const insets = useSafeAreaInsets();
+  // Rotating to landscape (allowed for horizontal broadcasts) updates these, so we
+  // can fill the screen only when the phone is actually turned sideways.
+  const { width: winW, height: winH } = useWindowDimensions();
+  const isLandscape = winW > winH;
   const [viewers, setViewers] = useState(0);
   // Burst-buffered chat (see LiveChatOverlay) — busy rooms coalesce into a few
   // renders per second instead of one per message.
-  const { messages: chat, push: pushChat, clear: clearChat } = useBufferedChat();
+  const { messages: chat, push: pushChat } = useBufferedChat();
   const [draft, setDraft] = useState('');
+  // Keyboard-open flag: while it's up, the home-indicator inset is covered by the
+  // keyboard, so we drop the extra bottom padding and let the input bar sit right
+  // above the keys instead of floating a gap above them.
+  const [kbUp, setKbUp] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', () => setKbUp(true));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKbUp(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const [donateOpen, setDonateOpen] = useState(false);
   // Latest donation broadcast → drives the Twitch-style alert overlay.
   const [donationEvent, setDonationEvent] = useState<LiveDonationEvent | null>(null);
   const channelRef = useRef<ReturnType<typeof joinLiveChannel> | null>(null);
+  // Chat input ref so tapping a comment can prefill "@name" AND pop the keyboard.
+  const inputRef = useRef<TextInput>(null);
+  // Keep these stable so the memoized chat rows don't re-render on every keystroke
+  // (typing changes `draft`, which re-renders LiveCard).
+  const onOpenProfileRef = useRef(onOpenProfile); onOpenProfileRef.current = onOpenProfile;
+  const openChatProfile = useCallback((m: LiveChatMessage) => onOpenProfileRef.current(m.userId), []);
+  const replyToChat = useCallback((m: LiveChatMessage) => {
+    // Prefer the @handle so the inserted mention is a real, tappable/resolvable
+    // one (the display name — which may contain spaces — is only the fallback).
+    const tag = m.username || m.name;
+    setDraft((d) => (d.trim() ? d.trim() + ' ' : '') + '@' + tag + ' ');
+    inputRef.current?.focus();
+  }, []);
   // Donations unlock only for a Premium host (also enforced server-side).
   const canDonate = hostCanReceive(stream.profile?.premium_until);
 
@@ -88,6 +115,7 @@ function LiveCard({
       streamId: stream.id,
       userId: profile.id,
       name: profile.display_name || profile.username || 'Someone',
+      username: profile.username ?? null,
       avatarUrl: profile.avatar_url ?? null,
       tier: displayedTier(profile),
       onViewers: setViewers,
@@ -95,22 +123,35 @@ function LiveCard({
       onDonation: setDonationEvent,
     });
     channelRef.current = handle;
-    return () => { handle.leave(); channelRef.current = null; clearChat(); setViewers(0); };
-  }, [active, stream.id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url, pushChat, clearChat]);
+    // Leave the room channel when the card goes inactive, but DON'T wipe the
+    // messages: tapping a profile (the host avatar or a chat username) navigates
+    // away and back, and the chat must still show the history from when the viewer
+    // joined — not reset to empty. The buffer is dropped naturally on unmount.
+    return () => { handle.leave(); channelRef.current = null; setViewers(0); };
+  }, [active, stream.id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url, pushChat]);
 
   const send = () => {
     const text = draft.trim();
     if (!text || !channelRef.current) return;
     channelRef.current.sendChat(text);
     setDraft('');
+    // Drop the keyboard on every send (button OR return key) — it feels cleaner
+    // than leaving it up, and lets the viewer see the message land in chat.
+    Keyboard.dismiss();
   };
 
   const name = stream.profile?.display_name || stream.profile?.username || '';
+  // @handle shown under the display name at the top so the live host's username
+  // is always visible (hidden only when it would just duplicate the name).
+  const handle = stream.profile?.username || '';
   const hostTier = displayedTier(stream.profile);
   // Horizontal broadcasts letterbox (black bars top/bottom, like vertical
   // Laybell TV playback) instead of cover-cropping into a fake vertical.
   // 'vertical' and 'both' are framed for the portrait feed, so they still fill.
-  const letterbox = stream.orientation === 'horizontal';
+  // Horizontal broadcast: letterbox in the PORTRAIT feed (so it isn't cover-cropped
+  // into a fake vertical), but once the viewer rotates to landscape to watch it,
+  // fill the whole screen (cover) for true fullscreen playback.
+  const letterbox = stream.orientation === 'horizontal' && !isLandscape;
 
   // After all hooks so the hook order never changes when a live ends mid-view.
   if (ended) {
@@ -167,7 +208,12 @@ function LiveCard({
               <Text style={styles.hostInitial}>{(name || '?').charAt(0).toUpperCase()}</Text>
             </LinearGradient>
           )}
-          <Text style={[styles.hostName, nameColor(hostTier)]} numberOfLines={1}>{name}</Text>
+          <View style={styles.hostNameCol}>
+            <Text style={[styles.hostName, nameColor(hostTier)]} numberOfLines={1}>{name}</Text>
+            {!!handle && handle !== name && (
+              <Text style={styles.hostHandle} numberOfLines={1}>@{handle}</Text>
+            )}
+          </View>
         </TouchableOpacity>
         <View style={styles.livePill}>
           <Text style={styles.livePillText}>{t('live.live')}</Text>
@@ -193,22 +239,23 @@ function LiveCard({
         style={styles.bottomWrap}
         pointerEvents="box-none"
       >
-        <View style={[styles.bottomInner, { paddingBottom: insets.bottom + 14 }]} pointerEvents="box-none">
+        <View style={[styles.bottomInner, { paddingBottom: kbUp ? 8 : insets.bottom + 14 }]} pointerEvents="box-none">
           {!!stream.title && <Text style={styles.title} numberOfLines={2}>{stream.title}</Text>}
-          <LiveChatOverlay messages={chat} />
+          <LiveChatOverlay messages={chat} onPressName={openChatProfile} onPressComment={replyToChat} />
           <View style={styles.inputRow}>
             <TextInput
+              ref={inputRef}
               style={[styles.input, { color: '#fff' }]}
               placeholder={t('live.chatPlaceholder')}
-              placeholderTextColor="rgba(255,255,255,0.55)"
+              placeholderTextColor="rgba(255,255,255,0.7)"
               value={draft}
               onChangeText={setDraft}
               onSubmitEditing={send}
               returnKeyType="send"
               maxLength={300}
             />
-            <TouchableOpacity onPress={send} style={styles.sendBtn} disabled={!draft.trim()}>
-              <Ionicons name="arrow-up" size={18} color={draft.trim() ? '#fff' : 'rgba(255,255,255,0.4)'} />
+            <TouchableOpacity onPress={send} style={[styles.sendBtn, !!draft.trim() && styles.sendBtnActive, isLandscape && styles.sendBtnLandscape]} disabled={!draft.trim()}>
+              <Ionicons name="arrow-up" size={18} color={draft.trim() ? '#000' : 'rgba(255,255,255,0.4)'} />
             </TouchableOpacity>
           </View>
         </View>
@@ -235,6 +282,17 @@ export default function LiveScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
+  // Landscape (horizontal live turned sideways): the camera bar/notch sits centered
+  // on the side edge, so the Go Live + mic column needs to ride higher into the
+  // clear top-right corner to avoid being clipped by it.
+  const { width: winW, height: winH } = useWindowDimensions();
+  const screenLandscape = winW > winH;
+  // My own id — you never watch yourself in the feed, and viewing lives means I'm
+  // not broadcasting, so any of MY "live" rows here are ghosts to reap. Held in a
+  // ref so load()'s stable closure reads the current value without re-subscribing.
+  const { profile } = useProfile();
+  const myIdRef = useRef<string | undefined>(undefined);
+  myIdRef.current = profile?.id;
   // Opened from Laybell TV with a specific stream to start on. Consumed once.
   const { streamId } = useLocalSearchParams<{ streamId?: string }>();
   const startStreamId = useRef<string | null>(streamId ?? null);
@@ -288,7 +346,13 @@ export default function LiveScreen() {
 
   const load = useCallback(async () => {
     try {
-      const rows = await fetchLiveStreams();
+      const mine = myIdRef.current;
+      // Reap my own ghost 'live' rows — I'm here watching, so I'm not broadcasting;
+      // any of mine are leftovers from a killed session. Fire-and-forget.
+      if (mine) endMyStaleLiveStreams(mine).catch(() => {});
+      // Never show me my own stream in the watch feed (that's what Go Live is for),
+      // so a ghost can never turn into "watching myself on a black screen".
+      const rows = (await fetchLiveStreams()).filter((r) => !mine || r.user_id !== mine);
       setStreams((prev) => {
         // Keep the card the viewer is actually watching in the list after its
         // broadcast ends (it drops out of the live-only fetch). Re-inserting at
@@ -377,6 +441,10 @@ export default function LiveScreen() {
               snapToAlignment="start"
               decelerationRate="fast"
               showsVerticalScrollIndicator={false}
+              // The chat input + send button live inside these cells. Without this,
+              // a tap on the send button while the keyboard is up is swallowed just
+              // to dismiss the keyboard (needing a second tap to actually post).
+              keyboardShouldPersistTaps="handled"
               getItemLayout={(_, i) => ({ length: pageH, offset: pageH * i, index: i })}
               initialScrollIndex={Math.max(0, streams.findIndex((s) => s.id === visibleId))}
               onViewableItemsChanged={onViewableItemsChanged}
@@ -413,14 +481,20 @@ export default function LiveScreen() {
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </TouchableOpacity>
 
-        {/* Floating actions: Studio hub + Go Live */}
-        <View style={[styles.fabCol, { top: insets.top + 12 }]}>
+        {/* Floating actions: Studio hub + Go Live. The side Go Live button is
+            hidden when nobody is live — the empty state already shows the big
+            orange Go Live CTA, so a second one here would be redundant. When
+            streams ARE live it stays in this spot as a red, stacked Go/Live
+            button. */}
+        <View style={[styles.fabCol, { top: insets.top + 12 }, screenLandscape && styles.fabColLandscape]}>
           <TouchableOpacity style={styles.fab} onPress={() => router.push('/studio')} activeOpacity={0.85}>
-            <Ionicons name="headset-outline" size={20} color="#fff" />
+            <Ionicons name="mic-outline" size={20} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.fab} onPress={() => router.push('/live/go-live')} activeOpacity={0.85}>
-            <Ionicons name="radio-outline" size={20} color="#fff" />
-          </TouchableOpacity>
+          {streams.length > 0 && (
+            <TouchableOpacity style={styles.goLiveFab} onPress={() => router.push('/live/go-live')} activeOpacity={0.85}>
+              <Text style={styles.goLiveFabText} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{t('live.goLive')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </SwipeBackPager>
@@ -433,10 +507,15 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   fallbackText: { color: 'rgba(255,255,255,0.7)', fontSize: 13, textAlign: 'center', paddingHorizontal: 40 },
   // Starts right of the floating back button (14 + 40 + 8).
   topRow: { position: 'absolute', left: 62, right: 14, flexDirection: 'row', alignItems: 'center', gap: 8, zIndex: 5 },
-  hostRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 96 },
+  // flex:1 so it fills the space left of the LIVE/viewers/Donate pills. (The old
+  // marginRight:96 double-reserved space next to those in-flow pills and squeezed
+  // the name column to ~0 width — that's why the username slot looked empty.)
+  hostRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
   hostAvatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   hostInitial: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  hostName: { color: '#fff', fontSize: 14, fontWeight: '700', flexShrink: 1, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
+  hostNameCol: { flex: 1 },
+  hostName: { color: '#fff', fontSize: 14, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
+  hostHandle: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
   livePill: { backgroundColor: '#F43F5E', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   livePillText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
   viewerPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
@@ -453,11 +532,45 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   endedSub: { color: 'rgba(255,255,255,0.6)', fontSize: 13, textAlign: 'center', paddingHorizontal: 40 },
   title: { color: '#fff', fontSize: 14, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  input: { flex: 1, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 10 : 7, fontSize: 14 },
-  sendBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
+  // Dark translucent backing + light hairline edge + soft shadow so the input and
+  // send button stay clearly present over BRIGHT parts of a broadcast (a near-white
+  // translucent pill used to vanish on light backgrounds).
+  input: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 20, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 10 : 7, fontSize: 14,
+    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 5, shadowOffset: { width: 0, height: 2 },
+  },
+  sendBtn: {
+    width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 4,
+  },
+  // Postable draft → the button lights up solid white (with a black arrow) so it
+  // reads as "ready to send"; a faint dark ring keeps it defined on light video.
+  sendBtnActive: { backgroundColor: '#fff', borderColor: 'rgba(0,0,0,0.18)' },
+  // Landscape: pull the send button inboard so its right edge lines up with the
+  // LEFT edge of the fab column (right:14 + 40px button = 54px from the edge; the
+  // button otherwise sits at 14px). This keeps it clear of the side camera bar
+  // when the input row slides up with the keyboard.
+  sendBtnLandscape: { marginRight: 40 },
   backFab: { position: 'absolute', left: 14, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.25)', zIndex: 6 },
-  fabCol: { position: 'absolute', right: 14, gap: 10, zIndex: 6, marginTop: 52 },
+  fabCol: { position: 'absolute', right: 14, gap: 10, zIndex: 6, marginTop: 52, alignItems: 'center' },
+  // Landscape: sit just under the top pills and tighten the stack so both buttons
+  // clear the side camera bar/notch instead of running down into it.
+  fabColLandscape: { marginTop: 34, gap: 8 },
   fab: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.25)' },
+  // Go Live button — same circular 40×40 footprint as the mic fab above it: a
+  // white circle with black text. The label wraps to two stacked lines ("Go" over
+  // "Live" in English); the side padding forces that wrap and adjustsFontSizeToFit
+  // shrinks longer localized labels so they still fit the circle.
+  goLiveFab: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.12)',
+  },
+  goLiveFabText: { color: '#000', fontSize: 10, fontWeight: '800', textAlign: 'center', lineHeight: 12, letterSpacing: 0.2 },
   skeletonWrap: { flex: 1, justifyContent: 'flex-end', padding: 18, gap: 12 },
   skeletonTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 36 },

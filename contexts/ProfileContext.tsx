@@ -2,6 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { supabase } from '../lib/supabase';
 import { touchLogin, evaluateBadges, onBadgeTierChange, type Tier } from '../lib/badges';
 import { upsertOwnIdentifiers, loadOwnPhone } from '../lib/identifiers';
+import { endMyStaleLiveStreams } from '../lib/live';
+
+// Run-once-per-process guard for the ghost-live reap. It must fire only at the
+// FIRST profile load (cold start) — when the user provably isn't broadcasting yet
+// (Go Live is a pushed screen reached only after launch). Later refreshes (token
+// refresh, badge-tier change) skip it, so it can never end a live broadcast.
+let reapedGhostLives = false;
 
 // Single source of truth for the CURRENT user's own profile (avatar, name, …).
 // Before this existed, every screen fetched `profiles` independently, so changing
@@ -51,6 +58,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setProfile(null); setLoading(false); return; }
+    // Cold start only (guarded): reap any of my own leftover "live" rows from a
+    // session that was killed mid-broadcast, so I never reopen the app as a ghost
+    // livestream. Fire-and-forget — never blocks profile load.
+    if (!reapedGhostLives) {
+      reapedGhostLives = true;
+      endMyStaleLiveStreams(user.id).catch(() => {});
+    }
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     setProfile((data as CurrentProfile) ?? null);
     setLoading(false);

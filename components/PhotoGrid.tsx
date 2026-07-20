@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useMemo, useRef, memo, forwardRef, useImperativeHandle } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, ActivityIndicator, Platform,
+  View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator,
 } from 'react-native';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image as ExpoImage } from 'expo-image';
 import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
@@ -13,9 +14,9 @@ import { resolveAssetUri, evictAssetUri } from '../lib/assetInfoCache';
 
 const NUM_COLS = 4;
 const GAP = 2;
+const HALF_GAP = GAP / 2;           // per-cell inset → GAP between neighbours, HALF_GAP at edges
 const SCREEN_W = Dimensions.get('window').width;
-const CELL = (SCREEN_W - GAP * (NUM_COLS - 1)) / NUM_COLS;
-const ROW_H = CELL + GAP; // fixed row geometry (contentContainer gap) → getItemLayout
+const COL_W = SCREEN_W / NUM_COLS;  // one square slot; the thumb sits inside it inset by HALF_GAP
 const PAGE = 60;
 
 // Session cache of loaded pages, keyed by grid flavor. The grid UNMOUNTS every
@@ -47,12 +48,13 @@ function formatDur(s: number) {
 // pick, so the collapsing preview re-expands and shows the chosen media).
 export type PhotoGridHandle = { scrollToTop: () => void };
 
-// A single memoized grid cell. Pulling it out of an inline renderItem (and
-// keeping its props primitives + STABLE callbacks) is what keeps deep scrolling
-// smooth: a page append or a `loading`/`resolvingId` toggle re-renders the grid,
-// but only the handful of cells whose own props changed actually re-render —
-// instead of every mounted thumbnail decoding again. onSelect/onRemove come in
-// as stable refs from PhotoGrid so this memo isn't defeated on every render.
+// A single memoized grid cell. FlashList RECYCLES the underlying view across
+// items as you scroll (like a native UICollectionView) instead of mounting and
+// destroying it — that's what makes deep scrolling camera-roll smooth. The cell
+// holds NO internal state: everything it shows comes from props derived from
+// `item`, and expo-image's recyclingKey={item.id} resets the picture when the
+// view is reused for a different asset. onSelect/onRemove arrive as stable refs
+// so the memo isn't defeated on every parent render.
 const GridCell = memo(function GridCell({
   item, selected, selIndex, isVideo, numbered, isResolving, onSelect, onRemove, styles, spinnerColor,
 }: {
@@ -68,34 +70,36 @@ const GridCell = memo(function GridCell({
   spinnerColor: string;
 }) {
   return (
-    <TouchableOpacity
-      style={styles.cell}
-      activeOpacity={0.85}
-      onPress={() => (selected ? onRemove?.(item.id) : onSelect(item))}
-    >
-      <ExpoImage
-        source={{ uri: item.uri }}
-        style={styles.thumb}
-        contentFit="cover"
-        recyclingKey={item.id}
-        cachePolicy="memory-disk"
-        transition={120}
-      />
-      {isVideo && item.duration > 0 && (
-        <Text style={styles.dur}>{formatDur(item.duration)}</Text>
-      )}
-      {selected && <View style={styles.selOverlay} pointerEvents="none" />}
-      {selected && (
-        <View style={styles.selBadge}>
-          {numbered
-            ? <Text style={styles.selBadgeText}>{selIndex + 1}</Text>
-            : <Ionicons name="checkmark" size={14} color="#fff" />}
-        </View>
-      )}
-      {isResolving && (
-        <View style={styles.resolving}><ActivityIndicator color={spinnerColor} /></View>
-      )}
-    </TouchableOpacity>
+    <View style={styles.slot}>
+      <TouchableOpacity
+        style={styles.cell}
+        activeOpacity={0.85}
+        onPress={() => (selected ? onRemove?.(item.id) : onSelect(item))}
+      >
+        <ExpoImage
+          source={{ uri: item.uri }}
+          style={styles.thumb}
+          contentFit="cover"
+          recyclingKey={item.id}
+          cachePolicy="memory-disk"
+          transition={120}
+        />
+        {isVideo && item.duration > 0 && (
+          <Text style={styles.dur}>{formatDur(item.duration)}</Text>
+        )}
+        {selected && <View style={styles.selOverlay} pointerEvents="none" />}
+        {selected && (
+          <View style={styles.selBadge}>
+            {numbered
+              ? <Text style={styles.selBadgeText}>{selIndex + 1}</Text>
+              : <Ionicons name="checkmark" size={14} color="#fff" />}
+          </View>
+        )}
+        {isResolving && (
+          <View style={styles.resolving}><ActivityIndicator color={spinnerColor} /></View>
+        )}
+      </TouchableOpacity>
+    </View>
   );
 });
 
@@ -116,10 +120,11 @@ type PhotoGridProps = {
 };
 
 // Device camera-roll grid (Instagram-style) showing photos AND videos together.
-// Thumbnails render the asset's ph:// URI via expo-image (fast, poster frames for
-// videos); the chosen asset is resolved to a file:// path only on tap. Selected
-// items show a check (single) or an order number (slideshow), and tapping a
-// selected item removes it (onRemove).
+// Built on FlashList v2 (view recycling) so it scrolls like the native camera
+// roll. Thumbnails render the asset's ph:// URI via expo-image (fast, poster
+// frames for videos); the chosen asset is resolved to a file:// path only on tap.
+// Selected items show a check (single) or an order number (slideshow), and
+// tapping a selected item removes it (onRemove).
 const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid(
   { onPick, onRemove, onScroll, onScrollActive, selectedIds = [], numbered = false, videosOnly = false },
   ref,
@@ -136,7 +141,7 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
   const [loading, setLoading] = useState(false);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const loadingRef = useRef(false);
-  const flatListRef = useRef<FlatList>(null);
+  const listRef = useRef<FlashListRef<any>>(null);
   // Persistent id set so page appends dedupe in O(new-assets) instead of
   // rebuilding a Set over the whole (growing) list every page — that O(N) merge
   // is a big part of why the grid hitched more the deeper you scrolled.
@@ -147,7 +152,7 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
   const resolvingRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
-    scrollToTop: () => flatListRef.current?.scrollToOffset({ offset: 0, animated: true }),
+    scrollToTop: () => listRef.current?.scrollToOffset({ offset: 0, animated: true }),
   }), []);
 
   // Stable across renders (read live values through refs) — passed to every cell.
@@ -189,10 +194,9 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
         after,
       });
       // Dedupe by asset id: expo-media-library can return the SAME asset across
-      // pages (iCloud / edited / shared photos), which would give the numColumns
-      // FlatList two cells with the same key → a React "two children with the same
-      // key" warning. A persistent seenIdsRef makes each append O(new assets); a
-      // fresh load (no cursor) resets it so page 1 re-seeds from scratch.
+      // pages (iCloud / edited / shared photos), which would give two cells the
+      // same key. A persistent seenIdsRef makes each append O(new assets); a fresh
+      // load (no cursor) resets it so page 1 re-seeds from scratch.
       setAssets(prev => {
         const fresh = !after;
         const base = fresh ? [] : prev;
@@ -257,22 +261,52 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
   }
 
   // Rebuilt only when the asset list actually changes — NOT on every render (a
-  // scroll-driven parent re-render, a loading/resolving toggle), so the FlatList
+  // scroll-driven parent re-render, a loading/resolving toggle), so FlashList
   // isn't handed a fresh data array (and forced to re-diff the whole list) each
-  // time. The spread was also O(N) on every render as the list grew.
+  // time.
   const data = useMemo<any[]>(
     () => (videosOnly ? assets : [{ id: '__camera__' } as any, ...assets]),
     [assets, videosOnly],
   );
 
+  const renderItem = useCallback(({ item }: { item: any }) => {
+    if (item.id === '__camera__') {
+      return (
+        <View style={styles.slot}>
+          <TouchableOpacity style={[styles.cell, styles.cameraCell]} onPress={openCamera}>
+            <Ionicons name="camera" size={26} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    const selIndex = selectedIds.indexOf(item.id);
+    return (
+      <GridCell
+        item={item}
+        selected={selIndex >= 0}
+        selIndex={selIndex}
+        isVideo={item.mediaType === MediaLibrary.MediaType.video}
+        numbered={numbered}
+        isResolving={resolvingId === item.id}
+        onSelect={handleSelect}
+        onRemove={handleRemove}
+        styles={styles}
+        spinnerColor={colors.text}
+      />
+    );
+  }, [selectedIds, numbered, resolvingId, handleSelect, handleRemove, styles, colors.text]);
+
   return (
-    <FlatList
-      ref={flatListRef}
+    <FlashList
+      ref={listRef}
       data={data}
       keyExtractor={(item) => item.id}
+      // Separate recycle pools: the camera tile must never be reused as a thumb
+      // cell (different subtree) and vice-versa.
+      getItemType={(item) => (item.id === '__camera__' ? 'camera' : 'thumb')}
       numColumns={NUM_COLS}
-      columnWrapperStyle={{ gap: GAP }}
-      contentContainerStyle={{ gap: GAP }}
+      renderItem={renderItem}
+      contentContainerStyle={styles.gridContent}
       onScroll={onScroll}
       scrollEventThrottle={16}
       onScrollBeginDrag={() => onScrollActive?.(true)}
@@ -280,39 +314,12 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
       onMomentumScrollEnd={() => onScrollActive?.(false)}
       onEndReached={() => { if (hasNext && endCursor && !loadingRef.current) loadPage(endCursor); }}
       onEndReachedThreshold={0.6}
-      // Fixed-geometry virtualization: paint a full screen of cells in the first
-      // pass (default was 10 items ≈ 2.5 rows back-filling batch by batch) and
-      // skip async layout measurement entirely.
-      getItemLayout={(_, index) => ({ length: ROW_H, offset: ROW_H * Math.floor(index / NUM_COLS), index })}
-      initialNumToRender={NUM_COLS * 8}
-      maxToRenderPerBatch={NUM_COLS * 4}
-      windowSize={7}
-      removeClippedSubviews={Platform.OS === 'android'}
+      // Render a couple of extra screens of rows ahead of the viewport so a fast
+      // fling doesn't outrun decoding. Cheap with recycling — the view pool stays
+      // bounded regardless.
+      drawDistance={COL_W * 6}
+      showsVerticalScrollIndicator={false}
       ListFooterComponent={loading ? <ActivityIndicator color={colors.primary} style={{ margin: SPACING.md }} /> : null}
-      renderItem={({ item }) => {
-        if (item.id === '__camera__') {
-          return (
-            <TouchableOpacity style={[styles.cell, styles.cameraCell]} onPress={openCamera}>
-              <Ionicons name="camera" size={26} color={colors.text} />
-            </TouchableOpacity>
-          );
-        }
-        const selIndex = selectedIds.indexOf(item.id);
-        return (
-          <GridCell
-            item={item}
-            selected={selIndex >= 0}
-            selIndex={selIndex}
-            isVideo={item.mediaType === MediaLibrary.MediaType.video}
-            numbered={numbered}
-            isResolving={resolvingId === item.id}
-            onSelect={handleSelect}
-            onRemove={handleRemove}
-            styles={styles}
-            spinnerColor={colors.text}
-          />
-        );
-      }}
     />
   );
 });
@@ -320,7 +327,13 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
 export default PhotoGrid;
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  cell: { width: CELL, height: CELL, backgroundColor: colors.surfaceLight },
+  gridContent: { paddingBottom: SPACING.md },
+  // Each item is one square slot; the padding is what creates the grid gap
+  // (HALF_GAP per side → GAP between neighbours). Spacing lives here, per cell,
+  // rather than on a row wrapper or the content container — FlashList has no
+  // columnWrapperStyle and per-cell insets recycle cleanly.
+  slot: { width: COL_W, height: COL_W, padding: HALF_GAP },
+  cell: { flex: 1, backgroundColor: colors.surfaceLight, overflow: 'hidden' },
   cameraCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceElevated },
   thumb: { width: '100%', height: '100%' },
   dur: {

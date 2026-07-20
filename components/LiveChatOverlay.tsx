@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 import type { LiveChatMessage } from '../lib/live';
 import { badgeRingColors, tierRank, type Tier } from '../lib/badges';
+import MentionText from './MentionText';
 
 // Live-chat overlay shared by the viewer feed (app/live/index.tsx) and the
 // broadcaster screen (app/live/go-live.tsx). Built for busy rooms:
@@ -15,7 +16,12 @@ import { badgeRingColors, tierRank, type Tier } from '../lib/badges';
 // badge (or an unrecognized tier from an older/foreign payload — tierRank 0)
 // keeps the default white from the base style.
 export function nameColor(tier: Tier | null | undefined) {
-  return tierRank(tier) > 0 ? { color: badgeRingColors(tier)[0] } : null;
+  if (tierRank(tier) <= 0) return null;
+  // Gold's badge color (#F59E0B, amber-500) reads as bronze against the dark live
+  // overlay — use a brighter, unmistakably-gold tone for names here so a gold host
+  // never looks like a bronze one.
+  if (tier === 'gold') return { color: '#FFC72C' };
+  return { color: badgeRingColors(tier)[0] };
 }
 
 const KEEP = 80;      // scrollback cap — plenty to read back, flat memory
@@ -56,19 +62,48 @@ export function useBufferedChat() {
   return { messages, push, clear };
 }
 
-const Row = memo(function Row({ m }: { m: LiveChatMessage }) {
+const Row = memo(function Row({ m, onPressName, onPressComment }: {
+  m: LiveChatMessage;
+  onPressName?: (m: LiveChatMessage) => void;
+  onPressComment?: (m: LiveChatMessage) => void;
+}) {
+  // Press feedback for the name: instead of the boxy native highlight, we suppress
+  // that and briefly underline the name while it's held (a clean, link-style cue
+  // for which name was tapped).
+  const [pressed, setPressed] = useState(false);
   return (
-    <Text style={styles.line} numberOfLines={3}>
-      <Text style={[styles.name, nameColor(m.tier)]}>{m.name}  </Text>
-      {m.text}
+    // Tapping the comment body fires onPressComment; tapping the name (a nested
+    // Text, so it wins the touch) fires onPressName; @mentions inside the text are
+    // their own tappable blue spans (MentionText → open that user's profile).
+    <Text
+      style={styles.line}
+      numberOfLines={3}
+      suppressHighlighting
+      onPress={onPressComment ? () => onPressComment(m) : undefined}
+    >
+      <Text
+        style={[styles.name, nameColor(m.tier), pressed && styles.namePressed]}
+        suppressHighlighting
+        onPressIn={onPressName ? () => setPressed(true) : undefined}
+        onPressOut={onPressName ? () => setPressed(false) : undefined}
+        onPress={onPressName ? () => onPressName(m) : undefined}
+      >
+        {m.name}
+      </Text>
+      {'  '}
+      <MentionText text={m.text} mentionStyle={styles.mention} />
     </Text>
   );
 });
 
-export default function LiveChatOverlay({ messages, maxHeight = 210, style }: {
+export default function LiveChatOverlay({ messages, maxHeight = 210, style, onPressName, onPressComment }: {
   messages: LiveChatMessage[];
   maxHeight?: number;
   style?: StyleProp<ViewStyle>;
+  // Tap a name / comment → the host or viewer screen decides (open profile,
+  // prefill a reply, …). Both receive the full message.
+  onPressName?: (m: LiveChatMessage) => void;
+  onPressComment?: (m: LiveChatMessage) => void;
 }) {
   // Inverted list ⇒ data index 0 renders at the visual bottom, so feed newest-first.
   const data = useMemo(() => [...messages].reverse(), [messages]);
@@ -77,7 +112,10 @@ export default function LiveChatOverlay({ messages, maxHeight = 210, style }: {
       data={data}
       inverted
       keyExtractor={(m) => m.id}
-      renderItem={({ item }) => <Row m={item} />}
+      // Let a tap on a chat name register while the keyboard is up instead of
+      // being swallowed just to dismiss it.
+      keyboardShouldPersistTaps="handled"
+      renderItem={({ item }) => <Row m={item} onPressName={onPressName} onPressComment={onPressComment} />}
       // flexGrow 0 + maxHeight: hugs its content while the room is quiet,
       // stops growing (and scrolls) once chat fills the strip.
       style={[{ maxHeight, flexGrow: 0 }, style]}
@@ -92,7 +130,11 @@ export default function LiveChatOverlay({ messages, maxHeight = 210, style }: {
 }
 
 const styles = StyleSheet.create({
-  content: { gap: 5, paddingVertical: 2 },
-  line: { color: 'rgba(255,255,255,0.92)', fontSize: 13, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
+  content: { gap: 6, paddingVertical: 2 },
+  line: { color: 'rgba(255,255,255,0.92)', fontSize: 15, lineHeight: 20, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
   name: { fontWeight: '700', color: '#fff' },
+  namePressed: { textDecorationLine: 'underline' },
+  // @mentions inside a chat message — a bright, clearly-blue tappable span that
+  // stays legible over the dark broadcast.
+  mention: { color: '#4DA6FF', fontWeight: '600' },
 });

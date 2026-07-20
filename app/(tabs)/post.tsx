@@ -153,7 +153,11 @@ export default function PostScreen() {
   const [trimStart, setTrimStart] = useState(0); // seconds — start of the chosen window
   const cropperRef = useRef<MediaCropperHandle>(null);
   const cropRef = useRef<CropRect | null>(null);
-  const scrollY = useRef(new Animated.Value(0)).current;
+  // Preview height is animated with a single spring on collapse/expand (see the
+  // threshold effect below) — deliberately NOT bound frame-by-frame to the grid
+  // scroll. The old scroll-linked interpolation resized the grid container every
+  // frame, which on iOS made the grid stutter and flash big blank rows.
+  const previewH = useRef(new Animated.Value(PREVIEW_MAX_H)).current;
   // Lets a pick scroll the camera-roll grid back to the top so the collapsing
   // preview re-expands and shows the media that was just tapped.
   const photoGridRef = useRef<PhotoGridHandle>(null);
@@ -313,25 +317,37 @@ export default function PostScreen() {
   let frameH = SCREEN_W / previewAspect;
   if (frameH > PREVIEW_MAX_H) { frameH = PREVIEW_MAX_H; frameW = PREVIEW_MAX_H * previewAspect; }
 
-  // Collapsing preview — shrinks as the gallery scrolls down so more photos show.
+  // Collapsing preview — shrinks once the gallery is scrolled so more photos show.
   const fullPreviewH = frameH + SPACING.xs * 2;
   const collapsedPreviewH = 96;
-  const animatedPreviewH = scrollY.interpolate({
-    inputRange: [0, Math.max(1, fullPreviewH - collapsedPreviewH)],
-    outputRange: [fullPreviewH, collapsedPreviewH],
-    extrapolate: 'clamp',
-  });
 
-  // Flip previewCollapsed once the user has scrolled the gallery down a bit, so
-  // the tap-to-expand overlay only exists when the preview is actually shrunk
-  // (and never blocks the cropper at the top). Only toggles on threshold crossings.
+  // Animate the preview height with a single spring whenever the collapse state
+  // (or the expanded target) changes — exactly two height changes per scroll, not
+  // one per frame. The old approach interpolated the live scroll offset straight
+  // into this height with useNativeDriver:false, so every scroll frame resized the
+  // grid container underneath; on iOS that makes a virtualized grid jump and flash
+  // big blank rows. Keeping the grid a stable size while browsing is what makes
+  // scrolling smooth.
   useEffect(() => {
-    const id = scrollY.addListener(({ value }) => {
-      const collapsed = value > 50;
-      setPreviewCollapsed(prev => (prev === collapsed ? prev : collapsed));
+    Animated.timing(previewH, {
+      toValue: previewCollapsed ? collapsedPreviewH : fullPreviewH,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [previewCollapsed, fullPreviewH, collapsedPreviewH, previewH]);
+
+  // Cheap scroll handler: only flips the collapse threshold (a guarded setState,
+  // so it no-ops on every frame except the two crossings). No per-frame Animated
+  // or layout work runs on the JS thread here — that's what frees the grid to keep
+  // up and stops the blank-cell flashing.
+  const onGridScroll = useCallback((e: any) => {
+    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    setPreviewCollapsed(prev => {
+      const next = y > 50;
+      return prev === next ? prev : next;
     });
-    return () => scrollY.removeListener(id);
-  }, [scrollY]);
+  }, []);
 
   const showGenre = postType !== 'audio' || audioKind === 'audio';
   const hasMedia = postType === 'audio' ? !!audioFile : postType === 'slideshow' ? slides.length > 0 : !!media;
@@ -1458,7 +1474,7 @@ export default function PostScreen() {
       ) : (
         <>
           {/* Collapsing preview — single media cropper OR the slideshow cover */}
-          <Animated.View style={[styles.previewArea, { height: animatedPreviewH }]}>
+          <Animated.View style={[styles.previewArea, { height: previewH }]}>
             {slideshowMode ? (
               lastSlide ? (
                 lastSlide.type === 'image' ? (
@@ -1569,7 +1585,7 @@ export default function PostScreen() {
                 numbered={slideshowMode}
                 onPick={slideshowMode ? addSlideFromGrid : onPickMedia}
                 onRemove={slideshowMode ? removeSlideById : clearMedia}
-                onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
+                onScroll={onGridScroll}
                 // Hold the tab swipe off only while actively scrolling the grid;
                 // restore it (to swipeOn) once the scroll settles.
                 onScrollActive={(active) => setTabSwipe(active ? false : swipeOn)}

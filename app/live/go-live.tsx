@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Share, ActivityIndicator, Platform,
 } from 'react-native';
@@ -14,8 +14,9 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import {
-  createLiveStream, discardLiveStream, endLiveStream, isInputConnected, joinLiveChannel,
-  markLive, type LiveOrientation, type LiveStream, type LiveStreamKeys, type LiveDonationEvent,
+  createLiveStream, discardLiveStream, endLiveStream, endMyStaleLiveStreams, isInputConnected,
+  joinLiveChannel, markLive, type LiveOrientation, type LiveStream, type LiveStreamKeys,
+  type LiveDonationEvent, type LiveChatMessage,
 } from '../../lib/live';
 import { WhipPublisher, getRTCView, webrtcAvailable } from '../../lib/whip';
 import { rtmpAvailable, getRtmpView, type RtmpPublisherHandle } from '../../lib/rtmp';
@@ -128,6 +129,17 @@ export default function GoLiveScreen() {
 
   useEffect(() => () => { cleanup(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Opening Go Live means I'm not currently broadcasting, so reap any leftover
+  // ghost "live" rows from a previous session BEFORE I start a new one. Safe: it
+  // only ends rows that already exist, so the stream prepare() creates next is
+  // never caught by it. Runs once, when my id is first known.
+  const reapedRef = useRef(false);
+  useEffect(() => {
+    if (reapedRef.current || !profile?.id) return;
+    reapedRef.current = true;
+    endMyStaleLiveStreams(profile.id).catch(() => {});
+  }, [profile?.id]);
+
   async function cleanup(ended: boolean) {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     channelRef.current?.leave();
@@ -213,6 +225,7 @@ export default function GoLiveScreen() {
           streamId: stream.id,
           userId: profile.id,
           name: profile.display_name || profile.username || '',
+          username: profile.username ?? null,
           avatarUrl: profile.avatar_url ?? null,
           tier: displayedTier(profile),
           isHost: true,
@@ -243,6 +256,12 @@ export default function GoLiveScreen() {
   }
 
   const live = phase === 'live';
+
+  // Host can tap a viewer's name/comment to view their profile. It's pushed on
+  // top of the broadcast, which keeps running underneath (cleanup only ends the
+  // stream on unmount), so hosting isn't interrupted. There's no reply bar on
+  // this screen, so a comment tap opens the profile too.
+  const openChatProfile = useCallback((m: LiveChatMessage) => router.push(`/profile/${m.userId}`), [router]);
 
   return (
     <SwipeBackPager scrollEnabled={!live}>
@@ -418,10 +437,18 @@ export default function GoLiveScreen() {
             </View>
           )}
 
-          {live && <LiveDonationAlerts event={donationEvent} />}
+          {/* Host mounts this inside `body` (already below the header + safe area),
+              so a small offset keeps the alert up near the top instead of the
+              double-inset middle. The viewer keeps the default full-screen offset. */}
+          {live && <LiveDonationAlerts event={donationEvent} topOffset={8} />}
           {live && (
             <View style={styles.previewControls}>
-              <LiveChatOverlay messages={chat} style={styles.hostChat} />
+              <LiveChatOverlay
+                messages={chat}
+                style={styles.hostChat}
+                onPressName={openChatProfile}
+                onPressComment={openChatProfile}
+              />
               <TouchableOpacity onPress={() => setConfirmEnd(true)} activeOpacity={0.85} style={styles.endBtn}>
                 <Text style={styles.endBtnText}>{t('live.end')}</Text>
               </TouchableOpacity>

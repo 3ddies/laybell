@@ -13,15 +13,24 @@ import type { LiveDonationEvent } from '../lib/live';
 // The Twitch-style donation alert. Mounted on BOTH the viewer and the host's
 // go-live screen; when a donation broadcast lands (see joinLiveChannel), it
 // slides a gradient card in over the stream with the donor, amount, and message
-// — with emphasis (bounce-in, gift burst, haptic), holds ~5s, then rolls to the
-// next queued donation so a flurry of tips plays one-at-a-time instead of piling.
+// — with emphasis (bounce-in, gift burst, haptic), holds 10s, then rolls to the
+// next queued donation so a flurry of tips plays one-at-a-time (each donor gets
+// their own full 10s, in the order they were processed) instead of piling up.
 //
 // Fed the LATEST donation via `event`; it de-dupes by id and manages its own
 // queue, so the parent just pipes channel donations straight in.
 
-const HOLD_MS = 5000;
+// Each donation holds at least this long before the next queued one plays.
+const HOLD_MS = 10000;
 
-export default function LiveDonationAlerts({ event }: { event: LiveDonationEvent | null }) {
+export default function LiveDonationAlerts({ event, topOffset }: {
+  event: LiveDonationEvent | null;
+  // Distance from the top of this component's container to the card. Defaults to
+  // clearing the status bar + top overlay (viewer, which mounts this full-screen).
+  // The host mounts it inside a container that already sits below the header +
+  // safe area, so it passes a small value to keep the banner up near the top.
+  topOffset?: number;
+}) {
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -74,7 +83,7 @@ export default function LiveDonationAlerts({ event }: { event: LiveDonationEvent
   const shimmerX = shimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 220] });
 
   return (
-    <View style={[styles.wrap, { paddingTop: insets.top + 56 }]} pointerEvents="none">
+    <View style={[styles.wrap, { paddingTop: topOffset ?? insets.top + 56 }]} pointerEvents="none">
       <Animated.View
         style={[
           styles.card,

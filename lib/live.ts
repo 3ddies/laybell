@@ -49,6 +49,9 @@ export type LiveChatMessage = {
   id: string;
   userId: string;
   name: string;
+  // Sender's @handle — lets a tapped reply insert a real, resolvable @username
+  // mention (older clients omit it → falls back to the display name).
+  username?: string | null;
   avatarUrl: string | null;
   text: string;
   at: number;
@@ -214,6 +217,41 @@ export async function discardLiveStream(streamId: string, inputUid: string): Pro
     .catch(() => { /* best effort */ });
 }
 
+/**
+ * Reaps THIS user's "ghost" streams — rows still marked live/idle when the user
+ * is provably NOT broadcasting. They happen when a broadcast's cleanup never runs
+ * (app force-killed or crashed mid-stream), leaving a status='live' row that has
+ * no media behind it — so it lingers in the live feed forever as an un-playable
+ * black screen, and the host even sees themselves "live". Call this whenever we
+ * KNOW the user isn't broadcasting: cold app start, opening Go Live, opening the
+ * live feed.
+ *
+ * Crucially it ends ONLY the specific rows it just read (`.in('id', ids)`), never
+ * a blanket "all my non-ended rows" update — so a brand-new broadcast created a
+ * moment later (racing this call) can never be reaped by it. Returns the count.
+ */
+export async function endMyStaleLiveStreams(userId: string): Promise<number> {
+  if (!userId) return 0;
+  const { data } = await supabase
+    .from('live_streams')
+    .select('id, cf_input_uid')
+    .eq('user_id', userId)
+    .neq('status', 'ended');
+  const rows = (data ?? []) as { id: string; cf_input_uid: string | null }[];
+  if (!rows.length) return 0;
+  await supabase
+    .from('live_streams')
+    .update({ status: 'ended', ended_at: new Date().toISOString() })
+    .in('id', rows.map((r) => r.id));
+  // Best-effort Cloudflare input teardown so ghosts don't linger as paid inputs.
+  for (const r of rows) {
+    if (r.cf_input_uid) {
+      supabase.functions.invoke('live-input', { body: { action: 'delete', inputUid: r.cf_input_uid } }).catch(() => {});
+    }
+  }
+  return rows.length;
+}
+
 /** Asks Cloudflare whether an encoder is connected to the input (RTMP mode). */
 export async function isInputConnected(inputUid: string): Promise<boolean> {
   const { data } = await supabase.functions.invoke('live-input', {
@@ -231,6 +269,7 @@ export function joinLiveChannel(opts: {
   streamId: string;
   userId: string;
   name: string;
+  username?: string | null;
   avatarUrl: string | null;
   // The joiner's displayed badge tier — rides along on every chat message they
   // send so other viewers can tier-color their name.
@@ -266,6 +305,7 @@ export function joinLiveChannel(opts: {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         userId: opts.userId,
         name: opts.name,
+        username: opts.username ?? null,
         avatarUrl: opts.avatarUrl,
         text: text.slice(0, 300),
         at: Date.now(),
