@@ -35,6 +35,9 @@ export type LiveStream = {
   playback_url: string;
   status: 'idle' | 'live' | 'ended';
   started_at: string | null;
+  // Last "I'm still broadcasting" ping (updated ~every 15s while live). Absent on
+  // pre-migration DBs / older clients → treated as always-fresh (never hidden).
+  last_heartbeat_at?: string | null;
   viewer_peak: number;
   profile?: LiveProfile;
 };
@@ -95,6 +98,25 @@ async function attachProfiles<T extends { user_id: string }>(rows: T[]): Promise
 }
 
 const LIVE_COLS = 'id, user_id, title, mode, orientation, cf_input_uid, playback_url, status, started_at, viewer_peak';
+const LIVE_COLS_HB = `${LIVE_COLS}, last_heartbeat_at`;
+
+// A live host pings last_heartbeat_at ~every 15s. If the newest ping is older
+// than this, their app is gone (killed / crashed / long-backgrounded, which stops
+// the camera anyway) — a ghost, so hide it. Generous enough (3 missed pings) that
+// a brief network blip never flickers a real stream out.
+const STALE_LIVE_MS = 45_000;
+
+// Drop ghost lives: any row whose heartbeat has gone stale. A NULL heartbeat means
+// a pre-migration DB or an older client that can't ping — those are left visible
+// (we can't tell, so we don't hide a possibly-real stream).
+function dropStaleLives<T extends { last_heartbeat_at?: string | null }>(rows: T[]): T[] {
+  const cutoff = Date.now() - STALE_LIVE_MS;
+  return rows.filter((r) => {
+    if (r.last_heartbeat_at == null) return true;
+    const t = new Date(r.last_heartbeat_at).getTime();
+    return Number.isNaN(t) || t >= cutoff;
+  });
+}
 
 /**
  * A frame of the live from Cloudflare's thumbnail endpoint
@@ -119,14 +141,20 @@ export function liveThumbnailUrl(l: Pick<LiveStream, 'playback_url' | 'cf_input_
  * orientation column isn't migrated yet (the filter no-ops → all lives shown).
  */
 export async function fetchLiveStreams(horizontalOnly = false): Promise<LiveStream[]> {
-  let q = supabase
-    .from('live_streams')
-    .select(LIVE_COLS)
-    .eq('status', 'live')
-    .order('started_at', { ascending: false })
-    .limit(50);
-  if (horizontalOnly) q = q.in('orientation', ['horizontal', 'both']);
-  const { data, error } = await q;
+  const build = (cols: string) => {
+    let q = supabase
+      .from('live_streams')
+      .select(cols)
+      .eq('status', 'live')
+      .order('started_at', { ascending: false })
+      .limit(50);
+    if (horizontalOnly) q = q.in('orientation', ['horizontal', 'both']);
+    return q;
+  };
+  // Prefer the heartbeat column so ghosts can be filtered; retry on the base
+  // columns if it isn't migrated yet (then nothing gets hidden — same as before).
+  let { data, error } = await build(LIVE_COLS_HB);
+  if (error) ({ data, error } = await build(LIVE_COLS));
   if (error) {
     // Pre-migration (no orientation column): retry without the horizontal filter.
     if (horizontalOnly) {
@@ -134,11 +162,11 @@ export async function fetchLiveStreams(horizontalOnly = false): Promise<LiveStre
         .from('live_streams')
         .select('id, user_id, title, mode, cf_input_uid, playback_url, status, started_at, viewer_peak')
         .eq('status', 'live').order('started_at', { ascending: false }).limit(50);
-      return attachProfiles((d2 ?? []) as LiveStream[]);
+      return attachProfiles(dropStaleLives((d2 ?? []) as LiveStream[]));
     }
     throw error;
   }
-  return attachProfiles((data ?? []) as LiveStream[]);
+  return attachProfiles(dropStaleLives((data ?? []) as unknown as LiveStream[]));
 }
 
 /**
@@ -196,6 +224,19 @@ export async function markLive(streamId: string): Promise<void> {
     .update({ status: 'live', started_at: new Date().toISOString() })
     .eq('id', streamId);
   if (error) throw error;
+}
+
+/**
+ * "I'm still broadcasting" ping — called ~every 15s while live so viewers' feeds
+ * can hide this stream the moment the host's app dies (see dropStaleLives). Fully
+ * best-effort: pre-migration (no column) or offline just no-ops, and markLive is
+ * deliberately NOT touched, so going live never depends on this column existing.
+ */
+export async function beatLiveStream(streamId: string): Promise<void> {
+  await supabase
+    .from('live_streams')
+    .update({ last_heartbeat_at: new Date().toISOString() })
+    .eq('id', streamId); // returned error (missing column / RLS / offline) is ignored on purpose
 }
 
 /** Ends the broadcast: row → 'ended', Cloudflare input deleted (best effort). */

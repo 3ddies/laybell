@@ -14,9 +14,9 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import {
-  createLiveStream, discardLiveStream, endLiveStream, endMyStaleLiveStreams, isInputConnected,
-  joinLiveChannel, markLive, type LiveOrientation, type LiveStream, type LiveStreamKeys,
-  type LiveDonationEvent, type LiveChatMessage,
+  beatLiveStream, createLiveStream, discardLiveStream, endLiveStream, endMyStaleLiveStreams,
+  isInputConnected, joinLiveChannel, markLive, type LiveOrientation, type LiveStream,
+  type LiveStreamKeys, type LiveDonationEvent, type LiveChatMessage,
 } from '../../lib/live';
 import { WhipPublisher, getRTCView, webrtcAvailable } from '../../lib/whip';
 import { rtmpAvailable, getRtmpView, type RtmpPublisherHandle } from '../../lib/rtmp';
@@ -116,6 +116,21 @@ export default function GoLiveScreen() {
     const iv = setInterval(pull, 15_000);
     return () => { alive = false; clearInterval(iv); };
   }, [phase, canEarn, profile?.id]);
+
+  // Heartbeat while live: prove to viewers' feeds this broadcast is still alive so
+  // that if THIS app is killed the stream drops out within ~45s instead of
+  // lingering as a ghost black screen (see dropStaleLives / STALE_LIVE_MS in
+  // lib/live). Best-effort — a pre-migration DB just no-ops. iOS suspends this
+  // timer in the background, which is the point: a backgrounded broadcast has
+  // stopped sending video anyway, so letting it go stale is correct.
+  useEffect(() => {
+    if (phase !== 'live') return;
+    const id = streamRef.current?.id;
+    if (!id) return;
+    beatLiveStream(id).catch(() => {});
+    const iv = setInterval(() => beatLiveStream(id).catch(() => {}), 15_000);
+    return () => clearInterval(iv);
+  }, [phase]);
 
   const streamRef = useRef<LiveStream | null>(null);
   const keysRef = useRef<LiveStreamKeys | null>(null);

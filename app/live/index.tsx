@@ -309,6 +309,10 @@ export default function LiveScreen() {
   const endedRef = useRef(endedIds);
   const visibleRef = useRef<string | null>(null);
   useEffect(() => { visibleRef.current = visibleId; }, [visibleId]);
+  // Mirror the current list so the realtime handler can tell a NEW live stream
+  // (reload) from a heartbeat ping on one we already show (ignore).
+  const streamsRef = useRef<LiveStream[]>([]);
+  streamsRef.current = streams;
 
   // Watching a horizontal broadcast lets the viewer turn the phone — sensor
   // rotation unlocks (same as landscape reels) so the letterboxed stream can go
@@ -391,7 +395,13 @@ export default function LiveScreen() {
         // An official end (host tapped End, status flips to 'ended') — or the
         // row being deleted — flags the card before the refetch prunes it.
         const id = payload?.new?.id ?? payload?.old?.id;
-        if (id && (payload?.eventType === 'DELETE' || payload?.new?.status === 'ended')) markEnded(id);
+        const ev = payload?.eventType;
+        if (id && (ev === 'DELETE' || payload?.new?.status === 'ended')) { markEnded(id); load(); return; }
+        // Ignore the ~15s heartbeat pings: an UPDATE that leaves a stream we ALREADY
+        // show still 'live' changes nothing on screen. Reloading on each would
+        // refetch the whole feed every 15s per live host. A stream going live (id
+        // not in our list yet) still falls through to load().
+        if (ev === 'UPDATE' && payload?.new?.status === 'live' && streamsRef.current.some((s) => s.id === id)) return;
         load();
       })
       .subscribe();
