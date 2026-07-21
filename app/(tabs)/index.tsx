@@ -1394,6 +1394,8 @@ export default function HomeScreen() {
           item={item}
           onCta={onAdCta}
           onOptions={onAdOptions}
+          videoMuted={videoMuted}
+          onToggleMuted={onToggleMuted}
         />
       ) : (
         <PostCard

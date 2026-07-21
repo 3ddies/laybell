@@ -25,13 +25,17 @@ type Props = {
   item: any; // feed ad item: { id, type, media_url, slides, aspect_ratio, __ad }
   onCta: (item: any) => void;
   onOptions: (item: any) => void;
+  // Global feed video-mute state + toggle (shared with real posts) so an ad's
+  // audio follows the same volume the viewer set on the rest of the feed.
+  videoMuted?: boolean;
+  onToggleMuted?: () => void;
 };
 
 // Playback flags come from the per-card store (lib/feedVideo) instead of props,
 // so a viewability/gate change re-renders only this card, never the whole list.
 // The home feed is this component's only host (ad ids never enter the warm set,
 // so isVisibleVideo here means exactly "this ad is the visible video").
-const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions }: Props) {
+const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions, videoMuted, onToggleMuted }: Props) {
   const { isVisibleVideo, shouldPlayVideo } = useCardPlayback(item.id);
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -99,17 +103,27 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions }: Pr
       )}
 
       {item.type === 'video' && !!item.media_url && (
-        <TouchableOpacity activeOpacity={0.95} onPress={() => onCta(item)}>
-          {/* POOLED surface (lib/feedVideoPool): assignment is an async source
-              swap, never a player creation — an ad card scrolling into view can
-              no longer stall the frame the way the old created-at-visible
-              AppVideo did. The black slot holds layout until readyToPlay. */}
-          <View style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}>
-            {isVisibleVideo && (
-              <FeedVideo id={item.id} uri={item.media_url} play={shouldPlayVideo} muted />
-            )}
-          </View>
-        </TouchableOpacity>
+        <View>
+          <TouchableOpacity activeOpacity={0.95} onPress={() => onCta(item)}>
+            {/* POOLED surface (lib/feedVideoPool): assignment is an async source
+                swap, never a player creation — an ad card scrolling into view can
+                no longer stall the frame the way the old created-at-visible
+                AppVideo did. The black slot holds layout until readyToPlay. */}
+            <View style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}>
+              {isVisibleVideo && (
+                // Follows the feed's shared mute toggle (was hardcoded muted, so
+                // ad audio never played even with the feed unmuted).
+                <FeedVideo id={item.id} uri={item.media_url} play={shouldPlayVideo} muted={!!videoMuted} />
+              )}
+            </View>
+          </TouchableOpacity>
+          {/* Tap to mute/unmute — same control real feed videos have. */}
+          {isVisibleVideo && (
+            <TouchableOpacity style={styles.videoAudioBtn} onPress={() => onToggleMuted?.()}>
+              <Ionicons name={videoMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
       {/* Headline + body */}
@@ -158,6 +172,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
 
   media: { width: '100%', backgroundColor: colors.surfaceLight },
+  videoAudioBtn: {
+    position: 'absolute', top: SPACING.sm, right: SPACING.sm,
+    width: 34, height: 34, borderRadius: RADIUS.full,
+    backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
+  },
 
   headline: { color: colors.text, fontSize: 15, fontWeight: '700', paddingHorizontal: SPACING.md, paddingTop: SPACING.sm },
   body: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: SPACING.md, paddingTop: 3 },
