@@ -63,14 +63,25 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   // Listen mode: the tab bar fades away, so the player glides down into the
   // space it vacated (the 68px bar height), staying flush above the home bar.
   // Hooks run before the early return below, so the value stays mounted.
+  //
+  // Gated on !bottomDock — the Listen drop applies ONLY while the card is docked
+  // to the tab bar (a (tabs) screen). Tapping an artist's name in the full player
+  // pushes their profile WITHOUT exiting Listen mode, and on that pushed screen
+  // `dockSlide` below already drops the card the full 68px to the true bottom.
+  // Left ungated, the Listen offset stacked on top (136px total) and shoved the
+  // card off the bottom edge. Because the two slides are now mutually exclusive,
+  // their SUM is always "drop 68 when the tab bar is absent" — so the card sits at
+  // the bottom of whatever screen the listener lands on. Same 300ms curve as
+  // dockSlide keeps that sum constant through the Music→profile hand-off (both
+  // flip on the same `bottomDock` change), so the card doesn't budge as it happens.
   const listenSlide = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(listenSlide, {
-      toValue: listenMode ? 68 : 0,
-      duration: 350,
+      toValue: listenMode && !bottomDock ? 68 : 0,
+      duration: 300,
       useNativeDriver: true,
     }).start();
-  }, [listenMode, listenSlide]);
+  }, [listenMode, bottomDock, listenSlide]);
 
   // Routes WITHOUT the bottom tab bar (another user's profile, pushed screens):
   // the bar drops by the tab-bar height (68) so it rests at the true bottom of

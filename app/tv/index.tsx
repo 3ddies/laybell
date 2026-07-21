@@ -18,6 +18,7 @@ import { fetchHorizontalVideos, matchesQuery, rankVideosForUser } from '../../li
 import { fetchLiveStreams, liveThumbnailUrl, type LiveStream } from '../../lib/live';
 import { selection } from '../../lib/haptics';
 import { useCast } from '../../contexts/CastContext';
+import { useListenMode } from '../../contexts/ListenModeContext';
 import TVConnectModal from '../../components/TVConnectModal';
 import { postToCastItem, liveToCastItem, adToCastItem, type CastItem } from '../../lib/cast';
 import { fetchTvAds, tvItemFor, TV_AD_EVERY_VIDEOS, type AdViewer } from '../../lib/ads';
@@ -71,6 +72,7 @@ export default function LaybellTVScreen() {
   const insets = useSafeAreaInsets();
   const { profile } = useProfile();
   const cast = useCast();
+  const { confirmLeaveListen } = useListenMode();
 
   const [tab, setTab] = useState<Tab>('videos');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -224,7 +226,7 @@ export default function LaybellTVScreen() {
             {/* The SAME live button as the Home header (tv glyph + red LIVE
                 disc) → the live feed. All connect affordances live in the
                 "Watch on TV" banner below — one obvious way in, no icon soup. */}
-            <TouchableOpacity style={styles.liveBtn} onPress={() => router.push('/live')} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.liveBtn} onPress={() => confirmLeaveListen(() => router.push('/live'))} activeOpacity={0.7}>
               <Ionicons name="tv-outline" size={30} color={colors.text} />
               <View style={styles.liveDisc}>
                 <Text style={styles.liveDiscText}>LIVE</Text>
@@ -359,7 +361,7 @@ export default function LaybellTVScreen() {
                   // (live HLS fills the screen); phone lives — no HLS during
                   // Cloudflare's beta — open the on-phone viewer instead.
                   if (cast.connected && castLive(item)) return;
-                  router.push({ pathname: '/live', params: { streamId: item.id } });
+                  confirmLeaveListen(() => router.push({ pathname: '/live', params: { streamId: item.id } }));
                 }}
                 activeOpacity={0.85}
               >

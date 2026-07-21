@@ -447,6 +447,11 @@ export default function TabLayout() {
   // Listen mode locks the pager to the Music tab — no tab swipes until exit
   // (Music's internal pill swipes are its own PanResponder, unaffected).
   const { listenMode } = useListenMode();
+  // Ref mirror so the navigator's `state` settle listener (a closure that can
+  // capture a stale render) always sees the live flag — used by the airtight
+  // lock below to snap any off-Music settle back while the mode is on.
+  const listenModeRef = useRef(listenMode);
+  listenModeRef.current = listenMode;
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -510,6 +515,24 @@ export default function TabLayout() {
             const newIndex = navState?.index;
             const names = navState?.routeNames;
             if (typeof newIndex !== 'number' || !names) return;
+
+            // ── AIRTIGHT LISTEN-MODE LOCK ──────────────────────────────────────
+            // Listen mode is a Music-tab session; it must NEVER coexist with any
+            // other tab being active. `swipeEnabled: !listenMode` blocks NEW
+            // swipes, but a swipe already in flight when the Listen button is
+            // pressed ("flick away + tap at the same instant") settles on the next
+            // tab before that prop reaches the native pager — the reported gap.
+            // The settle is the final arbiter: if it lands off Music while the mode
+            // is on, snap straight back. The mode stays on (the user asked for it);
+            // only the stray tab move is undone, so the state can't be exploited.
+            if (listenModeRef.current) {
+              const musicIndex = names.indexOf('music');
+              if (musicIndex >= 0 && newIndex !== musicIndex) {
+                settledIndexRef.current = musicIndex;
+                navigation.navigate('music');
+                return;
+              }
+            }
 
             const homeIndex = names.indexOf('index');
             const justMounted = Date.now() - mountedAt.current < MOUNT_GUARD_MS;

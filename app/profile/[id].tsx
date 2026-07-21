@@ -34,6 +34,7 @@ import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
 import { countLabel } from '../../lib/i18n';
 import { displayUrl } from '../../lib/profileOptions';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
+import { useListenMode } from '../../contexts/ListenModeContext';
 import { activeLayout, usedPostIds } from '../../lib/pageLayout';
 import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { slideshowThumb } from '../../lib/slideshow';
@@ -68,6 +69,7 @@ export default function PublicProfileScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const { playQueue, expand } = useAudio();
+  const { confirmLeaveListen } = useListenMode();
   const { playingId } = useAudioPlayer();
   const { show: showOptions } = usePostOptions();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -385,12 +387,20 @@ export default function PublicProfileScreen() {
   function openVisual(post: any, node?: any) {
     const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
     const seed = JSON.stringify(post);
-    if (node?.measureInWindow) {
-      node.measureInWindow((x: number, y: number, width: number, height: number) =>
-        router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
-    } else {
-      router.push({ pathname, params: { id: post.id, post: seed } });
-    }
+    const go = () => {
+      if (node?.measureInWindow) {
+        node.measureInWindow((x: number, y: number, width: number, height: number) =>
+          router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
+      } else {
+        router.push({ pathname, params: { id: post.id, post: seed } });
+      }
+    };
+    // A reel is an immersive full-screen player with no docked mini-player, so it
+    // can't run inside a listen session — confirm the Listen-mode exit first (a
+    // no-op prompt-wise when Listen mode is off). Image/slideshow posts keep the
+    // side-chip mini-player and coexist fine, so they open straight away.
+    if (post.type === 'video') confirmLeaveListen(go);
+    else go();
   }
 
   // The Posts tab: the owner's custom feature layout (when active) above the
@@ -445,15 +455,10 @@ export default function PublicProfileScreen() {
                   Math.max(0, idx),
                 );
               } else {
-                const node = gridRefs.current[post.id];
-                const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
-                const seed = JSON.stringify(post);
-                if (node?.measureInWindow) {
-                  node.measureInWindow((x: number, y: number, width: number, height: number) =>
-                    router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
-                } else {
-                  router.push({ pathname, params: { id: post.id, post: seed } });
-                }
+                // Same path as the layout blocks — openVisual measures the cell
+                // for the expand animation AND gates reels behind the Listen-mode
+                // exit confirmation.
+                openVisual(post, gridRefs.current[post.id]);
               }
             }}
           >

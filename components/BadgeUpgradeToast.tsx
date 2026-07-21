@@ -8,6 +8,7 @@ import BadgeEmblem from './BadgeEmblem';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { useListenMode } from '../contexts/ListenModeContext';
 
 // A celebratory banner that slides down from the top whenever the user levels up
 // to a higher badge tier mid-session. Auto-dismisses; tap to open the Badges page.
@@ -18,6 +19,7 @@ export default function BadgeUpgradeToast() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
+  const { setListenMode } = useListenMode();
   const [tier, setTier] = useState<Tier | null>(null);
   const y = useRef(new Animated.Value(-200)).current;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,10 +57,13 @@ export default function BadgeUpgradeToast() {
       style={[styles.wrap, { paddingTop: insets.top + SPACING.sm, transform: [{ translateY: y }] }]}
       pointerEvents="box-none"
     >
+      {/* This toast can pop while the user is listening on the Music tab —
+          /badges is an unrelated screen, so tapping cleanly leaves Listen mode
+          on the way there rather than carrying the session onto it. */}
       <TouchableOpacity
         activeOpacity={0.9}
         style={[styles.card, { borderColor: accent + '55' }]}
-        onPress={() => { dismiss(); router.push('/badges'); }}
+        onPress={() => { setListenMode(false); dismiss(); router.push('/badges'); }}
       >
         <BadgeEmblem tier={tier} size={36} />
         <View style={styles.body}>

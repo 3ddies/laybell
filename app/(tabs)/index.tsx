@@ -57,6 +57,7 @@ import { selection, impactLight } from '../../lib/haptics';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useShare } from '../../contexts/ShareContext';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
+import { useListenMode } from '../../contexts/ListenModeContext';
 import { isAudioPost } from '../../lib/genres';
 import { fetchBlockedIds } from '../../lib/blocks';
 import { countGroupUnread } from '../../lib/groups';
@@ -617,6 +618,9 @@ export default function HomeScreen() {
   const { playSong, stop: stopSong, toggleMuted: toggleSongMuted, prefetchSong, warmSongPlayer } = usePostMusicActions();
   const songMuted = usePostMusicMuted();
   const router = useRouter();
+  // Reels/lives can't run inside a listen session — route the live entry through
+  // the shared confirm-and-exit gate (a no-op when Listen mode is off).
+  const { confirmLeaveListen } = useListenMode();
 
   // Only autoplay feed videos when this tab is focused — not while a swipe is
   // dragging the feed off-screen (saves rendering, matches "land first").
@@ -1476,7 +1480,7 @@ export default function HomeScreen() {
             </Animated.View>
           </TouchableOpacity>
           {/* Live: a tv with a red LIVE disc on its screen — opens the live feed. */}
-          <TouchableOpacity style={styles.liveBtn} onPress={() => router.push('/live')} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.liveBtn} onPress={() => confirmLeaveListen(() => router.push('/live'))} activeOpacity={0.7}>
             <Ionicons name="tv-outline" size={30} color={colors.text} />
             <View style={styles.liveDisc}>
               <Text style={styles.liveDiscText}>LIVE</Text>

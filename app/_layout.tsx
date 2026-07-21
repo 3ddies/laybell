@@ -35,10 +35,12 @@ import { PhotoPickerProvider } from '../contexts/PhotoPickerContext';
 import { UploadQueueProvider } from '../contexts/UploadQueueContext';
 import { CastProvider } from '../contexts/CastContext';
 import { StoryUploadProvider, useStoryUpload } from '../contexts/StoryUploadContext';
+import { useListenMode } from '../contexts/ListenModeContext';
 import CastBar from '../components/CastBar';
 import StoryFailedBanner from '../components/StoryFailedBanner';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
+import ListenLeaveConfirm from '../components/ListenLeaveConfirm';
 import BadgeUpgradeToast from '../components/BadgeUpgradeToast';
 import WelcomeTour, { WELCOME_TOUR_FLAG } from '../components/WelcomeTour';
 import { useNotifications } from '../hooks/useNotifications';
@@ -98,6 +100,18 @@ function AppContent() {
   // stays visible + controllable without covering those controls.
   const castChip = tab === 'story-camera' || segments[0] === 'live';
 
+  // Listen-mode safety net: the mode is a Music-tab focus session, so landing on
+  // an IMMERSIVE surface (a reel/story viewer or the Live section) — which owns
+  // the whole screen and its own audio and can't host the docked mini-player —
+  // force-exits it. Known entries (profile reel grid, the LIVE buttons) already
+  // confirm+exit BEFORE navigating; this is the backstop that heals any OTHER
+  // path in (a deep link, a story ring, a feed reel) so Listen mode can never be
+  // stranded on a screen that doesn't understand it. A no-op unless it's on.
+  const { listenMode, setListenMode } = useListenMode();
+  useEffect(() => {
+    if (listenMode && (immersive || onLive)) setListenMode(false);
+  }, [listenMode, immersive, onLive, setListenMode]);
+
   // One-time welcome tour: onboarding arms a flag then drops the user onto the
   // tabs, so the live app is already mounted. The first time we land on the tabs
   // with the flag set we read-and-clear it (shown exactly once) and float the
@@ -129,6 +143,9 @@ function AppContent() {
       {failedJob && <StoryFailedBanner onRetry={retryFailed} onDismiss={dismissFailed} />}
       <NowPlaying />
       <BadgeUpgradeToast />
+      {/* Themed confirm for leaving Listen mode to enter an immersive surface —
+          its own overlay so it paints above pushed screens on iOS. */}
+      <ListenLeaveConfirm />
     </>
   );
 
