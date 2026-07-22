@@ -14,6 +14,7 @@ const DOCS = [
   { src: 'lib/legal/terms.json', out: 'web/terms.html' },
   { src: 'lib/legal/community.json', out: 'web/community.html' },
   { src: 'lib/legal/advertising.json', out: 'web/advertising.html' },
+  { src: 'lib/legal/marketplace.json', out: 'web/marketplace.html' },
 ];
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -98,6 +99,7 @@ const index = `<!doctype html>
 <a href="./terms.html">Terms of Service →</a>
 <a href="./community.html">Community Guidelines →</a>
 <a href="./advertising.html">Advertiser Terms →</a>
+<a href="./marketplace.html">Marketplace &amp; Beat Licensing Terms →</a>
 </div>
 <footer>© 2026 Laybell LLC. All rights reserved.</footer>
 </main></body></html>`;

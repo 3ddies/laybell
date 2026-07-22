@@ -458,6 +458,11 @@ export default function SettingsScreen() {
       label: t('about.advertiserTerms'),
       onPress: () => router.push('/advertiser-terms'),
     },
+    {
+      icon: 'storefront-outline',
+      label: t('about.marketplace'),
+      onPress: () => router.push('/marketplace-terms'),
+    },
   ];
 
   const dangerItems: SectionItem[] = [

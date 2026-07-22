@@ -2,7 +2,7 @@
 
 Everything needed to take the legal/privacy work live. Things marked **[code done]** are already implemented in this repo; the rest need your accounts/credentials. Work top to bottom.
 
-**Progress:** domain ✅ · contact inboxes ✅ · DMCA agent ✅ · mailing address filled ✅ · SQL migrations run ✅ · trademark spec ready ✅ · Privacy + Terms + Community Guidelines + Advertiser Terms built & wired ✅
+**Progress:** domain ✅ · contact inboxes ✅ · DMCA agent ✅ · mailing address filled ✅ · SQL migrations run ✅ · trademark spec ready ✅ · Privacy + Terms + Community Guidelines + Advertiser Terms built & wired ✅ · Marketplace & Beat Licensing Terms built & wired ✅ **[code done]** (`lib/legal/marketplace.json` → `/marketplace-terms` in-app + `web/marketplace.html`; linked from Settings → About, the shop seller agreement, and every listing page; defines Lease / Exclusive Purchase ("Buy") / Free Claims / Offers, the exclusivity + surviving-leases rule, refund-gated takedowns, and store guidelines — all matching the platform-enforced mechanics in `shop_multi.sql`)
 **Remaining — all at/around app‑store submission:** host the web pages (step 7) · store privacy forms (step 8) · one‑time attorney review (step 9). Optional: parent‑consent email (step 2), EU/UK reps (step 6), trademark.
 
 ---
@@ -59,6 +59,8 @@ Use `docs/STORE_PRIVACY_DISCLOSURES.md` to complete Apple's **App Privacy** and 
 
 ## 9. One‑time attorney review  **(strongly recommended)**
 Have a tech/IP attorney review `terms.json` + `privacy.json` — especially the **music/copyright** and **GDPR** sections. You're handing them a finished draft, so it's a cheap review rather than a from‑scratch drafting job.
+
+Add `marketplace.json` to that same review — priority items: the **Lease scope** (§6: perpetual, credit clause, no Content ID enrollment), the **Exclusive Purchase transfer language** (§7: rights transfer subject to surviving prior leases — this must stay aligned with the in-app copy that a sale "transfers ownership"), the **refund/license-termination mechanics** (§9), and the **venue/fee framing** (§3, 15% fee with off-platform settlement).
 
 ---
 
