@@ -24,3 +24,11 @@ alter table public.posts add column if not exists top_caption jsonb;
 -- clear of the reel's meta block / action rail / scrub bar by the app's zone
 -- math). Re-run this whole file to apply — both statements are idempotent.
 alter table public.posts add column if not exists bottom_caption jsonb;
+
+-- ── v3: vertical captions (story-style) ───────────────────────────────────────
+-- VERTICAL clips get the story sticker system instead of the single screen
+-- caption: `captions` is a jsonb ARRAY of freely-placed caption objects
+--   { text, x, y, scale, rotation, font, color, bg, size }
+-- (same shape as stories.stickers). Rendered in the reel viewer AND the home
+-- feed. Landscape clips keep using top_caption / bottom_caption.
+alter table public.posts add column if not exists captions jsonb;

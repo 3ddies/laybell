@@ -1244,7 +1244,7 @@ const StickerTextEditor = memo(function StickerTextEditor({
         <View style={styles.fontRow}>
           <TouchableOpacity
             style={[styles.bgToggle, bg !== 'none' && styles.bgToggleActive]}
-            onPress={() => setBg((b) => (b === 'none' ? 'soft' : b === 'soft' ? 'pill' : 'none'))}
+            onPress={() => setBg((b) => (b === 'none' ? 'soft' : b === 'soft' ? 'pill' : b === 'pill' ? 'boxy' : 'none'))}
           >
             <Ionicons name="color-fill-outline" size={18} color="#fff" />
           </TouchableOpacity>

@@ -25,7 +25,7 @@ import { storyReplyBody } from '../../lib/postLinks';
 import { createNotification } from '../../lib/createNotification';
 import SongAttribution from '../../components/SongAttribution';
 import BadgeEmblem from '../../components/BadgeEmblem';
-import { captionStickerTextStyle, resolveSticker } from '../../components/StickerLayer';
+import { captionStickerTextStyle, resolveSticker, StickerContent } from '../../components/StickerLayer';
 import { useStories } from '../../contexts/StoriesContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { usePostMusicActions, usePostMusicMuted } from '../../contexts/PostMusicContext';
@@ -799,27 +799,25 @@ export default function StoryViewerScreen() {
                 so the story looks exactly as it did when composed. */}
             {(story.stickers ?? []).length > 0 && (
               <Animated.View style={[StyleSheet.absoluteFill, { opacity: textReveal }]} pointerEvents="none">
-                {(story.stickers ?? []).map((st: any, i: number) => {
-                  const { textStyle, boxStyle } = resolveSticker(st);
-                  return (
-                    <View key={i} style={StyleSheet.absoluteFill}>
-                      <View style={styles.captionStickerCenter}>
-                        <View
-                          style={[boxStyle, {
-                            transform: [
-                              { translateX: (st.x - 0.5) * SCREEN_W },
-                              { translateY: (st.y - 0.5) * SCREEN_H },
-                              { scale: st.scale ?? 1 },
-                              { rotate: `${st.rotation ?? 0}deg` },
-                            ],
-                          }]}
-                        >
-                          <Text style={textStyle}>{st.text}</Text>
-                        </View>
+                {(story.stickers ?? []).map((st: any, i: number) => (
+                  <View key={i} style={StyleSheet.absoluteFill}>
+                    <View style={styles.captionStickerCenter}>
+                      <View
+                        style={{
+                          transform: [
+                            { translateX: (st.x - 0.5) * SCREEN_W },
+                            { translateY: (st.y - 0.5) * SCREEN_H },
+                            { scale: st.scale ?? 1 },
+                            { rotate: `${st.rotation ?? 0}deg` },
+                          ],
+                        }}
+                      >
+                        {/* Shared renderer → 'boxy' shows per-line pills. */}
+                        <StickerContent sticker={st} />
                       </View>
                     </View>
-                  );
-                })}
+                  </View>
+                ))}
               </Animated.View>
             )}
 

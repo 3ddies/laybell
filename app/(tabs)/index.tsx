@@ -4,6 +4,7 @@ import {
 } from '../../lib/feedScorer';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
 import FeedVideo from '../../components/FeedVideo';
+import { PlacedStickers } from '../../components/StickerLayer';
 // FlashList v2: RECYCLES card views instead of mounting/destroying them while
 // scrolling — the structural fix for mount-burst micro-hitches (same philosophy
 // as the video player pool). Recycling means components receive a NEW item
@@ -111,6 +112,7 @@ type Post = {
   comments: { count: number }[];
   save_count?: number;
   aspect_ratio?: string | null;
+  captions?: unknown[] | null; // vertical-video story-style captions (jsonb array)
   stream_count?: number;
   cover_url?: string | null;
   thumbnail_url?: string | null;
@@ -341,6 +343,18 @@ const PostCard = memo(function PostCard({
                   onProgress={(pos, dur) => trackVideoProgress(item.id, pos, dur)}
                 />
               )}
+              {/* A vertical clip's story-style captions, so the feed shows them
+                  too (not just the reel). Positioned over the card frame; the
+                  same normalized data the reel uses, clipped to the card. */}
+              {Array.isArray(item.captions) && item.captions.length ? (
+                <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
+                  <PlacedStickers
+                    stickers={item.captions as never}
+                    frameW={SCREEN_W}
+                    frameH={Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H)}
+                  />
+                </View>
+              ) : null}
             </View>
           </TouchableOpacity>
           <TouchableOpacity style={styles.videoAudioBtn} onPress={item.song_id ? onToggleSongMute : onToggleMuted}>

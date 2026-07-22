@@ -23,7 +23,9 @@ import MentionSuggestions from '../../components/MentionSuggestions';
 import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleModal';
 import ThumbnailPickerModal from '../../components/ThumbnailPickerModal';
 import TopCaptionEditor from '../../components/TopCaptionEditor';
+import VideoStickerEditor from '../../components/VideoStickerEditor';
 import type { TopCaptionData } from '../../components/TopCaption';
+import type { Sticker } from '../../components/StickerLayer';
 import FeaturesModal from '../../components/FeaturesModal';
 import { type Feature } from '../../lib/features';
 import { useAudio } from '../../contexts/AudioContext';
@@ -155,12 +157,13 @@ export default function PostScreen() {
   // image as the post thumbnail. Post-time only — it just replaces thumbnailUri,
   // which uploads through the existing path.
   const [showThumbPicker, setShowThumbPicker] = useState(false);
-  // Band captions (HORIZONTAL videos only): TikTok-style bubbles the creator
-  // parks in the black letterbox bands shown above/below the clip in portrait.
-  // ONE entry point — the editor defaults to the top band and offers the
-  // bottom band as a tappable second zone.
+  // Video captions. HORIZONTAL clips: TikTok-style bubbles parked in the black
+  // letterbox bands above/below the clip (one editor, top band default + bottom
+  // as a tappable second zone). VERTICAL clips: the STORY sticker system —
+  // tap anywhere to add as many captions as you like (stored as `videoCaptions`).
   const [topCaption, setTopCaption] = useState<TopCaptionData | null>(null);
   const [bottomCaption, setBottomCaption] = useState<TopCaptionData | null>(null);
+  const [videoCaptions, setVideoCaptions] = useState<Sticker[]>([]);
   const [showCaptionEditor, setShowCaptionEditor] = useState(false);
   const [videoAspect, setVideoAspect] = useState(0.8); // native aspect for video display
   const [videoDuration, setVideoDuration] = useState(0); // seconds (source)
@@ -386,7 +389,7 @@ export default function PostScreen() {
     unloadPreview();
     setIsRecording(false); setRecSecs(0);
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
-    setVideoDuration(0); setTrimStart(0); setTopCaption(null); setBottomCaption(null);
+    setVideoDuration(0); setTrimStart(0); setTopCaption(null); setBottomCaption(null); setVideoCaptions([]);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setGenre(''); setSong(null); setTagged([]); setCommunities([]); setError(''); setStep('pick');
     setAllowDownloads(true); setAllowGifs(true);
@@ -423,7 +426,7 @@ export default function PostScreen() {
       id, createdAt: now, updatedAt: now,
       postType, format, caption, genre, isPublic,
       media, crop: cropRef.current as any, thumbnailUri,
-      videoAspect, videoDuration, trimStart, topCaption, bottomCaption,
+      videoAspect, videoDuration, trimStart, topCaption, bottomCaption, videoCaptions,
       slides,
       audioFile, audioDuration, coverUri, audioKind,
       song, tagged, features,
@@ -451,6 +454,7 @@ export default function PostScreen() {
     setTrimStart(d.trimStart);
     setTopCaption(d.topCaption ?? null);
     setBottomCaption(d.bottomCaption ?? null);
+    setVideoCaptions(d.videoCaptions ?? []);
     setSlides(d.slides ?? []);
     setPickedId(null);
     setAudioFile(d.audioFile);
@@ -513,7 +517,7 @@ export default function PostScreen() {
       setVideoAspect(clampVideoAspect((m.width || 1) / (m.height || 1)));
       setVideoDuration(m.duration ?? 0);
       setTrimStart(0);
-      setTopCaption(null); setBottomCaption(null); // captions belong to the clip they were placed on
+      setTopCaption(null); setBottomCaption(null); setVideoCaptions([]); // captions belong to the clip they were placed on
       try {
         // Grab an early frame, but never past the clip's end — a time beyond
         // the duration fails to decode and would leave the cover blank.
@@ -819,10 +823,11 @@ export default function PostScreen() {
           taggedIds: tagged.map((tp) => tp.id),
           communityIds: communities.map((c) => c.id),
           allowGifs,
-          // top slot = top band (landscape) or free screen placement (vertical);
-          // the bottom band only exists on landscape clips.
-          topCaption,
+          // Landscape → letterbox band bubbles; vertical → free-placed sticker
+          // captions (the story-style array). Only the matching kind is sent.
+          topCaption: videoAspect > 1 ? topCaption : null,
           bottomCaption: videoAspect > 1 ? bottomCaption : null,
+          captions: videoAspect <= 1 && videoCaptions.length ? videoCaptions : null,
           maxDurationSeconds: VIDEO_MAX_SEC + 30,
           spotlight: ps ? { campaignId: ps.campaignId, days: ps.days } : null,
         });
@@ -1154,22 +1159,26 @@ export default function PostScreen() {
             </View>
           )}
 
-          {/* Video captions — TikTok-style bubbles. Horizontal clips park them
-              in the letterbox bands; vertical clips place one anywhere on the
-              screen that doesn't cover the reel UI. */}
-          {postType === 'video' && !!media?.uri && (
+          {/* Video captions — TikTok-style. Horizontal clips park bubbles in the
+              black letterbox bands; vertical clips place as many as you like
+              anywhere on screen (the story sticker system), clear of the reel UI. */}
+          {postType === 'video' && !!media?.uri && (() => {
+            const horiz = videoAspect > 1;
+            const hasCaption = horiz ? (!!topCaption || !!bottomCaption) : videoCaptions.length > 0;
+            const summary = horiz
+              ? (topCaption ?? bottomCaption)?.text.replace(/\n/g, ' ')
+              : videoCaptions.map((s) => s.text.replace(/\n/g, ' ')).filter(Boolean).join(' · ');
+            return (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{videoAspect > 1 ? t('post.bandCaptions') : t('post.videoCaption')}</Text>
+              <Text style={styles.sectionLabel}>{horiz ? t('post.bandCaptions') : t('post.videoCaption')}</Text>
               <TouchableOpacity style={styles.dropdown} onPress={() => setShowCaptionEditor(true)} activeOpacity={0.8}>
-                <Ionicons name="chatbox-ellipses" size={15} color={topCaption || bottomCaption ? colors.primary : colors.textTertiary} />
-                <Text style={[styles.dropdownText, !(topCaption || bottomCaption) && styles.dropdownPlaceholder]} numberOfLines={1}>
-                  {(topCaption ?? bottomCaption)
-                    ? (topCaption ?? bottomCaption)!.text.replace(/\n/g, ' ')
-                    : videoAspect > 1 ? t('post.topCaptionAdd') : t('post.screenCaptionAdd')}
+                <Ionicons name="chatbox-ellipses" size={15} color={hasCaption ? colors.primary : colors.textTertiary} />
+                <Text style={[styles.dropdownText, !hasCaption && styles.dropdownPlaceholder]} numberOfLines={1}>
+                  {hasCaption ? summary : horiz ? t('post.topCaptionAdd') : t('post.screenCaptionAdd')}
                 </Text>
-                {topCaption || bottomCaption ? (
+                {hasCaption ? (
                   <TouchableOpacity
-                    onPress={() => { setTopCaption(null); setBottomCaption(null); }}
+                    onPress={() => { setTopCaption(null); setBottomCaption(null); setVideoCaptions([]); }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
@@ -1179,10 +1188,11 @@ export default function PostScreen() {
                 )}
               </TouchableOpacity>
               <Text style={styles.genreLockHint}>
-                {videoAspect > 1 ? t('post.bandCaptionsHint') : t('post.screenCaptionHint')}
+                {horiz ? t('post.bandCaptionsHint') : t('post.screenCaptionHint')}
               </Text>
             </View>
-          )}
+            );
+          })()}
 
           {/* Audio category */}
           {postType === 'audio' && (
@@ -1396,13 +1406,21 @@ export default function PostScreen() {
           onPick={(uri) => { setThumbnailUri(uri); setShowThumbPicker(false); }}
           onClose={() => setShowThumbPicker(false)}
         />
+        {/* Horizontal → letterbox band editor; vertical → story sticker editor. */}
         <TopCaptionEditor
-          visible={showCaptionEditor}
+          visible={showCaptionEditor && videoAspect > 1}
           aspect={videoAspect}
           posterUri={thumbnailUri}
           initialTop={topCaption}
           initialBottom={bottomCaption}
           onSave={(top, bottom) => { setTopCaption(top); setBottomCaption(bottom); setShowCaptionEditor(false); }}
+          onClose={() => setShowCaptionEditor(false)}
+        />
+        <VideoStickerEditor
+          visible={showCaptionEditor && videoAspect <= 1}
+          posterUri={thumbnailUri}
+          initial={videoCaptions}
+          onSave={(caps) => { setVideoCaptions(caps); setShowCaptionEditor(false); }}
           onClose={() => setShowCaptionEditor(false)}
         />
         <FeaturesModal visible={showFeaturesModal} initial={features} onClose={() => setShowFeaturesModal(false)} onDone={setFeatures} />

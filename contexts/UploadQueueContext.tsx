@@ -39,6 +39,9 @@ export type VideoJob = {
   // post_top_caption.sql).
   topCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
   bottomCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
+  // Story-style free-placed captions for a VERTICAL clip (posts.captions jsonb,
+  // an array of sticker objects). Shown in the reel viewer AND the home feed.
+  captions?: unknown[] | null;
   maxDurationSeconds: number;
   spotlight?: { campaignId: string; days: number } | null;
 };
@@ -214,6 +217,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         // Spread-conditional: pre-migration databases simply never see the columns.
         ...(job.topCaption?.text ? { top_caption: job.topCaption } : {}),
         ...(job.bottomCaption?.text ? { bottom_caption: job.bottomCaption } : {}),
+        ...(job.captions?.length ? { captions: job.captions } : {}),
         ...(job.trim ? { trim_start: job.trim.start, trim_end: job.trim.end } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         video_uid: uid, video_status: 'processing', video_hls_url: hls,

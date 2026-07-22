@@ -26,7 +26,9 @@ export const DEFAULT_CAPTION_STYLE: CaptionStyle = { x: 0.5, y: 0.5, scale: 1, r
 // before these existed render exactly as they used to.
 
 export type StickerFont = 'classic' | 'bold' | 'typewriter' | 'serif' | 'neon';
-export type StickerBg = 'none' | 'pill' | 'soft';
+// 'boxy' = the TikTok-caption look (see components/TopCaption.tsx): every LINE
+// gets its own rounded pill, stacked and slightly fused.
+export type StickerBg = 'none' | 'pill' | 'soft' | 'boxy';
 
 export type Sticker = {
   id: string;
@@ -106,7 +108,9 @@ export function resolveSticker(s: {
   }
   const boxStyle: ViewStyle = { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 };
 
-  if (bg === 'pill') {
+  if (bg === 'pill' || bg === 'boxy') {
+    // 'boxy' renders as per-line pills via StickerContent; this single-box
+    // fallback (same colors) dresses the editor's TextInput while typing.
     boxStyle.backgroundColor = color;
     textStyle.color = contrastOn(color);
   } else if (bg === 'soft') {
@@ -122,6 +126,85 @@ export function resolveSticker(s: {
     textStyle.textShadowOffset = { width: 0, height: 1 };
   }
   return { textStyle, boxStyle };
+}
+
+/**
+ * The one true sticker renderer — standard single box, or per-line fused
+ * pills for bg 'boxy' (the TikTok-caption look shared with video captions).
+ * Every surface that shows a COMMITTED sticker goes through this so a story
+ * looks identical in the editor layer and the viewer.
+ */
+export function StickerContent({ sticker }: {
+  sticker: { text: string; font?: StickerFont; color?: string; bg?: StickerBg; size?: number; emoji?: boolean };
+}) {
+  const { textStyle, boxStyle } = resolveSticker(sticker);
+  if (sticker.bg === 'boxy' && !sticker.emoji) {
+    const color = sticker.color ?? '#FFFFFF';
+    const fontSize = (textStyle.fontSize as number) ?? 26;
+    const radius = Math.round(fontSize * 0.42);
+    const lines = sticker.text.split('\n').map((l) => l.trim()).filter(Boolean);
+    return (
+      <View style={{ alignItems: 'center', maxWidth: 300 }}>
+        {lines.map((line, i) => (
+          <View
+            key={i}
+            style={{
+              backgroundColor: color,
+              borderRadius: radius,
+              paddingHorizontal: Math.round(fontSize * 0.46),
+              paddingVertical: Math.round(fontSize * 0.16),
+              marginTop: i === 0 ? 0 : -2,
+            }}
+          >
+            <Text style={[textStyle, { maxWidth: undefined, textShadowColor: undefined, textShadowRadius: undefined }]}>
+              {line}
+            </Text>
+          </View>
+        ))}
+      </View>
+    );
+  }
+  return (
+    <View style={boxStyle}>
+      <Text style={textStyle}>{sticker.text}</Text>
+    </View>
+  );
+}
+
+/**
+ * Non-interactive render of a committed sticker set over a frame — used by the
+ * reel viewer and the home feed to show a vertical video's captions. Positions
+ * are normalized to (frameW, frameH), so the same data renders correctly at any
+ * size (full-screen reel or a feed card).
+ */
+export function PlacedStickers({ stickers, frameW, frameH }: {
+  stickers: Sticker[];
+  frameW: number;
+  frameH: number;
+}) {
+  if (!stickers?.length) return null;
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {stickers.map((s, i) => (
+        s.text ? (
+          <View key={s.id ?? i} style={[StyleSheet.absoluteFill, styles.center]}>
+            <View
+              style={{
+                transform: [
+                  { translateX: (s.x - 0.5) * frameW },
+                  { translateY: (s.y - 0.5) * frameH },
+                  { scale: s.scale ?? 1 },
+                  { rotate: `${s.rotation ?? 0}deg` },
+                ],
+              }}
+            >
+              <StickerContent sticker={s} />
+            </View>
+          </View>
+        ) : null
+      ))}
+    </View>
+  );
 }
 
 // Legacy export — the viewer's old single-caption placement renders with this.
@@ -291,7 +374,6 @@ export default function StickerLayer({
       {stickers.map((s) => {
         if (s.id === editingId || !s.text) return null;
         const a = getAnim(s);
-        const { textStyle, boxStyle } = resolveSticker(s);
         return (
           <View key={s.id} style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
             <Animated.View
@@ -304,9 +386,7 @@ export default function StickerLayer({
                 ],
               }}
             >
-              <View style={boxStyle}>
-                <Text style={textStyle}>{s.text}</Text>
-              </View>
+              <StickerContent sticker={s} />
             </Animated.View>
           </View>
         );

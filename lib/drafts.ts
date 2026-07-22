@@ -44,6 +44,8 @@ export type Draft = {
   // Horizontal-video band captions (letterbox bubbles); absent on older drafts.
   topCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
   bottomCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
+  // Vertical-video story-style captions (array of sticker objects).
+  videoCaptions?: any[];
 
   // slideshow — PickedSlide[] (kept loosely typed to avoid a UI import cycle)
   slides: any[];
