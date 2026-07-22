@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Appearance } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { THEMES, type ThemeMode, type ThemePalette } from '../constants/theme';
 
@@ -47,13 +48,28 @@ export function useThemedStyles<T>(factory: (c: ThemePalette) => T): T {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>('dark');
+  // Until the user picks a theme themselves (no saved preference), follow the
+  // PHONE's appearance — a first launch on an iPhone in light mode opens a
+  // light Laybell. Read synchronously at mount, BEFORE the native override
+  // below ever runs, so this is the genuine system scheme. Requires the
+  // app.json `userInterfaceStyle: "automatic"` native unlock to report the
+  // real value; on the older dark-locked binaries this reads 'dark' — exactly
+  // the previous default — so shipping this over OTA changes nothing there.
+  const [mode, setModeState] = useState<ThemeMode>(() => (Appearance.getColorScheme() === 'light' ? 'light' : 'dark'));
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((m) => {
       if (m === 'dark' || m === 'grey' || m === 'light') setModeState(m);
     }).catch(() => {});
   }, []);
+
+  // Pin the NATIVE chrome (keyboard, alerts, system sheets) to the app's own
+  // scheme. With 'automatic' unlocked those would otherwise follow the SYSTEM
+  // and could mismatch a manually-picked in-app theme (light keyboard under a
+  // dark app). Grey counts as dark.
+  useEffect(() => {
+    try { Appearance.setColorScheme(mode === 'light' ? 'light' : 'dark'); } catch {}
+  }, [mode]);
 
   const setMode = useCallback((m: ThemeMode) => {
     setModeState(m);

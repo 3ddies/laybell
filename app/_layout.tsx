@@ -6,6 +6,7 @@ import { View, Platform, Alert } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../lib/supabase';
+import { ensureProfileForSession } from '../lib/socialAuth';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
 import { tg } from '../lib/i18n';
@@ -302,8 +303,18 @@ export default function RootLayout() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: profile } = await supabase
+    let { data: profile } = await supabase
       .from('profiles').select('*').eq('id', user.id).single();
+
+    // OAuth first-timers (Google/Apple) may arrive with no profiles row — the
+    // email flow's row is built from signup metadata they don't carry. Derive a
+    // starter profile (username from the account, onboarded=false) and re-read,
+    // so they flow into onboarding like any fresh account.
+    if (!profile) {
+      await ensureProfileForSession(user);
+      ({ data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single());
+      if (!profile) return; // still nothing (RLS/offline) — don't enter half-signed-up
+    }
 
     // A permanently-deleted account ("Delete now" → delete_immediately) is signed
     // out and blocked from entering the app. The auth user itself is removed

@@ -227,6 +227,12 @@ export default function ListingScreen() {
             {listing.sales_count > 0 && (
               <Text style={styles.sales}>{t('shop.salesCount', { n: listing.sales_count })}</Text>
             )}
+            {/* What this deal type MEANS, in plain words — inexperienced buyers
+                shouldn't have to know marketplace jargon to buy safely. */}
+            <View style={styles.licenseInfo}>
+              <Ionicons name="information-circle-outline" size={15} color={colors.textSecondary} />
+              <Text style={styles.licenseInfoText}>{t(`shop.licenseInfo.${listing.license}`)}</Text>
+            </View>
             {!!listing.description && <Text style={styles.description}>{listing.description}</Text>}
 
             {/* Seller — the row is the shop entrance ("View shop" → their shop
@@ -395,6 +401,14 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   pricePill: { backgroundColor: c.success, borderRadius: RADIUS.full, paddingHorizontal: 13, paddingVertical: 6 },
   priceText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   sales: { color: c.textSecondary, fontSize: 12, fontWeight: '600' },
+  // Deal-type explainer (Lease / Sell / Free in plain words).
+  licenseInfo: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: c.surface, borderRadius: RADIUS.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+    paddingHorizontal: 12, paddingVertical: 10,
+  },
+  licenseInfoText: { flex: 1, color: c.textSecondary, fontSize: 12.5, lineHeight: 18 },
   description: { color: c.textSecondary, fontSize: 14, lineHeight: 20 },
   sellerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,

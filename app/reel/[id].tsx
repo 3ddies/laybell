@@ -44,8 +44,10 @@ import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, EMPTY_PROFILE,
 } from '../../lib/feedScorer';
 import {
-  fetchReelAds, weaveReelAds, fetchTvAds, tvItemFor, recordAdImpression, recordAdClick, recordAdSkip, recordAdComplete, AD_SKIP_MS, TV_AD_EVERY_VIDEOS, type AdViewer,
+  fetchReelAds, reelItemFor, randInt, fetchTvAds, tvItemFor, recordAdImpression, recordAdClick, recordAdSkip, recordAdComplete,
+  AD_SKIP_MS, TV_AD_EVERY_VIDEOS, REEL_AD_FIRST, REEL_AD_EVERY_MIN, REEL_AD_EVERY_MAX, type AdViewer, type AdSource,
 } from '../../lib/ads';
+import { adSpacingMultiplier } from '../../lib/entitlements';
 import { openAdOptions } from '../../contexts/AdOptionsContext';
 import ReelAd from '../../components/ReelAd';
 import TVAdOverlay from '../../components/TVAdOverlay';
@@ -57,9 +59,16 @@ import { ReelSkeleton } from '../../components/Skeleton';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 // Minimum breathing room between ANY two sponsors across the vertical and
-// horizontal surfaces. A slot that comes due inside this window is simply
-// skipped (not queued), so rotating right after an ad can't chain a second one.
+// horizontal surfaces — the TIME half of the two-metric ad scheduler (the
+// other half is posts scrolled). An ad only becomes DUE once BOTH have passed;
+// a due ad then shows at the next opportunity, so rotating right after an ad
+// still can't chain a second one inside this window.
 const AD_MIN_GAP_MS = 45_000;
+
+// Softer time gate for the FIRST sponsor of a session (vertical reels): the
+// session opens ad-free for at least this long no matter how fast the user
+// swipes. After any sponsor has shown, AD_MIN_GAP_MS is the time gate.
+const REEL_AD_FIRST_TIME_MS = 15_000;
 
 // A clip "wrapped" (played through) when its playhead jumps BACK by at least
 // this much. onProgress reports MILLISECONDS — an undersized threshold here
@@ -222,19 +231,23 @@ const ReelPage = memo(function ReelPage({
   isLiked: boolean; isSaved: boolean; spotlight: boolean; insetsBottom: number; mountPlayer: boolean; api: ReelPageApi;
 }) {
   const styles = useThemedStyles(makeStyles);
+  const ratio = aspectToNumber(item.aspect_ratio, 16 / 9);
   // Landscape/square videos show in full (letterboxed) so nothing is cut;
   // portrait videos fill the screen edge-to-edge.
-  const landscape = aspectToNumber(item.aspect_ratio, 16 / 9) >= 1;
+  const landscape = ratio >= 1;
   // Cached thumbnail shown while the video buffers — keeps the expand from
   // revealing a black screen before the first frame is ready.
   const poster = item.thumbnail_url ?? item.cover_url ?? null;
   // Letterbox geometry for the rotate hint: a `contain` landscape video is
   // SCREEN_W wide, so the black band above it is half the leftover height. Park
   // the hint just above the video's top edge, and only when the band is tall
-  // enough to hold it clear of the back button.
-  const videoH = SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9);
+  // enough to hold it clear of the back button. Strictly > 1 (not the >= 1
+  // letterbox rule): square clips letterbox too but do NOT unlock the sideways
+  // fullscreen (visibleLandscape uses > 1) — nudging them to rotate would
+  // point at a door that doesn't open.
+  const videoH = SCREEN_W / ratio;
   const band = (SCREEN_H - videoH) / 2;
-  const showRotateHint = landscape && active && !zoomed && band >= 130;
+  const showRotateHint = ratio > 1 && active && !zoomed && band >= 130;
   return (
     <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }} disabled={zoomed}>
       <TouchableOpacity
@@ -257,7 +270,10 @@ const ReelPage = memo(function ReelPage({
             AppVideo keeps its surface transparent until readyToPlay — so the
             still becomes motion with no black flash at the handoff. */}
         {poster ? (
-          <ExpoImage source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={landscape ? 'contain' : 'cover'} />
+          // memory-disk: the feed/grid thumbnail is the SAME url, so opening a
+          // reel paints the poster straight from the memory cache (no disk read
+          // during the expand animation).
+          <ExpoImage source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={landscape ? 'contain' : 'cover'} cachePolicy="memory-disk" recyclingKey={item.id} />
         ) : null}
         {mountPlayer ? (
           // POOLED player (lib/feedVideoPool reelPool): assignment is an async
@@ -374,6 +390,28 @@ export default function ReelScreen() {
   // — that's the violent multi-skip when turning the phone. Both pagers ignore
   // wrap signals until this passes.
   const rotationSettleUntilRef = useRef(0);
+  // Same story for the SCRUB BAR: dragging backward seeks the playhead back,
+  // which the wrap detector would read as "clip finished" → yanked to the next
+  // reel mid-scrub. The last-pos refs are corrected at the seek call sites, but
+  // a straggler progress tick carrying the PRE-seek position can land after
+  // that correction — so manual seeks also open this short settle window that
+  // both advance paths respect.
+  const seekSettleUntilRef = useRef(0);
+  const markManualSeek = (sec: number) => {
+    seekSettleUntilRef.current = Date.now() + 800;
+    portraitLastPosRef.current = sec * 1000;
+    overlayLastPosRef.current = sec * 1000;
+    positionRef.current = sec * 1000;
+  };
+  // The scrub bar's fraction maps over the FULL timeline, so on trimmed clips a
+  // raw seek could land outside the trim window and play pre/post-trim footage
+  // until the loop-back caught up. Clamp into the window (just shy of trim end,
+  // which would instantly loop back).
+  const clampToTrim = (post: any, sec: number) => {
+    const lo = post?.trim_start ?? 0;
+    const hi = post?.trim_end != null ? post.trim_end - 0.05 : Infinity;
+    return Math.min(Math.max(sec, lo), Math.max(lo, hi));
+  };
   // Scrolling BACK to a reel reads as "I want to watch this again", so autoplay-
   // next is switched off for it — a re-watch shouldn't get yanked away. Only
   // sticks if they actually stay on it ~2s, so a quick back-swipe THROUGH a reel
@@ -397,12 +435,28 @@ export default function ReelScreen() {
       if (visibleIdRef.current === id || overlayIdRef.current === id) manualOnlyRef.current.add(id);
     }, 2000);
   };
-  // When ANY sponsor last played, vertical or horizontal. The two cadences are
-  // independent (reel ads are woven positionally, TV covers are counted), so
-  // without a shared marker they can land back-to-back — finish a vertical ad,
-  // rotate, and immediately eat a horizontal one. Nothing frustrates viewers
-  // faster than two ads in a row.
-  const lastAdAtRef = useRef(0);
+  // When ANY sponsor last played, vertical or horizontal. Both surfaces share
+  // this marker so their cadences can't land back-to-back — finish a vertical
+  // ad, rotate, and immediately eat a horizontal one. Nothing frustrates
+  // viewers faster than two ads in a row. Initialized to MOUNT time: "time
+  // since the last sponsor" reads as "time since the session opened" until the
+  // first one shows, which is what gives the first-ad time gate its meaning.
+  const lastAdAtRef = useRef(Date.now());
+  // ── Dynamic ad scheduler (vertical pager) ──────────────────────────────────
+  // Ads are no longer woven into fixed list positions at load. Instead an ad
+  // becomes DUE when BOTH metrics pass — organic reels landed since the last
+  // sponsor (count gate) AND wall-clock since it (time gate) — and a due ad is
+  // inserted just-in-time as the NEXT post after the reel being watched. Fast
+  // swipers are paced by the time gate, long-watchers by the count gate, so
+  // neither extreme ever feels spammy. All refs (not state): the frozen
+  // viewability handler is the only writer/reader.
+  const reelAdPoolRef = useRef<AdSource[]>([]);   // fetched inventory (rotates)
+  const reelAdSlotRef = useRef(0);                // rotation index + unique item ids
+  const organicSinceAdRef = useRef(0);            // count metric: organic lands since last sponsor
+  const reelAdBaseGateRef = useRef(REEL_AD_FIRST); // lands required (pre-Premium-spacing); re-rolled 4-7 after each ad
+  const hadAnySponsorRef = useRef(false);         // first ad uses the softer time gate
+  const lastCountedIdRef = useRef<string | null>(null); // consecutive-land dedupe (ad-lock bounce-backs)
+  const pendingAdIdRef = useRef<string | null>(null);   // inserted but not yet seen — never insert a second
   const { profile: myProfile } = useProfile();
   const myProfileRef = useRef(myProfile);
   myProfileRef.current = myProfile;
@@ -448,48 +502,82 @@ export default function ReelScreen() {
     const prevId = portraitPrevVisibleIdRef.current;
     portraitPrevVisibleIdRef.current = it.id;
     if (prevId && prevId !== it.id && Date.now() >= rotationSettleUntilRef.current) {
-      try { videoRefs.current.get(prevId)?.seek(0); } catch {}
+      // "The top" of a trimmed clip is its trim start, not 0 — rewinding to 0
+      // put the playhead OUTSIDE the trim window, so returning to a trimmed
+      // reel played pre-trim footage.
+      const prevStart = postsRef.current.find((p) => p.id === prevId)?.trim_start ?? 0;
+      try { videoRefs.current.get(prevId)?.seek(prevStart); } catch {}
     }
     if (it.__ad) {
       lastAdAtRef.current = Date.now(); // feeds the cross-surface ad spacing
+      // A sponsor is being SEEN — both due-metrics restart from here, and the
+      // next interval rolls a fresh randomized count gate so the cadence never
+      // feels metronomic. (Re-viewing an old ad on a back-scroll resets too:
+      // seeing a sponsor is seeing a sponsor — spacing stays conservative.)
+      organicSinceAdRef.current = 0;
+      hadAnySponsorRef.current = true;
+      reelAdBaseGateRef.current = randInt(REEL_AD_EVERY_MIN, REEL_AD_EVERY_MAX);
+      if (pendingAdIdRef.current === it.id) pendingAdIdRef.current = null;
       recordAdImpression(it, 'reels', currentUserIdRef.current);
       // Arm the swipe lock the moment the ad is the visible page — well before the
       // momentum settle. Only SET here (never clear): unlockAd clears it when Skip
       // unlocks.
       if (!adUnlockedRef.current.has(it.id)) lockedAdIdRef.current = it.id;
+    } else if (!landscapeFullscreenRef.current && lastCountedIdRef.current !== it.id) {
+      // ── Dynamic ad scheduling: count this organic land, insert when due ────
+      // Only while portrait is the ACTIVE surface (the overlay syncs this list
+      // positionally — those fires belong to the TV cover cadence, not this
+      // one) and deduped against the immediately-previous land (ad-lock
+      // bounce-backs re-fire viewability for the same page).
+      lastCountedIdRef.current = it.id;
+      organicSinceAdRef.current += 1;
+      const list = postsRef.current;
+      const idx = list.findIndex((p) => p.id === it.id);
+      // An inserted-but-unseen ad we've JUMPED past (overlay-driven position
+      // sync) will never be reached going forward — forget it so scheduling
+      // resumes; it stays in the list behind us like any already-passed ad.
+      // Same if it's not in the list at all (insertion bailed / was removed):
+      // a dangling pending id must never wedge the scheduler.
+      if (pendingAdIdRef.current) {
+        const pIdx = list.findIndex((p) => p.id === pendingAdIdRef.current);
+        if (pIdx < 0 || idx > pIdx) pendingAdIdRef.current = null;
+      }
+      // Due = BOTH metrics passed. Premium widens both by the same spacing
+      // multiplier (~50% fewer reel ads, the existing perk).
+      const spacing = adSpacingMultiplier();
+      const countDue = organicSinceAdRef.current >= Math.round(reelAdBaseGateRef.current * spacing);
+      const timeGate = (hadAnySponsorRef.current ? AD_MIN_GAP_MS : REEL_AD_FIRST_TIME_MS) * spacing;
+      const timeDue = Date.now() - lastAdAtRef.current >= timeGate;
+      if (
+        countDue && timeDue && reelAdPoolRef.current.length > 0 && !pendingAdIdRef.current
+        // Insert only BETWEEN posts (never as the new last item — the ad's own
+        // skip/complete handlers advance to index+1, which must exist) and
+        // never directly before another sponsor.
+        && idx >= 0 && idx + 1 < list.length && !list[idx + 1]?.__ad
+      ) {
+        const pool = reelAdPoolRef.current;
+        const adItem = reelItemFor(pool[reelAdSlotRef.current % pool.length], reelAdSlotRef.current);
+        reelAdSlotRef.current += 1;
+        pendingAdIdRef.current = adItem.id;
+        // Insertion is strictly BELOW the current page, so the visible reel's
+        // offset/index never move — no jump, even mid-gesture. The next swipe
+        // simply lands on the sponsor: "the ad is the next post".
+        setPosts((prev) => {
+          const at = prev.findIndex((p) => p.id === it.id);
+          if (at < 0 || at + 1 >= prev.length || prev[at + 1]?.__ad) return prev;
+          const next = prev.slice();
+          next.splice(at + 1, 0, adItem);
+          return next;
+        });
+      }
     }
   }).current;
 
   useEffect(() => { stop(); setup(); }, [id]);
 
-  // Auto-play the focused reel's attached song (the video itself is muted when a
-  // song is set); stop on swipe-away / blur / unmount. The start is DEFERRED
-  // ~160ms past the viewability commit: playSong tears down + creates a native
-  // audio player (plus a possible fetch), which used to land synchronously on
-  // the exact frame the pager snapped — and a fast swipe-through now never
-  // starts a song at all.
+  // The focused reel (used by the attached-song autoplay effect below — it
+  // lives AFTER the overlayAd declarations it must react to).
   const visibleItem = posts.find((p) => p.id === visibleId);
-  useEffect(() => {
-    if (!visibleId) return;
-    if (!isFocused) { stopSong(); return; } // blur isn't gesture-time — stop now
-    const songId = visibleItem?.song_id;
-    if (songId) prefetchSong(songId); // URL resolves in the background NOW
-    // ALL player mutation lives in this ONE deferred timer (past the snap
-    // settle): start when the landed reel has a song, stop when it doesn't.
-    // The old cleanup-stop ran native audio work at the 55% viewability commit
-    // MID-SWIPE — and by destroying the player right before the deferred
-    // start, it also made the same-song handoff fast-path dead code. Now a
-    // swipe between posts sharing one song is a pure ref handoff (zero native
-    // churn), and different songs do a single internal replacement at +320ms.
-    const timer = setTimeout(() => {
-      if (songId) playSong(visibleId, songId);
-      else stopSong();
-    }, 320);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleId, visibleItem?.song_id, isFocused]);
-  // Unmount backstop — the timer-owned flow above never stops on unmount.
-  useEffect(() => () => stopSong(), []);
 
   // Players mount ONLY at snap-completion — never mid-swipe, never while the
   // landed video is already playing. (The previous "pre-warm the next reel"
@@ -551,6 +639,11 @@ export default function ReelScreen() {
   const visibleLandscape = !!visibleItem && !visibleItem.__ad
     && aspectToNumber(visibleItem.aspect_ratio, 16 / 9) > 1;
   const landscapeFullscreen = isFocused && visibleLandscape && deviceLandscape;
+  // Mirror for the frozen portrait viewability handler (it can't see render
+  // values): overlay-driven position syncs must not count toward the vertical
+  // ad scheduler while landscape owns the screen.
+  const landscapeFullscreenRef = useRef(false);
+  landscapeFullscreenRef.current = landscapeFullscreen;
   // Which landscape rotation we're in — needed to place the action rail relative
   // to the notch. Safe-area insets can't tell the two landscape directions apart
   // (they report the notch inset on BOTH sides), so we read the real device
@@ -642,6 +735,46 @@ export default function ReelScreen() {
   // it starts playing. Deliberately no auto-advance — that would skip it.
   const dismissOverlayAd = () => { overlayAdRef.current = null; setOverlayAd(null); };
 
+  // Auto-play the focused reel's attached song (the video itself is muted when a
+  // song is set); stop on swipe-away / blur / unmount. The start is DEFERRED
+  // past the viewability commit: playSong can do native audio work (plus a
+  // possible fetch), which used to land synchronously on the exact frame the
+  // pager snapped — and a fast swipe-through never starts a song at all.
+  // (Declared HERE, below the overlayAd state, because it must react to it.)
+  const visibleIsSponsor = !!visibleItem?.__ad;
+  useEffect(() => {
+    if (!visibleId) return;
+    if (!isFocused) { stopSong(); return; } // blur isn't gesture-time — stop now
+    // A sponsor owns the audio channel — the vertical ad page, or the TV cover
+    // over the landscape pager. Stop any attached song IMMEDIATELY, not on the
+    // deferred timer: the ad's own sound starts the moment it shows, so the
+    // timer's ~320ms window was two audios fighting. Worse, the TV cover never
+    // changes visibleId, so the timer path alone NEVER stopped the song — it
+    // played under the whole horizontal ad. stop() is pause-only on the
+    // persistent player, so doing it at the commit costs nothing — and it also
+    // clears any deferred mini-player claim, so a song can't resurrect
+    // mid-sponsor through that handoff either. On dismiss/swipe-away this
+    // effect re-runs and the landed reel's song starts normally.
+    if (visibleIsSponsor || overlayAd) { stopSong(); return; }
+    const songId = visibleItem?.song_id;
+    if (songId) prefetchSong(songId); // URL resolves in the background NOW
+    // ALL player mutation lives in this ONE deferred timer (past the snap
+    // settle): start when the landed reel has a song, stop when it doesn't.
+    // The old cleanup-stop ran native audio work at the 55% viewability commit
+    // MID-SWIPE — and by destroying the player right before the deferred
+    // start, it also made the same-song handoff fast-path dead code. Now a
+    // swipe between posts sharing one song is a pure ref handoff (zero native
+    // churn), and different songs do a single internal replacement at +320ms.
+    const timer = setTimeout(() => {
+      if (songId) playSong(visibleId, songId);
+      else stopSong();
+    }, 320);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleId, visibleItem?.song_id, isFocused, visibleIsSponsor, overlayAd]);
+  // Unmount backstop — the timer-owned flow above never stops on unmount.
+  useEffect(() => () => stopSong(), []);
+
   // ── Autoplay-next for the landscape pager (mirrors the Cast/TV behaviour) ────
   // On the TV a finished clip rolls to the next queued item, EXCEPT while the
   // viewer is mid-interaction (sheet open / paused), where it loops instead —
@@ -656,6 +789,7 @@ export default function ReelScreen() {
   const maybeAdvanceOverlay = () => {
     if (!landscapeFullscreen) return;                          // overlay isn't the active surface
     if (Date.now() < rotationSettleUntilRef.current) return;    // mid-rotation
+    if (Date.now() < seekSettleUntilRef.current) return;        // mid-manual-seek
     if (manualOnlyRef.current.has(overlayIdRef.current ?? '')) return; // re-watch → manual only
     if (overlayAdvancingRef.current || overlayDraggingRef.current) return; // already moving
     if (paused || scrubbing || overlayAdRef.current) return;   // viewer is driving
@@ -676,6 +810,7 @@ export default function ReelScreen() {
   // rolling on would defeat the whole unskippable window.
   const maybeAdvancePortrait = () => {
     if (Date.now() < rotationSettleUntilRef.current) return;    // mid-rotation
+    if (Date.now() < seekSettleUntilRef.current) return;        // mid-manual-seek
     if (manualOnlyRef.current.has(visibleIdRef.current ?? '')) return; // re-watch → manual only
     if (portraitAdvancingRef.current || portraitDraggingRef.current) return; // already moving
     if (!isFocused || landscapeFullscreen) return;             // not the active surface
@@ -770,7 +905,10 @@ export default function ReelScreen() {
     const prevOverlayId = overlayPrevVisibleIdRef.current;
     overlayPrevVisibleIdRef.current = it.id;
     if (prevOverlayId && prevOverlayId !== it.id && Date.now() >= rotationSettleUntilRef.current) {
-      try { overlayRefs.current.get(prevOverlayId)?.seek(0); } catch {}
+      // Same trim-aware rewind as the portrait pager: 0 sits outside a trimmed
+      // clip's window.
+      const prevStart = landscapeReelsRef.current.find((p: any) => p.id === prevOverlayId)?.trim_start ?? 0;
+      try { overlayRefs.current.get(prevOverlayId)?.seek(prevStart); } catch {}
     }
     visibleIdRef.current = it.id;
     setVisibleId(it.id);
@@ -782,30 +920,36 @@ export default function ReelScreen() {
     // Keep the vertical feed positioned on this reel so rotating back lands here.
     const idx = postsRef.current.findIndex((p) => p.id === it.id);
     if (idx >= 0) { try { listRef.current?.scrollToIndex({ index: idx, animated: false }); } catch {} }
-    // Interstitial cadence: after every few landscape reels, drop a TV ad COVER
-    // over the pager (blocks swipes, dismisses when done). No pager scroll ops.
+    // Interstitial cadence — same two-metric model as the vertical scheduler:
+    // a cover becomes DUE once enough genuinely-NEW landscape reels have been
+    // seen (count gate) AND the cross-surface time gap has passed (time gate),
+    // and a due cover then fires on the NEXT new-reel land where both hold.
+    // (It used to fire only at exact multiples of the count, burning the slot
+    // if the time gap blocked it.) Still a COVER over the pager — blocks
+    // swipes, dismisses when done, no pager scroll ops.
     //
     // Each reel counts exactly ONCE (countedReelsRef). Scrolling BACK over reels
     // you've already passed must not advance the cadence — otherwise an ad you
-    // already sat through pops up again. An ad belongs to its slot; once that
-    // slot is spent, the next one only comes after N genuinely-new reels.
+    // already sat through pops up again.
     if (!overlayAdRef.current && !countedReelsRef.current.has(it.id)) {
       countedReelsRef.current.add(it.id);
       overlayViewCountRef.current += 1;
       const ads = tvAdsRef.current;
-      // NEVER stack two sponsors. A reel ad may already be the current item in the
-      // vertical feed underneath (its own cadence is independent), and a TV cover
-      // on top of that is two ads at once. The counted slot is still consumed, so
-      // this one is simply skipped rather than queued up behind the reel ad.
+      // NEVER stack two sponsors. A reel ad may already be the current item in
+      // the vertical feed underneath, and a TV cover on top of that is two ads
+      // at once. Due-ness PERSISTS past the block: the cover fires on the next
+      // new reel once clear.
       const portraitAdActive = !!postsRef.current.find((p) => p.id === visibleIdRef.current)?.__ad;
       // …and even once it's gone, keep a minimum gap after ANY recent sponsor.
       const tooSoon = Date.now() - lastAdAtRef.current < AD_MIN_GAP_MS;
-      if (!portraitAdActive && !tooSoon && ads.length && overlayViewCountRef.current % TV_AD_EVERY_VIDEOS === 0) {
+      if (!portraitAdActive && !tooSoon && ads.length && overlayViewCountRef.current >= TV_AD_EVERY_VIDEOS) {
+        overlayViewCountRef.current = 0; // count metric restarts once shown
         const ad = ads[overlayAdRotationRef.current % ads.length];
         overlayAdRotationRef.current += 1;
         overlayAdRef.current = ad;
         setOverlayAd(ad);
         lastAdAtRef.current = Date.now(); // feeds the cross-surface ad spacing
+        hadAnySponsorRef.current = true;  // vertical's softer first-ad gate is spent too
         recordAdImpression(ad, 'tv', currentUserIdRef.current);
       }
     }
@@ -824,6 +968,11 @@ export default function ReelScreen() {
     overlayAdvancingRef.current = false;
     portraitDraggingRef.current = false;
     overlayDraggingRef.current = false;
+    // Fresh back-swipe baselines: comparing the landing index against one left
+    // over from a PREVIOUS session of this pager mis-read plain rotation as
+    // "scrolled backward" and opted the landed reel out of autoplay-next.
+    portraitPrevIndexRef.current = -1;
+    overlayPrevIndexRef.current = -1;
     // The horizontal ad cadence is per UNBROKEN landscape session: leaving to
     // vertical (or coming back) starts the count over. Otherwise a count left
     // sitting at the threshold fires the instant you rotate in — which is how a
@@ -832,6 +981,16 @@ export default function ReelScreen() {
     overlayViewCountRef.current = 0;
     countedReelsRef.current.clear();
     if (landscapeFullscreen) {
+      // An inserted-but-unseen vertical ad must not survive the surface
+      // switch: landscape has its own sponsor cadence, and coming back later
+      // could land the stale ad right after a TV cover (two sponsors nearly
+      // back-to-back). It sits BELOW the current page, so removing it never
+      // shifts what's on screen; the scheduler simply re-inserts when due.
+      if (pendingAdIdRef.current) {
+        const pid = pendingAdIdRef.current;
+        pendingAdIdRef.current = null;
+        setPosts((prev) => prev.filter((p) => p.id !== pid));
+      }
       enteredFromIdRef.current = visibleId;
       overlayIdRef.current = visibleId;
       setOverlayId(visibleId);
@@ -914,18 +1073,23 @@ export default function ReelScreen() {
     setCurrentUserId(uid);
     currentUserIdRef.current = uid;
 
-    const [seen, profile, followingRes] = await Promise.all([
+    // ALL independent fetches go out together — the posts query used to wait
+    // for seen/affinity/follows, and likes/saves serialized after it, so the
+    // swipeable list took two-plus round-trips longer than it needed to.
+    const SELECT = '*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)';
+    const [seen, profile, followingRes, postsRes, likesRes, savesRes] = await Promise.all([
       loadSeenPostIds(),
       uid ? buildAffinityProfile(uid) : Promise.resolve(EMPTY_PROFILE),
       uid ? supabase.from('follows').select('following_id').eq('follower_id', uid) : Promise.resolve({ data: [] as any }),
+      supabase
+        .from('posts').select(SELECT)
+        .eq('is_public', true).eq('type', 'video')
+        .order('created_at', { ascending: false }).limit(40),
+      uid ? supabase.from('likes').select('post_id').eq('user_id', uid) : Promise.resolve({ data: [] as any }),
+      uid ? supabase.from('saves').select('post_id').eq('user_id', uid) : Promise.resolve({ data: [] as any }),
     ]);
     const followingSet = new Set<string>((followingRes.data ?? []).map((f: any) => f.following_id));
-
-    const SELECT = '*, profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)';
-    const { data } = await supabase
-      .from('posts').select(SELECT)
-      .eq('is_public', true).eq('type', 'video')
-      .order('created_at', { ascending: false }).limit(40);
+    const data = postsRes.data;
 
     const now = Date.now();
     let list = attachEngagementCountsAll(data)
@@ -941,34 +1105,34 @@ export default function ReelScreen() {
       const { data: one } = await supabase.from('posts').select(SELECT).eq('id', id).single();
       start = attachEngagementCounts(one);
     }
-    const ordered = start ? [start, ...list] : list;
+    const ordered0 = start ? [start, ...list] : list;
     // Preserve the served spotlight flag on the tapped reel — the refetched DB
     // rows don't carry the __spotlight meta the feed attached, so re-tag it so
-    // the subtle sparkle emblem stays by the username.
-    setPosts(
-      seed?.__spotlight
-        ? ordered.map((p) => (p.id === seed.id ? { ...p, __spotlight: seed.__spotlight } : p))
-        : ordered,
-    );
+    // the subtle sparkle emblem stays by the username. The TAGGED array is what
+    // both setPosts and the later ad-weave use — weaving from the untagged one
+    // silently dropped the sparkle again.
+    const ordered = seed?.__spotlight
+      ? ordered0.map((p) => (p.id === seed.id ? { ...p, __spotlight: seed.__spotlight } : p))
+      : ordered0;
+    setPosts(ordered);
     setVisibleId(ordered[0]?.id ?? null);
     // Flag which loaded reels are spotlighted right now (one batched query), so
     // the sparkle shows globally — not just on a feed-tapped reel.
     fetchSpotlightedPostIds(ordered.map((p) => p.id)).then(setSpotlightIds);
 
     if (uid) {
-      const [{ data: l }, { data: s }] = await Promise.all([
-        supabase.from('likes').select('post_id').eq('user_id', uid),
-        supabase.from('saves').select('post_id').eq('user_id', uid),
-      ]);
-      setLiked(new Set((l ?? []).map((r: any) => r.post_id)));
-      setSaved(new Set((s ?? []).map((r: any) => r.post_id)));
+      setLiked(new Set((likesRes.data ?? []).map((r: any) => r.post_id)));
+      setSaved(new Set((savesRes.data ?? []).map((r: any) => r.post_id)));
     }
     recordSeenPostIds(ordered.map((p) => p.id));
     setLoading(false);
 
-    // Weave reel ads in WITHOUT blocking the first render: ads land at output
-    // indices 2, 7, 12 … (the 3rd reel, then every 5th). The tapped video is
-    // index 0, so weaving never disturbs what's currently on screen.
+    // Ad inventory for the dynamic scheduler (see the viewability handler): no
+    // load-time weave — ads insert just-in-time when both the posts-scrolled
+    // and time-elapsed gates pass. A slow inventory fetch costs nothing: the
+    // counters accrue regardless, and the first due-check after the pool lands
+    // can insert immediately (the old weave gave up entirely if the user had
+    // already scrolled past index 2 by the time ads arrived).
     const adViewer: AdViewer = {
       id: uid,
       profile: myProfileRef.current ? {
@@ -980,16 +1144,7 @@ export default function ReelScreen() {
       affinity: profile,
     };
     fetchReelAds(adViewer)
-      .then((pool) => {
-        if (!pool.length) return;
-        // Weave only while the user is still ABOVE the first ad slot (index
-        // 2): inserting once they're deeper shifts every index under them and
-        // swaps the reel they're WATCHING mid-play. Slow ad inventory just
-        // sits this session out.
-        const idx = postsRef.current.findIndex((p) => p.id === visibleIdRef.current);
-        if (idx > 1) return;
-        setPosts(weaveReelAds(ordered, pool));
-      })
+      .then((pool) => { reelAdPoolRef.current = pool; })
       .catch(() => {});
 
     // Laybell TV (horizontal) ads — shaped as landscape video items and woven
@@ -1018,6 +1173,10 @@ export default function ReelScreen() {
     if (!currentUserId) return;
     const isSaved = saved.has(item.id);
     setSaved((prev) => { const n = new Set(prev); isSaved ? n.delete(item.id) : n.add(item.id); return n; });
+    // Optimistic count beside the bookmark, mirroring the like button — the
+    // icon used to flip while its number sat frozen until a full reload.
+    setPosts((prev) => prev.map((p) => p.id !== item.id ? p
+      : { ...p, save_count: Math.max(0, (p.save_count || 0) + (isSaved ? -1 : 1)) }));
     if (isSaved) await supabase.from('saves').delete().eq('user_id', currentUserId).eq('post_id', item.id);
     else await supabase.from('saves').insert({ user_id: currentUserId, post_id: item.id });
   }
@@ -1062,7 +1221,11 @@ export default function ReelScreen() {
     setVideoRef: (pid: string, r: any) => { if (r) videoRefs.current.set(pid, r); else videoRefs.current.delete(pid); },
     setScrubRef: (pid: string, r: any) => { if (r) scrubRefs.current.set(pid, r); else scrubRefs.current.delete(pid); },
     setScrubbing,
-    seek: (pid: string, sec: number) => videoRefs.current.get(pid)?.seek(sec),
+    seek: (pid: string, sec: number) => {
+      const s = clampToTrim(postsRef.current.find((p) => p.id === pid), sec);
+      markManualSeek(s);
+      videoRefs.current.get(pid)?.seek(s);
+    },
     onProgress: (pid: string, pos: number, dur: number) => {
       if (visibleIdRef.current === pid) {
         // Backward jump = the clip wrapped (played through) → autoplay-next, the
@@ -1110,14 +1273,16 @@ export default function ReelScreen() {
           startSkippable={adUnlocked.has(item.id)}
           onSkip={() => {
             recordAdSkip(item, 'reels', currentUserId);
-            listRef.current?.scrollToIndex({ index: index + 1, animated: true });
+            // Guard the advance: a block/delete can retroactively strand an ad
+            // as the LAST item, where index+1 would throw out-of-range.
+            if (index + 1 < posts.length) listRef.current?.scrollToIndex({ index: index + 1, animated: true });
           }}
           // Played all the way through and never skipped → bill a COMPLETE (not a
           // skip), release the lock, and roll on, so nobody sits on a looping ad.
           onComplete={() => {
             recordAdComplete(item, 'reels', currentUserId);
             unlockAd(item.id);
-            listRef.current?.scrollToIndex({ index: index + 1, animated: true });
+            if (index + 1 < posts.length) listRef.current?.scrollToIndex({ index: index + 1, animated: true });
           }}
           // The ad's Skip countdown reached zero — release the swipe lock so the
           // user can page past (the same moment the Skip button becomes tappable).
@@ -1366,7 +1531,12 @@ export default function ReelScreen() {
                   bottomInset={insets.bottom + 6}
                   reachAbove={16}
                   onScrubbingChange={setScrubbing}
-                  onSeek={(sec) => overlayRefs.current.get(overlayIdRef.current ?? '')?.seek(sec)}
+                  onSeek={(sec) => {
+                    const oid = overlayIdRef.current ?? '';
+                    const s = clampToTrim(landscapeReelsRef.current.find((p: any) => p.id === oid), sec);
+                    markManualSeek(s);
+                    overlayRefs.current.get(oid)?.seek(s);
+                  }}
                 />
               )}
               <TouchableOpacity

@@ -213,6 +213,12 @@ export default function NewListingScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          {/* Plain-language explainer for the SELECTED deal type, so first-time
+              sellers know exactly what Lease / Sell / Free means before listing. */}
+          <View style={styles.licenseInfo}>
+            <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.licenseInfoText}>{t(`shop.licenseInfo.${license}`)}</Text>
+          </View>
           {license !== 'free' && (
             <>
               <View style={styles.priceRow}>
@@ -317,6 +323,14 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   chipActive: { backgroundColor: c.text, borderColor: c.text },
   chipText: { color: c.textSecondary, fontSize: 12, fontWeight: '600' },
   chipTextActive: { color: c.background },
+  // Explainer for the selected deal type (Lease / Sell / Free).
+  licenseInfo: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: c.surface, borderRadius: RADIUS.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+    paddingHorizontal: 12, paddingVertical: 10,
+  },
+  licenseInfoText: { flex: 1, color: c.textSecondary, fontSize: 12.5, lineHeight: 18 },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   priceSymbol: { color: c.text, fontSize: 18, fontWeight: '800' },
   priceInput: { flex: 1 },

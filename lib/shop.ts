@@ -8,6 +8,7 @@
 //   'shop'       (public)  <seller_id>/<listing_id>/cover.jpg | preview.<ext>
 //   'shop-files' (private) <seller_id>/<listing_id>/<filename>
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
 export type Shop = {
@@ -397,4 +398,59 @@ export async function fetchMyPurchases(): Promise<ShopOrder[]> {
     .limit(100);
   if (error) throw error;
   return attachOrderMeta((data ?? []) as ShopOrder[]);
+}
+
+// ── Unseen shop activity (the profile Shop-button alert dot) ─────────────────
+// "Needs my eyes" = (a) buy requests still waiting on me as the SELLER — these
+// are UNADDRESSED until delivered/declined, so they count even after being
+// seen (same persistence as the Orders-tab badge) — plus (b) order OUTCOMES I
+// haven't seen as the BUYER (my file was delivered / my offer was declined).
+// Seen-tracking is a local order-id → status snapshot captured whenever the
+// Orders tab is viewed: status CHANGES re-alert, no schema changes needed.
+
+const ORDERS_SEEN_KEY = 'shop_orders_seen_v1';
+
+async function loadOrdersSeen(uid: string): Promise<Record<string, string>> {
+  try {
+    const raw = await AsyncStorage.getItem(`${ORDERS_SEEN_KEY}_${uid}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+/** Snapshot the orders the user just looked at (called by the Orders tab). */
+export async function markShopOrdersSeen(orders: Pick<ShopOrder, 'id' | 'status'>[]): Promise<void> {
+  try {
+    if (!orders.length) return;
+    const uid = await myId();
+    const seen = await loadOrdersSeen(uid);
+    for (const o of orders) seen[o.id] = o.status;
+    await AsyncStorage.setItem(`${ORDERS_SEEN_KEY}_${uid}`, JSON.stringify(seen));
+  } catch { /* best effort */ }
+}
+
+/** How many orders want attention — drives the red dot on the profile Shop button. */
+export async function unseenShopActivityCount(): Promise<number> {
+  try {
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth?.user?.id;
+    if (!uid) return 0;
+    const { data } = await supabase
+      .from('shop_orders')
+      .select('id, status, seller_id, buyer_id')
+      .or(`seller_id.eq.${uid},buyer_id.eq.${uid}`)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    const rows = (data ?? []) as Pick<ShopOrder, 'id' | 'status' | 'seller_id' | 'buyer_id'>[];
+    if (!rows.length) return 0;
+    const seen = await loadOrdersSeen(uid);
+    let n = 0;
+    for (const r of rows) {
+      // Seller: a pending request is unaddressed — always counts.
+      if (r.seller_id === uid && r.status === 'requested') { n += 1; continue; }
+      // Buyer: a delivered/declined outcome counts until the Orders tab has
+      // been opened with that exact status on record.
+      if (r.buyer_id === uid && (r.status === 'delivered' || r.status === 'declined') && seen[r.id] !== r.status) n += 1;
+    }
+    return n;
+  } catch { return 0; } // pre-migration → no dot
 }

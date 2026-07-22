@@ -120,8 +120,11 @@ export default function StoryViewerScreen() {
   // Drives the CURRENT segment's fill (0→1, scaleX from the left).
   const progressAnim = useRef(new Animated.Value(0)).current;
   const panY = useRef(new Animated.Value(0)).current;
-  // Open/close "expand from rect" progress: 0 = at the source rect, 1 = fullscreen.
-  const expand = useRef(new Animated.Value(srcRect ? 0 : 1)).current;
+  // Open/close progress: 0 = at the source rect (or fully off-screen right when
+  // there's no rect), 1 = fullscreen. Starts at 0 in BOTH modes — without a
+  // rect the entrance is a quick Instagram-style slide-in from the right
+  // (notification taps and deep links used to hard-cut in).
+  const expand = useRef(new Animated.Value(0)).current;
   const contentFadeIn = useRef(new Animated.Value(srcRect ? 0 : 1)).current; // slower open fade
   // Free-floating text (stickers + a positioned caption) is hidden until the layout
   // has settled (and, when opening from a ring, until the zoom is essentially done),
@@ -198,11 +201,14 @@ export default function StoryViewerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Expand out of the tapped rect on open (Instagram shared-element style).
+  // Expand out of the tapped rect on open (Instagram shared-element style) —
+  // or, with no rect to grow from, slide in from the right like a native push.
   useEffect(() => {
     if (srcRect) {
       Animated.timing(expand, { toValue: 1, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
       Animated.timing(contentFadeIn, { toValue: 1, duration: 340, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+    } else {
+      Animated.timing(expand, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     }
     // Reveal the overlay text once it's settled at full size: after the zoom when
     // expanding from a circle, or after a brief settle when opened without one.
@@ -381,7 +387,9 @@ export default function StoryViewerScreen() {
         Animated.timing(panY, { toValue: 0, duration: 300, useNativeDriver: true }),
       ]).start(() => router.back());
     } else {
-      router.back();
+      // Mirror of the slide-in entrance: slide back out to the right, then pop.
+      Animated.timing(expand, { toValue: 0, duration: 240, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+        .start(() => router.back());
     }
   }, [srcRect, router, expand, panY]);
 
@@ -593,9 +601,16 @@ export default function StoryViewerScreen() {
   // ─── expand transform (rect → fullscreen) + swipe-down ───────────────────────
   const { contentTransform, backdropOpacity, contentOpacity } = useMemo(() => {
     if (!srcRect) {
+      // No source rect → the push-style slide: content rides `expand` in from
+      // the right edge (and back out on dismiss); the backdrop dims with it so
+      // the screen underneath darkens like a native push. Content stays fully
+      // opaque — the slide is the whole story, no fade.
       return {
-        contentTransform: [{ translateY: panY }] as any[],
-        backdropOpacity: 1 as Animated.Value | number,
+        contentTransform: [
+          { translateX: expand.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_W, 0] }) },
+          { translateY: panY },
+        ] as any[],
+        backdropOpacity: expand as Animated.Value | number,
         contentOpacity: 1 as Animated.Value | number,
       };
     }

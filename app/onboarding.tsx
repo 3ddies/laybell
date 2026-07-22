@@ -262,7 +262,15 @@ export default function OnboardingScreen() {
     return (
       <View style={styles.container}>
         <LinearGradient
-          colors={['#1C0A04', colors.background, colors.background]}
+          // A soft warm brand glow at the very top that melts into the theme
+          // background WELL ABOVE the title — so no text ever sits on the
+          // tinted band. The old hardcoded dark-brown top (`#1C0A04`) put the
+          // near-black title on a dark smudge in light mode (the unreadable
+          // zone). This is a translucent brand tint over colors.background, so
+          // it reads the same gentle way in light AND dark and the whole
+          // screen now follows the phone's light/dark theme.
+          colors={[colors.primary + '22', colors.background, colors.background]}
+          locations={[0, 0.3, 1]}
           style={[styles.welcomeBg, { paddingTop: insets.top + SPACING.md, paddingBottom: insets.bottom + SPACING.lg }]}
         >
           {/* Language picker — choose at account creation (defaults to English). */}
@@ -306,7 +314,7 @@ export default function OnboardingScreen() {
           <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep(1)}>
             <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
               <Text style={styles.primaryBtnText}>{t('onboarding.getStarted')}</Text>
-              <Ionicons name="arrow-forward" size={20} color={colors.text} />
+              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
             </LinearGradient>
           </TouchableOpacity>
         </LinearGradient>
@@ -454,11 +462,11 @@ export default function OnboardingScreen() {
           >
             <LinearGradient colors={valid ? GRADIENTS.primary : ['#333', '#222']} style={styles.primaryBtnInner}>
               {savingAbout ? (
-                <ActivityIndicator color={colors.text} />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <>
                   <Text style={styles.primaryBtnText}>{t('onboarding.continue')}</Text>
-                  <Ionicons name="arrow-forward" size={20} color={colors.text} />
+                  <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
                 </>
               )}
             </LinearGradient>
@@ -534,7 +542,7 @@ export default function OnboardingScreen() {
           <TouchableOpacity style={styles.primaryBtn} onPress={handlePermissionsContinue}>
             <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
               <Text style={styles.primaryBtnText}>{t('onboarding.continue')}</Text>
-              <Ionicons name="arrow-forward" size={20} color={colors.text} />
+              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity onPress={handlePermissionsContinue}>
@@ -596,13 +604,13 @@ export default function OnboardingScreen() {
               style={styles.primaryBtnInner}
             >
               {loading ? (
-                <ActivityIndicator color={colors.text} />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <>
                   <Text style={styles.primaryBtnText}>
                     {t('onboarding.continue')} {selectedGenres.size > 0 ? `(${selectedGenres.size})` : ''}
                   </Text>
-                  <Ionicons name="arrow-forward" size={20} color={colors.text} />
+                  <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
                 </>
               )}
             </LinearGradient>
@@ -677,11 +685,11 @@ export default function OnboardingScreen() {
         <TouchableOpacity style={styles.primaryBtn} onPress={handleFinish} disabled={finishing}>
           <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
             {finishing ? (
-              <ActivityIndicator color={colors.text} />
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
               <>
                 <Text style={styles.primaryBtnText}>{t('onboarding.takeMeIn')}</Text>
-                <Ionicons name="musical-notes" size={20} color={colors.text} />
+                <Ionicons name="musical-notes" size={20} color="#FFFFFF" />
               </>
             )}
           </LinearGradient>
@@ -881,7 +889,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: SPACING.md + 2, gap: SPACING.sm,
   },
-  primaryBtnText: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  // Fixed white (not colors.text): the CTA fill is always the brand orange
+  // gradient, so its label must be white in BOTH themes — colors.text flipped
+  // it to black in light mode, an inconsistent look across the same button.
+  primaryBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   btnDisabled: { opacity: 0.5 },
   skipText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center' },
 });

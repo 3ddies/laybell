@@ -7,7 +7,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from './ThemeContext';
 import { supabase } from '../lib/supabase';
 import { useProfile } from './ProfileContext';
 import { useTranslation } from './LanguageContext';
@@ -99,7 +100,9 @@ type ExternalApp = {
   label: string;
   labelKey?: string;   // when set, the label is localized via t(labelKey); brand names keep `label`
   icon: any;
-  color: string;
+  // Brand hex, or null → the render resolves it from the live theme (the
+  // neutral "More" circle must match light/dark).
+  color: string | null;
   urls?: (c: ShareCtx) => string[];
   native?: boolean;
 };
@@ -134,7 +137,7 @@ const EXTERNAL_APPS: ExternalApp[] = [
     urls: ({ link, title }) => [`https://www.reddit.com/submit?url=${enc(link)}&title=${enc(title)}`],
   },
   {
-    key: 'more', label: 'More', labelKey: 'share.more', icon: 'ellipsis-horizontal', color: COLORS.surfaceElevated, native: true,
+    key: 'more', label: 'More', labelKey: 'share.more', icon: 'ellipsis-horizontal', color: null, native: true,
   },
 ];
 
@@ -150,6 +153,10 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
   const insets = useSafeAreaInsets();
   const { profile } = useProfile();
   const { t } = useTranslation();
+  // Live theme (was the static dark COLORS): in white mode the share sheet now
+  // slides up as a light menu instead of a mismatched dark one.
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const translateY = useRef(new Animated.Value(DISMISS_DIST)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
   const closeRef = useRef(onClose); closeRef.current = onClose;
@@ -327,7 +334,7 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
                 <Image source={{ uri: payload.cover }} style={styles.previewThumb} />
               ) : (
                 <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.previewThumb}>
-                  <Ionicons name="musical-notes" size={18} color={COLORS.primary} />
+                  <Ionicons name="musical-notes" size={18} color={colors.primary} />
                 </LinearGradient>
               )}
               <View style={styles.previewInfo}>
@@ -396,8 +403,8 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.peopleRow}>
             {EXTERNAL_APPS.map((app) => (
               <TouchableOpacity key={app.key} style={styles.person} onPress={() => openApp(app)} activeOpacity={0.8}>
-                <View style={[styles.appCircle, { backgroundColor: app.color }]}>
-                  <Ionicons name={app.icon} size={26} color={app.key === 'more' ? COLORS.text : '#fff'} />
+                <View style={[styles.appCircle, { backgroundColor: app.color ?? colors.surfaceElevated }]}>
+                  <Ionicons name={app.icon} size={26} color={app.key === 'more' ? colors.text : '#fff'} />
                 </View>
                 <Text style={styles.personName} numberOfLines={1}>{app.labelKey ? t(app.labelKey) : app.label}</Text>
               </TouchableOpacity>
@@ -422,35 +429,36 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
   );
 });
 
-const styles = StyleSheet.create({
+// Themed (light/grey/dark) — the share sheet must match the active display mode.
+const makeStyles = (c: ThemePalette) => StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   // Above the TV remote (70) and level with the comments sheet (80) — the two
   // are never open at once (both launch from the remote, which sits beneath).
   overlayHost: { zIndex: 80 },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: c.surface,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
     overflow: 'hidden',
   },
   grab: { alignItems: 'center', paddingTop: SPACING.sm, paddingBottom: SPACING.sm, gap: SPACING.sm },
-  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: COLORS.border },
-  title: { color: COLORS.text, fontSize: 16, fontWeight: '800' },
+  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: c.border },
+  title: { color: c.text, fontSize: 16, fontWeight: '800' },
 
   preview: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
     paddingHorizontal: SPACING.md, paddingBottom: SPACING.md,
   },
-  previewThumb: { width: 44, height: 44, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight },
+  previewThumb: { width: 44, height: 44, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: c.surfaceLight },
   previewInfo: { flex: 1 },
-  previewCaption: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  previewUser: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
+  previewCaption: { color: c.text, fontSize: 14, fontWeight: '600' },
+  previewUser: { color: c.textSecondary, fontSize: 12, marginTop: 1 },
 
-  divider: { height: 0.5, backgroundColor: COLORS.border },
+  divider: { height: 0.5, backgroundColor: c.border },
 
   sectionLabel: {
-    color: COLORS.textTertiary, fontSize: 11, fontWeight: '700',
+    color: c.textTertiary, fontSize: 11, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.8,
     paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.sm,
   },
@@ -462,20 +470,20 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: 'transparent',
   },
-  personAvatarSel: { borderColor: COLORS.primary },
+  personAvatarSel: { borderColor: c.primary },
   personInitial: { color: '#fff', fontSize: 20, fontWeight: '700' },
   checkBadge: {
     position: 'absolute', bottom: -2, right: -2,
-    width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.primary,
+    width: 20, height: 20, borderRadius: 10, backgroundColor: c.primary,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: COLORS.surface,
+    borderWidth: 2, borderColor: c.surface,
   },
-  personName: { color: COLORS.textSecondary, fontSize: 11, maxWidth: 60, textAlign: 'center' },
-  emptyPeople: { color: COLORS.textSecondary, fontSize: 13, paddingHorizontal: SPACING.md, paddingBottom: SPACING.md },
+  personName: { color: c.textSecondary, fontSize: 11, maxWidth: 60, textAlign: 'center' },
+  emptyPeople: { color: c.textSecondary, fontSize: 13, paddingHorizontal: SPACING.md, paddingBottom: SPACING.md },
 
   sendBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.primary,
+    backgroundColor: c.primary,
     marginHorizontal: SPACING.md, marginVertical: SPACING.sm,
     paddingVertical: SPACING.md, borderRadius: RADIUS.md,
   },

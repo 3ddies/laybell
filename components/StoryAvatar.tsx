@@ -3,11 +3,13 @@ import { View, Text, StyleSheet, TouchableOpacity, type StyleProp, type ViewStyl
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { GRADIENTS, type ThemePalette } from '../constants/theme';
+import { useRouter } from 'expo-router';
+import { GRADIENTS, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { badgeGlow } from '../lib/badges';
 import { HIDDEN_NAME } from '../lib/hiddenProfile';
 import { useStories } from '../contexts/StoriesContext';
+import { useLiveStreamId } from '../lib/liveNow';
 
 // Drop-in avatar that shows a ring ONLY while `userId` has an active story (the
 // story is what surfaces the ring) and opens the story viewer on tap; otherwise it
@@ -43,6 +45,12 @@ export default function StoryAvatar({
   const story = hasStory(userId);
   const unseen = hasUnseen(userId);
   const wrapRef = useRef<View>(null);
+  const router = useRouter();
+  // LIVE pill: shown while this user is broadcasting (shared 45s poll — see
+  // lib/liveNow); tapping it jumps straight into their stream. Hidden on tiny
+  // avatars where the pill would be unreadable.
+  const liveStreamId = useLiveStreamId(userId);
+  const showLive = !!liveStreamId && size >= 32;
 
   // A ring shows ONLY while the user has an active story.
   //  • Unseen → the user's badge-tier color (or an explicit `badgeRing` override,
@@ -136,6 +144,18 @@ export default function StoryAvatar({
           <Ionicons name="add" size={16} color="#fff" />
         </TouchableOpacity>
       )}
+      {showLive && (
+        <View style={[styles.liveWrap, { bottom: -Math.max(4, Math.round(size * 0.09)) }]} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.livePill}
+            onPress={() => router.push(`/live?streamId=${liveStreamId}`)}
+            activeOpacity={0.85}
+            hitSlop={6}
+          >
+            <Text style={[styles.livePillText, { fontSize: Math.max(6.5, Math.min(9, size * 0.17)) }]}>LIVE</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -147,4 +167,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 2, borderColor: colors.background,
     alignItems: 'center', justifyContent: 'center',
   },
+  // Bottom-centered LIVE pill (wider slack than the avatar so it can't clip);
+  // box-none so the avatar stays tappable around it.
+  liveWrap: { position: 'absolute', left: -10, right: -10, alignItems: 'center' },
+  livePill: {
+    backgroundColor: '#F43F5E', // the app's LIVE red (matches the header disc)
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 5, paddingVertical: 1.5,
+    borderWidth: 1.5, borderColor: colors.background,
+  },
+  livePillText: { color: '#fff', fontWeight: '800', letterSpacing: 0.4 },
 });

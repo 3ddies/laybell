@@ -1,10 +1,11 @@
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Dimensions, Animated } from 'react-native';
-import { useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Dimensions, Animated, PanResponder } from 'react-native';
+import { useEffect, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
-import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useLinkGuard } from '../contexts/LinkGuardContext';
 import { openAdOptions } from '../contexts/AdOptionsContext';
@@ -14,8 +15,12 @@ import AppVideo from './AppVideo';
 // Fullscreen, DISMISSABLE viewer for a Laybell TV ad — opened by tapping a
 // sponsored card on the TV landing grid. Unlike the woven ads (landscape pager /
 // cast), this one is OPTIONAL: the user chose to watch it, so it plays with
-// sound and can be closed any time. Shows Sponsored + advertiser + a CTA button.
-const { width: SCREEN_W } = Dimensions.get('window');
+// sound and can be closed any time: the × button, or dragging the whole card
+// down (story-style — it follows the finger and the grid re-emerges behind).
+// Orientation is UNLOCKED while it's open, so a landscape creative can be
+// watched fullscreen by simply turning the phone; closing restores the app's
+// portrait lock.
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export type TVAdViewerItem = { media_url: string; thumbnail_url?: string | null; __ad?: AdMeta };
 
@@ -24,7 +29,6 @@ export default function TVAdViewer({ item, uid, onClose }: {
   uid: string | null;
   onClose: () => void;
 }) {
-  const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -32,6 +36,46 @@ export default function TVAdViewer({ item, uid, onClose }: {
 
   const meta = item?.__ad;
   const progress = useRef(new Animated.Value(0)).current;
+
+  // ── Swipe-down to exit ──────────────────────────────────────────────────────
+  // The card rides the finger (translateY) while the backdrop thins so the TV
+  // grid re-emerges behind; release past the threshold (or a real downward
+  // fling) slides it off and closes, otherwise it springs back. Claims only
+  // clearly-vertical downward MOVES, so the ×/CTA/report taps are untouched.
+  const translateY = useRef(new Animated.Value(0)).current;
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+  const dismissBySwipe = () => {
+    Animated.timing(translateY, { toValue: SCREEN_H, duration: 200, useNativeDriver: true })
+      .start(() => { translateY.setValue(0); closeRef.current(); });
+  };
+  const springBack = () =>
+    Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+  const pan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_e, g) => g.dy > 12 && g.dy > Math.abs(g.dx) * 1.5,
+    onPanResponderMove: (_e, g) => { if (g.dy > 0) translateY.setValue(g.dy); },
+    onPanResponderRelease: (_e, g) => {
+      if (g.dy > 120 || g.vy > 0.8) dismissBySwipe();
+      else springBack();
+    },
+    onPanResponderTerminate: springBack,
+  })).current;
+  const backdropOpacity = translateY.interpolate({
+    inputRange: [0, 420],
+    outputRange: [1, 0.15],
+    extrapolate: 'clamp',
+  });
+
+  // While open, the phone may rotate freely (TV creatives are usually
+  // landscape); closing restores the app-wide portrait lock. Reset any
+  // leftover drag offset from a previous viewing too.
+  useEffect(() => {
+    if (!item) return;
+    translateY.setValue(0);
+    ScreenOrientation.unlockAsync().catch(() => {});
+    return () => { ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {}); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item]);
 
   const onCta = () => {
     if (!meta?.ctaUrl) return;
@@ -46,8 +90,17 @@ export default function TVAdViewer({ item, uid, onClose }: {
   };
 
   return (
-    <Modal visible={!!item} transparent={false} animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.root}>
+    <Modal
+      visible={!!item}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      supportedOrientations={['portrait', 'landscape']}
+    >
+      {/* Backdrop thins as the card is dragged, revealing the grid behind. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, { opacity: backdropOpacity }]} />
+      <Animated.View style={[styles.root, { transform: [{ translateY }] }]} {...pan.panHandlers}>
         {item?.media_url ? (
           <AppVideo
             source={{ uri: item.media_url }}
@@ -87,7 +140,7 @@ export default function TVAdViewer({ item, uid, onClose }: {
           {!!meta?.ctaUrl && (
             <TouchableOpacity style={styles.cta} onPress={onCta} activeOpacity={0.85}>
               <Text style={styles.ctaText}>{meta.ctaLabel || t('reelAd.learnMore')}</Text>
-              <Ionicons name="arrow-forward" size={15} color={colors.text} />
+              <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
             </TouchableOpacity>
           )}
         </View>
@@ -96,13 +149,14 @@ export default function TVAdViewer({ item, uid, onClose }: {
         <View style={[styles.progressTrack, { bottom: insets.bottom + 2 }]}>
           <Animated.View style={[styles.progressFill, { width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
+  backdrop: { backgroundColor: '#000' },
   topBar: {
     position: 'absolute', left: SPACING.md, right: SPACING.md,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -130,5 +184,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: colors.primary, borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm + 2, marginTop: SPACING.sm,
   },
-  ctaText: { color: colors.text, fontSize: 15, fontWeight: '800' },
+  // Fixed white (not colors.text): orange fill over a dark video — light
+  // mode's near-black text read wrong there (same treatment as the other ads).
+  ctaText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
 });

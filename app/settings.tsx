@@ -46,6 +46,20 @@ type SectionItem = {
   subtitle?: string;
 };
 
+// Tiny scattered "stars" for the Spotlight card's galaxy look — static layout
+// (top in px inside the card, left as a %), varied size/brightness so the
+// field reads as depth rather than a pattern. Confined to the TEXT-FREE
+// columns — around the icon bubble on the left and the chevron on the right —
+// so no dot can ever sit under the label/subtitle (which flex-fill the middle
+// and may wrap in longer languages).
+const GALAXY_STARS = [
+  { top: 8, left: '15%', size: 2, opacity: 0.9 },
+  { top: 30, left: '8%', size: 1.5, opacity: 0.55 },
+  { top: 48, left: '13%', size: 2, opacity: 0.7 },
+  { top: 10, left: '90%', size: 1.5, opacity: 0.8 },
+  { top: 46, left: '88%', size: 2, opacity: 0.65 },
+] as const;
+
 function SettingsRow({ item }: { item: SectionItem }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -259,18 +273,6 @@ export default function SettingsScreen() {
       onPress: () => router.push('/analytics'),
     },
     {
-      icon: 'sparkles-outline',
-      label: 'Spotlight',
-      subtitle: t('account.spotlightSub'),
-      onPress: () => requireAdult(() => router.push('/spotlight')),
-    },
-    {
-      icon: 'megaphone-outline',
-      label: t('account.adManager'),
-      subtitle: t('account.adManagerSub'),
-      onPress: () => requireAdult(() => router.push('/ad-manager')),
-    },
-    {
       icon: 'ribbon-outline',
       label: t('account.badges'),
       subtitle: t('account.badgesSub'),
@@ -400,15 +402,6 @@ export default function SettingsScreen() {
     },
   ];
 
-  const premiumItems: SectionItem[] = [
-    {
-      icon: isPremium ? 'star' : 'star-outline',
-      label: t('premium.settingsRow'),
-      subtitle: isPremium ? t('premium.settingsActive') : t('premium.settingsUpgrade'),
-      onPress: () => router.push('/premium'),
-    },
-  ];
-
   const offlineItems: SectionItem[] = [
     {
       icon: 'cloud-download-outline',
@@ -522,6 +515,77 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         )}
 
+        {/* Promotion tools — one CONNECTED menu (no gaps), stacked by visual
+            weight: Laybell Premium (flagship brand-orange, thickest) →
+            Spotlight (galaxy-purple, mid) → Ad Manager (inverted mono block:
+            white-on-dark themes / black-on-light). */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings.section.promo')}</Text>
+          <View style={styles.promoMenu}>
+            <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/premium')}>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.promoPremium}
+              >
+                <View style={styles.promoIconBubble}>
+                  <Ionicons name={isPremium ? 'star' : 'star-outline'} size={22} color="#FFFFFF" />
+                </View>
+                <View style={styles.rowContent}>
+                  <Text style={styles.promoPremiumLabel}>{t('premium.settingsRow')}</Text>
+                  <Text style={styles.promoPremiumSub}>
+                    {isPremium ? t('premium.settingsActive') : t('premium.settingsUpgrade')}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.9)" />
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.85} onPress={() => requireAdult(() => router.push('/spotlight'))}>
+              <LinearGradient
+                colors={['#241147', '#3B1D8F', '#6D28D9']}
+                start={{ x: 0, y: 1 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.promoSpotlight}
+              >
+                {/* Scattered pin-prick stars sell the galaxy without any assets. */}
+                {GALAXY_STARS.map((s, i) => (
+                  <View
+                    key={i}
+                    style={[styles.galaxyStar, {
+                      top: s.top, left: s.left,
+                      width: s.size, height: s.size, borderRadius: s.size / 2,
+                      opacity: s.opacity,
+                    }]}
+                  />
+                ))}
+                <View style={[styles.promoIconBubble, styles.promoIconBubbleSm]}>
+                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                </View>
+                <View style={styles.rowContent}>
+                  <Text style={styles.promoSpotlightLabel}>Spotlight</Text>
+                  <Text style={styles.promoSpotlightSub}>{t('account.spotlightSub')}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.85)" />
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.promoAd}
+              onPress={() => requireAdult(() => router.push('/ad-manager'))}
+            >
+              <View style={[styles.promoIconBubble, styles.promoIconBubbleSm, styles.promoAdBubble]}>
+                <Ionicons name="megaphone-outline" size={18} color={colors.background} />
+              </View>
+              <View style={styles.rowContent}>
+                <Text style={styles.promoAdLabel}>{t('account.adManager')}</Text>
+                <Text style={styles.promoAdSub}>{t('account.adManagerSub')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.background + 'B3'} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Display — choose the app's color scheme (applies live). */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings.section.display')}</Text>
@@ -543,8 +607,6 @@ export default function SettingsScreen() {
             ))}
           </View>
         </View>
-
-        <Section title={t('premium.sectionTitle')} items={premiumItems} />
         <Section title={t('offline.sectionTitle')} items={offlineItems} />
         <Section title={t('settings.section.account')} items={accountItems} />
         <Section title={t('settings.section.notifications')} items={notifItems} />
@@ -674,6 +736,44 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   rowLabel: { color: c.text, fontSize: 15, fontWeight: '600' },
   rowLabelDestructive: { color: c.error },
   rowSubtitle: { color: c.textSecondary, fontSize: 12, marginTop: 1 },
+
+  // Promotion tools — ONE connected menu (the container owns the rounding and
+  // clips the flush blocks), stacked by visual weight: Premium is the thickest
+  // (flagship, brand orange), Spotlight mid (galaxy purple), Ad Manager an
+  // inverted mono block — white with black text on the dark themes, black with
+  // white text on light (bg = c.text, content = c.background).
+  promoMenu: {
+    borderRadius: RADIUS.lg, overflow: 'hidden',
+    borderWidth: 1, borderColor: c.border,
+  },
+  promoPremium: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.md + 6,
+  },
+  promoPremiumLabel: { color: '#FFFFFF', fontSize: 16.5, fontWeight: '800' },
+  promoPremiumSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12.5, marginTop: 2 },
+  promoSpotlight: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
+    overflow: 'hidden', // keeps the star field inside the block
+  },
+  promoSpotlightLabel: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  promoSpotlightSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 1 },
+  promoAd: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 4,
+    backgroundColor: c.text,
+  },
+  promoAdBubble: { backgroundColor: c.background + '26' },
+  promoAdLabel: { color: c.background, fontSize: 15, fontWeight: '700' },
+  promoAdSub: { color: c.background + 'B3', fontSize: 12, marginTop: 1 },
+  promoIconBubble: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  promoIconBubbleSm: { width: 34, height: 34, borderRadius: 17 },
+  galaxyStar: { position: 'absolute', backgroundColor: '#FFFFFF' },
 
   // Display-mode color chip + unselected radio.
   swatch: { width: 28, height: 28, borderRadius: RADIUS.sm, borderWidth: 1 },

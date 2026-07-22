@@ -7,7 +7,8 @@ import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { useTheme, useThemedStyles } from './ThemeContext';
 import { confirmDeletePost, reportPost, reportUser, confirmArchivePost } from '../lib/postActions';
 import { confirmBlockUser, isBlocked, unblockUser } from '../lib/blocks';
 import { isAudioPost } from '../lib/genres';
@@ -174,6 +175,10 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   onLaybellTv: (item: CastItem) => void;
 }) {
   const insets = useSafeAreaInsets();
+  // Live theme (was the static dark COLORS): in white mode the sheet now
+  // renders as a light menu instead of a mismatched dark one.
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   // Cap the sheet so it never exceeds the screen — in landscape the option list
   // is taller than the short viewport, which used to run off the top (clipped).
   // The list scrolls within this cap instead.
@@ -390,9 +395,9 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
         onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) onAddToPlaylist(o.postId); }); } });
     }
     options.push({ key: 'like', label: liked ? t('postOptions.unlike') : t('postOptions.like'), icon: liked ? 'heart' : 'heart-outline',
-      active: liked, activeColor: COLORS.like, onPress: toggleLike });
+      active: liked, activeColor: colors.like, onPress: toggleLike });
     options.push({ key: 'save', label: saved ? t('postOptions.unsave') : t('postOptions.save'), icon: saved ? 'bookmark' : 'bookmark-outline',
-      active: saved, activeColor: COLORS.primary, onPress: toggleSave });
+      active: saved, activeColor: colors.primary, onPress: toggleSave });
     // Download for offline (any viewer). Pinned → "Remove download"; otherwise
     // "Download". useDownloadAction owns all the failure alerts (tier/space/opt-out).
     {
@@ -408,7 +413,7 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
     if (isOwn) {
       options.push({ key: 'downloadable', label: t('offline.downloadableLabel'),
         icon: downloadable ? 'cloud-done' : 'cloud-offline-outline',
-        active: downloadable, activeColor: COLORS.primary,
+        active: downloadable, activeColor: colors.primary,
         accessibilityLabel: t('offline.downloadableLabel'), onPress: toggleDownloadable });
     }
     if (opts?.authorId && !isOwn) {
@@ -522,15 +527,15 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
               <View style={[
                 styles.iconWrap,
                 opt.destructive && styles.iconWrapDestructive,
-                opt.active && { backgroundColor: (opt.activeColor ?? COLORS.primary) + '1A' },
+                opt.active && { backgroundColor: (opt.activeColor ?? colors.primary) + '1A' },
               ]}>
                 {opt.loading ? (
-                  <ActivityIndicator size="small" color={COLORS.text} />
+                  <ActivityIndicator size="small" color={colors.text} />
                 ) : (
                   <Ionicons
                     name={opt.icon}
                     size={20}
-                    color={opt.active ? (opt.activeColor ?? COLORS.primary) : opt.destructive ? COLORS.error : COLORS.text}
+                    color={opt.active ? (opt.activeColor ?? colors.primary) : opt.destructive ? colors.error : colors.text}
                   />
                 )}
               </View>
@@ -556,18 +561,19 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   );
 }
 
-const styles = StyleSheet.create({
+// Themed (light/grey/dark) — the 3-dot menu must match the active display mode.
+const makeStyles = (c: ThemePalette) => StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: c.surface,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
     overflow: 'hidden',
   },
   grab: { alignItems: 'center', paddingVertical: SPACING.sm },
-  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: COLORS.border },
-  divider: { height: 0.5, backgroundColor: COLORS.border },
+  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: c.border },
+  divider: { height: 0.5, backgroundColor: c.border },
   optionsScroll: { flexShrink: 1 },
   option: {
     flexDirection: 'row',
@@ -576,16 +582,16 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md + SPACING.xs,
     gap: SPACING.md,
   },
-  optionBorder: { borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
+  optionBorder: { borderBottomWidth: 0.5, borderBottomColor: c.border },
   iconWrap: {
     width: 36,
     height: 36,
     borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: c.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconWrapDestructive: { backgroundColor: '#F43F5E18' },
-  optionLabel: { color: COLORS.text, fontSize: 16, fontWeight: '500' },
-  destructive: { color: COLORS.error },
+  optionLabel: { color: c.text, fontSize: 16, fontWeight: '500' },
+  destructive: { color: c.error },
 });

@@ -1155,8 +1155,10 @@ export default function HomeScreen() {
       if (fetchSeq.current !== seq) return;
 
       // PAINT 1 — organic, ranked + jittered. Real content replaces the skeleton
-      // now; the promoted layer weaves in on the next paint.
-      setPosts([...orderedPairs].sort((a, b) => b.score - a.score).map((p) => p.item));
+      // now; the promoted layer weaves in on the next paint. The first item is
+      // remembered so PAINT 2 can keep it pinned (the user is watching it).
+      const paint1List = [...orderedPairs].sort((a, b) => b.score - a.score).map((p) => p.item);
+      setPosts(paint1List);
       setLoading(false);
       setRefreshing(false);
 
@@ -1230,7 +1232,29 @@ export default function HomeScreen() {
       const adsForFeed = (adItems as any[]).filter((a) => a.user_id !== userId && !blockedIds.has(a.user_id));
       // Re-check: the promoted-layer await may have been overtaken by a newer fetch.
       if (fetchSeq.current !== seq) return;
-      setPosts(injectFeedAds(merged, adsForFeed));
+      // PAINT 2 lands ~0.5s under a user who is ALREADY WATCHING paint 1's first
+      // post — it must never change what's at the top. A spotlight that outranks
+      // the top anchor used to take slot 0 here (mergeSpotlights allows a
+      // feed-opening spotlight) and visibly REPLACED the watched post mid-view.
+      // Pin the watched post first; the spotlight opens one slot lower instead —
+      // still premium placement. Matching by id keeps this correct even when the
+      // watched post IS the spotlighted one (its promoted copy takes slot 0).
+      const woven = injectFeedAds(merged, adsForFeed);
+      const paint1FirstId = paint1List[0]?.id ?? null;
+      if (paint1FirstId && woven.length > 1 && woven[0]?.id !== paint1FirstId) {
+        const keepIdx = woven.findIndex((p: any) => p?.id === paint1FirstId);
+        if (keepIdx > 0) woven.unshift(woven.splice(keepIdx, 1)[0]);
+      }
+      setPosts(woven);
+      // The list is usually at REST when this lands, and a resting FlashList
+      // does not re-run viewability on a data swap — so a card shifted by the
+      // promoted insertions could keep its video playing (and the ambient song
+      // pointed at it) until the next scroll event. Re-resolve the viewability
+      // pairs against what is actually on screen now; impression handlers are
+      // session-deduped, so re-firing them cannot double-bill.
+      requestAnimationFrame(() => {
+        if (fetchSeq.current === seq) { try { feedListRef.current?.recomputeViewableItems(); } catch {} }
+      });
       // Persist shown IDs (spotlights excluded) so they deprioritise next session.
       recordSeenPostIds(visible.filter((p: any) => !spotPostIds.has(p.id)).map((p: any) => p.id));
     } finally {

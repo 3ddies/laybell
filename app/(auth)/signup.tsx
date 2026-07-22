@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import SocialAuthButtons from '../../components/SocialAuthButtons';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -149,6 +150,11 @@ export default function SignupScreen() {
           >
             {loading ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>{t('auth.createAccount')}</Text>}
           </TouchableOpacity>
+
+          {/* Express sign-up — Google (and Apple where available). The provider
+              account IS the consent-carrying identity; new users still complete
+              the same onboarding (incl. the required About-you step). */}
+          <SocialAuthButtons onError={setError} />
         </View>
 
         <View style={styles.footer}>

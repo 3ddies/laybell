@@ -21,6 +21,7 @@ import { createNotification } from '../../lib/createNotification';
 import { notifySuccess } from '../../lib/haptics';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleModal';
+import ThumbnailPickerModal from '../../components/ThumbnailPickerModal';
 import FeaturesModal from '../../components/FeaturesModal';
 import { type Feature } from '../../lib/features';
 import { useAudio } from '../../contexts/AudioContext';
@@ -148,6 +149,10 @@ export default function PostScreen() {
   const [media, setMedia] = useState<{ uri: string; width: number; height: number; posterUri?: string } | null>(null);
   const [pickedId, setPickedId] = useState<string | null>(null); // grid asset id of the single selection
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
+  // Cover picker (video posts, details step): choose any frame or a camera-roll
+  // image as the post thumbnail. Post-time only — it just replaces thumbnailUri,
+  // which uploads through the existing path.
+  const [showThumbPicker, setShowThumbPicker] = useState(false);
   const [videoAspect, setVideoAspect] = useState(0.8); // native aspect for video display
   const [videoDuration, setVideoDuration] = useState(0); // seconds (source)
   const [trimStart, setTrimStart] = useState(0); // seconds — start of the chosen window
@@ -1054,15 +1059,30 @@ export default function PostScreen() {
           {/* ── Top: bigger preview + Genre/Music dropdowns (image/video/slideshow) */}
           {postType !== 'audio' && (
             <View style={styles.twoCol}>
-              {/* Bigger post preview, with a Tag-people shortcut overlaid on it */}
+              {/* Bigger post preview, with a Tag-people shortcut overlaid on it.
+                  For VIDEO posts the square itself opens the cover picker (any
+                  frame from the clip, or a camera-roll image). */}
               <View style={styles.previewCol}>
-                {thumbUri ? (
-                  // ExpoImage renders ph:// reliably and degrades to empty (not a
-                  // broken-image glyph) if the file is gone — unlike RN core Image.
-                  <ExpoImage source={{ uri: thumbUri }} style={styles.previewBig} contentFit="cover" />
-                ) : (
-                  <View style={[styles.previewBig, styles.previewBigPlaceholder]}>
-                    <Ionicons name="image-outline" size={28} color={colors.textTertiary} />
+                <TouchableOpacity
+                  style={styles.previewBig}
+                  activeOpacity={postType === 'video' && media?.uri ? 0.85 : 1}
+                  disabled={!(postType === 'video' && media?.uri)}
+                  onPress={() => setShowThumbPicker(true)}
+                >
+                  {thumbUri ? (
+                    // ExpoImage renders ph:// reliably and degrades to empty (not a
+                    // broken-image glyph) if the file is gone — unlike RN core Image.
+                    <ExpoImage source={{ uri: thumbUri }} style={styles.previewBig} contentFit="cover" />
+                  ) : (
+                    <View style={[styles.previewBig, styles.previewBigPlaceholder]}>
+                      <Ionicons name="image-outline" size={28} color={colors.textTertiary} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+                {postType === 'video' && !!media?.uri && (
+                  <View style={styles.coverOverlay} pointerEvents="none">
+                    <Ionicons name="images-outline" size={12} color="#fff" />
+                    <Text style={styles.tagOverlayText}>{t('post.editCover')}</Text>
                   </View>
                 )}
                 <TouchableOpacity
@@ -1318,6 +1338,14 @@ export default function PostScreen() {
         </ScrollView>
         <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} />
         <TagPeopleModal visible={showTagModal} initial={tagged} onClose={() => setShowTagModal(false)} onDone={setTagged} />
+        <ThumbnailPickerModal
+          visible={showThumbPicker}
+          videoUri={postType === 'video' ? media?.uri ?? null : null}
+          durationSec={videoDuration ?? 0}
+          currentUri={thumbnailUri}
+          onPick={(uri) => { setThumbnailUri(uri); setShowThumbPicker(false); }}
+          onClose={() => setShowThumbPicker(false)}
+        />
         <FeaturesModal visible={showFeaturesModal} initial={features} onClose={() => setShowFeaturesModal(false)} onDone={setFeatures} />
         <CommunityPickerModal
           visible={showCommunityPicker}
@@ -1832,6 +1860,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingVertical: 5, paddingHorizontal: SPACING.sm,
   },
   tagOverlayText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  // "Edit cover" chip (video posts) — top of the preview square, mirroring the
+  // tag chip at the bottom; the whole square opens the cover picker.
+  coverOverlay: {
+    position: 'absolute', left: SPACING.xs, top: SPACING.xs,
+    maxWidth: DETAILS_PREVIEW - SPACING.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: RADIUS.full,
+    paddingVertical: 5, paddingHorizontal: SPACING.sm,
+  },
   rightCol: { flex: 1, gap: SPACING.sm },
   field: { gap: 6 },
   fieldLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },

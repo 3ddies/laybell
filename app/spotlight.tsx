@@ -420,7 +420,7 @@ export default function SpotlightScreen() {
 
               <TouchableOpacity style={styles.createBtn} onPress={startFlow} activeOpacity={0.85}>
                 <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
-                  <Ionicons name="sparkles" size={18} color={colors.text} />
+                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
                   <Text style={styles.createBtnText}>{t('spotlight.createBtn')}</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -776,7 +776,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
     paddingVertical: SPACING.md,
   },
-  createBtnText: { color: colors.text, fontSize: 15, fontWeight: '800' },
+  createBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
 
   sectionTitle: {
     color: colors.textTertiary, fontSize: 11, fontWeight: '700',

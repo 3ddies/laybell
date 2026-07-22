@@ -137,7 +137,9 @@ export default function WelcomeTour({ onDone }: { onDone: () => void }) {
           renderItem={({ item }) => (
             <View style={styles.slide}>
               <LinearGradient colors={GRADIENTS.primary} style={styles.iconCircle}>
-                <Ionicons name={item.icon} size={40} color={colors.text} />
+                {/* Fixed white on the always-orange circle (colors.text flipped
+                    it black in light mode). */}
+                <Ionicons name={item.icon} size={40} color="#FFFFFF" />
               </LinearGradient>
               <Text style={styles.title}>{item.title}</Text>
               <Text style={styles.body}>{item.body}</Text>
@@ -154,7 +156,7 @@ export default function WelcomeTour({ onDone }: { onDone: () => void }) {
         <TouchableOpacity style={styles.primaryBtn} onPress={next} activeOpacity={0.85}>
           <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnInner}>
             <Text style={styles.primaryBtnText}>{isLast ? t('welcomeTour.getStarted') : t('welcomeTour.next')}</Text>
-            <Ionicons name={isLast ? 'checkmark' : 'arrow-forward'} size={18} color={colors.text} />
+            <Ionicons name={isLast ? 'checkmark' : 'arrow-forward'} size={18} color="#FFFFFF" />
           </LinearGradient>
         </TouchableOpacity>
       </Animated.View>
@@ -191,5 +193,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   dotActive: { width: 22, backgroundColor: colors.primary },
   primaryBtn: { borderRadius: RADIUS.full, overflow: 'hidden' },
   primaryBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, paddingVertical: SPACING.md },
-  primaryBtnText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  // Fixed white (not colors.text): the button fill is always the brand orange
+  // gradient, so the label stays white in both light and dark themes.
+  primaryBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 });

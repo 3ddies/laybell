@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import SocialAuthButtons from '../../components/SocialAuthButtons';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -100,6 +101,10 @@ export default function LoginScreen() {
           >
             {loading ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>{t('auth.login')}</Text>}
           </TouchableOpacity>
+
+          {/* Express sign-in — Google (and Apple where available). New accounts
+              flow into onboarding automatically. */}
+          <SocialAuthButtons onError={setError} />
         </View>
 
         <View style={styles.footer}>

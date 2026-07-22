@@ -40,6 +40,17 @@ const HANDOFF_MS = 200;
 // the rare case where a glitch fires just after the user's first real touch.
 const MOUNT_GUARD_MS = 2500;
 
+// The BAR's last programmatic navigation: which route index it targeted and
+// when. The teleport guard exempts bar-driven jumps (a tap/flick may
+// legitimately move several tabs) — but the 2026-07-21 recording showed the
+// corrupted post-login pager OVERSHOOTING a bar flick (low-thumb swipes land
+// on the bar band): the bar targeted the ADJACENT tab, the broken pager
+// settled on Profile, and the plain "a tabPress happened recently" exemption
+// swallowed it. Recording the actual TARGET lets the guard verify a
+// bar-driven settle instead of trusting it: land anywhere else → redirect to
+// where the bar meant to go.
+const lastBarNav = { index: -1, at: 0 };
+
 // Wrap the Material Top Tabs navigator so Expo Router drives it with file-based
 // routes. Material Top Tabs is backed by the native react-native-pager-view, so
 // swiping between tabs shows the adjacent screen sliding in (real preview, not
@@ -292,6 +303,10 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
     const event = navigation.emit({ type: 'tabPress', target: target.route.key, canPreventDefault: true });
     if (!focused && !event.defaultPrevented) {
       const jump = Math.abs(target.index - state.index);
+      // Remember the intended destination so the teleport guard can VERIFY the
+      // settle that follows (see lastBarNav above).
+      lastBarNav.index = target.index;
+      lastBarNav.at = Date.now();
       navigation.navigate(target.route.name);
       return jump;
     }
@@ -483,8 +498,28 @@ export default function TabLayout() {
   // always land after this flips true and stay exempt.
   const hasInteractedRef = useRef(false);
 
+  // ── Measured-mount gate ─────────────────────────────────────────────────────
+  // The native pager must never initialize against unmeasured geometry: the
+  // tab tree (re)mounts during the login transition (app/_layout keys it by
+  // user id), and a pager created before its container's real layout comes up
+  // with corrupted page offsets — the owner-reported "hypersensitive first
+  // swipe" that overshoots to Profile, normalizing only after the glitch
+  // forces a relayout. Waiting one frame for a real measured width means the
+  // pager's first geometry IS its final geometry. (Width changes later — the
+  // reels landscape rotation — only re-render; the navigator is not keyed to
+  // the value, so nothing remounts.)
+  const [measuredW, setMeasuredW] = useState(0);
+
   return (
      <TabSwipeContext.Provider value={setSwipeEnabled}>
+      <View
+        style={{ flex: 1 }}
+        onLayout={(e) => {
+          const w = Math.round(e.nativeEvent.layout.width);
+          if (w > 0) setMeasuredW((prev) => (prev === w ? prev : w));
+        }}
+      >
+      {measuredW > 0 && (
       <MaterialTopTabs
         initialRouteName="index"
         tabBarPosition="bottom"
@@ -543,20 +578,40 @@ export default function TabLayout() {
             // native-pager teleport emits NEITHER — that's what marks it spurious.
             const swipeDriven = swipingRef.current || Date.now() - lastSwipeEndAt.current < 600;
             const barDriven = Date.now() - lastTabPressAt.current < 700;
+            // A bar navigation is only TRUSTED when the settle landed on the tab
+            // the bar actually targeted — the corrupted post-login pager can
+            // overshoot a bar flick to a far tab (the recorded glitch: low-thumb
+            // swipes land on the bar band, the bar targets the adjacent tab, the
+            // broken pager settles on Profile, and a plain "tabPress happened
+            // recently" exemption swallowed it).
+            const barTargetFresh = Date.now() - lastBarNav.at < 1500 && lastBarNav.index >= 0;
+            const barVerified = barDriven && barTargetFresh && newIndex === lastBarNav.index;
+            const barMisfired = barDriven && barTargetFresh && newIndex !== lastBarNav.index;
 
             // First settle after (re)mount MUST be Home (that's initialRouteName,
             // and a single swipe can only reach an ADJACENT page). So a FAR first
-            // settle with no bar tap and no swipe is the native-pager "login
-            // teleport" (it lands on Profile). Snap straight to Home before it
-            // becomes our reference point — UNCONDITIONALLY, not just inside the
-            // mount window: a slow login can push this first settle past the window,
-            // and that stale timing check was the leak that let the glitch through.
-            // An adjacent first settle (initial layout) or a real gesture/tap is
-            // left alone.
+            // settle is the freshly-created native pager mis-firing — and it
+            // happens BOTH ungestured (the original "login teleport") AND during
+            // the user's first real swipe: the owner's 2026-07-21 screen recording
+            // shows a first swipe toward the CAMERA (page 0) previewing the
+            // profile screen in the camera's slot and then committing PROFILE
+            // (the far end). The pager's first-gesture offset is corrupted, so
+            // the committed index — and therefore its DIRECTION — is garbage;
+            // redirecting "the way the finger went" would just guess. The old
+            // `!swipeDriven` exemption here was the leak that let the recorded
+            // glitch through. Only an explicit bar press (tabPress) legitimately
+            // lands far on the first settle; EVERYTHING else snaps back to Home.
+            // That sets the reference point, the pager recovers, and every later
+            // settle is guarded by the delta logic below — worst case is one
+            // swipe that visibly returns to Home instead of teleporting.
             if (prev == null) {
-              if (homeIndex >= 0 && Math.abs(newIndex - homeIndex) > 1 && !barDriven && !swipeDriven) {
-                settledIndexRef.current = homeIndex;
-                navigation.navigate(names[homeIndex]);
+              if (homeIndex >= 0 && Math.abs(newIndex - homeIndex) > 1 && !barVerified) {
+                // Far first settle that ISN'T a verified bar landing: the mount
+                // glitch. Land where the user actually meant to go — the bar's
+                // recorded target when this was a mis-flown bar flick, else Home.
+                const intended = barMisfired ? lastBarNav.index : homeIndex;
+                settledIndexRef.current = intended;
+                navigation.navigate(names[intended]);
               } else {
                 settledIndexRef.current = newIndex;
               }
@@ -567,11 +622,16 @@ export default function TabLayout() {
             const delta = newIndex - prev;
             if (Math.abs(delta) <= 1) return; // a normal single-page move
 
-            if (barDriven) {
-              // Intentional bar navigation (tap or drag-release) — checked FIRST:
-              // a tabPress is a stronger intent signal than a ≤600ms-old swipe.
-              // (Before, a far bar jump made moments after a swipe fell into the
-              // swipe branch below and was redirected to the adjacent tab.)
+            if (barVerified) {
+              // Intentional bar navigation CONFIRMED by its landing spot —
+              // checked FIRST: a verified tabPress is a stronger intent signal
+              // than a ≤600ms-old swipe.
+            } else if (barMisfired) {
+              // The bar navigated but the pager settled somewhere ELSE — the
+              // corrupted-pager overshoot. Go where the bar meant.
+              const intended = Math.max(0, Math.min(names.length - 1, lastBarNav.index));
+              settledIndexRef.current = intended;
+              navigation.navigate(names[intended]);
             } else if (swipeDriven) {
               // A finger swipe moves EXACTLY one page, so an over-committed swipe
               // lands on the ADJACENT page in the swiped direction (where the finger
@@ -610,6 +670,8 @@ export default function TabLayout() {
             (their swipes belong to profile's fling stepper). */}
         <MaterialTopTabs.Screen name="profile" />
       </MaterialTopTabs>
+      )}
+      </View>
      </TabSwipeContext.Provider>
   );
 }

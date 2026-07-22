@@ -15,11 +15,14 @@ import type { UserAffinityProfile } from './feedScorer';
 //
 // Model: an advertiser creates a campaign (objective, placements, budget, CPM,
 // schedule, optional lightweight targeting) with one uploaded creative per
-// placement. Serving is CLIENT-SIDE and unranked — ads are injected at fixed
-// cadences (feed: spaced; reels: 3rd then every 5th; audio: 1 min then every
-// 6 min) AFTER the organic+spotlight feed is built, so the tuned ranking math
-// is never touched. Billing is simulated: each genuinely-new impression accrues
-// CPM spend via the RPC and the campaign auto-ends when the budget is spent.
+// placement. Serving is CLIENT-SIDE and unranked — the organic+spotlight
+// ranking math is never touched. Cadences per surface: the FEED injects at
+// spaced positions once per fetch; REELS run a dynamic two-metric scheduler
+// (posts scrolled AND time elapsed both gate when an ad is due — see
+// app/reel/[id].tsx — with the due ad inserted as the next post); AUDIO is
+// time-gated (1 min first, then 3-5 min between breaks). Billing is simulated:
+// each genuinely-new impression accrues CPM spend via the RPC and the campaign
+// auto-ends when the budget is spent.
 
 // ─── Flags & constants ─────────────────────────────────────────────────────────
 
@@ -34,8 +37,11 @@ export const AD_FEED_GAP = 9;
 export const AD_FEED_GAP_MIN = 7;
 export const AD_FEED_GAP_MAX = 13;
 
-// Reels: the first ad is 2 reels into scrolling (output index 2), then a
-// RANDOM 4-7 videos between each subsequent ad.
+// Reels: COUNT gates for the dynamic scheduler in app/reel/[id].tsx — the
+// first ad needs 2 organic reels landed, each later one a RANDOM 4-7 since the
+// previous sponsor. Count is HALF of due-ness: a time gate (15s first / 45s
+// between, the cross-surface AD_MIN_GAP_MS) must also pass, and a due ad then
+// shows as the NEXT post. Premium widens both gates ×2 (adSpacingMultiplier).
 export const REEL_AD_FIRST = 2;
 export const REEL_AD_EVERY_MIN = 4;
 export const REEL_AD_EVERY_MAX = 7;
@@ -564,11 +570,10 @@ export function injectFeedAds(list: any[], ads: any[], firstGap: number = AD_FEE
   return out;
 }
 
-// Weave reel ads into the ordered reel list: the first at output index 2 (the
-// 3rd reel), then a RANDOM 4-7 videos between each subsequent ad. No trailing
-// ad; the same campaign can repeat across slots when the pool is small.
-// `spacing` widens both the first slot and the between-gaps — premium passes ×2
-// (via adSpacingMultiplier) for ~50% fewer reel ads; free users get ×1.
+// LEGACY fixed-position weave (kept for reference/reuse): first ad at output
+// index 2, then a RANDOM 4-7 between. Superseded in app/reel/[id].tsx by the
+// dynamic two-metric scheduler (posts scrolled + time elapsed → due → inserted
+// as the next post), which reuses the same REEL_AD_* count constants.
 export function weaveReelAds(organic: any[], pool: AdSource[], spacing = adSpacingMultiplier()): any[] {
   if (!pool.length || !organic.length) return organic;
   const out: any[] = [];

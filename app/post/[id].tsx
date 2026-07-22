@@ -84,7 +84,12 @@ export default function PostDetailScreen() {
   const songMuted = usePostMusicMuted();
   const isFocused = useIsFocused();
   const flatListRef = useRef<any>(null);
-  const { dismiss, popInstant, backdropOpacity, contentStyle } = useExpandTransition();
+  const { srcRect, dismiss, popInstant, backdropOpacity, contentStyle } = useExpandTransition();
+  // Close the viewer: shrink into the source rect when there is one; otherwise a
+  // plain back — the SwipeBackPager intercepts that and slides the page off
+  // (and its closing guard survives a mid-slide re-grab, unlike the hook's
+  // one-shot latch, so the back button can never dead-end).
+  const closeViewer = srcRect ? dismiss : () => router.back();
   // The swipe-back pager's gesture, paused while a slideshow carousel inside is
   // being touched (it provides TabSwipeContext below) so swiping between slides
   // never drags the whole post off-screen.
@@ -275,9 +280,10 @@ export default function PostDetailScreen() {
 
   if (notFound && !post) {
     return (
-      // onClose (not the default back) so this pager never intercepts
-      // beforeRemove — the expand hook already listens for that.
-      <SwipeBackPager onClose={popInstant} fastExit>
+      // With a source rect, onClose keeps this pager from intercepting
+      // beforeRemove (the expand hook listens for that); without one the pager
+      // owns the close and slides the page off on back-press.
+      <SwipeBackPager onClose={srcRect ? popInstant : undefined} fastExit>
         <View style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -296,17 +302,21 @@ export default function PostDetailScreen() {
     <View style={styles.root}>
       {/* Swipe right anywhere to slide the whole post (backdrop included) off and
           reveal the screen underneath — one motion, same feel as the tab pager.
-          onClose skips the shrink-to-thumbnail close (the page is already
-          off-screen); the back button still uses the shrink via dismiss().
-          animateIn off — the grow-from-thumbnail expand IS the entrance. */}
-      <SwipeBackPager onClose={popInstant} scrollEnabled={pageSwipeOn} animateIn={false} fastExit>
+          With a source rect: onClose skips the shrink-to-thumbnail close (the
+          page is already off-screen) and the back button shrinks via dismiss().
+          WITHOUT one (notification taps, reposts, deep links) the screen used
+          to hard-cut both ways — so the pager now provides the Instagram-style
+          push: animateIn slides it in, and leaving onClose unset lets the
+          pager's beforeRemove interception slide it out on back-press too
+          (dismiss()'s src-less router.back() lands in that same interception). */}
+      <SwipeBackPager onClose={srcRect ? popInstant : undefined} scrollEnabled={pageSwipeOn} animateIn={!srcRect} fastExit>
       <TabSwipeContext.Provider value={setPageSwipeOn}>
       {/* Darkening backdrop — fades as the post grows out of / shrinks into the thumb. */}
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]} />
       <Animated.View style={[StyleSheet.absoluteFill, contentStyle]}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={dismiss}>
+        <TouchableOpacity style={styles.backBtn} onPress={closeViewer}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('postView.title')}</Text>
@@ -366,7 +376,7 @@ export default function PostDetailScreen() {
                   </TouchableOpacity>
                 )}
                 {!!post.song_id && (
-                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={dismiss} />
+                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
                 )}
                 <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
               </View>
@@ -383,7 +393,7 @@ export default function PostDetailScreen() {
                   initialIndex={initialSlide}
                 />
                 {!!post.song_id && (
-                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={dismiss} />
+                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
                 )}
                 <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
               </View>
@@ -410,7 +420,7 @@ export default function PostDetailScreen() {
                 </TouchableOpacity>
               )}
               {!!post.song_id && (
-                <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={dismiss} />
+                <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
               )}
               <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
               </View>

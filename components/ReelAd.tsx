@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
-import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { aspectToNumber } from '../lib/aspectRatio';
 import { AD_SKIP_MS, type AdMeta } from '../lib/ads';
@@ -42,7 +42,6 @@ type Props = {
 };
 
 export default function ReelAd({ item, visible, paused, mountPlayer, insets, onSkip, onCta, onOptions, onSkippableChange, startSkippable = false, onComplete }: Props) {
-  const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const ad: AdMeta = item.__ad;
@@ -82,6 +81,17 @@ export default function ReelAd({ item, visible, paused, mountPlayer, insets, onS
     if (!startSkippable) setSecsRemaining(Math.ceil(AD_SKIP_MS / 1000));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, item.id]);
+  // Un-warmed arrival (fast swipe onto the ad): the pooled player mounts at the
+  // SETTLE, after the reset above ran against a null ref — so a same-creative
+  // entry could hand back a retained mid-clip playhead and "complete" early.
+  // Re-zero the playhead the moment the player exists. Deliberately does NOT
+  // touch the countdown refs — genuine watched time keeps accruing.
+  useEffect(() => {
+    if (!visible || !mountPlayer) return;
+    try { videoRef.current?.seek(0); } catch {}
+    lastPosRef.current = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mountPlayer, visible]);
 
   return (
     <View style={{ width: SCREEN_W, height: SCREEN_H, backgroundColor: '#000' }}>
@@ -166,7 +176,7 @@ export default function ReelAd({ item, visible, paused, mountPlayer, insets, onS
         {!!ad?.body && <Text style={styles.body} numberOfLines={2}>{ad.body}</Text>}
         <TouchableOpacity style={styles.cta} onPress={onCta} activeOpacity={0.85}>
           <Text style={styles.ctaText}>{ad?.ctaLabel || t('reelAd.learnMore')}</Text>
-          <Ionicons name="arrow-forward" size={15} color={colors.text} />
+          <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
     </View>
@@ -205,5 +215,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: colors.primary, borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm + 2, marginTop: SPACING.sm,
   },
-  ctaText: { color: colors.text, fontSize: 15, fontWeight: '800' },
+  // Fixed white (not colors.text): the button sits on the orange brand fill
+  // over a dark video — light mode's near-black text read wrong there.
+  ctaText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
 });

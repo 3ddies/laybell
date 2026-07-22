@@ -42,6 +42,7 @@ import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { unseenShopActivityCount } from '../../lib/shop';
 import TranslatableText from '../../components/TranslatableText';
 import { ProfileSkeleton } from '../../components/Skeleton';
 
@@ -106,6 +107,14 @@ export default function ProfileScreen() {
   const isFocused = useIsFocused();
   const { playQueue, expand } = useAudio();
   const { playingId } = useAudioPlayer();
+
+  // Unaddressed/unseen shop activity (pending sale requests, freshly delivered
+  // or declined orders) → red alert dot on the Shop button, refreshed whenever
+  // the profile regains focus (e.g. returning from the shop hub clears it).
+  const [shopAlertCount, setShopAlertCount] = useState(0);
+  useFocusEffect(useCallback(() => {
+    unseenShopActivityCount().then(setShopAlertCount).catch(() => {});
+  }, []));
 
   // Per-thumbnail nodes so opening a post/reel can expand out of the tapped cell.
   const gridRefs = useRef<Record<string, any>>({});
@@ -683,10 +692,20 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={styles.shopBtn}
               activeOpacity={0.8}
-              onPress={() => router.push('/shop?tab=mine')}
+              // With pending activity the tap lands straight on the Orders tab
+              // (the thing the red dot is about); otherwise My Shop as usual.
+              onPress={() => router.push(shopAlertCount > 0 ? '/shop?tab=orders' : '/shop?tab=mine')}
             >
               <Ionicons name="storefront" size={15} color="#fff" />
               <Text style={styles.shopBtnText}>{t('shop.title')}</Text>
+              {/* Unaddressed/unseen shop activity (new sale request, delivered
+                  file, declined offer) — same red alert treatment as the
+                  notification/message bells, anchored top-left per design. */}
+              {shopAlertCount > 0 && (
+                <View style={styles.shopAlertDot}>
+                  <Text style={styles.shopAlertText}>{shopAlertCount > 9 ? '9+' : shopAlertCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.spotlightBtn}
@@ -811,6 +830,17 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
   },
   shopBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  // Red alert circle (top-left of the Shop button) for unaddressed/unseen shop
+  // activity — same recipe as the home header's notification badge, with a
+  // background ring so it pops off the green pill.
+  shopAlertDot: {
+    position: 'absolute', top: -5, left: -5,
+    minWidth: 17, height: 17, borderRadius: 8.5,
+    backgroundColor: colors.error, paddingHorizontal: 3,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: colors.background,
+  },
+  shopAlertText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   spotlightBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
     backgroundColor: colors.primary,

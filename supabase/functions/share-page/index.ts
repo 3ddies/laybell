@@ -86,6 +86,26 @@ serve(async (req: Request) => {
   // landing page; crawlers never execute this and just read the tags.
   const target = `${WEB}/open.html${openPath ? `?p=${encodeURIComponent(openPath)}` : ''}`;
 
+  // Supabase HARD-SANITIZES HTML on the shared *.supabase.co functions domain
+  // (Content-Type forced to text/plain + a sandbox CSP, anti-phishing) — so a
+  // human tapping the link saw raw HTML source and the meta-refresh/JS bounce
+  // never ran. Redirects pass through untouched: send BROWSERS a real 302 to
+  // open.html, and keep the OG document only for link CRAWLERS (matched by
+  // user-agent), which parse the tags out of the body regardless of the forced
+  // content type. If the function ever moves behind a custom domain, the
+  // sanitizer stops applying and both paths keep working as-is.
+  const ua = (req.headers.get('user-agent') ?? '').toLowerCase();
+  const isCrawler = /facebookexternalhit|whatsapp|discordbot|twitterbot|telegrambot|slackbot|linkedinbot|pinterest|redditbot|skypeuripreview|applebot|googlebot|bingbot|snapchat|vkshare|embedly|quora link preview|bot|crawler|spider/.test(ua);
+  if (!isCrawler) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        location: target,
+        'cache-control': 'public, max-age=300, s-maxage=600',
+      },
+    });
+  }
+
   const html = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">

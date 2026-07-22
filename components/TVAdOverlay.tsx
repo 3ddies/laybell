@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
-import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
+import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { AD_SKIP15_MS, type AdMeta } from '../lib/ads';
 import AppVideo from './AppVideo';
@@ -21,7 +21,6 @@ export default function TVAdOverlay({ item, active, insets, onDone, onSkip, onRe
   onReport: () => void;           // open the ad options / report sheet
   onCta: () => void;
 }) {
-  const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const ad: AdMeta = item.__ad;
@@ -139,7 +138,7 @@ export default function TVAdOverlay({ item, active, insets, onDone, onSkip, onRe
         {!!ad?.ctaUrl && (
           <TouchableOpacity style={styles.cta} onPress={onCta} activeOpacity={0.85}>
             <Text style={styles.ctaText}>{ad.ctaLabel || t('reelAd.learnMore')}</Text>
-            <Ionicons name="arrow-forward" size={15} color={colors.text} />
+            <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
           </TouchableOpacity>
         )}
       </View>
@@ -184,7 +183,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingVertical: SPACING.sm + 2, marginTop: SPACING.xs, alignSelf: 'flex-start',
     paddingHorizontal: SPACING.lg,
   },
-  ctaText: { color: colors.text, fontSize: 15, fontWeight: '800' },
+  // Fixed white (not colors.text): orange fill over a dark video — light
+  // mode's near-black text read wrong there.
+  ctaText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   progressTrack: { position: 'absolute', left: 0, right: 0, height: 3, backgroundColor: 'rgba(255,255,255,0.25)' },
   progressFill: { height: 3, backgroundColor: colors.primary },
 });

@@ -183,15 +183,18 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
       if (status === 'readyToPlay') {
         retriesRef.current = 0;
         hasLoadedRef.current = true;
-        setSurfaceReady(true);
-        setShowPoster(false);
-        if (!firedReadyRef.current) { firedReadyRef.current = true; onReadyRef.current?.(); }
+        // Seed BEFORE revealing (same order as ReelVideo): revealing first
+        // flashed frame 0 for a beat on trimmed clips / rotation-resume
+        // before the seek landed.
         if (!seededRef.current) {
           seededRef.current = true;
           const ts = trimStartRef.current;
           const seekTo = ts != null && ts > 0 ? ts : startPositionRef.current;
           if (seekTo != null && seekTo > 0) { try { player.currentTime = seekTo; } catch {} }
         }
+        setSurfaceReady(true);
+        setShowPoster(false);
+        if (!firedReadyRef.current) { firedReadyRef.current = true; onReadyRef.current?.(); }
         // A load can succeed via the error-retry below (e.g. a freshly-posted
         // Cloudflare clip that just finished encoding). The shouldPlay effect
         // won't re-fire on its own, so kick playback here if it should be running.
@@ -254,6 +257,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
           source={{ uri: poster }}
           style={StyleSheet.absoluteFill}
           contentFit={posterContentFit ?? contentFit}
+          cachePolicy="memory-disk"
           pointerEvents="none"
         />
       ) : null}

@@ -16,9 +16,9 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import {
   LISTING_CATEGORIES, createShop, deliverOrder, exploreListings, fetchMyPurchases,
-  fetchMySales, fetchSellerListings, formatPrice, getShop, pendingSalesCount,
-  sellerEarningsCents, setOrderStatus, updateShop,
-  type ExploreSort, type ListingCategory, type Shop, type ShopListing, type ShopOrder,
+  fetchMySales, fetchSellerListings, formatPrice, getShop, hasOpenShop,
+  markShopOrdersSeen, pendingSalesCount, sellerEarningsCents, setOrderStatus, updateShop,
+  type ExploreSort, type ListingCategory, type SellerProfile, type Shop, type ShopListing, type ShopOrder,
 } from '../../lib/shop';
 import { useShopCart } from '../../lib/shopCart';
 
@@ -433,7 +433,11 @@ function MyShopTab({ myId, myAge }: { myId: string | null; myAge: number | null 
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statCell}>
-              <Text style={[styles.statValue, { color: colors.success }]}>{formatPrice(earnedCents)}</Text>
+              {/* Zero earnings say "None" — formatPrice(0) says "FREE", which
+                  reads like a price, not a total. Green only once real. */}
+              <Text style={[styles.statValue, earnedCents > 0 && { color: colors.success }]}>
+                {earnedCents > 0 ? formatPrice(earnedCents) : t('shop.earnedNone')}
+              </Text>
               <Text style={styles.statLabel}>{t('shop.statsEarned')}</Text>
             </View>
           </View>
@@ -468,10 +472,23 @@ function OrdersTab({ onChanged }: { onChanged?: () => void }) {
       const [s, p] = await Promise.all([fetchMySales(), fetchMyPurchases()]);
       setSales(s);
       setPurchases(p);
+      // Looking at the Orders tab IS seeing the outcomes — snapshot them so the
+      // profile Shop button's red alert dot clears (pending sale requests keep
+      // counting there until actually delivered/declined).
+      markShopOrdersSeen([...s, ...p]).catch(() => {});
     } catch { /* pre-migration */ }
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Tap the counterparty's name → their shop, or their profile when they don't
+  // have one set up (buyers often won't) — so a seller can see who they're
+  // selling to in one tap.
+  async function openCounterparty(p?: SellerProfile) {
+    if (!p?.id) return;
+    const shopOpen = await hasOpenShop(p.id).catch(() => false);
+    router.push(shopOpen ? `/shop/${p.id}` : `/profile/${p.id}`);
+  }
 
   async function act(order: ShopOrder, status: 'delivered' | 'declined') {
     setSales((prev) => prev.map((o) => (o.id === order.id ? { ...o, status } : o)));
@@ -528,7 +545,15 @@ function OrdersTab({ onChanged }: { onChanged?: () => void }) {
                 <View style={styles.flex}>
                   <Text style={styles.orderTitle} numberOfLines={1}>{o.listing?.title ?? '—'}</Text>
                   <Text style={styles.orderMeta} numberOfLines={1}>
-                    {name} · {formatPrice(o.price_cents, o.currency)} · {t(`shop.status.${o.status}`)}
+                    {!!name && (
+                      // Nested pressable span: tapping the NAME opens the person
+                      // (shop or profile); the rest of the row still opens the
+                      // listing.
+                      <Text style={styles.orderMetaName} suppressHighlighting onPress={() => openCounterparty(other)}>
+                        {name}
+                      </Text>
+                    )}
+                    {name ? ' · ' : ''}{formatPrice(o.price_cents, o.currency)} · {t(`shop.status.${o.status}`)}
                   </Text>
                 </View>
                 {section.sale && o.status === 'requested' ? (
@@ -662,6 +687,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   orderCoverFallback: { alignItems: 'center', justifyContent: 'center' },
   orderTitle: { color: c.text, fontSize: 13, fontWeight: '700' },
   orderMeta: { color: c.textTertiary, fontSize: 12, marginTop: 1 },
+  // The tappable counterparty name inside the meta line — brighter + bolder so
+  // it reads as a link to their shop/profile.
+  orderMetaName: { color: c.text, fontWeight: '700' },
   orderActions: { gap: 6 },
   deliverBtn: { backgroundColor: c.success, borderRadius: RADIUS.sm, paddingHorizontal: 10, paddingVertical: 5 },
   deliverBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },

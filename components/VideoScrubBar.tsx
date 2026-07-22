@@ -1,7 +1,13 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import {
-  Animated, View, StyleSheet, PanResponder, Easing, type StyleProp, type ViewStyle,
+  Animated, View, Text, StyleSheet, PanResponder, Easing, type StyleProp, type ViewStyle,
 } from 'react-native';
+
+// "0:42" — seconds floored, minutes unbounded (reels cap at 3min anyway).
+const fmtTime = (ms: number) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
 
 // A thin white progress bar for the reel player. Progress is pushed in
 // imperatively via the ref (`setProgress`) so the video's time-updates re-render
@@ -60,6 +66,12 @@ export default forwardRef<VideoScrubBarHandle, Props>(function VideoScrubBar(
     },
   }), [anim]);
 
+  // Target/total time readout while dragging, so the user can aim a seek. The
+  // string only changes when a displayed second flips, and setState with an
+  // identical string bails out — so this re-renders the (tiny) bar ~1×/s of
+  // scrubbed video, never per move event.
+  const [dragLabel, setDragLabel] = useState<string | null>(null);
+
   // Local x where the touch first landed on the bar; the live x is this plus the
   // gesture's accumulated dx (reliable for both taps, where dx≈0, and drags —
   // unlike per-move locationX, which jumps around).
@@ -68,9 +80,10 @@ export default forwardRef<VideoScrubBarHandle, Props>(function VideoScrubBar(
     const f = Math.max(0, Math.min(1, localX / (widthRef.current || 1)));
     anim.stopAnimation();
     anim.setValue(f);
+    if (durRef.current > 0) setDragLabel(`${fmtTime(f * durRef.current)} / ${fmtTime(durRef.current)}`);
     return f;
   };
-  const endScrub = () => { draggingRef.current = false; setDragging(false); onScrubbingChange?.(false); };
+  const endScrub = () => { draggingRef.current = false; setDragging(false); setDragLabel(null); onScrubbingChange?.(false); };
 
   // The visible line sits `bottomInset` up from the wrap's bottom, i.e. at
   // local y ≈ reachAbove + 3. Touches near it claim INSTANTLY (tap-to-seek);
@@ -124,6 +137,11 @@ export default forwardRef<VideoScrubBarHandle, Props>(function VideoScrubBar(
         <Animated.View style={[styles.fill, { transform: [{ scaleX: anim }] }]} />
       </View>
       {dragging && <Animated.View style={[styles.knob, { left: 0, bottom: bottomInset - 5, transform: [{ translateX: knobX }] }]} pointerEvents="none" />}
+      {dragging && dragLabel != null && (
+        <View style={[styles.timePill, { bottom: bottomInset + 18 }]} pointerEvents="none">
+          <Text style={styles.timeText}>{dragLabel}</Text>
+        </View>
+      )}
     </View>
   );
 });
@@ -143,4 +161,12 @@ const styles = StyleSheet.create({
     position: 'absolute', width: 14, height: 14, borderRadius: 7, marginLeft: -7,
     backgroundColor: '#fff',
   },
+  // Centered "target / total" readout floated just above the line while dragging.
+  timePill: {
+    position: 'absolute', alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 999,
+    paddingHorizontal: 12, paddingVertical: 5,
+  },
+  // Tabular digits so the label doesn't wobble as the numbers tick.
+  timeText: { color: '#fff', fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
 });
