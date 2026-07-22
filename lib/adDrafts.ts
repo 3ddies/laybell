@@ -18,6 +18,12 @@ export type AdDraft = {
   advertiserName: string;
   isBusiness: boolean;
   businessAvatar: any | null;
+  // Objective destinations (optional — absent on older drafts).
+  awarenessSelf?: boolean;
+  awarenessOthers?: any[];
+  shopListingId?: string | null;
+  websiteUrl?: string;
+  websiteCta?: string;
   placements: string[];
   drafts: Record<string, any>;
   ageMin: string;

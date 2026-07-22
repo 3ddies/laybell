@@ -20,9 +20,9 @@ import { formatCount } from '../lib/format';
 import { createNotification } from '../lib/createNotification';
 import Scrubber from './Scrubber';
 import Comments from './Comments';
-import { recordAdClick, AUDIO_AD_SKIP_MS } from '../lib/ads';
+import { adDestination, AUDIO_AD_SKIP_MS } from '../lib/ads';
+import { openAdCta } from '../contexts/AdCtaContext';
 import { isPostSpotlighted } from '../lib/spotlight';
-import { useLinkGuard } from '../contexts/LinkGuardContext';
 import { fetchFeatures, type Feature } from '../lib/features';
 import SongCardTitle from './SongCardTitle';
 
@@ -194,7 +194,6 @@ export default function NowPlaying() {
   const { t } = useTranslation();
   const { currentTrack, expanded, collapse, setCommentComposing, noteCommentEngagement, clearCommentEngagement, adState, skipAudioAd } = useAudio();
   const { show: showOptions } = usePostOptions();
-  const linkGuard = useLinkGuard();
   const router = useRouter();
   const [render, setRender] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
@@ -478,14 +477,10 @@ export default function NowPlaying() {
                 re-renders per ad tick. */}
             <AdProgress />
 
-            {!!adState.ctaUrl && (
+            {!!adDestination(adState) && (
               <TouchableOpacity
                 style={styles.adCtaBtn}
-                onPress={() => linkGuard.open(adState.ctaUrl!, {
-                  context: 'ad',
-                  sourceName: adState.advertiserName,
-                  onProceed: () => recordAdClick(adState, 'audio', adState.viewerId),
-                })}
+                onPress={() => openAdCta(adState, 'audio', adState.viewerId)}
                 activeOpacity={0.85}
               >
                 <Text style={styles.adCtaText}>{adState.ctaLabel}</Text>

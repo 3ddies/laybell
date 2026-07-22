@@ -195,6 +195,10 @@ export type AdCampaign = {
   target_lat?: number | null;
   target_lng?: number | null;
   target_radius_km?: number | null;
+  // Objective destinations (ad_ecosystem.sql, 2026-07-23). awareness → profiles;
+  // engagement → the advertiser's shop, featuring this listing.
+  target_profile_ids?: string[] | null;
+  target_shop_listing_id?: string | null;
   created_at: string;
   ad_creatives?: AdCreative[];
 };
@@ -214,6 +218,10 @@ export type AdMeta = {
   placement: AdPlacement;
   // Advertiser skip mode for TV/music ads ('unskippable' | 'skip15'); null else.
   skipMode?: string | null;
+  // Objective destination (see openAdCta / adDestination). Legacy ads have a
+  // null objective and fall back to opening ctaUrl.
+  objective?: AdObjective | null;
+  targetProfileIds?: string[] | null;
 };
 
 // What the audio scheduler needs to play and bill an audio ad.
@@ -231,6 +239,9 @@ export type AudioAd = {
   durationSeconds?: number | null;
   // 'unskippable' (plays fully) | 'skip15' (skippable after 15s) | null (10s).
   skipMode?: string | null;
+  // Objective destination — same fields as AdMeta so openAdCta works on both.
+  objective?: AdObjective | null;
+  targetProfileIds?: string[] | null;
 };
 
 // A {campaign, creative} pair the reel weaver turns into full-screen ad items.
@@ -345,6 +356,8 @@ function metaFor(c: AdCampaign, cr: AdCreative, placement: AdPlacement): AdMeta 
     ctaUrl: normalizeUrl(cr.cta_url),
     placement,
     skipMode: cr.skip_mode ?? null,
+    objective: c.objective ?? null,
+    targetProfileIds: c.target_profile_ids ?? null,
   };
 }
 
@@ -415,6 +428,42 @@ export function tvItemFor(src: AdSource, slot: number): any {
   };
 }
 
+// ─── Objective destinations ───────────────────────────────────────────────────
+// A served ad carries its full meta as item.__ad (feed/reels/tv) or IS the meta
+// (AudioAd). Resolve where its CTA should lead based on the campaign objective:
+//   awareness  → one or more Laybell profiles (a tap opens a chooser if >1)
+//   engagement → the advertiser's shop
+//   traffic / legacy → the external website (cta_url)
+
+export type AdMetaLike = AdMeta | AudioAd;
+
+export function adFullMeta(item: any): AdMetaLike | null {
+  if (!item) return null;
+  if (item.__ad) return item.__ad as AdMeta;
+  if (item.campaignId) return item as AudioAd;
+  return null;
+}
+
+export type AdDestination =
+  | { kind: 'website'; url: string }
+  | { kind: 'profile'; ids: string[] }
+  | { kind: 'shop'; ownerId: string };
+
+export function adDestination(item: any): AdDestination | null {
+  const m = adFullMeta(item);
+  if (!m) return null;
+  const objective = (m as AdMeta).objective ?? null;
+  if (objective === 'awareness') {
+    const ids = ((m as AdMeta).targetProfileIds ?? []).filter(Boolean);
+    return ids.length ? { kind: 'profile', ids } : null;
+  }
+  if (objective === 'engagement') {
+    return m.ownerId ? { kind: 'shop', ownerId: m.ownerId } : null;
+  }
+  // traffic, or a legacy ad with no objective → open the link.
+  return m.ctaUrl ? { kind: 'website', url: m.ctaUrl } : null;
+}
+
 function normalizeUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   const t = url.trim();
@@ -432,7 +481,7 @@ const CAMPAIGN_SELECT = `
   budget_cents_total, budget_cents_daily, spent_cents, bid_cpm_cents,
   impression_count, click_count, advertiser_name, advertiser_avatar_url, is_business, objective, placements,
   target_age_min, target_age_max, target_gender, target_genres,
-  target_lat, target_lng, target_radius_km, created_at,
+  target_lat, target_lng, target_radius_km, target_profile_ids, target_shop_listing_id, created_at,
   ad_creatives ( id, campaign_id, placement, media_type, media_url, slides, thumbnail_url, cover_url, aspect_ratio, duration_seconds, headline, body, cta_label, cta_url, skip_mode )
 `;
 
@@ -534,6 +583,8 @@ export async function pickAudioAd(viewer: AdViewer): Promise<AudioAd | null> {
         cover: cr.cover_url ?? cr.thumbnail_url ?? null,
         durationSeconds: cr.duration_seconds ?? null,
         skipMode: cr.skip_mode ?? null,
+        objective: c.objective ?? null,
+        targetProfileIds: c.target_profile_ids ?? null,
       });
     }
   }
@@ -740,6 +791,10 @@ export type NewCampaignInput = {
   bidCpmCents: number;
   startsAt: string | null; // ISO, or null = now
   endsAt: string; // ISO
+  // Objective destinations: awareness → the profile(s) a tap can visit;
+  // engagement → the shop listing the ad features. traffic uses the creative url.
+  targetProfileIds?: string[] | null;
+  targetShopListingId?: string | null;
   targeting: {
     ageMin?: number | null;
     ageMax?: number | null;
@@ -787,15 +842,19 @@ export async function purchaseAdCampaign(input: NewCampaignInput): Promise<strin
       target_lat: input.targeting.lat ?? null,
       target_lng: input.targeting.lng ?? null,
       target_radius_km: input.targeting.radiusKm ?? null,
+      target_profile_ids: input.targetProfileIds?.length ? input.targetProfileIds : null,
+      target_shop_listing_id: input.targetShopListingId ?? null,
     };
     let { data: campaign, error } = await supabase
       .from('ad_campaigns').insert(insertRow).select('id').single();
-    // Resilience: an older ad_ecosystem.sql may lack the (cosmetic, nullable)
-    // advertiser_avatar_url column — rather than hard-block the whole launch on
-    // one missing column, drop it and retry. Re-running ad_ecosystem.sql adds it
-    // back and future ads carry the avatar again.
-    if (error && /advertiser_avatar_url/i.test(error.message ?? '')) {
+    // Resilience: an older ad_ecosystem.sql may lack a (cosmetic, nullable) new
+    // column — rather than hard-block the whole launch on one missing column,
+    // drop the offending ones and retry. Re-running ad_ecosystem.sql adds them
+    // back and future ads carry the full data again.
+    if (error && /advertiser_avatar_url|target_profile_ids|target_shop_listing_id/i.test(error.message ?? '')) {
       delete insertRow.advertiser_avatar_url;
+      delete insertRow.target_profile_ids;
+      delete insertRow.target_shop_listing_id;
       ({ data: campaign, error } = await supabase
         .from('ad_campaigns').insert(insertRow).select('id').single());
     }

@@ -67,10 +67,11 @@ import {
   recordSpotlightImpression, recordSpotlightTap, type SpotlightMeta,
 } from '../../lib/spotlight';
 import {
-  fetchFeedAds, injectFeedAds, recordAdImpression, recordAdClick,
+  fetchFeedAds, injectFeedAds, recordAdImpression,
   type AdViewer,
 } from '../../lib/ads';
 import { openAdOptions } from '../../contexts/AdOptionsContext';
+import { openAdCta } from '../../contexts/AdCtaContext';
 import SponsoredCard from '../../components/SponsoredCard';
 import { useProfile } from '../../contexts/ProfileContext';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
@@ -1399,13 +1400,8 @@ export default function HomeScreen() {
   // actually proceeds.
   const onAdCta = useCallback((item: any) => {
     if (isSwipeTap()) return;
-    const url = item.__ad?.ctaUrl;
-    if (!url) return;
-    live.current.linkGuard.open(url, {
-      context: 'ad',
-      sourceName: item.__ad?.advertiserName,
-      onProceed: () => recordAdClick(item, 'feed', live.current.currentUserId),
-    });
+    // Objective-aware: profile / shop / website, handled centrally.
+    openAdCta(item, 'feed', live.current.currentUserId);
   }, []);
   // Ad 3-dot: opens the themed ad-options sheet (report / why this ad / settings).
   const onAdOptions = useCallback((item: any) => {

@@ -7,9 +7,9 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
-import { useLinkGuard } from '../contexts/LinkGuardContext';
 import { openAdOptions } from '../contexts/AdOptionsContext';
-import { recordAdClick, type AdMeta } from '../lib/ads';
+import { adDestination, type AdMeta } from '../lib/ads';
+import { openAdCta } from '../contexts/AdCtaContext';
 import AppVideo from './AppVideo';
 
 // Fullscreen, DISMISSABLE viewer for a Laybell TV ad — opened by tapping a
@@ -32,7 +32,6 @@ export default function TVAdViewer({ item, uid, onClose }: {
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const linkGuard = useLinkGuard();
 
   const meta = item?.__ad;
   const progress = useRef(new Animated.Value(0)).current;
@@ -87,14 +86,8 @@ export default function TVAdViewer({ item, uid, onClose }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item]);
 
-  const onCta = () => {
-    if (!meta?.ctaUrl) return;
-    linkGuard.open(meta.ctaUrl, {
-      context: 'ad',
-      sourceName: meta.advertiserName,
-      onProceed: () => recordAdClick({ __ad: meta }, 'tv', uid),
-    });
-  };
+  const hasDestination = !!meta && !!adDestination({ __ad: meta });
+  const onCta = () => { if (meta) openAdCta({ __ad: meta }, 'tv', uid); };
   const onReport = () => {
     if (meta) openAdOptions({ campaignId: meta.campaignId, creativeId: meta.creativeId, advertiserName: meta.advertiserName });
   };
@@ -147,9 +140,9 @@ export default function TVAdViewer({ item, uid, onClose }: {
           {!!meta?.advertiserName && <Text style={styles.advertiser} numberOfLines={1}>{meta.advertiserName}</Text>}
           {!!meta?.headline && <Text style={styles.headline} numberOfLines={2}>{meta.headline}</Text>}
           {!!meta?.body && <Text style={styles.body} numberOfLines={2}>{meta.body}</Text>}
-          {!!meta?.ctaUrl && (
+          {hasDestination && (
             <TouchableOpacity style={styles.cta} onPress={onCta} activeOpacity={0.85}>
-              <Text style={styles.ctaText}>{meta.ctaLabel || t('reelAd.learnMore')}</Text>
+              <Text style={styles.ctaText}>{meta!.ctaLabel || t('reelAd.learnMore')}</Text>
               <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
             </TouchableOpacity>
           )}

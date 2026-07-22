@@ -20,14 +20,17 @@ import {
 import { analyzeUrl, scanText } from '../../lib/linkSafety';
 import { saveAdDraft, loadAdDraft, clearAdDraft, isMeaningfulAdDraft, type AdDraft } from '../../lib/adDrafts';
 import { GENRES, genreLabel } from '../../lib/genres';
+import { fetchSellerListings, type ShopListing } from '../../lib/shop';
 import { useProfile } from '../../contexts/ProfileContext';
 import SwipeBackPager from '../../components/SwipeBackPager';
+import TagPeopleModal from '../../components/TagPeopleModal';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string;
+type TargetProfile = { id: string; username: string | null; display_name: string | null; avatar_url: string | null };
 
 // Self-serve ad campaign creation: objective → placements → creative upload per
 // placement → optional targeting → budget/schedule → review (with required ad
@@ -65,7 +68,21 @@ type Pick = { uri: string; width?: number; height?: number; kind: 'image' | 'vid
 // (creative ≤15s), 'skip15' is skippable after 15s (creative >15s).
 type CreativeDraft = { picks: Pick[]; cover?: Pick | null; headline: string; body: string; ctaLabel: string; ctaUrl: string; skipMode: AdSkipMode };
 
-const emptyDraft = (t: TFn): CreativeDraft => ({ picks: [], headline: '', body: '', ctaLabel: t('adCreate.ctaDefault'), ctaUrl: '', skipMode: 'unskippable' });
+// The button label pre-typed into a creative: the objective's default, which
+// the advertiser can still edit.
+function objectiveCta(obj: AdObjective, t: TFn): string {
+  return obj === 'awareness' ? t('adCta.visitProfile')
+    : obj === 'engagement' ? t('adCta.visitShop')
+    : t('adCta.visitWebsite');
+}
+// Any of the built-in defaults (incl. the legacy 'Learn more') counts as
+// "not customized", so switching objective re-fills it but a typed label stays.
+function isDefaultCta(label: string, t: TFn): boolean {
+  const s = label.trim();
+  return !s || [t('adCreate.ctaDefault'), t('adCta.visitProfile'), t('adCta.visitShop'), t('adCta.visitWebsite')]
+    .some((d) => d.trim() === s);
+}
+const emptyDraft = (t: TFn, obj: AdObjective): CreativeDraft => ({ picks: [], headline: '', body: '', ctaLabel: objectiveCta(obj, t), ctaUrl: '', skipMode: 'unskippable' });
 
 
 function extOf(uri: string, fallback: string): string {
@@ -93,6 +110,33 @@ export default function CreateAdScreen() {
   const [objective, setObjective] = useState<AdObjective>('awareness');
   const [advertiserName, setAdvertiserName] = useState('');
   const [isBusiness, setIsBusiness] = useState(false);
+
+  // ── Objective destinations ───────────────────────────────────────────────────
+  // awareness → profile(s): the advertiser's own profile is included by default,
+  // plus any others they add (a viewer tapping picks which to visit when >1).
+  const [awarenessSelf, setAwarenessSelf] = useState(true);
+  const [awarenessOthers, setAwarenessOthers] = useState<TargetProfile[]>([]);
+  const [showProfilePicker, setShowProfilePicker] = useState(false);
+  // Website → the link + button text are set right here in Basics (one per
+  // campaign) rather than per creative.
+  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [websiteCta, setWebsiteCta] = useState(() => t('adCta.visitWebsite'));
+  // engagement → the advertiser's shop, featuring one of their active listings.
+  const [myListings, setMyListings] = useState<ShopListing[] | null>(null);
+  const [shopListingId, setShopListingId] = useState<string | null>(null);
+  const [showListingPicker, setShowListingPicker] = useState(false);
+
+  const awarenessIds = [
+    ...(awarenessSelf && profile?.id ? [profile.id] : []),
+    ...awarenessOthers.map((p) => p.id),
+  ];
+  const chosenListing = (myListings ?? []).find((l) => l.id === shopListingId) ?? null;
+
+  // Load the advertiser's own active listings once, when Shop traffic is picked.
+  useEffect(() => {
+    if (objective !== 'engagement' || myListings !== null || !profile?.id) return;
+    fetchSellerListings(profile.id).then((ls) => setMyListings(ls)).catch(() => setMyListings([]));
+  }, [objective, myListings, profile?.id]);
   // Business ads carry their own uploaded profile picture; regular-user ads reuse
   // the creator's own profile avatar (snapshotted at publish).
   const [businessAvatar, setBusinessAvatar] = useState<Pick | null>(null);
@@ -133,6 +177,11 @@ export default function CreateAdScreen() {
     setAdvertiserName(d.advertiserName ?? '');
     setIsBusiness(!!d.isBusiness);
     setBusinessAvatar(d.businessAvatar ?? null);
+    if (typeof d.awarenessSelf === 'boolean') setAwarenessSelf(d.awarenessSelf);
+    setAwarenessOthers((d.awarenessOthers ?? []) as TargetProfile[]);
+    setShopListingId(d.shopListingId ?? null);
+    setWebsiteUrl(d.websiteUrl ?? '');
+    setWebsiteCta(d.websiteCta ?? '');
     setPlacements((d.placements ?? []) as AdPlacement[]);
     setDrafts((d.drafts ?? {}) as Record<string, CreativeDraft>);
     setAgeMin(d.ageMin ?? ''); setAgeMax(d.ageMax ?? ''); setGender(d.gender ?? 'Any');
@@ -170,14 +219,38 @@ export default function CreateAdScreen() {
     const id = setTimeout(() => {
       saveAdDraft({
         step, objective, advertiserName, isBusiness, businessAvatar,
+        awarenessSelf, awarenessOthers, shopListingId, websiteUrl, websiteCta,
         placements, drafts, ageMin, ageMax, gender, genres, useLocation, radiusKm,
         budget, dailyCap, cpm, days,
       });
     }, 500);
     return () => clearTimeout(id);
   }, [hydrated, step, objective, advertiserName, isBusiness, businessAvatar,
+      awarenessSelf, awarenessOthers, shopListingId, websiteUrl, websiteCta,
       placements, drafts, ageMin, ageMax, gender, genres, useLocation, radiusKm,
       budget, dailyCap, cpm, days]);
+
+  // Keep the pre-typed button label matching the objective's default (Visit
+  // profile / Visit shop / Visit website) — unless the advertiser typed their
+  // own. Also upgrades a legacy "Learn more" left in a resumed draft.
+  useEffect(() => {
+    if (!hydrated) return;
+    if (objective === 'traffic') {
+      setWebsiteCta((cur) => (isDefaultCta(cur, t) ? t('adCta.visitWebsite') : cur));
+    } else {
+      const label = objectiveCta(objective, t);
+      setDrafts((prev) => {
+        let changed = false;
+        const next: Record<string, CreativeDraft> = {};
+        for (const k of Object.keys(prev)) {
+          if (isDefaultCta(prev[k].ctaLabel, t)) { next[k] = { ...prev[k], ctaLabel: label }; changed = true; }
+          else next[k] = prev[k];
+        }
+        return changed ? next : prev;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, objective]);
 
   // Which placement the library video grid is currently picking for.
   const [videoPickerFor, setVideoPickerFor] = useState<AdPlacement | null>(null);
@@ -185,14 +258,14 @@ export default function CreateAdScreen() {
   const hasLocation = profile?.latitude != null && profile?.longitude != null;
 
   function patchDraft(p: AdPlacement, patch: Partial<CreativeDraft>) {
-    setDrafts((prev) => ({ ...prev, [p]: { ...(prev[p] ?? emptyDraft(t)), ...patch } }));
+    setDrafts((prev) => ({ ...prev, [p]: { ...(prev[p] ?? emptyDraft(t, objective)), ...patch } }));
   }
 
   function togglePlacement(p: AdPlacement) {
     setPlacements((prev) => {
       const has = prev.includes(p);
       if (has) return prev.filter((x) => x !== p);
-      setDrafts((d) => (d[p] ? d : { ...d, [p]: emptyDraft(t) }));
+      setDrafts((d) => (d[p] ? d : { ...d, [p]: emptyDraft(t, objective) }));
       return [...prev, p];
     });
   }
@@ -285,6 +358,16 @@ export default function CreateAdScreen() {
   // ── Validation ───────────────────────────────────────────────────────────────
   function validateStep(s: Step): string | null {
     if (s === 'basics' && isBusiness && !advertiserName.trim()) return t('adCreate.errAdvertiserName');
+    if (s === 'basics' && objective === 'awareness' && awarenessIds.length === 0) return t('adCreate.errNoProfile');
+    if (s === 'basics' && objective === 'traffic') {
+      // Website link + safety are validated here now (set in Basics, not per creative).
+      if (!websiteUrl.trim()) return t('adCreate.errLink', { placement: '' });
+      if (analyzeUrl(websiteUrl).verdict === 'block') return t('adCreate.errUnsafeLink', { placement: '' });
+    }
+    if (s === 'basics' && objective === 'engagement') {
+      if (myListings !== null && myListings.length === 0) return t('adCreate.errNoShop');
+      if (!shopListingId) return t('adCreate.errNoListing');
+    }
     if (s === 'placements' && placements.length === 0) return t('adCreate.errPlacement');
     if (s === 'creatives') {
       for (const p of placements) {
@@ -307,11 +390,8 @@ export default function CreateAdScreen() {
           }
         }
         if (!d.headline.trim()) return t('adCreate.errHeadline', { placement: labelFor(p) });
-        if (!d.ctaUrl.trim()) return t('adCreate.errLink', { placement: labelFor(p) });
-        // Link safety: never let a campaign go live with a dangerous destination
-        // (bad scheme, embedded credentials, blocklisted host) or a blocked link
-        // hidden in the body text.
-        if (analyzeUrl(d.ctaUrl).verdict === 'block') return t('adCreate.errUnsafeLink', { placement: labelFor(p) });
+        // The destination (link/profile/shop) is set once in Basics now — no
+        // per-creative link. A blocked link hidden in the body is still rejected.
         if (scanText(d.body).verdict === 'block') return t('adCreate.errUnsafeLink', { placement: labelFor(p) });
       }
     }
@@ -377,13 +457,20 @@ export default function CreateAdScreen() {
 
   async function buildCreative(uid: string, p: AdPlacement, d: CreativeDraft): Promise<NewCreativeInput> {
     const mt = mediaTypeOf(p, d.picks);
+    // Default CTA button text tracks the objective; a link is stored only for
+    // Website traffic (Account/Shop traffic route internally, no URL).
+    const ctaFallback = objectiveCta(objective, t);
     const base = {
       placement: p,
       media_type: mt,
       headline: d.headline.trim() || null,
       body: d.body.trim() || null,
-      cta_label: d.ctaLabel.trim() || t('adCreate.ctaDefault'),
-      cta_url: d.ctaUrl.trim() || null,
+      // Website's link + button are campaign-level (set in Basics); Account and
+      // Shop use the per-creative button label with an objective default.
+      cta_label: objective === 'traffic'
+        ? (websiteCta.trim() || ctaFallback)
+        : (d.ctaLabel.trim() || ctaFallback),
+      cta_url: objective === 'traffic' ? (websiteUrl.trim() || null) : null,
       // Skip mode applies to Laybell TV + music ads only; null everywhere else.
       skip_mode: (p === 'tv' || p === 'audio') ? d.skipMode : null,
     };
@@ -472,6 +559,9 @@ export default function CreateAdScreen() {
         bidCpmCents: AD_DEFAULT_CPM_CENTS, // flat platform rate (no advertiser bid)
         startsAt: null,
         endsAt,
+        // Objective destinations (traffic uses the creative link above).
+        targetProfileIds: objective === 'awareness' ? awarenessIds : null,
+        targetShopListingId: objective === 'engagement' ? shopListingId : null,
         targeting: {
           ageMin: ageMin ? parseInt(ageMin, 10) : null,
           ageMax: ageMax ? parseInt(ageMax, 10) : null,
@@ -524,7 +614,7 @@ export default function CreateAdScreen() {
   };
 
   function renderCreativeCard(p: AdPlacement) {
-    const d = drafts[p] ?? emptyDraft(t);
+    const d = drafts[p] ?? emptyDraft(t, objective);
     const cfg = PLACEMENTS.find((x) => x.key === p)!;
     const firstImg = d.picks.find((x) => x.kind === 'image');
     return (
@@ -635,25 +725,33 @@ export default function CreateAdScreen() {
           multiline
           maxLength={140}
         />
-        <View style={styles.ctaRow}>
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            placeholder={t('adCreate.buttonLabelPlaceholder')}
-            placeholderTextColor={colors.textTertiary}
-            value={d.ctaLabel}
-            onChangeText={(text) => patchDraft(p, { ctaLabel: text })}
-            maxLength={20}
+        {/* The button label is per-creative for Account/Shop; Website's link +
+            button are set once in Basics, so this creative just shows where it
+            leads (no per-placement destination fields). */}
+        {objective !== 'traffic' && (
+          <View style={styles.ctaRow}>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              placeholder={objective === 'awareness' ? t('adCta.visitProfile') : t('adCta.visitShop')}
+              placeholderTextColor={colors.textTertiary}
+              value={d.ctaLabel}
+              onChangeText={(text) => patchDraft(p, { ctaLabel: text })}
+              maxLength={20}
+            />
+          </View>
+        )}
+        <View style={styles.destNoteRow}>
+          <Ionicons
+            name={objective === 'awareness' ? 'person-circle-outline' : objective === 'engagement' ? 'storefront-outline' : 'link-outline'}
+            size={15}
+            color={colors.textSecondary}
           />
+          <Text style={styles.destNoteText}>
+            {objective === 'awareness' ? t('adCreate.dest.leadsProfile')
+              : objective === 'engagement' ? t('adCreate.dest.leadsShop')
+              : t('adCreate.dest.leadsWebsite')}
+          </Text>
         </View>
-        <TextInput
-          style={styles.input}
-          placeholder={t('adCreate.linkPlaceholder')}
-          placeholderTextColor={colors.textTertiary}
-          value={d.ctaUrl}
-          onChangeText={(text) => patchDraft(p, { ctaUrl: text })}
-          autoCapitalize="none"
-          keyboardType="url"
-        />
       </View>
     );
   }
@@ -694,6 +792,100 @@ export default function CreateAdScreen() {
                     </TouchableOpacity>
                   );
                 })}
+
+                {/* Objective destination — where a tap on this ad leads. */}
+                {objective === 'awareness' && (
+                  <View style={styles.destCard}>
+                    <Text style={styles.destTitle}>{t('adCreate.dest.awarenessTitle')}</Text>
+                    <Text style={styles.destSub}>{t('adCreate.dest.awarenessSub')}</Text>
+                    <View style={styles.destChipWrap}>
+                      <TouchableOpacity
+                        style={[styles.profileChip, awarenessSelf && styles.profileChipOn]}
+                        onPress={() => setAwarenessSelf((v) => !v)}
+                        activeOpacity={0.8}
+                      >
+                        {profile?.avatar_url
+                          ? <Image source={{ uri: profile.avatar_url }} style={styles.chipAvatar} />
+                          : <View style={[styles.chipAvatar, styles.chipAvatarEmpty]}><Ionicons name="person" size={12} color={colors.primary} /></View>}
+                        <Text style={[styles.destChipText, awarenessSelf && { color: colors.primary }]}>{t('adCreate.dest.you')}</Text>
+                        <Ionicons name={awarenessSelf ? 'checkmark-circle' : 'add-circle-outline'} size={15} color={awarenessSelf ? colors.primary : colors.textTertiary} />
+                      </TouchableOpacity>
+                      {awarenessOthers.map((p) => (
+                        <View key={p.id} style={[styles.profileChip, styles.profileChipOn]}>
+                          {p.avatar_url
+                            ? <Image source={{ uri: p.avatar_url }} style={styles.chipAvatar} />
+                            : <View style={[styles.chipAvatar, styles.chipAvatarEmpty]}><Ionicons name="person" size={12} color={colors.primary} /></View>}
+                          <Text style={[styles.destChipText, { color: colors.primary }]} numberOfLines={1}>{p.display_name || p.username}</Text>
+                          <TouchableOpacity onPress={() => setAwarenessOthers((o) => o.filter((x) => x.id !== p.id))} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                            <Ionicons name="close-circle" size={15} color={colors.textTertiary} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                      <TouchableOpacity style={styles.addProfileChip} onPress={() => setShowProfilePicker(true)} activeOpacity={0.8}>
+                        <Ionicons name="person-add-outline" size={14} color={colors.text} />
+                        <Text style={styles.destChipText}>{t('adCreate.dest.addProfiles')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+                {objective === 'traffic' && (
+                  <View style={styles.destCard}>
+                    <Text style={styles.destTitle}>{t('adCreate.dest.trafficTitle')}</Text>
+                    <Text style={styles.destSub}>{t('adCreate.dest.trafficSub')}</Text>
+                    <TextInput
+                      style={[styles.input, { marginTop: 4 }]}
+                      placeholder={t('adCreate.linkPlaceholder')}
+                      placeholderTextColor={colors.textTertiary}
+                      value={websiteUrl}
+                      onChangeText={setWebsiteUrl}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder={t('adCta.visitWebsite')}
+                      placeholderTextColor={colors.textTertiary}
+                      value={websiteCta}
+                      onChangeText={setWebsiteCta}
+                      maxLength={20}
+                    />
+                  </View>
+                )}
+                {objective === 'engagement' && (
+                  <View style={styles.destCard}>
+                    <Text style={styles.destTitle}>{t('adCreate.dest.shopTitle')}</Text>
+                    {myListings === null ? (
+                      <ActivityIndicator color={colors.primary} style={{ alignSelf: 'flex-start', marginTop: 4 }} />
+                    ) : myListings.length === 0 ? (
+                      <>
+                        <Text style={styles.destSub}>{t('adCreate.dest.noShop')}</Text>
+                        <TouchableOpacity onPress={() => router.push('/shop')} activeOpacity={0.7}>
+                          <Text style={styles.destLink}>{t('adCreate.dest.openShop')}</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : chosenListing ? (
+                      <TouchableOpacity style={styles.listingRow} onPress={() => setShowListingPicker(true)} activeOpacity={0.8}>
+                        {chosenListing.cover_url
+                          ? <Image source={{ uri: chosenListing.cover_url }} style={styles.listingCover} />
+                          : <View style={[styles.listingCover, styles.chipAvatarEmpty]}><Ionicons name="musical-note" size={18} color={colors.textTertiary} /></View>}
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.listingTitle} numberOfLines={1}>{chosenListing.title}</Text>
+                          <Text style={styles.destSub}>{t('adCreate.dest.changeListing')}</Text>
+                        </View>
+                        <Ionicons name="swap-horizontal" size={18} color={colors.textTertiary} />
+                      </TouchableOpacity>
+                    ) : (
+                      <>
+                        <Text style={styles.destSub}>{t('adCreate.dest.shopSub')}</Text>
+                        <TouchableOpacity style={styles.pickListingBtn} onPress={() => setShowListingPicker(true)} activeOpacity={0.85}>
+                          <Ionicons name="pricetag-outline" size={16} color={colors.primary} />
+                          <Text style={[styles.destChipText, { color: colors.primary }]}>{t('adCreate.dest.chooseListing')}</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                )}
+
                 <View style={styles.switchRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.switchLabel}>{t('adCreate.isBusinessLabel')}</Text>
@@ -961,6 +1153,53 @@ export default function CreateAdScreen() {
               <PhotoGrid videosOnly onPick={onVideoPicked} />
             </View>
           </Modal>
+
+          {/* Awareness → add other profiles this ad can lead to (reuses the
+              app's account multi-select; own profile is handled separately). */}
+          <TagPeopleModal
+            visible={showProfilePicker}
+            initial={awarenessOthers as never}
+            onClose={() => setShowProfilePicker(false)}
+            onDone={(people) => setAwarenessOthers(people as never as TargetProfile[])}
+          />
+
+          {/* Engagement → pick which of your active listings the ad features. */}
+          <Modal
+            visible={showListingPicker}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setShowListingPicker(false)}
+          >
+            <View style={styles.listingSheetBackdrop}>
+              <View style={styles.listingSheet}>
+                <View style={styles.listingSheetHead}>
+                  <Text style={styles.listingSheetTitle}>{t('adCreate.dest.chooseListing')}</Text>
+                  <TouchableOpacity onPress={() => setShowListingPicker(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Ionicons name="close" size={24} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView contentContainerStyle={styles.listingGrid}>
+                  {(myListings ?? []).map((l) => {
+                    const on = l.id === shopListingId;
+                    return (
+                      <TouchableOpacity
+                        key={l.id}
+                        style={styles.listingCell}
+                        onPress={() => { setShopListingId(l.id); setShowListingPicker(false); }}
+                        activeOpacity={0.85}
+                      >
+                        {l.cover_url
+                          ? <Image source={{ uri: l.cover_url }} style={styles.listingCellCover} />
+                          : <View style={[styles.listingCellCover, styles.chipAvatarEmpty]}><Ionicons name="musical-note" size={26} color={colors.textTertiary} /></View>}
+                        {on && <View style={styles.listingCellCheck}><Ionicons name="checkmark-circle" size={22} color={colors.primary} /></View>}
+                        <Text style={styles.listingCellTitle} numberOfLines={1}>{l.title}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
         </View>
       </KeyboardAvoidingView>
     </SwipeBackPager>
@@ -1010,6 +1249,57 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   selectTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
   selectSub: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
   selectMeta: { color: colors.textTertiary, fontSize: 11, marginTop: 3, fontStyle: 'italic' },
+
+  // Objective destination (Basics)
+  destCard: {
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: colors.border, padding: SPACING.md, gap: 6,
+  },
+  destTitle: { color: colors.text, fontSize: 13, fontWeight: '800' },
+  destSub: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
+  destLink: { color: colors.primary, fontSize: 13, fontWeight: '700', marginTop: 2 },
+  destChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  profileChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border,
+    paddingLeft: 4, paddingRight: 10, paddingVertical: 4, backgroundColor: colors.surfaceElevated, maxWidth: 200,
+  },
+  profileChipOn: { borderColor: colors.primary, backgroundColor: colors.primary + '11' },
+  chipAvatar: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  chipAvatarEmpty: { backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center' },
+  destChipText: { color: colors.text, fontSize: 12, fontWeight: '700', flexShrink: 1 },
+  addProfileChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: RADIUS.full, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border,
+    paddingHorizontal: 12, paddingVertical: 7,
+  },
+  listingRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: 4,
+    backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.md, padding: 8,
+  },
+  listingCover: { width: 44, height: 44, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight },
+  listingTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  pickListingBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start', marginTop: 4,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.primary,
+    paddingHorizontal: 14, paddingVertical: 8,
+  },
+  destNoteRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  destNoteText: { color: colors.textSecondary, fontSize: 12, flex: 1 },
+  // Listing picker sheet
+  listingSheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  listingSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl,
+    paddingTop: SPACING.md, maxHeight: '80%',
+  },
+  listingSheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
+  listingSheetTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  listingGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, padding: SPACING.md },
+  listingCell: { width: '30%', gap: 4 },
+  listingCellCover: { width: '100%', aspectRatio: 1, borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight },
+  listingCellCheck: { position: 'absolute', top: 6, right: 6, backgroundColor: colors.background, borderRadius: 11 },
+  listingCellTitle: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
 
   input: {
     backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,

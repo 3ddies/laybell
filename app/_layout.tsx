@@ -26,6 +26,7 @@ import { ListenModeProvider } from '../contexts/ListenModeContext';
 import { LinkGuardProvider } from '../contexts/LinkGuardContext';
 import { ReportProvider } from '../contexts/ReportContext';
 import { AdOptionsProvider } from '../contexts/AdOptionsContext';
+import { AdCtaProvider } from '../contexts/AdCtaContext';
 import { BlockConfirmProvider } from '../contexts/BlockConfirmContext';
 import { PostConfirmProvider } from '../contexts/PostConfirmContext';
 import { GifActionSheetProvider } from '../contexts/GifActionSheetContext';
@@ -376,6 +377,7 @@ export default function RootLayout() {
                   <LinkGuardProvider>
                     <ReportProvider>
                       <AdOptionsProvider>
+                        <AdCtaProvider>
                         <BlockConfirmProvider>
                           <PostConfirmProvider>
                           <GifActionSheetProvider>
@@ -397,6 +399,7 @@ export default function RootLayout() {
                           </GifActionSheetProvider>
                           </PostConfirmProvider>
                         </BlockConfirmProvider>
+                        </AdCtaProvider>
                       </AdOptionsProvider>
                     </ReportProvider>
                   </LinkGuardProvider>

@@ -44,7 +44,7 @@ import {
   buildAffinityProfile, loadSeenPostIds, recordSeenPostIds, scorePost, EMPTY_PROFILE,
 } from '../../lib/feedScorer';
 import {
-  fetchReelAds, reelItemFor, randInt, fetchTvAds, tvItemFor, recordAdImpression, recordAdClick, recordAdSkip, recordAdComplete,
+  fetchReelAds, reelItemFor, randInt, fetchTvAds, tvItemFor, recordAdImpression, recordAdSkip, recordAdComplete,
   AD_SKIP_MS, TV_AD_EVERY_VIDEOS, REEL_AD_FIRST, REEL_AD_EVERY_MIN, REEL_AD_EVERY_MAX, type AdViewer, type AdSource,
 } from '../../lib/ads';
 import { adSpacingMultiplier } from '../../lib/entitlements';
@@ -54,6 +54,7 @@ import TVAdOverlay from '../../components/TVAdOverlay';
 import RotateHint from '../../components/RotateHint';
 import { PositionedTopCaption, asTopCaption } from '../../components/TopCaption';
 import { PlacedStickers } from '../../components/StickerLayer';
+import { openAdCta } from '../../contexts/AdCtaContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import { ReelSkeleton } from '../../components/Skeleton';
@@ -1310,15 +1311,7 @@ export default function ReelScreen() {
           // The ad's Skip countdown reached zero — release the swipe lock so the
           // user can page past (the same moment the Skip button becomes tappable).
           onSkippableChange={(can) => { if (can) unlockAd(item.id); }}
-          onCta={() => {
-            const url = item.__ad?.ctaUrl;
-            if (!url) return;
-            linkGuard.open(url, {
-              context: 'ad',
-              sourceName: item.__ad?.advertiserName,
-              onProceed: () => recordAdClick(item, 'reels', currentUserId),
-            });
-          }}
+          onCta={() => openAdCta(item, 'reels', currentUserId)}
           onOptions={() => {
             const ad = item.__ad;
             openAdOptions({ campaignId: ad.campaignId, creativeId: ad.creativeId, advertiserName: ad.advertiserName });
@@ -1347,15 +1340,7 @@ export default function ReelScreen() {
     );
   }
 
-  const onOverlayAdCta = (item: any) => {
-    const url = item.__ad?.ctaUrl;
-    if (!url) return;
-    linkGuard.open(url, {
-      context: 'ad',
-      sourceName: item.__ad?.advertiserName,
-      onProceed: () => recordAdClick(item, 'tv', currentUserId),
-    });
-  };
+  const onOverlayAdCta = (item: any) => openAdCta(item, 'tv', currentUserId);
   const onOverlayAdReport = (item: any) => {
     const ad = item.__ad;
     if (ad) openAdOptions({ campaignId: ad.campaignId, creativeId: ad.creativeId, advertiserName: ad.advertiserName });

@@ -220,26 +220,57 @@ export default function AdManagerScreen() {
               <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
             }
           >
-            <Text style={styles.hint}>{t('adManager.hint')}</Text>
-
-            <TouchableOpacity style={styles.createBtn} onPress={() => router.push('/ad-manager/create')} activeOpacity={0.85}>
-              <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
-                <Ionicons name="megaphone" size={18} color="#FFFFFF" />
-                <Text style={styles.createBtnText}>{t('adManager.create')}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
             {campaigns.length === 0 ? (
-              <View style={styles.empty}>
-                <Ionicons name="megaphone-outline" size={44} color={colors.textTertiary} />
-                <Text style={styles.emptyTitle}>{t('adManager.emptyTitle')}</Text>
-                <Text style={styles.emptySub}>{t('adManager.emptySub')}</Text>
+              // ── Polished empty state: a soft hero instead of a bare icon ──────
+              <View style={styles.hero}>
+                <LinearGradient
+                  colors={[colors.primary + '22', colors.primary + '05']}
+                  style={styles.heroGlow}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                >
+                  <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.heroBadge}>
+                    <Ionicons name="megaphone" size={34} color="#FFFFFF" />
+                  </LinearGradient>
+                  <Text style={styles.heroTitle}>{t('adManager.emptyTitle')}</Text>
+                  <Text style={styles.heroSub}>{t('adManager.hint')}</Text>
+                </LinearGradient>
+
+                {/* Where your ads can run — makes the surface feel considered. */}
+                <View style={styles.featureRow}>
+                  {([
+                    { icon: 'home-outline', label: t('adManager.featureFeed') },
+                    { icon: 'play-circle-outline', label: t('adManager.featureReels') },
+                    { icon: 'musical-notes-outline', label: t('adManager.featureMusic') },
+                  ] as const).map((f) => (
+                    <View key={f.label} style={styles.featureChip}>
+                      <Ionicons name={f.icon} size={18} color={colors.primary} />
+                      <Text style={styles.featureText}>{f.label}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <TouchableOpacity style={styles.createBtn} onPress={() => router.push('/ad-manager/create')} activeOpacity={0.85}>
+                  <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
+                    <Ionicons name="add" size={19} color="#FFFFFF" />
+                    <Text style={styles.createBtnText}>{t('adManager.create')}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
               </View>
             ) : (
-              <View style={styles.cards}>
-                <Text style={styles.sectionTitle}>{t('adManager.sectionCampaigns')}</Text>
-                {campaigns.map(renderCampaign)}
-              </View>
+              <>
+                <Text style={styles.hint}>{t('adManager.hint')}</Text>
+                <TouchableOpacity style={styles.createBtn} onPress={() => router.push('/ad-manager/create')} activeOpacity={0.85}>
+                  <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
+                    <Ionicons name="megaphone" size={18} color="#FFFFFF" />
+                    <Text style={styles.createBtnText}>{t('adManager.create')}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+                <View style={styles.cards}>
+                  <Text style={styles.sectionTitle}>{t('adManager.sectionCampaigns')}</Text>
+                  {campaigns.map(renderCampaign)}
+                </View>
+              </>
             )}
           </ScrollView>
         )}
@@ -324,4 +355,26 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm, paddingHorizontal: SPACING.lg },
   emptyTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
   emptySub: { color: colors.textSecondary, fontSize: 13, textAlign: 'center' },
+
+  // Polished empty-state hero
+  hero: { gap: SPACING.lg, paddingTop: SPACING.sm },
+  heroGlow: {
+    alignItems: 'center', gap: SPACING.sm,
+    borderRadius: RADIUS.xl, paddingVertical: SPACING.xl, paddingHorizontal: SPACING.lg,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  heroBadge: {
+    width: 74, height: 74, borderRadius: 37, alignItems: 'center', justifyContent: 'center',
+    marginBottom: SPACING.xs,
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 14, elevation: 8,
+  },
+  heroTitle: { color: colors.text, fontSize: 20, fontWeight: '900', textAlign: 'center' },
+  heroSub: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, textAlign: 'center', paddingHorizontal: SPACING.sm },
+  featureRow: { flexDirection: 'row', gap: SPACING.sm },
+  featureChip: {
+    flex: 1, alignItems: 'center', gap: 6,
+    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: colors.border, paddingVertical: SPACING.md,
+  },
+  featureText: { color: colors.textSecondary, fontSize: 11.5, fontWeight: '700' },
 });

@@ -83,6 +83,17 @@ alter table public.ad_campaigns add column if not exists target_lat      double 
 alter table public.ad_campaigns add column if not exists target_lng      double precision;
 alter table public.ad_campaigns add column if not exists target_radius_km double precision;
 
+-- ─── objective destinations (added 2026-07-23) ─────────────────────────────────
+-- Each objective sends a tap somewhere specific (no CHECK — free-form text, so a
+-- future objective never needs a constraint migration):
+--   'awareness'  → a Laybell PROFILE (own, someone else's, or several: a tap
+--                  opens a chooser). Stored as target_profile_ids.
+--   'traffic'    → an external WEBSITE via the creative's cta_url (unchanged).
+--   'engagement' → the advertiser's SHOP; target_shop_listing_id is the listing
+--                  they picked to feature (its cover is shown while building).
+alter table public.ad_campaigns add column if not exists target_profile_ids uuid[];
+alter table public.ad_campaigns add column if not exists target_shop_listing_id uuid;
+
 -- Relax the Spotlight-only constraints so ad rows can omit them. These ONLY
 -- widen the rules (… is null or <old check>) — every existing Spotlight insert
 -- still passes. Drop-then-add keeps the whole file idempotent across re-runs.
