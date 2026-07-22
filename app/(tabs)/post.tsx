@@ -22,6 +22,8 @@ import { notifySuccess } from '../../lib/haptics';
 import MentionSuggestions from '../../components/MentionSuggestions';
 import TagPeopleModal, { type TaggedPerson } from '../../components/TagPeopleModal';
 import ThumbnailPickerModal from '../../components/ThumbnailPickerModal';
+import TopCaptionEditor from '../../components/TopCaptionEditor';
+import type { TopCaptionData } from '../../components/TopCaption';
 import FeaturesModal from '../../components/FeaturesModal';
 import { type Feature } from '../../lib/features';
 import { useAudio } from '../../contexts/AudioContext';
@@ -153,6 +155,13 @@ export default function PostScreen() {
   // image as the post thumbnail. Post-time only — it just replaces thumbnailUri,
   // which uploads through the existing path.
   const [showThumbPicker, setShowThumbPicker] = useState(false);
+  // Band captions (HORIZONTAL videos only): TikTok-style bubbles the creator
+  // parks in the black letterbox bands shown above/below the clip in portrait.
+  // ONE entry point — the editor defaults to the top band and offers the
+  // bottom band as a tappable second zone.
+  const [topCaption, setTopCaption] = useState<TopCaptionData | null>(null);
+  const [bottomCaption, setBottomCaption] = useState<TopCaptionData | null>(null);
+  const [showCaptionEditor, setShowCaptionEditor] = useState(false);
   const [videoAspect, setVideoAspect] = useState(0.8); // native aspect for video display
   const [videoDuration, setVideoDuration] = useState(0); // seconds (source)
   const [trimStart, setTrimStart] = useState(0); // seconds — start of the chosen window
@@ -377,7 +386,7 @@ export default function PostScreen() {
     unloadPreview();
     setIsRecording(false); setRecSecs(0);
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
-    setVideoDuration(0); setTrimStart(0);
+    setVideoDuration(0); setTrimStart(0); setTopCaption(null); setBottomCaption(null);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setGenre(''); setSong(null); setTagged([]); setCommunities([]); setError(''); setStep('pick');
     setAllowDownloads(true); setAllowGifs(true);
@@ -414,7 +423,7 @@ export default function PostScreen() {
       id, createdAt: now, updatedAt: now,
       postType, format, caption, genre, isPublic,
       media, crop: cropRef.current as any, thumbnailUri,
-      videoAspect, videoDuration, trimStart,
+      videoAspect, videoDuration, trimStart, topCaption, bottomCaption,
       slides,
       audioFile, audioDuration, coverUri, audioKind,
       song, tagged, features,
@@ -440,6 +449,8 @@ export default function PostScreen() {
     setVideoAspect(d.videoAspect);
     setVideoDuration(d.videoDuration);
     setTrimStart(d.trimStart);
+    setTopCaption(d.topCaption ?? null);
+    setBottomCaption(d.bottomCaption ?? null);
     setSlides(d.slides ?? []);
     setPickedId(null);
     setAudioFile(d.audioFile);
@@ -502,6 +513,7 @@ export default function PostScreen() {
       setVideoAspect(clampVideoAspect((m.width || 1) / (m.height || 1)));
       setVideoDuration(m.duration ?? 0);
       setTrimStart(0);
+      setTopCaption(null); setBottomCaption(null); // captions belong to the clip they were placed on
       try {
         // Grab an early frame, but never past the clip's end — a time beyond
         // the duration fails to decode and would leave the cover blank.
@@ -807,6 +819,10 @@ export default function PostScreen() {
           taggedIds: tagged.map((tp) => tp.id),
           communityIds: communities.map((c) => c.id),
           allowGifs,
+          // top slot = top band (landscape) or free screen placement (vertical);
+          // the bottom band only exists on landscape clips.
+          topCaption,
+          bottomCaption: videoAspect > 1 ? bottomCaption : null,
           maxDurationSeconds: VIDEO_MAX_SEC + 30,
           spotlight: ps ? { campaignId: ps.campaignId, days: ps.days } : null,
         });
@@ -1138,6 +1154,36 @@ export default function PostScreen() {
             </View>
           )}
 
+          {/* Video captions — TikTok-style bubbles. Horizontal clips park them
+              in the letterbox bands; vertical clips place one anywhere on the
+              screen that doesn't cover the reel UI. */}
+          {postType === 'video' && !!media?.uri && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>{videoAspect > 1 ? t('post.bandCaptions') : t('post.videoCaption')}</Text>
+              <TouchableOpacity style={styles.dropdown} onPress={() => setShowCaptionEditor(true)} activeOpacity={0.8}>
+                <Ionicons name="chatbox-ellipses" size={15} color={topCaption || bottomCaption ? colors.primary : colors.textTertiary} />
+                <Text style={[styles.dropdownText, !(topCaption || bottomCaption) && styles.dropdownPlaceholder]} numberOfLines={1}>
+                  {(topCaption ?? bottomCaption)
+                    ? (topCaption ?? bottomCaption)!.text.replace(/\n/g, ' ')
+                    : videoAspect > 1 ? t('post.topCaptionAdd') : t('post.screenCaptionAdd')}
+                </Text>
+                {topCaption || bottomCaption ? (
+                  <TouchableOpacity
+                    onPress={() => { setTopCaption(null); setBottomCaption(null); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                ) : (
+                  <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                )}
+              </TouchableOpacity>
+              <Text style={styles.genreLockHint}>
+                {videoAspect > 1 ? t('post.bandCaptionsHint') : t('post.screenCaptionHint')}
+              </Text>
+            </View>
+          )}
+
           {/* Audio category */}
           {postType === 'audio' && (
             <View style={styles.section}>
@@ -1349,6 +1395,15 @@ export default function PostScreen() {
           currentUri={thumbnailUri}
           onPick={(uri) => { setThumbnailUri(uri); setShowThumbPicker(false); }}
           onClose={() => setShowThumbPicker(false)}
+        />
+        <TopCaptionEditor
+          visible={showCaptionEditor}
+          aspect={videoAspect}
+          posterUri={thumbnailUri}
+          initialTop={topCaption}
+          initialBottom={bottomCaption}
+          onSave={(top, bottom) => { setTopCaption(top); setBottomCaption(bottom); setShowCaptionEditor(false); }}
+          onClose={() => setShowCaptionEditor(false)}
         />
         <FeaturesModal visible={showFeaturesModal} initial={features} onClose={() => setShowFeaturesModal(false)} onDone={setFeatures} />
         <CommunityPickerModal

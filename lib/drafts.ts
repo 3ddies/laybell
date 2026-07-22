@@ -41,6 +41,9 @@ export type Draft = {
   videoAspect: number;
   videoDuration: number;
   trimStart: number;
+  // Horizontal-video band captions (letterbox bubbles); absent on older drafts.
+  topCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
+  bottomCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
 
   // slideshow — PickedSlide[] (kept loosely typed to avoid a UI import cycle)
   slides: any[];

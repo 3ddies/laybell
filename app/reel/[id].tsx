@@ -52,6 +52,7 @@ import { openAdOptions } from '../../contexts/AdOptionsContext';
 import ReelAd from '../../components/ReelAd';
 import TVAdOverlay from '../../components/TVAdOverlay';
 import RotateHint from '../../components/RotateHint';
+import { PositionedTopCaption, asTopCaption } from '../../components/TopCaption';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import { ReelSkeleton } from '../../components/Skeleton';
@@ -298,6 +299,33 @@ const ReelPage = memo(function ReelPage({
 
       {/* "Turn your phone" nudge, in the empty letterbox band above the video. */}
       <RotateHint visible={showRotateHint} top={band - 52} />
+
+      {/* Creator's band captions: top parks ABOVE the rotate hint (zone math
+          caps it at band - 62), bottom parks under the video ABOVE the meta
+          block / rail / scrub reserve — neither can collide with the reel UI.
+          They only exist in this portrait letterbox page — the sideways
+          fullscreen overlay covers this page entirely, so rotating hides
+          them naturally. */}
+      {!zoomed && asTopCaption(item.top_caption) ? (
+        <PositionedTopCaption
+          data={asTopCaption(item.top_caption)!}
+          // Landscape: the top letterbox band. Vertical (fills the screen):
+          // free placement anywhere between the same protected strips.
+          zone={ratio > 1 ? 'top' : 'screen'}
+          ratio={ratio}
+          screenW={SCREEN_W}
+          screenH={SCREEN_H}
+        />
+      ) : null}
+      {ratio > 1 && !zoomed && asTopCaption(item.bottom_caption) ? (
+        <PositionedTopCaption
+          data={asTopCaption(item.bottom_caption)!}
+          zone="bottom"
+          ratio={ratio}
+          screenW={SCREEN_W}
+          screenH={SCREEN_H}
+        />
+      ) : null}
 
       {/* paused indicator */}
       {showPaused && (

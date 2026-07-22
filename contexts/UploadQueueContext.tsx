@@ -34,6 +34,11 @@ export type VideoJob = {
   taggedIds: string[];
   communityIds: string[];
   allowGifs: boolean;
+  // TikTok-style bubbles for the black letterbox bands above/below a LANDSCAPE
+  // clip in portrait viewing (posts.top_caption / bottom_caption jsonb — see
+  // post_top_caption.sql).
+  topCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
+  bottomCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
   maxDurationSeconds: number;
   spotlight?: { campaignId: string; days: number } | null;
 };
@@ -206,6 +211,9 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         ...(job.genre ? { genre: job.genre } : {}),
         ...(job.durationSeconds && job.durationSeconds > 0 ? { duration_seconds: job.durationSeconds } : {}),
         aspect_ratio: job.aspectRatio,
+        // Spread-conditional: pre-migration databases simply never see the columns.
+        ...(job.topCaption?.text ? { top_caption: job.topCaption } : {}),
+        ...(job.bottomCaption?.text ? { bottom_caption: job.bottomCaption } : {}),
         ...(job.trim ? { trim_start: job.trim.start, trim_end: job.trim.end } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         video_uid: uid, video_status: 'processing', video_hls_url: hls,
