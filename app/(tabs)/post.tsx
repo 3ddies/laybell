@@ -503,7 +503,11 @@ export default function PostScreen() {
       setVideoDuration(m.duration ?? 0);
       setTrimStart(0);
       try {
-        const { uri } = await VideoThumbnails.getThumbnailAsync(m.uri, { time: 1000 });
+        // Grab an early frame, but never past the clip's end — a time beyond
+        // the duration fails to decode and would leave the cover blank.
+        const durMs = (m.duration ?? 0) * 1000;
+        const at = durMs > 0 ? Math.min(1000, Math.round(durMs / 2)) : 1000;
+        const { uri } = await VideoThumbnails.getThumbnailAsync(m.uri, { time: at, quality: 0.5 });
         setThumbnailUri(uri);
       } catch {}
     }

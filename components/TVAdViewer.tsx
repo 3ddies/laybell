@@ -42,6 +42,12 @@ export default function TVAdViewer({ item, uid, onClose }: {
   // grid re-emerges behind; release past the threshold (or a real downward
   // fling) slides it off and closes, otherwise it springs back. Claims only
   // clearly-vertical downward MOVES, so the ×/CTA/report taps are untouched.
+  //
+  // A downward drag that STARTS in the middle-to-top half of the screen is
+  // claimed via the CAPTURE phase so it wins even over the fullscreen video
+  // (whose native view would otherwise swallow the touch) — that's the region
+  // people naturally flick to toss the ad away. The bottom half is left to the
+  // normal (non-capture) path so it never steals from the CTA / meta block.
   const translateY = useRef(new Animated.Value(0)).current;
   const closeRef = useRef(onClose); closeRef.current = onClose;
   const dismissBySwipe = () => {
@@ -50,9 +56,13 @@ export default function TVAdViewer({ item, uid, onClose }: {
   };
   const springBack = () =>
     Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+  const isDownSwipe = (g: { dy: number; dx: number }) => g.dy > 10 && g.dy > Math.abs(g.dx) * 1.2;
   const pan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
-    onMoveShouldSetPanResponder: (_e, g) => g.dy > 12 && g.dy > Math.abs(g.dx) * 1.5,
+    // Intercept top/middle-half downward drags before the video can grab them.
+    onMoveShouldSetPanResponderCapture: (_e, g) => g.y0 < SCREEN_H * 0.5 && isDownSwipe(g),
+    // Anywhere else, still allow the drag where no child claims it first.
+    onMoveShouldSetPanResponder: (_e, g) => isDownSwipe(g),
     onPanResponderMove: (_e, g) => { if (g.dy > 0) translateY.setValue(g.dy); },
     onPanResponderRelease: (_e, g) => {
       if (g.dy > 120 || g.vy > 0.8) dismissBySwipe();
