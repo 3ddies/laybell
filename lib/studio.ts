@@ -40,6 +40,10 @@ export type StudioSession = {
   status: 'open' | 'ended';
   created_at: string;
   member_count?: number;
+  // Broadcast state (studio_live.sql) — absent on a pre-migration database.
+  live?: boolean;
+  live_started_at?: string | null;
+  listener_peak?: number;
 };
 
 export type StudioMember = {
@@ -55,6 +59,28 @@ export type CountInMessage = {
   startAt: number; // epoch ms when the REC flash should land
   bpm: number;
   from: string;
+};
+
+export type StudioJoinRequest = {
+  session_id: string;
+  user_id: string;
+  status: 'pending' | 'accepted' | 'declined';
+  created_at: string;
+  username?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+};
+
+/** A live studio broadcast as the audience sees it (RPC-shaped — no join code). */
+export type LiveStudioSession = {
+  id: string;
+  title: string | null;
+  host_id: string;
+  live_started_at: string | null;
+  host_username: string | null;
+  host_display_name: string | null;
+  host_avatar_url: string | null;
+  member_count: number;
 };
 
 // --- Session CRUD -------------------------------------------------------------
@@ -96,12 +122,21 @@ export async function fetchMySessions(): Promise<StudioSession[]> {
 }
 
 export async function fetchSession(sessionId: string): Promise<StudioSession | null> {
-  const { data } = await supabase
+  // The broadcast columns arrive with studio_live.sql — on a pre-migration
+  // database that select errors, so retry with the base column set.
+  let row: unknown = (await supabase
     .from('studio_sessions')
-    .select('id, host_id, title, join_code, status, created_at')
+    .select('id, host_id, title, join_code, status, created_at, live, live_started_at, listener_peak')
     .eq('id', sessionId)
-    .maybeSingle();
-  return (data as StudioSession) ?? null;
+    .maybeSingle()).data;
+  if (!row) {
+    row = (await supabase
+      .from('studio_sessions')
+      .select('id, host_id, title, join_code, status, created_at')
+      .eq('id', sessionId)
+      .maybeSingle()).data;
+  }
+  return (row as StudioSession) ?? null;
 }
 
 export async function fetchRoster(sessionId: string): Promise<StudioMember[]> {
@@ -129,8 +164,13 @@ export async function fetchRoster(sessionId: string): Promise<StudioMember[]> {
 export async function endSession(sessionId: string): Promise<void> {
   await supabase
     .from('studio_sessions')
+    // live:false so an in-progress broadcast ends with the session (the column
+    // arrives with studio_live.sql; pre-migration the update still succeeds
+    // because unknown columns are the caller's schema problem — so send it in
+    // a second, best-effort update instead of risking the primary one).
     .update({ status: 'ended', ended_at: new Date().toISOString() })
     .eq('id', sessionId);
+  await supabase.from('studio_sessions').update({ live: false }).eq('id', sessionId).then(() => {}, () => {});
 }
 
 export async function leaveSession(sessionId: string): Promise<void> {
@@ -169,6 +209,99 @@ const MUSIC_PUBLISH = {
   stopMicTrackOnMute: false,
 } as const;
 
+// --- Vocal presets -------------------------------------------------------------
+// One-tap "make my voice sound mixed" presets, keyed by the singer's pitch
+// range. Each carries two layers:
+//   * capture — WebRTC constraints applied on EVERY platform: 'raw' bypasses
+//     all processing (instruments/DAW), everything else runs the clean-voice
+//     chain (echo cancel + noise suppression + auto-gain = the polished,
+//     even, feedback-safe sound).
+//   * eq — the pitch-specific EQ + compressor recipe. Applied where real DSP
+//     exists today: the web/DAW connector's Web Audio graph (web/studio.html
+//     mirrors these numbers). Native publishes the preset key through
+//     participant attributes so any DSP-capable surface can honor it.
+export type VocalPresetKey = 'raw' | 'natural' | 'low' | 'mid' | 'high';
+
+export type VocalEq = {
+  highpassHz: number;
+  bands: Array<{ freqHz: number; gainDb: number; q: number }>;
+  compressor: { thresholdDb: number; ratio: number; attackS: number; releaseS: number };
+  makeupDb: number;
+};
+
+export type VocalPreset = {
+  key: VocalPresetKey;
+  /** Ionicons name for the picker pill. */
+  icon: string;
+  capture: Record<string, unknown>;
+  eq: VocalEq | null;
+};
+
+export const VOCAL_PRESETS: VocalPreset[] = [
+  // Raw input — instruments, DAWs, interfaces. The old "studio mode".
+  { key: 'raw', icon: 'pulse-outline', capture: STUDIO_CAPTURE, eq: null },
+  // Clean voice, no tonal shaping.
+  { key: 'natural', icon: 'mic-outline', capture: VOICE_CAPTURE, eq: null },
+  // Deep voices: clear the mud below the chest register, push presence.
+  {
+    key: 'low', icon: 'trending-down-outline', capture: VOICE_CAPTURE,
+    eq: {
+      highpassHz: 70,
+      bands: [
+        { freqHz: 250, gainDb: -2.5, q: 1.0 },   // de-mud
+        { freqHz: 3200, gainDb: 3, q: 1.1 },     // presence / diction
+        { freqHz: 9500, gainDb: 1.5, q: 0.8 },   // air
+      ],
+      compressor: { thresholdDb: -18, ratio: 3, attackS: 0.003, releaseS: 0.25 },
+      makeupDb: 3,
+    },
+  },
+  // Mid voices: gentle low-mid tidy, forward presence, open top.
+  {
+    key: 'mid', icon: 'remove-outline', capture: VOICE_CAPTURE,
+    eq: {
+      highpassHz: 85,
+      bands: [
+        { freqHz: 350, gainDb: -2, q: 1.1 },
+        { freqHz: 4000, gainDb: 2.5, q: 1.1 },
+        { freqHz: 11000, gainDb: 2, q: 0.8 },
+      ],
+      compressor: { thresholdDb: -18, ratio: 3, attackS: 0.003, releaseS: 0.25 },
+      makeupDb: 2.5,
+    },
+  },
+  // High/bright voices: add body, soften harshness, keep the sparkle.
+  {
+    key: 'high', icon: 'trending-up-outline', capture: VOICE_CAPTURE,
+    eq: {
+      highpassHz: 100,
+      bands: [
+        { freqHz: 220, gainDb: 1.5, q: 0.9 },    // warmth / body
+        { freqHz: 6500, gainDb: -2, q: 2.0 },    // de-harsh
+        { freqHz: 12000, gainDb: 2, q: 0.8 },    // air
+      ],
+      compressor: { thresholdDb: -20, ratio: 2.5, attackS: 0.004, releaseS: 0.22 },
+      makeupDb: 2,
+    },
+  },
+];
+
+export function vocalPreset(key: VocalPresetKey): VocalPreset {
+  return VOCAL_PRESETS.find((p) => p.key === key) ?? VOCAL_PRESETS[1];
+}
+
+/**
+ * Republishes the mic with the preset's capture profile and stamps the choice
+ * on participant attributes (so the web connector & future DSP surfaces can
+ * apply the matching EQ recipe to what they hear/publish).
+ */
+export async function applyVocalPreset(room: Room, key: VocalPresetKey): Promise<void> {
+  const p = vocalPreset(key);
+  await room.localParticipant.setMicrophoneEnabled(false);
+  await room.localParticipant.setMicrophoneEnabled(true, p.capture as never, MUSIC_PUBLISH);
+  try { await room.localParticipant.setAttributes({ vocalPreset: key }); } catch { /* older server */ }
+}
+
 // The RN audio session must be running before any WebRTC audio flows. Guarded
 // require so a binary without the livekit natives doesn't crash at import.
 async function setAudioSession(on: boolean): Promise<void> {
@@ -202,14 +335,21 @@ export async function disconnectStudioRoom(room: Room): Promise<void> {
   await setAudioSession(false);
 }
 
-/** Republishes the mic with (or without) voice processing. */
-export async function setStudioMode(room: Room, studio: boolean): Promise<void> {
-  await room.localParticipant.setMicrophoneEnabled(false);
-  await room.localParticipant.setMicrophoneEnabled(
-    true,
-    studio ? STUDIO_CAPTURE : VOICE_CAPTURE,
-    MUSIC_PUBLISH,
-  );
+/**
+ * Tunes in to a LIVE studio broadcast: subscribe-only + hidden, so the
+ * musicians' room never even sees the audience. Any signed-in user works —
+ * no membership required (the token fn checks the session is live).
+ */
+export async function connectStudioListener(sessionId: string): Promise<Room> {
+  const { data, error } = await supabase.functions.invoke('livekit-token', {
+    body: { sessionId, listen: true },
+  });
+  if (error || !data?.token) throw new Error(data?.error ?? error?.message ?? 'token failed');
+
+  await setAudioSession(true);
+  const room = new (lk().Room)({ adaptiveStream: false });
+  await room.connect(data.url, data.token);
+  return room;
 }
 
 // --- Sync count-in --------------------------------------------------------------
@@ -235,4 +375,110 @@ export function onCountIn(room: Room, cb: (msg: CountInMessage) => void): () => 
   };
   room.on(lk().RoomEvent.DataReceived, handler);
   return () => { room.off(lk().RoomEvent.DataReceived, handler); };
+}
+
+// --- Live broadcast (the audience side of a session) ---------------------------
+// All of this degrades gracefully pre-migration (studio_live.sql): the RPCs
+// just error and callers fall back to "not available".
+
+/** Host: start/stop broadcasting this session to listeners. */
+export async function setSessionLive(sessionId: string, on: boolean): Promise<boolean> {
+  const { error } = await supabase
+    .from('studio_sessions')
+    .update(on
+      ? { live: true, live_started_at: new Date().toISOString() }
+      : { live: false })
+    .eq('id', sessionId);
+  return !error;
+}
+
+/** Host: record the broadcast's biggest audience (for the earned screen). */
+export async function setListenerPeak(sessionId: string, peak: number): Promise<void> {
+  await supabase.from('studio_sessions').update({ listener_peak: peak }).eq('id', sessionId).then(() => {}, () => {});
+}
+
+/** Live broadcasts, for the audience rails (RPC — join codes never leave). */
+export async function fetchLiveStudioSessions(): Promise<LiveStudioSession[]> {
+  try {
+    const { data, error } = await supabase.rpc('fetch_live_studio_sessions');
+    if (error) return [];
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      ...r,
+      member_count: Number(r.member_count ?? 0),
+    })) as LiveStudioSession[];
+  } catch {
+    return [];
+  }
+}
+
+/** Everything the listen screen needs; null once the broadcast has ended. */
+export async function fetchStudioListen(sessionId: string): Promise<{
+  session: { id: string; title: string | null; host_id: string; live_started_at: string | null };
+  roster: StudioMember[];
+} | null> {
+  try {
+    const { data, error } = await supabase.rpc('fetch_studio_listen', { p_session: sessionId });
+    if (error || !data) return null;
+    return data as never;
+  } catch {
+    return null;
+  }
+}
+
+/** Listener: ask to join the session. Resolves to the request's status. */
+export async function requestStudioJoin(sessionId: string):
+  Promise<'pending' | 'accepted' | 'declined' | 'member' | 'unavailable'> {
+  try {
+    const { data, error } = await supabase.rpc('request_studio_join', { p_session: sessionId });
+    if (error) return 'unavailable';
+    return (data as never) ?? 'pending';
+  } catch {
+    return 'unavailable';
+  }
+}
+
+/** Host: accept or decline a listener's join request. */
+export async function respondStudioJoin(sessionId: string, userId: string, accept: boolean): Promise<boolean> {
+  const { error } = await supabase.rpc('respond_studio_join', {
+    p_session: sessionId, p_user: userId, p_accept: accept,
+  });
+  return !error;
+}
+
+/** Host: this session's pending join requests, with requester profiles. */
+export async function fetchJoinRequests(sessionId: string): Promise<StudioJoinRequest[]> {
+  const { data } = await supabase
+    .from('studio_join_requests')
+    .select('session_id, user_id, status, created_at')
+    .eq('session_id', sessionId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+  const rows = (data ?? []) as StudioJoinRequest[];
+  if (!rows.length) return [];
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, username, display_name, avatar_url')
+    .in('id', rows.map((r) => r.user_id));
+  const byId = new Map((profiles ?? []).map((p) => [p.id, p]));
+  return rows.map((r) => ({
+    ...r,
+    username: byId.get(r.user_id)?.username ?? null,
+    display_name: byId.get(r.user_id)?.display_name ?? null,
+    avatar_url: byId.get(r.user_id)?.avatar_url ?? null,
+  }));
+}
+
+/** Listener: my request's current status for this session (null = none yet). */
+export async function myJoinRequestStatus(sessionId: string):
+  Promise<'pending' | 'accepted' | 'declined' | null> {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth?.user?.id;
+  if (!uid) return null;
+  const { data } = await supabase
+    .from('studio_join_requests')
+    .select('status')
+    .eq('session_id', sessionId)
+    .eq('user_id', uid)
+    .maybeSingle();
+  return (data?.status as never) ?? null;
 }

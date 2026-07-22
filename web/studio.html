@@ -14,7 +14,8 @@ h1 { font-size:22px; margin:0 0 6px; text-align:center; }
 p.sub { color:var(--muted); margin:0 0 22px; text-align:center; font-size:14px; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; margin-bottom:14px; }
 label { display:block; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin:0 0 6px; }
-input { width:100%; padding:13px 14px; border-radius:12px; border:1px solid var(--line); background:#0f0e12; color:var(--ink); font-size:16px; margin-bottom:12px; }
+input, select { width:100%; padding:13px 14px; border-radius:12px; border:1px solid var(--line); background:#0f0e12; color:var(--ink); font-size:16px; margin-bottom:12px; }
+select { appearance:none; -webkit-appearance:none; }
 input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
 .btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:14px 18px; border-radius:13px; border:0; cursor:pointer; font-weight:700; font-size:15px; margin:0 0 10px; }
 .btn-primary { background:linear-gradient(90deg,var(--brand),var(--brand2)); color:#fff; }
@@ -33,13 +34,15 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
 .pill { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:3px 10px; margin-left:8px; vertical-align:2px; }
 .pill .dot { width:8px; height:8px; }
 .pill.live .dot { background:var(--ok); }
+.meter { height:8px; border-radius:4px; background:#0f0e12; border:1px solid var(--line); overflow:hidden; margin:0 0 12px; }
+.meter > div { height:100%; width:0%; background:linear-gradient(90deg,var(--ok),#EAB308 70%,var(--err)); transition:width .06s linear; }
 .countin { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); font-size:140px; font-weight:900; color:#fff; z-index:50; }
 .countin.rec { color:var(--err); }
 </style>
 </head><body><main>
   <div class="logo">L</div>
   <h1>Laybell Studio</h1>
-  <p class="sub">Join a live studio session from your computer and pipe FL&nbsp;Studio, BandLab, or any app's audio straight into the room.</p>
+  <p class="sub">Join a live studio session from your computer — pro mics and interfaces, FL&nbsp;Studio / BandLab audio, and one-tap vocal polish.</p>
 
   <!-- Join -->
   <div class="card" id="join">
@@ -55,16 +58,33 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
   <div class="card" id="room">
     <div style="margin-bottom:10px">In session<span class="pill live" id="connPill"><span class="dot"></span><span id="connText">connected</span></span></div>
     <div class="people" id="people"></div>
+
+    <label for="micSel">Microphone / audio interface</label>
+    <select id="micSel"></select>
+
+    <label for="presetSel">Vocal preset</label>
+    <select id="presetSel">
+      <option value="raw">Raw input — interfaces, instruments, DAW out</option>
+      <option value="natural" selected>Natural voice — clean, no shaping</option>
+      <option value="low">Low voice — deep range, mixed &amp; polished</option>
+      <option value="mid">Mid voice — mixed &amp; polished</option>
+      <option value="high">High voice — bright range, mixed &amp; polished</option>
+    </select>
+
+    <div class="meter"><div id="meterFill"></div></div>
+
     <div class="row">
       <button class="btn btn-ghost" id="muteBtn">Mute mic</button>
       <button class="btn btn-primary" id="dawBtn">Share app audio</button>
     </div>
     <p class="status" id="roomStatus"></p>
     <p class="hint" style="margin-top:10px">
+      <b>Pro mic / interface:</b> plug it in and pick it under <i>Microphone</i> — with <i>Raw input</i> the signal
+      goes to the room untouched at studio quality.
       <b>Connect your DAW:</b> click <i>Share app audio</i>, pick the FL&nbsp;Studio / BandLab window or your screen, and tick
-      <i>"share audio"</i> in the browser dialog. Everyone in the session hears your DAW in studio quality.
-      When the host fires a <b>sync count-in</b>, this page counts 4 beats then flashes <b style="color:var(--err)">REC</b> —
-      punch record in your DAW on the flash and every take lines up.
+      <i>"share audio"</i> in the browser dialog. (Using ASIO? Route your DAW to the system output or share the entire
+      screen with system audio.) When the host fires a <b>sync count-in</b>, this page counts 4 beats then flashes
+      <b style="color:var(--err)">REC</b> — punch record in your DAW on the flash and every take lines up.
     </p>
     <button class="btn btn-ghost" id="leaveBtn" style="margin-top:12px">Leave</button>
   </div>
@@ -81,7 +101,8 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
   var TOKEN_FN = 'https://wawpaokvtptfmuygjnns.supabase.co/functions/v1/livekit-token';
 
   var LK = window.LivekitClient;
-  var room = null, micTrack = null, dawTrack = null, muted = false;
+  var room = null, micPub = null, dawTrack = null, muted = false;
+  var audioCtx = null, chain = null, meterRaf = 0;
 
   var $ = function (id) { return document.getElementById(id); };
   var params = new URLSearchParams(location.search);
@@ -95,12 +116,27 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
     echoCancellation: false, noiseSuppression: false, autoGainControl: false,
     channelCount: 2, sampleRate: 48000
   };
+  // Polished voice capture: the browser's echo cancel / noise suppression /
+  // auto-gain chain — the "clean" base the EQ presets build on.
+  var VOICE_AUDIO = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
   var PUBLISH_OPTS = { dtx: false, red: false, audioPreset: { maxBitrate: 320000 } };
+
+  // Vocal presets — numbers mirror lib/studio.ts (VOCAL_PRESETS). Each EQ
+  // preset = highpass + three peaking bands + a gentle compressor + makeup.
+  var PRESETS = {
+    raw:     { capture: STUDIO_AUDIO, eq: null },
+    natural: { capture: VOICE_AUDIO,  eq: null },
+    low: { capture: VOICE_AUDIO, eq: { hp: 70, bands: [[250, -2.5, 1.0], [3200, 3, 1.1], [9500, 1.5, 0.8]], comp: [-18, 3, 0.003, 0.25], makeup: 3 } },
+    mid: { capture: VOICE_AUDIO, eq: { hp: 85, bands: [[350, -2, 1.1], [4000, 2.5, 1.1], [11000, 2, 0.8]], comp: [-18, 3, 0.003, 0.25], makeup: 2.5 } },
+    high: { capture: VOICE_AUDIO, eq: { hp: 100, bands: [[220, 1.5, 0.9], [6500, -2, 2.0], [12000, 2, 0.8]], comp: [-20, 2.5, 0.004, 0.22], makeup: 2 } }
+  };
 
   $('joinBtn').addEventListener('click', join);
   $('muteBtn').addEventListener('click', toggleMute);
   $('dawBtn').addEventListener('click', shareDaw);
   $('leaveBtn').addEventListener('click', function () { location.reload(); });
+  $('micSel').addEventListener('change', republishMic);
+  $('presetSel').addEventListener('change', onPresetChange);
 
   async function join() {
     var code = $('code').value.trim().toUpperCase();
@@ -121,9 +157,8 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
       wireRoom(room);
       await room.connect(data.url, data.token);
 
-      // Publish the mic in studio quality.
-      micTrack = await LK.createLocalAudioTrack(STUDIO_AUDIO);
-      await room.localParticipant.publishTrack(micTrack, PUBLISH_OPTS);
+      await republishMic();
+      await listMics();
 
       $('join').style.display = 'none';
       $('room').style.display = 'block';
@@ -136,6 +171,123 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
     $('joinBtn').disabled = false;
   }
 
+  // ── Input devices (pro mics / interfaces show up here) ─────────────────────
+  async function listMics() {
+    try {
+      var devices = await navigator.mediaDevices.enumerateDevices();
+      var sel = $('micSel');
+      var cur = sel.value;
+      sel.innerHTML = '';
+      devices.filter(function (d) { return d.kind === 'audioinput'; }).forEach(function (d, i) {
+        var opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ('Microphone ' + (i + 1));
+        sel.appendChild(opt);
+      });
+      if (cur) sel.value = cur;
+    } catch (_) {}
+  }
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', listMics);
+  }
+
+  // ── Mic pipeline: capture → (optional Web Audio polish chain) → publish ────
+  function currentPreset() { return PRESETS[$('presetSel').value] || PRESETS.natural; }
+
+  function buildChain(stream, eq) {
+    // getUserMedia stream → highpass → 3 peaking bands → compressor → makeup → destination
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    var src = audioCtx.createMediaStreamSource(stream);
+    var node = src;
+    var hp = audioCtx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = eq.hp;
+    node.connect(hp); node = hp;
+    eq.bands.forEach(function (b) {
+      var f = audioCtx.createBiquadFilter();
+      f.type = 'peaking'; f.frequency.value = b[0]; f.gain.value = b[1]; f.Q.value = b[2];
+      node.connect(f); node = f;
+    });
+    var comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = eq.comp[0]; comp.ratio.value = eq.comp[1];
+    comp.attack.value = eq.comp[2]; comp.release.value = eq.comp[3]; comp.knee.value = 6;
+    node.connect(comp);
+    var makeup = audioCtx.createGain();
+    makeup.gain.value = Math.pow(10, eq.makeup / 20);
+    comp.connect(makeup);
+    var dest = audioCtx.createMediaStreamDestination();
+    makeup.connect(dest);
+    // Level meter taps the FINAL signal (what the room hears).
+    var analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    makeup.connect(analyser);
+    return { src: src, dest: dest, analyser: analyser, raw: stream };
+  }
+
+  function meterFromTrack(stream) {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    var src = audioCtx.createMediaStreamSource(stream);
+    var analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    src.connect(analyser); // analysis only — nothing routed to output
+    return analyser;
+  }
+
+  function runMeter(analyser) {
+    cancelAnimationFrame(meterRaf);
+    var buf = new Uint8Array(analyser.fftSize);
+    (function tick() {
+      analyser.getByteTimeDomainData(buf);
+      var peak = 0;
+      for (var i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128) / 128);
+      $('meterFill').style.width = Math.min(100, Math.round(peak * 130)) + '%';
+      meterRaf = requestAnimationFrame(tick);
+    })();
+  }
+
+  function stopChain() {
+    cancelAnimationFrame(meterRaf);
+    $('meterFill').style.width = '0%';
+    if (chain && chain.raw) chain.raw.getTracks().forEach(function (t) { t.stop(); });
+    chain = null;
+  }
+
+  async function republishMic() {
+    if (!room) return;
+    var preset = currentPreset();
+    try {
+      // Tear down the previous publication + capture.
+      if (micPub) { try { await room.localParticipant.unpublishTrack(micPub.track, true); } catch (_) {} micPub = null; }
+      stopChain();
+
+      var constraints = Object.assign({}, preset.capture);
+      var devId = $('micSel').value;
+      if (devId) constraints.deviceId = { exact: devId };
+
+      var stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+      var outTrack, analyser;
+      if (preset.eq) {
+        chain = buildChain(stream, preset.eq);
+        outTrack = chain.dest.stream.getAudioTracks()[0];
+        analyser = chain.analyser;
+      } else {
+        chain = { raw: stream };
+        outTrack = stream.getAudioTracks()[0];
+        analyser = meterFromTrack(stream);
+      }
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+      micPub = await room.localParticipant.publishTrack(outTrack, Object.assign({}, PUBLISH_OPTS, { name: 'mic-audio' }));
+      if (muted) { try { micPub.track.mute(); } catch (_) {} }
+      runMeter(analyser);
+      setStatus($('roomStatus'), '', '');
+    } catch (e) {
+      setStatus($('roomStatus'), 'Could not open that microphone.', 'err');
+    }
+  }
+
+  function onPresetChange() {
+    republishMic();
+  }
+
   function wireRoom(r) {
     r.on(LK.RoomEvent.ParticipantConnected, renderPeople)
      .on(LK.RoomEvent.ParticipantDisconnected, renderPeople)
@@ -145,6 +297,7 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
      .on(LK.RoomEvent.Disconnected, function () {
        $('connText').textContent = 'disconnected';
        $('connPill').classList.remove('live');
+       stopChain();
      })
      .on(LK.RoomEvent.TrackSubscribed, function (track) {
        if (track.kind === 'audio') { var el = track.attach(); document.body.appendChild(el); }
@@ -174,9 +327,9 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
   }
 
   function toggleMute() {
-    if (!micTrack) return;
+    if (!micPub || !micPub.track) return;
     muted = !muted;
-    if (muted) micTrack.mute(); else micTrack.unmute();
+    if (muted) micPub.track.mute(); else micPub.track.unmute();
     $('muteBtn').textContent = muted ? 'Unmute mic' : 'Mute mic';
   }
 

@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, Share, ActivityIndicator, ScrollView, Switch,
+  TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Room } from 'livekit-client';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import LiveChatOverlay, { useBufferedChat } from '../../components/LiveChatOverlay';
+import LiveDonationAlerts from '../../components/LiveDonationAlerts';
+import LiveEarnedOverlay from '../../components/LiveEarnedOverlay';
 import { GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -17,19 +22,31 @@ import { supabase } from '../../lib/supabase';
 import { WEB_ORIGIN } from '../../lib/appLinks';
 import { tabTick } from '../../lib/haptics';
 import { webrtcAvailable } from '../../lib/whip';
+import { displayedTier } from '../../lib/badges';
+import { joinStudioChannel, type LiveChannelHandle, type LiveDonationEvent } from '../../lib/live';
+import { fetchStudioEarnings } from '../../lib/donations';
 import {
-  connectStudioRoom, disconnectStudioRoom, endSession, fetchRoster, fetchSession,
-  getRoomEvents, leaveSession, onCountIn, sendCountIn, setStudioMode,
-  type StudioMember, type StudioSession,
+  applyVocalPreset, connectStudioRoom, disconnectStudioRoom, endSession, fetchJoinRequests,
+  fetchRoster, fetchSession, getRoomEvents, leaveSession, onCountIn, respondStudioJoin,
+  sendCountIn, setListenerPeak, setSessionLive, VOCAL_PRESETS,
+  type StudioJoinRequest, type StudioMember, type StudioSession, type VocalPresetKey,
 } from '../../lib/studio';
 
 // A studio session room: LiveKit voice tuned for music (high-bitrate stereo
-// Opus, DTX/RED off), with a "studio mode" that strips echo cancellation /
-// noise suppression / AGC for raw DAW and instrument signal. The synchronized
-// count-in broadcasts a wall-clock start so everyone can punch record in their
-// own DAW on the same beat — Laybell as the connector, like Zoom for meetings.
+// Opus, DTX/RED off), with one-tap VOCAL PRESETS — 'raw' (the old studio mode:
+// no processing, for DAWs/instruments) or polished voice chains keyed to the
+// singer's pitch range. The synchronized count-in broadcasts a wall-clock
+// start so everyone can punch record in their own DAW on the same beat.
+//
+// The host can also BROADCAST the session to a listener audience ("modern
+// radio"): listeners tune in hear-only + hidden (zero impact on the musicians'
+// latency/quality), chat + donations ride a Supabase channel exactly like a
+// livestream's, and listeners can request a seat — accepted requests join the
+// session for real.
 
 type ConnState = 'connecting' | 'connected' | 'unavailable' | 'error';
+
+const PRESET_STORE_KEY = 'studio.vocalPreset';
 
 export default function StudioRoomScreen() {
   const styles = useThemedStyles(makeStyles);
@@ -44,14 +61,27 @@ export default function StudioRoomScreen() {
   const [roster, setRoster] = useState<StudioMember[]>([]);
   const [conn, setConn] = useState<ConnState>('connecting');
   const [muted, setMuted] = useState(false);
-  const [studioOn, setStudioOn] = useState(false);
+  const [preset, setPreset] = useState<VocalPresetKey>('natural');
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [count, setCount] = useState<string | null>(null); // '4'…'1' | 'REC'
   const [, force] = useState(0);
   const roomRef = useRef<Room | null>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const mutedRef = useRef(false); mutedRef.current = muted;
+
+  // ── Broadcast state ─────────────────────────────────────────────────────────
+  const [broadcastBusy, setBroadcastBusy] = useState(false);
+  const [listeners, setListeners] = useState(0);
+  const [joinReqs, setJoinReqs] = useState<StudioJoinRequest[]>([]);
+  const [donationEvent, setDonationEvent] = useState<LiveDonationEvent | null>(null);
+  const [earned, setEarned] = useState<number | null>(null);
+  const [draft, setDraft] = useState('');
+  const { messages: chat, push: pushChat } = useBufferedChat();
+  const channelRef = useRef<LiveChannelHandle | null>(null);
+  const listenerPeakRef = useRef(0);
 
   const isHost = !!session && session.host_id === profile?.id;
+  const isLive = !!session?.live;
 
   const loadMeta = useCallback(async () => {
     if (!id) return;
@@ -79,7 +109,7 @@ export default function StudioRoomScreen() {
     let alive = true;
     let cleanupCountIn: (() => void) | null = null;
     connectStudioRoom(id)
-      .then((room) => {
+      .then(async (room) => {
         if (!alive) { disconnectStudioRoom(room); return; }
         roomRef.current = room;
         const update = () => force((n) => n + 1);
@@ -94,6 +124,15 @@ export default function StudioRoomScreen() {
           .on(RoomEvent.Disconnected, () => { if (alive) setConn('error'); });
         cleanupCountIn = onCountIn(room, runCountIn);
         setConn('connected');
+        // Restore the artist's last vocal preset (persisted across sessions).
+        try {
+          const stored = (await AsyncStorage.getItem(PRESET_STORE_KEY)) as VocalPresetKey | null;
+          if (alive && stored && stored !== 'natural' && VOCAL_PRESETS.some((p) => p.key === stored)) {
+            setPreset(stored);
+            await applyVocalPreset(room, stored);
+            if (mutedRef.current) await room.localParticipant.setMicrophoneEnabled(false);
+          }
+        } catch { /* keep natural */ }
       })
       .catch(() => { if (alive) setConn('error'); });
     return () => {
@@ -106,6 +145,42 @@ export default function StudioRoomScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // ── Audience channel (chat + donations + listener count) ────────────────────
+  // Every session member joins while the broadcast is live — as 'host' so the
+  // presence count stays listeners-only (musicians aren't their own audience).
+  useEffect(() => {
+    if (!isLive || !id || !profile?.id) return;
+    const handle = joinStudioChannel(id, {
+      userId: profile.id,
+      name: profile.display_name || profile.username || 'Artist',
+      username: profile.username ?? null,
+      avatarUrl: profile.avatar_url ?? null,
+      tier: displayedTier(profile),
+      isHost: true,
+      onViewers: (n) => {
+        listenerPeakRef.current = Math.max(listenerPeakRef.current, n);
+        setListeners(n);
+      },
+      onChat: pushChat,
+      onDonation: setDonationEvent,
+    });
+    channelRef.current = handle;
+    return () => { handle.leave(); channelRef.current = null; setListeners(0); };
+  }, [isLive, id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url, pushChat]);
+
+  // ── Join requests (host only, while live) ───────────────────────────────────
+  useEffect(() => {
+    if (!isLive || !isHost || !id) return;
+    let alive = true;
+    const load = () => fetchJoinRequests(id).then((r) => { if (alive) setJoinReqs(r); }).catch(() => {});
+    load();
+    const channel = supabase
+      .channel(`studio-reqs:${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'studio_join_requests', filter: `session_id=eq.${id}` }, load)
+      .subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [isLive, isHost, id]);
 
   // Runs the 4-beat visual/haptic count-in ending exactly at msg.startAt.
   function runCountIn(msg: { startAt: number; bpm: number }) {
@@ -132,14 +207,63 @@ export default function StudioRoomScreen() {
     await room.localParticipant.setMicrophoneEnabled(!next).catch(() => setMuted(!next));
   }
 
-  async function toggleStudio(on: boolean) {
+  async function pickPreset(key: VocalPresetKey) {
+    if (key === preset) return;
     const room = roomRef.current;
-    setStudioOn(on);
+    const prev = preset;
+    setPreset(key);
+    AsyncStorage.setItem(PRESET_STORE_KEY, key).catch(() => {});
     if (!room) return;
     try {
-      await setStudioMode(room, on);
-      if (muted) await room.localParticipant.setMicrophoneEnabled(false);
-    } catch { setStudioOn(!on); }
+      await applyVocalPreset(room, key);
+      if (mutedRef.current) await room.localParticipant.setMicrophoneEnabled(false);
+    } catch { setPreset(prev); }
+  }
+
+  // ── Broadcast toggle (host) ─────────────────────────────────────────────────
+  async function toggleBroadcast(on: boolean) {
+    if (!session || broadcastBusy) return;
+    setBroadcastBusy(true);
+    try {
+      if (on) {
+        listenerPeakRef.current = 0;
+        const ok = await setSessionLive(session.id, true);
+        if (ok) setSession({ ...session, live: true });
+      } else {
+        await stopBroadcast(true);
+      }
+    } finally {
+      setBroadcastBusy(false);
+    }
+  }
+
+  // Ends the broadcast: tells the audience, flips the flag, records the peak,
+  // and (optionally) rolls the earned celebration.
+  async function stopBroadcast(celebrate: boolean) {
+    if (!session) return;
+    channelRef.current?.sendEnded();
+    await setSessionLive(session.id, false);
+    setListenerPeak(session.id, listenerPeakRef.current).catch(() => {});
+    setSession({ ...session, live: false });
+    setJoinReqs([]);
+    if (celebrate) {
+      const cents = await fetchStudioEarnings(session.id).catch(() => 0);
+      if (cents > 0) setEarned(cents);
+    }
+  }
+
+  async function respondReq(userId: string, accept: boolean) {
+    if (!session) return;
+    setJoinReqs((q) => q.filter((r) => r.user_id !== userId));
+    const ok = await respondStudioJoin(session.id, userId, accept);
+    if (!ok) fetchJoinRequests(session.id).then(setJoinReqs).catch(() => {});
+  }
+
+  function sendChat() {
+    const text = draft.trim();
+    if (!text || !channelRef.current) return;
+    setDraft('');
+    channelRef.current.sendChat(text);
   }
 
   function invite() {
@@ -152,8 +276,12 @@ export default function StudioRoomScreen() {
   async function exit() {
     setConfirmEnd(false);
     if (session) {
-      if (isHost) await endSession(session.id).catch(() => {});
-      else await leaveSession(session.id).catch(() => {});
+      if (isHost) {
+        if (isLive) await stopBroadcast(false).catch(() => {});
+        await endSession(session.id).catch(() => {});
+      } else {
+        await leaveSession(session.id).catch(() => {});
+      }
     }
     router.back();
   }
@@ -165,6 +293,7 @@ export default function StudioRoomScreen() {
     ? [room.localParticipant, ...room.remoteParticipants.values()]
     : [];
   const byId = new Map(roster.map((m) => [m.user_id, m]));
+  const selected = VOCAL_PRESETS.find((p) => p.key === preset) ?? VOCAL_PRESETS[1];
 
   return (
     <SwipeBackPager>
@@ -181,14 +310,25 @@ export default function StudioRoomScreen() {
                 : conn === 'connecting' ? t('studio.connecting')
                 : conn === 'unavailable' ? t('live.rebuildNeeded')
                 : t('studio.connectionLost')}
+              {isLive ? `  ·  ${t('studio.listenersIn', { n: listeners })}` : ''}
             </Text>
           </View>
+          {isLive && (
+            <View style={styles.liveBadge}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveBadgeText}>{t('studio.onAir')}</Text>
+            </View>
+          )}
           <TouchableOpacity onPress={invite} style={styles.headerBtn}>
             <Ionicons name="person-add-outline" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {/* Join code + DAW connector hint */}
           <View style={styles.codeCard}>
             <View style={styles.codeRow}>
@@ -198,6 +338,10 @@ export default function StudioRoomScreen() {
             <View style={styles.dawRow}>
               <Ionicons name="laptop-outline" size={17} color={colors.textSecondary} />
               <Text style={styles.dawText}>{t('studio.connectDawSub')}</Text>
+            </View>
+            <View style={styles.dawRow}>
+              <Ionicons name="hardware-chip-outline" size={17} color={colors.textSecondary} />
+              <Text style={styles.dawText}>{t('studio.proGearSub')}</Text>
             </View>
           </View>
 
@@ -255,21 +399,111 @@ export default function StudioRoomScreen() {
               ))}
           </View>
 
-          {/* Studio mode */}
-          <View style={styles.settingRow}>
-            <View style={styles.settingTextWrap}>
-              <Text style={styles.settingTitle}>{t('studio.studioMode')}</Text>
-              <Text style={styles.settingSub}>{t('studio.studioModeSub')}</Text>
-            </View>
-            <Switch
-              value={studioOn}
-              onValueChange={toggleStudio}
-              disabled={conn !== 'connected'}
-              trackColor={{ true: colors.primary, false: colors.surfaceLight }}
-              thumbColor="#fff"
-            />
+          {/* Vocal preset — one tap from raw signal to a mixed, polished voice */}
+          <View style={styles.presetCard}>
+            <Text style={styles.settingTitle}>{t('studio.voicePreset')}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetRow}>
+              {VOCAL_PRESETS.map((p) => {
+                const on = p.key === preset;
+                return (
+                  <TouchableOpacity
+                    key={p.key}
+                    style={[styles.presetPill, on && styles.presetPillOn]}
+                    onPress={() => pickPreset(p.key)}
+                    disabled={conn !== 'connected'}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name={p.icon as never} size={14} color={on ? '#fff' : colors.textSecondary} />
+                    <Text style={[styles.presetPillText, on && styles.presetPillTextOn]}>
+                      {t(`studio.preset.${p.key}`)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <Text style={styles.settingSub}>{t(`studio.preset.${selected.key}Sub`)}</Text>
           </View>
+
+          {/* Broadcast to listeners (host controls; members see the state) */}
+          {isHost && (
+            <View style={styles.settingColumn}>
+              <View style={styles.settingRowInner}>
+                <View style={styles.settingTextWrap}>
+                  <Text style={styles.settingTitle}>{t('studio.broadcast')}</Text>
+                  <Text style={styles.settingSub}>{t('studio.broadcastSub')}</Text>
+                </View>
+                {broadcastBusy
+                  ? <ActivityIndicator color={colors.primary} />
+                  : (
+                    <Switch
+                      value={isLive}
+                      onValueChange={toggleBroadcast}
+                      disabled={conn !== 'connected'}
+                      trackColor={{ true: colors.primary, false: colors.surfaceLight }}
+                      thumbColor="#fff"
+                    />
+                  )}
+              </View>
+
+              {/* Pending join requests */}
+              {isLive && joinReqs.map((r) => (
+                <View key={r.user_id} style={styles.reqRow}>
+                  {r.avatar_url ? (
+                    <Image source={{ uri: r.avatar_url }} style={styles.reqAvatar} />
+                  ) : (
+                    <LinearGradient colors={GRADIENTS.primary} style={styles.reqAvatar}>
+                      <Text style={styles.reqInitial}>{(r.display_name || r.username || '?').charAt(0).toUpperCase()}</Text>
+                    </LinearGradient>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.reqName} numberOfLines={1}>{r.display_name || r.username || '—'}</Text>
+                    <Text style={styles.reqSub}>{t('studio.wantsToJoin')}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.reqAccept} onPress={() => respondReq(r.user_id, true)}>
+                    <Ionicons name="checkmark" size={18} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.reqDecline} onPress={() => respondReq(r.user_id, false)}>
+                    <Ionicons name="close" size={18} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Audience chat — visible to every musician while on air */}
+          {isLive && (
+            <View style={styles.chatCard}>
+              <View style={styles.chatHeader}>
+                <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.textSecondary} />
+                <Text style={styles.chatTitle}>{t('studio.audienceChat')}</Text>
+                <Text style={styles.chatCount}>{t('studio.listenersIn', { n: listeners })}</Text>
+              </View>
+              {chat.length === 0
+                ? <Text style={styles.chatEmpty}>{t('studio.chatEmpty')}</Text>
+                : <LiveChatOverlay messages={chat} maxHeight={180} onPressName={(m) => router.push(`/profile/${m.userId}`)} />}
+              <View style={styles.chatInputRow}>
+                <TextInput
+                  style={styles.chatInput}
+                  placeholder={t('live.chatPlaceholder')}
+                  placeholderTextColor={colors.textTertiary}
+                  value={draft}
+                  onChangeText={setDraft}
+                  maxLength={300}
+                  onSubmitEditing={sendChat}
+                  returnKeyType="send"
+                />
+                <TouchableOpacity
+                  onPress={sendChat}
+                  disabled={!draft.trim()}
+                  style={[styles.chatSend, !draft.trim() && { opacity: 0.4 }]}
+                >
+                  <Ionicons name="arrow-up" size={18} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </ScrollView>
+        </KeyboardAvoidingView>
 
         {/* Controls */}
         <View style={[styles.controls, { paddingBottom: insets.bottom + 14 }]}>
@@ -296,11 +530,23 @@ export default function StudioRoomScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Donation alerts ride over everything while on air */}
+        <LiveDonationAlerts event={donationEvent} topOffset={insets.top + 54} />
+
         {/* Count-in overlay */}
         {count !== null && (
           <View pointerEvents="none" style={styles.countOverlay}>
             <Text style={[styles.countText, count === 'REC' && { color: '#F43F5E' }]}>{count}</Text>
           </View>
+        )}
+
+        {/* Post-broadcast "You Earned $X" */}
+        {earned !== null && (
+          <LiveEarnedOverlay
+            amountCents={earned}
+            onCashOut={() => { setEarned(null); router.push('/wallet'); }}
+            onDone={() => setEarned(null)}
+          />
         )}
 
         <ConfirmDialog
@@ -325,6 +571,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   headerTextWrap: { flex: 1, gap: 1 },
   headerTitle: { color: c.text, fontSize: 16, fontWeight: '700' },
   headerSub: { color: c.textTertiary, fontSize: 12 },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F43F5E', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' },
+  liveBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   scrollContent: { padding: 16, gap: 14, paddingBottom: 24 },
   codeCard: { backgroundColor: c.surface, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 14, gap: 10 },
   codeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -340,10 +589,36 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   micOffBadge: { position: 'absolute', bottom: 2, right: 2, width: 20, height: 20, borderRadius: 10, backgroundColor: '#F43F5E', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: c.background },
   tileName: { color: c.text, fontSize: 12, fontWeight: '600', maxWidth: 84 },
   hostTag: { color: c.textTertiary, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: c.surface, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 14 },
+  presetCard: { backgroundColor: c.surface, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 14, gap: 10 },
+  presetRow: { gap: 8 },
+  presetPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: 999, borderWidth: 1, borderColor: c.border,
+    paddingHorizontal: 13, paddingVertical: 8, backgroundColor: c.surfaceLight,
+  },
+  presetPillOn: { backgroundColor: c.primary, borderColor: c.primary },
+  presetPillText: { color: c.textSecondary, fontSize: 13, fontWeight: '700' },
+  presetPillTextOn: { color: '#fff' },
+  settingColumn: { backgroundColor: c.surface, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 14, gap: 12 },
+  settingRowInner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   settingTextWrap: { flex: 1, gap: 3 },
   settingTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
   settingSub: { color: c.textTertiary, fontSize: 12, lineHeight: 17 },
+  reqRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border, paddingTop: 12 },
+  reqAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  reqInitial: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  reqName: { color: c.text, fontSize: 13, fontWeight: '700' },
+  reqSub: { color: c.textTertiary, fontSize: 11 },
+  reqAccept: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#22C55E', alignItems: 'center', justifyContent: 'center' },
+  reqDecline: { width: 36, height: 36, borderRadius: 18, backgroundColor: c.surfaceLight, alignItems: 'center', justifyContent: 'center' },
+  chatCard: { backgroundColor: c.surface, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 14, gap: 10 },
+  chatHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chatTitle: { color: c.text, fontSize: 14, fontWeight: '700', flex: 1 },
+  chatCount: { color: c.textTertiary, fontSize: 12 },
+  chatEmpty: { color: c.textTertiary, fontSize: 12, fontStyle: 'italic' },
+  chatInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chatInput: { flex: 1, backgroundColor: c.surfaceLight, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, color: c.text, fontSize: 14 },
+  chatSend: { width: 38, height: 38, borderRadius: 19, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' },
   controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 16, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border },
   controlBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: c.surfaceLight, alignItems: 'center', justifyContent: 'center' },
   controlBtnActive: { backgroundColor: '#F43F5E' },

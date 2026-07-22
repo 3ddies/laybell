@@ -9,19 +9,23 @@ import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import {
-  donate, donationBreakdown, hostCanReceive, hostFeeRate, fmtCents,
+  donate, donateStudio, donationBreakdown, hostCanReceive, hostFeeRate, fmtCents,
   DONATION_PRESETS_CENTS, DONATION_MIN_CENTS, DONATION_MAX_CENTS,
 } from '../lib/donations';
-import type { LiveStream } from '../lib/live';
+import type { LiveProfile, LiveStream } from '../lib/live';
 
 // Bottom-sheet donation flow for the live viewer. The host must be Premium to
 // receive (checked here for the UI + enforced server-side by donation_guard).
 // Payment is simulated; the sheet just shows the split (Laybell 15% + est. tax)
 // so the donor sees exactly what the host takes home.
+//
+// Two targets share the sheet: a LIVESTREAM (`stream`) or a LIVE STUDIO
+// broadcast (`studio`) — pass exactly one; only the insert target differs.
 
-export default function LiveDonateModal({ visible, stream, onClose, onDonated }: {
+export default function LiveDonateModal({ visible, stream, studio, onClose, onDonated }: {
   visible: boolean;
-  stream: LiveStream;
+  stream?: LiveStream;
+  studio?: { sessionId: string; hostProfile?: LiveProfile | null };
   onClose: () => void;
   onDonated: (amountCents: number, message: string) => void;
 }) {
@@ -35,9 +39,10 @@ export default function LiveDonateModal({ visible, stream, onClose, onDonated }:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const hostName = stream.profile?.display_name || stream.profile?.username || t('live.donate.host');
-  const canReceive = hostCanReceive(stream.profile?.premium_until);
-  const b = donationBreakdown(amount, hostFeeRate(stream.profile?.premium_until));
+  const hostProfile = stream?.profile ?? studio?.hostProfile ?? null;
+  const hostName = hostProfile?.display_name || hostProfile?.username || t('live.donate.host');
+  const canReceive = hostCanReceive(hostProfile?.premium_until);
+  const b = donationBreakdown(amount, hostFeeRate(hostProfile?.premium_until));
   const validAmount = amount >= DONATION_MIN_CENTS && amount <= DONATION_MAX_CENTS;
 
   function pickPreset(cents: number) {
@@ -57,7 +62,9 @@ export default function LiveDonateModal({ visible, stream, onClose, onDonated }:
     if (!validAmount || busy) return;
     setBusy(true);
     const msg = message.trim();
-    const res = await donate(stream.id, amount, msg);
+    const res = studio
+      ? await donateStudio(studio.sessionId, amount, msg)
+      : await donate(stream!.id, amount, msg);
     setBusy(false);
     if (res.ok) {
       onDonated(amount, msg);

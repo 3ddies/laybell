@@ -83,17 +83,31 @@ export type DonateResult =
  * donor, stream, and amount. Maps the server's error strings to a typed reason.
  */
 export async function donate(streamId: string, amountCents: number, message = ''): Promise<DonateResult> {
+  return donateTo({ stream_id: streamId }, amountCents, message);
+}
+
+/** Tip the host of a LIVE STUDIO broadcast (donation_guard v3 resolves the
+    host from studio_sessions; requires studio_live.sql). */
+export async function donateStudio(sessionId: string, amountCents: number, message = ''): Promise<DonateResult> {
+  return donateTo({ studio_session_id: sessionId }, amountCents, message);
+}
+
+async function donateTo(
+  target: { stream_id?: string; studio_session_id?: string },
+  amountCents: number,
+  message: string,
+): Promise<DonateResult> {
   const amount = Math.round(amountCents);
   if (!(amount >= DONATION_MIN_CENTS)) return { ok: false, reason: 'unavailable' };
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { ok: false, reason: 'signed_out' };
-    // streamer_id is a NOT NULL column but the trigger overrides it from the stream;
-    // send the donor's own id as a placeholder to satisfy the insert shape.
+    // streamer_id is a NOT NULL column but the trigger overrides it from the
+    // target; send the donor's own id as a placeholder to satisfy the shape.
     const { error } = await supabase.from('donations').insert({
       donor_id: user.id,
       streamer_id: user.id,
-      stream_id: streamId,
+      ...target,
       amount_cents: amount,
       message: message.trim().slice(0, 200) || null,
     });
@@ -116,6 +130,21 @@ export async function fetchStreamEarnings(streamId: string): Promise<number> {
       .from('donations')
       .select('streamer_payout_cents')
       .eq('stream_id', streamId)
+      .eq('status', 'succeeded');
+    return (data ?? []).reduce((sum, d: any) => sum + (d.streamer_payout_cents ?? 0), 0);
+  } catch {
+    return 0;
+  }
+}
+
+/** A studio broadcast's take-home for the host — the "You Earned $X" moment
+    when the broadcast ends (mirror of fetchStreamEarnings). */
+export async function fetchStudioEarnings(sessionId: string): Promise<number> {
+  try {
+    const { data } = await supabase
+      .from('donations')
+      .select('streamer_payout_cents')
+      .eq('studio_session_id', sessionId)
       .eq('status', 'succeeded');
     return (data ?? []).reduce((sum, d: any) => sum + (d.streamer_payout_cents ?? 0), 0);
   } catch {

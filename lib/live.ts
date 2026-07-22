@@ -301,13 +301,7 @@ export async function isInputConnected(inputUid: string): Promise<boolean> {
   return !!data?.connected;
 }
 
-/**
- * Joins a stream's realtime channel: presence drives the viewer count, broadcast
- * carries ephemeral chat. Returns send + leave handles. Broadcasters join too
- * (they're not counted — presence key 'host' is subtracted client-side).
- */
-export function joinLiveChannel(opts: {
-  streamId: string;
+export type LiveChannelOpts = {
   userId: string;
   name: string;
   username?: string | null;
@@ -319,8 +313,32 @@ export function joinLiveChannel(opts: {
   onViewers: (count: number) => void;
   onChat: (msg: LiveChatMessage) => void;
   onDonation?: (d: LiveDonationEvent) => void;
-}) {
-  const channel = supabase.channel(`live:${opts.streamId}`, {
+  // Studio broadcasts: the host announces the end over the channel (listeners
+  // can't watch the session row through RLS the way stream viewers can).
+  onEnded?: () => void;
+};
+
+export type LiveChannelHandle = ReturnType<typeof joinBroadcastChannel>;
+
+/**
+ * Joins a stream's realtime channel: presence drives the viewer count, broadcast
+ * carries ephemeral chat. Returns send + leave handles. Broadcasters join too
+ * (they're not counted — presence key 'host' is subtracted client-side).
+ */
+export function joinLiveChannel(opts: LiveChannelOpts & { streamId: string }) {
+  return joinBroadcastChannel(`live:${opts.streamId}`, opts);
+}
+
+/**
+ * Same machinery for a STUDIO broadcast's audience — chat, donation alerts and
+ * the listener count ride one channel, exactly like a livestream's.
+ */
+export function joinStudioChannel(sessionId: string, opts: LiveChannelOpts) {
+  return joinBroadcastChannel(`studio-live:${sessionId}`, opts);
+}
+
+function joinBroadcastChannel(channelName: string, opts: LiveChannelOpts) {
+  const channel = supabase.channel(channelName, {
     config: {
       presence: { key: opts.isHost ? `host:${opts.userId}` : opts.userId },
       broadcast: { self: true },
@@ -335,6 +353,9 @@ export function joinLiveChannel(opts: {
   });
   channel.on('broadcast', { event: 'donation' }, ({ payload }) => {
     if (payload) opts.onDonation?.(payload as LiveDonationEvent);
+  });
+  channel.on('broadcast', { event: 'ended' }, () => {
+    opts.onEnded?.();
   });
   channel.subscribe((status) => {
     if (status === 'SUBSCRIBED') channel.track({ at: Date.now() }).catch(() => {});
@@ -369,6 +390,11 @@ export function joinLiveChannel(opts: {
       };
       channel.send({ type: 'broadcast', event: 'donation', payload: d }).catch(() => {});
       return d;
+    },
+    // Host only: tell the audience the broadcast is over (studio listeners
+    // have no RLS view of the session row, so this IS their end signal).
+    sendEnded() {
+      channel.send({ type: 'broadcast', event: 'ended', payload: { at: Date.now() } }).catch(() => {});
     },
     leave() {
       supabase.removeChannel(channel);

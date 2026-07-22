@@ -19,6 +19,7 @@ import {
   fetchLiveStreams, joinLiveChannel, endMyStaleLiveStreams,
   type LiveStream, type LiveDonationEvent, type LiveChatMessage,
 } from '../../lib/live';
+import { fetchLiveStudioSessions, type LiveStudioSession } from '../../lib/studio';
 import { hostCanReceive } from '../../lib/donations';
 import { displayedTier } from '../../lib/badges';
 import LiveChatOverlay, { nameColor, useBufferedChat } from '../../components/LiveChatOverlay';
@@ -297,6 +298,7 @@ export default function LiveScreen() {
   const { streamId } = useLocalSearchParams<{ streamId?: string }>();
   const startStreamId = useRef<string | null>(streamId ?? null);
   const [streams, setStreams] = useState<LiveStream[]>([]);
+  const [studios, setStudios] = useState<LiveStudioSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [visibleId, setVisibleId] = useState<string | null>(null);
@@ -354,6 +356,9 @@ export default function LiveScreen() {
       // Reap my own ghost 'live' rows — I'm here watching, so I'm not broadcasting;
       // any of mine are leftovers from a killed session. Fire-and-forget.
       if (mine) endMyStaleLiveStreams(mine).catch(() => {});
+      // Live STUDIO broadcasts ride a strip over the feed (audio-only "radio"
+      // rooms — tapping one opens the listen screen). Fire-and-forget refresh.
+      fetchLiveStudioSessions().then(setStudios).catch(() => {});
       // Never show me my own stream in the watch feed (that's what Go Live is for),
       // so a ghost can never turn into "watching myself on a black screen".
       const rows = (await fetchLiveStreams()).filter((r) => !mine || r.user_id !== mine);
@@ -506,6 +511,41 @@ export default function LiveScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Live STUDIO broadcasts — audio rooms ("modern radio"), tap to listen.
+            A compact strip under the top controls; present even when no camera
+            streams are live so studio broadcasts are always discoverable. */}
+        {studios.length > 0 && (
+          <View style={[styles.studioStrip, { top: insets.top + 64 }]} pointerEvents="box-none">
+            <FlatList
+              horizontal
+              data={studios}
+              keyExtractor={(s) => s.id}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.studioStripContent}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.studioPill}
+                  onPress={() => router.push(`/studio/listen/${item.id}`)}
+                  activeOpacity={0.85}
+                >
+                  {item.host_avatar_url ? (
+                    <Image source={{ uri: item.host_avatar_url }} style={styles.studioPillAvatar} />
+                  ) : (
+                    <LinearGradient colors={GRADIENTS.primary} style={styles.studioPillAvatar}>
+                      <Ionicons name="mic" size={12} color="#fff" />
+                    </LinearGradient>
+                  )}
+                  <View style={styles.studioPillDot} />
+                  <Text style={styles.studioPillText} numberOfLines={1}>
+                    {item.title || item.host_display_name || item.host_username || t('studio.untitled')}
+                  </Text>
+                  <Ionicons name="headset-outline" size={13} color="rgba(255,255,255,0.8)" />
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        )}
       </View>
     </SwipeBackPager>
   );
@@ -517,6 +557,17 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   fallbackText: { color: 'rgba(255,255,255,0.7)', fontSize: 13, textAlign: 'center', paddingHorizontal: 40 },
   // Starts right of the floating back button (14 + 40 + 8).
   topRow: { position: 'absolute', left: 62, right: 14, flexDirection: 'row', alignItems: 'center', gap: 8, zIndex: 5 },
+  studioStrip: { position: 'absolute', left: 0, right: 0, zIndex: 6 },
+  studioStripContent: { paddingHorizontal: 14, gap: 8 },
+  studioPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 220,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.25)',
+    paddingLeft: 4, paddingRight: 12, paddingVertical: 4,
+  },
+  studioPillAvatar: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  studioPillDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#F43F5E' },
+  studioPillText: { color: '#fff', fontSize: 12, fontWeight: '700', flexShrink: 1 },
   // flex:1 so it fills the space left of the LIVE/viewers/Donate pills. (The old
   // marginRight:96 double-reserved space next to those in-flow pills and squeezed
   // the name column to ~0 width — that's why the username slot looked empty.)

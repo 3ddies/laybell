@@ -14,9 +14,15 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 //
 // Request (POST):
 //   App user:  { sessionId: string }                 + Supabase auth Bearer token
+//   Listener:  { sessionId: string, listen: true }   + Supabase auth Bearer token
 //   Web guest: { code: string, name?: string }       (the shareable 6-char code)
 // Response:
 //   { token, url, room, identity }
+//
+// Listeners are the studio-broadcast audience: subscribe-only AND hidden, so
+// they hear everything but never publish, never appear in the participant
+// list, and never generate join/leave events on the musicians' clients — the
+// session's latency/quality is completely untouched by audience size.
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -65,16 +71,22 @@ const b64url = (data: Uint8Array | string): string => {
 };
 
 // LiveKit access tokens are plain HS256 JWTs with a `video` grant claim.
-async function mintToken(room: string, identity: string, name: string): Promise<string> {
+async function mintToken(room: string, identity: string, name: string, listener = false): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const grant = listener
+    // Audience: hear-only + invisible — zero impact on the musicians' room.
+    ? { room, roomJoin: true, canPublish: false, canSubscribe: true, canPublishData: false, hidden: true }
+    // Musicians: full publish + own-metadata so vocal-preset choices can ride
+    // participant attributes.
+    : { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true, canUpdateOwnMetadata: true };
   const payload = b64url(JSON.stringify({
     iss: LK_KEY,
     sub: identity,
     name,
     nbf: now - 10,
     exp: now + 6 * 3600,
-    video: { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true },
+    video: grant,
   }));
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(LK_SECRET!), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
@@ -93,8 +105,20 @@ serve(async (req) => {
     let sessionId: string | null = null;
     let identity = '';
     let name = '';
+    let listener = false;
 
-    if (uid && typeof body?.sessionId === 'string' && body.sessionId) {
+    if (uid && typeof body?.sessionId === 'string' && body.sessionId && body?.listen === true) {
+      // Listener path: any signed-in user may tune into a session that is
+      // OPEN and LIVE — subscribe-only + hidden (see mintToken).
+      const rows = await sbSelect(
+        `studio_sessions?id=eq.${encodeURIComponent(body.sessionId)}&status=eq.open&live=is.true&select=id`,
+      ) as Array<{ id: string }>;
+      if (!rows.length) return json({ error: 'not_live' }, 403);
+      sessionId = body.sessionId;
+      identity = `listener-${uid}`;
+      name = 'Listener';
+      listener = true;
+    } else if (uid && typeof body?.sessionId === 'string' && body.sessionId) {
       // App path: caller must be a member of an OPEN session.
       const rows = await sbSelect(
         `studio_session_members?session_id=eq.${encodeURIComponent(body.sessionId)}&user_id=eq.${uid}&select=session_id,studio_sessions!inner(status)`,
@@ -119,7 +143,7 @@ serve(async (req) => {
     }
 
     const room = `studio-${sessionId}`;
-    const token = await mintToken(room, identity, name);
+    const token = await mintToken(room, identity, name, listener);
     return json({ token, url: LK_URL, room, identity });
   } catch (err) {
     return json({ error: String(err) }, 500);

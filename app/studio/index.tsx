@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, Image, ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,11 +12,13 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { ListRowsSkeleton } from '../../components/Skeleton';
 import {
-  createStudioSession, fetchMySessions, joinByCode, type StudioSession,
+  createStudioSession, fetchLiveStudioSessions, fetchMySessions, joinByCode,
+  type LiveStudioSession, type StudioSession,
 } from '../../lib/studio';
 
 // Studio hub: your open sessions, start a new one, or join with a code —
-// Laybell as the connector for online studio sessions.
+// Laybell as the connector for online studio sessions. Broadcasting sessions
+// show up in a "Live now" rail anyone can tune into.
 
 export default function StudioHubScreen() {
   const styles = useThemedStyles(makeStyles);
@@ -25,6 +27,7 @@ export default function StudioHubScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [sessions, setSessions] = useState<StudioSession[]>([]);
+  const [liveNow, setLiveNow] = useState<LiveStudioSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
   const [code, setCode] = useState('');
@@ -32,10 +35,21 @@ export default function StudioHubScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    try { setSessions(await fetchMySessions()); } catch { /* pre-migration */ }
+    try {
+      const [mine, live] = await Promise.all([fetchMySessions(), fetchLiveStudioSessions()]);
+      setSessions(mine);
+      setLiveNow(live);
+    } catch { /* pre-migration */ }
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // A live broadcast I'm already a member of opens the session room; everyone
+  // else tunes in as a listener.
+  function openLive(s: LiveStudioSession) {
+    if (sessions.some((mine) => mine.id === s.id)) router.push(`/studio/${s.id}`);
+    else router.push(`/studio/listen/${s.id}`);
+  }
 
   async function onCreate() {
     if (busy) return;
@@ -82,6 +96,36 @@ export default function StudioHubScreen() {
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             <View style={styles.top}>
+              {/* Live studio broadcasts — modern radio, tap to tune in */}
+              {liveNow.length > 0 && (
+                <View style={styles.liveWrap}>
+                  <Text style={styles.sectionLabel}>{t('studio.liveNow')}</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.liveRail}>
+                    {liveNow.map((s) => (
+                      <TouchableOpacity key={s.id} style={styles.liveCard} onPress={() => openLive(s)} activeOpacity={0.85}>
+                        <View style={styles.liveCardTop}>
+                          {s.host_avatar_url ? (
+                            <Image source={{ uri: s.host_avatar_url }} style={styles.liveAvatar} />
+                          ) : (
+                            <LinearGradient colors={GRADIENTS.primary} style={styles.liveAvatar}>
+                              <Ionicons name="mic" size={16} color="#fff" />
+                            </LinearGradient>
+                          )}
+                          <View style={styles.liveTag}>
+                            <View style={styles.liveTagDot} />
+                            <Text style={styles.liveTagText}>{t('studio.liveTag')}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.liveTitle} numberOfLines={1}>{s.title || t('studio.untitled')}</Text>
+                        <Text style={styles.liveHost} numberOfLines={1}>
+                          {s.host_display_name || s.host_username || ''}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
               {/* New session */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>{t('studio.newSession')}</Text>
@@ -179,6 +223,19 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   codeInput: { flex: 1, letterSpacing: 3, fontWeight: '700' },
   joinBtn: { width: 46, borderRadius: 12, backgroundColor: c.surfaceLight, alignItems: 'center', justifyContent: 'center' },
   sectionLabel: { color: c.textTertiary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 8 },
+  liveWrap: { gap: 8 },
+  liveRail: { gap: 10 },
+  liveCard: {
+    width: 150, backgroundColor: c.surface, borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 12, gap: 6,
+  },
+  liveCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  liveAvatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  liveTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F43F5E', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
+  liveTagDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#fff' },
+  liveTagText: { color: '#fff', fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
+  liveTitle: { color: c.text, fontSize: 13, fontWeight: '700', marginTop: 2 },
+  liveHost: { color: c.textTertiary, fontSize: 11 },
   sessionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: c.surface, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 12 },
   sessionIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: c.surfaceLight, alignItems: 'center', justifyContent: 'center' },
   sessionTextWrap: { flex: 1, gap: 2 },
