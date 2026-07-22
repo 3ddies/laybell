@@ -19,7 +19,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { supabase } from '../../lib/supabase';
-import { WEB_ORIGIN } from '../../lib/appLinks';
+import { STATIC_WEB_ORIGIN } from '../../lib/appLinks';
 import { tabTick } from '../../lib/haptics';
 import { webrtcAvailable } from '../../lib/whip';
 import { displayedTier } from '../../lib/badges';
@@ -268,8 +268,11 @@ export default function StudioRoomScreen() {
 
   function invite() {
     if (!session) return;
+    // STATIC_WEB_ORIGIN (GitHub Pages), not laybell.app: the GoDaddy builder
+    // can't host web/ files, so studio.html 404s there until the custom domain
+    // is mapped onto Pages (go-live checklist) — same rule as QR/share links.
     Share.share({
-      message: `${t('studio.inviteMsg', { code: session.join_code })}\n${WEB_ORIGIN}/studio.html?code=${session.join_code}`,
+      message: `${t('studio.inviteMsg', { code: session.join_code })}\n${STATIC_WEB_ORIGIN}/studio.html?code=${session.join_code}`,
     }).catch(() => {});
   }
 
