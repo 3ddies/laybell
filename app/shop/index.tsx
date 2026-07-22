@@ -325,7 +325,10 @@ function MyShopTab({ myId, myAge }: { myId: string | null; myAge: number | null 
             />
             <Text style={styles.agreeCheckText}>
               {t('shop.agreeCheck')}
-              <Text style={styles.agreeLink} onPress={() => router.push('/terms-of-service')}> {t('shop.agreeTerms')}</Text>
+              {/* The Marketplace & Beat Licensing Terms are the seller's full
+                  contract (what Buy/Lease/Free grant, exclusivity, refunds);
+                  the ToS still governs everything else app-wide. */}
+              <Text style={styles.agreeLink} onPress={() => router.push('/marketplace-terms')}> {t('shop.agreeTerms')}</Text>
             </Text>
           </TouchableOpacity>
         </View>
@@ -553,13 +556,18 @@ function OrdersTab({ onChanged }: { onChanged?: () => void }) {
                         {name}
                       </Text>
                     )}
-                    {name ? ' · ' : ''}{formatPrice(o.price_cents, o.currency)} · {t(`shop.status.${o.status}`)}
+                    {name ? ' · ' : ''}{formatPrice(o.price_cents, o.currency)}
+                    {o.kind ? ` · ${t(`shop.kind.${o.kind}`)}` : ''} · {t(`shop.status.${o.status}`)}
                   </Text>
                 </View>
                 {section.sale && o.status === 'requested' ? (
                   <View style={styles.orderActions}>
+                    {/* Accepting an OFFER = selling the beat outright at the
+                        buyer's price (delivers + marks the listing sold). */}
                     <TouchableOpacity style={styles.deliverBtn} onPress={() => act(o, 'delivered')}>
-                      <Text style={styles.deliverBtnText}>{t('shop.deliver')}</Text>
+                      <Text style={styles.deliverBtnText}>
+                        {o.kind === 'offer' ? t('shop.acceptOffer') : t('shop.deliver')}
+                      </Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.declineBtn} onPress={() => act(o, 'declined')}>
                       <Text style={styles.declineBtnText}>{t('shop.decline')}</Text>
@@ -567,7 +575,7 @@ function OrdersTab({ onChanged }: { onChanged?: () => void }) {
                   </View>
                 ) : (
                   <Ionicons
-                    name={o.status === 'delivered' ? 'checkmark-circle' : 'time-outline'}
+                    name={o.status === 'delivered' ? 'checkmark-circle' : o.status === 'refunded' ? 'arrow-undo-circle-outline' : 'time-outline'}
                     size={20}
                     color={o.status === 'delivered' ? '#22C55E' : '#888'}
                   />

@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { ShopListing } from './shop';
+import { legacyKindOf, priceForKind, saleTypes, type SaleKind, type ShopListing } from './shop';
 
 // Shop cart — a LOCAL, device-only collection of listings the buyer wants to
 // request together. It's AsyncStorage-backed (no DB, OTA-safe), mirroring the
@@ -22,6 +22,9 @@ export type CartItem = {
   sellerId: string;
   sellerName: string;
   addedAt: number;
+  // Which deal type the buyer wants (multi-type listings). Absent on items
+  // added before the upgrade — checkout falls back to the legacy kind.
+  kind?: SaleKind;
 };
 
 // `items` identity changes only on mutation, so useSyncExternalStore caches it
@@ -65,18 +68,30 @@ export function isInCart(listingId: string): boolean {
   return items.some((i) => i.listingId === listingId);
 }
 
+/** The deal type the cart shortlists by default: a lease when offered (the
+    everyday purchase), else the buy-out, else the freebie. */
+export function defaultCartKind(listing: ShopListing): Exclude<SaleKind, 'offer'> {
+  const types = saleTypes(listing);
+  if (types.lease) return 'lease';
+  if (types.sell) return 'sell';
+  if (types.free) return 'free';
+  return legacyKindOf(listing) as Exclude<SaleKind, 'offer'>;
+}
+
 /** Add a listing (no-op if already present). Returns the new count. */
-export function addToCart(listing: ShopListing): number {
+export function addToCart(listing: ShopListing, kind?: Exclude<SaleKind, 'offer'>): number {
   if (isInCart(listing.id)) return items.length;
+  const k = kind ?? defaultCartKind(listing);
   const item: CartItem = {
     listingId: listing.id,
     title: listing.title,
-    priceCents: listing.price_cents,
+    priceCents: priceForKind(listing, k),
     currency: listing.currency,
     coverUrl: listing.cover_url ?? null,
     sellerId: listing.user_id,
     sellerName: listing.seller?.display_name || listing.seller?.username || '',
     addedAt: Date.now(),
+    kind: k,
   };
   items = [item, ...items];
   persist();

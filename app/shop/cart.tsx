@@ -69,7 +69,8 @@ export default function CartScreen() {
         const listing = await fetchListing(item.listingId);
         // Gone, paused, sold, or somehow your own listing → skip, keep in cart.
         if (!listing || listing.status !== 'active') { skipped++; continue; }
-        await requestToBuy(listing, '');
+        // Request the deal type this item was added as (server re-validates it).
+        await requestToBuy(listing, '', item.kind);
         removeFromCart(item.listingId);
         requested++;
       } catch (e) {
@@ -206,6 +207,7 @@ function CartRow({ item, onOpen, onRemove }: { item: CartItem; onOpen: () => voi
           {!!item.sellerName && <Text style={styles.rowSeller} numberOfLines={1}>{item.sellerName}</Text>}
           <Text style={styles.rowPrice}>
             {item.priceCents <= 0 ? t('shop.free') : formatPrice(item.priceCents, item.currency)}
+            {item.kind ? `  ·  ${t(`shop.kind.${item.kind}`)}` : ''}
           </Text>
         </View>
       </TouchableOpacity>

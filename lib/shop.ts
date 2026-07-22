@@ -23,6 +23,10 @@ export type ListingCategory = 'beat' | 'song' | 'sample_pack' | 'preset' | 'serv
 export type ListingLicense = 'exclusive' | 'nonexclusive' | 'free';
 export type ListingStatus = 'active' | 'paused' | 'sold' | 'removed';
 
+/** How an order came about: an exclusive buy, a lease copy, a free claim, or a
+    buyer-priced offer on a lease-only listing. Legacy orders have no kind. */
+export type SaleKind = 'sell' | 'lease' | 'free' | 'offer';
+
 export type ShopListing = {
   id: string;
   user_id: string;
@@ -39,6 +43,15 @@ export type ShopListing = {
   status: ListingStatus;
   sales_count: number;
   created_at: string;
+  // Multi-type columns (shop_multi.sql) — absent on a pre-migration database;
+  // saleTypes()/priceForKind() fall back to the legacy license axis.
+  sell_enabled?: boolean;
+  sell_price_cents?: number;
+  lease_enabled?: boolean;
+  lease_price_cents?: number;
+  free_enabled?: boolean;
+  free_requires_follow?: boolean;
+  free_like_post_ids?: string[];
   seller?: SellerProfile;
 };
 
@@ -49,7 +62,7 @@ export type SellerProfile = {
   avatar_url: string | null;
 };
 
-export type OrderStatus = 'requested' | 'delivered' | 'declined' | 'cancelled';
+export type OrderStatus = 'requested' | 'delivered' | 'declined' | 'cancelled' | 'refunded';
 
 export type ShopOrder = {
   id: string;
@@ -62,6 +75,9 @@ export type ShopOrder = {
   note: string | null;
   created_at: string;
   delivered_at: string | null;
+  // shop_multi.sql — null/absent on legacy orders and pre-migration databases.
+  kind?: SaleKind | null;
+  refunded_at?: string | null;
   listing?: Pick<ShopListing, 'id' | 'title' | 'cover_url' | 'category' | 'file_path'>;
   buyer?: SellerProfile;
   seller?: SellerProfile;
@@ -96,6 +112,49 @@ export function formatPrice(cents: number, currency = 'USD'): string {
   const symbol = currency === 'USD' ? '$' : `${currency} `;
   const dollars = cents / 100;
   return `${symbol}${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}`;
+}
+
+// ── Multi-type helpers ────────────────────────────────────────────────────────
+
+export type SaleTypes = { sell: boolean; lease: boolean; free: boolean };
+
+/** The deal types a listing offers. Flag columns win; rows created before
+    shop_multi.sql (no flags set) fall back to the legacy single license. */
+export function saleTypes(l: ShopListing): SaleTypes {
+  if (l.sell_enabled || l.lease_enabled || l.free_enabled) {
+    return { sell: !!l.sell_enabled, lease: !!l.lease_enabled, free: !!l.free_enabled };
+  }
+  return {
+    sell: l.license === 'exclusive',
+    lease: l.license === 'nonexclusive',
+    free: l.license === 'free',
+  };
+}
+
+/** Asking price for one deal type (legacy rows use the single price column). */
+export function priceForKind(l: ShopListing, kind: 'sell' | 'lease' | 'free'): number {
+  if (kind === 'free') return 0;
+  if (kind === 'sell') return l.sell_enabled ? (l.sell_price_cents ?? 0) : l.price_cents;
+  return l.lease_enabled ? (l.lease_price_cents ?? 0) : l.price_cents;
+}
+
+/** The kind a legacy (pre-multi) order implicitly was, from its listing. */
+export function legacyKindOf(l: ShopListing): SaleKind {
+  return l.license === 'exclusive' ? 'sell' : l.license === 'free' ? 'free' : 'lease';
+}
+
+/** Card-tag label: cheapest paid price ("+" when there's more than one way to
+    get it), or FREE for free-only listings. */
+export function listingPriceLabel(l: ShopListing, freeWord: string): string {
+  const types = saleTypes(l);
+  const paid: number[] = [];
+  if (types.sell) paid.push(priceForKind(l, 'sell'));
+  if (types.lease) paid.push(priceForKind(l, 'lease'));
+  const ways = paid.length + (types.free ? 1 : 0);
+  if (!paid.length) return freeWord;
+  const min = Math.min(...paid);
+  const base = min <= 0 ? freeWord : formatPrice(min, l.currency);
+  return ways > 1 ? `${base}+` : base;
 }
 
 async function myId(): Promise<string> {
@@ -192,32 +251,78 @@ export async function getDeliverableUrl(filePath: string): Promise<string> {
 
 // --- Listings ----------------------------------------------------------------------
 
-const LISTING_COLS = 'id, user_id, title, description, category, genre, price_cents, currency, license, cover_url, preview_url, file_path, status, sales_count, created_at';
+// '*' (not an explicit column list) so the multi-type columns flow in when the
+// migration has run, and everything still works when it hasn't.
+const LISTING_COLS = '*';
+
+export type ListingTypesInput = {
+  sell: { enabled: boolean; priceCents: number };
+  lease: { enabled: boolean; priceCents: number };
+  free: { enabled: boolean; requiresFollow: boolean; likePostIds: string[] };
+};
+
+/** Legacy single-axis mirror of a multi-type config — written alongside the
+    flags so old clients and pre-migration databases keep working. */
+function legacyAxisOf(types: ListingTypesInput): { license: ListingLicense; price_cents: number } {
+  if (types.sell.enabled) return { license: 'exclusive', price_cents: Math.max(0, Math.round(types.sell.priceCents)) };
+  if (types.lease.enabled) return { license: 'nonexclusive', price_cents: Math.max(0, Math.round(types.lease.priceCents)) };
+  return { license: 'free', price_cents: 0 };
+}
+
+function multiColumnsOf(types: ListingTypesInput) {
+  return {
+    sell_enabled: types.sell.enabled,
+    sell_price_cents: types.sell.enabled ? Math.max(0, Math.round(types.sell.priceCents)) : 0,
+    lease_enabled: types.lease.enabled,
+    lease_price_cents: types.lease.enabled ? Math.max(0, Math.round(types.lease.priceCents)) : 0,
+    free_enabled: types.free.enabled,
+    free_requires_follow: types.free.enabled && types.free.requiresFollow,
+    free_like_post_ids: types.free.enabled ? types.free.likePostIds : [],
+  };
+}
 
 export async function createListing(input: {
   title: string;
   description: string;
   category: ListingCategory;
   genre: string;
-  priceCents: number;
-  license: ListingLicense;
+  types: ListingTypesInput;
 }): Promise<ShopListing> {
   const userId = await myId();
-  const { data, error } = await supabase
+  const base = {
+    user_id: userId,
+    title: input.title.trim(),
+    description: input.description.trim() || null,
+    category: input.category,
+    genre: input.genre.trim() || null,
+    ...legacyAxisOf(input.types),
+  };
+  // Full multi-type insert; a pre-migration database rejects the unknown
+  // columns, so retry with the legacy axis only (the primary type survives).
+  let { data, error } = await supabase
     .from('shop_listings')
-    .insert({
-      user_id: userId,
-      title: input.title.trim(),
-      description: input.description.trim() || null,
-      category: input.category,
-      genre: input.genre.trim() || null,
-      price_cents: input.license === 'free' ? 0 : Math.max(0, Math.round(input.priceCents)),
-      license: input.license,
-    })
+    .insert({ ...base, ...multiColumnsOf(input.types) })
     .select(LISTING_COLS)
     .single();
+  if (error) {
+    ({ data, error } = await supabase.from('shop_listings').insert(base).select(LISTING_COLS).single());
+  }
   if (error) throw error;
   return data as ShopListing;
+}
+
+/** Update a listing's deal types (multi columns + legacy mirror). */
+export async function updateListingTypes(id: string, types: ListingTypesInput): Promise<void> {
+  const patch = { ...legacyAxisOf(types), ...multiColumnsOf(types), updated_at: new Date().toISOString() };
+  const { error } = await supabase.from('shop_listings').update(patch).eq('id', id);
+  if (error) {
+    // Pre-migration database — persist at least the legacy axis.
+    const { error: e2 } = await supabase
+      .from('shop_listings')
+      .update({ ...legacyAxisOf(types), updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (e2) throw e2;
+  }
 }
 
 export async function updateListing(id: string, patch: Partial<Omit<ShopListing, 'id' | 'user_id' | 'created_at' | 'sales_count' | 'seller'>>): Promise<void> {
@@ -277,33 +382,56 @@ export async function exploreListings(opts: {
 
 // --- Orders ---------------------------------------------------------------------
 
-const ORDER_COLS = 'id, listing_id, buyer_id, seller_id, status, price_cents, currency, note, created_at, delivered_at';
+const ORDER_COLS = '*';
 
 /**
- * Files a buy request and drops a marketplace-style DM to the seller so the
- * conversation (and payment arrangement) starts immediately.
+ * Files a buy request for ONE deal type and drops a marketplace-style DM to
+ * the seller so the conversation (and payment arrangement) starts immediately.
+ *  - 'sell' / 'lease': price comes from that type's asking price.
+ *  - 'free': a claim — the server checks the unlock conditions and, when they
+ *    pass, delivers INSTANTLY (the returned order is already 'delivered').
+ *  - 'offer': the buyer names their own price (offerCents) on a lease-only
+ *    listing; the seller accepting = an exclusive sale.
  */
-export async function requestToBuy(listing: ShopListing, note: string): Promise<ShopOrder> {
+export async function requestToBuy(
+  listing: ShopListing,
+  note: string,
+  kind: SaleKind = legacyKindOf(listing),
+  offerCents = 0,
+): Promise<ShopOrder> {
   const buyerId = await myId();
-  const { data, error } = await supabase
+  const priceCents = kind === 'offer'
+    ? Math.max(0, Math.round(offerCents))
+    : priceForKind(listing, kind);
+  const base = {
+    listing_id: listing.id,
+    buyer_id: buyerId,
+    seller_id: listing.user_id,
+    price_cents: priceCents,
+    // Snapshot Laybell's 15% at order time, so a future fee change can't
+    // retroactively alter a deal's bookkeeping.
+    fee_cents: shopFeeCents(priceCents),
+    currency: listing.currency,
+    note: note.trim() || null,
+  };
+  let { data, error } = await supabase
     .from('shop_orders')
-    .insert({
-      listing_id: listing.id,
-      buyer_id: buyerId,
-      seller_id: listing.user_id,
-      price_cents: listing.price_cents,
-      // Snapshot Laybell's 15% at order time, so a future fee change can't
-      // retroactively alter a deal's bookkeeping.
-      fee_cents: shopFeeCents(listing.price_cents),
-      currency: listing.currency,
-      note: note.trim() || null,
-    })
+    .insert({ ...base, kind })
     .select(ORDER_COLS)
     .single();
+  if (error && kind !== 'offer' && `${error.message}`.includes('kind')) {
+    // Pre-migration database (no kind column) — legacy single-type request.
+    // Offers genuinely need the migration, so those stay failed.
+    ({ data, error } = await supabase.from('shop_orders').insert(base).select(ORDER_COLS).single());
+  }
   if (error) throw error;
 
-  const priceText = formatPrice(listing.price_cents, listing.currency);
-  const body = `🛍 ${listing.title} — ${priceText}\n${note.trim() ? note.trim() + '\n' : ''}`;
+  const priceText = formatPrice(priceCents, listing.currency);
+  const body = kind === 'offer'
+    ? `💰 ${priceText} — ${listing.title}\n${note.trim() ? note.trim() + '\n' : ''}`
+    : kind === 'free'
+      ? `🎁 ${listing.title}`
+      : `🛍 ${listing.title} — ${priceText}\n${note.trim() ? note.trim() + '\n' : ''}`;
   supabase
     .from('messages')
     .insert({ sender_id: buyerId, receiver_id: listing.user_id, body: body.trim() })
@@ -342,18 +470,79 @@ export async function pendingSalesCount(): Promise<number> {
   return count ?? 0;
 }
 
-/** The caller's existing order on a listing (drives the listing CTA state). */
-export async function myOrderForListing(listingId: string): Promise<ShopOrder | null> {
+/** The caller's orders on a listing, one per deal type at most (drives the
+    per-kind CTA states on the listing screen). */
+export async function myOrdersForListing(listingId: string): Promise<ShopOrder[]> {
   const { data: auth } = await supabase.auth.getUser();
   const uid = auth?.user?.id;
-  if (!uid) return null;
+  if (!uid) return [];
   const { data } = await supabase
     .from('shop_orders')
     .select(ORDER_COLS)
     .eq('listing_id', listingId)
     .eq('buyer_id', uid)
-    .maybeSingle();
-  return (data as ShopOrder) ?? null;
+    .order('created_at', { ascending: false });
+  return (data ?? []) as ShopOrder[];
+}
+
+// ── Free-unlock conditions ────────────────────────────────────────────────────
+
+export type FreeConditionState = {
+  followMet: boolean;
+  likes: { postId: string; met: boolean }[];
+  allMet: boolean;
+  /** False when the listing has no conditions at all (claim is ungated). */
+  hasConditions: boolean;
+};
+
+/** Client-side mirror of the server's free-claim gate — powers the checklist
+    UI. The shop_order_precheck trigger re-verifies everything on claim. */
+export async function checkFreeConditions(listing: ShopListing): Promise<FreeConditionState> {
+  const needFollow = !!listing.free_requires_follow;
+  const postIds = listing.free_like_post_ids ?? [];
+  if (!needFollow && !postIds.length) {
+    return { followMet: true, likes: [], allMet: true, hasConditions: false };
+  }
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth?.user?.id;
+  if (!uid) return { followMet: !needFollow, likes: postIds.map((p) => ({ postId: p, met: false })), allMet: false, hasConditions: true };
+
+  const [followRes, likesRes] = await Promise.all([
+    needFollow
+      ? supabase.from('follows').select('follower_id').eq('follower_id', uid).eq('following_id', listing.user_id).maybeSingle()
+      : Promise.resolve({ data: true } as { data: unknown }),
+    postIds.length
+      ? supabase.from('likes').select('post_id').eq('user_id', uid).in('post_id', postIds)
+      : Promise.resolve({ data: [] } as { data: { post_id: string }[] }),
+  ]);
+  const followMet = !needFollow || !!followRes.data;
+  const likedSet = new Set(((likesRes.data ?? []) as { post_id: string }[]).map((l) => l.post_id));
+  const likes = postIds.map((postId) => ({ postId, met: likedSet.has(postId) }));
+  return {
+    followMet,
+    likes,
+    allMet: followMet && likes.every((l) => l.met),
+    hasConditions: true,
+  };
+}
+
+// ── Takedown protection ───────────────────────────────────────────────────────
+
+/** Whether a listing has DELIVERED purchases (blocks plain removal). */
+export async function hasDeliveredSales(listingId: string): Promise<boolean> {
+  const { count } = await supabase
+    .from('shop_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('listing_id', listingId)
+    .eq('status', 'delivered');
+  return (count ?? 0) > 0;
+}
+
+/** The only way to take down a purchased listing: refunds every delivered
+    buyer (they lose file access), then removes it. Server-side RPC. */
+export async function refundAndRemoveListing(listingId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('refund_and_remove_listing', { p_listing: listingId });
+  return !error;
 }
 
 async function attachOrderMeta(rows: ShopOrder[]): Promise<ShopOrder[]> {

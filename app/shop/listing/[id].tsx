@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, ActivityIndicator, Linking, RefreshControl, Share,
+  Modal, TextInput, KeyboardAvoidingView, Platform, Pressable,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,23 +14,31 @@ import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../../../constant
 import { useTheme, useThemedStyles } from '../../../contexts/ThemeContext';
 import { useTranslation } from '../../../contexts/LanguageContext';
 import { useProfile } from '../../../contexts/ProfileContext';
+import { useFollow } from '../../../contexts/FollowContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { reactionPop } from '../../../lib/haptics';
+import { reactionPop, notifySuccess } from '../../../lib/haptics';
 import { usePostMusicActions, useSongHostActive } from '../../../contexts/PostMusicContext';
 import { WEB_ORIGIN } from '../../../lib/appLinks';
 import { reportListing } from '../../../lib/postActions';
 import {
-  fetchListing, formatPrice, getDeliverableUrl, myOrderForListing, requestToBuy,
-  setOrderStatus, updateListing, type ShopListing, type ShopOrder,
+  checkFreeConditions, fetchListing, formatPrice, getDeliverableUrl, hasDeliveredSales,
+  legacyKindOf, listingPriceLabel, myOrdersForListing, priceForKind, refundAndRemoveListing,
+  requestToBuy, saleTypes, setOrderStatus, updateListing,
+  type FreeConditionState, type SaleKind, type ShopListing, type ShopOrder,
 } from '../../../lib/shop';
 import { addToCart, removeFromCart, useInCart, useShopCart } from '../../../lib/shopCart';
 
 const PREVIEW_HOST = 'shop-preview';
 
 // Listing detail — the marketplace "product page": cover, tap-to-play preview,
-// price/license/category, seller row, and the CTA state machine:
-//   visitor: Request to buy → Requested (cancel) → Delivered (download)
-//   seller:  Edit · Pause/Activate · Remove
+// seller row, and a CTA PER DEAL TYPE (a listing can offer any mix):
+//   Sell  → "Buy · $X"        (exclusive buy-out — delivering it ends the listing)
+//   Lease → "Lease · $Y"      (non-exclusive copy, keeps selling)
+//   Free  → "Free (Claim now)" (may be gated on following the seller and/or
+//                               liking posts; a valid claim delivers instantly)
+// Lease-ONLY listings also get "Make an offer" — name a buy-out price the
+// seller can accept. Owners see Edit · Pause · Remove; removal of a listing
+// with purchases becomes "Refund buyers & remove".
 
 export default function ListingScreen() {
   const styles = useThemedStyles(makeStyles);
@@ -39,6 +48,7 @@ export default function ListingScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { profile } = useProfile();
+  const { following, toggleFollow } = useFollow();
   const { playSong, stop: stopSong } = usePostMusicActions();
   // Derived from the shared player, so the icon always matches what's audible —
   // per-host subscription re-renders this screen only when ITS preview flips.
@@ -47,14 +57,20 @@ export default function ListingScreen() {
   const inCart = useInCart(id);
 
   const [listing, setListing] = useState<ShopListing | null>(null);
-  const [order, setOrder] = useState<ShopOrder | null>(null);
+  const [orders, setOrders] = useState<ShopOrder[]>([]);
+  const [conds, setConds] = useState<FreeConditionState | null>(null);
+  const [hasSales, setHasSales] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busyKind, setBusyKind] = useState<SaleKind | 'download' | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // Offer sheet (lease-only listings).
+  const [offerOpen, setOfferOpen] = useState(false);
+  const [offerText, setOfferText] = useState('');
   // One-time marketplace safety primer, shown before the FIRST buy request on
   // this device (payments happen off-platform, so buyers must know the rules).
   const [safetyOpen, setSafetyOpen] = useState(false);
+  const pendingBuyRef = useRef<{ kind: SaleKind; offerCents: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isOwner = !!listing && listing.user_id === profile?.id;
@@ -62,13 +78,30 @@ export default function ListingScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [l, o] = await Promise.all([fetchListing(id), myOrderForListing(id)]);
+      const [l, os] = await Promise.all([fetchListing(id), myOrdersForListing(id)]);
       setListing(l);
-      setOrder(o);
+      setOrders(os);
+      if (l) {
+        const types = saleTypes(l);
+        if (types.free && l.user_id !== profile?.id) {
+          checkFreeConditions(l).then(setConds).catch(() => {});
+        }
+        if (l.user_id === profile?.id) {
+          hasDeliveredSales(l.id).then(setHasSales).catch(() => {});
+        }
+      }
     } catch { /* pre-migration */ }
     setLoading(false);
-  }, [id]);
+  }, [id, profile?.id]);
   useEffect(() => { load(); }, [load]);
+  // Coming back from a post (liking it for a free claim) or a profile → the
+  // unlock checklist re-verifies itself.
+  useFocusEffect(useCallback(() => {
+    if (listing && saleTypes(listing).free && !isOwner) {
+      checkFreeConditions(listing).then(setConds).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listing?.id, following]));
   // Stop the preview on unmount ONLY. stopSong's identity changes on every
   // context re-render, so listing it as a dep re-ran this cleanup right after
   // playSong updated the context — killing the preview the instant it started.
@@ -83,59 +116,165 @@ export default function ListingScreen() {
 
   const SAFETY_ACK_KEY = 'shop_safety_ack_v1';
 
-  async function buy() {
-    if (!listing || busy) return;
-    // First purchase request on this device → show the safety primer once.
-    const acked = await AsyncStorage.getItem(SAFETY_ACK_KEY).catch(() => null);
-    if (!acked) { setSafetyOpen(true); return; }
-    setBusy(true);
+  // The buyer's standing order for one deal type (legacy orders map through
+  // the listing's old single license).
+  function orderFor(kind: SaleKind): ShopOrder | null {
+    if (!listing) return null;
+    return orders.find((o) => (o.kind ?? legacyKindOf(listing)) === kind
+      && (o.status === 'requested' || o.status === 'delivered')) ?? null;
+  }
+  const deliveredOrder = orders.find((o) => o.status === 'delivered') ?? null;
+
+  async function buy(kind: SaleKind, offerCents = 0) {
+    if (!listing || busyKind) return;
     setError(null);
+    // Free claims aren't payments — no primer; instead the unlock conditions
+    // must be met (client check for UX; the server re-verifies).
+    if (kind === 'free') {
+      if (conds && !conds.allMet) { setError(t('shop.freeCondUnmetErr')); return; }
+    } else {
+      const acked = await AsyncStorage.getItem(SAFETY_ACK_KEY).catch(() => null);
+      if (!acked) {
+        pendingBuyRef.current = { kind, offerCents };
+        setSafetyOpen(true);
+        return;
+      }
+    }
+    setBusyKind(kind);
     try {
-      const o = await requestToBuy(listing, '');
-      setOrder(o);
-      reactionPop(); // request sent — small physical confirmation
+      const o = await requestToBuy(listing, '', kind, offerCents);
+      setOrders((prev) => [o, ...prev]);
+      if (kind === 'free' && o.status === 'delivered') notifySuccess(); // instant claim!
+      else reactionPop(); // request sent — small physical confirmation
+      if (kind === 'offer') { setOfferOpen(false); setOfferText(''); }
     } catch (e) {
       const msg = (e as Error)?.message ?? '';
       if (msg.includes('rate_limited')) setError(t('shop.rateLimited'));
-      else await load(); // unique violation = already requested → resync
+      else if (msg.includes('free_follow_required') || msg.includes('free_likes_required')) {
+        setError(t('shop.freeCondUnmetErr'));
+        checkFreeConditions(listing).then(setConds).catch(() => {});
+      } else await load(); // unique violation / kind gone → resync
     }
-    setBusy(false);
+    setBusyKind(null);
   }
 
   async function ackSafetyAndBuy() {
     setSafetyOpen(false);
     // Persist the ack BEFORE re-entering buy(), which re-reads it.
     await AsyncStorage.setItem(SAFETY_ACK_KEY, '1').catch(() => {});
-    buy();
+    const pending = pendingBuyRef.current;
+    pendingBuyRef.current = null;
+    if (pending) buy(pending.kind, pending.offerCents);
   }
 
-  async function cancelRequest() {
-    if (!order || busy) return;
-    setBusy(true);
-    setOrder({ ...order, status: 'cancelled' });
+  async function cancelRequest(order: ShopOrder) {
+    if (busyKind) return;
+    setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: 'cancelled' } : o)));
     await setOrderStatus(order.id, 'cancelled').catch(() => load());
-    setBusy(false);
   }
 
   async function download() {
-    if (!listing?.file_path || busy) return;
-    setBusy(true);
+    if (!listing?.file_path || busyKind) return;
+    setBusyKind('download');
     try {
       const url = await getDeliverableUrl(listing.file_path);
       Linking.openURL(url).catch(() => {});
     } catch { /* not delivered / revoked */ }
-    setBusy(false);
+    setBusyKind(null);
   }
 
-  async function setStatus(status: 'active' | 'paused' | 'removed') {
+  async function setStatus(status: 'active' | 'paused') {
     if (!listing) return;
-    if (status === 'removed') setConfirmRemove(false);
     setListing({ ...listing, status });
     await updateListing(listing.id, { status }).catch(() => load());
-    if (status === 'removed') router.back();
+  }
+
+  // Takedown: purchase-free listings remove directly; purchased ones can ONLY
+  // go down through the refund path (the server enforces this either way).
+  async function removeListing() {
+    if (!listing) return;
+    setConfirmRemove(false);
+    if (hasSales) {
+      const ok = await refundAndRemoveListing(listing.id);
+      if (!ok) { setError(t('shop.error')); return; }
+      router.back();
+    } else {
+      setListing({ ...listing, status: 'removed' });
+      try {
+        await updateListing(listing.id, { status: 'removed' });
+        router.back();
+      } catch {
+        // Raced a first sale → the guard refused. Reload and show the note.
+        await load();
+        setError(t('shop.hasPurchasesNote'));
+      }
+    }
   }
 
   const sellerName = listing?.seller?.display_name || listing?.seller?.username || '';
+  const types = listing ? saleTypes(listing) : { sell: false, lease: false, free: false };
+  const offerable = !!listing && types.lease && !types.sell && listing.status === 'active';
+  const offerCents = Math.round((parseFloat(offerText.replace(',', '.')) || 0) * 100);
+  const enabledLabels = [
+    types.sell && t('shop.license.exclusive'),
+    types.lease && t('shop.license.nonexclusive'),
+    types.free && t('shop.license.free'),
+  ].filter(Boolean).join(' · ');
+
+  // One CTA button per deal type; each has its own pending/owned state.
+  function renderKindCta(kind: 'sell' | 'lease' | 'free') {
+    if (!listing) return null;
+    const order = orderFor(kind);
+    if (order?.status === 'delivered') return null; // covered by Download above
+    if (order?.status === 'requested') {
+      const label = kind === 'sell'
+        ? t('shop.requested')
+        : `${t(`shop.kind.${kind}`)} — ${t('shop.requested')}`;
+      return (
+        <TouchableOpacity key={kind} style={styles.pendingBtn} onPress={() => cancelRequest(order)} disabled={!!busyKind}>
+          <Ionicons name="time-outline" size={17} color={colors.textSecondary} />
+          <Text style={styles.pendingBtnText}>{label}</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (kind === 'free') {
+      return (
+        <TouchableOpacity
+          key="free"
+          style={[styles.greenBtn, styles.freeBtn, conds && !conds.allMet && styles.btnLocked]}
+          onPress={() => buy('free')}
+          disabled={!!busyKind}
+          activeOpacity={0.85}
+        >
+          {busyKind === 'free' ? <ActivityIndicator color="#fff" /> : (
+            <View style={styles.freeBtnInner}>
+              <Text style={styles.greenBtnText}>{t('shop.freeWord')}</Text>
+              <Text style={styles.claimNowText}>{t('shop.claimNow')}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      );
+    }
+    const price = formatPrice(priceForKind(listing, kind), listing.currency);
+    return (
+      <TouchableOpacity
+        key={kind}
+        style={[styles.greenBtn, kind === 'lease' && styles.leaseBtn]}
+        onPress={() => buy(kind)}
+        disabled={!!busyKind}
+        activeOpacity={0.85}
+      >
+        {busyKind === kind ? <ActivityIndicator color="#fff" /> : (
+          <>
+            <Ionicons name={kind === 'sell' ? 'flash' : 'repeat'} size={18} color="#fff" />
+            <Text style={styles.greenBtnText}>
+              {kind === 'sell' ? t('shop.buyFor', { price }) : t('shop.leaseFor', { price })}
+            </Text>
+          </>
+        )}
+      </TouchableOpacity>
+    );
+  }
 
   return (
     <SwipeBackPager>
@@ -161,7 +300,7 @@ export default function ListingScreen() {
                   Share.share({
                     message: `${t('shop.shareMsg', {
                       title: listing.title,
-                      price: listing.price_cents <= 0 ? t('shop.free') : formatPrice(listing.price_cents, listing.currency),
+                      price: listingPriceLabel(listing, t('shop.free')),
                     })}\n${WEB_ORIGIN}/open.html?p=shop/listing/${listing.id}`,
                   }).catch(() => {})
                 }
@@ -214,25 +353,27 @@ export default function ListingScreen() {
                 <Text style={styles.meta}>
                   {t(`shop.category.${listing.category}`)}
                   {listing.genre ? ` · ${listing.genre}` : ''}
-                  {` · ${t(`shop.license.${listing.license}`)}`}
+                  {enabledLabels ? ` · ${enabledLabels}` : ''}
                 </Text>
               </View>
               <View style={styles.pricePill}>
-                <Text style={styles.priceText}>
-                  {listing.price_cents <= 0 ? t('shop.free') : formatPrice(listing.price_cents, listing.currency)}
-                </Text>
+                <Text style={styles.priceText}>{listingPriceLabel(listing, t('shop.free'))}</Text>
               </View>
             </View>
 
             {listing.sales_count > 0 && (
               <Text style={styles.sales}>{t('shop.salesCount', { n: listing.sales_count })}</Text>
             )}
-            {/* What this deal type MEANS, in plain words — inexperienced buyers
-                shouldn't have to know marketplace jargon to buy safely. */}
-            <View style={styles.licenseInfo}>
-              <Ionicons name="information-circle-outline" size={15} color={colors.textSecondary} />
-              <Text style={styles.licenseInfoText}>{t(`shop.licenseInfo.${listing.license}`)}</Text>
-            </View>
+            {/* What each offered deal type MEANS, in plain words — inexperienced
+                buyers shouldn't need marketplace jargon to buy safely. */}
+            {(['sell', 'lease', 'free'] as const).filter((k) => types[k]).map((k) => (
+              <View key={k} style={styles.licenseInfo}>
+                <Ionicons name="information-circle-outline" size={15} color={colors.textSecondary} />
+                <Text style={styles.licenseInfoText}>
+                  {t(`shop.licenseInfo.${k === 'sell' ? 'exclusive' : k === 'lease' ? 'nonexclusive' : 'free'}`)}
+                </Text>
+              </View>
+            ))}
             {!!listing.description && <Text style={styles.description}>{listing.description}</Text>}
 
             {/* Seller — the row is the shop entrance ("View shop" → their shop
@@ -260,71 +401,140 @@ export default function ListingScreen() {
 
             {/* CTAs */}
             {isOwner ? (
-              <View style={styles.ownerActions}>
-                <TouchableOpacity style={styles.ownerBtn} onPress={() => router.push(`/shop/new-listing?id=${listing.id}`)}>
-                  <Ionicons name="create-outline" size={17} color={colors.text} />
-                  <Text style={styles.ownerBtnText}>{t('shop.edit')}</Text>
-                </TouchableOpacity>
-                {listing.status !== 'sold' && (
-                  <TouchableOpacity
-                    style={styles.ownerBtn}
-                    onPress={() => setStatus(listing.status === 'paused' ? 'active' : 'paused')}
-                  >
-                    <Ionicons name={listing.status === 'paused' ? 'play-outline' : 'pause-outline'} size={17} color={colors.text} />
-                    <Text style={styles.ownerBtnText}>
-                      {listing.status === 'paused' ? t('shop.activate') : t('shop.pause')}
-                    </Text>
+              <>
+                <View style={styles.ownerActions}>
+                  <TouchableOpacity style={styles.ownerBtn} onPress={() => router.push(`/shop/new-listing?id=${listing.id}`)}>
+                    <Ionicons name="create-outline" size={17} color={colors.text} />
+                    <Text style={styles.ownerBtnText}>{t('shop.edit')}</Text>
                   </TouchableOpacity>
+                  {listing.status !== 'sold' && (
+                    <TouchableOpacity
+                      style={styles.ownerBtn}
+                      onPress={() => setStatus(listing.status === 'paused' ? 'active' : 'paused')}
+                    >
+                      <Ionicons name={listing.status === 'paused' ? 'play-outline' : 'pause-outline'} size={17} color={colors.text} />
+                      <Text style={styles.ownerBtnText}>
+                        {listing.status === 'paused' ? t('shop.activate') : t('shop.pause')}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.ownerBtn} onPress={() => setConfirmRemove(true)}>
+                    <Ionicons name="trash-outline" size={17} color={colors.error} />
+                    <Text style={[styles.ownerBtnText, { color: colors.error }]}>{t('shop.remove')}</Text>
+                  </TouchableOpacity>
+                </View>
+                {hasSales && (
+                  <View style={styles.protectedRow}>
+                    <Ionicons name="lock-closed-outline" size={13} color={colors.textTertiary} />
+                    <Text style={styles.protectedText}>{t('shop.hasPurchasesNote')}</Text>
+                  </View>
                 )}
-                <TouchableOpacity style={styles.ownerBtn} onPress={() => setConfirmRemove(true)}>
-                  <Ionicons name="trash-outline" size={17} color={colors.error} />
-                  <Text style={[styles.ownerBtnText, { color: colors.error }]}>{t('shop.remove')}</Text>
-                </TouchableOpacity>
-              </View>
+                {!!error && <Text style={styles.errorText}>{error}</Text>}
+              </>
             ) : (
               <View style={styles.buyerActions}>
-                {order?.status === 'delivered' ? (
-                  <TouchableOpacity style={styles.greenBtn} onPress={download} disabled={busy} activeOpacity={0.85}>
-                    {busy ? <ActivityIndicator color="#fff" /> : (
+                {/* A delivered order (any kind) = the file is yours. */}
+                {deliveredOrder && (
+                  <TouchableOpacity style={styles.greenBtn} onPress={download} disabled={!!busyKind} activeOpacity={0.85}>
+                    {busyKind === 'download' ? <ActivityIndicator color="#fff" /> : (
                       <>
                         <Ionicons name="download-outline" size={18} color="#fff" />
                         <Text style={styles.greenBtnText}>{t('shop.download')}</Text>
                       </>
                     )}
                   </TouchableOpacity>
-                ) : order?.status === 'requested' ? (
-                  <TouchableOpacity style={styles.pendingBtn} onPress={cancelRequest} disabled={busy}>
-                    <Ionicons name="time-outline" size={17} color={colors.textSecondary} />
-                    <Text style={styles.pendingBtnText}>{t('shop.requested')}</Text>
-                  </TouchableOpacity>
-                ) : listing.status === 'active' ? (
-                  <>
-                    <TouchableOpacity style={styles.greenBtn} onPress={buy} disabled={busy} activeOpacity={0.85}>
-                      {busy ? <ActivityIndicator color="#fff" /> : (
-                        <>
-                          <Ionicons name="flash" size={18} color="#fff" />
-                          <Text style={styles.greenBtnText}>
-                            {listing.price_cents <= 0 ? t('shop.get') : t('shop.buyNow')}
-                          </Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.cartBtn, inCart && styles.cartBtnActive]}
-                      onPress={() => { reactionPop(); inCart ? removeFromCart(listing.id) : addToCart(listing); }}
-                      activeOpacity={0.85}
-                    >
-                      <Ionicons name={inCart ? 'checkmark' : 'cart-outline'} size={17} color={inCart ? colors.success : colors.text} />
-                      <Text style={[styles.cartBtnText, inCart && { color: colors.success }]}>
-                        {inCart ? t('shop.inCart') : t('shop.addToCart')}
-                      </Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <View style={styles.pendingBtn}>
-                    <Text style={styles.pendingBtnText}>{t('shop.unavailable')}</Text>
-                  </View>
                 )}
+
+                {listing.status === 'active' ? (
+                  <>
+                    {/* One button per deal type the seller highlighted. */}
+                    {types.sell && renderKindCta('sell')}
+                    {types.lease && renderKindCta('lease')}
+                    {types.free && renderKindCta('free')}
+
+                    {/* Free-unlock checklist */}
+                    {types.free && conds?.hasConditions && !orderFor('free') && (
+                      <View style={styles.unlockCard}>
+                        <Text style={styles.unlockTitle}>{t('shop.unlockTitle')}</Text>
+                        {!!listing.free_requires_follow && (
+                          <TouchableOpacity
+                            style={styles.unlockRow}
+                            onPress={() => { if (!conds.followMet) toggleFollow(listing.user_id); }}
+                            activeOpacity={conds.followMet ? 1 : 0.7}
+                          >
+                            <Ionicons
+                              name={conds.followMet ? 'checkmark-circle' : 'person-add-outline'}
+                              size={19}
+                              color={conds.followMet ? colors.success : colors.textSecondary}
+                            />
+                            <Text style={[styles.unlockText, conds.followMet && styles.unlockTextMet]}>
+                              {t('shop.unlockFollow', { name: sellerName || '—' })}
+                            </Text>
+                            {!conds.followMet && <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />}
+                          </TouchableOpacity>
+                        )}
+                        {conds.likes.map((lk, i) => (
+                          <TouchableOpacity
+                            key={lk.postId}
+                            style={styles.unlockRow}
+                            onPress={() => router.push(`/post/${lk.postId}`)}
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons
+                              name={lk.met ? 'checkmark-circle' : 'heart-outline'}
+                              size={19}
+                              color={lk.met ? colors.success : colors.textSecondary}
+                            />
+                            <Text style={[styles.unlockText, lk.met && styles.unlockTextMet]}>
+                              {t('shop.unlockLike', { n: i + 1 })}
+                            </Text>
+                            {!lk.met && <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />}
+                          </TouchableOpacity>
+                        ))}
+                        <Text style={[styles.unlockHint, conds.allMet && { color: colors.success }]}>
+                          {conds.allMet ? t('shop.unlockReady') : t('shop.unlockUnmet')}
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Lease-only: name your price for the beat itself. */}
+                    {offerable && !orderFor('offer') && (
+                      <TouchableOpacity style={styles.offerBtn} onPress={() => setOfferOpen(true)} activeOpacity={0.85}>
+                        <Ionicons name="pricetag-outline" size={17} color={colors.text} />
+                        <Text style={styles.offerBtnText}>{t('shop.makeOffer')}</Text>
+                      </TouchableOpacity>
+                    )}
+                    {orderFor('offer')?.status === 'requested' && (
+                      <TouchableOpacity style={styles.pendingBtn} onPress={() => cancelRequest(orderFor('offer')!)} disabled={!!busyKind}>
+                        <Ionicons name="time-outline" size={17} color={colors.textSecondary} />
+                        <Text style={styles.pendingBtnText}>
+                          {t('shop.offerSent', { price: formatPrice(orderFor('offer')!.price_cents, listing.currency) })}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Add to cart (shortlists the everyday deal type). */}
+                    {!deliveredOrder && (
+                      <TouchableOpacity
+                        style={[styles.cartBtn, inCart && styles.cartBtnActive]}
+                        onPress={() => { reactionPop(); inCart ? removeFromCart(listing.id) : addToCart(listing); }}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name={inCart ? 'checkmark' : 'cart-outline'} size={17} color={inCart ? colors.success : colors.text} />
+                        <Text style={[styles.cartBtnText, inCart && { color: colors.success }]}>
+                          {inCart ? t('shop.inCart') : t('shop.addToCart')}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </>
+                ) : !deliveredOrder ? (
+                  <View style={styles.pendingBtn}>
+                    <Text style={styles.pendingBtnText}>
+                      {listing.status === 'sold' ? t('shop.sold') : t('shop.unavailable')}
+                    </Text>
+                  </View>
+                ) : null}
+
                 <TouchableOpacity
                   style={styles.messageBtn}
                   onPress={() => router.push(`/messages/${listing.user_id}`)}
@@ -333,17 +543,60 @@ export default function ListingScreen() {
                   <Text style={styles.messageBtnText}>{t('shop.messageSeller')}</Text>
                 </TouchableOpacity>
                 {!!error && <Text style={styles.errorText}>{error}</Text>}
-                {order?.status === 'requested' && (
+                {orders.some((o) => o.status === 'requested') && (
                   <Text style={styles.hint}>{t('shop.requestHint')}</Text>
                 )}
                 <TouchableOpacity style={styles.reportRow} onPress={() => reportListing(listing.id)} hitSlop={6}>
                   <Ionicons name="flag-outline" size={13} color={colors.textTertiary} />
                   <Text style={styles.reportText}>{t('shop.report')}</Text>
                 </TouchableOpacity>
+                {/* What Buy / Lease / Free actually grant — the full agreement. */}
+                <TouchableOpacity style={styles.reportRow} onPress={() => router.push('/marketplace-terms')} hitSlop={6}>
+                  <Ionicons name="document-text-outline" size={13} color={colors.textTertiary} />
+                  <Text style={styles.reportText}>{t('shop.marketplaceTerms')}</Text>
+                </TouchableOpacity>
               </View>
             )}
           </ScrollView>
         )}
+
+        {/* Offer sheet — buyer names a buy-out price on a lease-only beat. */}
+        <Modal visible={offerOpen} transparent animationType="slide" onRequestClose={() => setOfferOpen(false)}>
+          <Pressable style={styles.offerBackdrop} onPress={() => setOfferOpen(false)}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+              <Pressable style={[styles.offerSheet, { paddingBottom: insets.bottom + SPACING.md }]}>
+                <Text style={styles.offerTitle}>{t('shop.makeOffer')}</Text>
+                <Text style={styles.offerSub}>{t('shop.offerSub')}</Text>
+                <View style={styles.offerRow}>
+                  <Text style={styles.offerSymbol}>$</Text>
+                  <TextInput
+                    style={styles.offerInput}
+                    placeholder="0.00"
+                    placeholderTextColor={colors.textTertiary}
+                    value={offerText}
+                    onChangeText={setOfferText}
+                    keyboardType="decimal-pad"
+                    maxLength={8}
+                    autoFocus
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[styles.greenBtn, offerCents <= 0 && { opacity: 0.5 }]}
+                  onPress={() => buy('offer', offerCents)}
+                  disabled={offerCents <= 0 || !!busyKind}
+                  activeOpacity={0.85}
+                >
+                  {busyKind === 'offer' ? <ActivityIndicator color="#fff" /> : (
+                    <>
+                      <Ionicons name="paper-plane-outline" size={17} color="#fff" />
+                      <Text style={styles.greenBtnText}>{t('shop.offerSend')}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </Pressable>
+            </KeyboardAvoidingView>
+          </Pressable>
+        </Modal>
 
         {/* One-time buyer safety primer (payments settle off-platform). */}
         <ConfirmDialog
@@ -354,17 +607,17 @@ export default function ListingScreen() {
           cancelLabel={t('common.cancel')}
           icon="shield-checkmark-outline"
           onConfirm={ackSafetyAndBuy}
-          onCancel={() => setSafetyOpen(false)}
+          onCancel={() => { pendingBuyRef.current = null; setSafetyOpen(false); }}
         />
 
         <ConfirmDialog
           visible={confirmRemove}
-          title={t('shop.removeConfirmTitle')}
-          message={t('shop.removeConfirmMsg')}
-          confirmLabel={t('shop.remove')}
+          title={hasSales ? t('shop.refundRemoveTitle') : t('shop.removeConfirmTitle')}
+          message={hasSales ? t('shop.refundRemoveMsg') : t('shop.removeConfirmMsg')}
+          confirmLabel={hasSales ? t('shop.refundRemove') : t('shop.remove')}
           cancelLabel={t('common.cancel')}
           destructive
-          onConfirm={() => setStatus('removed')}
+          onConfirm={removeListing}
           onCancel={() => setConfirmRemove(false)}
         />
       </View>
@@ -425,12 +678,35 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: c.border, borderRadius: RADIUS.md, paddingVertical: 11,
   },
   ownerBtnText: { color: c.text, fontSize: 13, fontWeight: '600' },
+  protectedRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingHorizontal: 4 },
+  protectedText: { flex: 1, color: c.textTertiary, fontSize: 11.5, lineHeight: 16 },
   buyerActions: { gap: 8 },
   greenBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: c.success, borderRadius: RADIUS.full, paddingVertical: 13,
   },
+  // The lease button reads as its own deal, not a twin of Buy.
+  leaseBtn: { backgroundColor: '#0EA5E9' },
   greenBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  freeBtn: { paddingVertical: 9 },
+  freeBtnInner: { alignItems: 'center' },
+  claimNowText: { color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '600', marginTop: 1 },
+  btnLocked: { opacity: 0.55 },
+  unlockCard: {
+    backgroundColor: c.surface, borderRadius: RADIUS.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+    padding: 12, gap: 10,
+  },
+  unlockTitle: { color: c.text, fontSize: 13, fontWeight: '800' },
+  unlockRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  unlockText: { flex: 1, color: c.textSecondary, fontSize: 13, fontWeight: '600' },
+  unlockTextMet: { color: c.text, textDecorationLine: 'line-through', opacity: 0.7 },
+  unlockHint: { color: c.textTertiary, fontSize: 11.5, marginTop: 2 },
+  offerBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    borderWidth: 1.5, borderColor: c.text, borderRadius: RADIUS.full, paddingVertical: 12,
+  },
+  offerBtnText: { color: c.text, fontSize: 14, fontWeight: '700' },
   pendingBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     backgroundColor: c.surfaceLight, borderRadius: RADIUS.full, paddingVertical: 13,
@@ -447,4 +723,18 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   reportText: { color: c.textTertiary, fontSize: 12 },
   gone: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   goneText: { color: c.textTertiary, fontSize: 14 },
+  offerBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  offerSheet: {
+    backgroundColor: c.surface,
+    borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: 10,
+  },
+  offerTitle: { color: c.text, fontSize: 16, fontWeight: '800' },
+  offerSub: { color: c.textSecondary, fontSize: 12.5, lineHeight: 18 },
+  offerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  offerSymbol: { color: c.text, fontSize: 18, fontWeight: '800' },
+  offerInput: {
+    flex: 1, backgroundColor: c.surfaceLight, borderRadius: RADIUS.md,
+    paddingHorizontal: 14, paddingVertical: 12, color: c.text, fontSize: 16, fontWeight: '700',
+  },
 });

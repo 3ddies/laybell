@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
-import { formatPrice, type ShopListing } from '../lib/shop';
+import { listingPriceLabel, type ShopListing } from '../lib/shop';
 
 // One marketplace tile — used by Explore, seller shops, and My Shop grids.
 // Two-column grid; the price rides the cover like a marketplace tag.
@@ -32,10 +32,9 @@ export default function ShopListingCard({
             <Ionicons name="musical-note" size={30} color={colors.textTertiary} />
           </View>
         )}
+        {/* Cheapest way in, "+" when the listing offers more than one deal. */}
         <View style={styles.priceTag}>
-          <Text style={styles.priceText}>
-            {listing.price_cents <= 0 ? t('shop.free') : formatPrice(listing.price_cents, listing.currency)}
-          </Text>
+          <Text style={styles.priceText}>{listingPriceLabel(listing, t('shop.free'))}</Text>
         </View>
         {listing.status !== 'active' && (
           <View style={styles.statusScrim}>

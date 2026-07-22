@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Image, ActivityIndicator,
+  Modal, FlatList, Switch,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,19 +13,24 @@ import { tabTick } from '../../lib/haptics';
 import { RADIUS, SPACING, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { supabase } from '../../lib/supabase';
 import {
-  LISTING_CATEGORIES, buyerTaxCents, createListing, fetchListing, formatPrice,
-  sellerEarningsCents, shopFeeCents, updateListing,
+  LISTING_CATEGORIES, buyerTaxCents, createListing, fetchListing, formatPrice, saleTypes,
+  sellerEarningsCents, shopFeeCents, updateListing, updateListingTypes,
   uploadListingCover, uploadListingFile, uploadListingPreview,
-  type ListingCategory, type ListingLicense,
+  type ListingCategory, type ListingTypesInput,
 } from '../../lib/shop';
 
-// Create / edit a listing. Three media slots:
-//   cover   — square image (public)
-//   preview — short/tagged audio anyone can stream (public)
-//   file    — the real deliverable, unlocked per-buyer on delivery (private)
+// Create / edit a listing. Three media slots (cover / public preview / private
+// deliverable) + MULTI-TYPE deals: the seller highlights any combination of
+//   Sell  (exclusive buy-out, its own price)
+//   Lease (non-exclusive copies, its own price)
+//   Free  (a claim — optionally gated on following the seller and/or liking
+//          any number of their posts)
+// and the listing page grows one CTA button per highlighted type.
 
 type PickedAudio = { uri: string; name: string; mime: string } | null;
+type MyPost = { id: string; thumb: string | null };
 
 export default function NewListingScreen() {
   const styles = useThemedStyles(makeStyles);
@@ -38,8 +44,17 @@ export default function NewListingScreen() {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<ListingCategory>('beat');
   const [genre, setGenre] = useState('');
-  const [price, setPrice] = useState('');
-  const [license, setLicense] = useState<ListingLicense>('nonexclusive');
+  // Deal types — any combination.
+  const [sellOn, setSellOn] = useState(false);
+  const [leaseOn, setLeaseOn] = useState(true);
+  const [freeOn, setFreeOn] = useState(false);
+  const [sellPrice, setSellPrice] = useState('');
+  const [leasePrice, setLeasePrice] = useState('');
+  // Free-claim conditions.
+  const [freeFollow, setFreeFollow] = useState(false);
+  const [freePostIds, setFreePostIds] = useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [myPosts, setMyPosts] = useState<MyPost[] | null>(null);
   const [coverUri, setCoverUri] = useState<string | null>(null);
   const [existingCover, setExistingCover] = useState<string | null>(null);
   const [preview, setPreview] = useState<PickedAudio>(null);
@@ -58,8 +73,16 @@ export default function NewListingScreen() {
     setDescription(l.description ?? '');
     setCategory(l.category);
     setGenre(l.genre ?? '');
-    setPrice(l.price_cents > 0 ? String(l.price_cents / 100) : '');
-    setLicense(l.license);
+    const types = saleTypes(l);
+    setSellOn(types.sell);
+    setLeaseOn(types.lease);
+    setFreeOn(types.free);
+    const sp = l.sell_enabled ? (l.sell_price_cents ?? 0) : types.sell ? l.price_cents : 0;
+    const lp = l.lease_enabled ? (l.lease_price_cents ?? 0) : types.lease ? l.price_cents : 0;
+    setSellPrice(sp > 0 ? String(sp / 100) : '');
+    setLeasePrice(lp > 0 ? String(lp / 100) : '');
+    setFreeFollow(!!l.free_requires_follow);
+    setFreePostIds(l.free_like_post_ids ?? []);
     setExistingCover(l.cover_url);
     setHasExistingPreview(!!l.preview_url);
     setHasExistingFile(!!l.file_path);
@@ -88,11 +111,43 @@ export default function NewListingScreen() {
     else setFile(picked);
   }
 
-  const priceCents = Math.round((parseFloat(price.replace(',', '.')) || 0) * 100);
+  // My public posts, for the "must like these posts" condition picker.
+  async function openPostPicker() {
+    setPickerOpen(true);
+    if (myPosts) return;
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth?.user) { setMyPosts([]); return; }
+      const { data } = await supabase
+        .from('posts')
+        .select('id, media_url, thumbnail_url, cover_url')
+        .eq('user_id', auth.user.id)
+        .eq('is_public', true)
+        .order('created_at', { ascending: false })
+        .limit(90);
+      setMyPosts((data ?? []).map((p: Record<string, string | null>) => ({
+        id: p.id as string,
+        thumb: p.thumbnail_url || p.cover_url || p.media_url || null,
+      })));
+    } catch { setMyPosts([]); }
+  }
+
+  const sellPriceCents = Math.round((parseFloat(sellPrice.replace(',', '.')) || 0) * 100);
+  const leasePriceCents = Math.round((parseFloat(leasePrice.replace(',', '.')) || 0) * 100);
+  const anyType = sellOn || leaseOn || freeOn;
+  const pricesOk = (!sellOn || sellPriceCents > 0) && (!leaseOn || leasePriceCents > 0);
   const canPublish =
-    !!title.trim() && !busy
-    && (license === 'free' || priceCents > 0)
+    !!title.trim() && !busy && anyType && pricesOk
     && (hasExistingFile || !!file || category === 'service');
+
+  // Earnings preview for the "main" paid deal (the buy-out when both are on).
+  const earnPreviewCents = sellOn && sellPriceCents > 0 ? sellPriceCents : leaseOn ? leasePriceCents : 0;
+
+  const typesInput = (): ListingTypesInput => ({
+    sell: { enabled: sellOn, priceCents: sellPriceCents },
+    lease: { enabled: leaseOn, priceCents: leasePriceCents },
+    free: { enabled: freeOn, requiresFollow: freeFollow, likePostIds: freePostIds },
+  });
 
   async function publish() {
     if (!canPublish) return;
@@ -106,13 +161,12 @@ export default function NewListingScreen() {
           description: description.trim() || null,
           category,
           genre: genre.trim() || null,
-          price_cents: license === 'free' ? 0 : priceCents,
-          license,
         });
+        await updateListingTypes(editId, typesInput());
       } else {
         const created = await createListing({
           title, description, category, genre,
-          priceCents, license,
+          types: typesInput(),
         });
         listingId = created.id;
       }
@@ -130,6 +184,56 @@ export default function NewListingScreen() {
   }
 
   const coverShown = coverUri ?? existingCover;
+
+  // One highlightable card per deal type: chip row + its own price /
+  // conditions when enabled.
+  function typeCard(
+    kind: 'sell' | 'lease' | 'free',
+    on: boolean,
+    setOn: (v: boolean) => void,
+    body?: React.ReactNode,
+  ) {
+    const label = t(`shop.license.${kind === 'sell' ? 'exclusive' : kind === 'lease' ? 'nonexclusive' : 'free'}`);
+    const icon = kind === 'sell' ? 'flash-outline' : kind === 'lease' ? 'repeat-outline' : 'gift-outline';
+    return (
+      <View style={[styles.typeCard, on && styles.typeCardOn]}>
+        <TouchableOpacity style={styles.typeHead} onPress={() => setOn(!on)} activeOpacity={0.75}>
+          <Ionicons name={icon as never} size={18} color={on ? colors.success : colors.textTertiary} />
+          <Text style={[styles.typeLabel, on && styles.typeLabelOn]}>{label}</Text>
+          <Ionicons
+            name={on ? 'checkmark-circle' : 'ellipse-outline'}
+            size={22}
+            color={on ? colors.success : colors.textTertiary}
+          />
+        </TouchableOpacity>
+        {on && (
+          <>
+            <Text style={styles.typeInfo}>
+              {t(`shop.licenseInfo.${kind === 'sell' ? 'exclusive' : kind === 'lease' ? 'nonexclusive' : 'free'}`)}
+            </Text>
+            {body}
+          </>
+        )}
+      </View>
+    );
+  }
+
+  function priceInput(value: string, setValue: (v: string) => void) {
+    return (
+      <View style={styles.priceRow}>
+        <Text style={styles.priceSymbol}>$</Text>
+        <TextInput
+          style={[styles.input, styles.priceInput]}
+          placeholder="0.00"
+          placeholderTextColor={colors.textTertiary}
+          value={value}
+          onChangeText={setValue}
+          keyboardType="decimal-pad"
+          maxLength={9}
+        />
+      </View>
+    );
+  }
 
   return (
     <SwipeBackPager>
@@ -198,65 +302,59 @@ export default function NewListingScreen() {
             maxLength={40}
           />
 
-          {/* License + price */}
-          <Text style={styles.label}>{t('shop.licenseLabel')}</Text>
-          <View style={styles.chipWrap}>
-            {(['nonexclusive', 'exclusive', 'free'] as ListingLicense[]).map((lic) => (
-              <TouchableOpacity
-                key={lic}
-                style={[styles.chip, license === lic && styles.chipActive]}
-                onPress={() => setLicense(lic)}
-              >
-                <Text style={[styles.chipText, license === lic && styles.chipTextActive]}>
-                  {t(`shop.license.${lic}`)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {/* Plain-language explainer for the SELECTED deal type, so first-time
-              sellers know exactly what Lease / Sell / Free means before listing. */}
-          <View style={styles.licenseInfo}>
-            <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.licenseInfoText}>{t(`shop.licenseInfo.${license}`)}</Text>
-          </View>
-          {license !== 'free' && (
-            <>
-              <View style={styles.priceRow}>
-                <Text style={styles.priceSymbol}>$</Text>
-                <TextInput
-                  style={[styles.input, styles.priceInput]}
-                  placeholder="0.00"
-                  placeholderTextColor={colors.textTertiary}
-                  value={price}
-                  onChangeText={setPrice}
-                  keyboardType="decimal-pad"
-                  maxLength={9}
+          {/* Deal types — highlight every way this can be bought. */}
+          <Text style={styles.label}>{t('shop.typesLabel')}</Text>
+          <Text style={styles.typesSub}>{t('shop.typesSub')}</Text>
+
+          {typeCard('lease', leaseOn, setLeaseOn, priceInput(leasePrice, setLeasePrice))}
+          {typeCard('sell', sellOn, setSellOn, priceInput(sellPrice, setSellPrice))}
+          {typeCard('free', freeOn, setFreeOn, (
+            <View style={styles.condWrap}>
+              <Text style={styles.condLabel}>{t('shop.freeCondLabel')}</Text>
+              <View style={styles.condRow}>
+                <Ionicons name="person-add-outline" size={17} color={colors.textSecondary} />
+                <Text style={styles.condText}>{t('shop.freeCondFollow')}</Text>
+                <Switch
+                  value={freeFollow}
+                  onValueChange={setFreeFollow}
+                  trackColor={{ true: colors.success, false: colors.surfaceLight }}
+                  thumbColor="#fff"
                 />
               </View>
-              {/* Poshmark-style earnings breakdown — live as the price is typed. */}
-              {priceCents > 0 && (
-                <View style={styles.earnCard}>
-                  <View style={styles.earnRow}>
-                    <Text style={styles.earnLabel}>{t('shop.earnPrice')}</Text>
-                    <Text style={styles.earnValue}>{formatPrice(priceCents)}</Text>
-                  </View>
-                  <View style={styles.earnRow}>
-                    <Text style={styles.earnLabel}>{t('shop.earnFee')}</Text>
-                    <Text style={styles.earnValue}>−{formatPrice(shopFeeCents(priceCents))}</Text>
-                  </View>
-                  <View style={styles.earnRow}>
-                    <Text style={styles.earnLabel}>{t('shop.earnTax')}</Text>
-                    <Text style={styles.earnValueMuted}>+{formatPrice(buyerTaxCents(priceCents))}</Text>
-                  </View>
-                  <View style={styles.earnDivider} />
-                  <View style={styles.earnRow}>
-                    <Text style={styles.earnTotalLabel}>{t('shop.earnYou')}</Text>
-                    <Text style={styles.earnTotalValue}>{formatPrice(sellerEarningsCents(priceCents))}</Text>
-                  </View>
-                  <Text style={styles.earnNote}>{t('shop.earnNote')}</Text>
-                </View>
-              )}
-            </>
+              <TouchableOpacity style={styles.condRow} onPress={openPostPicker} activeOpacity={0.75}>
+                <Ionicons name="heart-outline" size={17} color={colors.textSecondary} />
+                <Text style={styles.condText}>
+                  {freePostIds.length
+                    ? t('shop.freeCondLikes', { n: freePostIds.length })
+                    : t('shop.pickPosts')}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          {/* Poshmark-style earnings breakdown — live as prices are typed. */}
+          {earnPreviewCents > 0 && (
+            <View style={styles.earnCard}>
+              <View style={styles.earnRow}>
+                <Text style={styles.earnLabel}>{t('shop.earnPrice')}</Text>
+                <Text style={styles.earnValue}>{formatPrice(earnPreviewCents)}</Text>
+              </View>
+              <View style={styles.earnRow}>
+                <Text style={styles.earnLabel}>{t('shop.earnFee')}</Text>
+                <Text style={styles.earnValue}>−{formatPrice(shopFeeCents(earnPreviewCents))}</Text>
+              </View>
+              <View style={styles.earnRow}>
+                <Text style={styles.earnLabel}>{t('shop.earnTax')}</Text>
+                <Text style={styles.earnValueMuted}>+{formatPrice(buyerTaxCents(earnPreviewCents))}</Text>
+              </View>
+              <View style={styles.earnDivider} />
+              <View style={styles.earnRow}>
+                <Text style={styles.earnTotalLabel}>{t('shop.earnYou')}</Text>
+                <Text style={styles.earnTotalValue}>{formatPrice(sellerEarningsCents(earnPreviewCents))}</Text>
+              </View>
+              <Text style={styles.earnNote}>{t('shop.earnNote')}</Text>
+            </View>
           )}
 
           {/* Audio slots */}
@@ -296,6 +394,57 @@ export default function NewListingScreen() {
           {/* Rights attestation — publishing is the act of confirming ownership. */}
           <Text style={styles.rightsNote}>{t('shop.rightsNote')}</Text>
         </ScrollView>
+
+        {/* Which posts must be liked to claim the freebie. */}
+        <Modal visible={pickerOpen} animationType="slide" onRequestClose={() => setPickerOpen(false)}>
+          <View style={[styles.pickerRoot, { paddingTop: insets.top + 8 }]}>
+            <View style={styles.header}>
+              <TouchableOpacity onPress={() => setPickerOpen(false)} style={styles.headerBtn}>
+                <Ionicons name="chevron-back" size={24} color={colors.text} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>{t('shop.pickPostsTitle')}</Text>
+              <TouchableOpacity onPress={() => setPickerOpen(false)} style={styles.headerBtn}>
+                <Text style={styles.pickerDone}>{t('shop.pickPostsDone')}</Text>
+              </TouchableOpacity>
+            </View>
+            {myPosts === null ? (
+              <ActivityIndicator color={colors.success} style={{ marginTop: 40 }} />
+            ) : (
+              <FlatList
+                data={myPosts}
+                keyExtractor={(p) => p.id}
+                numColumns={3}
+                contentContainerStyle={styles.pickerGrid}
+                columnWrapperStyle={{ gap: 3 }}
+                ListEmptyComponent={<Text style={styles.pickerEmpty}>{t('shop.pickPostsEmpty')}</Text>}
+                renderItem={({ item }) => {
+                  const on = freePostIds.includes(item.id);
+                  return (
+                    <TouchableOpacity
+                      style={styles.pickerCell}
+                      onPress={() => setFreePostIds((prev) =>
+                        on ? prev.filter((p) => p !== item.id) : [...prev, item.id])}
+                      activeOpacity={0.8}
+                    >
+                      {item.thumb ? (
+                        <Image source={{ uri: item.thumb }} style={styles.pickerThumb} />
+                      ) : (
+                        <View style={[styles.pickerThumb, styles.pickerThumbEmpty]}>
+                          <Ionicons name="musical-note" size={20} color={colors.textTertiary} />
+                        </View>
+                      )}
+                      {on && (
+                        <View style={styles.pickerSel}>
+                          <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+          </View>
+        </Modal>
       </View>
     </SwipeBackPager>
   );
@@ -305,7 +454,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: c.background },
   flex: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
-  headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { flex: 1, textAlign: 'center', color: c.text, fontSize: 17, fontWeight: '700' },
   content: { padding: SPACING.md, gap: 10, paddingBottom: 46 },
   coverPick: { alignSelf: 'center', width: 160, height: 160, borderRadius: RADIUS.lg, overflow: 'hidden', backgroundColor: c.surfaceLight },
@@ -323,14 +472,21 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   chipActive: { backgroundColor: c.text, borderColor: c.text },
   chipText: { color: c.textSecondary, fontSize: 12, fontWeight: '600' },
   chipTextActive: { color: c.background },
-  // Explainer for the selected deal type (Lease / Sell / Free).
-  licenseInfo: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+  typesSub: { color: c.textTertiary, fontSize: 12, lineHeight: 17, marginTop: -4 },
+  // One card per deal type; enabling it reveals its price / conditions.
+  typeCard: {
     backgroundColor: c.surface, borderRadius: RADIUS.md,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
-    paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1, borderColor: c.border, padding: 12, gap: 10,
   },
-  licenseInfoText: { flex: 1, color: c.textSecondary, fontSize: 12.5, lineHeight: 18 },
+  typeCardOn: { borderColor: c.success },
+  typeHead: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  typeLabel: { flex: 1, color: c.textSecondary, fontSize: 14, fontWeight: '700' },
+  typeLabelOn: { color: c.text },
+  typeInfo: { color: c.textTertiary, fontSize: 12, lineHeight: 17 },
+  condWrap: { gap: 10 },
+  condLabel: { color: c.textSecondary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  condRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  condText: { flex: 1, color: c.text, fontSize: 13, fontWeight: '600' },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   priceSymbol: { color: c.text, fontSize: 18, fontWeight: '800' },
   priceInput: { flex: 1 },
@@ -361,4 +517,16 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   greenBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   error: { color: c.error, fontSize: 13, textAlign: 'center' },
   rightsNote: { color: c.textTertiary, fontSize: 11, lineHeight: 15, textAlign: 'center', paddingHorizontal: 14 },
+  // Post picker (free-claim like conditions)
+  pickerRoot: { flex: 1, backgroundColor: c.background },
+  pickerDone: { color: c.success, fontSize: 14, fontWeight: '700', paddingHorizontal: 8 },
+  pickerGrid: { padding: 3, gap: 3 },
+  pickerCell: { flex: 1 / 3, aspectRatio: 1, padding: 1.5 },
+  pickerThumb: { width: '100%', height: '100%', borderRadius: 4, backgroundColor: c.surfaceLight },
+  pickerThumbEmpty: { alignItems: 'center', justifyContent: 'center' },
+  pickerSel: {
+    position: 'absolute', top: 6, right: 6,
+    backgroundColor: c.background, borderRadius: 11,
+  },
+  pickerEmpty: { color: c.textTertiary, fontSize: 13, textAlign: 'center', marginTop: 40 },
 });
