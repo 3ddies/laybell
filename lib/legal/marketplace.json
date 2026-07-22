@@ -17,7 +17,7 @@
         { "type": "bullet", "text": "\"Seller\" — the user who owns a shop and publishes a Listing." },
         { "type": "bullet", "text": "\"Buyer\" — the user who leases, purchases, claims, or offers to purchase from a Listing." },
         { "type": "bullet", "text": "\"Work\" — the underlying content a Listing offers (for example a beat, song, sample pack, or preset), including the private deliverable file." },
-        { "type": "bullet", "text": "\"Lease\" — a NON-EXCLUSIVE license to a Work, sold at the Listing's lease price. Many different Buyers can hold Leases to the same Work at the same time." },
+        { "type": "bullet", "text": "\"Lease\" — a NON-EXCLUSIVE license to a Work, sold at the Listing's lease price. Many different Buyers can hold Leases to the same Work at the same time. Every Laybell Lease is an UNLIMITED lease: it carries no stream, sales, or monetization caps of any kind (see Section 6)." },
         { "type": "bullet", "text": "\"Exclusive Purchase\" (shown in the app as \"Buy\") — the one-time exclusive sale of a Work at the Listing's buy-out price, or at an accepted Offer price. A Work can be exclusively purchased once." },
         { "type": "bullet", "text": "\"Free Claim\" — obtaining a Work at no charge from a Listing that offers it free, after meeting any unlock conditions the Seller set (such as following the Seller or liking specific posts)." },
         { "type": "bullet", "text": "\"Offer\" — a Buyer-proposed buy-out price on a Listing that offers Leases but not an Exclusive Purchase. If the Seller accepts, the Offer completes as an Exclusive Purchase at the offered price." },
@@ -55,11 +55,13 @@
       ]
     },
     {
-      "heading": "6. The Lease (Non-Exclusive License)",
+      "heading": "6. The Lease (Unlimited Non-Exclusive License)",
       "blocks": [
         { "type": "p", "text": "When a Lease is Delivered and paid for, the Seller grants the Buyer a non-exclusive, worldwide, perpetual, non-transferable license to:" },
         { "type": "bullet", "text": "use the Work to create new works (for example recording vocals over a beat, or using sounds from a pack or preset in your own productions); and" },
         { "type": "bullet", "text": "distribute, stream, perform, publish, and commercially exploit those NEW works you created with it, on and off Laybell." },
+        { "type": "subheading", "text": "Unlimited means unlimited" },
+        { "type": "p", "text": "Every Laybell Lease is what the industry commonly calls an \"unlimited lease.\" The license above carries NO usage caps of any kind — no limit on streams, sales, downloads, video views, radio or podcast play, live performances, sync placements, or the money your new work earns. You never owe the Seller an upgrade fee, a renewal, or additional royalties because your work performed well, and a Lease never expires or converts based on how much it is used. (What a Lease still is NOT is exclusive — the restrictions below and the Seller's right to keep selling further Leases remain.)" },
         { "type": "p", "text": "A Lease does NOT allow the Buyer to:" },
         { "type": "bullet", "text": "resell, re-license, sublicense, give away, or redistribute the Work itself (or the deliverable file), on its own or with only trivial changes;" },
         { "type": "bullet", "text": "claim ownership or authorship of the Work, register the Work (as opposed to your new work) with any rights organization, or enroll the Work itself in fingerprinting/monetization systems such as Content ID in a way that blocks the Seller or other lease holders;" },
