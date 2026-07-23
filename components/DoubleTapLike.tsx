@@ -21,8 +21,15 @@ const DOUBLE_TAP_MS = 260;
 function HeartBurst({ trigger }: { trigger: number }) {
   const scale = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  // The trigger value this instance MOUNTED with. Only a real change (a fresh
+  // double-tap) bursts — never the mount itself. Without this, remounting the
+  // burst with a stale non-zero trigger (the shared landscape-overlay heart
+  // moving onto the newly-swiped reel, or a recycled feed cell changing media
+  // type) fired a phantom heart on a post the user never liked.
+  const seen = useRef(trigger);
   useEffect(() => {
-    if (!trigger) return; // initial mount (trigger 0) — nothing to animate yet
+    if (trigger === seen.current) return; // mount, or no real change → no burst
+    seen.current = trigger;
     scale.setValue(0.3);
     opacity.setValue(0);
     Animated.sequence([
