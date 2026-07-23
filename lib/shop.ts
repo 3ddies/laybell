@@ -576,6 +576,25 @@ export async function fetchMySales(): Promise<ShopOrder[]> {
   return attachOrderMeta((data ?? []) as ShopOrder[]);
 }
 
+/**
+ * Total seller take-home (cents) from DELIVERED orders, summed SERVER-SIDE so it
+ * isn't truncated by fetchMySales' 100-row page cap (which under-counts a seller
+ * with >100 orders). Uses the same formula as sellerEarningsCents, just uncapped.
+ * Falls back to the page-capped client sum if the delivered_earnings RPC isn't
+ * deployed yet, so behavior is unchanged until supabase/sql/wallet_earnings.sql
+ * is run.
+ */
+export async function fetchDeliveredShopEarningsCents(): Promise<number> {
+  try {
+    const { data, error } = await supabase.rpc('delivered_earnings');
+    if (!error && data?.[0]) return Number(data[0].total_cents ?? 0);
+  } catch {}
+  const sales = await fetchMySales().catch(() => [] as ShopOrder[]);
+  return sales
+    .filter((o) => o.status === 'delivered')
+    .reduce((sum, o) => sum + sellerEarningsCents(o.price_cents), 0);
+}
+
 /** My buy requests + purchases. */
 export async function fetchMyPurchases(): Promise<ShopOrder[]> {
   const uid = await myId();

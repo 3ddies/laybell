@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchDonationEarnings } from './donations';
-import { fetchMySales, sellerEarningsCents } from './shop';
+import { fetchDeliveredShopEarningsCents } from './shop';
 
 // Wallet — the money a user has earned on Laybell and the (SCAFFOLDED) path to
 // move it to their bank. Balance is REAL (live-donation payouts + delivered shop
@@ -18,13 +18,10 @@ export type WalletBalance = {
 
 /** Real earned balance: live-donation take-home + delivered shop-sale take-home. */
 export async function fetchWalletBalance(): Promise<WalletBalance> {
-  const [donations, sales] = await Promise.all([
+  const [donations, shopCents] = await Promise.all([
     fetchDonationEarnings().catch(() => ({ totalCents: 0, count: 0 })),
-    fetchMySales().catch(() => []),
+    fetchDeliveredShopEarningsCents().catch(() => 0),
   ]);
-  const shopCents = sales
-    .filter((o) => o.status === 'delivered')
-    .reduce((sum, o) => sum + sellerEarningsCents(o.price_cents), 0);
   const donationCents = donations.totalCents;
   return { totalCents: donationCents + shopCents, donationCents, shopCents };
 }
