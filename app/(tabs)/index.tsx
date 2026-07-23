@@ -118,6 +118,7 @@ import { useUploadQueue } from '../../contexts/UploadQueueContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import SongAttribution from '../../components/SongAttribution';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
+import { useDoubleTapLike } from '../../components/DoubleTapLike';
 import MentionText from '../../components/MentionText';
 import TranslatableText from '../../components/TranslatableText';
 import TaggedPeopleButton from '../../components/TaggedPeopleButton';
@@ -233,6 +234,13 @@ const PostCard = memo(function PostCard({
       Animated.spring(likeScale, { toValue: 1, friction: 3, useNativeDriver: true }),
     ]).start();
   };
+  // Double-tap the media → like (never un-like) + heart burst; also bounce the
+  // action-row heart to match. The existing single-tap open is routed through
+  // onMediaTap, which defers it briefly so a double-tap doesn't also open.
+  const { onTap: onMediaTap, heart } = useDoubleTapLike({
+    isLiked,
+    onLike: () => { popLike(); onLike(item); },
+  });
 
   return (
     <View style={styles.postCard}>
@@ -274,7 +282,8 @@ const PostCard = memo(function PostCard({
       {item.type === 'image' && item.media_url && (
         <TouchableOpacity
           ref={imgRef}
-          onPress={() => imgRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }))}
+          activeOpacity={1}
+          onPress={() => onMediaTap(() => imgRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h })))}
         >
           {/* expo-image: decodes at DISPLAYED size (RN Image decodes the full
               multi-MP original — memory spikes + dropped frames mid-scroll). */}
@@ -298,6 +307,7 @@ const PostCard = memo(function PostCard({
             <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
+          {heart}
         </TouchableOpacity>
       )}
 
@@ -315,12 +325,13 @@ const PostCard = memo(function PostCard({
             active={shouldPlayVideo}
             postId={item.id}
             onVideoAudioActiveChange={(a) => onSlideAudioActive(item, a)}
-            onOpen={(idx) => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }, idx))}
+            onOpen={(idx) => onMediaTap(() => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }, idx)))}
           />
           {!!item.song_id && (
             <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
+          {heart}
         </View>
       )}
 
@@ -347,7 +358,7 @@ const PostCard = memo(function PostCard({
           <TouchableOpacity
             ref={vidRef}
             activeOpacity={1}
-            onPress={() => vidRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenReel(item, { x, y, width: w, height: h }))}
+            onPress={() => onMediaTap(() => vidRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenReel(item, { x, y, width: w, height: h })))}
           >
             <View style={[styles.postVideo, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}>
               {/* Thumbnail for every card; the real player mounts only for the
@@ -386,6 +397,7 @@ const PostCard = memo(function PostCard({
                   />
                 </View>
               ) : null}
+              {heart}
             </View>
           </TouchableOpacity>
           <TouchableOpacity style={styles.videoAudioBtn} onPress={item.song_id ? onToggleSongMute : onToggleMuted}>

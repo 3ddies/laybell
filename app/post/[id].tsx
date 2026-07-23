@@ -28,6 +28,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import { createNotification } from '../../lib/createNotification';
 import { usePostActionSheets } from '../../hooks/usePostActionSheets';
 import FollowButton from '../../components/FollowButton';
+import { useDoubleTapLike } from '../../components/DoubleTapLike';
 import { trackVideoProgress } from '../../lib/viewTracker';
 import { isAudioPost } from '../../lib/genres';
 import { aspectToNumber } from '../../lib/aspectRatio';
@@ -278,6 +279,11 @@ export default function PostDetailScreen() {
     setCommentCount(prev => prev - 1);
   }
 
+  // Double-tap the media → like (never un-like) + heart burst. Image/slideshow
+  // have no single-tap action here, so nothing is deferred; the native-controls
+  // video is intentionally left to its own scrub/play controls.
+  const { onTap: onMediaTap, heart } = useDoubleTapLike({ isLiked, onLike: handleLike });
+
   if (notFound && !post) {
     return (
       // With a source rect, onClose keeps this pager from intercepting
@@ -371,7 +377,7 @@ export default function PostDetailScreen() {
 
             {/* Media */}
             {post.type === 'image' && post.media_url && (
-              <View>
+              <TouchableOpacity activeOpacity={1} onPress={() => onMediaTap()}>
                 <Image source={{ uri: post.media_url }} style={[styles.media, { aspectRatio: aspectToNumber(post.aspect_ratio, 1), height: undefined, backgroundColor: '#000' }]} resizeMode="cover" />
                 {!!post.song_id && (
                   <TouchableOpacity style={styles.songMuteBtn} onPress={toggleSongMuted}>
@@ -382,7 +388,8 @@ export default function PostDetailScreen() {
                   <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
                 )}
                 <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
-              </View>
+                {heart}
+              </TouchableOpacity>
             )}
             {isSlideshow(post.type) && (
               <View>
@@ -394,11 +401,14 @@ export default function PostDetailScreen() {
                   postId={id as string}
                   onVideoAudioActiveChange={setSlideAudioActive}
                   initialIndex={initialSlide}
+                  // No open action in the viewer — a slide tap only routes double-tap-to-like.
+                  onOpen={() => onMediaTap()}
                 />
                 {!!post.song_id && (
                   <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
                 )}
                 <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
+                {heart}
               </View>
             )}
             {post.type === 'video' && post.media_url && (

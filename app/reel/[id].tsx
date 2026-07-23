@@ -27,6 +27,7 @@ import { aspectToNumber } from '../../lib/aspectRatio';
 import { attachEngagementCounts, attachEngagementCountsAll } from '../../lib/postCounts';
 import CommentsSheet from '../../components/CommentsSheet';
 import ElasticSwipeView from '../../components/ElasticSwipeView';
+import { useDoubleTapLike } from '../../components/DoubleTapLike';
 import FollowButton from '../../components/FollowButton';
 import MentionText from '../../components/MentionText';
 import TranslatableText from '../../components/TranslatableText';
@@ -251,13 +252,20 @@ const ReelPage = memo(function ReelPage({
   const videoH = SCREEN_W / ratio;
   const band = (SCREEN_H - videoH) / 2;
   const showRotateHint = ratio > 1 && active && !zoomed && band >= 130;
+  // Double-tap the video → like (never un-like) + heart burst; a double-tap NEVER
+  // pauses (the deferred single is cancelled). A lone tap pauses via api.tapToggle
+  // after the window — guarded by activeRef so a fast tap-then-swipe can't land a
+  // stale pause on the NEXT reel (api.tapToggle delegates to the current page).
+  const { onTap: onMediaTap, heart } = useDoubleTapLike({ isLiked, onLike: () => api.toggleLike(item) });
+  const activeRef = useRef(active);
+  activeRef.current = active;
   return (
     <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }} disabled={zoomed}>
       <TouchableOpacity
         activeOpacity={1}
         style={StyleSheet.absoluteFill}
         onPressIn={api.pressIn}
-        onPress={api.tapToggle}
+        onPress={() => onMediaTap(() => { if (activeRef.current) api.tapToggle(); })}
       >
         <ZoomableView
           width={SCREEN_W}
@@ -329,6 +337,9 @@ const ReelPage = memo(function ReelPage({
           <Ionicons name="play" size={64} color="rgba(255,255,255,0.85)" />
         </View>
       )}
+
+      {/* double-tap-to-like heart burst, centered over the video */}
+      {heart}
 
       <ReelControls
         item={item}
@@ -884,18 +895,29 @@ export default function ReelScreen() {
     Animated.timing(controlsOpacity, { toValue: 0, duration: 220, useNativeDriver: true })
       .start(({ finished }) => { if (finished) setControlsVisible(false); });
   };
+  // Landscape double-tap-to-like: ONE hook for the single active landscape reel.
+  const { onTap: onOverlayTap, heart: overlayHeart } = useDoubleTapLike({
+    isLiked: !!overlayId && liked.has(overlayId),
+    onLike: () => { const it = posts.find((p) => p.id === overlayIdRef.current); if (it) toggleLike(it); },
+  });
   // Landscape tap zones: the center pauses/plays; anywhere else toggles the
   // controls (show for 2s if hidden, or close them to enter clean view mode).
+  // Routed through the deferred double-tap so a double-tap LIKES without pausing
+  // or toggling controls; a lone tap still runs its zone action after the window.
   const handleOverlayTap = (e: any) => {
     // A clean tap works (even while zoomed); a tap that was part of a pinch/drag
     // this press does not.
     if (gestureSincePressRef.current) return;
     const lx = e.nativeEvent?.locationX ?? 0;
     const ly = e.nativeEvent?.locationY ?? 0;
-    const inCenter = lx > winW * 0.3 && lx < winW * 0.7 && ly > winH * 0.2 && ly < winH * 0.8;
-    if (inCenter) { setPaused((p) => !p); return; }
-    if (controlsVisibleRef.current) hideControls();
-    else revealControls();
+    const tappedId = overlayIdRef.current; // the landscape reel that was tapped
+    onOverlayTap(() => {
+      if (overlayIdRef.current !== tappedId) return; // swiped to another reel → skip the stale action
+      const inCenter = lx > winW * 0.3 && lx < winW * 0.7 && ly > winH * 0.2 && ly < winH * 0.8;
+      if (inCenter) { setPaused((p) => !p); return; }
+      if (controlsVisibleRef.current) hideControls();
+      else revealControls();
+    });
   };
   // The landscape pager holds ORGANIC landscape reels only — the TV ad is a cover
   // (see overlayAd), never a page — so the pager is never scroll-manipulated.
@@ -1402,6 +1424,8 @@ export default function ReelScreen() {
           />
           </ZoomableView>
         </TouchableOpacity>
+        {/* double-tap-to-like heart burst, centered over the active landscape reel */}
+        {overlayId === item.id && overlayHeart}
       </View>
     );
   }
