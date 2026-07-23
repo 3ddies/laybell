@@ -190,12 +190,16 @@ export default function ChatScreen() {
   }, [currentUserId, id]);
 
   async function setup() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) { setCurrentUserId(user.id); await fetchMessages(user.id); markAsRead(user.id); }
-    const { data: profile } = await supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden').eq('id', id).single();
-    // A partner who has since hidden their account reads as "Hidden account".
-    if (profile) setOtherUser(maskHiddenProfile(profile as any));
-    setLoading(false);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) { setCurrentUserId(user.id); await fetchMessages(user.id); markAsRead(user.id); }
+      const { data: profile } = await supabase.from('profiles').select('username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden').eq('id', id).single();
+      // A partner who has since hidden their account reads as "Hidden account".
+      if (profile) setOtherUser(maskHiddenProfile(profile as any));
+    } finally {
+      // Never leave the thread stuck on a skeleton if a fetch rejects.
+      setLoading(false);
+    }
   }
 
   // Mark this sender's messages to me as read
@@ -329,6 +333,8 @@ export default function ChatScreen() {
     }
     setSending(true);
     // An attachment carries an optional caption; otherwise it's plain text.
+    const prevText = newMessage;
+    const prevAttachment = pendingAttachment;
     const body = pendingAttachment ? attachmentBody(pendingAttachment, newMessage.trim()) : newMessage.trim();
     setNewMessage('');
     setPendingAttachment(null);
@@ -345,6 +351,11 @@ export default function ChatScreen() {
       if (messages.filter(m => m.sender_id === currentUserId).length === 0) {
         createNotification({ userId: String(id), actorId: currentUserId, type: 'message' });
       }
+    } else {
+      // Send failed — restore the typed text and staged attachment so nothing
+      // the user wrote is silently dropped.
+      setNewMessage(prevText);
+      setPendingAttachment(prevAttachment);
     }
     setSending(false);
   }

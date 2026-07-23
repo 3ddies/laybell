@@ -25,7 +25,15 @@ export default function LoginScreen() {
   async function handleLogin() {
     if (!email || !password) { setError(t('auth.fillAllFields')); return; }
     setLoading(true); setError('');
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    // Capture a thrown network/timeout error into the same shape the branches
+    // below already handle, so a rejected sign-in can never leave the button
+    // stuck disabled — the setLoading(false) at the end always runs.
+    let error: any;
+    try {
+      ({ error } = await supabase.auth.signInWithPassword({ email: email.trim(), password }));
+    } catch (e: any) {
+      error = e;
+    }
     if (error) {
       if (/email not confirmed/i.test(error.message)) {
         // Their password is right but the address was never verified — send a

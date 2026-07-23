@@ -43,10 +43,17 @@ export default function SignupScreen() {
     if (!agreed) { setError(t('auth.acceptTerms')); return; }
 
     setLoading(true); setError('');
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email: email.trim(), password,
-      options: { data: { username: uname.toLowerCase(), display_name: displayName.trim() } },
-    });
+    // Capture a thrown network/timeout error into the returned shape so a rejected
+    // sign-up can't leave the button stuck — the setLoading(false) below always runs.
+    let data: any, signUpError: any;
+    try {
+      ({ data, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(), password,
+        options: { data: { username: uname.toLowerCase(), display_name: displayName.trim() } },
+      }));
+    } catch (e: any) {
+      signUpError = e;
+    }
     if (signUpError) {
       if (/already registered/i.test(signUpError.message)) setError(t('auth.emailInUse'));
       else if (/rate|security purposes/i.test(signUpError.message)) setError(t('auth.rateLimited'));

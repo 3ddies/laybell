@@ -171,26 +171,30 @@ export default function GroupChatScreen() {
   useEffect(() => () => { Object.values(fadeTimers).forEach((t) => clearTimeout(t)); }, []);
 
   async function setup() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setLoading(false); return; }
-    setCurrentUserId(user.id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setCurrentUserId(user.id);
 
-    const [{ data: conv }, { data: memberRows }, { data: msgs }] = await Promise.all([
-      supabase.from('conversations').select('id, title, avatar_url, created_by').eq('id', id).single(),
-      supabase.from('conversation_members').select('user_id').eq('conversation_id', id),
-      supabase.from('messages').select('id, body, sender_id, conversation_id, created_at')
-        .eq('conversation_id', id).order('created_at', { ascending: true }),
-    ]);
-    if (conv) setConversation(conv as Conversation);
-    if (memberRows?.length) {
-      const ids = memberRows.map(r => r.user_id);
-      const { data: profiles } = await supabase
-        .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show').in('id', ids);
-      if (profiles) setMembers(profiles as GroupProfile[]);
+      const [{ data: conv }, { data: memberRows }, { data: msgs }] = await Promise.all([
+        supabase.from('conversations').select('id, title, avatar_url, created_by').eq('id', id).single(),
+        supabase.from('conversation_members').select('user_id').eq('conversation_id', id),
+        supabase.from('messages').select('id, body, sender_id, conversation_id, created_at')
+          .eq('conversation_id', id).order('created_at', { ascending: true }),
+      ]);
+      if (conv) setConversation(conv as Conversation);
+      if (memberRows?.length) {
+        const ids = memberRows.map(r => r.user_id);
+        const { data: profiles } = await supabase
+          .from('profiles').select('id, username, display_name, avatar_url, badge_tier, badge_show').in('id', ids);
+        if (profiles) setMembers(profiles as GroupProfile[]);
+      }
+      if (msgs) { setMessages(msgs as Message[]); fetchReactions(msgs.map((m: any) => m.id)); }
+      markGroupRead(String(id), user.id);
+    } finally {
+      // Never strand the group thread on a skeleton if a fetch rejects.
+      setLoading(false);
     }
-    if (msgs) { setMessages(msgs as Message[]); fetchReactions(msgs.map((m: any) => m.id)); }
-    markGroupRead(String(id), user.id);
-    setLoading(false);
   }
 
   async function fetchReactions(ids: string[]) {
@@ -215,6 +219,8 @@ export default function GroupChatScreen() {
   async function sendMessage() {
     if ((!newMessage.trim() && !pendingAttachment) || !currentUserId || sending) return;
     setSending(true);
+    const prevText = newMessage;
+    const prevAttachment = pendingAttachment;
     const body = pendingAttachment ? attachmentBody(pendingAttachment, newMessage.trim()) : newMessage.trim();
     setNewMessage('');
     setPendingAttachment(null);
@@ -229,6 +235,11 @@ export default function GroupChatScreen() {
       // Notify the other members (fire-and-forget).
       members.filter(m => m.id !== currentUserId).forEach(m =>
         createNotification({ userId: m.id, actorId: currentUserId, type: 'message' }));
+    } else {
+      // Send failed — restore the typed text and staged attachment so nothing
+      // the user wrote is silently dropped.
+      setNewMessage(prevText);
+      setPendingAttachment(prevAttachment);
     }
     setSending(false);
   }

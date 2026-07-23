@@ -58,18 +58,23 @@ export default function CommentsScreen() {
   }, [id, currentUserId]);
 
   async function setup() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      setCurrentUserId(user.id);
-      const [profileRes, postRes] = await Promise.all([
-        supabase.from('profiles').select('username, display_name').eq('id', user.id).single(),
-        supabase.from('posts').select('user_id').eq('id', id).single(),
-      ]);
-      if (profileRes.data) setCurrentUserProfile(profileRes.data);
-      if (postRes.data) setPostOwnerId(postRes.data.user_id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+        const [profileRes, postRes] = await Promise.all([
+          supabase.from('profiles').select('username, display_name').eq('id', user.id).single(),
+          supabase.from('posts').select('user_id').eq('id', id).single(),
+        ]);
+        if (profileRes.data) setCurrentUserProfile(profileRes.data);
+        if (postRes.data) setPostOwnerId(postRes.data.user_id);
+      }
+      await fetchComments();
+    } finally {
+      // Always clear the skeleton — a transient network reject must not leave the
+      // screen spinning forever (pull-to-refresh / reopen can then retry).
+      setLoading(false);
     }
-    await fetchComments();
-    setLoading(false);
   }
 
   async function fetchComments() {
@@ -84,6 +89,7 @@ export default function CommentsScreen() {
   async function handleSendComment() {
     if (!newComment.trim() || !currentUserId || sending) return;
     setSending(true);
+    const prevText = newComment;
     const body = newComment.trim();
     setNewComment('');
     const { data, error } = await supabase.from('comments').insert({ user_id: currentUserId, post_id: id, body }).select().single();
@@ -94,6 +100,9 @@ export default function CommentsScreen() {
       if (postOwnerId && postOwnerId !== currentUserId) {
         createNotification({ userId: postOwnerId, actorId: currentUserId, type: 'comment', postId: id as string });
       }
+    } else {
+      // Send failed — restore the text so the comment isn't silently lost.
+      setNewComment(prevText);
     }
     setSending(false);
   }

@@ -103,9 +103,13 @@ export default function MessagesScreen() {
   }
 
   async function setup() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) { setCurrentUserId(user.id); await fetchConversations(user.id); }
-    setLoading(false);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) { setCurrentUserId(user.id); await fetchConversations(user.id); }
+    } finally {
+      // Never strand the inbox on a skeleton if the fetch rejects.
+      setLoading(false);
+    }
   }
 
   async function fetchConversations(userId: string) {
