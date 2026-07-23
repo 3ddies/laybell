@@ -156,7 +156,7 @@ export default function PublicProfileScreen() {
     },
   })).current;
 
-  useEffect(() => { setup(); }, [id]);
+  useEffect(() => { setup().catch(() => { setLoading(false); setRefreshing(false); }); }, [id]);
 
   // Shop button gate: RLS only exposes shops that are open (or your own).
   useEffect(() => {
@@ -658,7 +658,7 @@ export default function PublicProfileScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.pageContent}
               refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setup(); }} tintColor={tabAccent} colors={[tabAccent]} />
+                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setup().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
             >
               {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : key === 'posts' ? renderPostsTab() : renderGrid(dataForTab(key), key)}

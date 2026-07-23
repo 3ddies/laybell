@@ -151,7 +151,7 @@ export default function NotificationsScreen() {
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
-  useEffect(() => { fetchNotifications(); }, []);
+  useEffect(() => { fetchNotifications().catch(() => { setLoading(false); setRefreshing(false); }); }, []);
 
   async function fetchNotifications() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -269,7 +269,7 @@ export default function NotificationsScreen() {
             stickySectionHeadersEnabled={false}
             showsVerticalScrollIndicator={false}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications(); }} tintColor={colors.primary} />
+              <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={colors.primary} />
             }
             renderSectionHeader={({ section }) => (
               <Text style={styles.sectionHeader}>{t(SECTION_KEYS[section.title] ?? 'notifications.earlier')}</Text>

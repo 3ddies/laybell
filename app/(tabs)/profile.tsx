@@ -222,7 +222,7 @@ export default function ProfileScreen() {
   })).current;
 
   // Refetch on focus so a post reposted elsewhere shows up in the Reposts tab.
-  useFocusEffect(useCallback(() => { fetchProfile(); }, []));
+  useFocusEffect(useCallback(() => { fetchProfile().catch(() => { setLoading(false); setRefreshing(false); }); }, []));
 
   async function fetchProfile() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -780,7 +780,7 @@ export default function ProfileScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.pageContent}
               refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile(); }} tintColor={tabAccent} colors={[tabAccent]} />
+                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile().catch(() => { setLoading(false); setRefreshing(false); }); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
             >
               {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : key === 'posts' ? renderPostsTab() : renderGrid(dataForTab(key), key)}

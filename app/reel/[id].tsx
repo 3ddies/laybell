@@ -608,7 +608,7 @@ export default function ReelScreen() {
     }
   }).current;
 
-  useEffect(() => { stop(); setup(); }, [id]);
+  useEffect(() => { stop(); setup().catch(() => setLoading(false)); }, [id]);
 
   // The focused reel (used by the attached-song autoplay effect below — it
   // lives AFTER the overlayAd declarations it must react to).

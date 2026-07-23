@@ -112,6 +112,10 @@ export default function ExploreScreen() {
   // (fired by pill taps and the dwell-swipe alike).
   const genreAnimX = useRef(new Animated.Value(0)).current;
   const prevGenreIdxRef = useRef(0);
+  // Guards search-as-you-type against out-of-order responses: each call bumps
+  // this, and a response only applies if it's still the latest (last-issued wins,
+  // not last-to-resolve).
+  const searchSeqRef = useRef(0);
   useEffect(() => {
     const idx = orderedGenres.indexOf(selectedGenre);
     if (idx < 0) return;
@@ -126,7 +130,7 @@ export default function ExploreScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGenre]);
 
-  useEffect(() => { setup(); }, []);
+  useEffect(() => { setup().catch(() => setLoading(false)); }, []);
 
   useEffect(() => {
     if (searchQuery.trim().length > 0) {
@@ -365,6 +369,7 @@ export default function ExploreScreen() {
 
   async function handleSearch() {
     if (!searchQuery.trim()) return;
+    const seq = ++searchSeqRef.current;
     setSearching(true);
 
     const q = searchQuery.toLowerCase().trim();
@@ -376,6 +381,8 @@ export default function ExploreScreen() {
       .select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden')
       .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
       .limit(20);
+    // A newer keystroke superseded this query while it was in flight — drop it.
+    if (seq !== searchSeqRef.current) return;
     // Hidden accounts never appear in search.
     const matched = (profData ?? []).filter((p: any) => !p.hidden);
     setProfiles([...matched].sort((a: any, b: any) => profileMatchTier(b, q) - profileMatchTier(a, q)));
@@ -399,6 +406,7 @@ export default function ExploreScreen() {
     }
 
     const { data } = await query;
+    if (seq !== searchSeqRef.current) return;
     if (data) {
       // Relevancy = closeness of match first, then the post's algorithm score
       // (scorePost). No seen-penalty — the user is actively searching.

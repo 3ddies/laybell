@@ -125,7 +125,7 @@ export default function PostDetailScreen() {
 
   const audioPlaying = currentTrack?.id === id && isPlaying;
 
-  useEffect(() => { setup(); }, [id]);
+  useEffect(() => { setup().catch(() => setLoading(false)); }, [id]);
 
   // Live mirrors so the async song promotion below reads current values, not the
   // stale closure from when the effect last ran.
