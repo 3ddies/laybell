@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import TrackPlayer, { Event as TPEvent, State as TPState } from 'react-native-track-player';
@@ -120,6 +120,37 @@ export function useAudioPosition(): { positionMs: number; durationMs: number } {
     [subscribe],
   );
   return state;
+}
+
+// ── Now-playing subscription store (module) ─────────────────────────────────
+// Grids and track rails only need "which track id is playing, and is it playing"
+// to badge the active item. Subscribing them to the whole AudioContext re-rendered
+// them on every isBuffering / adState / queueIndex change (e.g. the Explore grid
+// re-mapped all its cells on an ad boundary). This mirrors the position-subscription
+// trick above (and PostMusicContext's useSongHostActive): consumers subscribe to
+// ONLY this slice via useSyncExternalStore. Purely additive — the AudioContext
+// value below is untouched, so every existing useAudio() consumer is unaffected.
+let nowPlayingSnap: { id: string | null; playing: boolean } = { id: null, playing: false };
+const nowPlayingSubs = new Set<() => void>();
+function publishNowPlaying(id: string | null, playing: boolean) {
+  if (id === nowPlayingSnap.id && playing === nowPlayingSnap.playing) return;
+  nowPlayingSnap = { id, playing };
+  for (const cb of nowPlayingSubs) cb();
+}
+// A stable wrapper over the live play(): lets a consumer start playback without
+// subscribing to the provider. `latestPlay` is refreshed each commit (below).
+let latestPlay: ((track: Track) => Promise<void>) | null = null;
+const stableNowPlay = (track: Track): Promise<void> => (latestPlay ? latestPlay(track) : Promise.resolve());
+
+// Re-renders the caller ONLY when the playing track id or isPlaying flips — never
+// on buffering/ad/queue churn. Drop-in for the { currentTrack, isPlaying, play }
+// slice of useAudio() on hot list surfaces.
+export function useNowPlaying(): { id: string | null; playing: boolean; play: (track: Track) => Promise<void> } {
+  const snap = useSyncExternalStore(
+    (cb) => { nowPlayingSubs.add(cb); return () => { nowPlayingSubs.delete(cb); }; },
+    () => nowPlayingSnap,
+  );
+  return { id: snap.id, playing: snap.playing, play: stableNowPlay };
 }
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
@@ -1203,6 +1234,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
     await startQueue(queueIndexRef.current);
   }
+
+  // Keep the now-playing module store + stable play accessor in sync, so
+  // useNowPlaying() consumers (Explore grid, track rails) re-render on ONLY a
+  // track change / play-pause — not on this provider's buffering/ad/queue churn.
+  useEffect(() => { latestPlay = play; });
+  useEffect(() => { publishNowPlaying(currentTrack?.id ?? null, isPlaying); }, [currentTrack?.id, isPlaying]);
 
   return (
     <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, play, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, hasMore, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>

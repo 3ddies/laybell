@@ -6,8 +6,13 @@ so every *applied* change is behavior-preserving on the happy path. Riskier or
 behavior-changing improvements are written up here as **recommendations**, not
 applied.
 
-**All work is on branch `polish/scale-hardening-2026-07-23`** — nothing touched
-`dev`. Nothing was pushed, deployed, or run against the database.
+**All work is on branch `polish/scale-hardening-2026-07-23`** (pushed to `origin`
+at the owner's request) — nothing touched `dev`, and nothing was deployed or run
+against the database.
+
+> **Update (same session, after review):** the 🟠 wallet money-cap bug and the 🟡
+> AudioContext render item were then implemented on this branch — see
+> **"Follow-up — implemented after review"** at the bottom.
 
 ---
 
@@ -163,5 +168,31 @@ git log --oneline 55a4a4f..HEAD      # the 4 commits above
 git diff 55a4a4f..HEAD               # full diff (small)
 ```
 Merge into `dev` when you're happy, or cherry-pick individual commits. The SQL
-file is inert until you choose to run it. Everything is OTA-safe (no native
+files are inert until you choose to run them. Everything is OTA-safe (no native
 changes), so it ships in a normal JS bundle/update.
+
+---
+
+## Follow-up — implemented after review (same session)
+
+Two of the above were taken further after the owner reviewed this report:
+
+- **🟠 Wallet money-cap bug — FIXED** (commit `867c936`). Added a server-side
+  `delivered_earnings()` RPC (`supabase/sql/wallet_earnings.sql` — review-only,
+  run when ready) that sums delivered-order take-home *uncapped*, and routed
+  `fetchWalletBalance` through it with a fallback to the old client sum. So the
+  balance is unchanged until you run the SQL, and correct (uncapped) afterward.
+- **🟡 AudioContext — DONE additively.** Added a narrow `useNowPlaying()` selector
+  store (mirrors the existing `useAudioPosition` / `useSongHostActive` patterns)
+  and migrated **only the Explore grid** off `useAudio()`. The fat context is
+  untouched, so every other consumer is unaffected; the grid no longer re-renders
+  on buffering / ad / queue churn — only on a real track change or play/pause. The
+  same `useNowPlaying()` can be applied to the music rails / `TrackRow` later.
+  **Verify the Explore now-playing highlight on a device before merging.**
+
+Still open by design:
+- **like/save scoping** (the payload-vs-latency tradeoff above) — left as-is.
+- **Realtime firehose** — a **dashboard setting, not code**: confirm Realtime
+  authorization / RLS is enabled on the `messages` table so `postgres_changes` is
+  row-filtered server-side. The DM subscription is already `receiver_id`-filtered;
+  only the group-message subscription is unfiltered (by necessity) and RLS-gated.

@@ -15,7 +15,7 @@ import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/them
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { aspectToNumber } from '../lib/aspectRatio';
-import { useAudio } from '../contexts/AudioContext';
+import { useNowPlaying } from '../contexts/AudioContext';
 import { formatCount } from '../lib/format';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isSwipeTap } from '../contexts/PagerContext';
@@ -148,7 +148,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
-  const { play: playRaw, currentTrack, isPlaying } = useAudio();
+  // Narrow now-playing subscription (id + isPlaying only) instead of the full
+  // AudioContext, so the grid no longer re-maps its cells on buffering/ad/queue
+  // churn — only on an actual track change or play/pause.
+  const { play: playRaw, id: playingTrackId, playing: isPlaying } = useNowPlaying();
   // Swipe-tap guard: a tab swipe gliding over the grid must not start audio.
   const play: typeof playRaw = (t) => (isSwipeTap() ? Promise.resolve() : playRaw(t));
   const { show: showOptions } = usePostOptions();
@@ -508,7 +511,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     }
     if (isAudioPost(p.type)) {
       // Song shown as a 1:1 cover tile (genre view) — tap to play.
-      const active = currentTrack?.id === p.id && isPlaying;
+      const active = playingTrackId === p.id && isPlaying;
       return (
         <TouchableOpacity
           key={cell.key}
@@ -593,7 +596,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
             </View>
           </LinearGradient>
           {cell.songs.map((s, i) => {
-            const active = currentTrack?.id === s.id && isPlaying;
+            const active = playingTrackId === s.id && isPlaying;
             return (
               <TouchableOpacity
                 key={s.id}
@@ -670,7 +673,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
   // Genre view: a uniform 3-up square grid.
   const renderSquare = (p: GridPost) => {
     if (isAudioPost(p.type)) {
-      const active = currentTrack?.id === p.id && isPlaying;
+      const active = playingTrackId === p.id && isPlaying;
       return (
         <TouchableOpacity
           key={p.id}
