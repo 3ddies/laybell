@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, RefreshControl, Alert, Animated, Keyboard, Pressable } from 'react-native';
-import { Fragment, useCallback, useEffect, useRef, useState, ReactElement } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, ReactElement } from 'react';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -192,7 +192,7 @@ export default function Comments({
   // Top-level comments in relevance order (topOrder), with any posted-this-session
   // comments not yet in the snapshot appended at the end (they get ranked on the
   // next load/refresh). Replies stay chronological within their thread.
-  const topLevel = (() => {
+  const topLevel = useMemo(() => {
     const byId = new Map(rows.map((r) => [r.id, r]));
     const seen = new Set<string>();
     const out: Row[] = [];
@@ -202,8 +202,20 @@ export default function Comments({
     }
     for (const r of rows) if (!r.parent_id && !seen.has(r.id)) out.push(r);
     return out;
-  })();
-  const repliesOf = (id: string) => rows.filter(r => r.parent_id === id);
+  }, [rows, topOrder]);
+  // Replies grouped by parent id, built once per `rows` change — replaces an
+  // O(n²) `rows.filter` that ran per top-level comment on every render (e.g.
+  // every keystroke while composing).
+  const repliesByParent = useMemo(() => {
+    const m = new Map<string, Row[]>();
+    for (const r of rows) {
+      if (!r.parent_id) continue;
+      const arr = m.get(r.parent_id);
+      if (arr) arr.push(r); else m.set(r.parent_id, [r]);
+    }
+    return m;
+  }, [rows]);
+  const repliesOf = (id: string) => repliesByParent.get(id) ?? [];
 
   async function toggleLike(commentId: string) {
     if (!userId) return;

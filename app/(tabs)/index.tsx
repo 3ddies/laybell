@@ -524,9 +524,14 @@ export default function HomeScreen() {
   // While a background upload's optimistic card is showing, hide the real DB row
   // with the same id so the two never appear together — the card hands off to the
   // row the moment the upload finishes and the card is removed.
+  // Signature of just the pending postIds, so this Set — and everything derived
+  // from it (feedData → the FlashList data) — changes identity ONLY when a post
+  // enters/leaves the pending set, not on every upload-progress tick that
+  // rewrites the `pending` array.
+  const pendingIdsSig = pending.map((p) => p.postId).filter(Boolean).join(',');
   const pendingPostIds = useMemo(
-    () => new Set(pending.map((p) => p.postId).filter(Boolean) as string[]),
-    [pending],
+    () => new Set(pendingIdsSig ? pendingIdsSig.split(',') : []),
+    [pendingIdsSig],
   );
   // Freshly-finished posts are pinned to the very top (as real, fully-interactive
   // PostCards) until a manual refresh. Prefer the copy already in `posts` (freshest),
