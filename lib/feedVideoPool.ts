@@ -25,9 +25,14 @@ type Entry = {
   seq: number;               // acquisition order — steal the oldest stealable
   onStolen?: () => void;     // previous owner's detach callback
   loading?: boolean;         // replaceAsync in flight — old item may still report readyToPlay
+  loadPromise?: Promise<void>; // resolves when `uri` has finished loading into the player
 };
 
-export type PoolAcquisition = { player: VideoPlayer; alreadyLoaded: boolean };
+// alreadyLoaded = this exact source is already loaded and ready (instant reveal).
+// loadPromise (present only when a load is in flight) resolves once THIS source
+// is loaded — the caller waits on it before showing its surface, so it never
+// paints the frame the pooled player was still holding from its PREVIOUS post.
+export type PoolAcquisition = { player: VideoPlayer; alreadyLoaded: boolean; loadPromise?: Promise<void> };
 
 export type PlayerPool = {
   acquire: (
@@ -97,26 +102,32 @@ function makePool(size: number): PlayerPool {
           try { p.pause(); } catch {}
           entry.uri = uri;
           entry.loading = true;
-          p.replaceAsync({ uri })
+          entry.loadPromise = p.replaceAsync({ uri })
             .then(() => { if (entry.uri === uri) entry.loading = false; })
             // A failed load must not poison the entry: clearing uri makes the
             // next acquire RETRY (fresh Cloudflare posts 404 while encoding;
             // one transient error used to mean a stuck thumbnail all session).
             .catch(() => { if (entry.uri === uri) { entry.uri = null; entry.loading = false; } });
-          return { player: p, alreadyLoaded: false };
+          return { player: p, alreadyLoaded: false, loadPromise: entry.loadPromise };
         }
         // Same source re-acquired but the player ERRORED on it — retry now.
         if (p.status === 'error') {
           entry.loading = true;
-          p.replaceAsync({ uri })
+          entry.loadPromise = p.replaceAsync({ uri })
             .then(() => { if (entry.uri === uri) entry.loading = false; })
             .catch(() => { if (entry.uri === uri) { entry.uri = null; entry.loading = false; } });
-          return { player: p, alreadyLoaded: false };
+          return { player: p, alreadyLoaded: false, loadPromise: entry.loadPromise };
         }
         // Same source still loaded (re-acquired) — reveal immediately if ready.
         // NEVER while a swap is in flight: the OLD item still reports
-        // readyToPlay, and trusting it revealed the previous post's video.
-        return { player: p, alreadyLoaded: !entry.loading && p.status === 'readyToPlay' };
+        // readyToPlay, and trusting it revealed the previous post's video. If a
+        // swap for THIS uri is still in flight (another card started it), hand
+        // back its loadPromise so the caller waits for the real frame.
+        return {
+          player: p,
+          alreadyLoaded: !entry.loading && p.status === 'readyToPlay',
+          loadPromise: entry.loading ? entry.loadPromise : undefined,
+        };
       } catch {
         return { player: p, alreadyLoaded: false };
       }

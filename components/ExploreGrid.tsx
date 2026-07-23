@@ -161,6 +161,10 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
           authorId: p.user_id,
           authorName: p.profiles?.username,
           mediaType: p.type,
+          // Seed so the "Laybell TV" row shows instantly on landscape videos.
+          aspect: p.aspect_ratio,
+          caption: p.caption,
+          thumbnail: p.thumbnail_url,
           onEdit: () => router.push(`/edit-post/${p.id}`),
           onDeleted: () => onPostDeleted?.(p.id),
           onArchived: () => onPostDeleted?.(p.id),

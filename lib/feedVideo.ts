@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react';
+import { AppState } from 'react-native';
 import { subscribePagerSwiping, getPagerSwiping } from '../contexts/PagerContext';
 import { feedPool } from './feedVideoPool';
 
@@ -24,8 +25,23 @@ let warmKey = '';                       // joined key — cheap no-op check (mir
 let warmSet: ReadonlySet<string> = new Set();
 let focused = true;
 let swiping = getPagerSwiping();
-let fastScrolling = false;
-let canPlay = true;                     // focused && !swiping && !fastScrolling
+// App backgrounded (iOS "exit"): feed videos MUST stop — nothing but the main
+// music player (react-native-track-player) is allowed to keep sound going in the
+// background. `focused` is the FEED-TAB focus and stays true when the whole app
+// backgrounds, so without this an autoplaying (or self-healing) video would keep
+// running — and playing audio — behind the home screen. Tracks 'background'
+// specifically (not the transient 'inactive' of a notification pull / app
+// switcher, matching PostMusicContext's ambient-stop rule) so a quick peek
+// doesn't stutter playback; on return, canPlay flips back and the centered video
+// resumes via FeedVideo's play effect.
+let appActive = AppState.currentState !== 'background';
+// canPlay gates whether the CENTERED video may play. It intentionally does NOT
+// include a fast-scroll flag: the centered video keeps playing right through
+// scrolls and flings (Instagram-style continuity) — it only pauses when the feed
+// is blurred (!focused), a horizontal tab-swipe is carrying the feed off-screen
+// (swiping), or the whole app is backgrounded (!appActive). WHICH video is
+// centered is decided in index.tsx (geometry).
+let canPlay = true;                     // focused && !swiping && appActive
 
 const subs = new Map<string, Set<() => void>>();
 function notify(ids: Iterable<string | null>) {
@@ -46,6 +62,10 @@ export function setVisibleVideoId(next: string | null) {
   feedPool.setProtected(next);
   notify([prev, next]);
 }
+// The currently-active (centered) video id. index.tsx's geometry resolver reads
+// this to implement sticky continuity: when the focus line is momentarily over a
+// non-video, it keeps THIS video playing as long as it's still on screen.
+export function getVisibleVideoId(): string | null { return visibleVideoId; }
 
 export function setWarmVideoIds(ids: string[]) {
   const key = ids.join('|');
@@ -61,7 +81,7 @@ export function setWarmVideoIds(ids: string[]) {
 }
 
 function recompute() {
-  const next = focused && !swiping && !fastScrolling;
+  const next = focused && !swiping && appActive;
   if (next === canPlay) return;
   canPlay = next;
   // shouldPlay only differs for the visible card — the 1-card gate flip.
@@ -90,7 +110,32 @@ export function useFeedFocused(): boolean {
     () => focused,
   );
 }
-export function setFeedFastScrolling(on: boolean) { fastScrolling = on; recompute(); }
+
+// App foreground/background → gate playback (no background sound but the main
+// music player) and let FeedVideo force a clean repaint on return. Module-level
+// subscription (mirrors the pager store below): the app-state change re-renders
+// only the 1-2 mounted video cards, and canPlay recompute pauses/resumes the
+// centered one with no HomeScreen churn.
+const appSubs = new Set<() => void>();
+AppState.addEventListener('change', (s) => {
+  const next = s !== 'background';
+  if (next === appActive) return;
+  appActive = next;
+  for (const cb of appSubs) cb();
+  recompute();
+});
+export function useFeedAppActive(): boolean {
+  return useSyncExternalStore(
+    (cb) => { appSubs.add(cb); return () => { appSubs.delete(cb); }; },
+    () => appActive,
+  );
+}
+// Retained for its call sites (index.tsx's scroll gate + resetFeedVideo) but now
+// a PLAYBACK no-op: a fast fling no longer pauses the centered video. index.tsx
+// still uses its own fastScrollRef to DEFER switching which video is centered
+// during a fling (keeping source-swaps off fast-motion frames) — that path just
+// no longer force-pauses what's already playing.
+export function setFeedFastScrolling(_on: boolean) { /* no-op for playback */ }
 // Module-lifetime subscription, mirroring PagerContext's own store pattern —
 // tab-swipe start/end now flips playback for ONLY the visible card instead of
 // re-rendering the whole feed list at both edges of every pager gesture.

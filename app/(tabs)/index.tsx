@@ -16,7 +16,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { isSwipeTap } from '../../contexts/PagerContext';
 import {
-  setVisibleVideoId, setWarmVideoIds, setFeedFastScrolling, setFeedFocused, resetFeedVideo, useCardPlayback,
+  setVisibleVideoId, setWarmVideoIds, setFeedFastScrolling, setFeedFocused, resetFeedVideo, useCardPlayback, getVisibleVideoId,
 } from '../../lib/feedVideo';
 import { acquireFeedPlayer, releaseFeedPlayer } from '../../lib/feedVideoPool';
 import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
@@ -29,11 +29,41 @@ import {
 import { FeedSkeleton } from '../../components/Skeleton';
 
 const SCREEN_W = Dimensions.get('window').width;
+const SCREEN_H = Dimensions.get('window').height;
 const MAX_VIDEO_H = SCREEN_W * 1.25; // cap feed video at 4:5 so tall (9:16) clips aren't too long
+// A feed item that should drive the video gate: a video post, or a slideshow
+// whose slides include a video. Ads never autoplay through the feed's gate —
+// SponsoredCard owns its own creative — so they're excluded here.
+const isPlayableVideoItem = (it: any): boolean => !!it && !it.__ad && (
+  (it.type === 'video' && !!it.media_url) ||
+  (isSlideshow(it.type) && Array.isArray(it.slides) && it.slides.some((s: any) => s?.type === 'video'))
+);
 // Home feed candidate POOL — how many recent posts we pull to sample the shown
 // arrangement from (see lib/feedScorer.arrangeFeed). Bigger = more genuinely
 // different content per refresh; capped by how many posts actually exist.
 const POOL_SIZE = 120;
+// The feed paints ONCE, fully arranged (organic + spotlights + ads), so nothing
+// is ever seen jumping. The promoted layer (spotlight/ad backends + per-campaign
+// AsyncStorage reads) sits on that first-paint path, so it's raced against this
+// budget: if it hasn't resolved in time we paint the organic order alone rather
+// than hold the skeleton — a rare slow/failed fetch degrades, it never blocks.
+// The promoted fetch runs CONCURRENTLY with the core posts fetch (see
+// promotedPromise in fetchPosts), so it's usually already resolved by the time
+// we weave — this budget is just a backstop for a degraded backend: if the
+// promoted layer still isn't ready this long after we're ready to paint, we
+// paint the organic order alone rather than keep the user waiting.
+const PROMOTED_BUDGET_MS = 900;
+// Race a promise against a time budget; rejects on timeout so the caller's
+// catch can fall back. (setTimeout, not a library, to avoid a dependency here.)
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('promoted-timeout')), ms);
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
 
 // Map a feed post to a playable audio Track.
 const toTrack = (p: any): Track => ({
@@ -512,6 +542,14 @@ export default function HomeScreen() {
     if (feedGateUnlocked || feedData.length <= GATE_POSTS) return feedData;
     return [...feedData.slice(0, GATE_POSTS), { id: '__feed_gate__', __gate: true } as unknown as Post];
   }, [feedData, feedGateUnlocked]);
+  // Live mirrors for the geometry-based active-video resolver (below). It reads
+  // these from refs so it can stay a stable, identity-constant callback while
+  // still seeing the current data / header height / bottom inset.
+  const gatedFeedDataRef = useRef<Post[]>([]);
+  gatedFeedDataRef.current = gatedFeedData;
+  const lastVideoTokens = useRef<any[]>([]);       // most recent 40%-visible video tokens (geometry fallback)
+  const headerHRef = useRef(140);                  // floating-header height (assigned once headerH is known)
+  const bottomClearRef = useRef(68);               // tab bar + safe-area cover at the bottom of the band
   // The optimization pass: warm everything the next user actions will touch.
   const runFeedGatePrefetch = useCallback((deep: boolean) => {
     try {
@@ -684,24 +722,103 @@ export default function HomeScreen() {
 
   // Track which video is on-screen so it auto-plays while others pause.
   // FlatList requires these references to be stable across renders.
-  // TWO viewability pairs: video activation is EAGER (40% visible, no dwell
-  // time) so playback feels automatic the moment a video slides in, while
-  // spotlight/ad impressions + ambient music keep the original deliberate
-  // 60% + 90ms rule (impression semantics unchanged).
+  // TWO viewability pairs. The 40% video pair is now only a TRIGGER + candidate
+  // source: it fires the recompute (and seeds the fallback) whenever a video
+  // enters/leaves, but the actual CHOICE of which video plays is made by
+  // geometry (resolveActiveVideoByGeometry) — the post crossing the screen's
+  // center line. The 60% + 90ms pair keeps the original deliberate rule for
+  // spotlight/ad impressions + ambient music (impression semantics unchanged).
   const pendingVideoViewables = useRef<any[] | null>(null);
+  // ── Which video plays: PRECISE center detection (Instagram-style) ───────────
+  // The active video is the post whose card straddles the vertical CENTER of the
+  // visible band — read straight from FlashList's real layout geometry
+  // (getLayout / getAbsoluteLastScrollOffset / computeVisibleIndices), NOT "the
+  // first video that's 40% visible" (which let a video near the top edge play
+  // while a different post owned the middle of the screen — the reported bug).
+  // Returns null when the centered post isn't a video, so nothing plays until a
+  // video actually reaches center. Returns null (not a decision) when geometry
+  // isn't measured yet, so the caller can fall back to the viewability heuristic.
+  const resolveActiveVideoByGeometry = useRef((): { activeId: string | null; warm: string[] } | null => {
+    const list: any = feedListRef.current;
+    if (!list?.getLayout || !list.computeVisibleIndices) return null;
+    let scrollY: number; let winH: number; let range: { startIndex: number; endIndex: number };
+    try {
+      scrollY = list.getAbsoluteLastScrollOffset?.() ?? 0;
+      winH = list.getWindowSize?.().height ?? SCREEN_H;
+      range = list.computeVisibleIndices();
+    } catch { return null; }
+    if (!range || range.startIndex < 0) return null;
+    const data = gatedFeedDataRef.current;
+    // The band the user actually SEES: the floating header covers the top
+    // headerH; the tab bar + safe area cover the bottom. Its midpoint is the
+    // "focus line" — whichever post sits under it is what the eye is on.
+    const bandTop = scrollY + headerHRef.current;
+    const bandBottom = scrollY + winH - bottomClearRef.current;
+    const centerY = (bandTop + bandBottom) / 2;
+    let activeId: string | null = null;
+    let centerOnNonVideo = false; // focus line is over a real card, just not a video
+    let sawLayout = false;
+    for (let i = range.startIndex; i <= range.endIndex; i++) {
+      const L = list.getLayout(i);
+      if (!L) continue;
+      sawLayout = true;
+      // The card whose vertical extent contains the focus line IS the centered post.
+      if (centerY >= L.y && centerY < L.y + L.height) {
+        if (isPlayableVideoItem(data[i])) activeId = (data[i] as any).id;
+        else centerOnNonVideo = true;
+        break;
+      }
+    }
+    if (!sawLayout) return null; // layout not measured yet — let the caller fall back
+    // STICKY CONTINUITY: when the focus line is momentarily over a NON-video (a
+    // photo, a caption, or the gap between two posts), don't cut off the video
+    // that's already playing — keep it going as long as its card is still on
+    // screen. It stops only once it fully leaves the visible band OR a DIFFERENT
+    // video reaches center. This is the "keep playing until it's no longer
+    // supposed to play" feel: no pause-flash mid-scroll between posts.
+    if (!activeId && centerOnNonVideo) {
+      const prev = getVisibleVideoId();
+      if (prev) {
+        for (let i = range.startIndex; i <= range.endIndex; i++) {
+          if ((data[i] as any)?.id !== prev) continue;
+          const L = list.getLayout(i);
+          // Still overlapping the visible band → keep it playing.
+          if (L && L.y < bandBottom && L.y + L.height > bandTop) activeId = prev;
+          break;
+        }
+      }
+    }
+    // STAGED pre-warm (unchanged intent): the centered video + the next upcoming
+    // video below the focus line hold a pooled player; everything deeper stays a
+    // poster. Two concurrent streams max, so the playing one never gets starved.
+    const warm: string[] = [];
+    if (activeId) warm.push(activeId);
+    for (let i = range.startIndex; i <= range.endIndex; i++) {
+      const L = list.getLayout(i);
+      if (!L) continue;
+      const it: any = data[i];
+      if (it && !it.__ad && it.type === 'video' && it.media_url && it.id !== activeId && (L.y + L.height / 2) > centerY) {
+        warm.push(it.id);
+        break;
+      }
+    }
+    return { activeId, warm };
+  }).current;
   const applyVideoViewables = useRef((viewableItems: any[]) => {
-    // A video post, or a slideshow that contains at least one video slide, becomes
-    // the "playing" item so its current video slide can autoplay.
+    // Prefer precise geometry: the post crossing the screen's center line.
+    const byGeom = resolveActiveVideoByGeometry();
+    if (byGeom) {
+      setVisibleVideoId(byGeom.activeId);
+      setWarmVideoIds(byGeom.warm);
+      return;
+    }
+    // Fallback (geometry not measured yet — the first frames after mount / a
+    // data swap): the topmost sufficiently-visible video, staged warm as before.
     const firstVideo = viewableItems.find(v =>
       v.item?.type === 'video' ||
       (isSlideshow(v.item?.type) && Array.isArray(v.item?.slides) && v.item.slides.some((s: any) => s?.type === 'video'))
     );
     setVisibleVideoId(firstVideo ? firstVideo.item.id : null);
-    // STAGED loading (Instagram-style progressive unlock): only the VISIBLE
-    // video and the ONE below it hold live players/streams — everything
-    // deeper stays a poster until you approach it. Warming every on-screen
-    // video meant several concurrent streams: they starved the playing
-    // video's bandwidth (froze ~1s in) and piled up on cold open.
     const ids: string[] = [];
     if (firstVideo && !firstVideo.item.__ad && firstVideo.item.type === 'video' && firstVideo.item.media_url) {
       ids.push(firstVideo.item.id);
@@ -715,22 +832,24 @@ export default function HomeScreen() {
     setWarmVideoIds(ids);
   }).current;
   const onVideoViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
+    // Remember the latest viewable-video tokens: they seed the geometry fallback
+    // and let the at-rest / gentle-scroll passes re-resolve without a fresh event.
+    lastVideoTokens.current = viewableItems;
     // Gentle scrolls apply LIVE (Instagram-style — the video starts the moment
-    // you bring it into view): with the pooled players, assignment is a cheap
-    // async source swap, never a creation, so mid-gesture application is safe
-    // again. Only fast flings defer (no point churning sources mid-blur).
+    // it reaches center): with the pooled players, assignment is a cheap async
+    // source swap, never a creation, so mid-gesture application is safe. Only
+    // fast flings defer (no point churning sources mid-blur).
     if (fastScrollRef.current) { pendingVideoViewables.current = viewableItems; return; }
     pendingVideoViewables.current = null;
     applyVideoViewables(viewableItems);
   }).current;
-  // Scroll reached rest: apply the parked video snapshot — the ONLY moment
-  // video players are created/released. Runs before the music flush (+150ms).
+  // Scroll reached rest: re-resolve against the FINAL scroll position (where the
+  // finger landed) so the centered video is exact. Geometry reads the live
+  // offset, so this is correct even if no viewability event fired during a fling.
   function flushVideoAtRest() {
-    if (pendingVideoViewables.current) {
-      const pending = pendingVideoViewables.current;
-      pendingVideoViewables.current = null;
-      applyVideoViewables(pending);
-    }
+    const pending = pendingVideoViewables.current;
+    pendingVideoViewables.current = null;
+    applyVideoViewables(pending ?? lastVideoTokens.current);
   }
   // The most-visible post that carries an attached song — its track plays ambiently.
   const applyMusicViewables = useRef((viewableItems: any[]) => {
@@ -772,15 +891,18 @@ export default function HomeScreen() {
     { viewabilityConfig: { itemVisiblePercentThreshold: 60, minimumViewTime: 90 }, onViewableItemsChanged: onImpressionViewableItemsChanged },
   ]).current;
 
-  // Enter/exit fast-scroll mode; exiting flushes the viewability snapshot that
-  // was deferred mid-fling so the landed video starts right away.
+  // Enter/exit fast-scroll mode. This now controls only whether we DEFER picking
+  // a new centered video (source-swap churn control) — it no longer pauses the
+  // video that's already playing (setFeedFastScrolling is a playback no-op now),
+  // so the current video keeps running through the fling. Exiting flushes the
+  // deferred snapshot so the landed video is resolved right away.
   const setFastScroll = (on: boolean) => {
     if (fastScrollRef.current === on) return;
     fastScrollRef.current = on;
-    setFeedFastScrolling(on); // store publish — flips playback for ONLY the visible card, no list re-render
-    // BOTH video and music snapshots stay parked until the scroll truly RESTS
-    // (flushVideoAtRest / armMusicFlush) — the gate transition at GATE_OUT can
-    // still be mid-motion, and player creation mid-motion is a frame freeze.
+    setFeedFastScrolling(on); // retained call; playback no-op (see lib/feedVideo)
+    // BOTH video-SWITCHING and music snapshots stay parked until the scroll truly
+    // RESTS (flushVideoAtRest / armMusicFlush) — picking/creating a NEW player
+    // mid-motion is the frame freeze we avoid; the current one plays on.
   };
   // Ambient-song application runs ~150ms AFTER the scroll rests: the rest frame
   // already carries the landed video's play() and the list settle — spacing the
@@ -815,6 +937,13 @@ export default function HomeScreen() {
   // also left too little buffered stream (stall a second in). Play near rest.
   const GATE_IN = 1.0, GATE_OUT = 0.4;
   const trackScrollVelocity = (y: number) => {
+    // Live center-tracking during a gentle browse: keep the playing video locked
+    // to whichever post currently owns the screen's center line, so playback
+    // follows the finger like Instagram instead of only updating on 40%-crossing
+    // events. Cheap — setVisibleVideoId/setWarmVideoIds no-op when unchanged, and
+    // only the 1-2 affected video cards re-render. Skipped during fast flings
+    // (playback is gated off then and the snapshot is applied at rest).
+    if (!fastScrollRef.current) applyVideoViewables(lastVideoTokens.current);
     const t = Date.now();
     const { y: py, t: pt } = scrollSample.current;
     const dt = t - pt;
@@ -862,7 +991,9 @@ export default function HomeScreen() {
   function checkScrollStop() {
     scrollStopTimer.current = null;
     const idle = Date.now() - scrollSample.current.t;
-    if (idle >= 100) { setFastScroll(false); scrollingRef.current = false; flushVideoAtRest(); armMusicFlush(); return; }
+    // flush BEFORE un-gating: set the correct centered video first, THEN flip
+    // canPlay true — otherwise the previously-visible id could play for a frame.
+    if (idle >= 100) { flushVideoAtRest(); setFastScroll(false); scrollingRef.current = false; armMusicFlush(); return; }
     scrollStopTimer.current = setTimeout(checkScrollStop, 100 - idle);
   }
   const [feedMode, setFeedMode] = useState<'all' | 'following' | 'friends'>('all');
@@ -874,6 +1005,7 @@ export default function HomeScreen() {
   // after the first onLayout could be "compensated" away, leaving the first
   // posts under the floating header. onLayout still corrects the exact value.
   const [headerH, setHeaderH] = useState(140);
+  headerHRef.current = headerH; // mirror for the geometry resolver's focus-line math
   // Memoized so re-renders don't tear down + rebuild the native interpolation
   // node graph (inline it rebuilt on every commit — native-animated churn that
   // landed exactly at drag start). Created twice ever: mount + first onLayout.
@@ -882,6 +1014,10 @@ export default function HomeScreen() {
   }), [headerH]);
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  // Tab bar (~68) + bottom safe area cover the bottom of the visible band — the
+  // geometry resolver subtracts this so the focus line sits at the TRUE middle
+  // of what the user sees, not the middle of the full (under-chrome) viewport.
+  bottomClearRef.current = 68 + insets.bottom;
   // Stable list-container style so FlatList's PureComponent can bail on shell
   // re-renders (an inline array is a fresh identity every render).
   const feedGatedNow = !feedGateUnlocked && feedData.length > GATE_POSTS;
@@ -1116,6 +1252,20 @@ export default function HomeScreen() {
       affinity: affinityProfile.current,
     };
 
+    // Kick the promoted layer (spotlights + ads) off NOW, in parallel with the
+    // core posts fetch below — NOT after it. This is what keeps the single
+    // arranged paint fast: by the time the posts come back and are scored +
+    // arranged, this is almost always already resolved, so weaving it in adds
+    // no perceptible wait. Only 'all' mode shows promoted content. Resolves to
+    // null on any failure OR if it runs past PROMOTED_BUDGET_MS, so a slow ad /
+    // spotlight backend degrades to the organic order instead of stalling the
+    // paint. (.catch here so the timeout rejection is handled the moment it
+    // fires, not whenever we get around to awaiting it.)
+    const promotedPromise: Promise<[any[], any[]] | null> = feedMode === 'all'
+      ? withTimeout(Promise.all([fetchFeedSpotlights(), fetchFeedAds(adViewer)]), PROMOTED_BUDGET_MS)
+          .catch(() => null)
+      : Promise.resolve(null);
+
     // Everything below awaits the network / AsyncStorage. Wrap it so (a) the
     // skeleton always clears for the LATEST fetch even if a query throws, and
     // (b) a failed promoted-layer fetch degrades to the organic feed (already
@@ -1166,110 +1316,107 @@ export default function HomeScreen() {
       const orderedPairs = arrangeFeed(scoredPairs);
 
       // A newer fetch (pull-to-refresh / mode switch) superseded us — let it own
-      // the screen. Bailing here seq-guards PAINT 1 AND the seen-record below.
+      // the screen. Bailing here seq-guards the paint AND the seen-record below.
       if (fetchSeq.current !== seq) return;
 
-      // PAINT 1 — organic, ranked + jittered. Real content replaces the skeleton
-      // now; the promoted layer weaves in on the next paint. The first item is
-      // remembered so PAINT 2 can keep it pinned (the user is watching it).
-      const paint1List = [...orderedPairs].sort((a, b) => b.score - a.score).map((p) => p.item);
-      setPosts(paint1List);
-      setLoading(false);
-      setRefreshing(false);
+      // The organic arrangement — the jittered, author-spread arrangeFeed draw.
+      // This is the SINGLE order the feed paints in; the promoted layer is woven
+      // into it BELOW *before* the first paint, so the feed appears already in
+      // its final order and no post is ever seen jumping after it lands.
+      const organicList = orderedPairs.map((p) => p.item);
 
       // Following / Friends keep their strict "people you chose" guarantee — no
-      // spotlights or ads. Record seen and stop.
+      // spotlights or ads. Paint the organic order once, record seen, stop.
       if (feedMode !== 'all') {
+        setPosts(organicList);
+        setLoading(false);
+        setRefreshing(false);
         recordSeenPostIds(visible.map((p: any) => p.id));
         return;
       }
 
-      // PAINT 2 — weave the promoted layer (spotlights + ads) without blocking the
-      // first paint. Fetched here, off the critical path; a failure throws to the
-      // finally and leaves PAINT 1's organic feed in place.
-      const [spotItems, adItems] = await Promise.all([fetchFeedSpotlights(), fetchFeedAds(adViewer)]);
+      // ── Single arranged paint ──────────────────────────────────────────────
+      // Weave the promoted layer (spotlights + ads) into the organic order and
+      // paint ONCE, so promoted cards are already in place before the skeleton
+      // clears and the feed never visibly reshuffles. promotedPromise was started
+      // in parallel with the core fetch above, so it's almost always already
+      // resolved here — weaving costs no extra wait. null = slow/failed fetch:
+      // keep the organic order (no promoted cards this load) and paint now.
+      let woven: Post[] = organicList;
+      let spotPostIds = new Set<string>();
+      const promoted = await promotedPromise;
+      if (promoted) try {
+        const [spotItems, adItems] = promoted;
 
-      // The spotlight anchor is the feed's best organic score WITHOUT the seen-
-      // penalty (matches the spotlights' own penalty-free scoring) AND without the
-      // variety jitter, so spotlight SCORING stays stable; final placement can
-      // still drift a slot or two per refresh as it competes with jittered posts.
-      const neverSeen = new Set<string>();
-      const topScore = visible.reduce(
-        (m: number, p: any) => Math.max(m, scorePost(p, profile, followingSet, neverSeen, now)),
-        0,
-      );
-      // Spotlights rank INTO the feed: a regular-post score × a decaying multiplier
-      // (see lib/spotlight). Default 3rd slot; mergeSpotlights guarantees ≥6 posts
-      // between any two, and skips the seen-penalty + seen-set write (bought reach
-      // must not decay like scored reach).
-      const spots = spotItems.filter((s) => !blockedIds.has(s.user_id));
-      const spotPostIds = new Set(spots.map((s) => s.id));
-      // Anchors live in the deduped space mergeSpotlights ranks in (spotlights'
-      // own organic copies are removed there), from the DETERMINISTIC scores.
-      const anchorPairs = scoredPairs.filter((p) => !spotPostIds.has(p.item.id));
-      const sortedOrg = [...anchorPairs].sort((a, b) => b.score - a.score);
-      const anchors = {
-        top: sortedOrg[0]?.score ?? 0,
-        second: sortedOrg[1]?.score ?? sortedOrg[0]?.score ?? 0,
-        third: sortedOrg[2]?.score ?? 0,
-        avg: anchorPairs.length
-          ? anchorPairs.reduce((s, x) => s + x.score, 0) / anchorPairs.length
-          : 0,
-        count: anchorPairs.length,
-      };
-      // How strongly THIS viewer's tastes match a spotlighted post (0..1).
-      const affinityFor = (p: any) => Math.max(
-        profile.creatorScores[p.user_id] ?? 0,
-        (profile.genreScores[p.genre ?? ''] ?? 0) * 0.8,
-        (profile.typeScores[p.type] ?? 0) * 0.6,
-        followingSet.has(p.user_id) ? 0.6 : 0,
-      );
-      // A spotlight buys a fresh shot at reach — score its base as if created when
-      // the campaign started so recency-decay doesn't bury an older promoted post.
-      const freshForSpotlight = (p: any) => ({ ...p, created_at: p.__spotlight?.startsAt ?? p.created_at });
-      const spotPairs = await Promise.all(spots.map(async (s) => ({
-        item: s,
-        score: await rankSpotlight({
-          campaignId: s.__spotlight?.campaignId ?? s.id,
-          organicPf: scorePost(freshForSpotlight(s), profile, followingSet, neverSeen, now),
-          topPf: topScore,
-          anchors,
-          startsAt: s.__spotlight?.startsAt ?? null,
-          weight: s.__spotlight?.weight ?? 1,
-          now,
-          affinity: affinityFor(s),
-          viewerId: userId ?? null,
-        }),
-      })));
-      // Merge spotlights into the SAME jittered organic order, then inject ads via
-      // the pure spacing pass. injectFeedAds no-ops when there are no ads.
-      const merged = mergeSpotlights(orderedPairs, spotPairs);
-      const adsForFeed = (adItems as any[]).filter((a) => a.user_id !== userId && !blockedIds.has(a.user_id));
-      // Re-check: the promoted-layer await may have been overtaken by a newer fetch.
-      if (fetchSeq.current !== seq) return;
-      // PAINT 2 lands ~0.5s under a user who is ALREADY WATCHING paint 1's first
-      // post — it must never change what's at the top. A spotlight that outranks
-      // the top anchor used to take slot 0 here (mergeSpotlights allows a
-      // feed-opening spotlight) and visibly REPLACED the watched post mid-view.
-      // Pin the watched post first; the spotlight opens one slot lower instead —
-      // still premium placement. Matching by id keeps this correct even when the
-      // watched post IS the spotlighted one (its promoted copy takes slot 0).
-      const woven = injectFeedAds(merged, adsForFeed);
-      const paint1FirstId = paint1List[0]?.id ?? null;
-      if (paint1FirstId && woven.length > 1 && woven[0]?.id !== paint1FirstId) {
-        const keepIdx = woven.findIndex((p: any) => p?.id === paint1FirstId);
-        if (keepIdx > 0) woven.unshift(woven.splice(keepIdx, 1)[0]);
+        // The spotlight anchor is the feed's best organic score WITHOUT the seen-
+        // penalty (matches the spotlights' own penalty-free scoring) AND without the
+        // variety jitter, so spotlight SCORING stays stable; final placement can
+        // still drift a slot or two per refresh as it competes with jittered posts.
+        const neverSeen = new Set<string>();
+        const topScore = visible.reduce(
+          (m: number, p: any) => Math.max(m, scorePost(p, profile, followingSet, neverSeen, now)),
+          0,
+        );
+        // Spotlights rank INTO the feed: a regular-post score × a decaying multiplier
+        // (see lib/spotlight). Default 3rd slot; mergeSpotlights guarantees ≥6 posts
+        // between any two, and skips the seen-penalty + seen-set write (bought reach
+        // must not decay like scored reach).
+        const spots = spotItems.filter((s) => !blockedIds.has(s.user_id));
+        spotPostIds = new Set(spots.map((s) => s.id));
+        // Anchors live in the deduped space mergeSpotlights ranks in (spotlights'
+        // own organic copies are removed there), from the DETERMINISTIC scores.
+        const anchorPairs = scoredPairs.filter((p) => !spotPostIds.has(p.item.id));
+        const sortedOrg = [...anchorPairs].sort((a, b) => b.score - a.score);
+        const anchors = {
+          top: sortedOrg[0]?.score ?? 0,
+          second: sortedOrg[1]?.score ?? sortedOrg[0]?.score ?? 0,
+          third: sortedOrg[2]?.score ?? 0,
+          avg: anchorPairs.length
+            ? anchorPairs.reduce((s, x) => s + x.score, 0) / anchorPairs.length
+            : 0,
+          count: anchorPairs.length,
+        };
+        // How strongly THIS viewer's tastes match a spotlighted post (0..1).
+        const affinityFor = (p: any) => Math.max(
+          profile.creatorScores[p.user_id] ?? 0,
+          (profile.genreScores[p.genre ?? ''] ?? 0) * 0.8,
+          (profile.typeScores[p.type] ?? 0) * 0.6,
+          followingSet.has(p.user_id) ? 0.6 : 0,
+        );
+        // A spotlight buys a fresh shot at reach — score its base as if created when
+        // the campaign started so recency-decay doesn't bury an older promoted post.
+        const freshForSpotlight = (p: any) => ({ ...p, created_at: p.__spotlight?.startsAt ?? p.created_at });
+        const spotPairs = await Promise.all(spots.map(async (s) => ({
+          item: s,
+          score: await rankSpotlight({
+            campaignId: s.__spotlight?.campaignId ?? s.id,
+            organicPf: scorePost(freshForSpotlight(s), profile, followingSet, neverSeen, now),
+            topPf: topScore,
+            anchors,
+            startsAt: s.__spotlight?.startsAt ?? null,
+            weight: s.__spotlight?.weight ?? 1,
+            now,
+            affinity: affinityFor(s),
+            viewerId: userId ?? null,
+          }),
+        })));
+        // Merge spotlights into the jittered organic order, then inject ads via
+        // the pure spacing pass. injectFeedAds no-ops when there are no ads.
+        const merged = mergeSpotlights(orderedPairs, spotPairs);
+        const adsForFeed = (adItems as any[]).filter((a) => a.user_id !== userId && !blockedIds.has(a.user_id));
+        woven = injectFeedAds(merged, adsForFeed);
+      } catch {
+        // Weaving failed (e.g. a spotlight-ranking read threw) — fall back to the
+        // organic order so the paint still happens; never blank the feed.
+        woven = organicList;
+        spotPostIds = new Set<string>();
       }
+
+      // A newer fetch may have started while we built the promoted layer.
+      if (fetchSeq.current !== seq) return;
       setPosts(woven);
-      // The list is usually at REST when this lands, and a resting FlashList
-      // does not re-run viewability on a data swap — so a card shifted by the
-      // promoted insertions could keep its video playing (and the ambient song
-      // pointed at it) until the next scroll event. Re-resolve the viewability
-      // pairs against what is actually on screen now; impression handlers are
-      // session-deduped, so re-firing them cannot double-bill.
-      requestAnimationFrame(() => {
-        if (fetchSeq.current === seq) { try { feedListRef.current?.recomputeViewableItems(); } catch {} }
-      });
+      setLoading(false);
+      setRefreshing(false);
       // Persist shown IDs (spotlights excluded) so they deprioritise next session.
       recordSeenPostIds(visible.filter((p: any) => !spotPostIds.has(p.id)).map((p: any) => p.id));
     } finally {
@@ -1417,6 +1564,11 @@ export default function HomeScreen() {
       authorId: item.user_id,
       authorName: item.profiles?.username,
       mediaType: item.type,
+      // Seed Laybell TV eligibility + cast payload so the "Laybell TV" row shows
+      // instantly on landscape videos (no lazy-fetch pop-in).
+      aspect: item.aspect_ratio,
+      caption: item.caption,
+      thumbnail: item.thumbnail_url,
       onEdit: () => live.current.router.push(`/edit-post/${item.id}`),
       onDeleted: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
       onArchived: () => setPosts(prev => prev.filter(p => p.id !== item.id)),
@@ -1616,7 +1768,7 @@ export default function HomeScreen() {
         }}
         onScrollBeginDrag={() => { scrollingRef.current = true; cancelMusicFlush(); feedDragStart(); }}
         onScrollEndDrag={feedDragEnd}
-        onMomentumScrollEnd={() => { setFastScroll(false); settleFeedChrome(); scrollingRef.current = false; flushVideoAtRest(); armMusicFlush(); }}
+        onMomentumScrollEnd={() => { flushVideoAtRest(); setFastScroll(false); settleFeedChrome(); scrollingRef.current = false; armMusicFlush(); }}
         // 16 is deliberate: the chrome is discrete now (no per-frame JS follow),
         // so 60Hz sampling halves per-frame JS scroll work vs throttle 1 —
         // headroom for cell mounts. Don't "fix" this back to 1.

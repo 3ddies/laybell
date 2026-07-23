@@ -1228,6 +1228,10 @@ export default function ReelScreen() {
       authorId: item.user_id,
       authorName: item.profiles?.username,
       mediaType: item.type ?? 'video',
+      // Seed so the "Laybell TV" row shows instantly on landscape videos.
+      aspect: item.aspect_ratio,
+      caption: item.caption,
+      thumbnail: item.thumbnail_url,
       onEdit: () => router.push(`/edit-post/${item.id}`),
       onDeleted: () => setPosts((prev) => prev.filter((p) => p.id !== item.id)),
       onArchived: () => setPosts((prev) => prev.filter((p) => p.id !== item.id)),

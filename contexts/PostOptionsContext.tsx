@@ -48,6 +48,14 @@ export type PostOptionsArgs = {
   mediaUrl?: string | null;
   cover?: string | null;
   downloadable?: boolean;
+  // Video posts: seed Laybell TV eligibility (aspect_ratio) + the cast payload
+  // (caption / thumbnail) so the "Laybell TV" row renders IMMEDIATELY for
+  // landscape videos instead of popping in a network round-trip later (its
+  // visibility keys off aspect). Callers that already hold the post row should
+  // pass these; when omitted the lazy posts fetch back-fills them (old delay).
+  aspect?: string | number | null;
+  caption?: string | null;
+  thumbnail?: string | null;
   // The item is already playing on the TV (menu opened from the cast remote) —
   // hides the "Laybell TV" option, which would restart it and drop the queue.
   hideLaybellTv?: boolean;
@@ -265,8 +273,10 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
       // maker, plus aspect/caption/thumbnail so "Laybell TV" can appear on
       // landscape videos and cast with the right title/poster.
       if (o?.postId && o.mediaType === 'video') {
+        // Seed from the args the caller already has (aspect drives the Laybell TV
+        // row's visibility) so it renders on first paint — no pop-in.
         setVidUrl(o.mediaUrl ?? null); setVidDur(0); setAllowGifs(true);
-        setVidAspect(null); setVidCaption(null); setVidThumb(null);
+        setVidAspect(o.aspect ?? null); setVidCaption(o.caption ?? null); setVidThumb(o.thumbnail ?? null);
         supabase.from('posts').select('media_url, duration_seconds, allow_gifs, aspect_ratio, caption, thumbnail_url').eq('id', o.postId).maybeSingle()
           .then(({ data }) => {
             const d = data as any;
@@ -274,9 +284,11 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
             setVidUrl(d.media_url ?? o.mediaUrl ?? null);
             setVidDur(Number(d.duration_seconds) || 0);
             setAllowGifs(d.allow_gifs !== false);
-            setVidAspect(d.aspect_ratio ?? null);
-            setVidCaption(d.caption ?? null);
-            setVidThumb(d.thumbnail_url ?? null);
+            // Back-fill ONLY what the caller didn't seed — overwriting a seeded
+            // aspect could make the row flash out then back in.
+            if (o.aspect == null) setVidAspect(d.aspect_ratio ?? null);
+            if (o.caption == null) setVidCaption(d.caption ?? null);
+            if (o.thumbnail == null) setVidThumb(d.thumbnail_url ?? null);
           }, () => {});
       } else {
         setVidUrl(null); setVidDur(0); setAllowGifs(true);

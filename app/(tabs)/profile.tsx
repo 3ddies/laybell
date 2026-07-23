@@ -446,6 +446,9 @@ export default function ProfileScreen() {
       postId: post.id,
       isOwn: true,
       mediaType: post.type,
+      aspect: post.aspect_ratio,
+      caption: post.caption,
+      thumbnail: post.thumbnail_url,
       onEdit: () => router.push(`/edit-post/${post.id}`),
       onDeleted: () => { setUserPosts(prev => prev.filter(p => p.id !== post.id)); setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) })); },
       onArchived: () => { setUserPosts(prev => prev.filter(p => p.id !== post.id)); setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) })); },
@@ -510,6 +513,9 @@ export default function ProfileScreen() {
                     postId: post.id,
                     isOwn: true,
                     mediaType: post.type,
+                    aspect: post.aspect_ratio,
+                    caption: post.caption,
+                    thumbnail: post.thumbnail_url,
                     onEdit: () => router.push(`/edit-post/${post.id}`),
                     onDeleted: () => {
                       setUserPosts(prev => prev.filter(p => p.id !== post.id));
