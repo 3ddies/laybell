@@ -39,17 +39,38 @@ export type PayoutMethod = {
   addedAt: number;
 };
 
+// Never store or show a full account/card number here. Cards/accounts are often
+// typed with spaces or dashes, so treat any digit run totalling 5+ digits as
+// sensitive and reduce it to its last 4 (a bare "last 4" or a year is kept). This
+// runs on BOTH save and read, so a number a prior build may have persisted gets
+// redacted the next time the method loads.
+export function maskPayoutLabel(input: string): string {
+  return input.replace(/\d[\d\s-]*\d/g, (seq) => {
+    const digits = seq.replace(/\D/g, '');
+    return digits.length >= 5 ? '•••• ' + digits.slice(-4) : seq;
+  });
+}
+
 export async function getPayoutMethod(): Promise<PayoutMethod | null> {
   try {
     const raw = await AsyncStorage.getItem(METHOD_KEY);
-    return raw ? (JSON.parse(raw) as PayoutMethod) : null;
+    if (!raw) return null;
+    const m = JSON.parse(raw) as PayoutMethod;
+    const safe = maskPayoutLabel(m.label ?? '');
+    if (safe !== m.label) {
+      // Scrub a full number a prior build may have persisted, on first read.
+      m.label = safe;
+      AsyncStorage.setItem(METHOD_KEY, JSON.stringify(m)).catch(() => {});
+    }
+    return m;
   } catch {
     return null;
   }
 }
 
 export async function savePayoutMethod(kind: PayoutMethod['kind'], label: string): Promise<void> {
-  const m: PayoutMethod = { kind, label: label.trim().slice(0, 40), addedAt: Date.now() };
+  // Redact any full number BEFORE it ever touches storage.
+  const m: PayoutMethod = { kind, label: maskPayoutLabel(label.trim()).slice(0, 40), addedAt: Date.now() };
   await AsyncStorage.setItem(METHOD_KEY, JSON.stringify(m)).catch(() => {});
 }
 
