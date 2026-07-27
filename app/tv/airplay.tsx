@@ -16,7 +16,7 @@ import { useMediaSuspend } from '../../contexts/MediaSuspendContext';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { fetchHorizontalVideos, rankVideosForUser } from '../../lib/tv';
 import {
-  fetchTvAds, tvItemFor, TV_AD_EVERY_VIDEOS, recordAdImpression, recordAdClick, adSkipAfterMs,
+  fetchTvAds, tvItemFor, TV_AD_EVERY_VIDEOS, recordAdImpression, recordAdClick, recordAdComplete, adSkipAfterMs,
   type AdViewer,
 } from '../../lib/ads';
 import { EMPTY_PROFILE, buildAffinityProfile } from '../../lib/feedScorer';
@@ -45,6 +45,16 @@ import Scrubber from '../../components/Scrubber';
 //     phone audio. Nothing lingers.
 
 const VIDEOS_PER_FETCH = 40;
+// AirPlay drain. The receiver runs BEHIND the local player: when the local item
+// hits its end, the TV still has roughly a second of buffered video left to
+// show. `playToEnd` is media-driven and correct, but replacing the source the
+// instant it fires truncates whatever is still in flight — which is why an ad
+// visibly cut off early ON THE TV while the phone's own timeline had genuinely
+// finished. Waiting this long before loading the next item lets the receiver
+// finish; from the TV's side the gap is absorbed by its own buffer.
+// Estimated, not measured (AirPlay exposes no latency figure) — tune here if the
+// tail is still clipped (raise) or a still frame lingers between items (lower).
+const AIRPLAY_DRAIN_MS = 1500;
 
 let VideoAirPlayButton: any = null;
 try {
@@ -81,6 +91,12 @@ export default function AirPlayTvScreen() {
   const [buffering, setBuffering] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [routing, setRouting] = useState(false); // isExternalPlaybackActive
+  // Mirror of `routing` for the player listeners, which are wired once and would
+  // otherwise capture the value from first render (always false).
+  const routingRef = useRef(false);
+  routingRef.current = routing;
+  // Cleared on unmount so a pending drain can't touch a released player.
+  const drainTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pos, setPos] = useState(0);             // seconds
   const [dur, setDur] = useState(0);
 
@@ -194,6 +210,8 @@ export default function AirPlayTvScreen() {
 
     return () => {
       alive = false;
+      // A pending AirPlay drain must never fire into a released player.
+      if (drainTimer.current) { clearTimeout(drainTimer.current); drainTimer.current = null; }
       try { player.pause(); } catch {}
       try { player.replace(null); } catch {} // drop the AirPlay route
       resume(); // release the media-suspend → feed + ambient resume
@@ -225,23 +243,38 @@ export default function AirPlayTvScreen() {
       player.addListener('playToEnd', () => {
         if (advancedRef.current) return;
         advancedRef.current = true;
-        const next = indexRef.current + 1;
-        if (next < queueRef.current.length) {
-          loadIndex(next);
-        } else {
-          // Reached the end → pull a FRESH ranked feed so the TV keeps flowing
-          // with new algorithm picks (the seen-post penalty reorders it) instead
-          // of replaying the same loop. Falls back to restarting the current
-          // queue if the refresh fails. Buffering overlay covers the brief fetch.
-          setBuffering(true);
-          (async () => {
-            try {
-              const q = await buildQueueRef.current();
-              if (q.length) queueRef.current = q;
-            } catch { /* keep the existing queue */ }
-            loadIndex(0);
-          })();
-        }
+        // A sponsor that ran to its end is a completed TV view (deduped per
+        // campaign). Only the reels player was reporting this, so every TV
+        // campaign showed impressions and clicks but a 0% completion rate.
+        const done = queueRef.current[indexRef.current];
+        if (done?.isAd && done.ad) { try { recordAdComplete({ __ad: done.ad }, 'tv'); } catch {} }
+        // Over AirPlay, hold the source swap until the receiver has drained (see
+        // AIRPLAY_DRAIN_MS). Pinned to the index we finished on, so a manual
+        // next/prev during the wait cancels it instead of double-advancing.
+        const from = indexRef.current;
+        const advance = () => {
+          if (indexRef.current !== from) return; // a manual skip got there first
+          const next = indexRef.current + 1;
+          if (next < queueRef.current.length) {
+            loadIndex(next);
+          } else {
+            // Reached the end → pull a FRESH ranked feed so the TV keeps flowing
+            // with new algorithm picks (the seen-post penalty reorders it) instead
+            // of replaying the same loop. Falls back to restarting the current
+            // queue if the refresh fails. Buffering overlay covers the brief fetch.
+            setBuffering(true);
+            (async () => {
+              try {
+                const q = await buildQueueRef.current();
+                if (q.length) queueRef.current = q;
+              } catch { /* keep the existing queue */ }
+              loadIndex(0);
+            })();
+          }
+        };
+        if (drainTimer.current) clearTimeout(drainTimer.current);
+        if (routingRef.current) drainTimer.current = setTimeout(advance, AIRPLAY_DRAIN_MS);
+        else advance(); // playing on the phone — the local timeline IS the truth
       }),
       player.addListener('isExternalPlaybackActiveChange', () => {
         // Track routing state only — never reload/nudge off this event (it can
