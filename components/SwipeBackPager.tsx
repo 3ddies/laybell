@@ -23,8 +23,11 @@ import { useNavigation } from '@react-navigation/native';
 //    the same depth cue as the iOS push. (iOS ignores slide_from_right on
 //    modal presentations, which is why the entry can't be left to the stack.)
 //  - swipe out: drag right, previous screen revealed live, invisible pop.
-//  - back button / hardware back: intercepted via beforeRemove, the page
-//    slides off first, then the original action is dispatched.
+//  - back button / hardware back: intercepted via beforeRemove; the content
+//    slides off on the SAME Animated value as the entrance (run in reverse,
+//    faster and accelerating), then the original action is dispatched. It is
+//    deliberately not a pager setPage — that rode the pager's own native settle,
+//    which is uncontrollable and about twice as long.
 //
 // Render the WHOLE screen (header included) as children so the page moves as
 // one piece, and keep the route's native back gesture off in app/_layout.tsx —
@@ -55,6 +58,15 @@ type Props = {
 // The measured Instagram push: ~280ms with a hard-decelerating cubic-out
 // (a third of the distance covered in the first two frames, feather landing).
 const ENTER_MS = 280;
+// Leaving is deliberately FASTER than arriving, and accelerates instead of
+// decelerating: an entrance should land softly, an exit should get out of the
+// way. This used to be `pagerRef.setPage(0)`, i.e. react-native-pager-view's own
+// native settle — uncontrollable, ease-in-out, and roughly twice this long, so a
+// whole screen took visibly longer to leave than a bottom sheet did. 220ms /
+// cubic-in is exactly what every sheet in the app already closes with
+// (PostOptions, Share, CommentsSheet, PlaylistOptionsSheet), so screens and
+// sheets now leave at one speed instead of two.
+const EXIT_MS = 220;
 // How dark the previous screen gets once fully covered (iOS push dim).
 const SCRIM_MAX = 0.32;
 
@@ -76,7 +88,6 @@ export default function SwipeBackPager({ children, scrollEnabled = true, animate
   // Set when we initiate the pop ourselves (or a back press is mid-slide-out)
   // so the beforeRemove interception lets the actual removal through.
   const closing = useRef(false);
-  const pendingBack = useRef<any>(null);
 
   // ── Entrance ────────────────────────────────────────────────────────────────
   // 0 → 1 drives the content's translateX (screenW → 0) AND the scrim. Native
@@ -103,16 +114,27 @@ export default function SwipeBackPager({ children, scrollEnabled = true, animate
     outputRange: [0, SCRIM_MAX],
   });
 
-  // Back button / hardware back: slide the page off first (same motion as the
-  // swipe), then let the original navigation action proceed from onPageSelected.
+  // Back button / hardware back: slide the content off first, then dispatch the
+  // original navigation action.
   useEffect(() => {
     if (onClose) return; // screen owns its own close choreography (post viewer)
     const unsub = navigation.addListener('beforeRemove', (e: any) => {
       if (closing.current) return; // our own pop — allow
       e.preventDefault();
       closing.current = true;
-      pendingBack.current = e.data.action;
-      pagerRef.current?.setPage(0);
+      const action = e.data.action;
+      // Drive the exit ourselves rather than handing it to the pager. Running
+      // `enter` back to 0 is the entrance in reverse — the same native-driver
+      // translateX, and the scrim (enter × pagerFrac) un-dims the screen behind
+      // as it's revealed, for free. When it lands the content is fully
+      // off-screen, so dispatching the original action pops invisibly. The
+      // re-entry is guarded by closing.current above.
+      Animated.timing(enter, {
+        toValue: 0,
+        duration: EXIT_MS,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => navigation.dispatch(action));
     });
     return unsub;
   }, [navigation, onClose]);
@@ -149,7 +171,7 @@ export default function SwipeBackPager({ children, scrollEnabled = true, animate
         // let onPageSelected(0) pop — skipping the slow native settle so the exit is
         // snappy and can't be re-grabbed mid-slide. Guards exclude a snap-back to
         // content (fraction < 0.5) and the back-button path.
-        if (state === 'settling' && fastExit && armed.current && !closing.current && !pendingBack.current && fraction.current < 0.5) {
+        if (state === 'settling' && fastExit && armed.current && !closing.current && fraction.current < 0.5) {
           pagerRef.current?.setPageWithoutAnimation(0);
           return;
         }
@@ -165,12 +187,11 @@ export default function SwipeBackPager({ children, scrollEnabled = true, animate
           // treat an interrupted slide-out (grabbed mid-animation) as cancelled.
           armed.current = true;
           closing.current = false;
-          pendingBack.current = null;
           return;
         }
         if (pos !== 0) return;
-        // A back press already chose the destination — finish that action.
-        if (pendingBack.current) { navigation.dispatch(pendingBack.current); return; }
+        // Only a SWIPE can land here now: a back press never moves the pager,
+        // it runs the exit slide above and dispatches its own action.
         // Nothing to pop (cold-start deep link) → snap back to the content
         // instead of stranding the user on the see-through page.
         if (!router.canGoBack()) { pagerRef.current?.setPageWithoutAnimation(1); return; }
