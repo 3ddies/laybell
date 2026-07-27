@@ -122,6 +122,7 @@ const en: Record<string, string> = {
   'photoGrid.permText': 'Allow photo access to pick from your library',
   'photoGrid.grantAccess': 'Grant access',
   'videoTrimmer.dragHint': 'Drag to choose your {sec}s window',
+  'videoTrimmer.edgeHint': 'Drag the window to move it, or drag either edge to trim. Max {sec}s.',
 
   // Components: ads/audio/playlist/picker
   'reelAd.skip': 'Skip',
@@ -2549,6 +2550,7 @@ const es: Record<string, string> = {
   'photoGrid.permText': 'Permite el acceso a las fotos para elegir de tu galería',
   'photoGrid.grantAccess': 'Conceder acceso',
   'videoTrimmer.dragHint': 'Arrastra para elegir tu ventana de {sec}s',
+  'videoTrimmer.edgeHint': 'Arrastra la ventana para moverla o arrastra un borde para recortar. Máx. {sec}s.',
 
   // Components: ads/audio/playlist/picker
   'reelAd.skip': 'Saltar',
@@ -4209,6 +4211,7 @@ const fr: Record<string, string> = {
   'photoGrid.permText': "Autorisez l'accès aux photos pour choisir dans votre galerie",
   'photoGrid.grantAccess': "Autoriser l'accès",
   'videoTrimmer.dragHint': 'Faites glisser pour choisir votre fenêtre de {sec}s',
+  'videoTrimmer.edgeHint': 'Faites glisser la fenêtre pour la déplacer, ou un bord pour rogner. Max {sec}s.',
 
   // Components: ads/audio/playlist/picker
   'reelAd.skip': 'Passer',
@@ -5869,6 +5872,7 @@ const de: Record<string, string> = {
   'photoGrid.permText': 'Erlaube den Fotozugriff, um aus deiner Galerie zu wählen',
   'photoGrid.grantAccess': 'Zugriff erlauben',
   'videoTrimmer.dragHint': 'Ziehe, um dein {sec}s-Fenster zu wählen',
+  'videoTrimmer.edgeHint': 'Ziehe das Fenster zum Verschieben oder einen Rand zum Kürzen. Max. {sec}s.',
 
   // Components: ads/audio/playlist/picker
   'reelAd.skip': 'Überspringen',
@@ -7529,6 +7533,7 @@ const pt: Record<string, string> = {
   'photoGrid.permText': 'Permita o acesso às fotos para escolher da sua galeria',
   'photoGrid.grantAccess': 'Conceder acesso',
   'videoTrimmer.dragHint': 'Arraste para escolher sua janela de {sec}s',
+  'videoTrimmer.edgeHint': 'Arraste a janela para movê-la ou arraste uma borda para cortar. Máx. {sec}s.',
 
   // Components: ads/audio/playlist/picker
   'reelAd.skip': 'Pular',
@@ -9189,6 +9194,7 @@ const it: Record<string, string> = {
   'photoGrid.permText': "Consenti l'accesso alle foto per scegliere dalla tua galleria",
   'photoGrid.grantAccess': "Consenti l'accesso",
   'videoTrimmer.dragHint': 'Trascina per scegliere la tua finestra di {sec}s',
+  'videoTrimmer.edgeHint': 'Trascina la finestra per spostarla o un bordo per tagliare. Max {sec}s.',
 
   // Components: ads/audio/playlist/picker
   'reelAd.skip': 'Salta',
@@ -10849,6 +10855,7 @@ const ru: Record<string, string> = {
   'photoGrid.permText': 'Разрешите доступ к фото, чтобы выбрать из вашей галереи',
   'photoGrid.grantAccess': 'Разрешить доступ',
   'videoTrimmer.dragHint': 'Перетащите, чтобы выбрать окно в {sec} с',
+  'videoTrimmer.edgeHint': 'Перетащите окно, чтобы сдвинуть его, или край — чтобы обрезать. Макс. {sec} с.',
 
   // Components: ads/audio/playlist/picker
   'reelAd.skip': 'Пропустить',
@@ -12474,6 +12481,7 @@ const zh: Record<string, string> = {
   'photoGrid.permText': '允许访问照片以从相册中选择',
   'photoGrid.grantAccess': '授予访问权限',
   'videoTrimmer.dragHint': '拖动以选择 {sec} 秒的片段',
+  'videoTrimmer.edgeHint': '拖动选框可移动，拖动边缘可裁剪。最长 {sec} 秒。',
 
   // Components: ads/audio/playlist/picker
   'reelAd.skip': '跳过',
@@ -14099,6 +14107,7 @@ const ja: Record<string, string> = {
   'photoGrid.permText': 'ライブラリから選ぶには写真へのアクセスを許可してください',
   'photoGrid.grantAccess': 'アクセスを許可',
   'videoTrimmer.dragHint': 'ドラッグして{sec}秒の範囲を選びます',
+  'videoTrimmer.edgeHint': 'ウィンドウをドラッグで移動、端をドラッグでトリミングできます。最大 {sec} 秒。',
 
   // Components: ads/audio/playlist/picker
   'reelAd.skip': 'スキップ',
@@ -15724,6 +15733,7 @@ const hi: Record<string, string> = {
   'photoGrid.permText': 'अपनी लाइब्रेरी से चुनने के लिए फ़ोटो एक्सेस की अनुमति दें',
   'photoGrid.grantAccess': 'एक्सेस दें',
   'videoTrimmer.dragHint': '{sec} सेकंड की विंडो चुनने के लिए खींचें',
+  'videoTrimmer.edgeHint': 'विंडो को खींचकर हिलाएँ, या किनारे को खींचकर ट्रिम करें। अधिकतम {sec} सेकंड।',
 
   // Components: ads/audio/playlist/picker
   'reelAd.skip': 'स्किप करें',

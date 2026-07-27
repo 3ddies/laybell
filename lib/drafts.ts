@@ -41,6 +41,9 @@ export type Draft = {
   videoAspect: number;
   videoDuration: number;
   trimStart: number;
+  // Optional: drafts saved before draggable trim edges existed have no end,
+  // so the composer falls back to a full window from trimStart.
+  trimEnd?: number;
   // Horizontal-video band captions (letterbox bubbles); absent on older drafts.
   topCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
   bottomCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;

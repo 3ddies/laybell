@@ -191,6 +191,10 @@ export default function PostScreen() {
   const [videoAspect, setVideoAspect] = useState(0.8); // native aspect for video display
   const [videoDuration, setVideoDuration] = useState(0); // seconds (source)
   const [trimStart, setTrimStart] = useState(0); // seconds — start of the chosen window
+  // End of the chosen window. Both edges are draggable, so the window is no
+  // longer a fixed VIDEO_MAX_SEC slab — it can be pinched shorter to cut the
+  // start, the end, or both. 0 means "not chosen yet"; the trimmer seeds it.
+  const [trimEnd, setTrimEnd] = useState(0);
   const cropperRef = useRef<MediaCropperHandle>(null);
   const cropRef = useRef<CropRect | null>(null);
   // Preview height is animated with a single spring on collapse/expand (see the
@@ -429,7 +433,7 @@ export default function PostScreen() {
     unloadPreview();
     setIsRecording(false); setRecSecs(0);
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
-    setVideoDuration(0); setTrimStart(0); setTopCaption(null); setBottomCaption(null); setVideoCaptions([]);
+    setVideoDuration(0); setTrimStart(0); setTrimEnd(0); setTopCaption(null); setBottomCaption(null); setVideoCaptions([]);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setGenre(''); setSong(null); setTagged([]); setCommunities([]); setError(''); setStep('pick');
     setAllowDownloads(true); setAllowGifs(true);
@@ -466,7 +470,7 @@ export default function PostScreen() {
       id, createdAt: now, updatedAt: now,
       postType, format, caption, genre, isPublic,
       media, crop: cropRef.current as any, thumbnailUri,
-      videoAspect, videoDuration, trimStart, topCaption, bottomCaption, videoCaptions,
+      videoAspect, videoDuration, trimStart, trimEnd, topCaption, bottomCaption, videoCaptions,
       slides,
       audioFile, audioDuration, coverUri, audioKind,
       song, tagged, features,
@@ -492,6 +496,7 @@ export default function PostScreen() {
     setVideoAspect(d.videoAspect);
     setVideoDuration(d.videoDuration);
     setTrimStart(d.trimStart);
+    setTrimEnd(d.trimEnd ?? 0);
     setTopCaption(d.topCaption ?? null);
     setBottomCaption(d.bottomCaption ?? null);
     setVideoCaptions(d.videoCaptions ?? []);
@@ -527,7 +532,7 @@ export default function PostScreen() {
     setPostType(t);
     setFormat(t === 'slideshow' ? '1:1' : defaultFormatFor(t as any));
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
-    setVideoDuration(0); setTrimStart(0);
+    setVideoDuration(0); setTrimStart(0); setTrimEnd(0);
     setAudioFile(null); setAudioDuration(null);
     setSong(null); setTagged([]);
     forgetResumedDraft(); // the resumed draft's media is gone — stop tracking it
@@ -596,7 +601,7 @@ export default function PostScreen() {
     if (m.type === 'video') {
       setVideoAspect(clampVideoAspect((m.width || 1) / (m.height || 1)));
       setVideoDuration(m.duration ?? 0);
-      setTrimStart(0);
+      setTrimStart(0); setTrimEnd(0);
       setTopCaption(null); setBottomCaption(null); setVideoCaptions([]); // captions belong to the clip they were placed on
       try {
         // Grab an early frame, but never past the clip's end — a time beyond
@@ -613,7 +618,7 @@ export default function PostScreen() {
   // ── Unified Posts picker: single vs slideshow, both off one in-app grid ───────
   function clearMedia() {
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null;
-    setVideoDuration(0); setTrimStart(0);
+    setVideoDuration(0); setTrimStart(0); setTrimEnd(0);
     setPostType('image'); setFormat('1:1');
     forgetResumedDraft();
   }
@@ -895,7 +900,12 @@ export default function PostScreen() {
       // Posting feels instant and never blocks on the upload.
       if (postType === 'video') {
         const trimmedV = videoDuration > VIDEO_MAX_SEC;
-        const videoDurSecV = trimmedV ? VIDEO_MAX_SEC : Math.round(videoDuration);
+        // Both trimmer edges are draggable, so the window is whatever the user
+        // pinched it to — not always a full VIDEO_MAX_SEC. trimEnd is only set
+        // once they actually drag, so someone who walks straight through the
+        // trim step still gets a sane full-length window from trimStart.
+        const winEndV = trimEnd > trimStart ? trimEnd : Math.min(trimStart + VIDEO_MAX_SEC, videoDuration);
+        const videoDurSecV = trimmedV ? Math.max(1, Math.round(winEndV - trimStart)) : Math.round(videoDuration);
         const ps = peekPendingSpotlight();
         const spotLabel = ps?.label ?? null;
         enqueueVideo({
@@ -909,7 +919,7 @@ export default function PostScreen() {
           hasCommunity,
           genre: genre && showGenre ? genre : null,
           durationSeconds: videoDurSecV > 0 ? videoDurSecV : null,
-          trim: trimmedV ? { start: trimStart, end: trimStart + VIDEO_MAX_SEC } : null,
+          trim: trimmedV ? { start: trimStart, end: winEndV } : null,
           song: song ? { id: song.id, title: song.title, artist: song.artist, artistId: song.artistId ?? null } : null,
           taggedIds: tagged.map((tp) => tp.id),
           communityIds: communities.map((c) => c.id),
@@ -1014,7 +1024,9 @@ export default function PostScreen() {
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
         ...(postType === 'image' ? { aspect_ratio: format } : {}),
         ...(postType === 'slideshow' ? { aspect_ratio: format, slides: slidesPayload } : {}),
-        ...(trimmed ? { trim_start: trimStart, trim_end: trimStart + VIDEO_MAX_SEC } : {}),
+        ...(trimmed
+          ? { trim_start: trimStart, trim_end: trimEnd > trimStart ? trimEnd : Math.min(trimStart + VIDEO_MAX_SEC, videoDuration) }
+          : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(coverUrl ? { cover_url: coverUrl } : {}),
         ...(song && postType !== 'audio'
@@ -1108,8 +1120,9 @@ export default function PostScreen() {
             windowSec={VIDEO_MAX_SEC}
             frameW={frameW}
             frameH={frameH}
-            onChange={setTrimStart}
+            onChange={(s, e) => { setTrimStart(s); setTrimEnd(e); }}
             initialStart={trimStart}
+            initialEnd={trimEnd || undefined}
           />
         </View>
       </View>
