@@ -1,6 +1,30 @@
 import Constants from 'expo-constants';
+import { NativeModules, TurboModuleRegistry } from 'react-native';
 
 const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
+
+// ── Native-presence probe (this MUST run before the module is imported) ───────
+// react-native-video-trim's index.js has a STATIC import of NativeVideoTrim.js,
+// whose top level is `TurboModuleRegistry.getEnforcing('VideoTrim')`. getEnforcing
+// THROWS when the native binary doesn't register the module — and because it is a
+// static import, that throw happens while Metro is evaluating the module, which a
+// .catch() on the dynamic import cannot contain. The first version of this file
+// learned that the hard way: on a binary without the module, posting a clip that
+// needed trimming produced an uncaught "'VideoTrim' could not be found" redbox
+// instead of falling back.
+//
+// So: probe with the NON-throwing accessors first and never touch the import at
+// all unless the native side is really there. getEnforcing's own contract is what
+// we're avoiding, so nothing here may use it.
+function nativeTrimAvailable(): boolean {
+  try {
+    if (TurboModuleRegistry?.get?.('VideoTrim')) return true; // new arch
+  } catch { /* fall through to old arch */ }
+  try {
+    if ((NativeModules as Record<string, unknown>)?.VideoTrim) return true; // old arch
+  } catch { /* not available */ }
+  return false;
+}
 
 // Headless video trimming (react-native-video-trim), used to physically cut a
 // long clip down to the window the user actually chose BEFORE it is uploaded.
@@ -29,11 +53,16 @@ export type TrimOutcome = {
 
 let modPromise: Promise<any | null> | null = null;
 function loadTrimmer(): Promise<any | null> {
-  if (IS_EXPO_GO) return Promise.resolve(null);
+  if (IS_EXPO_GO || !nativeTrimAvailable()) return Promise.resolve(null);
   if (!modPromise) {
-    modPromise = import('react-native-video-trim')
-      .then((m: any) => (typeof m?.trim === 'function' ? m : typeof m?.default?.trim === 'function' ? m.default : null))
-      .catch(() => null); // module not in this build yet → graceful fallback
+    try {
+      modPromise = import('react-native-video-trim')
+        .then((m: any) => (typeof m?.trim === 'function' ? m : typeof m?.default?.trim === 'function' ? m.default : null))
+        .catch(() => null);
+    } catch {
+      // import() itself threw synchronously — belt and braces behind the probe.
+      modPromise = Promise.resolve(null);
+    }
   }
   return modPromise;
 }
@@ -52,10 +81,12 @@ export async function trimVideoIfPossible(
   const fallback: TrimOutcome = { uri, trimmed: false };
   if (!uri || !(endSec > startSec)) return fallback;
 
-  const mod = await loadTrimmer();
-  if (!mod) return fallback;
-
+  // The load is INSIDE the try too: nothing about resolving this module may be
+  // able to reach the caller, because the caller is mid-publish.
   try {
+    const mod = await loadTrimmer();
+    if (!mod) return fallback;
+
     const res = await mod.trim(uri, {
       startTime: Math.max(0, Math.round(startSec * 1000)), // the API takes ms
       endTime: Math.round(endSec * 1000),
