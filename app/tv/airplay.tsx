@@ -16,7 +16,8 @@ import { useMediaSuspend } from '../../contexts/MediaSuspendContext';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
 import { fetchHorizontalVideos, rankVideosForUser } from '../../lib/tv';
 import {
-  fetchTvAds, tvItemFor, TV_AD_EVERY_VIDEOS, recordAdImpression, recordAdClick, recordAdComplete, adSkipAfterMs,
+  fetchTvAds, tvItemFor, TV_AD_EVERY_VIDEOS, TV_AD_FIRST_VIDEOS, TV_AD_FIRST_TIME_MS,
+  recordAdImpression, recordAdClick, recordAdComplete, adSkipAfterMs,
   type AdViewer,
 } from '../../lib/ads';
 import { EMPTY_PROFILE, buildAffinityProfile } from '../../lib/feedScorer';
@@ -97,6 +98,12 @@ export default function AirPlayTvScreen() {
   routingRef.current = routing;
   // Cleared on unmount so a pending drain can't touch a released player.
   const drainTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Opening ad gates (mirrors the landscape interstitial). The weave already
+  // places the first sponsor after TV_AD_FIRST_VIDEOS; these enforce the TIME
+  // half, which a pre-built queue can't express — a viewer tapping "next" could
+  // otherwise reach that slot within a few seconds of opening.
+  const sessionStartRef = useRef(Date.now());
+  const tvHadAdRef = useRef(false);
   const [pos, setPos] = useState(0);             // seconds
   const [dur, setDur] = useState(0);
 
@@ -137,14 +144,21 @@ export default function AirPlayTvScreen() {
       adItems = ads.map((s, i) => adToCastItem(tvItemFor(s, i))).filter(Boolean) as CastItem[];
     } catch { /* ads are best-effort — never block playback */ }
 
-    // Weave a sponsor in after every TV_AD_EVERY_VIDEOS videos.
+    // Weave sponsors in: the FIRST after TV_AD_FIRST_VIDEOS, every later one
+    // after TV_AD_EVERY_VIDEOS. Counting since the last sponsor (rather than a
+    // modulo on the absolute index) is what lets the opening gap differ.
     const queue: CastItem[] = [];
     let adRot = 0;
+    let sinceAd = 0;
+    let need = TV_AD_FIRST_VIDEOS;
     for (let i = 0; i < realItems.length; i++) {
       queue.push(realItems[i]);
-      if (adItems.length && (i + 1) % TV_AD_EVERY_VIDEOS === 0) {
+      sinceAd++;
+      if (adItems.length && sinceAd >= need) {
         queue.push(adItems[adRot % adItems.length]);
         adRot++;
+        sinceAd = 0;
+        need = TV_AD_EVERY_VIDEOS;
       }
     }
     return queue;
@@ -168,6 +182,15 @@ export default function AirPlayTvScreen() {
     const idx = ((i % q.length) + q.length) % q.length; // wrap → endless loop
     const item = q[idx];
     if (!item) return;
+    // Session opens ad-free for TV_AD_FIRST_TIME_MS. If the viewer skipped ahead
+    // fast enough to reach the first woven sponsor inside that window, step over
+    // it — the weave has more ahead, and it never places two ads together, so
+    // this always lands on a video.
+    if (item.isAd && !tvHadAdRef.current && Date.now() - sessionStartRef.current < TV_AD_FIRST_TIME_MS) {
+      loadIndex(idx + 1);
+      return;
+    }
+    if (item.isAd) tvHadAdRef.current = true;
     indexRef.current = idx;
     advancedRef.current = false;
     setCurrent(item);

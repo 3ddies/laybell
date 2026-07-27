@@ -21,7 +21,7 @@ import { useCast } from '../../contexts/CastContext';
 import { useListenMode } from '../../contexts/ListenModeContext';
 import TVConnectModal from '../../components/TVConnectModal';
 import { postToCastItem, liveToCastItem, adToCastItem, type CastItem } from '../../lib/cast';
-import { fetchTvAds, tvItemFor, TV_AD_EVERY_VIDEOS, type AdViewer } from '../../lib/ads';
+import { fetchTvAds, tvItemFor, TV_AD_EVERY_VIDEOS, TV_AD_FIRST_VIDEOS, type AdViewer } from '../../lib/ads';
 import { EMPTY_PROFILE, buildAffinityProfile } from '../../lib/feedScorer';
 
 // Laybell TV — a horizontal-only video hub. It adds NO new media types: the
@@ -174,12 +174,17 @@ export default function LaybellTVScreen() {
     const ordered = [...realVideos.slice(startIdx), ...realVideos.slice(0, startIdx)];
     const queue: CastItem[] = [];
     let adRot = 0;
+    // FIRST sponsor after TV_AD_FIRST_VIDEOS, every later one after
+    // TV_AD_EVERY_VIDEOS — counted since the last sponsor rather than by a
+    // modulo on the index, which is what lets the opening gap differ.
+    let sinceAd = 0;
+    let need = TV_AD_FIRST_VIDEOS;
     for (let i = 0; i < ordered.length; i++) {
       const ci = postToCastItem(ordered[i]);
-      if (ci) queue.push(ci);
-      if (adPool.length && (i + 1) % TV_AD_EVERY_VIDEOS === 0) {
+      if (ci) { queue.push(ci); sinceAd++; }
+      if (adPool.length && sinceAd >= need) {
         const ad = adToCastItem(adPool[adRot % adPool.length]);
-        if (ad) { queue.push(ad); adRot++; }
+        if (ad) { queue.push(ad); adRot++; sinceAd = 0; need = TV_AD_EVERY_VIDEOS; }
       }
     }
     // Dev-only probe for the open "sponsors never reach a real cast TV" issue —

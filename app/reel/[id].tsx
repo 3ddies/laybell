@@ -46,7 +46,8 @@ import {
 } from '../../lib/feedScorer';
 import {
   fetchReelAds, reelItemFor, randInt, fetchTvAds, tvItemFor, recordAdImpression, recordAdSkip, recordAdComplete,
-  AD_SKIP_MS, TV_AD_EVERY_VIDEOS, REEL_AD_FIRST, REEL_AD_EVERY_MIN, REEL_AD_EVERY_MAX, type AdViewer, type AdSource,
+  AD_SKIP_MS, TV_AD_EVERY_VIDEOS, TV_AD_FIRST_VIDEOS, TV_AD_FIRST_TIME_MS,
+  REEL_AD_FIRST, REEL_AD_EVERY_MIN, REEL_AD_EVERY_MAX, type AdViewer, type AdSource,
 } from '../../lib/ads';
 import { adSpacingMultiplier } from '../../lib/entitlements';
 import { openAdOptions } from '../../contexts/AdOptionsContext';
@@ -762,6 +763,10 @@ export default function ReelScreen() {
   overlayAdRef.current = overlayAd;
   const overlayViewCountRef = useRef(0);      // NEW reels seen in landscape (ad cadence)
   const overlayAdRotationRef = useRef(0);     // which ad to show next
+  // Whether a TV sponsor has already shown this session. TV-specific on purpose:
+  // hadAnySponsorRef below is cross-surface (a vertical reel ad spends it too),
+  // but TV's opening gates should only be spent by a TV sponsor.
+  const tvHadAdRef = useRef(false);
   // Reels already counted toward the cadence. Back-scrolling over them must not
   // advance the count, so a spent ad slot never fires again.
   const countedReelsRef = useRef<Set<string>>(new Set());
@@ -987,8 +992,14 @@ export default function ReelScreen() {
       // new reel once clear.
       const portraitAdActive = !!postsRef.current.find((p) => p.id === visibleIdRef.current)?.__ad;
       // …and even once it's gone, keep a minimum gap after ANY recent sponsor.
-      const tooSoon = Date.now() - lastAdAtRef.current < AD_MIN_GAP_MS;
-      if (!portraitAdActive && !tooSoon && ads.length && overlayViewCountRef.current >= TV_AD_EVERY_VIDEOS) {
+      // The session OPENS on softer gates (2 videos / 20s, like vertical reels)
+      // and settles into the normal cadence once a TV sponsor has shown.
+      // lastAdAtRef starts at mount, so the same subtraction measures "time into
+      // the session" before the first ad and "time since the last ad" after it.
+      const needVideos = tvHadAdRef.current ? TV_AD_EVERY_VIDEOS : TV_AD_FIRST_VIDEOS;
+      const needMs = tvHadAdRef.current ? AD_MIN_GAP_MS : TV_AD_FIRST_TIME_MS;
+      const tooSoon = Date.now() - lastAdAtRef.current < needMs;
+      if (!portraitAdActive && !tooSoon && ads.length && overlayViewCountRef.current >= needVideos) {
         overlayViewCountRef.current = 0; // count metric restarts once shown
         const ad = ads[overlayAdRotationRef.current % ads.length];
         overlayAdRotationRef.current += 1;
@@ -996,6 +1007,7 @@ export default function ReelScreen() {
         setOverlayAd(ad);
         lastAdAtRef.current = Date.now(); // feeds the cross-surface ad spacing
         hadAnySponsorRef.current = true;  // vertical's softer first-ad gate is spent too
+        tvHadAdRef.current = true;        // …and TV's own opening gates
         recordAdImpression(ad, 'tv', currentUserIdRef.current);
       }
     }

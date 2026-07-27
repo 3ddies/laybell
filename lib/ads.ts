@@ -79,10 +79,19 @@ export const AD_SKIP_MS = 5_000;
 // between tracks and only become skippable after this much playback.
 export const AUDIO_AD_SKIP_MS = 10_000;
 
-// How many Laybell TV videos play between sponsors — used by BOTH the landscape
-// interstitial cadence (reel/[id]) and the cast auto-advance injection
-// (CastContext) so the on-phone and on-TV ad frequency stay identical.
+// How many Laybell TV videos play between sponsors — used by the landscape
+// interstitial cadence (reel/[id]), the cast queue weave (tv/index) and the
+// AirPlay queue weave (tv/airplay) so the on-phone and on-TV ad frequency stay
+// identical.
 export const TV_AD_EVERY_VIDEOS = 4;
+// …and TV now OPENS like vertical reels do: the first sponsor of a session needs
+// a shorter count gate AND its own softer time gate, so a session never leads
+// with an ad but also doesn't make you wait four videos for the first one.
+// Mirrors REEL_AD_FIRST / REEL_AD_FIRST_TIME_MS; the 20s is TV's own value.
+// After the first sponsor both surfaces fall back to TV_AD_EVERY_VIDEOS and the
+// cross-surface AD_MIN_GAP_MS.
+export const TV_AD_FIRST_VIDEOS = 2;
+export const TV_AD_FIRST_TIME_MS = 20_000;
 
 // Advertiser-chosen skip mode (Laybell TV + music ads only): a short spot that
 // plays FULLY through with no skip ('unskippable', creative must be ≤15s), or a
