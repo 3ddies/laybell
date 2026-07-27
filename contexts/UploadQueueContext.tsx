@@ -266,7 +266,20 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       // freshly-posted video is always on top no matter the feed ranking.
       setCompletedTick((n) => n + 1);
       const ready = await pollStreamReady(uid);
-      if (ready) supabase.from('posts').update({ video_status: 'ready' }).eq('id', postId).then(undefined, () => {});
+      if (!ready) {
+        // Cloudflare errored (or never finished) — most often because the source
+        // ran past the upload URL's maxDurationSeconds. The row was inserted
+        // BEFORE encoding, so bailing out silently here is what used to leave a
+        // permanently unplayable post sitting in the feed after the composer had
+        // already said "Posted". Roll it back: drop the row and the Stream asset,
+        // then fall into the catch so the card shows an error the user can retry
+        // or dismiss. Retry re-inserts a fresh row, so removing this one is safe.
+        await supabase.from('posts').delete().eq('id', postId).then(undefined, () => {});
+        deleteStreamVideo(uid).catch(() => {});
+        setCompletedTick((n) => n + 1); // pull the deleted row back out of the feed
+        throw new Error('Video processing failed');
+      }
+      supabase.from('posts').update({ video_status: 'ready' }).eq('id', postId).then(undefined, () => {});
       const shownFor = Date.now() - processingStart;
       if (shownFor < MIN_PROCESSING_MS) await new Promise((r) => setTimeout(r, MIN_PROCESSING_MS - shownFor));
       // Done — hand off from the optimistic card to the REAL post: pin its id at the

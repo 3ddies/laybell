@@ -38,7 +38,7 @@ import { Image as ExpoImage } from 'expo-image';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
 import PhotoGrid, { type PickedMedia, type PhotoGridHandle } from '../../components/PhotoGrid';
 import { MAX_SLIDES, type Slide } from '../../lib/slideshow';
-import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/upload';
+import { uploadToStorageWithProgress, compressVideoIfPossible, fileSizeBytes } from '../../lib/upload';
 import { useUploadActions } from '../../contexts/UploadQueueContext';
 import { peekPendingSpotlight, clearPendingSpotlight, activateCampaign, spotlightDurationPhrase } from '../../lib/spotlight';
 import {
@@ -121,8 +121,31 @@ const DETAILS_PREVIEW = Math.min(Math.round(SCREEN_W * 0.44), 190);
 // must never be rejected for it; the storage bucket's limit is raised to
 // match). Videos longer than the cap aren't rejected either: the trim editor
 // lets the user pick a 3-minute window.
-const VIDEO_MAX_SEC  = 180;      // 3 min
-const MUSIC_MAX_SEC  = 6 * 60;   // music tracks
+const VIDEO_MAX_SEC  = 180;      // 3 min — the published WINDOW
+// Trimming a long clip is VIRTUAL: we store trim_start/trim_end and upload the
+// FULL source file (no re-encode). Cloudflare, meanwhile, rejects any direct
+// upload longer than the maxDurationSeconds its upload URL was minted with — so
+// the ceiling we request has to cover the SOURCE, not the 3-minute window, and
+// sources past what stream-direct-upload will grant (it clamps at 600) have to
+// be refused up front. Sending the window ceiling was the bug that let a long
+// video fail on Cloudflare's side AFTER the composer had already said "Posted",
+// leaving a permanently unplayable post in the feed.
+const VIDEO_SOURCE_MAX_SEC = 600; // 10 min — matches the edge function's clamp
+// When the duration is UNKNOWN (0 — a picker that didn't report one) we ask for
+// the maximum rather than the minimum: under-asking is what makes Cloudflare
+// reject the upload later, and asking high costs nothing (Stream bills actual
+// stored minutes, not the ceiling the upload URL was minted with).
+const streamCeilingFor = (sourceSec: number) =>
+  sourceSec > 0
+    ? Math.min(VIDEO_SOURCE_MAX_SEC, Math.max(VIDEO_MAX_SEC, Math.ceil(sourceSec)) + 30)
+    : VIDEO_SOURCE_MAX_SEC;
+// Uploads above this get an "are you sure" first: there is no size cap anywhere
+// in the pipeline, so without this a multi-hundred-MB clip starts uploading (the
+// details step PREWARMS it) with no warning, on cellular as readily as wifi.
+const LARGE_UPLOAD_BYTES = 200 * 1024 * 1024; // 200 MB
+const MUSIC_MAX_SEC  = 12 * 60;  // music tracks — live cuts, mixes and extended
+                                 // versions routinely run past the old 6-minute
+                                 // cap on a music-first app
 const SPOKEN_MAX_SEC = 35 * 60;  // podcasts / audiobooks
 const AUDIO_MIN_SEC  = 5;        // global minimum length for any audio
 
@@ -249,12 +272,15 @@ export default function PostScreen() {
     if (step === 'details' && postType === 'video' && media?.uri) {
       if (prewarmedUriRef.current && prewarmedUriRef.current !== media.uri) discardPrewarm(prewarmedUriRef.current);
       prewarmedUriRef.current = media.uri;
-      prewarmVideo(media.uri, VIDEO_MAX_SEC + 30);
+      // Ceiling must cover the SOURCE — the prewarm uploads the untrimmed file.
+      prewarmVideo(media.uri, streamCeilingFor(videoDuration));
     } else if (prewarmedUriRef.current) {
       discardPrewarm(prewarmedUriRef.current);
       prewarmedUriRef.current = null;
     }
-  }, [step, postType, media?.uri, prewarmVideo, discardPrewarm]);
+    // videoDuration is a dep because the ceiling is derived from it; prewarmVideo
+    // is idempotent per uri, so a re-run after the duration lands is a no-op.
+  }, [step, postType, media?.uri, videoDuration, prewarmVideo, discardPrewarm]);
   const [publicCount, setPublicCount] = useState<number | null>(null);
 
   // Live count of public (non-archived) posts for the slot hint + gate.
@@ -503,12 +529,52 @@ export default function PostScreen() {
     setFormat(IMAGE_FORMATS[(i + 1) % IMAGE_FORMATS.length]);
   }
 
+  // Best-effort byte check before a pick is accepted. Returns true to proceed.
+  // A size of 0 means "couldn't read it" (e.g. a ph:// asset not yet localized),
+  // which must never block the user — the warning is a courtesy, not a gate.
+  // Deliberately says "a lot of data" rather than naming cellular: NetInfo is a
+  // native module that reports a pessimistic fallback until the binary is
+  // rebuilt with it, so a connection-specific claim could simply be wrong.
+  async function confirmLargeUpload(uri: string): Promise<boolean> {
+    let bytes = 0;
+    try { bytes = await fileSizeBytes(uri); } catch { bytes = 0; }
+    if (!bytes || bytes < LARGE_UPLOAD_BYTES) return true;
+    const size = `${Math.round(bytes / (1024 * 1024))} MB`;
+    return new Promise<boolean>((resolve) => {
+      Alert.alert(
+        t('post.largeUploadTitle'),
+        t('post.largeUploadBody', { size }),
+        [
+          { text: t('common.cancel'), style: 'cancel', onPress: () => resolve(false) },
+          { text: t('post.largeUploadContinue'), onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      );
+    });
+  }
+
   async function onPickMedia(m: PickedMedia) {
     // Tapping a thumbnail (even far down the grid) snaps back to the top so the
     // collapsing preview re-expands and shows the media that was just picked.
     photoGridRef.current?.scrollToTop();
-    // Long videos are never rejected — the edit step's trimmer picks a
-    // 3-minute window out of them instead.
+    // Long videos are still not rejected for LENGTH in the normal case — the
+    // edit step's trimmer picks a 3-minute window out of them. But the source
+    // itself is what gets uploaded, so anything past the Stream ceiling can
+    // never publish; refuse it here, while the user still has the picker open,
+    // rather than failing invisibly after they hit Share.
+    if (m.type === 'video') {
+      const srcSec = m.duration ?? 0;
+      if (srcSec > VIDEO_SOURCE_MAX_SEC) {
+        Alert.alert(
+          t('post.videoSourceTooLongTitle'),
+          t('post.videoSourceTooLongBody', { max: fmtMins(VIDEO_SOURCE_MAX_SEC) }),
+        );
+        return;
+      }
+      // Same idea for bytes: the details step prewarms the upload, so by the
+      // time a "this is huge" surprise would surface, it's already uploading.
+      if (!(await confirmLargeUpload(m.uri))) return;
+    }
     if (m.type !== postType) setFormat(defaultFormatFor(m.type as any)); // image↔video
     setPostType(m.type);
     setPickedId(m.id);
@@ -725,6 +791,17 @@ export default function PostScreen() {
     if (postType === 'image') cropRef.current = cropperRef.current?.getCrop() ?? null;
     if (postType === 'slideshow') captureLastSlideCrop();
     // Long videos go through the trim editor to pick a 3-minute window.
+    // Backstop for the source ceiling. onPickMedia already refuses these, but a
+    // DRAFT saved before that gate existed can still carry an over-length clip
+    // back in (drafts restore videoDuration verbatim) — and letting one through
+    // here is exactly the silent post-Share failure this is all guarding against.
+    if (postType === 'video' && videoDuration > VIDEO_SOURCE_MAX_SEC) {
+      Alert.alert(
+        t('post.videoSourceTooLongTitle'),
+        t('post.videoSourceTooLongBody', { max: fmtMins(VIDEO_SOURCE_MAX_SEC) }),
+      );
+      return;
+    }
     if (postType === 'video' && videoDuration > VIDEO_MAX_SEC) { setStep('edit'); return; }
     setStep('details');
   }
@@ -833,7 +910,9 @@ export default function PostScreen() {
           topCaption: videoAspect > 1 ? topCaption : null,
           bottomCaption: videoAspect > 1 ? bottomCaption : null,
           captions: videoAspect <= 1 && videoCaptions.length ? videoCaptions : null,
-          maxDurationSeconds: VIDEO_MAX_SEC + 30,
+          // Covers the SOURCE, not the 3-min window: the file that actually goes
+          // up is untrimmed, and Cloudflare rejects anything past this ceiling.
+          maxDurationSeconds: streamCeilingFor(videoDuration),
           spotlight: ps ? { campaignId: ps.campaignId, days: ps.days } : null,
         });
         if (ps) { clearPendingSpotlight(); setPendingSpotBanner(null); }

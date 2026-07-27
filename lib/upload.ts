@@ -30,7 +30,10 @@ export async function ensureLocalFile(uri: string): Promise<string> {
   }
 }
 
-async function fileSizeBytes(uri: string): Promise<number> {
+// Exported so the composer can warn about a huge upload BEFORE the details step
+// prewarms it. Returns 0 when the size can't be read (ph:// assets that haven't
+// been localized yet) — callers treat 0 as "unknown, don't block".
+export async function fileSizeBytes(uri: string): Promise<number> {
   try {
     const info = await FileSystem.getInfoAsync(uri);
     return info.exists ? ((info as any).size ?? 0) : 0;
