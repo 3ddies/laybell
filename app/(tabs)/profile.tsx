@@ -13,7 +13,7 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { tabTick } from '../../lib/haptics';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
@@ -27,10 +27,10 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import ProfileQRModal from '../../components/ProfileQRModal';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
-import { countLabel } from '../../lib/i18n';
+import { formatCount } from '../../lib/format';
 import { displayUrl } from '../../lib/profileOptions';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
-import { activeLayout, usedPostIds } from '../../lib/pageLayout';
+import { activeLayout, usedPostIds, type PageLayout } from '../../lib/pageLayout';
 import ProfileLayoutGrid from '../../components/ProfileLayoutGrid';
 import { isAudioPost } from '../../lib/genres';
 import { slideshowThumb } from '../../lib/slideshow';
@@ -76,6 +76,314 @@ function readableOn(hex: string): string {
   return lum > 0.62 ? '#16161A' : '#FFFFFF';
 }
 
+// Shared empty array so "no leftovers" keeps a stable identity across renders
+// (a fresh [] every render would bust the memoized Posts page below).
+const NO_POSTS: any[] = [];
+
+// ── Memoized sub-tab content ─────────────────────────────────────────────────
+// All five sub-tab pages stay MOUNTED (see the pager note in the render), so
+// before this every parent re-render — a focus, an audio tick, a refetch that
+// returned identical rows — rebuilt all five grids cell by cell. Each page is a
+// memo() component taking data + identity-stable handlers, so a re-render that
+// doesn't change what a page shows bails out instead of walking every cell.
+
+type CellAction = (post: any) => void;
+
+// One grid thumbnail. Re-renders only when its own post or spotlight flag moves.
+const GridCell = memo(function GridCell({ post, spotlighted, onOpen, onLongPress, registerRef }: {
+  post: any;
+  spotlighted: boolean;
+  onOpen: CellAction;
+  onLongPress?: CellAction;
+  registerRef: (id: string, node: any) => void;
+}) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <TouchableOpacity
+      ref={(n) => { if (n) registerRef(post.id, n); }}
+      style={styles.gridItem}
+      onLongPress={onLongPress ? () => onLongPress(post) : undefined}
+      onPress={() => onOpen(post)}
+    >
+      {post.type === 'slideshow' ? (
+        <>
+          {/* Slide 1's screenshot (video) or slide 1 itself (image) */}
+          <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} contentFit="cover" />
+          <View style={styles.gridPlayOverlay}>
+            <Ionicons name="copy" size={13} color="#fff" />
+          </View>
+        </>
+      ) : post.type === 'video' ? (
+        <>
+          <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.gridImage} />
+          <View style={styles.gridPlayOverlay}>
+            <Ionicons name="play" size={14} color="#fff" />
+          </View>
+        </>
+      ) : post.type === 'image' ? (
+        <Image source={{ uri: post.media_url }} style={styles.gridImage} contentFit="cover" />
+      ) : isAudioPost(post.type) && post.cover_url ? (
+        <>
+          <Image source={{ uri: post.cover_url }} style={styles.gridImage} contentFit="cover" />
+          <View style={styles.gridPlayOverlay}>
+            <Ionicons name="musical-notes" size={13} color="#fff" />
+          </View>
+        </>
+      ) : (
+        <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
+          <Ionicons
+            name={isAudioPost(post.type) ? 'musical-notes' : 'videocam'}
+            size={28} color={colors.primary}
+          />
+        </LinearGradient>
+      )}
+      {/* Subtle yellow sparkle when this post has a live spotlight. */}
+      {spotlighted && <SpotlightThumbBadge />}
+      {/* View count (video) / listen count (audio) */}
+      <ThumbStat type={post.type} viewCount={post.view_count} streamCount={post.stream_count} />
+    </TouchableOpacity>
+  );
+});
+
+// The 3-up thumbnail grid shared by Posts / Videos / Reposts.
+const PostsGrid = memo(function PostsGrid({
+  data, tabKey, spotlightIds, fallbackArtist, onOpenVisual, onLongPressPost, onPlayQueue,
+}: {
+  data: any[];
+  tabKey: string;
+  spotlightIds: Set<string>;
+  fallbackArtist: string;
+  onOpenVisual: (post: any, node?: any) => void;
+  onLongPressPost: (post: any, tabKey: string) => void;
+  onPlayQueue: (queue: any[], index: number, alsoExpand?: boolean) => void;
+}) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const styles = useThemedStyles(makeStyles);
+  // Per-grid node map so opening a post expands out of the cell you actually
+  // tapped. (One shared map across all five mounted tabs meant a post that
+  // appears in two of them resolved to whichever hidden tab registered last.)
+  const cellRefs = useRef<Record<string, any>>({});
+  const registerRef = useCallback((id: string, node: any) => { cellRefs.current[id] = node; }, []);
+
+  const handleOpen = useCallback((post: any) => {
+    if (isAudioPost(post.type)) {
+      const songs = data.filter((s: any) => isAudioPost(s.type));
+      const idx = songs.findIndex((s: any) => s.id === post.id);
+      onPlayQueue(
+        songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? fallbackArtist, cover: s.cover_url })),
+        Math.max(0, idx),
+      );
+    } else {
+      onOpenVisual(post, cellRefs.current[post.id]);
+    }
+  }, [data, fallbackArtist, onOpenVisual, onPlayQueue]);
+
+  const handleLongPress = useCallback((post: any) => onLongPressPost(post, tabKey), [onLongPressPost, tabKey]);
+
+  if (data.length === 0) {
+    return (
+      <View style={styles.emptyGrid}>
+        <Ionicons
+          name={tabKey === 'reposts' ? 'repeat-outline' : 'images-outline'}
+          size={40}
+          color={colors.textTertiary}
+        />
+        <Text style={styles.emptyGridText}>
+          {t(`profile.empty.${tabKey}`)}
+        </Text>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.postsGrid}>
+      {data.map((post: any) => (
+        <GridCell
+          key={post.id}
+          post={post}
+          spotlighted={spotlightIds.has(post.id)}
+          onOpen={handleOpen}
+          // Own content (Posts / Videos) — long-press for edit/delete.
+          // Reposts — long-press to remove the repost (via the options sheet).
+          onLongPress={handleLongPress}
+          registerRef={registerRef}
+        />
+      ))}
+    </View>
+  );
+});
+
+// The Posts tab: a custom feature layout (when active) above the normal grid of
+// any leftover posts, or just the normal grid.
+const PostsPage = memo(function PostsPage({
+  pageLayout, allPosts, ordered, leftovers, spotlightIds, playingId, ownerTier, artistName,
+  isActiveTab, fallbackArtist, onOpenVisual, onLongPressPost, onPlayQueue,
+}: {
+  pageLayout: PageLayout | null;
+  allPosts: any[];
+  ordered: any[];
+  leftovers: any[];
+  spotlightIds: Set<string>;
+  playingId: string | null;
+  ownerTier: string | null;
+  artistName?: string;
+  isActiveTab: boolean;
+  fallbackArtist: string;
+  onOpenVisual: (post: any, node?: any) => void;
+  onLongPressPost: (post: any, tabKey: string) => void;
+  onPlayQueue: (queue: any[], index: number, alsoExpand?: boolean) => void;
+}) {
+  // Focus is read HERE rather than in the screen body: it only ever feeds the
+  // looping hero below, so the whole profile no longer re-renders every time
+  // the tab gains or loses focus.
+  const isFocused = useIsFocused();
+  const grid = (
+    <PostsGrid
+      data={pageLayout ? leftovers : ordered}
+      tabKey="posts"
+      spotlightIds={spotlightIds}
+      fallbackArtist={fallbackArtist}
+      onOpenVisual={onOpenVisual}
+      onLongPressPost={onLongPressPost}
+      onPlayQueue={onPlayQueue}
+    />
+  );
+  if (!pageLayout) return grid;
+  return (
+    <>
+      <ProfileLayoutGrid
+        layout={pageLayout}
+        posts={allPosts}
+        ownerTier={ownerTier}
+        spotlightIds={spotlightIds}
+        playingId={playingId}
+        artistName={artistName}
+        // Pause the looping hero when this sub-tab is hidden or the profile is
+        // off-screen — a detached VideoView that plays to its end stalls black.
+        active={isActiveTab && isFocused}
+        onOpenVisual={onOpenVisual}
+        onPlaySongs={(queue, idx) => onPlayQueue(queue, idx)}
+        onLongPressPost={(post) => onLongPressPost(post, 'posts')}
+      />
+      {leftovers.length > 0 && grid}
+    </>
+  );
+});
+
+// Music tab: a scrollable list of "sound cards" (spotify-style TrackRows) —
+// NOT the picture-thumbnail grid the other tabs use. The main Posts grid still
+// shows audio posts as thumbnails (PostsGrid, default). `tracks` arrives already
+// ordered by the screen (custom order, else spotlighted-first newest-first).
+const MusicPage = memo(function MusicPage({
+  tracks, spotlightIds, playingId, badgeProfile, ownerId, ownerName, ownerUsername,
+  showReorder, onReorder, onPlayQueue, onTrackOptions,
+}: {
+  tracks: any[];
+  spotlightIds: Set<string>;
+  playingId: string | null;
+  badgeProfile: any;
+  ownerId?: string;
+  ownerName: string;
+  ownerUsername: string;
+  showReorder: boolean;
+  onReorder: () => void;
+  onPlayQueue: (queue: any[], index: number, alsoExpand?: boolean) => void;
+  onTrackOptions: (track: any) => void;
+}) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const styles = useThemedStyles(makeStyles);
+  const queue = useMemo(
+    () => tracks.map((tr: any) => ({
+      id: tr.id, uri: tr.media_url, caption: tr.caption,
+      artist: tr.profiles?.display_name ?? ownerName, cover: tr.cover_url,
+    })),
+    [tracks, ownerName],
+  );
+
+  if (tracks.length === 0) {
+    return (
+      <View style={styles.emptyGrid}>
+        <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
+        <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.musicList}>
+      {/* Premium: arrange the Music tab in a custom order (see /music-order). */}
+      {showReorder && (
+        <TouchableOpacity style={styles.reorderMusicBtn} onPress={onReorder} activeOpacity={0.8}>
+          <Ionicons name="swap-vertical" size={16} color={colors.primary} />
+          <Text style={styles.reorderMusicText}>{t('profile.reorderMusic')}</Text>
+        </TouchableOpacity>
+      )}
+      {tracks.map((track: any, i: number) => (
+        <TrackRow
+          key={track.id}
+          caption={track.caption}
+          artist={track.profiles?.display_name ?? ownerName}
+          username={track.profiles?.username ?? ownerUsername}
+          duration={track.duration_seconds}
+          streams={track.stream_count ?? 0}
+          cover={track.cover_url}
+          badgeProfile={badgeProfile}
+          badgeOwnerId={ownerId}
+          spotlighted={spotlightIds.has(track.id)}
+          isPlaying={playingId === track.id}
+          onPlay={() => onPlayQueue(queue, i)}
+          onCoverPress={() => onPlayQueue(queue, i, true)}
+          onOptions={() => onTrackOptions(track)}
+        />
+      ))}
+    </View>
+  );
+});
+
+// Public playlists as showcase cards: cover art, name, listen count.
+const PlaylistsPage = memo(function PlaylistsPage({ playlists, onOpen }: {
+  playlists: any[];
+  onOpen: (id: string) => void;
+}) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const styles = useThemedStyles(makeStyles);
+  // Same string countLabel('listen', n) builds, but through the CONTEXT-bound
+  // translator: countLabel reads a module singleton the language provider only
+  // syncs in an effect, so it lags one render behind a language switch — which
+  // this memoized page would then never repaint away.
+  const listens = (n: number) => t(`count.listen.${n === 1 ? 'one' : 'other'}`, { n: formatCount(n) });
+  if (playlists.length === 0) {
+    return (
+      <View style={styles.emptyGrid}>
+        <Ionicons name="albums-outline" size={40} color={colors.textTertiary} />
+        <Text style={styles.emptyGridText}>{t('profile.noPlaylists')}</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.plGrid}>
+      {playlists.map((pl: any) => (
+        <TouchableOpacity key={pl.id} style={styles.plCard} activeOpacity={0.8} onPress={() => onOpen(pl.id)}>
+          {pl.cover ? (
+            <Image source={{ uri: pl.cover }} style={styles.plCover} />
+          ) : (
+            <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.plCover}>
+              <Ionicons name="musical-notes" size={26} color={colors.primary} />
+            </LinearGradient>
+          )}
+          <Text style={styles.plName} numberOfLines={1}>{pl.name}</Text>
+          <View style={styles.plMetaRow}>
+            <Ionicons name="headset" size={11} color={colors.textTertiary} />
+            <Text style={styles.plMeta}>{listens(pl.play_count ?? 0)}</Text>
+          </View>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+});
+
 export default function ProfileScreen() {
   const { show: showOptions } = usePostOptions();
   const { profile: liveProfile } = useProfile();
@@ -104,9 +412,15 @@ export default function ProfileScreen() {
   const [publicPlaylists, setPublicPlaylists] = useState<any[]>([]);
   const router = useRouter();
   const navigation = useNavigation();
-  const isFocused = useIsFocused();
   const { playQueue, expand } = useAudio();
   const { playingId } = useAudioPlayer();
+
+  // The audio and post-options providers hand out fresh callbacks on every one
+  // of their renders — parking them behind a ref lets every handler below stay
+  // identity-stable, which is what keeps the memoized sub-tab pages from
+  // re-rendering on unrelated updates (an audio tick, a sheet opening).
+  const liveRef = useRef({ playQueue, expand, showOptions, router });
+  liveRef.current = { playQueue, expand, showOptions, router };
 
   // Unaddressed/unseen shop activity (pending sale requests, freshly delivered
   // or declined orders) → red alert dot on the Shop button, refreshed whenever
@@ -115,9 +429,6 @@ export default function ProfileScreen() {
   useFocusEffect(useCallback(() => {
     unseenShopActivityCount().then(setShopAlertCount).catch(() => {});
   }, []));
-
-  // Per-thumbnail nodes so opening a post/reel can expand out of the tapped cell.
-  const gridRefs = useRef<Record<string, any>>({});
 
   // ── Sub-tab navigation: Music-page pattern, NO pager ──────────────────────
   // One fling PanResponder on the page ROOT steps the sub-tabs (with the same
@@ -221,6 +532,18 @@ export default function ProfileScreen() {
     },
   })).current;
 
+  // Refetch signatures. The focus refetch below still runs on EVERY focus (so a
+  // post reposted elsewhere shows up), but it only pushes state when the rows
+  // actually changed — identical data means zero setState, zero re-render, and
+  // stable array/Set identities so every memo on the page holds. Local edits
+  // (delete / archive / un-repost) clear the matching signature so the next
+  // fetch is always applied on top of them.
+  const profileSigRef = useRef('');
+  const postsSigRef = useRef('');
+  const repostsSigRef = useRef('');
+  const playlistsSigRef = useRef('');
+  const spotlightSigRef = useRef('');
+
   // Refetch on focus so a post reposted elsewhere shows up in the Reposts tab.
   useFocusEffect(useCallback(() => { fetchProfile(); }, []));
 
@@ -239,18 +562,30 @@ export default function ProfileScreen() {
       supabase.from('playlists').select('*').eq('user_id', user.id).eq('is_public', true).order('play_count', { ascending: false }),
     ]);
 
-    if (profileRes.data) setProfile(profileRes.data);
-    setStats({ followers: followersRes.count || 0, following: followingRes.count || 0, posts: postsCountRes.count || 0 });
+    if (profileRes.data) {
+      const sig = JSON.stringify(profileRes.data);
+      if (sig !== profileSigRef.current) { profileSigRef.current = sig; setProfile(profileRes.data); }
+    }
+    const followers = followersRes.count || 0, following = followingRes.count || 0, posts = postsCountRes.count || 0;
+    setStats(prev => (prev.followers === followers && prev.following === following && prev.posts === posts)
+      ? prev
+      : { followers, following, posts });
     // Archived posts (archived_at set) are hidden from the grid but kept in the
     // Archive screen. archived_at is absent pre-migration → harmless no-op.
     if (postsRes.data) {
       const visible = postsRes.data.filter((p: any) => !p.archived_at);
-      setUserPosts(visible);
+      const sig = JSON.stringify(visible);
+      if (sig !== postsSigRef.current) { postsSigRef.current = sig; setUserPosts(visible); }
       // Flag which of these are currently spotlighted (one batched query).
-      fetchSpotlightedPostIds(visible.map((p: any) => p.id)).then(setSpotlightIds);
+      fetchSpotlightedPostIds(visible.map((p: any) => p.id)).then((ids) => {
+        const idSig = [...ids].sort().join(',');
+        if (idSig !== spotlightSigRef.current) { spotlightSigRef.current = idSig; setSpotlightIds(ids); }
+      });
     }
     // `reposts` may not be migrated yet — degrade to an empty tab if so.
-    setRepostedPosts((repostsRes.data ?? []).map((r: any) => r.posts).filter(Boolean));
+    const reposted = (repostsRes.data ?? []).map((r: any) => r.posts).filter(Boolean);
+    const repostSig = JSON.stringify(reposted);
+    if (repostSig !== repostsSigRef.current) { repostsSigRef.current = repostSig; setRepostedPosts(reposted); }
     // Public playlists tab: only the ones holding an active badge slot, faced
     // with their first track's cover. Degrades to empty pre-migration.
     try {
@@ -258,19 +593,148 @@ export default function ProfileScreen() {
       const active = activePublicIds(pls as any, rawTier(profileRes.data));
       const shown = pls.filter((p: any) => active.has(p.id));
       const covers = await fetchFirstTrackCovers(shown.map((p: any) => p.id));
-      setPublicPlaylists(shown.map((p: any) => ({ ...p, cover: covers[p.id] ?? null })));
-    } catch { setPublicPlaylists([]); }
+      const faced = shown.map((p: any) => ({ ...p, cover: covers[p.id] ?? null }));
+      const plSig = JSON.stringify(faced);
+      if (plSig !== playlistsSigRef.current) { playlistsSigRef.current = plSig; setPublicPlaylists(faced); }
+    } catch {
+      if (playlistsSigRef.current !== '[]') { playlistsSigRef.current = '[]'; setPublicPlaylists([]); }
+    }
     setLoading(false);
     setRefreshing(false);
   }
+
+  // ── Stable handlers ────────────────────────────────────────────────────────
+  // Every callback handed to a memoized page below is created once, reading
+  // anything volatile through liveRef.
+
+  // Drop a post from the grid after a delete/archive. Clearing the signature
+  // makes the next focus refetch authoritative again even if the server still
+  // reports the old row set.
+  const removePost = useCallback((id: string) => {
+    postsSigRef.current = '';
+    setUserPosts(prev => prev.filter(p => p.id !== id));
+    setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
+  }, []);
+
+  // Open an image/slideshow post or a reel, expanding out of the tapped cell
+  // (shared by the normal grid and the custom layout blocks).
+  const openVisual = useCallback((post: any, node?: any) => {
+    const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
+    const seed = JSON.stringify(post);
+    if (node?.measureInWindow) {
+      node.measureInWindow((x: number, y: number, width: number, height: number) =>
+        liveRef.current.router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
+    } else {
+      liveRef.current.router.push({ pathname, params: { id: post.id, post: seed } });
+    }
+  }, []);
+
+  // Long-press sheet. Own content (Posts / Videos, and the custom layout blocks)
+  // → edit / delete / archive; Reposts → remove the repost.
+  const onLongPressPost = useCallback((post: any, tabKey: string) => {
+    if (tabKey === 'reposts') {
+      liveRef.current.showOptions({
+        postId: post.id,
+        isOwn: false,
+        onRepostChanged: (reposted) => {
+          if (!reposted) {
+            repostsSigRef.current = '';
+            setRepostedPosts(prev => prev.filter(p => p.id !== post.id));
+          }
+        },
+      });
+      return;
+    }
+    liveRef.current.showOptions({
+      postId: post.id,
+      isOwn: true,
+      mediaType: post.type,
+      aspect: post.aspect_ratio,
+      caption: post.caption,
+      thumbnail: post.thumbnail_url,
+      onEdit: () => liveRef.current.router.push(`/edit-post/${post.id}`),
+      onDeleted: () => removePost(post.id),
+      onArchived: () => removePost(post.id),
+    });
+  }, [removePost]);
+
+  // The Music tab's own sheet (no aspect/caption/thumbnail — a sound card has
+  // no thumbnail preview to hand the sheet).
+  const onTrackOptions = useCallback((track: any) => {
+    liveRef.current.showOptions({
+      postId: track.id,
+      isOwn: true,
+      mediaType: track.type,
+      onEdit: () => liveRef.current.router.push(`/edit-post/${track.id}`),
+      onDeleted: () => removePost(track.id),
+      onArchived: () => removePost(track.id),
+    });
+  }, [removePost]);
+
+  const playTracks = useCallback((queue: any[], index: number, alsoExpand = false) => {
+    liveRef.current.playQueue(queue, index);
+    if (alsoExpand) liveRef.current.expand();
+  }, []);
+
+  const openPlaylist = useCallback((id: string) => { liveRef.current.router.push(`/playlist/${id}`); }, []);
+  const openMusicOrder = useCallback(() => { liveRef.current.router.push('/music-order'); }, []);
+
+  // ── Derived per-tab data ───────────────────────────────────────────────────
+  // Memoized (and above the loading early-return, so the hook order never
+  // changes): these used to be recomputed for every tab on every render.
+
+  // Prefer the global ProfileContext copy (live tier + avatar, kept in sync after
+  // edits / badge changes); fall back to this screen's own fetch on first paint.
+  const badgeProfile = liveProfile ?? profile;
+
+  // The custom Posts-grid layout, if the user has one AND still qualifies for its
+  // tier (activeLayout re-checks earned tier + resolves blocks against live posts).
+  const pageLayout = useMemo(() => activeLayout(badgeProfile, userPosts), [badgeProfile, userPosts]);
+
+  const musicPosts = useMemo(() => userPosts.filter((p: any) => p.type === 'audio'), [userPosts]);
+  const videoPosts = useMemo(() => userPosts.filter((p: any) => p.type === 'video'), [userPosts]);
+
+  // Posts tab ordering: float live-spotlighted posts to the TOP (newest-first
+  // among them), everyone else newest-first. When a spotlight expires the post
+  // drops out of spotlightIds → it returns to default placement. Skipped entirely
+  // if the user runs a custom page layout — then their own arrangement wins.
+  const orderedPosts = useMemo(() => {
+    if (pageLayout) return userPosts;
+    return [...userPosts].sort((a, b) => {
+      const sa = spotlightIds.has(a.id) ? 1 : 0;
+      const sb = spotlightIds.has(b.id) ? 1 : 0;
+      if (sa !== sb) return sb - sa;
+      return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+    });
+  }, [userPosts, spotlightIds, pageLayout]);
+
+  // Posts a custom layout doesn't already show — they fall through to the grid
+  // underneath it.
+  const layoutLeftovers = useMemo(() => {
+    if (!pageLayout) return NO_POSTS;
+    const used = usedPostIds(pageLayout.blocks);
+    return userPosts.filter((p: any) => !used.has(p.id));
+  }, [pageLayout, userPosts]);
+
+  // A saved custom order (Premium perk — see /music-order) WINS: the tab shows
+  // the user's exact arrangement (new songs appended newest-first). With no
+  // custom order, live-spotlighted tracks float to the TOP (newest-first among
+  // them), the rest most-recent → least-recent.
+  const musicTracks = useMemo(() => {
+    const order = parseMusicOrder((profile as any)?.music_order);
+    if (order.length) return applyMusicOrder([...musicPosts], order);
+    return [...musicPosts].sort((a, b) => {
+      const sa = spotlightIds.has(a.id) ? 1 : 0;
+      const sb = spotlightIds.has(b.id) ? 1 : 0;
+      if (sa !== sb) return sb - sa;
+      return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+    });
+  }, [musicPosts, spotlightIds, profile]);
 
   if (loading) {
     return <View style={[styles.loadingContainer, { justifyContent: 'flex-start' }]}><ProfileSkeleton /></View>;
   }
 
-  // Prefer the global ProfileContext copy (live tier + avatar, kept in sync after
-  // edits / badge changes); fall back to this screen's own fetch on first paint.
-  const badgeProfile = liveProfile ?? profile;
   const myTier = chosenTier(badgeProfile);
   const ringColors = resolveRingColors(badgeProfile, myTier);
   const bannerColors = resolveBannerColors(myTier, colors.background);
@@ -278,9 +742,6 @@ export default function ProfileScreen() {
   // Active sub-tab pill + glow take the user's emblem-theme color (orange default
   // when they have no badge). Visible on public profiles too (owner's tier).
   const tabAccent = myTier ? ringColors[0] : colors.primary;
-  // The custom Posts-grid layout, if the user has one AND still qualifies for its
-  // tier (activeLayout re-checks earned tier + resolves blocks against live posts).
-  const pageLayout = activeLayout(badgeProfile, userPosts);
   // Light mode: a SOLID accent pill so the active tab clearly separates from the
   // white background (a faint tint let light/metallic badge colors blend in).
   // Dark/grey keep the softer tinted pill (they already read fine).
@@ -297,307 +758,6 @@ export default function ProfileScreen() {
   // On the solid pill, text/icon flip to black/white for contrast; otherwise the
   // accent color on the tinted pill (unchanged).
   const activeContent = solidActive ? readableOn(tabAccent) : tabAccent;
-
-  function dataForTab(key: string) {
-    switch (key) {
-      case 'music': return userPosts.filter(p => p.type === 'audio');
-      case 'videos': return userPosts.filter(p => p.type === 'video');
-      case 'reposts': return repostedPosts;
-      default: return userPosts; // posts
-    }
-  }
-
-  // Posts tab ordering: float live-spotlighted posts to the TOP (newest-first
-  // among them), everyone else newest-first. When a spotlight expires the post
-  // drops out of spotlightIds → it returns to default placement. Skipped entirely
-  // if the user runs a custom page layout — then their own arrangement wins.
-  function orderPostsForGrid(data: any[]) {
-    if (pageLayout) return data;
-    return [...data].sort((a, b) => {
-      const sa = spotlightIds.has(a.id) ? 1 : 0;
-      const sb = spotlightIds.has(b.id) ? 1 : 0;
-      if (sa !== sb) return sb - sa;
-      return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
-    });
-  }
-
-  // Public playlists as showcase cards: cover art, name, listen count.
-  function renderPlaylists() {
-    if (publicPlaylists.length === 0) {
-      return (
-        <View style={styles.emptyGrid}>
-          <Ionicons name="albums-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyGridText}>{t('profile.noPlaylists')}</Text>
-        </View>
-      );
-    }
-    return (
-      <View style={styles.plGrid}>
-        {publicPlaylists.map((pl: any) => (
-          <TouchableOpacity key={pl.id} style={styles.plCard} activeOpacity={0.8} onPress={() => router.push(`/playlist/${pl.id}`)}>
-            {pl.cover ? (
-              <Image source={{ uri: pl.cover }} style={styles.plCover} />
-            ) : (
-              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.plCover}>
-                <Ionicons name="musical-notes" size={26} color={colors.primary} />
-              </LinearGradient>
-            )}
-            <Text style={styles.plName} numberOfLines={1}>{pl.name}</Text>
-            <View style={styles.plMetaRow}>
-              <Ionicons name="headset" size={11} color={colors.textTertiary} />
-              <Text style={styles.plMeta}>{countLabel('listen', pl.play_count ?? 0)}</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  }
-
-  // Music tab: a scrollable list of "sound cards" (spotify-style TrackRows),
-  // newest at the top — NOT the picture-thumbnail grid the other tabs use. The
-  // main Posts grid still shows audio posts as thumbnails (renderGrid, default).
-  function renderMusicList(data: any[]) {
-    if (data.length === 0) {
-      return (
-        <View style={styles.emptyGrid}>
-          <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
-        </View>
-      );
-    }
-    // A saved custom order (Premium perk — see /music-order) WINS: the tab shows
-    // the user's exact arrangement (new songs appended newest-first). With no
-    // custom order, live-spotlighted tracks float to the TOP (newest-first among
-    // them), the rest most-recent → least-recent.
-    const order = parseMusicOrder((profile as any)?.music_order);
-    const tracks = order.length
-      ? applyMusicOrder([...data], order)
-      : [...data].sort((a, b) => {
-          const sa = spotlightIds.has(a.id) ? 1 : 0;
-          const sb = spotlightIds.has(b.id) ? 1 : 0;
-          if (sa !== sb) return sb - sa;
-          return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
-        });
-    const queue = tracks.map((t) => ({
-      id: t.id, uri: t.media_url, caption: t.caption,
-      artist: t.profiles?.display_name ?? profile?.display_name ?? '', cover: t.cover_url,
-    }));
-    return (
-      <View style={styles.musicList}>
-        {/* Premium: arrange the Music tab in a custom order (see /music-order). */}
-        {isPremium && data.length > 1 && (
-          <TouchableOpacity style={styles.reorderMusicBtn} onPress={() => router.push('/music-order')} activeOpacity={0.8}>
-            <Ionicons name="swap-vertical" size={16} color={colors.primary} />
-            <Text style={styles.reorderMusicText}>{t('profile.reorderMusic')}</Text>
-          </TouchableOpacity>
-        )}
-        {tracks.map((track, i) => (
-          <TrackRow
-            key={track.id}
-            caption={track.caption}
-            artist={track.profiles?.display_name ?? profile?.display_name ?? ''}
-            username={track.profiles?.username ?? profile?.username ?? ''}
-            duration={track.duration_seconds}
-            streams={track.stream_count ?? 0}
-            cover={track.cover_url}
-            badgeProfile={badgeProfile}
-            badgeOwnerId={profile?.id}
-            spotlighted={spotlightIds.has(track.id)}
-            isPlaying={playingId === track.id}
-            onPlay={() => playQueue(queue, i)}
-            onCoverPress={() => { playQueue(queue, i); expand(); }}
-            onOptions={() => showOptions({
-              postId: track.id,
-              isOwn: true,
-              mediaType: track.type,
-              onEdit: () => router.push(`/edit-post/${track.id}`),
-              onDeleted: () => {
-                setUserPosts(prev => prev.filter(p => p.id !== track.id));
-                setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
-              },
-              onArchived: () => {
-                setUserPosts(prev => prev.filter(p => p.id !== track.id));
-                setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
-              },
-            })}
-          />
-        ))}
-      </View>
-    );
-  }
-
-  // Open an image/slideshow post or a reel, expanding out of the tapped cell
-  // (shared by the normal grid and the custom layout blocks).
-  function openVisual(post: any, node?: any) {
-    const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
-    const seed = JSON.stringify(post);
-    if (node?.measureInWindow) {
-      node.measureInWindow((x: number, y: number, width: number, height: number) =>
-        router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
-    } else {
-      router.push({ pathname, params: { id: post.id, post: seed } });
-    }
-  }
-
-  // Own-post options sheet (edit / delete / archive) — used by long-press in both
-  // the normal grid and the custom layout blocks.
-  function showPostOptions(post: any) {
-    showOptions({
-      postId: post.id,
-      isOwn: true,
-      mediaType: post.type,
-      aspect: post.aspect_ratio,
-      caption: post.caption,
-      thumbnail: post.thumbnail_url,
-      onEdit: () => router.push(`/edit-post/${post.id}`),
-      onDeleted: () => { setUserPosts(prev => prev.filter(p => p.id !== post.id)); setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) })); },
-      onArchived: () => { setUserPosts(prev => prev.filter(p => p.id !== post.id)); setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) })); },
-    });
-  }
-
-  // The Posts tab: a custom feature layout (when active) above the normal grid of
-  // any leftover posts, or just the normal grid.
-  function renderPostsTab() {
-    const data = dataForTab('posts');
-    if (!pageLayout) return renderGrid(orderPostsForGrid(data), 'posts');
-    const used = usedPostIds(pageLayout.blocks);
-    const leftovers = data.filter(p => !used.has(p.id));
-    return (
-      <>
-        <ProfileLayoutGrid
-          layout={pageLayout}
-          posts={userPosts}
-          ownerTier={rawTier(badgeProfile)}
-          spotlightIds={spotlightIds}
-          playingId={playingId}
-          artistName={profile?.display_name}
-          // Pause the looping hero when this sub-tab is hidden or the profile is
-          // off-screen — a detached VideoView that plays to its end stalls black.
-          active={activeTab === 'posts' && isFocused}
-          onOpenVisual={openVisual}
-          onPlaySongs={(queue, idx) => playQueue(queue, idx)}
-          onLongPressPost={showPostOptions}
-        />
-        {leftovers.length > 0 && renderGrid(leftovers, 'posts')}
-      </>
-    );
-  }
-
-  function renderGrid(data: any[], tabKey: string) {
-    if (data.length === 0) {
-      return (
-        <View style={styles.emptyGrid}>
-          <Ionicons
-            name={tabKey === 'reposts' ? 'repeat-outline' : 'images-outline'}
-            size={40}
-            color={colors.textTertiary}
-          />
-          <Text style={styles.emptyGridText}>
-            {t(`profile.empty.${tabKey}`)}
-          </Text>
-        </View>
-      );
-    }
-    return (
-      <View style={styles.postsGrid}>
-        {data.map((post: any) => (
-          <TouchableOpacity
-            key={post.id}
-            ref={(n) => { if (n) gridRefs.current[post.id] = n; }}
-            style={styles.gridItem}
-            // Own content (Posts / Music / Videos) — long-press for edit/delete.
-            // Reposts — long-press to remove the repost (via the options sheet).
-            onLongPress={
-              (tabKey === 'posts' || tabKey === 'music' || tabKey === 'videos')
-                ? () => showOptions({
-                    postId: post.id,
-                    isOwn: true,
-                    mediaType: post.type,
-                    aspect: post.aspect_ratio,
-                    caption: post.caption,
-                    thumbnail: post.thumbnail_url,
-                    onEdit: () => router.push(`/edit-post/${post.id}`),
-                    onDeleted: () => {
-                      setUserPosts(prev => prev.filter(p => p.id !== post.id));
-                      setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
-                    },
-                    onArchived: () => {
-                      setUserPosts(prev => prev.filter(p => p.id !== post.id));
-                      setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) }));
-                    },
-                  })
-                : tabKey === 'reposts'
-                ? () => showOptions({
-                    postId: post.id,
-                    isOwn: false,
-                    onRepostChanged: (reposted) => {
-                      if (!reposted) setRepostedPosts(prev => prev.filter(p => p.id !== post.id));
-                    },
-                  })
-                : undefined
-            }
-            onPress={() => {
-              if (isAudioPost(post.type)) {
-                const songs = data.filter((s: any) => isAudioPost(s.type));
-                const idx = songs.findIndex((s: any) => s.id === post.id);
-                playQueue(
-                  songs.map((s: any) => ({ id: s.id, uri: s.media_url, caption: s.caption, artist: s.profiles?.display_name ?? profile?.display_name ?? '', cover: s.cover_url })),
-                  Math.max(0, idx),
-                );
-              } else {
-                const node = gridRefs.current[post.id];
-                const pathname = post.type === 'video' ? '/reel/[id]' : '/post/[id]';
-                const seed = JSON.stringify(post);
-                if (node?.measureInWindow) {
-                  node.measureInWindow((x: number, y: number, width: number, height: number) =>
-                    router.push({ pathname, params: { id: post.id, post: seed, src: JSON.stringify({ x, y, width, height }) } }));
-                } else {
-                  router.push({ pathname, params: { id: post.id, post: seed } });
-                }
-              }
-            }}
-          >
-            {post.type === 'slideshow' ? (
-              <>
-                {/* Slide 1's screenshot (video) or slide 1 itself (image) */}
-                <Image source={{ uri: slideshowThumb(post) ?? undefined }} style={styles.gridImage} contentFit="cover" />
-                <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="copy" size={13} color="#fff" />
-                </View>
-              </>
-            ) : post.type === 'video' ? (
-              <>
-                <VideoThumb thumbnailUrl={post.thumbnail_url} mediaUrl={post.media_url} style={styles.gridImage} />
-                <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="play" size={14} color="#fff" />
-                </View>
-              </>
-            ) : post.type === 'image' ? (
-              <Image source={{ uri: post.media_url }} style={styles.gridImage} contentFit="cover" />
-            ) : isAudioPost(post.type) && post.cover_url ? (
-              <>
-                <Image source={{ uri: post.cover_url }} style={styles.gridImage} contentFit="cover" />
-                <View style={styles.gridPlayOverlay}>
-                  <Ionicons name="musical-notes" size={13} color="#fff" />
-                </View>
-              </>
-            ) : (
-              <LinearGradient colors={['#1C0E06', '#120A04']} style={styles.gridPlaceholder}>
-                <Ionicons
-                  name={isAudioPost(post.type) ? 'musical-notes' : 'videocam'}
-                  size={28} color={colors.primary}
-                />
-              </LinearGradient>
-            )}
-            {/* Subtle yellow sparkle when this post has a live spotlight. */}
-            {spotlightIds.has(post.id) && <SpotlightThumbBadge />}
-            {/* View count (video) / listen count (audio) */}
-            <ThumbStat type={post.type} viewCount={post.view_count} streamCount={post.stream_count} />
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  }
 
   return (
     // pageSwipePan lives on the ROOT: flings anywhere — header, grid, empty
@@ -783,7 +943,49 @@ export default function ProfileScreen() {
                 <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile(); }} tintColor={tabAccent} colors={[tabAccent]} />
               }
             >
-              {key === 'playlists' ? renderPlaylists() : key === 'music' ? renderMusicList(dataForTab('music')) : key === 'posts' ? renderPostsTab() : renderGrid(dataForTab(key), key)}
+              {key === 'playlists' ? (
+                <PlaylistsPage playlists={publicPlaylists} onOpen={openPlaylist} />
+              ) : key === 'music' ? (
+                <MusicPage
+                  tracks={musicTracks}
+                  spotlightIds={spotlightIds}
+                  playingId={playingId}
+                  badgeProfile={badgeProfile}
+                  ownerId={profile?.id}
+                  ownerName={profile?.display_name ?? ''}
+                  ownerUsername={profile?.username ?? ''}
+                  showReorder={isPremium && musicTracks.length > 1}
+                  onReorder={openMusicOrder}
+                  onPlayQueue={playTracks}
+                  onTrackOptions={onTrackOptions}
+                />
+              ) : key === 'posts' ? (
+                <PostsPage
+                  pageLayout={pageLayout}
+                  allPosts={userPosts}
+                  ordered={orderedPosts}
+                  leftovers={layoutLeftovers}
+                  spotlightIds={spotlightIds}
+                  playingId={playingId}
+                  ownerTier={rawTier(badgeProfile)}
+                  artistName={profile?.display_name}
+                  isActiveTab={activeTab === 'posts'}
+                  fallbackArtist={profile?.display_name ?? ''}
+                  onOpenVisual={openVisual}
+                  onLongPressPost={onLongPressPost}
+                  onPlayQueue={playTracks}
+                />
+              ) : (
+                <PostsGrid
+                  data={key === 'videos' ? videoPosts : repostedPosts}
+                  tabKey={key}
+                  spotlightIds={spotlightIds}
+                  fallbackArtist={profile?.display_name ?? ''}
+                  onOpenVisual={openVisual}
+                  onLongPressPost={onLongPressPost}
+                  onPlayQueue={playTracks}
+                />
+              )}
             </ScrollView>
           </View>
         ))}
