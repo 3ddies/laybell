@@ -149,7 +149,45 @@ Authorization: Bearer <your session JWT>
 `suspend` · `shadow_ban` · `hide_account` · `hide_content` / `restore` ·
 `legal_hold_set` (mod) / `legal_hold_release` (owner) · `escalate` (auto-holds the
 subject) · `blocklist_add` / `blocklist_remove` · `ban` / `unban` / `hard_delete`
-(owner, edge fn) · `grant_role` / `revoke_admin` (owner).
+(owner, edge fn) · `grant_role` / `revoke_admin` (owner) ·
+`originality_limit` / `originality_clear` (mod).
+
+---
+
+## Post inspector & originality demotion
+
+`supabase/sql/originality.sql` (run it AFTER the two `admin_console*.sql` files)
+adds the enforcement side of Community Guidelines §7 *"Originality and reposting"*.
+The Guidelines deliberately make originality a **distribution** question rather than
+a removal one, so the action does not hide anything: it sets
+`posts.originality_limited`, and `lib/feedScorer.ts` multiplies that post's score by
+`ORIGINALITY_LIMIT_MUL` (0.3). The post stays visible on the author's profile, in
+search and by direct link.
+
+Three RPCs: `admin_set_originality` (moderator+, reason constrained to the four
+published tiers `watermark | duplicate | reupload | other` so the audit log stays
+comparable between moderators), `admin_post_detail`, and `admin_list_originality`.
+
+The console's **Post inspector** tab is the moderator-facing half: look a post up by
+id — or hit *Open in inspector* from any reported-post case — and get the media, the
+author, every moderation flag that applies, and a **ranking breakdown**.
+
+⚠️ **On the ranking numbers.** `scorePost` is *viewer-specific*: creator/type/genre
+affinity, a ×1.5 follow boost and a ×0.15 already-seen penalty all vary per viewer,
+so **there is no single score for a post**. `admin_post_detail` therefore returns
+only viewer-independent components, and the inspector renders those plus a "base
+score" and an explicit note about what is excluded. It also previews what the post
+*would* score if limited, so the decision is concrete before you make it.
+
+The console's `SCORE` constants are **duplicated from `lib/feedScorer.ts`** (it is a
+dependency-free single file and cannot import from the app bundle). Change one,
+change the other.
+
+**Why the flag is client-readable**, unlike shadow-ban state: feed ranking runs in
+the app, so the client must read the flag to apply it. A limited post is a published,
+appealable decision under Guidelines §12/§13, not a secret one — and it is disclosed
+in the Terms' recommender-transparency clause. Do not "harden" this by hiding it
+without first moving ranking server-side.
 
 ---
 

@@ -189,12 +189,26 @@ export const BADGE_SCORE_BOOST: Record<string, number> = {
   bronze: 1.02, silver: 1.05, gold: 1.08, diamond: 1.12,
 };
 
+// ── Originality demotion ─────────────────────────────────────────────────────
+// Community Guidelines §7 "Originality and reposting" is deliberately written as
+// a DISTRIBUTION rule, not a removal one: a flagged post stays up and stays
+// reachable from its author's profile, search and direct links — it is simply
+// recommended less. This multiplier is that sentence in code.
+//
+// Set by a moderator via admin_set_originality (supabase/sql/originality.sql);
+// posts.originality_limited rides along on the feed's `select *`. 0.3 matches
+// GIRL_SPACE_MAN_PENALTY below on purpose: both are "soft down-rank, still
+// discoverable", and having one house value for that keeps the two comparable.
+// Tune here — it is the single knob for how hard the policy bites.
+export const ORIGINALITY_LIMIT_MUL = 0.3;
+
 export interface ScoredPost {
   id:           string;
   user_id:      string;
   created_at:   string;
   type:         string;
   genre?:       string | null;
+  originality_limited?: boolean;
   likes?:       { count: number }[];
   comments?:    { count: number }[];
   save_count?:  number;
@@ -245,6 +259,7 @@ export function scorePost(
   const followMul    = followingSet.has(post.user_id) ? 1.5 : 1.0;
   const badgeMul     = BADGE_SCORE_BOOST[post.profiles?.badge_tier ?? ''] ?? 1.0;
   const seenMul      = seenSet.has(post.id) ? 0.15 : 1.0;
+  const origMul      = post.originality_limited ? ORIGINALITY_LIMIT_MUL : 1.0;
 
   // Girl space: down-rank feminine-tagged posts for uninterested men (see above).
   let girlSpaceMul = 1.0;
@@ -259,7 +274,7 @@ export function scorePost(
     }
   }
 
-  return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul * girlSpaceMul;
+  return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul * girlSpaceMul * origMul;
 }
 
 // ── Instagram-style feed arrangement ─────────────────────────────────────────

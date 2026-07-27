@@ -187,11 +187,33 @@ const MOCK_AUDIT = [
   { created_at:'2026-07-10T08:05:00Z', actor_id:'modxxxxx-0000-4000-8000-000000000000', actor_role:'moderator', action:'hide_content', target_type:'post', target_id:'a1b2c3d4-0000-4000-8000-000000000001', reason:'nudity' },
   { created_at:'2026-07-09T20:00:00Z', actor_id:'ownerbee-0000-4000-8000-000000000000', actor_role:'owner', action:'blocklist_add', target_type:'domain', target_id:'sketchy-download.example', reason:'phishing kit' },
 ];
+function mockPost(id){
+  return {
+    post:{ id, user_id:'11111111-1111-4111-8111-111111111111', type:'video',
+      caption:'(sample post) full clip reposted from another app', media_url:'https://…/clip.m3u8',
+      thumbnail_url:null, cover_url:null, genre:'hip hop', is_public:true,
+      created_at:'2026-07-26T18:00:00Z', aspect_ratio:'0.5625', duration_seconds:47,
+      video_status:'ready', legal_hold:false, song_title:null, song_artist:null },
+    author:{ id:'11111111-1111-4111-8111-111111111111', username:'trolls_r_us', display_name:'Anon',
+      avatar_url:null, badge_tier:'silver', hidden:false, is_minor:false },
+    originality:{ limited:false, reason:null, note:null, at:null, by:null },
+    taken_down:null,
+    open_reports:1,
+    ranking:{ likes:42, comments:7, saves:5, reposts:2, streams:0, hours_old:15.5,
+      badge_tier:'silver', originality_limited:false },
+  };
+}
+const MOCK_ORIGINALITY = [
+  { post_id:'a1b2c3d4-0000-4000-8000-000000000001', caption:'(sample) TikTok watermark left on', type:'video',
+    thumbnail_url:null, reason:'watermark', note:null, at:'2026-07-26T12:00:00Z', username:'reposter_99', by:'ownerbee' },
+];
 function mockRpc(fn, args){
   if (fn==='current_admin_role') return 'owner';
   if (fn==='admin_list_queue')   return MOCK_QUEUE.filter(q => (args && args.p_include_resolved) || q.open_count>0);
   if (fn==='admin_get_case')     return mockCase(args.p_subject_type, args.p_subject_id);
   if (fn==='admin_user_detail')  return mockUser(args.p_user);
+  if (fn==='admin_post_detail')  return mockPost(args.p_post_id);
+  if (fn==='admin_list_originality') return MOCK_ORIGINALITY;
   if (fn==='admin_list_audit')   return MOCK_AUDIT;
   throw new Error('Demo mode — sign in with a real admin account to make changes.');
 }
@@ -263,6 +285,7 @@ function renderApp() {
       </header>
       <nav class="tabs" id="tabs">
         <button data-t="queue">Queue</button>
+        <button data-t="post">Post inspector</button>
         <button data-t="user">User lookup</button>
         <button data-t="audit">Audit log</button>
       </nav>
@@ -277,6 +300,7 @@ function paintTabs(){ document.querySelectorAll('#tabs button').forEach(b=>b.cla
 function renderView(){
   const v = document.getElementById('view');
   if (TAB==='queue') return renderQueue(v);
+  if (TAB==='post')  return renderPostInspector(v);
   if (TAB==='user')  return renderUserLookup(v);
   if (TAB==='audit') return renderAudit(v);
 }
@@ -337,6 +361,11 @@ async function openCase(i){
 
   const su = q.subject_user_id;
   const A = []; // action buttons
+  // A reported post is the one subject with a dedicated view — jump straight to it
+  // rather than making the moderator copy the UUID into another tab.
+  if (q.subject_type === 'post') {
+    A.push(`<button class="btn sm" onclick="closeDrawer();loadPost('${q.subject_id}')">Open in inspector →</button>`);
+  }
   A.push(`<button class="btn sm" onclick="act('resolve','${q.subject_type}','${q.subject_id}')">Resolve (actioned)</button>`);
   A.push(`<button class="btn ghost sm" onclick="act('dismiss','${q.subject_type}','${q.subject_id}')">Dismiss</button>`);
   A.push(`<button class="btn warn sm" onclick="act('escalate','${q.subject_type}','${q.subject_id}')">Escalate</button>`);
@@ -406,12 +435,163 @@ async function act(kind, type, id){
     if (kind==='hide_on'){ const why=prompt('Hide-account reason:','')||null; await rpc('admin_hide_account',{p_user:id,p_on:true,p_reason:why}); toast('Account hidden'); return; }
     if (kind==='hide_off'){ const why=prompt('Reason:','')||null; await rpc('admin_hide_account',{p_user:id,p_on:false,p_reason:why}); toast('Account unhidden'); return; }
     if (kind==='lift'){ const why=prompt('Reason:','')||null; await rpc('admin_lift_sanction',{p_user:id,p_reason:why}); toast('Sanction lifted'); return; }
+    // Originality (Guidelines §7). Reason is constrained to the published tiers so
+    // the audit log stays comparable across moderators; the RPC rejects anything else.
+    if (kind==='orig_limit'){
+      const reason = prompt('Reason — one of:\n  watermark  (another platform\'s watermark/bug/end card)\n  duplicate  (same or near-identical content, posted repeatedly)\n  reupload   (someone else\'s content, nothing meaningful added)\n  other','watermark');
+      if (!reason) return;
+      const note = prompt('Note (optional — what you saw):','')||null;
+      await rpc('admin_set_originality',{p_post_id:id,p_limited:true,p_reason:reason.trim(),p_note:note});
+      toast('Reach limited — post stays up'); loadPost(id); loadOriginalityList(); return;
+    }
+    if (kind==='orig_clear'){
+      const why = prompt('Reason for clearing (optional):','')||null;
+      await rpc('admin_set_originality',{p_post_id:id,p_limited:false,p_reason:null,p_note:why});
+      toast('Originality limit cleared'); loadPost(id); loadOriginalityList(); return;
+    }
     // owner-only, edge function
     if (kind==='ban'){ if(!confirm('Ban this account from logging in?'))return; const why=prompt('Ban reason:','')||null; await callEdge('ban',{user_id:id,reason:why}); toast('Login banned'); return; }
     if (kind==='unban'){ const why=prompt('Unban reason:','')||null; await callEdge('unban',{user_id:id,reason:why}); toast('Login restored'); return; }
     if (kind==='authinfo'){ const r=await callEdge('auth_info',{user_id:id}); alert('Email: '+(r.auth?.email||'—')+'\nLast sign-in: '+(r.auth?.last_sign_in_at||'—')+'\nBanned until: '+(r.auth?.banned_until||'—')); return; }
     if (kind==='harddelete'){ if(!confirm('PERMANENTLY delete this account and all their data? This cannot be undone.'))return; if(!confirm('Are you absolutely sure?'))return; const why=prompt('Delete reason:','')||null; const r=await callEdge('hard_delete',{user_id:id,reason:why,confirm:true}); toast('Account '+r.status); closeDrawer(); loadQueue(); return; }
   } catch(e){ toast(e.message,'bad'); }
+}
+
+// ── post inspector ────────────────────────────────────────────────────────────
+// Ranking constants MIRRORED from lib/feedScorer.ts. If you change them there,
+// change them here. They are duplicated because this console is a dependency-free
+// single file that cannot import from the app bundle.
+const SCORE = {
+  BASE:2, LIKE:3, COMMENT:5, SAVE:4, REPOST:6, STREAM:1,
+  DECAY_OFF:2, DECAY_EXP:1.2,
+  BADGE:{ bronze:1.02, silver:1.05, gold:1.08, diamond:1.12 },
+  ORIGINALITY_LIMIT:0.3,
+};
+// The VIEWER-INDEPENDENT part of scorePost(). Creator/type/genre affinity, the
+// follow multiplier and the seen penalty are all per-viewer, so no single number
+// is "the" score for a post — the UI says so rather than implying otherwise.
+function baseScore(r){
+  const engagement = (r.likes||0)*SCORE.LIKE + (r.comments||0)*SCORE.COMMENT + (r.saves||0)*SCORE.SAVE
+                   + (r.reposts||0)*SCORE.REPOST + (r.streams||0)*SCORE.STREAM + SCORE.BASE;
+  const decayed = engagement / Math.pow((r.hours_old||0) + SCORE.DECAY_OFF, SCORE.DECAY_EXP);
+  const badge = SCORE.BADGE[r.badge_tier] || 1;
+  const orig  = r.originality_limited ? SCORE.ORIGINALITY_LIMIT : 1;
+  return { engagement, decayed, badge, orig, base: decayed*badge*orig };
+}
+const n2 = (x)=> (Math.round(x*100)/100).toLocaleString();
+
+function renderPostInspector(v){
+  v.innerHTML = `<h2 style="font-size:17px">Post inspector</h2>
+    <div class="row"><input id="pid" placeholder="post UUID" style="width:360px" class="mono">
+      <button class="btn" id="plook">Look up</button></div>
+    <div id="pbody" style="margin-top:14px"></div>
+    <h3 style="font-size:14px;margin:26px 0 8px">Currently limited for originality</h3>
+    <div id="olist"><div class="loading">Loading…</div></div>`;
+  const go = ()=>{ const id=document.getElementById('pid').value.trim(); if(id) loadPost(id); };
+  document.getElementById('plook').onclick = go;
+  document.getElementById('pid').onkeydown = (e)=>{ if(e.key==='Enter') go(); };
+  loadOriginalityList();
+}
+
+async function loadOriginalityList(){
+  const box = document.getElementById('olist'); if(!box) return;
+  try {
+    const rows = await rpc('admin_list_originality', { p_limit:100 }) || [];
+    box.innerHTML = rows.length ? rows.map(r=>`
+      <div class="report" style="cursor:pointer" onclick="loadPost('${r.post_id}')">
+        <div class="rh"><span class="tag">${esc(r.reason||'—')}</span>
+          <span class="muted">@${esc(r.username||'?')}</span>
+          <span class="muted">${fmtDate(r.at)}</span>
+          <div class="spacer"></div><span class="muted">by ${esc(r.by||'—')}</span></div>
+        <div class="muted">${esc(r.caption||'(no caption)')}</div>
+      </div>`).join('') : '<div class="empty">No posts are currently limited.</div>';
+  } catch(e){ box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+async function loadPost(id){
+  if (TAB!=='post'){ TAB='post'; paintTabs(); renderView(); }
+  const box = document.getElementById('pbody');
+  const input = document.getElementById('pid'); if (input) input.value = id;
+  if (box) box.innerHTML = '<div class="loading">Loading…</div>';
+  let d;
+  try { d = await rpc('admin_post_detail', { p_post_id:id }); }
+  catch(e){ if(box) box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+
+  const p = d.post||{}, a = d.author||{}, o = d.originality||{}, r = d.ranking||{};
+  const s = baseScore(r);
+  const wouldBe = o.limited ? null : s.base * SCORE.ORIGINALITY_LIMIT;
+  const thumb = p.thumbnail_url || p.cover_url || (p.type==='image' ? p.media_url : null);
+
+  const flags = [];
+  if (o.limited)     flags.push(`<span class="tag" style="color:var(--warn)">originality limited · ${esc(o.reason||'')}</span>`);
+  if (d.taken_down && d.taken_down.active) flags.push('<span class="tag" style="color:var(--bad)">taken down</span>');
+  if (p.legal_hold)  flags.push('<span class="tag" style="color:var(--bad)">legal hold</span>');
+  if (!p.is_public)  flags.push('<span class="tag">private</span>');
+  if (d.open_reports) flags.push(`<span class="tag" style="color:var(--bad)">${d.open_reports} open report(s)</span>`);
+  if (a.is_minor)    flags.push('<span class="tag" style="color:var(--warn)">minor account</span>');
+
+  const row = (k,val,note='')=>`<tr><td class="muted" style="padding:3px 14px 3px 0;white-space:nowrap">${k}</td>
+    <td class="mono" style="padding:3px 14px 3px 0;text-align:right">${val}</td>
+    <td class="muted" style="padding:3px 0;font-size:12px">${note}</td></tr>`;
+
+  box.innerHTML = `
+    <div class="report">
+      <div class="rh">
+        <span class="tag">${esc(p.type||'?')}</span>
+        <b>@${esc(a.username||'?')}</b>
+        <span class="muted">${esc(a.display_name||'')}</span>
+        <span class="muted">${fmtDate(p.created_at)}</span>
+        <div class="spacer"></div>
+        <button class="btn ghost sm" onclick="TAB='user';paintTabs();renderView();setTimeout(()=>{document.getElementById('uid').value='${esc(a.id||'')}';document.getElementById('ulook').click();},0)">Investigate author →</button>
+      </div>
+      ${flags.length?`<div class="row" style="gap:6px;margin:6px 0">${flags.join('')}</div>`:''}
+      <div class="row" style="align-items:flex-start;gap:14px;margin-top:8px">
+        ${thumb?`<img src="${esc(thumb)}" alt="" style="width:130px;border-radius:8px;background:#111"
+             onerror="this.style.display='none'">`:''}
+        <div style="flex:1;min-width:220px">
+          <div style="margin-bottom:8px">${esc(p.caption||'(no caption)')}</div>
+          <div class="muted mono" style="font-size:12px">${esc(p.id||'')}</div>
+          ${p.media_url?`<div style="margin-top:6px"><a href="${esc(p.media_url)}" target="_blank" rel="noreferrer">open media ↗</a>
+            ${p.video_status?`<span class="muted"> · video ${esc(p.video_status)}</span>`:''}</div>`:''}
+          ${o.limited?`<div class="muted" style="margin-top:8px">Limited ${fmtDate(o.at)} by ${esc(o.by||'—')}${o.note?` — ${esc(o.note)}`:''}</div>`:''}
+        </div>
+      </div>
+    </div>
+
+    <div class="report">
+      <div class="rh"><b>Ranking</b><span class="muted">viewer-independent components</span></div>
+      <table style="border-collapse:collapse;font-size:13px">
+        ${row('likes × '+SCORE.LIKE, r.likes||0)}
+        ${row('comments × '+SCORE.COMMENT, r.comments||0)}
+        ${row('saves × '+SCORE.SAVE, r.saves||0)}
+        ${row('reposts × '+SCORE.REPOST, r.reposts||0)}
+        ${row('streams × '+SCORE.STREAM, r.streams||0)}
+        ${row('engagement', n2(s.engagement), 'weighted total, incl. base '+SCORE.BASE)}
+        ${row('age', n2(r.hours_old||0)+' h', 'decays ÷ (h+2)^1.2')}
+        ${row('after decay', n2(s.decayed))}
+        ${row('badge ×', s.badge.toFixed(2), esc(r.badge_tier||'none'))}
+        ${row('originality ×', s.orig.toFixed(2), o.limited?'LIMITED':'not limited')}
+        <tr><td style="padding:8px 14px 0 0"><b>base score</b></td>
+            <td class="mono" style="padding:8px 14px 0 0;text-align:right"><b>${n2(s.base)}</b></td>
+            <td class="muted" style="padding:8px 0 0;font-size:12px">before per-viewer multipliers</td></tr>
+        ${wouldBe!==null?row('if limited', n2(wouldBe), 'what this post would score at ×'+SCORE.ORIGINALITY_LIMIT):''}
+      </table>
+      <div class="muted" style="font-size:12px;margin-top:10px;line-height:1.5">
+        There is no single score for a post. On top of the above, each viewer's feed also applies
+        creator / type / genre affinity, a ×1.5 follow boost, and a ×0.15 already-seen penalty —
+        all specific to that viewer. This panel shows only the part that is the same for everyone.
+      </div>
+    </div>
+
+    <div class="actions">
+      ${o.limited
+        ? `<button class="btn ghost sm" onclick="act('orig_clear','post','${esc(p.id)}')">Clear originality limit</button>`
+        : `<button class="btn warn sm" onclick="act('orig_limit','post','${esc(p.id)}')">Limit reach (originality)</button>`}
+      <button class="btn warn sm" onclick="act('hide_content','post','${esc(p.id)}')">Hide content</button>
+      <button class="btn ghost sm" onclick="act('restore_content','post','${esc(p.id)}')">Restore</button>
+      <button class="btn warn sm" onclick="act('hold_set','post','${esc(p.id)}')">Legal hold</button>
+      ${can('owner')?`<button class="btn ghost sm" onclick="act('hold_release','post','${esc(p.id)}')">Release hold</button>`:''}
+    </div>`;
 }
 
 // ── user lookup ───────────────────────────────────────────────────────────────
