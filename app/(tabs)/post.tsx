@@ -28,7 +28,7 @@ import type { TopCaptionData } from '../../components/TopCaption';
 import type { Sticker } from '../../components/StickerLayer';
 import FeaturesModal from '../../components/FeaturesModal';
 import { type Feature } from '../../lib/features';
-import { useAudio } from '../../contexts/AudioContext';
+import { useAudioControls } from '../../contexts/AudioContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -39,7 +39,7 @@ import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../comp
 import PhotoGrid, { type PickedMedia, type PhotoGridHandle } from '../../components/PhotoGrid';
 import { MAX_SLIDES, type Slide } from '../../lib/slideshow';
 import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/upload';
-import { useUploadQueue } from '../../contexts/UploadQueueContext';
+import { useUploadActions } from '../../contexts/UploadQueueContext';
 import { peekPendingSpotlight, clearPendingSpotlight, activateCampaign, spotlightDurationPhrase } from '../../lib/spotlight';
 import {
   loadDrafts, saveDraft, deleteDraft, draftThumb, draftSummary, makeDraftId, type Draft,
@@ -233,7 +233,9 @@ export default function PostScreen() {
   // Friends-only posts are never gated; deleting/archiving frees a slot.
   const { profile } = useProfile();
   const navigation = useNavigation<any>();
-  const { enqueueVideo, prewarmVideo, discardPrewarm, scrollHomeTop } = useUploadQueue();
+  // Actions only: the composer reads no queue state, so it must not re-render on
+  // every upload progress tick while a previous post is still uploading.
+  const { enqueueVideo, prewarmVideo, discardPrewarm, scrollHomeTop } = useUploadActions();
   const myPostLimit = publicPostLimit(rawTier(profile));
 
   // Speculatively start the video upload the moment the user reaches the details
@@ -299,7 +301,10 @@ export default function PostScreen() {
   // publish or re-save, delete or overwrite the original draft.
   function forgetResumedDraft() { editingDraftId.current = null; }
 
-  const { stop } = useAudio();
+  // Controls only — this screen never renders audio state, so it must not
+  // re-render on it. `stop` is also stable now, which means the effect below
+  // fires when the STEP changes rather than on every provider commit.
+  const { stop } = useAudioControls();
   const swiping = usePagerSwiping();
   const setTabSwipe = useTabSwipeControl();
   const router = useRouter();

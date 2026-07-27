@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { tabTick } from '../../lib/haptics';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
-import { useAudio } from '../../contexts/AudioContext';
+import { useNowPlaying, useAudioControls } from '../../contexts/AudioContext';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
@@ -131,7 +131,11 @@ export default function MusicScreen() {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistPublic, setNewPlaylistPublic] = useState(false);
   const { playingId, play } = useAudioPlayer();
-  const { playQueue, expand, currentTrack } = useAudio();
+  // `loadedTrackId` is the LOADED track (non-null even while paused), which is
+  // what the listen-mix check below means by "nothing selected" — deliberately
+  // NOT `playingId` above, which goes null on pause.
+  const { id: loadedTrackId } = useNowPlaying();
+  const { playQueue, expand } = useAudioControls();
   const [savedTracks, setSavedTracks] = useState<any[]>([]);
   const [playlistModalPostId, setPlaylistModalPostId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'discover' | 'playlists' | 'saved' | 'liked' | 'community'>('discover');
@@ -757,7 +761,7 @@ export default function MusicScreen() {
   // is interrupted. Auto-advance through the queue is AudioContext's default.
   const prevListenRef = useRef(false);
   useEffect(() => {
-    if (listenMode && !prevListenRef.current && !currentTrack) startListenMix();
+    if (listenMode && !prevListenRef.current && !loadedTrackId) startListenMix();
     prevListenRef.current = listenMode;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listenMode]);

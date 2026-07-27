@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AppVideo from './AppVideo';
 import SongAttribution from './SongAttribution';
 import TaggedPeopleButton from './TaggedPeopleButton';
-import { useUploadQueue, type PendingUpload } from '../contexts/UploadQueueContext';
+import { useUploadQueue, useUploadActions, type PendingUpload } from '../contexts/UploadQueueContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -111,7 +111,9 @@ const PendingVideo = memo(function PendingVideo({ uri, poster, height, active, m
 // tagged people, audio toggle) so a freshly-posted video is complete and playing
 // before the DB row ever loads, with no manual refresh.
 function PendingCard({ p }: { p: PendingUpload }) {
-  const { retry, dismiss } = useUploadQueue();
+  // Row actions only — the row's own progress comes in as props, so it shouldn't
+  // re-subscribe to the whole queue.
+  const { retry, dismiss } = useUploadActions();
   const { profile } = useProfile();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);

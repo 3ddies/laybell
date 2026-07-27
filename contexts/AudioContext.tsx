@@ -153,6 +153,52 @@ export function useNowPlaying(): { id: string | null; playing: boolean; play: (t
   return { id: snap.id, playing: snap.playing, play: stableNowPlay };
 }
 
+// ── Stable control accessors (module) ───────────────────────────────────────
+// Screens that only DRIVE audio — never render its state — were paying a full
+// useAudio() subscription just to obtain a function. post.tsx pulled `stop`
+// alone and re-rendered on every buffering / ad / queue tick; worse, because
+// `stop`'s identity changed on every provider render, its `[step, stop]` effect
+// re-ran (and re-called stop) each of those times. These wrappers keep ONE
+// identity for the app's lifetime and call through to the live implementations,
+// refreshed on each commit below — same trick as stableNowPlay above.
+let latestPlayQueue: AudioContextType['playQueue'] | null = null;
+let latestStop: AudioContextType['stop'] | null = null;
+let latestExpand: AudioContextType['expand'] | null = null;
+let latestToggleVideoMuted: AudioContextType['toggleVideoMuted'] | null = null;
+
+const AUDIO_CONTROLS = {
+  play: stableNowPlay,
+  playQueue: (tracks: Track[], startIndex?: number, loadMore?: QueueLoader) =>
+    (latestPlayQueue ? latestPlayQueue(tracks, startIndex, loadMore) : Promise.resolve()),
+  stop: () => (latestStop ? latestStop() : Promise.resolve()),
+  expand: () => { latestExpand?.(); },
+  toggleVideoMuted: () => { latestToggleVideoMuted?.(); },
+};
+
+// Controls with NO subscription at all: a consumer that only starts/stops
+// playback never re-renders on audio state. Pair with useNowPlaying() when the
+// caller ALSO needs to badge the active track.
+export function useAudioControls() {
+  return AUDIO_CONTROLS;
+}
+
+// ── videoMuted subscription store (module) ──────────────────────────────────
+// The feed needs this single boolean to render its mute glyphs. Reading it off
+// the context meant re-rendering the whole feed on every unrelated audio change.
+let videoMutedSnap = false;
+const videoMutedSubs = new Set<() => void>();
+function publishVideoMuted(muted: boolean) {
+  if (muted === videoMutedSnap) return;
+  videoMutedSnap = muted;
+  for (const cb of videoMutedSubs) cb();
+}
+export function useVideoMuted(): boolean {
+  return useSyncExternalStore(
+    (cb) => { videoMutedSubs.add(cb); return () => { videoMutedSubs.delete(cb); }; },
+    () => videoMutedSnap,
+  );
+}
+
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -1238,8 +1284,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // Keep the now-playing module store + stable play accessor in sync, so
   // useNowPlaying() consumers (Explore grid, track rails) re-render on ONLY a
   // track change / play-pause — not on this provider's buffering/ad/queue churn.
-  useEffect(() => { latestPlay = play; });
+  useEffect(() => {
+    latestPlay = play;
+    latestPlayQueue = playQueue;
+    latestStop = stop;
+    latestExpand = expand;
+    latestToggleVideoMuted = toggleVideoMuted;
+  });
   useEffect(() => { publishNowPlaying(currentTrack?.id ?? null, isPlaying); }, [currentTrack?.id, isPlaying]);
+  useEffect(() => { publishVideoMuted(videoMuted); }, [videoMuted]);
 
   return (
     <AudioContext.Provider value={{ currentTrack, isPlaying, isBuffering, play, playQueue, setCommentComposing, noteCommentEngagement, clearCommentEngagement, pause, resume, stop, seekTo, expanded, expand, collapse, next, previous, queueIndex, queueLength, hasMore, videoMuted, toggleVideoMuted, adState, skipAudioAd }}>

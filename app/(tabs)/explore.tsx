@@ -23,7 +23,7 @@ import { badgeRingColors, chosenTier, specialRingTier, rawTier, tierRank } from 
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { fetchBlockedIds } from '../../lib/blocks';
-import { useAudio } from '../../contexts/AudioContext';
+import { useNowPlaying, useAudioControls } from '../../contexts/AudioContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { GENRES as MUSIC_GENRES, GENRE_FILTERS, CONTENT_TAGS, isAudioPost, genreLabel } from '../../lib/genres';
 import {
@@ -73,7 +73,11 @@ export default function ExploreScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
-  const { play, currentTrack, isPlaying, expand } = useAudio();
+  // Only the now-playing SLICE (track id + play/pause), never the whole context:
+  // this screen used `currentTrack` solely to badge the active row, so the full
+  // subscription re-rendered the search list on every buffering / ad / queue tick.
+  const { id: playingTrackId, playing: isPlaying, play } = useNowPlaying();
+  const { expand } = useAudioControls();
   const [searchQuery, setSearchQuery] = useState('');
   const searchRefs = useRef<Record<string, any>>({}); // per-row nodes for expand-from-row open
   // Search results are sorted/filtered into tabs. One query fetches everything;
@@ -657,7 +661,7 @@ export default function ExploreScreen() {
               badgeProfile={item.profiles}
               badgeOwnerId={item.user_id}
               highlightQuery={hq}
-              isPlaying={currentTrack?.id === item.id && isPlaying}
+              isPlaying={playingTrackId === item.id && isPlaying}
               onPlay={() => play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url })}
               onCoverPress={() => { play({ id: item.id, uri: item.media_url, caption: item.caption, artist: item.profiles?.display_name, cover: item.cover_url }); expand(); }}
               onAvatarPress={() => router.push(`/profile/${item.user_id}`)}

@@ -81,7 +81,7 @@ import { SPACING, RADIUS, SHADOWS, GRADIENTS, type ThemePalette } from '../../co
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { timeAgo } from '../../lib/timeAgo';
-import { useAudio, type Track } from '../../contexts/AudioContext';
+import { useNowPlaying, useVideoMuted, useAudioControls, type Track } from '../../contexts/AudioContext';
 import { attachEngagementCountsAll } from '../../lib/postCounts';
 import { createNotification } from '../../lib/createNotification';
 import { selection, impactLight } from '../../lib/haptics';
@@ -657,7 +657,15 @@ export default function HomeScreen() {
   const { profile: myProfile } = useProfile();
   const viewerProfileRef = useRef(myProfile);
   viewerProfileRef.current = myProfile;
-  const { play, playQueue, currentTrack, isPlaying, expand, videoMuted, toggleVideoMuted } = useAudio();
+  // Narrow slices instead of the whole AudioContext: the feed only needs "which
+  // track is active" + the mute flag, but the full subscription re-rendered it on
+  // every buffering / ad / queue tick — i.e. continuously while anything played.
+  // The controls carry no subscription at all. Bonus: renderPost's deps below now
+  // hold a track ID (string) rather than the currentTrack OBJECT, so its identity
+  // survives re-renders that merely re-created the track.
+  const { id: playingTrackId, playing: isPlaying, play } = useNowPlaying();
+  const videoMuted = useVideoMuted();
+  const { playQueue, expand, toggleVideoMuted } = useAudioControls();
   const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
@@ -1610,7 +1618,7 @@ export default function HomeScreen() {
           isOwn={item.user_id === currentUserId}
           isLiked={likedPosts.has(item.id)}
           isSaved={savedPosts.has(item.id)}
-          audioActive={isPlaying && currentTrack?.id === item.id}
+          audioActive={isPlaying && playingTrackId === item.id}
           videoMuted={videoMuted}
           songMuted={songMuted}
           onProfile={onProfile}
@@ -1633,7 +1641,7 @@ export default function HomeScreen() {
   // in lib/feedVideo — cards subscribe directly): renderPost identity now only
   // changes on user-initiated events (like/save, track change, mute), never
   // during a plain scroll — so FlatList's mounted cells bail via PureComponent.
-  ), [currentUserId, likedPosts, savedPosts, isPlaying, currentTrack, videoMuted, songMuted,
+  ), [currentUserId, likedPosts, savedPosts, isPlaying, playingTrackId, videoMuted, songMuted,
       onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onAdCta, onAdOptions, onGateArm]);
 
   if (loading) {

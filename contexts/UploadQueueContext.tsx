@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useRef, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { compressVideoIfPossible, ensureLocalFile } from '../lib/upload';
 import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, pollStreamReady, deleteStreamVideo } from '../lib/streamUpload';
@@ -97,11 +97,30 @@ type PrewarmEntry = {
   claimed: boolean;              // an enqueue is using it — never discard a claimed prewarm
 };
 
+// The action half of Ctx: everything that DRIVES the queue, with none of the
+// state that churns while an upload runs.
+type UploadActions = Pick<Ctx, 'prewarmVideo' | 'discardPrewarm' | 'enqueueVideo' | 'retry' | 'dismiss' | 'clearPinned' | 'scrollHomeTop'>;
+
 const UploadQueueContext = createContext<Ctx | null>(null);
+// Split out so callers that only START or CANCEL uploads don't re-render while
+// one is running: `pending` is rewritten on every progress tick (throttled to
+// 2% / 100ms), and because the provider's value was one object literal, that
+// re-rendered every consumer — including the Create screen, which reads nothing
+// but four stable functions. Nested like AudioPositionContext below the main
+// provider; `children` keeps its identity, so only real consumers re-render.
+const UploadActionsContext = createContext<UploadActions | null>(null);
 
 export function useUploadQueue(): Ctx {
   const c = useContext(UploadQueueContext);
   if (!c) throw new Error('useUploadQueue must be used within UploadQueueProvider');
+  return c;
+}
+
+// Actions only — stable for as long as the provider lives, so consuming this
+// never causes a re-render.
+export function useUploadActions(): UploadActions {
+  const c = useContext(UploadActionsContext);
+  if (!c) throw new Error('useUploadActions must be used within UploadQueueProvider');
   return c;
 }
 
@@ -321,9 +340,18 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
 
   const scrollHomeTop = useCallback(() => setHomeScrollTick((n) => n + 1), []);
 
+  // Every member is a useCallback above, so this recomputes only if one of them
+  // genuinely changes identity — never on a progress tick.
+  const actions = useMemo<UploadActions>(
+    () => ({ prewarmVideo, discardPrewarm, enqueueVideo, retry, dismiss, clearPinned, scrollHomeTop }),
+    [prewarmVideo, discardPrewarm, enqueueVideo, retry, dismiss, clearPinned, scrollHomeTop],
+  );
+
   return (
     <UploadQueueContext.Provider value={{ pending, completedTick, prewarmVideo, discardPrewarm, enqueueVideo, retry, dismiss, pinnedIds, clearPinned, homeScrollTick, scrollHomeTop }}>
-      {children}
+      <UploadActionsContext.Provider value={actions}>
+        {children}
+      </UploadActionsContext.Provider>
     </UploadQueueContext.Provider>
   );
 }
