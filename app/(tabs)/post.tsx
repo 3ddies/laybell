@@ -271,9 +271,18 @@ export default function PostScreen() {
   useEffect(() => {
     if (step === 'details' && postType === 'video' && media?.uri) {
       if (prewarmedUriRef.current && prewarmedUriRef.current !== media.uri) discardPrewarm(prewarmedUriRef.current);
-      prewarmedUriRef.current = media.uri;
-      // Ceiling must cover the SOURCE — the prewarm uploads the untrimmed file.
-      prewarmVideo(media.uri, streamCeilingFor(videoDuration));
+      // Clips that need TRIMMING are deliberately not prewarmed. The prewarm is
+      // keyed on the source uri and uploads it as-is, but the user can still go
+      // back and move the trim window — so a prewarmed upload would be the wrong
+      // window (or the whole untrimmed source). Those posts upload at Share
+      // instead, and now upload only the chosen window, which more than pays
+      // back the lost head start. Untrimmed clips keep the prewarm unchanged.
+      if (videoDuration <= VIDEO_MAX_SEC) {
+        prewarmedUriRef.current = media.uri;
+        prewarmVideo(media.uri, streamCeilingFor(videoDuration));
+      } else {
+        prewarmedUriRef.current = null;
+      }
     } else if (prewarmedUriRef.current) {
       discardPrewarm(prewarmedUriRef.current);
       prewarmedUriRef.current = null;

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { compressVideoIfPossible, ensureLocalFile } from '../lib/upload';
+import { trimVideoIfPossible } from '../lib/videoTrim';
 import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, pollStreamReady, deleteStreamVideo } from '../lib/streamUpload';
 import { bumpBadge } from '../lib/badges';
 import { processMentions } from '../lib/mentions';
@@ -91,7 +92,9 @@ type Ctx = {
 
 // A prewarmed upload that's in flight (or done) before the user publishes.
 type PrewarmEntry = {
-  promise: Promise<{ uid: string; subdomain: string } | null>;
+  // trimmedFile is always false here: a prewarm starts before the trim window is
+  // final, so it deliberately uploads the source as-is (see prewarmVideo).
+  promise: Promise<{ uid: string; subdomain: string; trimmedFile: boolean } | null>;
   progress: number;
   attachedTempId: string | null; // the pending card now mirroring this upload, once enqueued
   claimed: boolean;              // an enqueue is using it — never discard a claimed prewarm
@@ -148,13 +151,20 @@ async function startStreamUpload(
   localUri: string,
   maxDurationSeconds: number,
   onProgress: (f: number) => void,
-): Promise<{ uid: string; subdomain: string } | null> {
+  trim?: { start: number; end: number } | null,
+): Promise<{ uid: string; subdomain: string; trimmedFile: boolean } | null> {
   const localFile = await ensureLocalFile(localUri);
-  const upUri = await compressVideoIfPossible(localFile);
+  // Cut the chosen window FIRST, before compressing or uploading, so the
+  // discarded footage never leaves the phone: the upload shrinks in proportion
+  // and Cloudflare never stores what the post doesn't show. Falls back to the
+  // whole file (trimmedFile:false) when the native trimmer isn't in the build,
+  // in which case the caller keeps writing trim_start/trim_end as before.
+  const cut = trim ? await trimVideoIfPossible(localFile, trim.start, trim.end) : { uri: localFile, trimmed: false };
+  const upUri = await compressVideoIfPossible(cut.uri);
   const uid = await uploadVideoToStream(upUri, { maxDurationSeconds, onProgress });
   const subdomain = await resolveStreamSubdomain(uid);
   if (!subdomain) return null;
-  return { uid, subdomain };
+  return { uid, subdomain, trimmedFile: cut.trimmed };
 }
 
 export function UploadQueueProvider({ children }: { children: ReactNode }) {
@@ -193,7 +203,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
 
       // Reuse the speculative prewarm if the details step already started it —
       // otherwise start the upload now. Either way we get {uid, subdomain}.
-      let result: { uid: string; subdomain: string } | null;
+      let result: { uid: string; subdomain: string; trimmedFile: boolean } | null;
       const pre = prewarmRef.current.get(job.localUri);
       if (pre) {
         pre.attachedTempId = tempId; // route its live progress into this card
@@ -205,10 +215,17 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
           job.localUri,
           job.maxDurationSeconds,
           (f) => update(tempId, { progress: f }),
+          job.trim,
         );
       }
       if (!result) throw new Error('Could not prepare the video for playback');
       const { uid, subdomain } = result;
+      // If the file was PHYSICALLY cut, the upload already is the window, so the
+      // virtual trim must not be written too — the player seeks trim_start on a
+      // file that already starts there, which would trim it a second time. A
+      // prewarm never trims (it runs before the window is final), so this stays
+      // false on that path and the old behaviour is preserved.
+      const trimmedFile = result.trimmedFile === true;
       const hls = streamHlsUrl(subdomain, uid);
       // Upload done — the card can now play the HLS (it shows the poster and keeps
       // retrying until Cloudflare finishes encoding, then plays). Move to processing.
@@ -237,7 +254,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         ...(job.topCaption?.text ? { top_caption: job.topCaption } : {}),
         ...(job.bottomCaption?.text ? { bottom_caption: job.bottomCaption } : {}),
         ...(job.captions?.length ? { captions: job.captions } : {}),
-        ...(job.trim ? { trim_start: job.trim.start, trim_end: job.trim.end } : {}),
+        ...(job.trim && !trimmedFile ? { trim_start: job.trim.start, trim_end: job.trim.end } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         video_uid: uid, video_status: 'processing', video_hls_url: hls,
         ...(job.song ? { song_id: job.song.id, song_title: job.song.title, song_artist: job.song.artist, song_artist_id: job.song.artistId } : {}),
