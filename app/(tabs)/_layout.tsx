@@ -24,9 +24,18 @@ import { useListenMode } from '../../contexts/ListenModeContext';
 export const unstable_settings = { initialRouteName: 'index' };
 
 const SCREEN_W = Dimensions.get('window').width;
-// One shared duration for the drag `hover` + `dragging` handoff animations. They
-// must use the SAME curve so a landed tab's active value never dips (no blink).
-const HANDOFF_MS = 200;
+// How long the bar's highlight takes to glide from the old tab to the new one.
+// A bar press now swaps the page INSTANTLY (screenOptions.animationEnabled:
+// false), so this glide is the ONLY thing still animating on a tap — which is
+// exactly Instagram's shape: the screen cuts on a single frame while the bar's
+// active indicator eases across behind it. 140ms ≈ the 7 frames Instagram's own
+// indicator takes in the reference recording; 200 read as a slight drag.
+const HANDOFF_MS = 140;
+// Margin before the bar hands its highlight back to the pager-driven `near`.
+// The `hover` timings run natively (UI thread) while the handoff is a JS
+// timeout, so a few ms of skew is normal; waiting them out means `hover` is
+// provably at its target when we swap drivers, and the swap stays invisible.
+const HANDOFF_SETTLE_MS = HANDOFF_MS + 60;
 
 // Backstop window after the tab tree (re)mounts during which an UNGESTURED
 // multi-page jump is treated as the native-pager "login teleport" glitch and
@@ -97,10 +106,11 @@ function TabSlot({
   // "Active-ness" of this slot, 0→1, from two sources:
   //  • near  — pager proximity (1 when centred on this tab), so it glides while
   //            you swipe between pages instead of snapping at the end;
-  //  • hover  — drag feedback: the tab the finger is over during a bar drag.
-  // While a bar drag is in progress (`dragging`→1) the pager-driven `near`
-  // highlight is suppressed, so the tab you're ON goes dark and ONLY the tab
-  // tracking your finger lights up.
+  //  • hover  — bar feedback: the tab the finger is over during a press/drag.
+  // `dragging` is a hard 0/1 switch between the two (see beginHighlight): while
+  // the bar owns the highlight the pager-driven `near` term is zeroed out, so
+  // the tab you're ON goes dark and ONLY the tab tracking your finger lights up
+  // — and the page underneath is free to cut to its destination unnoticed.
   const near = position.interpolate({ inputRange: [r - 1, r, r + 1], outputRange: [0, 1, 0], extrapolate: 'clamp' });
   const active = Animated.add(Animated.multiply(near, Animated.subtract(1, dragging)), hover);
   const scale = active.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16], extrapolate: 'clamp' });
@@ -178,7 +188,7 @@ function TabSlot({
   );
 }
 
-function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
+function TabBar({ state, navigation, position, jumpTo }: MaterialTopTabBarProps) {
   const insets = useSafeAreaInsets();
   const { profile } = useProfile();
   const { colors, mode } = useTheme();
@@ -286,15 +296,20 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
   // highlight by (1 - dragging), so the current tab goes dark during a drag and
   // only the hovered tab (driven by `hovers`) shows.
   const dragging = useRef(new Animated.Value(0)).current;
-  // True between a drag-release that navigated and the new page settling. We
-  // keep the dim + target highlight held until `position` reaches the new tab,
-  // otherwise the old tab flashes back while the pager is still mid-transition.
+  // True between a press ending and the highlight being handed back to `near`.
+  // A fresh grab clears it, which cancels the pending handoff.
   const releasingRef = useRef(false);
+  // Which VISIBLE slot the pager is currently on. The responder below is built
+  // once, so (like commitRef) it reads this through a ref the render refreshes.
+  // -1 when the focused route isn't a bar slot (the hidden story camera).
+  const focusedSlotRef = useRef(-1);
+  focusedSlotRef.current = visible.findIndex((v) => v.index === state.index);
 
   // commit() needs the live route list / focused index / navigation, so it's
   // kept in a ref the render refreshes — the responder below reads it.
-  // Returns how many tabs the navigation jumped (0 if it didn't navigate), so
-  // the release can hold the dim for as long as the pager takes to slide there.
+  // Returns how many tabs it jumped, or 0 if it didn't navigate at all (already
+  // focused, or a screen preventDefault'd the press) — the release only needs to
+  // know WHETHER to glide the highlight forward or back.
   const commitRef = useRef<(slot: number) => number>(() => 0);
   commitRef.current = (slot: number) => {
     const target = visible[slot];
@@ -307,7 +322,17 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
       // settle that follows (see lastBarNav above).
       lastBarNav.index = target.index;
       lastBarNav.at = Date.now();
-      navigation.navigate(target.route.name);
+      // jumpTo, NOT navigation.navigate — this is what makes a press feel
+      // instant rather than merely un-animated. navigate() puts a full React
+      // pass in front of the page swap: dispatch → re-render every tab screen →
+      // paint → and only then does the pager's (passive) effect finally call
+      // setPageWithoutAnimation. On a busy JS thread that's the lag you feel on
+      // every tap. jumpTo runs the pager command FIRST, synchronously in this
+      // release handler, and dispatches the identical CommonActions.navigate
+      // afterwards — so the page has already cut by the time React starts
+      // rendering it, and a slow screen now lands late INSIDE the new tab
+      // instead of holding up the switch.
+      jumpTo(target.route.key);
       return jump;
     }
     return 0;
@@ -332,9 +357,8 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
       onPanResponderGrant: (e) => {
         const slot = slotFromX(e.nativeEvent.pageX);
         dragSlot.current = slot;
-        releasingRef.current = false; // a new grab cancels any pending release-fade
-        setDragging(1); // dim the current tab; only the hovered one lights up
-        setHover(slot);
+        releasingRef.current = false; // a new grab cancels any pending handoff
+        beginHighlight(slot); // bar takes the highlight; only the hovered tab lights up
       },
       onPanResponderMove: (e) => {
         const slot = slotFromX(e.nativeEvent.pageX);
@@ -359,30 +383,18 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
           }
         }
         dragSlot.current = -1;
-        if (jump > 0) {
-          // Navigated. Keep ONLY the target lit and the current tab dimmed until
-          // the pager has actually slid onto the new tab — THEN drop the dim so
-          // `near` (pager position) takes over with no flash back to the old tab.
-          // The hold scales with the jump distance (a far jump animates longer);
-          // holding a touch too long is invisible, dropping early is the glitch.
-          setHover(slot);
-          releasingRef.current = true;
-          const holdMs = Math.min(320 + jump * 150, 1000);
-          setTimeout(() => {
-            if (releasingRef.current) { releasingRef.current = false; setDragging(0); clearHover(); }
-          }, holdMs);
-        } else {
-          // Released on the current tab — restore it immediately (position is
-          // already here, so un-dimming is seamless).
-          setDragging(0);
-          clearHover();
-        }
+        // The page has ALREADY cut to its destination (no pager slide to wait
+        // out), so all that's left is gliding the highlight there — or back home
+        // when nothing navigated (released on the current tab, or a screen
+        // preventDefault'd the press). The old jump-scaled hold is gone with the
+        // slide it was covering; a far tab press no longer drags the bar behind.
+        setHover(jump > 0 ? slot : focusedSlotRef.current);
+        endHighlight();
       },
       onPanResponderTerminate: () => {
         dragSlot.current = -1;
-        releasingRef.current = false;
-        setDragging(0);
-        clearHover();
+        setHover(focusedSlotRef.current); // glide back to where the pager actually is
+        endHighlight();
       },
     }),
   );
@@ -394,21 +406,45 @@ function TabBar({ state, navigation, position }: MaterialTopTabBarProps) {
     const iw = (barWRef.current || SCREEN_W) / n;
     return Math.max(0, Math.min(n - 1, Math.floor(pageX / iw)));
   }
-  // `hover`, `clearHover` and `setDragging` MUST share one timing curve. The
-  // active value is `near*(1-dragging) + hover`; on the landed tab (near=1) that
-  // is `(1-dragging) + hover`, which only stays flat at 1 if dragging and the
-  // target's hover move in perfect lockstep. A curve mismatch (the old spring vs
-  // timing) made it dip mid-handoff → the icon/disc blinked after landing.
   function setHover(slot: number) {
     hovers.forEach((v, i) =>
       Animated.timing(v, { toValue: i === slot ? 1 : 0, duration: HANDOFF_MS, useNativeDriver: true }).start(),
     );
   }
-  function clearHover() {
-    hovers.forEach((v) => Animated.timing(v, { toValue: 0, duration: HANDOFF_MS, useNativeDriver: true }).start());
+
+  // ── Highlight ownership: `near` (pager) ⇄ `hover` (bar) ─────────────────────
+  // `active` is `near*(1-dragging) + hover`, so `dragging` is really a SWITCH
+  // deciding which of the two owns the highlight. Both handoffs have to be
+  // value-preserving or the icon/disc visibly blinks — the long-standing bug in
+  // this bar. Snapping `dragging` between 0 and 1 (rather than ramping it, as it
+  // once did) is what makes that provable instead of a curve-matching gamble:
+  // at every instant exactly ONE driver is live, and we only ever flip while the
+  // two agree.
+  //
+  // Take it: seed the focused slot's `hover` to 1 in the SAME tick `dragging`
+  // snaps to 1, and every slot's active value is unchanged (focused: 1*0 + 1 = 1;
+  // the rest: 0*0 + 0 = 0). From there only `hover` moves — which is precisely
+  // what lets the page cut instantly underneath without the bar twitching:
+  // `near` is free to jump while it's being multiplied by zero.
+  function beginHighlight(slot: number) {
+    dragging.setValue(1);
+    const focused = focusedSlotRef.current;
+    // setValue also stops any in-flight timing on that value, so a rapid
+    // re-press lands on clean state instead of fighting the previous glide.
+    hovers.forEach((v, i) => v.setValue(i === focused ? 1 : 0));
+    setHover(slot);
   }
-  function setDragging(to: number) {
-    Animated.timing(dragging, { toValue: to, duration: HANDOFF_MS, useNativeDriver: true }).start();
+  // Give it back: let the glide finish, then drop `dragging` and every `hover`
+  // in ONE batch. `near` settled on the new page the moment we navigated, so the
+  // target reads 1*0 + 1 before the swap and 1*1 + 0 after — flat across it.
+  function endHighlight() {
+    releasingRef.current = true;
+    setTimeout(() => {
+      if (!releasingRef.current) return; // a new press already took the highlight
+      releasingRef.current = false;
+      dragging.setValue(0);
+      hovers.forEach((v) => v.setValue(0));
+    }, HANDOFF_SETTLE_MS);
   }
 
   return (
@@ -530,7 +566,13 @@ export default function TabLayout() {
         // sceneStyle's backgroundColor matters: the bar-height padding strip at the
         // bottom is normally covered by the bar overlay, but when Listen mode fades
         // the bar away the pager's default (white) background would show through.
-        screenOptions={{ swipeEnabled: swipeEnabled && !listenMode, sceneStyle: { paddingBottom: 68 + insets.bottom, backgroundColor: colors.background } }}
+        // animationEnabled:false makes every PROGRAMMATIC page change a cut
+        // instead of a slide (react-native-tab-view swaps setPage for
+        // setPageWithoutAnimation) — bar presses, deep links and the guards
+        // below all land instantly, the way Instagram's tab bar does. Finger
+        // swipes are untouched: they're the native pager's own scroll, so they
+        // still track live and still drive `position` continuously.
+        screenOptions={{ swipeEnabled: swipeEnabled && !listenMode, animationEnabled: false, sceneStyle: { paddingBottom: 68 + insets.bottom, backgroundColor: colors.background } }}
         screenListeners={({ navigation }) => ({
           // Pause mid-swipe work (video autoplay, caption focus) until the page
           // settles. noteTabSwipe feeds the guardPress() tap suppressor — taps
