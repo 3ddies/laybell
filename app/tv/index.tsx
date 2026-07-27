@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Image, RefreshControl, Dimensions,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Image, RefreshControl, Dimensions, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -265,6 +265,21 @@ export default function LaybellTVScreen() {
           )}
         </TouchableOpacity>
 
+        {/* AirPlay to Apple TV — a SEPARATE, dedicated path (iOS only). The phone
+            plays Laybell TV and iOS routes it to the TV, following the phone's
+            algorithm + autoplay. Kept apart from the Chromecast wizard above. */}
+        {Platform.OS === 'ios' && (
+          <TouchableOpacity
+            onPress={() => confirmLeaveListen(() => router.push('/tv/airplay'))}
+            activeOpacity={0.85}
+            style={styles.airplayEntry}
+          >
+            <Ionicons name="tv-outline" size={17} color={colors.primary} />
+            <Text style={styles.airplayEntryText}>{t('tv.airplay.entry')}</Text>
+            <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />
+          </TouchableOpacity>
+        )}
+
         {/* Segmented tabs + search circle */}
         <View style={styles.tabRow}>
           <View style={styles.segment}>
@@ -441,6 +456,13 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   tvBannerText: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: -0.1 },
   tvBannerConnected: { backgroundColor: c.success },
   tvBannerConnectedText: { flex: 1, color: '#fff', fontSize: 13.5, fontWeight: '700' },
+  airplayEntry: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: SPACING.md, marginTop: 8,
+    borderRadius: RADIUS.full, paddingVertical: 10, paddingHorizontal: 16,
+    backgroundColor: c.surfaceLight, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+  },
+  airplayEntryText: { flex: 1, color: c.text, fontSize: 13.5, fontWeight: '700' },
   tabRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, marginTop: 4, marginBottom: 10 },
   segment: { flex: 1, flexDirection: 'row', backgroundColor: c.surfaceLight, borderRadius: RADIUS.full, padding: 3 },
   segmentBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: RADIUS.full },
