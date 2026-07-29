@@ -314,7 +314,20 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
     Animated.parallel([
       Animated.timing(translateY, { toValue: DISMISS_DIST, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
       Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start(() => closeRef.current());
+    ]).start(({ finished }) => {
+      // Tear down on the NEXT frame, not on the animation's final one.
+      //
+      // closeRef flips the host's state, which re-renders the whole host (in the
+      // reel viewer: the screen, its list and every sheet) AND unmounts this
+      // sheet's entire subtree — ScrollView, every option row, every icon; on
+      // Android a real native Modal window. Running all of that in the same
+      // frame the animation lands is what made the collapse end with a visible
+      // stutter. One frame later the sheet is already invisible (opacity 0,
+      // translated off), so nothing about the teardown can be seen — it just
+      // stops being felt.
+      if (!finished) { closeRef.current(); return; }
+      requestAnimationFrame(() => closeRef.current());
+    });
   }
 
   // Run an action after the dismiss animation so the sheet is gone first.
@@ -422,6 +435,49 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   // no false positives (authorId is always the post's owner).
   const isOwn = (opts?.isOwn ?? false) ||
     (!!opts?.authorId && !!profile?.id && opts.authorId === profile.id);
+  // Hoisted ABOVE the option-list build so every hook in this component runs
+  // before the visibility guard below. Its closure only touches values defined
+  // further up (translateY / backdrop / closeRef / rubber / DISMISS_DIST), so
+  // moving it is behaviour-neutral.
+  const pan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 3,
+    onPanResponderMove: (_e, g) => {
+      if (g.dy < 0) {
+        translateY.setValue(-rubber(Math.abs(g.dy)));
+        backdrop.setValue(1);
+      } else {
+        const dy = g.dy;
+        translateY.setValue(dy);
+        backdrop.setValue(Math.max(0, 1 - dy / DISMISS_DIST));
+      }
+    },
+    onPanResponderRelease: (_e, g) => {
+      if (g.dy > 60 || g.vy > 1.2) {
+        Animated.parallel([
+          Animated.timing(translateY, { toValue: DISMISS_DIST, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
+        ]).start(() => closeRef.current());
+      } else {
+        Animated.parallel([
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 5, speed: 16 }),
+          Animated.timing(backdrop, { toValue: 1, duration: 150, useNativeDriver: true }),
+        ]).start();
+      }
+    },
+  })).current;
+
+  // NOTHING below this line is built while the sheet is closed.
+  //
+  // This component stays mounted for every host that can show a 3-dot menu —
+  // including the reel viewer, which re-renders it several times per swipe. It
+  // used to construct the entire option list (~10 entries, each with t()
+  // lookups and fresh closures) and its ~32-element tree on EVERY one of those
+  // renders, then discard the result because `visible` was false. That was the
+  // largest remaining piece of pure waste on the reel swipe path, and it made
+  // the sheet's own collapse heavier than it needed to be.
+  if (!visible) return null;
+
   const hasPost = !!opts?.postId;
   const isAudio = isAudioPost(opts?.mediaType);
   const target = opts?.authorName ? `@${opts.authorName}` : t('postOptions.user');
@@ -535,33 +591,6 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
     options.push(blockOpt);
   }
 
-  const pan = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 3,
-    onPanResponderMove: (_e, g) => {
-      if (g.dy < 0) {
-        translateY.setValue(-rubber(Math.abs(g.dy)));
-        backdrop.setValue(1);
-      } else {
-        const dy = g.dy;
-        translateY.setValue(dy);
-        backdrop.setValue(Math.max(0, 1 - dy / DISMISS_DIST));
-      }
-    },
-    onPanResponderRelease: (_e, g) => {
-      if (g.dy > 60 || g.vy > 1.2) {
-        Animated.parallel([
-          Animated.timing(translateY, { toValue: DISMISS_DIST, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-          Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
-        ]).start(() => closeRef.current());
-      } else {
-        Animated.parallel([
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 5, speed: 16 }),
-          Animated.timing(backdrop, { toValue: 1, duration: 150, useNativeDriver: true }),
-        ]).start();
-      }
-    },
-  })).current;
 
   const content = (
     <View style={styles.overlay}>

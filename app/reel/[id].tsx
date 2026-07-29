@@ -1105,14 +1105,34 @@ export default function ReelScreen() {
   // Collapse the caption again whenever a new horizontal reel is landed on.
   useEffect(() => { setCapExpanded(false); }, [overlayId]);
 
+  // The desired orientation state, as a plain string, so a redundant native
+  // call can be skipped. `visibleLandscape` is derived from the landed reel's
+  // aspect ratio, so this effect re-ran on EVERY swipe — and swiping between
+  // two portrait reels re-issued the same PORTRAIT_UP lock each time. These are
+  // native round trips landing right on the swipe commit; only the transitions
+  // that actually change something are worth paying for.
+  const orientModeRef = useRef<string | null>(null);
   useEffect(() => {
-    if (isFocused && overlayAd) {
+    // Focus is part of the key, not just an input: blurring and returning must
+    // ALWAYS re-apply, since another screen may have changed the orientation
+    // while this one was away. Only same-focus, same-intent repeats are skipped
+    // — which is exactly the swipe-to-swipe case this is here for.
+    const mode = !isFocused ? 'blurred'
+      : overlayAd ? 'landscape'
+      : visibleLandscape ? 'unlocked'
+      : 'portrait';
+    if (orientModeRef.current === mode) return;
+    orientModeRef.current = mode;
+    if (mode === 'blurred') {
+      // Unchanged from before: leaving the viewer restores the portrait lock.
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    } else if (mode === 'landscape') {
       // A horizontal TV ad is playing → LOCK to landscape so the user can't
       // rotate back to portrait to exit (and thereby skip) the ad. LANDSCAPE
       // still allows flipping left↔right, just never portrait. The lock is
       // released the moment the ad dismisses (overlayAd → null re-runs this).
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
-    } else if (isFocused && visibleLandscape) {
+    } else if (mode === 'unlocked') {
       ScreenOrientation.unlockAsync().catch(() => {});
     } else {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
