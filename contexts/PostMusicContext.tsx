@@ -291,8 +291,40 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
     }
     return p;
   }
+  // Which source URI the persistent player currently holds. Lets playSong skip
+  // the replace() when the bytes are already staged, and staging skip itself
+  // when it would be redundant. Updated at EVERY replace site so it can never
+  // disagree with the native player.
+  const stagedUriRef = useRef<string | null>(null);
+
   function prefetchSong(songId: string, mediaUrl?: string | null) {
-    resolveSongUrl(songId, mediaUrl).catch(() => {});
+    resolveSongUrl(songId, mediaUrl)
+      .then((url) => {
+        // STAGE THE BYTES, not just the URL. The audible 1–2s gap on landing
+        // was never the URL lookup (cached by the time the scroll rests) — it
+        // was the native player only STARTING to fetch the audio file at
+        // rest+150ms. A paused replace() here begins that download during the
+        // approach instead, so the rest-flush's play() is a rate change on a
+        // buffered source.
+        //
+        // Guards, each of which degrades to today's behaviour when it trips:
+        //  · player must already EXIST — never create one mid-scroll (the
+        //    audio version of the pool rule; the feed gate pre-creates it via
+        //    warmSongPlayer, and it exists forever after the first song).
+        //  · no ambient song may be ACTIVE — replace() would cut it off. The
+        //    playing-song handoff keeps its existing rest-time behaviour.
+        //  · not while the user's own track has the mini-player — playSong
+        //    would defer in that state anyway, so the bytes would be wasted.
+        const p = soundRef.current;
+        if (!url || !p) return;
+        if (activeSongRef.current || mainPlayingRef.current) return;
+        if (stagedUriRef.current === url) return;
+        try {
+          p.replace({ uri: url }); // paused: loads/buffers, plays nothing
+          stagedUriRef.current = url;
+        } catch {}
+      })
+      .catch(() => {});
   }
 
   async function playSong(hostId: string, songId: string, mediaUrl?: string | null) {
@@ -337,7 +369,12 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
       // stall the frame anymore.
       const player = ensurePlayer();
       lastPosRef.current = 0;
-      player.replace({ uri: url });
+      if (stagedUriRef.current !== url) {
+        player.replace({ uri: url });
+        stagedUriRef.current = url;
+      }
+      // else: prefetchSong already staged these bytes during the approach —
+      // play() on the buffered source is the instant start.
       player.muted = mutedRef.current;
       player.play();
     } catch {}
