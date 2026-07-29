@@ -15,7 +15,7 @@ import {
 import type { ParamListBase, TabNavigationState } from '@react-navigation/native';
 import { GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
-import { TabSwipeContext, noteTabSwipe } from '../../contexts/PagerContext';
+import { TabSwipeContext, noteTabSwipe, useSearchLocked } from '../../contexts/PagerContext';
 import { feedChrome, setFeedChromeHidden } from '../../lib/feedChrome';
 import { useListenMode } from '../../contexts/ListenModeContext';
 
@@ -498,6 +498,11 @@ export default function TabLayout() {
   // Listen mode locks the pager to the Music tab — no tab swipes until exit
   // (Music's internal pill swipes are its own PanResponder, unaffected).
   const { listenMode } = useListenMode();
+  // A search field is in use somewhere in the tabs — page swipes are accidental
+  // while the keyboard is up, so they stand down until it is released.
+  // Ref-counted in PagerContext, so several search screens can't clobber
+  // each other's lock.
+  const searchLocked = useSearchLocked();
   // Ref mirror so the navigator's `state` settle listener (a closure that can
   // capture a stale render) always sees the live flag — used by the airtight
   // lock below to snap any off-Music settle back while the mode is on.
@@ -572,7 +577,7 @@ export default function TabLayout() {
         // below all land instantly, the way Instagram's tab bar does. Finger
         // swipes are untouched: they're the native pager's own scroll, so they
         // still track live and still drive `position` continuously.
-        screenOptions={{ swipeEnabled: swipeEnabled && !listenMode, animationEnabled: false, sceneStyle: { paddingBottom: 68 + insets.bottom, backgroundColor: colors.background } }}
+        screenOptions={{ swipeEnabled: swipeEnabled && !listenMode && !searchLocked, animationEnabled: false, sceneStyle: { paddingBottom: 68 + insets.bottom, backgroundColor: colors.background } }}
         screenListeners={({ navigation }) => ({
           // Pause mid-swipe work (video autoplay, caption focus) until the page
           // settles. noteTabSwipe feeds the guardPress() tap suppressor — taps

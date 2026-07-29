@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useSearchSwipeLock } from '../../contexts/PagerContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useFollow } from '../../contexts/FollowContext';
 import { createGroup, findExistingGroup, MAX_GROUP_MEMBERS, type GroupProfile } from '../../lib/groups';
@@ -33,6 +34,8 @@ export default function NewGroupScreen() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
   const [query, setQuery] = useState('');
+  // No swipe-back while searching — see explore.tsx.
+  useSearchSwipeLock(query.length > 0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [checking, setChecking] = useState(false);  // looking for an existing chat
   const [nameOpen, setNameOpen] = useState(false);  // name-the-group popup

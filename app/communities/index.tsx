@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import CommunityCard from '../../components/CommunityCard';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useSearchSwipeLock } from '../../contexts/PagerContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
@@ -36,6 +37,8 @@ export default function CommunitiesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
+  // No swipe-back while searching — see explore.tsx.
+  useSearchSwipeLock(query.length > 0);
   const [results, setResults] = useState<Community[]>([]);
   const [searching, setSearching] = useState(false);
 

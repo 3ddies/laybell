@@ -1,4 +1,5 @@
-import { createContext, useContext, useSyncExternalStore } from 'react';
+import { createContext, useContext, useEffect, useSyncExternalStore } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 
 // ── Pager swipe state (module store, NOT React state) ───────────────────────
 // True while a tab swipe gesture is in progress (between the navigator's
@@ -52,6 +53,59 @@ export const TabSwipeContext = createContext<(enabled: boolean) => void>(() => {
 
 export function useTabSwipeControl() {
   return useContext(TabSwipeContext);
+}
+
+// ── Search lock ──────────────────────────────────────────────────────────────
+// While a search field is in use, a horizontal page swipe is almost certainly
+// accidental — the user is typing at a keyboard that covers half the screen,
+// not navigating. Screens raise this lock and the tabs layout folds it into
+// swipeEnabled, exactly the way Listen mode is folded in.
+//
+// REF-COUNTED, deliberately, where TabSwipeContext is a single boolean slot.
+// That slot is already written by Music's dwell rule, its rail guards and the
+// profile stepper; a fourth independent writer would fight them (whoever wrote
+// last wins, so releasing one lock could silently re-enable swipes another
+// still needed). A counter composes instead: swipes return only when EVERY
+// holder has let go.
+let searchLocks = 0;
+const searchLockSubs = new Set<() => void>();
+
+function emitSearchLock() { searchLockSubs.forEach((cb) => cb()); }
+function subscribeSearchLock(cb: () => void): () => void {
+  searchLockSubs.add(cb);
+  return () => { searchLockSubs.delete(cb); };
+}
+
+export function getSearchLocked(): boolean { return searchLocks > 0; }
+
+export function useSearchLocked(): boolean {
+  return useSyncExternalStore(subscribeSearchLock, getSearchLocked, getSearchLocked);
+}
+
+/**
+ * Hold the page-swipe lock while `active` AND this screen is focused.
+ *
+ * The focus half is not optional: the tab navigator keeps every tab screen
+ * MOUNTED, so a query left sitting in Explore would otherwise keep the lock
+ * raised while the user was over on Music — swipes dead app-wide until they
+ * went back and cleared a field they had forgotten about.
+ *
+ * The release also runs on unmount, so a screen closed mid-search can never
+ * strand the pager locked — the failure mode that would make the app feel
+ * broken rather than polished.
+ */
+export function useSearchSwipeLock(active: boolean) {
+  const focused = useIsFocused();
+  const hold = active && focused;
+  useEffect(() => {
+    if (!hold) return;
+    searchLocks += 1;
+    emitSearchLock();
+    return () => {
+      searchLocks = Math.max(0, searchLocks - 1);
+      emitSearchLock();
+    };
+  }, [hold]);
 }
 
 // ── Swipe-tap guard ──────────────────────────────────────────────────────────

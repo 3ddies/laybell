@@ -12,6 +12,7 @@ import TVVideoList from '../../components/TVVideoList';
 import { Skeleton, SkeletonLine, ListRowsSkeleton } from '../../components/Skeleton';
 import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useSearchSwipeLock } from '../../contexts/PagerContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchHorizontalVideos, matchesQuery, rankVideosForUser } from '../../lib/tv';
@@ -76,6 +77,8 @@ export default function LaybellTVScreen() {
 
   const [tab, setTab] = useState<Tab>('videos');
   const [searchOpen, setSearchOpen] = useState(false);
+  // No swipe-back while the search bar is open — see explore.tsx.
+  useSearchSwipeLock(searchOpen);
   const [query, setQuery] = useState('');
   const [connectOpen, setConnectOpen] = useState(false);
 

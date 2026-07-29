@@ -13,6 +13,7 @@ import { GridSkeleton, ListRowsSkeleton } from '../../components/Skeleton';
 import { reactionPop, tabTick } from '../../lib/haptics';
 import { RADIUS, SPACING, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useSearchSwipeLock } from '../../contexts/PagerContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import {
@@ -109,6 +110,8 @@ function ExploreTab() {
   const { t } = useTranslation();
   const router = useRouter();
   const [search, setSearch] = useState('');
+  // No swipe-back while searching — see explore.tsx.
+  useSearchSwipeLock(search.length > 0);
   const [category, setCategory] = useState<ListingCategory | null>(null);
   // One friendly chip that CYCLES the sort — no menu to open, no extra row.
   const [sort, setSort] = useState<ExploreSort>('new');

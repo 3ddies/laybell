@@ -3,6 +3,7 @@ import { View, StyleSheet, Animated, Easing, useWindowDimensions } from 'react-n
 import PagerView from 'react-native-pager-view';
 import { useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
+import { useSearchLocked } from '../contexts/PagerContext';
 
 // One-motion swipe-back for pushed screens, matching the tab pager's feel.
 // The route must be declared as a transparentModal with animation:'none' and a
@@ -71,6 +72,7 @@ const EXIT_MS = 220;
 const SCRIM_MAX = 0.32;
 
 export default function SwipeBackPager({ children, scrollEnabled = true, animateIn = true, onClose, fastExit = false }: Props) {
+  const searchLocked = useSearchLocked();
   const router = useRouter();
   const navigation = useNavigation<any>();
   const { width: screenW } = useWindowDimensions();
@@ -151,7 +153,12 @@ export default function SwipeBackPager({ children, scrollEnabled = true, animate
       ref={pagerRef}
       style={styles.pager}
       initialPage={1}
-      scrollEnabled={scrollEnabled}
+      // A search field in use anywhere holds the lock: a horizontal swipe while
+      // typing is almost always accidental, and here it would pop the screen and
+      // throw the query away. Read from the shared store rather than plumbed
+      // through props, because the search state usually lives in a child (the
+      // Shop's Explore tab, for instance) while this pager sits in the parent.
+      scrollEnabled={scrollEnabled && !searchLocked}
       keyboardDismissMode="on-drag"
       // Keep the live fractional position up to date for the idle re-snap below,
       // and mirrored into the scrim so the dim tracks the finger.
