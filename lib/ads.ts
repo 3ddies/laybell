@@ -930,13 +930,15 @@ export async function fetchMyAdCampaigns(): Promise<AdCampaign[]> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
-    await supabase
-      .from('ad_campaigns')
-      .update({ status: 'ended' })
-      .eq('user_id', user.id)
-      .eq('kind', 'ad')
-      .eq('status', 'active')
-      .lt('ends_at', new Date().toISOString());
+    // This used to lazily settle schedule-expired campaigns to 'ended' before
+    // reading. It had to go: `ad_campaign_end` is what returns unspent budget,
+    // and it only refunds a campaign it ends itself — so merely OPENING this
+    // screen forfeited the remainder of every campaign that ran out its
+    // schedule. A $100 campaign that spent $20 silently lost $80, as the default
+    // outcome for any campaign not ended by budget exhaustion.
+    //
+    // Nothing is lost by removing it: serving already filters on `ends_at`, and
+    // `effectiveAdStatus` computes the expired label for display.
     const { data, error } = await supabase
       .from('ad_campaigns')
       .select(CAMPAIGN_SELECT)

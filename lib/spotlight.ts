@@ -520,12 +520,11 @@ export async function fetchMyCampaigns(): Promise<SpotlightCampaign[]> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
-    await supabase
-      .from('ad_campaigns')
-      .update({ status: 'ended' })
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-      .lt('ends_at', new Date().toISOString());
+    // Removed a lazy settle that flipped expired campaigns to 'ended' on read.
+    // It had NO `kind` filter, so opening the Spotlight screen also ended the
+    // user's AD campaigns — and `ad_campaign_end` only refunds unspent budget on
+    // a campaign it ends itself, so that quietly forfeited the remainder.
+    // `effectiveStatus` already computes the expired label for display.
     const { data, error } = await supabase
       .from('ad_campaigns')
       .select(`
