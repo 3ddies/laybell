@@ -1,7 +1,8 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  ActivityIndicator, Image, Alert,
+  ActivityIndicator, Alert,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -62,7 +63,7 @@ export default function DownloadsScreen() {
       >
         <View style={styles.coverWrap}>
           {item.cover ? (
-            <Image source={{ uri: item.cover }} style={styles.cover} />
+            <ExpoImage source={{ uri: item.cover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.cover}>
               <Ionicons name="musical-notes" size={18} color={colors.primary} />

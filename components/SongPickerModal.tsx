@@ -1,7 +1,8 @@
 import {
   View, Text, StyleSheet, Modal, FlatList, TextInput,
-  TouchableOpacity, Image, Keyboard,
+  TouchableOpacity, Keyboard,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useEffect, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -193,7 +194,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
                 return (
                   <TouchableOpacity style={styles.row} onPress={() => pick(item)} activeOpacity={0.8}>
                     {item.cover_url ? (
-                      <Image source={{ uri: item.cover_url }} style={styles.cover} />
+                      <ExpoImage source={{ uri: item.cover_url }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" />
                     ) : (
                       <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
                         <Ionicons name="musical-notes" size={18} color={colors.primary} />

@@ -1,7 +1,10 @@
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, Easing,
+  View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Easing,
   KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
+// expo-image: decodes at displayed size + memory-caches, so the large album art
+// paints instantly when the sheet re-opens instead of re-decoding from disk.
+import { Image as ExpoImage } from 'expo-image';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -192,7 +195,7 @@ function NowPlayingTVCard() {
   return (
     <View style={styles.tvCard}>
       {current.poster ? (
-        <Image source={{ uri: current.poster }} style={styles.tvCardPoster} />
+        <ExpoImage source={{ uri: current.poster }} style={styles.tvCardPoster} contentFit="cover" cachePolicy="memory-disk" />
       ) : (
         <LinearGradient colors={GRADIENTS.primarySoft} style={styles.tvCardPoster}>
           <Ionicons name="tv" size={18} color={colors.primary} />
@@ -323,9 +326,15 @@ export default function NowPlaying() {
       const { data: { user } } = await supabase.auth.getUser();
       if (cancelled) return;
       setUserId(user?.id ?? null);
-      const [postRes, likesRes, saveRes] = await Promise.all([
-        supabase.from('posts').select('stream_count, save_count, user_id, profiles!posts_user_id_fkey(username, display_name, badge_tier, badge_show, profile_theme)').eq('id', pid).single(),
-        supabase.from('likes').select('user_id').eq('post_id', pid),
+      // like_count is the trigger-maintained denormalized column
+      // (post_engagement_counts.sql) — the same one the feed and reels read via
+      // attachEngagementCounts. The old path here downloaded EVERY likes row for
+      // the track and counted client-side, which on a popular song was the
+      // visible seconds-late stats pop. isLiked is a single-row membership
+      // check instead of a scan.
+      const [postRes, likeRes, saveRes] = await Promise.all([
+        supabase.from('posts').select('stream_count, save_count, like_count, user_id, profiles!posts_user_id_fkey(username, display_name, badge_tier, badge_show, profile_theme)').eq('id', pid).single(),
+        user ? supabase.from('likes').select('user_id').eq('user_id', user.id).eq('post_id', pid).maybeSingle() : Promise.resolve({ data: null }),
         user ? supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', pid).maybeSingle() : Promise.resolve({ data: null }),
       ]);
       if (cancelled) return;
@@ -333,14 +342,12 @@ export default function NowPlaying() {
         const d: any = postRes.data;
         setStreams(d.stream_count || 0);
         setSaves(d.save_count || 0);
+        setLikeCount(d.like_count || 0);
         setOwnerId(d.user_id);
         setOwnerName(d.profiles?.username);
         setOwnerBadge(d.profiles ?? null);
       }
-      if (likesRes.data) {
-        setLikeCount(likesRes.data.length);
-        setIsLiked(!!user && likesRes.data.some((l: any) => l.user_id === user.id));
-      }
+      setIsLiked(!!likeRes.data);
       setIsSaved(!!saveRes.data);
     })();
     return () => { cancelled = true; };
@@ -491,7 +498,7 @@ export default function NowPlaying() {
           <View style={styles.adBody}>
             <View style={styles.artWrap}>
               {adState.cover ? (
-                <Image source={{ uri: adState.cover }} style={styles.art} />
+                <ExpoImage source={{ uri: adState.cover }} style={styles.art} contentFit="cover" cachePolicy="memory-disk" />
               ) : (
                 <LinearGradient colors={GRADIENTS.primary} style={styles.art}>
                   <Ionicons name="megaphone" size={64} color={colors.text} />
@@ -550,7 +557,7 @@ export default function NowPlaying() {
               <>
                 <View style={styles.artWrap}>
                   {track.cover ? (
-                    <Image source={{ uri: track.cover }} style={styles.art} />
+                    <ExpoImage source={{ uri: track.cover }} style={styles.art} contentFit="cover" cachePolicy="memory-disk" />
                   ) : (
                     <LinearGradient colors={GRADIENTS.primary} style={styles.art}>
                       <Ionicons name="musical-notes" size={64} color={colors.text} />

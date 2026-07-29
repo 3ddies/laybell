@@ -1,4 +1,8 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+// expo-image (NOT RN Image): decodes at DISPLAYED size and memory-caches the
+// decoded bitmap, so covers paint instantly on re-appearance instead of
+// re-decoding from disk (the visible split-second blank).
+import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
@@ -64,7 +68,7 @@ export default function TrackRow({
           Long-press opens the options sheet from ANY part of the row. */}
       <TouchableOpacity style={styles.coverWrap} onPress={safeCover} onLongPress={onOptions}>
         {cover ? (
-          <Image source={{ uri: cover }} style={styles.cover} />
+          <ExpoImage source={{ uri: cover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" />
         ) : (
           <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
             <Ionicons name="musical-notes" size={18} color={colors.primary} />
@@ -107,7 +111,7 @@ export default function TrackRow({
       {onAvatarPress && (
         <TouchableOpacity onPress={safeAvatar} onLongPress={onOptions}>
           {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+            <ExpoImage source={{ uri: avatarUrl }} style={styles.avatar} contentFit="cover" cachePolicy="memory-disk" />
           ) : (
             <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
               <Text style={styles.avatarText}>{(artist || username || '?').charAt(0).toUpperCase()}</Text>

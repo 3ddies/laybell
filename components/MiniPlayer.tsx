@@ -1,4 +1,6 @@
-import { View, Text, TouchableOpacity, StyleSheet, Image, Animated, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Platform } from 'react-native';
+// expo-image: memory-caches decoded covers so the bar art paints instantly.
+import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { feedChrome } from '../lib/feedChrome';
 import { useEffect, useRef, useState } from 'react';
@@ -200,7 +202,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           accessibilityLabel={t('a11y.openPlayer')}
         >
             {adState.cover ? (
-              <Image source={{ uri: adState.cover }} style={styles.cover} />
+              <ExpoImage source={{ uri: adState.cover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" />
             ) : (
               <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
                 <Ionicons name="megaphone" size={16} color={colors.primary} />
@@ -259,7 +261,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           accessibilityLabel={t('a11y.openPlayer')}
         >
           {track.cover ? (
-            <Image source={{ uri: track.cover }} style={styles.compactCover} />
+            <ExpoImage source={{ uri: track.cover }} style={styles.compactCover} contentFit="cover" cachePolicy="memory-disk" />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.compactCover}>
               <Ionicons name="musical-notes" size={13} color={colors.primary} />
@@ -309,7 +311,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           accessibilityLabel={t('a11y.openPlayer')}
         >
           {track.cover ? (
-            <Image source={{ uri: track.cover }} style={styles.compactCover} />
+            <ExpoImage source={{ uri: track.cover }} style={styles.compactCover} contentFit="cover" cachePolicy="memory-disk" />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.compactCover}>
               <Ionicons name="musical-notes" size={13} color={colors.primary} />
@@ -389,7 +391,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           accessibilityLabel={t('a11y.openPlayer')}
         >
           {track.cover ? (
-            <Image source={{ uri: track.cover }} style={styles.cover} />
+            <ExpoImage source={{ uri: track.cover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
               <Ionicons name="musical-notes" size={16} color={colors.primary} />

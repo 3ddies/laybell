@@ -1,8 +1,10 @@
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
-  Alert, TextInput, Modal, Image, Dimensions, RefreshControl, Keyboard,
+  Alert, TextInput, Modal, Dimensions, RefreshControl, Keyboard,
   KeyboardAvoidingView, Platform, TouchableWithoutFeedback, PanResponder, Animated, Easing,
 } from 'react-native';
+// expo-image: memory-caches decoded covers (RN Image re-decodes on every mount).
+import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { chromeScrollProps } from '../../lib/feedChrome';
 import { useNavigation } from '@react-navigation/native';
@@ -978,7 +980,7 @@ export default function MusicScreen() {
     >
       <View style={styles.pubCoverWrap}>
         {p.cover ? (
-          <Image source={{ uri: p.cover }} style={styles.pubCover} />
+          <ExpoImage source={{ uri: p.cover }} style={styles.pubCover} contentFit="cover" cachePolicy="memory-disk" />
         ) : (
           <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.pubCover}>
             <Ionicons name="musical-notes" size={26} color={colors.primary} />
@@ -1429,7 +1431,7 @@ export default function MusicScreen() {
                       })}
                     >
                       {track.cover_url ? (
-                        <Image source={{ uri: track.cover_url }} style={styles.forYouCover} />
+                        <ExpoImage source={{ uri: track.cover_url }} style={styles.forYouCover} contentFit="cover" cachePolicy="memory-disk" />
                       ) : (
                         <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.forYouCover}>
                           <Ionicons name="musical-notes" size={28} color={colors.primary} />
@@ -1469,7 +1471,7 @@ export default function MusicScreen() {
                     })}
                   >
                     {todaysPick.cover_url ? (
-                      <Image source={{ uri: todaysPick.cover_url }} style={styles.todaysCover} />
+                      <ExpoImage source={{ uri: todaysPick.cover_url }} style={styles.todaysCover} contentFit="cover" cachePolicy="memory-disk" />
                     ) : (
                       <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.todaysCover}>
                         <Ionicons name="musical-notes" size={20} color={colors.primary} />
@@ -1520,7 +1522,7 @@ export default function MusicScreen() {
                       >
                         <View style={[styles.pubCoverWrap, locked && styles.pubCoverLocked]}>
                           {p.cover ? (
-                            <Image source={{ uri: p.cover }} style={styles.pubCover} />
+                            <ExpoImage source={{ uri: p.cover }} style={styles.pubCover} contentFit="cover" cachePolicy="memory-disk" />
                           ) : (
                             <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.pubCover}>
                               <Ionicons name="musical-notes" size={26} color={colors.primary} />
@@ -1563,7 +1565,7 @@ export default function MusicScreen() {
             >
               {/* Faced with the first track's cover art, same as public squares */}
               {item.cover ? (
-                <Image source={{ uri: item.cover }} style={styles.playlistIcon} />
+                <ExpoImage source={{ uri: item.cover }} style={styles.playlistIcon} contentFit="cover" cachePolicy="memory-disk" />
               ) : (
                 <LinearGradient colors={GRADIENTS.primarySoft} style={styles.playlistIcon}>
                   <Ionicons name="musical-notes" size={22} color={colors.primary} />
@@ -1604,7 +1606,7 @@ export default function MusicScreen() {
           {/* Header: cover art + prominent title + meta line */}
           <View style={styles.detailHeader}>
             {selectedPlaylist.cover ? (
-              <Image source={{ uri: selectedPlaylist.cover }} style={styles.detailCover} />
+              <ExpoImage source={{ uri: selectedPlaylist.cover }} style={styles.detailCover} contentFit="cover" cachePolicy="memory-disk" />
             ) : (
               <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.detailCover}>
                 <Ionicons name="musical-notes" size={26} color={colors.primary} />
@@ -1810,7 +1812,7 @@ export default function MusicScreen() {
           {/* Header: cover art + prominent title + tappable creator line */}
           <View style={styles.detailHeader}>
             {selectedCommunity.cover ? (
-              <Image source={{ uri: selectedCommunity.cover }} style={styles.detailCover} />
+              <ExpoImage source={{ uri: selectedCommunity.cover }} style={styles.detailCover} contentFit="cover" cachePolicy="memory-disk" />
             ) : (
               <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.detailCover}>
                 <Ionicons name="musical-notes" size={26} color={colors.primary} />

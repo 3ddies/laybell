@@ -1,6 +1,7 @@
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList, Image,
+  View, Text, StyleSheet, TouchableOpacity, FlatList,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -120,7 +121,7 @@ export default function PlaylistScreen() {
           {/* Header card — cover art, prominent title, meta line */}
           <View style={styles.detailHeader}>
             {cover ? (
-              <Image source={{ uri: cover }} style={styles.detailCover} />
+              <ExpoImage source={{ uri: cover }} style={styles.detailCover} contentFit="cover" cachePolicy="memory-disk" />
             ) : (
               <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.detailCover}>
                 <Ionicons name="musical-notes" size={26} color={colors.primary} />

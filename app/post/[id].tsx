@@ -208,17 +208,24 @@ export default function PostDetailScreen() {
     // Global spotlight check — shows the sparkle no matter how this post was opened.
     isPostSpotlighted(id).then((s) => { if (s) setIsSpotlight(true); });
 
-    const [postRes, likesRes] = await Promise.all([
+    // like_count rides along in the `select('*')` row (trigger-maintained by
+    // post_engagement_counts.sql) — the old separate query downloaded EVERY
+    // likes row just to count client-side, which made stats pop in late on a
+    // cold open (deep link). isLiked is a single-row membership check.
+    const [postRes, likeRes] = await Promise.all([
       supabase.from('posts').select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url, badge_tier, badge_show, profile_theme)').eq('id', id).single(),
-      supabase.from('likes').select('user_id').eq('post_id', id),
+      user
+        ? supabase.from('likes').select('user_id').eq('user_id', user.id).eq('post_id', id).maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
 
-    if (postRes.data) { setPost(postRes.data as any); setSaveCount((postRes.data as any).save_count || 0); }
-    else if (!postParam) { setNotFound(true); }
-    if (likesRes.data) {
-      setLikeCount(likesRes.data.length);
-      if (user) setIsLiked(likesRes.data.some(l => l.user_id === user.id));
+    if (postRes.data) {
+      setPost(postRes.data as any);
+      setSaveCount((postRes.data as any).save_count || 0);
+      setLikeCount((postRes.data as any).like_count || 0);
     }
+    else if (!postParam) { setNotFound(true); }
+    setIsLiked(!!likeRes.data);
 
     if (user) {
       const { data: saveData } = await supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', id).single();

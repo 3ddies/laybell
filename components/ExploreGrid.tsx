@@ -609,7 +609,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
               >
                 {s.cover_url ? (
                   <View style={styles.songIcon}>
-                    <ExpoImage source={{ uri: s.cover_url }} style={styles.songCoverImg} contentFit="cover" cachePolicy="memory-disk" />
+                    <ExpoImage source={{ uri: s.cover_url }} style={styles.songCoverImg} contentFit="cover" cachePolicy="memory-disk" recyclingKey={s.id} />
                     {active && (
                       <View style={styles.songCoverOverlay}>
                         <Ionicons name="stop" size={15} color={colors.text} />

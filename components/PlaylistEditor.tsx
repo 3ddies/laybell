@@ -1,7 +1,8 @@
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Animated, PanResponder, Alert,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -132,7 +133,7 @@ export default function PlaylistEditor({ tracks, onCommitOrder, onRemove }: {
 
               <TouchableOpacity style={styles.body} activeOpacity={0.7} onPress={() => toggle(t.post_id)}>
                 {t.posts?.cover_url ? (
-                  <Image source={{ uri: t.posts.cover_url }} style={styles.cover} />
+                  <ExpoImage source={{ uri: t.posts.cover_url }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" />
                 ) : (
                   <LinearGradient colors={GRADIENTS.primarySoft as any} style={styles.cover}>
                     <Ionicons name="musical-notes" size={16} color={colors.primary} />
