@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme, useThemedStyles } from './ThemeContext';
 import { useTranslation } from './LanguageContext';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
-import { submitReport, submitUserReport, submitConversationReport, submitListingReport, setReportHandler, type ReportRequest } from '../lib/postActions';
+import { submitReport, submitUserReport, submitConversationReport, submitListingReport, submitCommunityReport, setReportHandler, type ReportRequest } from '../lib/postActions';
 
 // Themed in-app report sheet. Tapping Report opens a bottom sheet of quick
 // reasons; picking one opens a short, OPTIONAL "add details" step before filing,
@@ -118,6 +118,7 @@ export function ReportProvider({ children }: { children: React.ReactNode }) {
     if (req.kind === 'post') submitReport(req.targetId, reason).catch(() => {});
     else if (req.kind === 'conversation') submitConversationReport(req.targetId, reason).catch(() => {});
     else if (req.kind === 'listing') submitListingReport(req.targetId, reason).catch(() => {});
+    else if (req.kind === 'community') submitCommunityReport(req.targetId, reason).catch(() => {});
     else submitUserReport(req.targetId, reason).catch(() => {});
     setMode('done');
   }
@@ -143,6 +144,7 @@ export function ReportProvider({ children }: { children: React.ReactNode }) {
   const listTitle = kind === 'user' ? t('report.titleUser')
     : kind === 'conversation' ? t('report.titleChat')
     : kind === 'listing' ? t('report.titleListing')
+    : kind === 'community' ? t('report.titleCommunity')
     : t('report.titlePost');
   const isOther = selected === 'other';
   const submitDisabled = isOther && !detail.trim();

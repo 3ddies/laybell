@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { reportCommunity } from '../../lib/postActions';
 import { LinearGradient } from 'expo-linear-gradient';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import ExploreGrid from '../../components/ExploreGrid';
@@ -286,7 +287,9 @@ export default function CommunityDetailScreen() {
         <TopBar
           title={community.name}
           onBack={() => router.back()}
-          onMenu={isMember ? () => setMenuOpen(true) : undefined}
+          /* Always available: the menu now carries Report, which every visitor
+             needs — not just members. Member-only items stay gated inside. */
+          onMenu={() => setMenuOpen(true)}
         />
 
         <ExploreGrid
@@ -317,10 +320,23 @@ export default function CommunityDetailScreen() {
                   <Text style={styles.menuText}>{t('communities.manageMembers')}</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.menuItem} onPress={confirmLeave}>
-                <Ionicons name="exit-outline" size={20} color={colors.error} />
-                <Text style={[styles.menuText, { color: colors.error }]}>{t('communities.leave')}</Text>
-              </TouchableOpacity>
+              {/* Reporting your own community is meaningless — an owner who
+                  wants it gone deletes or edits it instead. */}
+              {role !== 'owner' && (
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => { setMenuOpen(false); reportCommunity(id); }}
+                >
+                  <Ionicons name="flag-outline" size={20} color={colors.text} />
+                  <Text style={styles.menuText}>{t('communities.report')}</Text>
+                </TouchableOpacity>
+              )}
+              {isMember && (
+                <TouchableOpacity style={styles.menuItem} onPress={confirmLeave}>
+                  <Ionicons name="exit-outline" size={20} color={colors.error} />
+                  <Text style={[styles.menuText, { color: colors.error }]}>{t('communities.leave')}</Text>
+                </TouchableOpacity>
+              )}
             </Pressable>
           </Pressable>
         </Modal>

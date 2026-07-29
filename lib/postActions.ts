@@ -145,7 +145,7 @@ export async function submitReport(postId: string, reason = 'other') {
 // The themed report sheet (contexts/ReportContext) registers its opener here, so
 // the imperative reportPost/reportUser callers (the 3-dot menu, the story viewer)
 // can stay unchanged while the UI is a real in-app sheet instead of an Alert.
-export type ReportRequest = { kind: 'post' | 'user' | 'conversation' | 'listing'; targetId: string; onClose?: () => void };
+export type ReportRequest = { kind: 'post' | 'user' | 'conversation' | 'listing' | 'community'; targetId: string; onClose?: () => void };
 let reportHandler: ((req: ReportRequest) => void) | null = null;
 export function setReportHandler(fn: ((req: ReportRequest) => void) | null) { reportHandler = fn; }
 
@@ -206,6 +206,29 @@ export function reportConversation(conversationId: string, onDone?: () => void) 
       await submitConversationReport(conversationId, 'other');
       onDone?.();
       Alert.alert(tg('chat.reportThanksTitle'), tg('chat.reportThanksBody'));
+    } },
+  ]);
+}
+
+// Records a community report. Silently no-ops if community_reports isn't
+// migrated yet — same degradation as the other report kinds, so the button is
+// never a dead end even on a database that predates the table.
+export async function submitCommunityReport(communityId: string, reason = 'other') {
+  const { data: { user } } = await supabase.auth.getUser();
+  await supabase.from('community_reports').insert({
+    community_id: communityId, reporter_id: user?.id ?? null, reason,
+  });
+}
+
+// Report a community through the themed report sheet (same UX as post/user).
+export function reportCommunity(communityId: string, onDone?: () => void) {
+  if (reportHandler) { reportHandler({ kind: 'community', targetId: communityId, onClose: onDone }); return; }
+  Alert.alert(tg('report.titleCommunity'), tg('communities.reportBody'), [
+    { text: tg('common.cancel'), style: 'cancel', onPress: onDone },
+    { text: tg('postAction.reportOther'), style: 'destructive', onPress: async () => {
+      await submitCommunityReport(communityId, 'other');
+      onDone?.();
+      Alert.alert(tg('postAction.reportThanksTitle'), tg('communities.reportThanks'));
     } },
   ]);
 }
