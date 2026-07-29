@@ -38,6 +38,11 @@ const isPlayableVideoItem = (it: any): boolean => !!it && !it.__ad && (
   (it.type === 'video' && !!it.media_url) ||
   (isSlideshow(it.type) && Array.isArray(it.slides) && it.slides.some((s: any) => s?.type === 'video'))
 );
+// The author-header band at the top of every post card (38px avatar +
+// 2×(SPACING.sm+2) padding ≈ 58px, +margin). Used by the center-line resolver:
+// a focus line inside this zone means the user is watching the card ABOVE.
+// Keep in sync with styles.postHeader/avatar if those ever change.
+const HEADER_FOCUS_ZONE = 64;
 // Home feed candidate POOL — how many recent posts we pull to sample the shown
 // arrangement from (see lib/feedScorer.arrangeFeed). Bigger = more genuinely
 // different content per refresh; capped by how many posts actually exist.
@@ -789,8 +794,26 @@ export default function HomeScreen() {
       sawLayout = true;
       // The card whose vertical extent contains the focus line IS the centered post.
       if (centerY >= L.y && centerY < L.y + L.height) {
-        if (isPlayableVideoItem(data[i])) activeId = (data[i] as any).id;
-        else centerOnNonVideo = true;
+        if (isPlayableVideoItem(data[i])) {
+          activeId = (data[i] as any).id;
+          // HEADER-ZONE handoff: the top ~58px of every card is the author
+          // header, never media. If the focus line sits on this card's HEADER,
+          // the user's eye is on the media that ends right above it — with two
+          // short landscape videos stacked, the raw containment rule played
+          // the BOTTOM one here while the fully-visible video above owned the
+          // middle of the screen (owner-reported, caught on video). So: line
+          // in the header zone + the adjacent item above is also a playable
+          // video still overlapping the band → that one is what's watched.
+          // Asymmetric on purpose (no bottom-edge twin): a card's bottom
+          // region is its caption/actions, directly UNDER its own media —
+          // containment is already right there.
+          if (centerY < L.y + HEADER_FOCUS_ZONE && i > 0 && isPlayableVideoItem(data[i - 1])) {
+            const LA = list.getLayout(i - 1);
+            if (LA && LA.y + LA.height > bandTop) activeId = (data[i - 1] as any).id;
+          }
+        } else {
+          centerOnNonVideo = true;
+        }
         break;
       }
     }
