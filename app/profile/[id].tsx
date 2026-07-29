@@ -106,14 +106,23 @@ export default function PublicProfileScreen() {
   // Slide the incoming sub-tab in from the travel direction (Music-pill style).
   const tabAnimX = useRef(new Animated.Value(0)).current;
   const prevTabIdxRef = useRef(0);
+  const pendingSlideRef = useRef(false);
+  // Start offset seeded DURING RENDER — see the twin block in
+  // app/(tabs)/profile.tsx for why. Short version: hidden pages are
+  // display:none, so revealing one lays it out fresh; seeding in an effect
+  // painted that fresh layout at rest for one frame before the slide began.
+  const tabIdx = TAB_KEYS.indexOf(activeTab);
+  if (tabIdx !== prevTabIdxRef.current) {
+    const dir = tabIdx > prevTabIdxRef.current ? 1 : -1;
+    prevTabIdxRef.current = tabIdx;
+    tabAnimX.stopAnimation();
+    tabAnimX.setValue(dir * SCREEN_W);
+    pendingSlideRef.current = true;
+  }
   useEffect(() => {
-    const idx = TAB_KEYS.indexOf(activeTab);
-    if (idx !== prevTabIdxRef.current) {
-      const dir = idx > prevTabIdxRef.current ? 1 : -1;
-      tabAnimX.setValue(dir * SCREEN_W);
-      Animated.timing(tabAnimX, { toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    }
-    prevTabIdxRef.current = idx;
+    if (!pendingSlideRef.current) return;
+    pendingSlideRef.current = false;
+    Animated.timing(tabAnimX, { toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 

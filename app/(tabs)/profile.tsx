@@ -148,14 +148,30 @@ export default function ProfileScreen() {
   // Slide the incoming sub-tab in from the travel direction (Music-pill style).
   const tabAnimX = useRef(new Animated.Value(0)).current;
   const prevTabIdxRef = useRef(0);
+  const pendingSlideRef = useRef(false);
+  // The start offset is seeded DURING RENDER (repo convention, same as the
+  // FlashList recycling guards), not in an effect. Hidden pages use
+  // display:none, so Yoga never lays out their subtree — flipping one visible
+  // lays it out fresh. Seeding in an effect meant the commit that revealed the
+  // page painted it AT REST (translateX still 0 from the previous slide) with
+  // its grid mid-layout, and only the NEXT frame jumped it off-screen to begin
+  // the slide: the brief flash of a half-built grid. Seeding here puts the page
+  // off-screen in the very same frame it becomes visible, so the fresh layout
+  // happens out of sight and the slide reveals a settled page.
+  const tabIdx = TAB_KEYS.indexOf(activeTab);
+  if (tabIdx !== prevTabIdxRef.current) {
+    const dir = tabIdx > prevTabIdxRef.current ? 1 : -1;
+    prevTabIdxRef.current = tabIdx;
+    // A slide already in flight drives toward 0 on its own clock; stop it or it
+    // fights the new seed and lands early.
+    tabAnimX.stopAnimation();
+    tabAnimX.setValue(dir * SCREEN_W);
+    pendingSlideRef.current = true;
+  }
   useEffect(() => {
-    const idx = TAB_KEYS.indexOf(activeTab);
-    if (idx !== prevTabIdxRef.current) {
-      const dir = idx > prevTabIdxRef.current ? 1 : -1;
-      tabAnimX.setValue(dir * SCREEN_W);
-      Animated.timing(tabAnimX, { toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    }
-    prevTabIdxRef.current = idx;
+    if (!pendingSlideRef.current) return;
+    pendingSlideRef.current = false;
+    Animated.timing(tabAnimX, { toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
