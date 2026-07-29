@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, ActivityIndicator,
   KeyboardAvoidingView, Platform, Pressable,
@@ -40,6 +40,8 @@ export default function LiveDonateModal({ visible, stream, studio, onClose, onDo
   const [customText, setCustomText] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  // Synchronous double-tap guard — see confirm(). State is too late.
+  const sendingRef = useRef(false);
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -68,13 +70,20 @@ export default function LiveDonateModal({ visible, stream, studio, onClose, onDo
   }
 
   async function confirm() {
-    if (!validAmount || busy) return;
+    // Guarded on a REF, not on `busy`. State updates don't apply until the next
+    // render, so two taps in the same frame both saw busy=false and both got
+    // through — and tip_post_internal has no idempotency key, inserting a fresh
+    // donation per call. The viewer was simply charged twice. The spotlight and
+    // ad-manager purchase buttons already use a ref for exactly this reason.
+    if (!validAmount || sendingRef.current) return;
+    sendingRef.current = true;
     setBusy(true);
     const msg = message.trim();
     const res = studio
       ? await donateStudio(studio.sessionId, amount, msg)
       : await donate(stream!.id, amount, msg);
     setBusy(false);
+    sendingRef.current = false;
     if (res.ok) {
       onDonated(amount, msg);
       setMessage('');

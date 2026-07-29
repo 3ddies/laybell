@@ -143,17 +143,32 @@ export default function SpotlightScreen() {
     payingRef.current = true;
     setPaying(true);
     try {
-      // Simulated checkout: a short beat for the "processing" feel, then the
-      // campaign + payment rows. A real provider slots in right here.
-      await new Promise(r => setTimeout(r, 900));
       const campaign = await purchaseCampaign(pkg);
+      // A null here means the purchase SUCCEEDED but the follow-up read of the
+      // row failed — the credits are already spent and the campaign exists. Say
+      // that, rather than "could not complete the purchase", and refresh so it
+      // shows up in the pending list where it can be used or cancelled.
       if (!campaign) {
-        Alert.alert(t('spotlight.payFailedTitle'), t('spotlight.payFailedBody'));
+        Alert.alert(t('spotlight.payFailedTitle'), t('spotlight.purchasedNotShown'));
+        load();
         return;
       }
       setFlowCampaign(campaign);
       setFlowStep('choose');
       load();
+    } catch (e: any) {
+      // purchaseCampaign now THROWS on RPC failure so callers can tell "no
+      // credits" from "offline". Without this catch it was an unhandled
+      // rejection: the spinner stopped, nothing was said, and the user tapped
+      // Pay again — buying a second campaign, because there is no idempotency
+      // key on a purchase the user genuinely repeated.
+      const msg = String(e?.message ?? '');
+      if (msg.includes('insufficient funds')) {
+        Alert.alert(t('spotlight.payFailedTitle'), t('spotlight.needCredits'));
+        router.push('/credits');
+      } else {
+        Alert.alert(t('spotlight.payFailedTitle'), t('spotlight.payFailedBody'));
+      }
     } finally {
       payingRef.current = false;
       setPaying(false);

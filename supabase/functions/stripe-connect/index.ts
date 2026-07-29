@@ -164,17 +164,17 @@ serve(async (req) => {
     }
 
     if (action === 'payout') {
-      if (!acct) return json({ error: 'no_connected_account' }, 400);
+      if (!acct) return json({ error: 'no_connected_account' });
       const amountCents = Math.floor(Number(body?.amountCents ?? 0));
       if (!Number.isFinite(amountCents) || amountCents <= 0) {
-        return json({ error: 'invalid_amount' }, 400);
+        return json({ error: 'invalid_amount' });
       }
 
       // payouts_enabled is the only field that means the creator can actually be
       // paid. Checking it here turns a confusing failed payout into a clear
       // "finish your onboarding".
       const a = await stripe(`accounts/${acct}`, undefined, 'GET');
-      if (!a.payouts_enabled) return json({ error: 'payouts_not_enabled' }, 400);
+      if (!a.payouts_enabled) return json({ error: 'payouts_not_enabled' });
 
       // request_payout runs as the CALLER, not the service role, so its
       // auth.uid() checks, its balance check and its one-pending-payout
@@ -189,13 +189,21 @@ serve(async (req) => {
       if (reqErr || !payoutId) {
         // These come back as Postgres exception messages; pass the recognisable
         // ones through so the app can say something specific.
-        return json({ error: reqErr?.message ?? 'payout_request_failed' }, 400);
+        return json({ error: reqErr?.message ?? 'payout_request_failed' });
       }
 
-      // The ledger is already debited. From here every failure path must either
-      // complete the transfer or reverse that debit — never simply return.
+      // The ledger is already debited. From here every path must either complete
+      // the transfer or reverse that debit — never simply return.
+      //
+      // ⚠️ THE TRY BLOCK CONTAINS ONLY THE TRANSFER. An earlier version also had
+      // the settle_payout('paid') call inside it, which meant a throw AFTER the
+      // transfer succeeded — from the settle call, JSON serialisation, anything —
+      // fell into the catch and REVERSED THE LEDGER while Stripe had already
+      // moved real cash. The creator got their balance back and the money. Only
+      // the operation that can be safely undone belongs inside the catch.
+      let transfer: any;
       try {
-        const transfer = await stripe(
+        transfer = await stripe(
           'transfers',
           {
             amount: String(amountCents),
@@ -210,26 +218,36 @@ serve(async (req) => {
           // second one.
           `laybell_payout_${payoutId}`,
         );
-
-        await db.rpc('settle_payout', {
-          p_payout_id: payoutId,
-          p_status: 'paid',
-          p_transfer_id: transfer.id,
-        });
-        return json({ payoutId, transferId: transfer.id });
       } catch (err) {
         const reason = String((err as any)?.code ?? err ?? 'transfer_failed');
-        // Give the money back. If THIS fails the payout is stuck 'pending' and
-        // the creator's balance is short — the query for that case is in
-        // payouts.sql, and it's why the stuck-pending check exists.
-        await db.rpc('settle_payout', {
-          p_payout_id: payoutId,
-          p_status: 'failed',
-          p_reason: reason,
+        // No money left Stripe, so giving the credits back is correct. If THIS
+        // fails the payout is stuck 'pending' and the creator's balance is
+        // short — payouts.sql has the query for that case.
+        const { error: revErr } = await db.rpc('settle_payout', {
+          p_payout_id: payoutId, p_status: 'failed', p_reason: reason,
         });
+        if (revErr) console.error('REVERSAL FAILED, payout stuck pending:', payoutId, revErr.message);
         console.error('transfer failed, reversed:', payoutId, reason);
-        return json({ error: 'transfer_failed', reason }, 400);
+        // 200 with an error body: supabase-js throws FunctionsHttpError on any
+        // non-2xx, which nulls `data` and hides this code from the client.
+        return json({ error: 'transfer_failed', reason });
       }
+
+      // Money HAS moved. From here nothing may reverse the ledger — the worst
+      // acceptable outcome is a payout left 'pending' for a human to settle.
+      const { error: settleErr } = await db.rpc('settle_payout', {
+        p_payout_id: payoutId,
+        p_status: 'paid',
+        p_transfer_id: transfer.id,
+      });
+      if (settleErr) {
+        console.error('PAID BUT NOT SETTLED — transfer', transfer.id, 'payout', payoutId, settleErr.message);
+        // Tell the truth: the money is on its way, but our record is wrong and
+        // the one-pending-payout rule will block their next withdrawal until a
+        // human clears it.
+        return json({ payoutId, transferId: transfer.id, warning: 'settle_failed' });
+      }
+      return json({ payoutId, transferId: transfer.id });
     }
 
     return json({ error: 'unknown_action' }, 400);

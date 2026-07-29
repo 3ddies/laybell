@@ -57,6 +57,8 @@ export default function WalletScreen() {
   // request. (The server refuses the second one — one pending payout per user —
   // but the user would see a confusing error rather than nothing happening.)
   const [transferring, setTransferring] = useState(false);
+  // Snapshotted at transfer time — see doTransfer.
+  const [transferredCents, setTransferredCents] = useState(0);
 
   const load = useCallback(async () => {
     const [b, p] = await Promise.all([fetchWalletBalance(), fetchPayoutStatus()]);
@@ -89,13 +91,14 @@ export default function WalletScreen() {
     Linking.openURL(res.url).catch(() => Alert.alert(t('wallet.payoutSetupFailed')));
   }
 
-  // `total` is the WITHDRAWABLE figure (money Laybell collected) and drives the
-  // transfer flow; `headline` is what the card shows. Until a processor lands the
-  // two differ, and the card must present a lifetime record — not a balance the
-  // company is holding on the user's behalf. See lib/wallet.ts.
   const total = balance?.totalCents ?? 0;
   const canPayout = payoutsAvailable();
-  const headline = canPayout ? total : (balance?.lifetimeCents ?? 0);
+  // The headline is the AVAILABLE balance — the same number the Transfer button
+  // acts on. It used to fall back to `lifetimeCents` whenever payoutsAvailable()
+  // was false, which is hardcoded false: so the card read "$100 Earned on
+  // Laybell" (including funds still on hold) while tapping Transfer offered $40.
+  // The held portion is already shown as its own line below.
+  const headline = total;
 
   async function doTransfer() {
     setConfirmTransfer(false);
@@ -104,6 +107,10 @@ export default function WalletScreen() {
     setTransferring(false);
     if (res.ok) {
       notifySuccess();
+      // Capture the amount BEFORE refreshing. The banner interpolates it, and
+      // load() sets the balance to its post-payout value — so cashing out your
+      // whole balance rendered "Transfer of $0.00 sent".
+      setTransferredCents(total);
       setTransferred(true);
       load();  // the ledger is already debited — reflect it rather than waiting
       return;
@@ -161,7 +168,7 @@ export default function WalletScreen() {
           >
             {/* Balance card */}
             <LinearGradient colors={GREEN} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.balanceCard}>
-              <Text style={styles.balanceLabel}>{canPayout ? t('wallet.available') : t('wallet.earnedTotal')}</Text>
+              <Text style={styles.balanceLabel}>{t('wallet.available')}</Text>
               <Text style={styles.balanceValue}>{fmtCents(headline)}</Text>
               <View style={styles.balanceBreak}>
                 <View style={styles.breakItem}>
@@ -199,7 +206,7 @@ export default function WalletScreen() {
             {transferred && (
               <View style={styles.pendingRow}>
                 <Ionicons name="time-outline" size={14} color={colors.success} />
-                <Text style={styles.pendingText}>{t('wallet.transferPending', { amount: fmtCents(total) })}</Text>
+                <Text style={styles.pendingText}>{t('wallet.transferPending', { amount: fmtCents(transferredCents) })}</Text>
               </View>
             )}
 
