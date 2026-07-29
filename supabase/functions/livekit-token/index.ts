@@ -40,14 +40,25 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 }
 
-function userIdFromJwt(req: Request): string | null {
+// Resolves the caller's user id by VERIFYING the token against GoTrue.
+//
+// This must never go back to decoding the JWT payload locally. Every other
+// Laybell function that does that is safe only because Supabase's gateway
+// verified the signature first — this one is deployed --no-verify-jwt (the web
+// DAW connector has no session), so there is no verifier in front of it. An
+// unsigned decode would let anyone forge `sub` and, because the membership
+// lookup below runs with the service role and bypasses RLS, mint a
+// full-publish token as any member of any open session.
+async function verifiedUserId(req: Request): Promise<string | null> {
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+  if (!token) return null;
   try {
-    const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-    let b64 = (token.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/');
-    if (!b64) return null;
-    while (b64.length % 4) b64 += '=';
-    const claims = JSON.parse(atob(b64));
-    return typeof claims.sub === 'string' ? claims.sub : null;
+    const res = await fetch(`${SB_URL}/auth/v1/user`, {
+      headers: { apikey: SB_SERVICE!, Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const user = await res.json().catch(() => null) as { id?: string } | null;
+    return typeof user?.id === 'string' ? user.id : null;
   } catch {
     return null;
   }
@@ -100,7 +111,7 @@ serve(async (req) => {
   try {
     if (!LK_URL || !LK_KEY || !LK_SECRET) return json({ error: 'livekit_not_configured' }, 500);
     const body = await req.json().catch(() => ({}));
-    const uid = userIdFromJwt(req);
+    const uid = await verifiedUserId(req);
 
     let sessionId: string | null = null;
     let identity = '';
@@ -126,8 +137,11 @@ serve(async (req) => {
       if (!rows.length || rows[0].studio_sessions?.status !== 'open') return json({ error: 'not_a_member' }, 403);
       sessionId = body.sessionId;
       identity = uid;
-      const profiles = await sbSelect(`profiles?id=eq.${uid}&select=username,name`) as Array<{ username?: string; name?: string }>;
-      name = profiles[0]?.name || profiles[0]?.username || 'Artist';
+      // `profiles` has no `name` column — it is `display_name`. Selecting a
+      // column that does not exist makes PostgREST 400, sbSelect swallow it,
+      // and every participant show up as "Artist".
+      const profiles = await sbSelect(`profiles?id=eq.${uid}&select=username,display_name`) as Array<{ username?: string; display_name?: string }>;
+      name = profiles[0]?.display_name || profiles[0]?.username || 'Artist';
     } else if (typeof body?.code === 'string' && body.code.trim()) {
       // Web DAW-connector path: the session code IS the credential (Zoom-style).
       const code = body.code.trim().toUpperCase();

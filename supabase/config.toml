@@ -28,6 +28,17 @@ verify_jwt = false
 verify_jwt = false
 
 # Issues LiveKit tokens to the web studio connector, which has no Supabase
-# session of its own.
+# session of its own. Because nothing verifies the token in front of this one,
+# the function verifies it ITSELF against GoTrue (see verifiedUserId) before
+# trusting a user id. Do not "simplify" that back to a local JWT decode.
 [functions.livekit-token]
+verify_jwt = false
+
+# Serves an HTML page to a parent/guardian who clicked a one-time link in their
+# email. That request carries no Supabase session, so with verify_jwt on the
+# gateway 401s the guardian before the function runs — the same silent failure
+# that broke revenuecat-webhook, and just as invisible (no logs, and the only
+# person who sees it is a parent trying to approve their kid's account).
+# The one-time token in the URL is the credential.
+[functions.parent-consent-verify]
 verify_jwt = false

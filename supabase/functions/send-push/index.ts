@@ -17,12 +17,50 @@ const ACTIONS: Record<string, (name: string) => string> = {
 
 serve(async (req) => {
   try {
-    const { userId, actorId, type, postId } = await req.json();
+    const { userId, type, postId } = await req.json();
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
+
+    // ── Authorization ────────────────────────────────────────────────────────
+    // This function sends with the service role, so it must not trust the body.
+    // It previously took `actorId` from the request, which let any signed-in
+    // user push an arbitrary notification to any other user while impersonating
+    // anyone. Two checks now stand in the way:
+    //
+    //   1. The actor is the VERIFIED caller, never a body field.
+    //   2. A matching `notifications` row must already exist. createNotification
+    //      inserts that row (under RLS) and awaits it before invoking us, so the
+    //      push can only ever mirror a notification the caller was allowed to
+    //      create. Without this, an authenticated user could still spam pushes
+    //      truthfully attributed to themselves.
+    const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    if (!token) return new Response('Unauthorized', { status: 401 });
+
+    const { data: caller, error: authErr } = await supabase.auth.getUser(token);
+    const actorId = caller?.user?.id;
+    if (authErr || !actorId) return new Response('Unauthorized', { status: 401 });
+
+    if (typeof userId !== 'string' || !userId) return new Response('Bad request', { status: 400 });
+    if (userId === actorId) return new Response('OK', { status: 200 }); // never self-notify
+    if (!Object.prototype.hasOwnProperty.call(ACTIONS, type)) {
+      return new Response('Bad request', { status: 400 });
+    }
+
+    const { data: row } = await supabase
+      .from('notifications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('actor_id', actorId)
+      .eq('type', type)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!row) return new Response('No matching notification', { status: 403 });
+    // ─────────────────────────────────────────────────────────────────────────
 
     const [{ data: tokenData }, { data: actor }] = await Promise.all([
       supabase.from('push_tokens').select('token').eq('user_id', userId).single(),

@@ -20,7 +20,10 @@ Also confirm your **other** feature migrations are applied (badges, spotlight, a
 ## 2. Deploy the parent‑consent email (optional but recommended)  **[code done — needs config]**
 The in‑app step already records consent. To add the verifiable email round‑trip:
 1. `supabase functions deploy parent-consent`
-2. `supabase functions deploy parent-consent-verify`
+2. `supabase functions deploy parent-consent-verify --no-verify-jwt`
+   (**the flag is required** — the guardian clicks an email link with no Supabase
+   session, so with the JWT gateway on they get a silent 401 and the function
+   never runs. The one-time token in the URL is the credential.)
 3. Get a sender domain verified with an email provider (e.g. **Resend**), then set secrets:
    ```
    supabase secrets set RESEND_API_KEY=...           # provider API key

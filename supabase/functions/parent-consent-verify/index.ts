@@ -4,7 +4,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // Landing page the parent/guardian reaches from the confirmation email. Marks
 // the minor's account as parent-consent-verified and shows a friendly page.
 //
-// Deploy:  supabase functions deploy parent-consent-verify
+// Deploy:  supabase functions deploy parent-consent-verify --no-verify-jwt
+//
+// --no-verify-jwt is REQUIRED. The guardian arrives from an email link with no
+// Supabase session, so with the JWT gateway on they get a bare 401 and this
+// function never runs or logs. The one-time `token` query param is the
+// credential, and it is validated below (exists, unconsumed, unexpired).
+//
 // Set this function's URL as CONSENT_VERIFY_URL for the parent-consent function.
 serve(async (req) => {
   const page = (msg: string) => new Response(
