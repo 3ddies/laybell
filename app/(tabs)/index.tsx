@@ -740,6 +740,13 @@ export default function HomeScreen() {
   // within 130ms of live scroll MOVEMENT are swallowed — a resting feed never
   // blocks taps.
   const lastScrollMoveAt = useRef(0);
+  // Last confirmed scroll direction (≥12ms windows, |dy|>2 — same guards as the
+  // velocity gate, so coalesced-event jitter can't flip it). Drives which
+  // NEIGHBOR video holds the second pooled player: scrolling up warms the video
+  // ABOVE the active one instead of below, so up-scroll handoffs between
+  // stacked videos land on a buffered player instead of a cold acquire.
+  // 'down' default = the pre-existing warm-below behavior.
+  const scrollDirRef = useRef<'down' | 'up'>('down');
   const lastTapGuardY = useRef(0);
   const scrollStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current); }, []);
@@ -836,20 +843,28 @@ export default function HomeScreen() {
         }
       }
     }
-    // STAGED pre-warm (unchanged intent): the centered video + the next upcoming
-    // video below the focus line hold a pooled player; everything deeper stays a
-    // poster. Two concurrent streams max, so the playing one never gets starved.
+    // STAGED pre-warm (unchanged budget): the centered video + ONE neighbor
+    // hold a pooled player; everything deeper stays a poster. Two concurrent
+    // streams max, so the playing one never gets starved. The neighbor slot is
+    // DIRECTION-AWARE: it used to always be the next video below, which made
+    // up-scroll handoffs between stacked videos land on a cold acquire (the
+    // "bottom keeps playing" feel when scrubbing between multiple landscape
+    // videos). Scrolling up warms the nearest video above instead; the
+    // opposite side is the fallback when the preferred side has no candidate.
     const warm: string[] = [];
     if (activeId) warm.push(activeId);
+    let aboveWarm: string | null = null;
+    let belowWarm: string | null = null;
     for (let i = range.startIndex; i <= range.endIndex; i++) {
       const L = list.getLayout(i);
       if (!L) continue;
       const it: any = data[i];
-      if (it && !it.__ad && it.type === 'video' && it.media_url && it.id !== activeId && (L.y + L.height / 2) > centerY) {
-        warm.push(it.id);
-        break;
-      }
+      if (!it || it.__ad || it.type !== 'video' || !it.media_url || it.id === activeId) continue;
+      if ((L.y + L.height / 2) > centerY) { if (!belowWarm) belowWarm = it.id; }
+      else aboveWarm = it.id; // ascending scan → the last above-center one is the nearest
     }
+    const second = scrollDirRef.current === 'up' ? (aboveWarm ?? belowWarm) : (belowWarm ?? aboveWarm);
+    if (second) warm.push(second);
     return { activeId, warm };
   }).current;
   const applyVideoViewables = useRef((viewableItems: any[]) => {
@@ -1006,6 +1021,7 @@ export default function HomeScreen() {
     }
     scrollSample.current = { y, t };
     if (dt > 0 && dt < 200) { // >200ms gap = a new gesture, not a velocity sample
+      if (Math.abs(y - py) > 2) scrollDirRef.current = y > py ? 'down' : 'up';
       const v = Math.abs(y - py) / dt;
       if (v >= GATE_IN) setFastScroll(true);
       else {
