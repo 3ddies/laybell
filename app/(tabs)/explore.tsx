@@ -880,11 +880,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
   postThumb: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
-  postInfo: { flex: 1, paddingRight: SPACING.xs },
+  // minWidth 0 so this flex child may actually shrink below its content width;
+  // without it a long caption/handle can widen the whole column and push the
+  // meta row out from under itself.
+  postInfo: { flex: 1, paddingRight: SPACING.xs, minWidth: 0 },
   postCaption: { color: colors.text, fontSize: 14, fontWeight: '500' },
-  postMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: SPACING.sm },
-  postUser: { color: colors.textSecondary, fontSize: 12 },
-  postStats: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  postMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: SPACING.sm, minWidth: 0 },
+  // flexShrink 1 makes the HANDLE the one thing that gives. React Native
+  // defaults flexShrink to 0, so nothing in this row could shrink and it simply
+  // overflowed postInfo — the like/comment counts then slid under the Follow
+  // button, which is drawn after them. The handle truncates instead (it already
+  // carries numberOfLines=1), and the counts keep their space.
+  postUser: { color: colors.textSecondary, fontSize: 12, flexShrink: 1 },
+  postStats: { flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0 },
   postStatText: { color: colors.textTertiary, fontSize: 11 },
   postAuthorAvatar: {
     width: 30, height: 30, borderRadius: 15, flexShrink: 0,
