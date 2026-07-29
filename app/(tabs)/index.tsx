@@ -88,6 +88,7 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { useNowPlaying, useVideoMuted, useAudioControls, type Track } from '../../contexts/AudioContext';
 import { attachEngagementCountsAll } from '../../lib/postCounts';
+import { cfStreamThumbnail } from '../../lib/cast';
 import { createNotification } from '../../lib/createNotification';
 import { selection, impactLight } from '../../lib/haptics';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
@@ -370,9 +371,17 @@ const PostCard = memo(function PostCard({
                   visible card and its nearest video neighbors (pre-warmed, paused)
                   so fast scrolling never spins up a player per row while landing
                   on a video still plays instantly. */}
-              {!!item.thumbnail_url && (
-                <ExpoImage source={{ uri: item.thumbnail_url }} recyclingKey={item.id} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
-              )}
+              {/* Same derived-poster fallback as the reel viewer: a video with
+                  no stored thumbnail used to render NOTHING under the player,
+                  so landing on it showed an empty card until the first frame
+                  decoded. Cloudflare serves a poster for every Stream VOD at a
+                  URL derivable from its manifest. */}
+              {(() => {
+                const thumb = item.thumbnail_url ?? cfStreamThumbnail(item.media_url);
+                return thumb ? (
+                  <ExpoImage source={{ uri: thumb }} recyclingKey={item.id} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
+                ) : null;
+              })()}
               {isVisibleVideo && (
                 // POOLED player (lib/feedVideoPool): assignment is a cheap
                 // source swap on a persistent player — no creation, no freeze —

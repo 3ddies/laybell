@@ -9,6 +9,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import ReelVideo from '../../components/ReelVideo';
 import { reelPool } from '../../lib/feedVideoPool';
+import { cfStreamThumbnail } from '../../lib/cast';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -242,7 +243,14 @@ const ReelPage = memo(function ReelPage({
   const landscape = ratio >= 1;
   // Cached thumbnail shown while the video buffers — keeps the expand from
   // revealing a black screen before the first frame is ready.
-  const poster = item.thumbnail_url ?? item.cover_url ?? null;
+  // Falling back to a DERIVED Cloudflare Stream poster is what stops a swipe
+  // landing on an empty rectangle. A post with no thumbnail_url and no
+  // cover_url previously rendered nothing under the player, so the page arrived
+  // in two stages — chrome and caption instantly, then a blank video area until
+  // the first frame decoded. Every Stream VOD already serves a poster frame at
+  // a URL derivable from its manifest (lib/cast.cfStreamThumbnail, which the
+  // TV cast path has always used); the viewer just never asked for it.
+  const poster = item.thumbnail_url ?? item.cover_url ?? cfStreamThumbnail(item.media_url);
   // Letterbox geometry for the rotate hint: a `contain` landscape video is
   // SCREEN_W wide, so the black band above it is half the leftover height. Park
   // the hint just above the video's top edge, and only when the band is tall
@@ -1388,7 +1396,14 @@ export default function ReelScreen() {
   // sideways screen (letterboxed via contain) with tap-to-pause. Only the reel
   // we rotated from resumes its position; freshly-swiped ones start at 0.
   function renderOverlayItem({ item }: { item: any }) {
-    const poster = item.thumbnail_url ?? item.cover_url ?? null;
+    // Falling back to a DERIVED Cloudflare Stream poster is what stops a swipe
+  // landing on an empty rectangle. A post with no thumbnail_url and no
+  // cover_url previously rendered nothing under the player, so the page arrived
+  // in two stages — chrome and caption instantly, then a blank video area until
+  // the first frame decoded. Every Stream VOD already serves a poster frame at
+  // a URL derivable from its manifest (lib/cast.cfStreamThumbnail, which the
+  // TV cast path has always used); the viewer just never asked for it.
+  const poster = item.thumbnail_url ?? item.cover_url ?? cfStreamThumbnail(item.media_url);
     const resume = item.id === enteredFromIdRef.current ? positionRef.current / 1000 : null;
     return (
       <View style={{ width: winW, height: winH }}>
