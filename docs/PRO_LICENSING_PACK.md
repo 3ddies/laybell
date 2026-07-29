@@ -204,11 +204,9 @@ agreement "shall automatically terminate." No invoice, no warning, no notice. Ev
 performance afterwards is unlicensed. §8 also imposes an affirmative duty to inform
 BMI *before* crossing.
 
-⚠️ **Meter is WRITTEN but NOT YET LIVE (corrected 2026-07-29).** `supabase/sql/stream_hours.sql`
-+ `lib/listenMeter.ts` were committed 2026-07-28, but the SQL was left out of every run bundle
-and has never been applied — so nothing is being counted, and the query below will error until
-it is. It is now in `supabase/sql/_RUN_PENDING_2026-07-29.sql`. **Run that first**, then check
-monthly:
+✅ **Meter is LIVE as of 2026-07-29.** `supabase/sql/stream_hours.sql` + `lib/listenMeter.ts`
+were committed 2026-07-28 but left out of every run bundle; they were applied via
+`_RUN_PENDING_2026-07-29.sql` and confirmed by `_VERIFY_ALL_2026-07-29.sql`. Check monthly:
 
 ```sql
 select * from public.bmi_license_usage('<start date>', '<end date>');
@@ -222,6 +220,39 @@ performance-rights licensor. If ASCAP requires reports, BMI must receive the sam
 
 **§11** — Laybell warrants its estimates are good-faith and that actuals are not
 expected to materially exceed them. Another reason the meter matters.
+
+### 🔴 BMI REPLIED 2026-07-29 — and the premise of the question is now stale
+
+BMI answered §1 and ducked §2(E)(iii):
+
+- **§1 confirmed.** No automatic renewal. They contact you before the 12-month term
+  ends to ask whether you still need the licence and to update annual gross revenue
+  totals (which can move you up a tier). A new agreement each year, handled through
+  their online Licensing Center. Our reading was right.
+- **Gross Revenue: not answered.** Instead they asked back: *"If you are not
+  processing the payment, how do you generate the commission? Is the transaction
+  initiated on Laybell? Do you have a beta link?"*
+
+They asked because **the description they were given no longer matches the app.**
+The email (2026-07-28) described the VENUE model — "Laybell is not the seller and
+does not process the payment." `shop_credits.sql` landed on the live database
+2026-07-29 and replaced it: buyers purchase credits through Apple/Google IAP, spend
+them in the Shop, Laybell debits its own ledger, retains `shop_fee_rate()` (0.30) and
+credits the seller 70%, withdrawable through Stripe Connect. **Laybell is in the
+payment flow now.**
+
+That actually makes the question answerable, but it must be re-asked against the new
+facts. Three candidates, and the gap between them is the whole tier decision:
+
+1. gross face value of credits users purchase,
+2. what Laybell receives from Apple/Google after their 30%, or
+3. what Laybell retains after creator payouts (~$0 at Apple 30% + a 30% shop fee).
+
+⚠️ **`lib/legal/marketplace.json` §5 still describes the old model** ("you send a
+request, arrange payment with the Seller"). The 2026-07-29 payment-copy sweep hit
+Terms, Advertiser Terms and Community Guidelines and missed this file. It is
+published at `laybell.app/marketplace.html` — fix it BEFORE sending BMI any link, or
+Laybell's own terms contradict what it is telling its licensor.
 
 ### The one email actually worth sending
 
