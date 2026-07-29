@@ -558,12 +558,22 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   searchRow: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.sm + 4 },
   // Raised, bordered pill so the search field reads as a distinct, polished element.
+  // The lift is a WIDE, FAINT shadow rather than the shared SHADOWS.sm, whose
+  // 0.4 opacity at 4pt radius reads as a hard drop shadow behind something this
+  // large — grubby on the light theme especially. Roughly a third the opacity
+  // spread over three times the radius: the pill still floats off the list, but
+  // the edge is soft enough that you notice the depth, not the shadow.
+  // (SHADOWS.sm is left alone — six other surfaces rely on it.)
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
     backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.full,
     paddingHorizontal: SPACING.md,
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-    ...SHADOWS.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    elevation: 2,
   },
   // System font (SF Pro / Roboto — same family Instagram's search uses), tuned light
   // and lightly tracked for that clean, airy search-field look.
