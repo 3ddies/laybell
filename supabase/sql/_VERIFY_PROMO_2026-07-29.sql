@@ -10,7 +10,7 @@ do $$
 declare
   fails  text[] := '{}';
   passes int := 0;
-  n int; r numeric;
+  n int;
   v_uid uuid;
 begin
   -- ── Prices and limits are server-side ─────────────────────────────────────
@@ -40,7 +40,6 @@ begin
   end if;
 
   -- ── The RPCs exist ────────────────────────────────────────────────────────
-  foreach r in array array[1] loop null; end loop;  -- (no-op, keeps r used)
   if to_regprocedure('public.spotlight_buy_with_credits(text)') is null
     then fails := fails || 'spotlight_buy_with_credits() MISSING'; else passes := passes + 1; end if;
   if to_regprocedure('public.spotlight_activate(uuid,uuid)') is null

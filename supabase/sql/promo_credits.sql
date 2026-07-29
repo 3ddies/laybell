@@ -33,16 +33,21 @@
 -- The package price lived ONLY in lib/spotlight.ts and was sent by the client.
 -- The SQL files carried the numbers in a comment. Here they become the
 -- authority; the app's copy is now just what it renders before asking.
+-- The columns are listed explicitly rather than `select *`: the VALUES list
+-- carries the package key as its first column, so `*` returns four columns
+-- against a three-column RETURNS TABLE and Postgres rejects the function at
+-- creation time with "Final statement returns text instead of integer".
 create or replace function public.spotlight_package(p_key text)
 returns table (price_cents int, duration_days numeric, weight int)
 language sql immutable as $$
-  select * from (values
-    ('12h',  599, 0.5::numeric, 1),
-    ('1d',  1099, 1.0::numeric, 2),
-    ('3d',  2499, 3.0::numeric, 3),
-    ('7d',  4999, 7.0::numeric, 4)
-  ) as t(k, price_cents, duration_days, weight)
-  where t.k = p_key;
+  select t.price_cents, t.duration_days, t.weight
+    from (values
+      ('12h',  599, 0.5::numeric, 1),
+      ('1d',  1099, 1.0::numeric, 2),
+      ('3d',  2499, 3.0::numeric, 3),
+      ('7d',  4999, 7.0::numeric, 4)
+    ) as t(k, price_cents, duration_days, weight)
+   where t.k = p_key;
 $$;
 
 -- Minimum ad budget. There was none — `parseFloat(budget) > 0` was the only
@@ -89,7 +94,7 @@ begin
   if v_user is null then raise exception 'not_signed_in'; end if;
 
   select * into v_pkg from public.spotlight_package(p_package_key);
-  if v_pkg.price_cents is null then raise exception 'unknown_package'; end if;
+  if not found then raise exception 'unknown_package'; end if;
 
   perform set_config('laybell.promo_trusted', 'on', true);
 
