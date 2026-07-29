@@ -16,7 +16,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.laybell.app",
       "associatedDomains": [
-        "applinks:laybell.app"
+        "applinks:laybell.app",
+        "webcredentials:laybell.app"
       ],
       "infoPlist": {
         "UIBackgroundModes": [
@@ -73,10 +74,16 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Laybell to access your photos so you can choose one to post."
+        }
+      ],
+      [
         "expo-camera",
         {
-          "cameraPermission": "Allow Laybell to use your camera to capture stories and posts.",
-          "microphonePermission": "Allow Laybell to use your microphone for video stories.",
+          "cameraPermission": "Allow Laybell to use your camera to capture photos and videos for posts and stories, and to broadcast livestreams.",
+          "microphonePermission": "Allow Laybell to use your microphone to record audio for posts, videos and stories, and for livestreams and studio sessions.",
           "recordAudioAndroid": true
         }
       ],
@@ -91,7 +98,10 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow Laybell to use your approximate location to suggest people near you."
+          "locationWhenInUsePermission": "Allow Laybell to use your approximate location to suggest people near you.",
+          "locationAlwaysPermission": false,
+          "locationAlwaysAndWhenInUsePermission": false,
+          "isAndroidBackgroundLocationEnabled": false
         }
       ],
       [
@@ -103,7 +113,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow Laybell to record audio for your posts."
+          "microphonePermission": "Allow Laybell to use your microphone to record audio for posts, videos and stories, and for livestreams and studio sessions."
         }
       ],
       "expo-video",
@@ -111,8 +121,8 @@
       [
         "@config-plugins/react-native-webrtc",
         {
-          "cameraPermission": "Allow Laybell to use your camera to broadcast livestreams.",
-          "microphonePermission": "Allow Laybell to use your microphone for livestreams and studio sessions."
+          "cameraPermission": "Allow Laybell to use your camera to capture photos and videos for posts and stories, and to broadcast livestreams.",
+          "microphonePermission": "Allow Laybell to use your microphone to record audio for posts, videos and stories, and for livestreams and studio sessions."
         }
       ],
       [
