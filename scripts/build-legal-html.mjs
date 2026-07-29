@@ -71,7 +71,7 @@ function page(doc) {
 <title>${esc(doc.title)} — Laybell</title>
 <style>${CSS}</style>
 </head><body><main>
-<a class="back" href="./index.html">← Laybell Legal</a>
+<a class="back" href="./legal.html">← Laybell Legal</a>
 <h1>${esc(doc.title)}</h1>
 <p class="eff">Last Updated: ${esc(doc.effective || '')}</p>
 ${renderSections(doc)}
@@ -103,6 +103,9 @@ const index = `<!doctype html>
 </div>
 <footer>© 2026 Laybell LLC. All rights reserved.</footer>
 </main></body></html>`;
-writeFileSync('web/index.html', index);
+// legal.html, NOT index.html: index.html is the company landing page and is
+// hand-written. Overwriting it here would replace the site with a list of legal
+// documents — which is what Apple's organization verification would then see.
+writeFileSync('web/legal.html', index);
 
-console.log('Wrote ' + DOCS.length + ' legal pages + web/index.html');
+console.log('Wrote ' + DOCS.length + ' legal pages + web/legal.html');
