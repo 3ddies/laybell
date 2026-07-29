@@ -1,0 +1,17 @@
+# Response headers for hosts that support this file (Cloudflare Pages, Netlify).
+#
+# GitHub Pages IGNORES this file — it has no way to set custom headers. That
+# matters for exactly one thing: Apple requires the apple-app-site-association
+# file to be served as application/json, and GitHub Pages serves extensionless
+# files as application/octet-stream. Universal links often work anyway on modern
+# iOS, but "often" is not something to ship on. If iOS universal links refuse to
+# open the app after everything else checks out, the content type is the first
+# thing to suspect, and moving this directory to Cloudflare Pages is the fix.
+#
+# See docs/DEEP_LINKS.md.
+
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+
+/.well-known/assetlinks.json
+  Content-Type: application/json

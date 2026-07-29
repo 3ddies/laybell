@@ -1,0 +1,27 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TEAMID.com.laybell.app"],
+        "components": [
+          { "/": "/post/*", "comment": "a single post" },
+          { "/": "/reel/*", "comment": "a reel" },
+          { "/": "/profile/*", "comment": "a creator profile" },
+          { "/": "/playlist/*", "comment": "a public playlist" },
+          { "/": "/communities/*", "comment": "a community" },
+          { "/": "/shop/*", "comment": "a creator shop and its listings" },
+          { "/": "/story/*", "comment": "a story" },
+          { "/": "/open.html", "comment": "QR / share smart-open page" },
+          { "/": "/privacy.html", "exclude": true, "comment": "legal pages must stay in the browser" },
+          { "/": "/terms.html", "exclude": true },
+          { "/": "/community.html", "exclude": true },
+          { "/": "/advertising.html", "exclude": true },
+          { "/": "/marketplace.html", "exclude": true }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": ["TEAMID.com.laybell.app"]
+  }
+}
