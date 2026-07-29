@@ -204,7 +204,7 @@ begin
   -- 20% Premium / 35% standard — see the note in donations.sql. The old 8% lost
   -- money on every Premium tip once credits (and therefore the store's ~15% cut)
   -- funded them.
-  new.laybell_fee_cents     := round(new.amount_cents * (case when public.is_premium(v_host) then 0.20 else 0.35 end));
+  new.laybell_fee_cents     := round(new.amount_cents * (case when public.is_premium(v_host) then 0.30 else 0.35 end));
   new.tax_cents             := round(new.amount_cents * 0.06);
   new.streamer_payout_cents := new.amount_cents - new.laybell_fee_cents;
   new.provider              := coalesce(new.provider, 'simulated');

@@ -22,27 +22,25 @@
 -- rate IS the "Earn More" perk. This is the authority — the client displays a
 -- rate, the server applies one, and only this one is real.
 --
--- WHY PREMIUM IS 20% AND NOT THE ORIGINAL 8%. Tips are paid in credits, and
--- credits are bought through Apple and Google, who take their commission before
--- Laybell sees anything:
+-- THE RATE IS DICTATED BY THE STORE'S CUT. Tips are paid in credits, and credits
+-- are bought through Apple and Google, who take their commission before Laybell
+-- sees anything:
 --
---   $10 tip: buyer paid Apple $10 → Apple keeps 15% → LAYBELL RECEIVES $8.50
---   At 8%, the creator was owed 92%                                    = $9.20
---   Laybell LOST $0.70 ON EVERY PREMIUM TIP.
+--                       Apple 30% (standard)   Apple 15% (Small Business)
+--   $10 tip
+--   Laybell receives           $7.00                   $8.50
+--   Creator owed (70%)         $7.00                   $7.00
+--   Laybell nets               $0.00                   $1.50
 --
--- Break-even is 15%. At 20% the creator keeps 80% and Laybell nets 5% — and the
--- 5% is not really the point: the tip rate is the reason to BUY Premium, and the
--- $9.99/month subscription is where Premium actually earns. "Keep 80% instead of
--- 65%" is a concrete reason to subscribe; two more points of margin is not.
+-- 30% is BREAK-EVEN while Apple takes 30%, which is the rate Laybell pays until
+-- Small Business Program enrolment is approved. The original 8% (creator keeps
+-- 92%) lost $2.20 per tip at that commission, and $0.70 even at 15%.
 --
--- 80% also beats what creators are used to: YouTube Super Thanks pays 70%,
--- Twitch's standard split is 50%, TikTok is around 50%.
---
--- Raise to 0.25 if direct margin matters more than the perk being compelling —
--- that nets 10%, matching the shop, and the creator still keeps 75%.
---
--- ⚠️ Assumes the App Store Small Business Program (15%). At the standard 30%,
--- Laybell receives $7.00 on a $10 tip and 20% would lose money again.
+-- ⚠️ REVISIT THE DAY SMALL BUSINESS APPROVAL LANDS. At Apple 15% this nets 15%,
+-- and dropping back toward 0.20 (creator keeps 80%) restores "Earn More" as a
+-- reason to subscribe — at 70% against the standard 65% it barely is, and the
+-- $9.99/month subscription is where Premium actually earns anyway. For
+-- reference: YouTube Super Thanks pays 70%, Twitch's standard split is 50%.
 create or replace function public.tip_fee_rate(p_host uuid)
 returns numeric
 language sql
@@ -52,7 +50,7 @@ set search_path = public
 as $$
   select case
     when coalesce((select premium_until from public.profiles where id = p_host), 'epoch'::timestamptz) > now()
-    then 0.20 else 0.35
+    then 0.30 else 0.35
   end;
 $$;
 

@@ -20,30 +20,33 @@
 -- facilitator, and the money is finally real.
 --
 -- ─── THE FEE HAD TO CHANGE, AND HERE IS THE ARITHMETIC ──────────────────────
--- The old 15% fee predates credits, and against IAP funding it earns nothing:
+-- The old 15% fee predates credits. Against IAP funding the platform fee and the
+-- store commission simply cancel out:
 --
+--                        Apple 30% (standard)   Apple 15% (Small Business)
 --   $10 beat = 1000 credits
---   Buyer paid Apple $10 → Apple keeps 15% → LAYBELL RECEIVED $8.50
---   Seller is owed 85% of 1000 credits                    = $8.50
---   Laybell keeps                                         = $0.00
+--   Laybell receives            $7.00                   $8.50
+--   Seller owed (70%)           $7.00                   $7.00
+--   Laybell nets                $0.00                   $1.50
 --
--- The platform fee and the store commission cancel out exactly. At 25%:
+-- 30% is the BREAK-EVEN fee while Apple takes 30%, which is what Laybell pays
+-- until Small Business Program enrolment is approved. At the previous 25% the
+-- seller was owed $7.50 against $7.00 received — a loss on every single sale.
 --
---   Laybell received $8.50, owes the seller 75% = $7.50 → nets $1.00 (10% gross)
+-- 70% to the seller is below BeatStars (~90%) and Bandcamp (~82-85%), and that
+-- gap is the store's commission, not greed. The seller UI shows it as its own
+-- line rather than letting them discover it at payout — a creator who expected
+-- 90% and got 70% churns, and tells people why.
 --
--- 75% to the seller is below BeatStars (~90%) and Bandcamp (~82-85%), and that
--- gap is Apple's commission, not greed. The seller UI states the split plainly
--- rather than letting them discover it at payout — a creator who expected 90%
--- and got 75% churns, and tells people why.
---
--- ⚠️ ENROLL IN THE APP STORE SMALL BUSINESS PROGRAM. It moves Apple's cut from
--- 30% to 15% for under $1M/year. Every number above assumes 15%. At 30% the
--- seller's 75% would cost Laybell money on every sale.
+-- ⚠️ REVISIT AFTER SMALL BUSINESS APPROVAL. At Apple 15% this rate nets 15%,
+-- more than the shop needs; lowering it back toward 0.25 (seller keeps 75%) is a
+-- real, visible improvement to hand creators. Also drop STORE_COMMISSION_RATE in
+-- lib/shop.ts to 0.15 so the seller-facing breakdown stops overstating Apple.
 --
 -- The rate is a function, not a constant, so it can be repriced without a deploy.
 
 create or replace function public.shop_fee_rate()
-returns numeric language sql immutable as $$ select 0.25 $$;
+returns numeric language sql immutable as $$ select 0.30 $$;
 
 
 -- ─── Buying ─────────────────────────────────────────────────────────────────

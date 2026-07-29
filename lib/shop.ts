@@ -88,25 +88,29 @@ export type ShopOrder = {
 export const LISTING_CATEGORIES: ListingCategory[] = ['beat', 'song', 'sample_pack', 'preset', 'service', 'other'];
 
 // ── Marketplace economics ─────────────────────────────────────────────────────
-// Laybell takes 25% of every sale. Mirrors shop_fee_rate() in
+// Laybell takes 30% of every sale. Mirrors shop_fee_rate() in
 // supabase/sql/shop_credits.sql, which is authoritative — this copy exists only
 // so the app can show the split before the server confirms it.
 //
-// WHY 25% AND NOT THE OLD 15%. Purchases are paid in credits, and credits are
-// bought through Apple and Google, who take their commission first:
+// THE RATE IS SET BY THE STORE'S CUT, NOT BY AMBITION. Purchases are paid in
+// credits, and credits are bought through Apple and Google, who take their
+// commission before Laybell sees anything:
 //
-//   $10 beat = 1000 credits
-//   Buyer pays Apple $10 → Apple keeps 15% → LAYBELL RECEIVES $8.50
-//   At the old 15% fee the seller was owed 85% = $8.50 → Laybell kept $0.00
+//                        Apple 30% (standard)   Apple 15% (Small Business)
+//   $10 sale
+//   Laybell receives            $7.00                   $8.50
+//   Seller owed (70%)           $7.00                   $7.00
+//   Laybell nets                $0.00                   $1.50
 //
-// The platform fee and the store commission cancelled out exactly. At 25% the
-// seller gets $7.50 and Laybell nets $1.00. The gap between 75% and BeatStars'
-// ~90% is Apple's commission, not margin — and the seller UI says so, because a
-// creator who expected 90% and discovers 75% at payout leaves, loudly.
+// 30% is the BREAK-EVEN fee while Apple takes 30%. Anything lower loses money on
+// every sale — at the previous 25% fee the seller was owed $7.50 against $7.00
+// received, i.e. −$0.50 each time.
 //
-// ⚠️ This assumes the App Store Small Business Program (15%). At the standard
-// 30%, Laybell RECEIVES $7.00 and owes $7.50 — a loss on every sale. Enrol.
-export const SHOP_FEE_RATE = 0.25;
+// ⚠️ REVISIT AFTER SMALL BUSINESS PROGRAM APPROVAL. Once Apple drops to 15% this
+// rate nets 15%, which is more margin than Laybell needs. Lowering it back
+// toward 25% (seller keeps 75%) would be a real, visible improvement to hand
+// creators, and it is a one-line change here and in shop_fee_rate().
+export const SHOP_FEE_RATE = 0.30;
 // No longer charged. Credits are bought through Apple and Google, who are
 // merchant of record and already collect and remit sales tax on that purchase;
 // adding tax again at spend time would tax the same money twice. Kept at 0 so
@@ -133,12 +137,14 @@ export function buyerTaxCents(priceCents: number): number {
  *
  * `storeCents` is Apple's or Google's commission on the credit purchase that
  * funded the sale. Laybell never receives it, so leaving it out would make
- * Laybell's own cut look twice the size it is — and a seller comparing 75% here
- * against BeatStars' 90% deserves to see where the other 25% actually went.
+ * Laybell's own cut look larger than it is — and a seller comparing 70% here
+ * against BeatStars' 90% deserves to see where the other 30% actually went.
  *
- * Assumes the App Store Small Business Program rate (15%).
+ * Currently the STANDARD 30%. Drop to 0.15 the day App Store Small Business
+ * Program enrolment is approved, so the seller-facing breakdown stops
+ * overstating Apple's cut.
  */
-export const STORE_COMMISSION_RATE = 0.15;
+export const STORE_COMMISSION_RATE = 0.30;
 
 export function shopSplit(priceCents: number): {
   priceCents: number; storeCents: number; laybellCents: number; sellerCents: number;
