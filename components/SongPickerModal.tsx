@@ -238,7 +238,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     height: 44,
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
     backgroundColor: colors.surfaceLight, borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    borderWidth: 1, borderColor: colors.borderStrong,
     paddingHorizontal: SPACING.md, marginHorizontal: SPACING.md, marginBottom: SPACING.sm,
   },
   // Intrinsic-height input centered by the fixed-height row — stretching it to

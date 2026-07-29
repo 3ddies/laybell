@@ -129,7 +129,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   searchBar: {
     height: 44, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
     backgroundColor: c.surfaceLight, borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+    borderWidth: 1, borderColor: c.borderStrong,
     paddingHorizontal: SPACING.md, marginHorizontal: SPACING.md, marginBottom: SPACING.sm,
   },
   searchInput: { flex: 1, paddingVertical: 0, color: c.text, fontSize: 15, lineHeight: 20 },

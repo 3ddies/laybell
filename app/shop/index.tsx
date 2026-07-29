@@ -630,6 +630,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     marginHorizontal: SPACING.md, marginBottom: 8,
     backgroundColor: c.surfaceLight, borderRadius: RADIUS.md, paddingHorizontal: 12,
+    borderWidth: 1, borderColor: c.borderStrong,
   },
   searchInput: { flex: 1, color: c.text, fontSize: 14, paddingVertical: 10 },
   chipRow: { flexGrow: 0, marginBottom: 8 },

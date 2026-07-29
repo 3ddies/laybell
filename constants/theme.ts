@@ -23,6 +23,7 @@ const DARK = {
   surfaceLight: '#181818',
   surfaceElevated: '#1E1E1E',
   border: '#242424',
+  borderStrong: '#3B3B3B',
   borderSubtle: '#1A1A1A',
   text: '#F5F5F5',
   textSecondary: '#A0A0A0',
@@ -41,6 +42,7 @@ const GREY = {
   surfaceLight: '#292826',
   surfaceElevated: '#322F2D',
   border: '#413F3B',
+  borderStrong: '#5C5952',
   borderSubtle: '#2C2A28',
   text: '#FFFFFF',
   textSecondary: '#CECECE',
@@ -62,6 +64,7 @@ const LIGHT = {
   // surfaces without going heavy. `border` is the standard visible edge; the
   // subtle one is for quiet dividers.
   border: '#D4D1C9',
+  borderStrong: '#B8B4A8',
   borderSubtle: '#E2DFD7',
   text: '#16161A',
   textSecondary: '#5E5E66',

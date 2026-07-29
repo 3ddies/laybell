@@ -545,7 +545,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
     backgroundColor: colors.surfaceLight, borderRadius: RADIUS.full,
-    borderWidth: 1, borderColor: colors.border, paddingHorizontal: SPACING.md,
+    borderWidth: 1, borderColor: colors.borderStrong, paddingHorizontal: SPACING.md,
   },
   searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: colors.text, fontSize: 15 },
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.xs },

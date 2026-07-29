@@ -272,6 +272,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
     backgroundColor: colors.surface, borderRadius: RADIUS.full, paddingHorizontal: SPACING.md,
+    borderWidth: 1, borderColor: colors.borderStrong,
   },
   searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: colors.text, fontSize: 15 },
 

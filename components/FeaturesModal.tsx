@@ -155,7 +155,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   chipText: { color: colors.primaryLight, fontSize: 13, fontWeight: '600' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md, marginHorizontal: SPACING.md, marginBottom: SPACING.sm,
   },
   searchInput: { flex: 1, paddingVertical: SPACING.sm + 2, color: colors.text, fontSize: 15 },

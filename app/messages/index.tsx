@@ -566,7 +566,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
     backgroundColor: 'transparent', borderRadius: RADIUS.full,
     paddingHorizontal: SPACING.md,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    borderWidth: 1, borderColor: colors.borderStrong,
   },
   // System font (SF Pro / Roboto — same family Instagram's search uses), tuned light
   // and lightly tracked for that clean, airy search-field look.

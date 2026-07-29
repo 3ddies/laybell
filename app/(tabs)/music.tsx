@@ -2040,7 +2040,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.surfaceLight,
     borderRadius: RADIUS.full,
-    borderWidth: 1, borderColor: colors.border,
+    borderWidth: 1, borderColor: colors.borderStrong,
     paddingHorizontal: SPACING.md, gap: SPACING.sm,
   },
   searchIcon: { marginRight: -4 },

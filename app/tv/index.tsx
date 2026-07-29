@@ -450,6 +450,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     marginHorizontal: SPACING.md, marginBottom: 10,
     backgroundColor: c.surfaceLight, borderRadius: RADIUS.md, paddingHorizontal: 12,
+    borderWidth: 1, borderColor: c.borderStrong,
   },
   searchInput: { flex: 1, color: c.text, fontSize: 14, paddingVertical: 10 },
   videoSkeleton: { paddingHorizontal: SPACING.md, paddingTop: 2, gap: SPACING.sm },
