@@ -352,55 +352,41 @@ export function timeLeftLabel(endsAt: string | null): string {
   return `${Math.max(1, Math.floor(ms / 60_000))}m left`;
 }
 
-// "Pay" (simulated) → a pending campaign plus its payment record. When a real
-// provider lands, only this function and spotlight.sql change — the flow
-// around it (pending → attach → active) stays identical.
+/**
+ * Buy a Spotlight with credits.
+ *
+ * This used to insert the campaign and its payment row straight from the client,
+ * after a hardcoded 900ms fake "processing" delay. Nothing was charged, and
+ * nothing stopped a crafted insert minting a live 365-day campaign at weight 10
+ * for $0 — the INSERT policy checked only that the row belonged to you.
+ *
+ * Now the server owns all of it: the price comes from `spotlight_package()`
+ * rather than from whatever the client sends, and a trigger rejects any
+ * client-side insert of a spotlight row at all. The two-step shape (pay, then
+ * choose the post) is unchanged.
+ *
+ * Throws on failure so callers can distinguish "no credits" from "offline" —
+ * the old version swallowed everything into null.
+ */
 export async function purchaseCampaign(pkg: SpotlightPackage): Promise<SpotlightCampaign | null> {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data: campaign, error } = await supabase
-      .from('ad_campaigns')
-      .insert({
-        user_id: user.id,
-        package_key: pkg.key,
-        duration_days: pkg.days,
-        price_cents: pkg.priceCents,
-        weight: pkg.weight,
-        status: 'pending',
-      })
-      .select('*')
-      .single();
-    if (error || !campaign) return null;
-    await supabase.from('ad_payments').insert({
-      user_id: user.id,
-      campaign_id: campaign.id,
-      amount_cents: pkg.priceCents,
-      provider: 'simulated',
-      status: 'succeeded',
-    });
-    return campaign as SpotlightCampaign;
-  } catch {
-    return null;
-  }
+  const { data: campaignId, error } = await supabase
+    .rpc('spotlight_buy_with_credits', { p_package_key: pkg.key });
+  if (error) throw error;
+  if (!campaignId) return null;
+  const { data } = await supabase.from('ad_campaigns').select('*').eq('id', campaignId).single();
+  return (data as SpotlightCampaign) ?? null;
 }
 
 // Attach a post to a paid pending campaign — the moment the spotlight goes live.
-export async function activateCampaign(campaignId: string, postId: string, days: number): Promise<boolean> {
+// `days` is no longer passed: the server reads the duration off the campaign it
+// already sold, so the end date can't be stretched from the client.
+export async function activateCampaign(campaignId: string, postId: string, _days?: number): Promise<boolean> {
   try {
-    const now = Date.now();
-    const { data, error } = await supabase
-      .from('ad_campaigns')
-      .update({
-        post_id: postId,
-        status: 'active',
-        starts_at: new Date(now).toISOString(),
-        ends_at: new Date(now + days * 86_400_000).toISOString(),
-      })
-      .eq('id', campaignId)
-      .eq('status', 'pending')
-      .select('id');
-    return !error && !!data?.length;
+    const { error } = await supabase.rpc('spotlight_activate', {
+      p_campaign_id: campaignId,
+      p_post_id: postId,
+    });
+    return !error;
   } catch {
     return false;
   }
@@ -456,19 +442,16 @@ export async function claimFreeSpotlight(postId: string): Promise<ClaimFreeResul
   }
 }
 
-// Cancel a paid-but-unattached campaign; the simulated payment flips to
-// refunded so the books stay coherent for a future real provider.
+// Cancel a paid-but-unattached campaign and get the credits back.
+//
+// This was two separate client UPDATEs — campaign, then payment — so a failure
+// between them left a cancelled campaign carrying a 'succeeded' payment. One
+// transaction now, and the refund is a real ledger entry rather than a status
+// flag on a row nobody was reading.
 export async function cancelPendingCampaign(campaignId: string): Promise<boolean> {
   try {
-    const { data, error } = await supabase
-      .from('ad_campaigns')
-      .update({ status: 'canceled' })
-      .eq('id', campaignId)
-      .eq('status', 'pending')
-      .select('id');
-    if (error || !data?.length) return false;
-    await supabase.from('ad_payments').update({ status: 'refunded' }).eq('campaign_id', campaignId);
-    return true;
+    const { error } = await supabase.rpc('spotlight_cancel_pending', { p_campaign_id: campaignId });
+    return !error;
   } catch {
     return false;
   }
@@ -490,8 +473,9 @@ export async function endCampaign(campaignId: string): Promise<boolean> {
 }
 
 // True when the post has a LIVE spotlight right now (active + unexpired). Used
-// to warn before deleting it: the ad_campaigns.post_id FK is ON DELETE CASCADE,
-// so deleting the post wipes the paid campaign immediately with no refund.
+// to warn before deleting it. The FK used to be ON DELETE CASCADE, so deleting
+// the post silently destroyed the paid campaign — promo_credits.sql re-points it
+// to ON DELETE SET NULL, but the warning stays: the promotion stops either way.
 // Degrades to false on any error (missing migration / RLS) so it never blocks a
 // normal delete — it only ever ADDS a warning.
 export async function isPostSpotlighted(postId: string): Promise<boolean> {

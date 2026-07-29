@@ -846,11 +846,11 @@ export async function purchaseAdCampaign(input: NewCampaignInput): Promise<strin
       advertiser_avatar_url: input.advertiserAvatarUrl ?? null,
       is_business: input.isBusiness,
       placements: input.placements,
-      budget_cents_total: input.budgetCentsTotal,
+      // Budget and CPM are deliberately NOT sent. The guard trigger nulls them
+      // on any client insert and `ad_campaign_fund_with_credits` sets them from
+      // the server — the client used to choose `bid_cpm_cents`, and a bid of 1
+      // bought a thousand times the delivery per dollar.
       budget_cents_daily: input.budgetCentsDaily ?? null,
-      bid_cpm_cents: input.bidCpmCents,
-      price_cents: 0,
-      spent_cents: 0,
       starts_at: input.startsAt ?? nowIso,
       ends_at: input.endsAt,
       policy_accepted_at: nowIso,
@@ -897,24 +897,29 @@ export async function purchaseAdCampaign(input: NewCampaignInput): Promise<strin
       }
     }
 
-    // Creatives are in — go live.
-    const { data: activated, error: actErr } = await supabase
-      .from('ad_campaigns')
-      .update({ status: 'active' })
-      .eq('id', campaign.id)
-      .eq('status', 'pending')
-      .select('id');
-    if (actErr || !activated?.length) return null; // stays pending (non-serving) on failure
-
-    await supabase.from('ad_payments').insert({
-      user_id: user.id,
-      campaign_id: campaign.id,
-      amount_cents: input.budgetCentsTotal,
-      provider: 'simulated',
-      status: 'succeeded',
+    // Creatives are in — charge the budget and go live, in one server call.
+    // Funding and activation are the same operation now: a campaign that is
+    // active but unpaid, or paid but inactive, are both states worth not having.
+    const { error: fundErr } = await supabase.rpc('ad_campaign_fund_with_credits', {
+      p_campaign_id: campaign.id,
+      p_budget_cents: input.budgetCentsTotal,
     });
+    if (fundErr) {
+      // Not enough credits, or below the minimum. The campaign stays `pending`,
+      // which never serves, so nothing runs unpaid. Rethrow so the screen can
+      // send them to buy credits instead of failing silently.
+      await supabase.from('ad_campaigns').update({ status: 'canceled' }).eq('id', campaign.id);
+      throw fundErr;
+    }
+
+    // The receipt is written by ad_campaign_fund_with_credits. ad_payments is
+    // now server-write-only — it used to accept any amount, any provider and
+    // status 'succeeded' from the client, which made it a self-issued receipt.
     return campaign.id as string;
-  } catch {
+  } catch (e) {
+    // Funding failures rethrow (the caller routes to /credits); everything else
+    // keeps the old null contract.
+    if ((e as any)?.code || /insufficient funds|below_minimum/.test(String((e as any)?.message ?? ''))) throw e;
     return null;
   }
 }
@@ -988,15 +993,19 @@ export async function resumeAdCampaign(id: string): Promise<boolean> {
   }
 }
 
+/**
+ * End a campaign and return whatever budget it never spent, in cents.
+ *
+ * The unspent remainder used to be abandoned — this function wrote only
+ * `status`. That was invisible while the budget was imaginary, but the copy said
+ * "Spent budget is not refunded", which implies the unspent part IS refunded.
+ * With real credits that sentence would have been false about money, so it is
+ * now true instead.
+ */
 export async function endAdCampaign(id: string): Promise<boolean> {
   try {
-    const { data, error } = await supabase
-      .from('ad_campaigns')
-      .update({ status: 'ended' })
-      .eq('id', id)
-      .in('status', ['active', 'paused'])
-      .select('id');
-    return !error && !!data?.length;
+    const { error } = await supabase.rpc('ad_campaign_end', { p_campaign_id: id });
+    return !error;
   } catch {
     return false;
   }
