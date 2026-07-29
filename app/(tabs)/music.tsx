@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
-  Alert, TextInput, Modal, Dimensions, RefreshControl, Keyboard,
-  KeyboardAvoidingView, Platform, TouchableWithoutFeedback, PanResponder, Animated, Easing,
+  Alert, TextInput, Dimensions, RefreshControl, Keyboard,
+  PanResponder, Animated, Easing,
 } from 'react-native';
 // expo-image: memory-caches decoded covers (RN Image re-decodes on every mount).
 import { Image as ExpoImage } from 'expo-image';
@@ -20,6 +20,7 @@ import { useNowPlaying, useAudioControls } from '../../contexts/AudioContext';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import AddToPlaylistModal from '../../components/AddToPlaylistModal';
+import SlideUpSheet from '../../components/SlideUpSheet';
 import PlaylistEditor from '../../components/PlaylistEditor';
 import PlaylistOptionsSheet from '../../components/PlaylistOptionsSheet';
 import TrackRow from '../../components/TrackRow';
@@ -1930,24 +1931,23 @@ export default function MusicScreen() {
       )}
 
       {/* New playlist modal */}
-      <Modal visible={showNewPlaylist} transparent animationType="slide" onRequestClose={() => setShowNewPlaylist(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          {/* Backdrop tap is a two-step exit: with the keyboard up the first
-              tap only drops the keyboard; the next closes the sheet. Tapping
-              the sheet itself (outside the text field) just drops the
-              keyboard. The input and buttons capture their own taps. */}
-          <TouchableWithoutFeedback
-            onPress={() => {
-              if (Keyboard.isVisible()) { Keyboard.dismiss(); return; }
-              setShowNewPlaylist(false);
-              setNewPlaylistName('');
-              setNewPlaylistPublic(false);
-            }}
-            accessible={false}
-          >
-          <View style={styles.modalOverlayInner}>
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <View style={styles.modalContent}>
+      {/* Backdrop tap is a two-step exit: with the keyboard up the first tap
+          only drops the keyboard; the next closes the sheet. Tapping the sheet
+          itself (outside the text field) just drops the keyboard. The input and
+          buttons capture their own taps. */}
+      <SlideUpSheet
+        visible={showNewPlaylist}
+        onClose={() => {
+          if (Keyboard.isVisible()) { Keyboard.dismiss(); return; }
+          setShowNewPlaylist(false);
+          setNewPlaylistName('');
+          setNewPlaylistPublic(false);
+        }}
+        onSheetPress={Keyboard.dismiss}
+        sheetStyle={styles.modalContent}
+        dim={0.75}
+        avoidKeyboard
+      >
             <Text style={styles.modalTitle}>{t('music.newPlaylist')}</Text>
             <TextInput
               style={styles.modalInput}
@@ -1999,12 +1999,7 @@ export default function MusicScreen() {
                 <Text style={styles.modalCreateText}>{t('music.create')}</Text>
               </TouchableOpacity>
             </View>
-          </View>
-          </TouchableWithoutFeedback>
-          </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-      </Modal>
+      </SlideUpSheet>
 
       {/* Add to playlist modal */}
       <AddToPlaylistModal
@@ -2254,10 +2249,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   todaysArtist: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   // ──────────────────────────────────────────────────────────────────────────
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)' },
-  // Fills the overlay so the tap-to-dismiss-keyboard target covers the whole
-  // screen, while keeping the sheet pinned to the bottom.
-  modalOverlayInner: { flex: 1, justifyContent: 'flex-end' },
+  // The overlay and its inner tap-target live in SlideUpSheet now — the dim has
+  // to be animated, and its 0.75 is passed as that component's `dim`.
   modalContent: { backgroundColor: colors.surfaceLight, borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl, padding: SPACING.lg, gap: SPACING.md },
   modalTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
   modalInput: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md, padding: SPACING.md, color: colors.text, fontSize: 15 },

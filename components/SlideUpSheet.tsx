@@ -28,6 +28,7 @@ export default function SlideUpSheet({
   backdropStyle,
   dim = 0.55,
   avoidKeyboard = false,
+  onSheetPress,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -39,6 +40,12 @@ export default function SlideUpSheet({
   dim?: number;
   /** Lift the sheet above the keyboard — needed when it contains a text input. */
   avoidKeyboard?: boolean;
+  /**
+   * Tap on the SHEET itself (not the backdrop). Defaults to swallowing the tap
+   * so it doesn't fall through and close. Sheets with a text field pass
+   * Keyboard.dismiss here.
+   */
+  onSheetPress?: () => void;
 }) {
   const [mounted, setMounted] = useState(visible);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
@@ -51,12 +58,17 @@ export default function SlideUpSheet({
     if (visible) {
       setMounted(true);
       translateY.setValue(SCREEN_H);
+      // ARRIVING and LEAVING are deliberately not mirror images. Entry launches
+      // fast and takes a long, soft landing (an expo-style ease-out) so the
+      // sheet reads as settling into place rather than being dragged up.
       Animated.timing(translateY, {
-        toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+        toValue: 0, duration: 340, easing: Easing.bezier(0.16, 1, 0.3, 1), useNativeDriver: true,
       }).start();
     } else if (mounted) {
+      // Exit is shorter and accelerates away — dismissal should feel decisive,
+      // not like the entry played backwards.
       Animated.timing(translateY, {
-        toValue: SCREEN_H, duration: 230, easing: Easing.in(Easing.cubic), useNativeDriver: true,
+        toValue: SCREEN_H, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true,
       }).start(({ finished }) => { if (finished) setMounted(false); });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -68,7 +80,7 @@ export default function SlideUpSheet({
     <Pressable style={styles.fill} onPress={onClose}>
       {/* Stop taps inside the sheet from closing it. */}
       <Animated.View style={{ transform: [{ translateY }] }}>
-        <Pressable style={sheetStyle} onPress={() => {}}>
+        <Pressable style={sheetStyle} onPress={onSheetPress ?? (() => {})}>
           {children}
         </Pressable>
       </Animated.View>
