@@ -1067,7 +1067,7 @@ export default function MusicScreen() {
             spellCheck={false}
           />
           {(searchQuery.length > 0 || searchFocused) && (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')}
               onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               style={styles.searchClear}

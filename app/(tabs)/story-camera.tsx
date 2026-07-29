@@ -830,10 +830,10 @@ export default function StoryCameraScreen() {
               >
                 <Ionicons name={previewing ? 'pause-circle' : 'play-circle'} size={44} color={colors.primary} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.songCardBtn} onPress={() => setShowSongPicker(true)} hitSlop={6}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.flipCamera')} style={styles.songCardBtn} onPress={() => setShowSongPicker(true)} hitSlop={6}>
                 <Ionicons name="swap-horizontal" size={20} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')}
                 style={styles.songCardBtn}
                 onPress={() => { stopSong('story-editor'); setSong(null); }}
                 hitSlop={6}
@@ -1020,7 +1020,7 @@ export default function StoryCameraScreen() {
                 <Text style={styles.timerBadge}>{timerMode}s</Text>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.roundBtn} onPress={() => setGrid((g) => !g)}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.grid')} style={styles.roundBtn} onPress={() => setGrid((g) => !g)}>
               <Ionicons name="grid-outline" size={20} color={grid ? colors.primaryLight : '#fff'} />
             </TouchableOpacity>
           </View>
@@ -1242,7 +1242,7 @@ const StickerTextEditor = memo(function StickerTextEditor({
           ))}
         </ScrollView>
         <View style={styles.fontRow}>
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.colour')}
             style={[styles.bgToggle, bg !== 'none' && styles.bgToggleActive]}
             onPress={() => setBg((b) => (b === 'none' ? 'soft' : b === 'soft' ? 'pill' : b === 'pill' ? 'boxy' : 'none'))}
           >

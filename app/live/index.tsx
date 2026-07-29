@@ -255,7 +255,7 @@ function LiveCard({
               returnKeyType="send"
               maxLength={300}
             />
-            <TouchableOpacity onPress={send} style={[styles.sendBtn, !!draft.trim() && styles.sendBtnActive, isLandscape && styles.sendBtnLandscape]} disabled={!draft.trim()}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.send')} onPress={send} style={[styles.sendBtn, !!draft.trim() && styles.sendBtnActive, isLandscape && styles.sendBtnLandscape]} disabled={!draft.trim()}>
               <Ionicons name="arrow-up" size={18} color={draft.trim() ? '#000' : 'rgba(255,255,255,0.4)'} />
             </TouchableOpacity>
           </View>
@@ -488,7 +488,7 @@ export default function LiveScreen() {
         )}
 
         {/* Floating back (pushed screen — swipe-back also works) */}
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')}
           style={[styles.backFab, { top: insets.top + 12 }]}
           onPress={() => router.back()}
           activeOpacity={0.85}
@@ -502,7 +502,7 @@ export default function LiveScreen() {
             streams ARE live it stays in this spot as a red, stacked Go/Live
             button. */}
         <View style={[styles.fabCol, { top: insets.top + 12 }, screenLandscape && styles.fabColLandscape]}>
-          <TouchableOpacity style={styles.fab} onPress={() => router.push('/studio')} activeOpacity={0.85}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.mic')} style={styles.fab} onPress={() => router.push('/studio')} activeOpacity={0.85}>
             <Ionicons name="mic-outline" size={20} color="#fff" />
           </TouchableOpacity>
           {streams.length > 0 && (

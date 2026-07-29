@@ -204,7 +204,7 @@ export default function EditCommunityScreen() {
       <SwipeBackPager>
         <View style={styles.container}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
               <Ionicons name="chevron-back" size={26} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{t('communities.editTitle')}</Text>
@@ -261,7 +261,7 @@ export default function EditCommunityScreen() {
       <SwipeBackPager>
         <View style={styles.container}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
               <Ionicons name="chevron-back" size={26} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{t('communities.editTitle')}</Text>
@@ -280,7 +280,7 @@ export default function EditCommunityScreen() {
     <SwipeBackPager>
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('communities.editTitle')}</Text>
@@ -455,7 +455,7 @@ export default function EditCommunityScreen() {
                       <Text style={styles.resultName} numberOfLines={1}>{i.display_name ?? i.username}</Text>
                       <Text style={styles.resultUser} numberOfLines={1}>@{i.username}</Text>
                     </View>
-                    <TouchableOpacity onPress={() => setInvitees((prev) => prev.filter((x) => x.id !== i.id))} hitSlop={8}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setInvitees((prev) => prev.filter((x) => x.id !== i.id))} hitSlop={8}>
                       <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
                     </TouchableOpacity>
                   </View>

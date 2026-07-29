@@ -162,7 +162,7 @@ export default function CreateCommunityScreen() {
       <SwipeBackPager>
         <View style={styles.container}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
               <Ionicons name="chevron-back" size={26} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{t('communities.createTitle')}</Text>
@@ -182,7 +182,7 @@ export default function CreateCommunityScreen() {
     <SwipeBackPager>
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('communities.createTitle')}</Text>
@@ -340,7 +340,7 @@ export default function CreateCommunityScreen() {
                           {t('communities.makeManager')}
                         </Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => removeInvitee(i.id)} hitSlop={8}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => removeInvitee(i.id)} hitSlop={8}>
                         <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
                       </TouchableOpacity>
                     </View>

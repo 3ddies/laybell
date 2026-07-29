@@ -89,7 +89,7 @@ export default function SavedScreen() {
     <SwipeBackPager>
       <View style={styles.container}>
         <View style={[styles.header, { paddingTop: Math.max(insets.top, SPACING.md) }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('saved.title')}</Text>

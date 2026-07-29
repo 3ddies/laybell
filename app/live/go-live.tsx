@@ -321,7 +321,7 @@ export default function GoLiveScreen() {
 
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')}
             onPress={() => (live ? setConfirmEnd(true) : router.back())}
             style={styles.headerBtn}
           >

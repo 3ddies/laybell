@@ -196,7 +196,7 @@ export default function StudioListenScreen() {
 
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => router.back()} style={styles.headerBtn}>
             <Ionicons name="chevron-back" size={24} color="#fff" />
           </TouchableOpacity>
           <View style={styles.liveBadge}>
@@ -291,11 +291,11 @@ export default function StudioListenScreen() {
                     onSubmitEditing={sendChat}
                     returnKeyType="send"
                   />
-                  <TouchableOpacity onPress={sendChat} disabled={!draft.trim()} style={[styles.sendBtn, !draft.trim() && { opacity: 0.4 }]}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.send')} onPress={sendChat} disabled={!draft.trim()} style={[styles.sendBtn, !draft.trim() && { opacity: 0.4 }]}>
                     <Ionicons name="arrow-up" size={17} color="#fff" />
                   </TouchableOpacity>
                 </View>
-                <TouchableOpacity style={styles.roundBtn} onPress={() => setDonateOpen(true)} activeOpacity={0.85}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.tip')} style={styles.roundBtn} onPress={() => setDonateOpen(true)} activeOpacity={0.85}>
                   <Ionicons name="cash-outline" size={20} color="#fff" />
                 </TouchableOpacity>
                 <TouchableOpacity

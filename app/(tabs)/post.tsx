@@ -1137,11 +1137,11 @@ export default function PostScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => setStep('pick')}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => setStep('pick')}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('post.trim')}</Text>
-          <TouchableOpacity style={styles.headerAction} onPress={() => setStep('details')}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.forward')} style={styles.headerAction} onPress={() => setStep('details')}>
             <Ionicons name="arrow-forward" size={24} color={colors.primary} />
           </TouchableOpacity>
         </View>
@@ -1177,7 +1177,7 @@ export default function PostScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => setStep('pick')}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => setStep('pick')}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('post.newPost')}</Text>
@@ -1206,7 +1206,7 @@ export default function PostScreen() {
                 <Text style={styles.adPendingTitle}>{t('post.inSpotlight')} · {pendingSpot.label}</Text>
                 <Text style={styles.adPendingSub}>{t('post.spotlightStartsOnShare')}</Text>
               </View>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 onPress={() => {
                   // Detach only — the paid campaign stays `pending` on the
@@ -1286,7 +1286,7 @@ export default function PostScreen() {
                       {song ? song.title : t('post.addMusic')}
                     </Text>
                     {song ? (
-                      <TouchableOpacity onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                         <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
                       </TouchableOpacity>
                     ) : (
@@ -1316,7 +1316,7 @@ export default function PostScreen() {
                   {hasCaption ? summary : horiz ? t('post.topCaptionAdd') : t('post.screenCaptionAdd')}
                 </Text>
                 {hasCaption ? (
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')}
                     onPress={() => { setTopCaption(null); setBottomCaption(null); setVideoCaptions([]); }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
@@ -1440,7 +1440,7 @@ export default function PostScreen() {
                   : t('communities.communityCount', { count: communities.length })}
               </Text>
               {hasCommunity ? (
-                <TouchableOpacity onPress={() => setCommunities([])} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setCommunities([])} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
                 </TouchableOpacity>
               ) : (
@@ -1649,7 +1649,7 @@ export default function PostScreen() {
           <Ionicons name="close" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('post.newPost')}</Text>
-        <TouchableOpacity style={styles.headerAction} onPress={goNext} disabled={!hasMedia}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.forward')} style={styles.headerAction} onPress={goNext} disabled={!hasMedia}>
           <Ionicons name="arrow-forward" size={24} color={hasMedia ? colors.primary : colors.textTertiary} />
         </TouchableOpacity>
       </View>
@@ -1872,7 +1872,7 @@ export default function PostScreen() {
       <Modal visible={draftsOpen} animationType="slide" onRequestClose={() => setDraftsOpen(false)}>
         <View style={styles.container}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.headerBtn} onPress={() => setDraftsOpen(false)}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')} style={styles.headerBtn} onPress={() => setDraftsOpen(false)}>
               <Ionicons name="close" size={26} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{t('post.drafts')}</Text>

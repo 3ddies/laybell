@@ -273,7 +273,7 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     if (item.id === '__camera__') {
       return (
         <View style={styles.slot}>
-          <TouchableOpacity style={[styles.cell, styles.cameraCell]} onPress={openCamera}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.camera')} style={[styles.cell, styles.cameraCell]} onPress={openCamera}>
             <Ionicons name="camera" size={26} color={colors.text} />
           </TouchableOpacity>
         </View>

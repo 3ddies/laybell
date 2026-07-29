@@ -617,7 +617,7 @@ export default function ChatScreen() {
       {pendingAttachment && (
         // Full-width row is a keyboard-dismiss zone; the box hugs the GIF only, so
         // tapping the space beside it exits typing rather than doing nothing.
-        <Pressable style={styles.attachPreviewRow} onPress={() => Keyboard.dismiss()}>
+        <Pressable accessibilityRole="button" accessibilityLabel={t('a11y.clear')} style={styles.attachPreviewRow} onPress={() => Keyboard.dismiss()}>
           <View style={styles.attachPreviewItem}>
             <AttachmentView url={pendingAttachment.url} w={pendingAttachment.w} h={pendingAttachment.h} maxWidth={110} radius={12} />
             <TouchableOpacity style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}

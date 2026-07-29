@@ -511,12 +511,12 @@ export default function PublicProfileScreen() {
       <View>
       {/* Back */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.usernameHeader}>@{profile?.username}</Text>
         {!isOwnProfile ? (
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}
             style={styles.backBtn}
             onPress={() => showOptions({
               isOwn: false,

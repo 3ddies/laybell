@@ -822,7 +822,7 @@ export default function CreateAdScreen() {
                             ? <Image source={{ uri: p.avatar_url }} style={styles.chipAvatar} />
                             : <View style={[styles.chipAvatar, styles.chipAvatarEmpty]}><Ionicons name="person" size={12} color={colors.primary} /></View>}
                           <Text style={[styles.destChipText, { color: colors.primary }]} numberOfLines={1}>{p.display_name || p.username}</Text>
-                          <TouchableOpacity onPress={() => setAwarenessOthers((o) => o.filter((x) => x.id !== p.id))} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setAwarenessOthers((o) => o.filter((x) => x.id !== p.id))} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
                             <Ionicons name="close-circle" size={15} color={colors.textTertiary} />
                           </TouchableOpacity>
                         </View>
@@ -1150,7 +1150,7 @@ export default function CreateAdScreen() {
           >
             <View style={styles.videoPickerContainer}>
               <View style={styles.videoPickerHeader}>
-                <TouchableOpacity style={styles.videoPickerClose} onPress={() => setVideoPickerFor(null)}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')} style={styles.videoPickerClose} onPress={() => setVideoPickerFor(null)}>
                   <Ionicons name="close" size={24} color={colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.videoPickerTitle}>{t('adCreate.addVideo')}</Text>
@@ -1180,7 +1180,7 @@ export default function CreateAdScreen() {
               <View style={styles.listingSheet}>
                 <View style={styles.listingSheetHead}>
                   <Text style={styles.listingSheetTitle}>{t('adCreate.dest.chooseListing')}</Text>
-                  <TouchableOpacity onPress={() => setShowListingPicker(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')} onPress={() => setShowListingPicker(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                     <Ionicons name="close" size={24} color={colors.text} />
                   </TouchableOpacity>
                 </View>

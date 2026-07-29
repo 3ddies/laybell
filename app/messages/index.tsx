@@ -249,7 +249,7 @@ export default function MessagesScreen() {
       <SwipeBackPager>
         <View style={styles.container}>
           <View style={[styles.header, { paddingTop: Math.max(insets.top, SPACING.md) }]}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="chevron-back" size={26} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{t('messages.title')}</Text>
@@ -300,7 +300,7 @@ export default function MessagesScreen() {
     <SwipeBackPager>
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, SPACING.md) }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('messages.title')}</Text>
@@ -331,7 +331,7 @@ export default function MessagesScreen() {
             spellCheck={false}
           />
           {(searchQuery.length > 0 || searchFocused) && (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')}
               onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               style={styles.searchClear}

@@ -158,7 +158,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
               >
                 {savingNew ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.createBtnText}>{t('addToPlaylist.createBtn')}</Text>}
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setCreating(false); setNewName(''); }} style={styles.createCancel} hitSlop={8}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')} onPress={() => { setCreating(false); setNewName(''); }} style={styles.createCancel} hitSlop={8}>
                 <Ionicons name="close" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>

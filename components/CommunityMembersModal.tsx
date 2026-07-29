@@ -132,7 +132,7 @@ export default function CommunityMembersModal({
                     </View>
                   </View>
                   {canActOn(m) && (
-                    <TouchableOpacity onPress={() => setTarget(m)} hitSlop={8} style={styles.manageBtn}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')} onPress={() => setTarget(m)} hitSlop={8} style={styles.manageBtn}>
                       <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
                     </TouchableOpacity>
                   )}

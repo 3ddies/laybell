@@ -205,7 +205,7 @@ export default function BadgesScreen() {
     <SwipeBackPager>
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('account.badges')}</Text>
@@ -379,7 +379,7 @@ export default function BadgesScreen() {
         <View style={styles.modalRoot}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{t('badges.pagePreview')}</Text>
-            <TouchableOpacity onPress={() => setShowPreview(false)} hitSlop={10}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')} onPress={() => setShowPreview(false)} hitSlop={10}>
               <Ionicons name="close" size={26} color={colors.text} />
             </TouchableOpacity>
           </View>

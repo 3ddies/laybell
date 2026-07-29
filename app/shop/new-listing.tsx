@@ -239,7 +239,7 @@ export default function NewListingScreen() {
     <SwipeBackPager>
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => router.back()} style={styles.headerBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{editId ? t('shop.editListing') : t('shop.newListing')}</Text>
@@ -399,7 +399,7 @@ export default function NewListingScreen() {
         <Modal visible={pickerOpen} animationType="slide" onRequestClose={() => setPickerOpen(false)}>
           <View style={[styles.pickerRoot, { paddingTop: insets.top + 8 }]}>
             <View style={styles.header}>
-              <TouchableOpacity onPress={() => setPickerOpen(false)} style={styles.headerBtn}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => setPickerOpen(false)} style={styles.headerBtn}>
                 <Ionicons name="chevron-back" size={24} color={colors.text} />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>{t('shop.pickPostsTitle')}</Text>

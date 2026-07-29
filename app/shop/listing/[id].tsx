@@ -284,7 +284,7 @@ export default function ListingScreen() {
     <SwipeBackPager>
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => router.back()} style={styles.headerBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>{listing?.title ?? t('shop.title')}</Text>
@@ -298,7 +298,7 @@ export default function ListingScreen() {
               )}
             </TouchableOpacity>
             {listing && (
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.share')}
                 style={styles.headerBtn}
                 onPress={() =>
                   Share.share({

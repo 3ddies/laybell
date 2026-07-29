@@ -107,7 +107,7 @@ export default function PlaylistOptionsSheet({ playlist, onClose, onToggleVisibi
           {mode === 'confirmDelete' ? (
             <>
               <View style={styles.header}>
-                <TouchableOpacity onPress={() => setMode('menu')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => setMode('menu')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                   <Ionicons name="chevron-back" size={24} color={colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{t('music.deletePlaylist')}</Text>

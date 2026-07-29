@@ -137,10 +137,10 @@ export default function MusicOrderScreen() {
                   </View>
                 </View>
                 <View style={styles.moves}>
-                  <TouchableOpacity style={[styles.moveBtn, i === 0 && styles.moveOff]} disabled={i === 0} onPress={() => move(i, -1)} hitSlop={6}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.moveUp')} style={[styles.moveBtn, i === 0 && styles.moveOff]} disabled={i === 0} onPress={() => move(i, -1)} hitSlop={6}>
                     <Ionicons name="chevron-up" size={20} color={i === 0 ? colors.textTertiary : colors.text} />
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.moveBtn, i === tracks.length - 1 && styles.moveOff]} disabled={i === tracks.length - 1} onPress={() => move(i, 1)} hitSlop={6}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.moveDown')} style={[styles.moveBtn, i === tracks.length - 1 && styles.moveOff]} disabled={i === tracks.length - 1} onPress={() => move(i, 1)} hitSlop={6}>
                     <Ionicons name="chevron-down" size={20} color={i === tracks.length - 1 ? colors.textTertiary : colors.text} />
                   </TouchableOpacity>
                 </View>

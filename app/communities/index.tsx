@@ -110,7 +110,7 @@ export default function CommunitiesScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('communities.title')}</Text>
@@ -133,7 +133,7 @@ export default function CommunitiesScreen() {
               autoCorrect={false}
             />
             {query.length > 0 && (
-              <TouchableOpacity onPress={() => { setQuery(''); Keyboard.dismiss(); }} hitSlop={10}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => { setQuery(''); Keyboard.dismiss(); }} hitSlop={10}>
                 <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
               </TouchableOpacity>
             )}

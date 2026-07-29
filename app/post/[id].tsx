@@ -292,7 +292,7 @@ export default function PostDetailScreen() {
       <SwipeBackPager onClose={srcRect ? popInstant : undefined} fastExit>
         <View style={styles.container}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
               <Ionicons name="chevron-back" size={24} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{t('postView.title')}</Text>
@@ -353,7 +353,7 @@ export default function PostDetailScreen() {
                 <Text style={styles.username}>@{post.profiles?.username} · {timeAgo(post.created_at)}</Text>
               </View>
               <FollowButton userId={post.user_id} />
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}
                 style={styles.typeTag}
                 onPress={() => showOptions({
                   postId: id as string,

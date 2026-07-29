@@ -303,7 +303,7 @@ export default function StudioRoomScreen() {
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => setConfirmEnd(true)} style={styles.headerBtn}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => setConfirmEnd(true)} style={styles.headerBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.headerTextWrap}>
@@ -462,10 +462,10 @@ export default function StudioRoomScreen() {
                     <Text style={styles.reqName} numberOfLines={1}>{r.display_name || r.username || '—'}</Text>
                     <Text style={styles.reqSub}>{t('studio.wantsToJoin')}</Text>
                   </View>
-                  <TouchableOpacity style={styles.reqAccept} onPress={() => respondReq(r.user_id, true)}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.confirm')} style={styles.reqAccept} onPress={() => respondReq(r.user_id, true)}>
                     <Ionicons name="checkmark" size={18} color="#fff" />
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.reqDecline} onPress={() => respondReq(r.user_id, false)}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')} style={styles.reqDecline} onPress={() => respondReq(r.user_id, false)}>
                     <Ionicons name="close" size={18} color={colors.text} />
                   </TouchableOpacity>
                 </View>
@@ -495,7 +495,7 @@ export default function StudioRoomScreen() {
                   onSubmitEditing={sendChat}
                   returnKeyType="send"
                 />
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.send')}
                   onPress={sendChat}
                   disabled={!draft.trim()}
                   style={[styles.chatSend, !draft.trim() && { opacity: 0.4 }]}
@@ -528,7 +528,7 @@ export default function StudioRoomScreen() {
               <Text style={styles.countInText}>{t('studio.countIn')}</Text>
             </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.controlBtn, styles.leaveBtn]} onPress={() => setConfirmEnd(true)}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.leave')} style={[styles.controlBtn, styles.leaveBtn]} onPress={() => setConfirmEnd(true)}>
             <Ionicons name="exit-outline" size={22} color="#fff" />
           </TouchableOpacity>
         </View>

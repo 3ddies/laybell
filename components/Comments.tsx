@@ -475,7 +475,7 @@ export default function Comments({
             <Text style={styles.replyingText} numberOfLines={1}>
               {t('comments.replyingTo')} <Text style={styles.replyingName}>@{replyTo.name}</Text>
             </Text>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')}
               onPress={() => {
                 // Dropping the reply also drops the auto-inserted "@username "
                 // tag — but keeps anything else the user typed after it.
@@ -502,10 +502,10 @@ export default function Comments({
           // Full-width row is a keyboard-dismiss zone; the bordered box hugs the
           // GIF only, so tapping the empty space beside it exits typing (handy in
           // the tight landscape comment sheet) rather than doing nothing.
-          <Pressable style={styles.attachPreviewRow} onPress={() => Keyboard.dismiss()}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('a11y.clear')} style={styles.attachPreviewRow} onPress={() => Keyboard.dismiss()}>
             <View style={styles.attachPreviewItem}>
               <AttachmentView url={pendingAttachment.url} w={pendingAttachment.w} h={pendingAttachment.h} maxWidth={96} radius={10} />
-              <TouchableOpacity style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}>
                 <Ionicons name="close-circle" size={20} color={colors.text} />
               </TouchableOpacity>
             </View>

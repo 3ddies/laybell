@@ -97,7 +97,7 @@ export default function CartScreen() {
     <SwipeBackPager>
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => router.back()} style={styles.headerBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('shop.cart.title')}</Text>
@@ -211,7 +211,7 @@ function CartRow({ item, onOpen, onRemove }: { item: CartItem; onOpen: () => voi
           </Text>
         </View>
       </TouchableOpacity>
-      <TouchableOpacity onPress={() => { reactionPop(); onRemove(); }} style={styles.removeBtn} hitSlop={8}>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')} onPress={() => { reactionPop(); onRemove(); }} style={styles.removeBtn} hitSlop={8}>
         <Ionicons name="close" size={18} color={colors.textTertiary} />
       </TouchableOpacity>
     </View>

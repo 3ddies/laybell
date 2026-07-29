@@ -121,7 +121,7 @@ export default function PlaylistsScreen() {
         >
           <Text style={styles.visBtnText}>{pl.is_public ? t('playlists.makePrivate') : t('playlists.makePublic')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.deleteBtn} onPress={() => confirmDelete(pl)} hitSlop={6}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.delete')} style={styles.deleteBtn} onPress={() => confirmDelete(pl)} hitSlop={6}>
           <Ionicons name="trash-outline" size={18} color={colors.textTertiary} />
         </TouchableOpacity>
       </View>
@@ -134,7 +134,7 @@ export default function PlaylistsScreen() {
     <SwipeBackPager>
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('account.playlists')}</Text>

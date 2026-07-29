@@ -98,7 +98,7 @@ export default function TrackRow({
       )}
 
       {onAddToPlaylist && (
-        <TouchableOpacity style={styles.addBtn} onPress={safeAdd} onLongPress={onOptions}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.add')} style={styles.addBtn} onPress={safeAdd} onLongPress={onOptions}>
           <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
         </TouchableOpacity>
       )}

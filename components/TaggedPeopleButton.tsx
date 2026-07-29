@@ -51,7 +51,7 @@ export default function TaggedPeopleButton({ userIds, style }: { userIds?: strin
 
   return (
     <>
-      <TouchableOpacity style={[styles.btn, style]} onPress={openMenu} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.profile')} style={[styles.btn, style]} onPress={openMenu} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
         <Ionicons name="person" size={13} color="#fff" />
       </TouchableOpacity>
 

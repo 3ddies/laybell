@@ -50,7 +50,7 @@ export default function ShopHubScreen() {
     <SwipeBackPager>
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => router.back()} style={styles.headerBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('shop.title')}</Text>
@@ -139,7 +139,7 @@ function ExploreTab() {
           returnKeyType="search"
         />
         {!!search && (
-          <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setSearch('')} hitSlop={8}>
             <Ionicons name="close-circle" size={17} color={colors.textTertiary} />
           </TouchableOpacity>
         )}

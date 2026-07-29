@@ -167,7 +167,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
               autoCorrect={false}
               spellCheck={false}
             />
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')}
               onPress={() => setQuery('')}
               disabled={query.length === 0}
               style={{ opacity: query.length > 0 ? 1 : 0 }}

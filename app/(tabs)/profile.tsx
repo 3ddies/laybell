@@ -616,7 +616,7 @@ export default function ProfileScreen() {
           >
             <Ionicons name="qr-code-outline" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/settings')} style={styles.settingsBtn}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.settings')} onPress={() => router.push('/settings')} style={styles.settingsBtn}>
             <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
@@ -673,7 +673,7 @@ export default function ProfileScreen() {
               ) : (
                 // No badge chosen (Default theme) → a tappable outline placeholder that
                 // only YOU see (visitors see nothing), linking to the Badges page.
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.add')}
                   style={styles.badgeOutline}
                   activeOpacity={0.7}
                   hitSlop={8}
@@ -730,7 +730,7 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.editButton} onPress={() => router.push('/edit-profile')}>
           <Text style={styles.editButtonText}>{t('profile.editProfile')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/friends')}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.people')} style={styles.secondaryButton} onPress={() => router.push('/friends')}>
           <Ionicons name="people-outline" size={18} color={colors.text} />
         </TouchableOpacity>
       </View>

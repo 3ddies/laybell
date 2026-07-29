@@ -215,7 +215,7 @@ export default function VideoStickerEditor({ visible, posterUri, initial, onSave
                 ))}
               </ScrollView>
               <View style={styles.fontRow}>
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.colour')}
                   style={[styles.bgToggle, bg !== 'none' && styles.bgToggleActive]}
                   onPress={() => setBg((b) => BG_ORDER[(BG_ORDER.indexOf(b) + 1) % BG_ORDER.length])}
                 >

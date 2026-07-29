@@ -63,7 +63,7 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions, vide
           </View>
           <Text style={styles.subline}>{t('sponsoredCard.ad')}</Text>
         </View>
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}
           style={styles.optionsBtn}
           onPress={() => onOptions(item)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

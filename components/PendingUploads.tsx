@@ -131,7 +131,7 @@ function PendingCard({ p }: { p: PendingUpload }) {
           : <View style={[styles.avatar, styles.avatarFallback]}><Ionicons name="person" size={16} color={colors.textTertiary} /></View>}
         <Text style={styles.name} numberOfLines={1}>{profile?.display_name || profile?.username || ''}</Text>
         {p.phase === 'error' && (
-          <TouchableOpacity onPress={() => dismiss(p.tempId)} hitSlop={10} style={styles.dismissBtn}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.close')} onPress={() => dismiss(p.tempId)} hitSlop={10} style={styles.dismissBtn}>
             <Ionicons name="close" size={18} color={colors.textSecondary} />
           </TouchableOpacity>
         )}

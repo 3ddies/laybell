@@ -698,7 +698,7 @@ export default function ExploreGrid({ posts, refreshing, onRefresh, songTiles, s
     }
     if (p.type === 'video') {
       return (
-        <TouchableOpacity key={p.id} style={styles.square} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.play')} key={p.id} style={styles.square} activeOpacity={0.9} onPress={(e: any) => openMedia(p, e)}>
           <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.mediaImage} />
           <View style={styles.squareBadge}><Ionicons name="play" size={11} color="#fff" /></View>
         </TouchableOpacity>

@@ -367,7 +367,7 @@ export default function GroupChatScreen() {
     return (
       <View style={styles.container}>
         <View style={[styles.header, { paddingTop: insets.top }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
         </View>
@@ -379,7 +379,7 @@ export default function GroupChatScreen() {
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.headerUser} activeOpacity={0.7} onPress={() => setMembersOpen(true)}>
@@ -389,7 +389,7 @@ export default function GroupChatScreen() {
             <Text style={styles.headerSub} numberOfLines={1}>{t('groups.memberCount', { count: members.length })}</Text>
           </View>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.headerMenuBtn} onPress={() => setMenuOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')} style={styles.headerMenuBtn} onPress={() => setMenuOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
         </TouchableOpacity>
       </View>
@@ -508,10 +508,10 @@ export default function GroupChatScreen() {
         {pendingAttachment && (
           // Full-width row is a keyboard-dismiss zone; the box hugs the GIF only, so
           // tapping the space beside it exits typing rather than doing nothing.
-          <Pressable style={styles.attachPreviewRow} onPress={() => Keyboard.dismiss()}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('a11y.clear')} style={styles.attachPreviewRow} onPress={() => Keyboard.dismiss()}>
             <View style={styles.attachPreviewItem}>
               <AttachmentView url={pendingAttachment.url} w={pendingAttachment.w} h={pendingAttachment.h} maxWidth={110} radius={12} />
-              <TouchableOpacity style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}>
                 <Ionicons name="close-circle" size={22} color={colors.text} />
               </TouchableOpacity>
             </View>

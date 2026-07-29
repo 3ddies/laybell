@@ -1587,7 +1587,7 @@ export default function ReelScreen() {
                   }}
                 />
               )}
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')}
                 style={[styles.back, { top: insets.top + 8 }]}
                 onPress={() => ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {})}
               >

@@ -342,7 +342,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
 
       {/* Transport: prev · −10s · play/pause/replay · +10s · next */}
       <View style={styles.controls}>
-        <TouchableOpacity onPress={() => { selection(); prev(); }} disabled={!hasPrev} hitSlop={10} style={styles.sideBtn}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.previousTrack')} onPress={() => { selection(); prev(); }} disabled={!hasPrev} hitSlop={10} style={styles.sideBtn}>
           <Ionicons name="play-skip-back" size={26} color={hasPrev ? colors.text : colors.textTertiary} />
         </TouchableOpacity>
         {!isLive && (
@@ -376,7 +376,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
             <Text style={[styles.skipLabel, !!current.isAd && { color: colors.textTertiary }]}>10</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity onPress={() => { selection(); next(); }} disabled={!hasNext} hitSlop={10} style={styles.sideBtn}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.nextTrack')} onPress={() => { selection(); next(); }} disabled={!hasNext} hitSlop={10} style={styles.sideBtn}>
           <Ionicons name="play-skip-forward" size={26} color={hasNext ? colors.text : colors.textTertiary} />
         </TouchableOpacity>
       </View>
