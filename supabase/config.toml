@@ -1,0 +1,33 @@
+# Supabase project config.
+#
+# This file exists for ONE reason: to record which Edge Functions must NOT sit
+# behind the JWT gateway. Getting that wrong fails silently and in the worst
+# possible place — the caller gets a 401 from Supabase's edge and the function
+# never runs, so there are no logs to find and nothing looks broken until money
+# has already changed hands.
+
+project_id = "wawpaokvtptfmuygjnns"
+
+# ─── Functions that are called by something other than a signed-in user ──────
+
+# RevenueCat's servers, with a shared secret in the Authorization header — NOT a
+# Supabase JWT. With verify_jwt on, the gateway tried to parse that secret as a
+# token and rejected the webhook with 401 before the function could check it.
+# The user pays Apple, RevenueCat calls us, we 401, and no credits are ever
+# granted. The function does its own auth (REVENUECAT_WEBHOOK_SECRET).
+[functions.revenuecat-webhook]
+verify_jwt = false
+
+# Cron/manual caller with its own STREAM_SWEEP_SECRET.
+[functions.stream-sweep]
+verify_jwt = false
+
+# Serves Open Graph unfurls to crawlers (iMessage, WhatsApp, Discord), which
+# obviously carry no session.
+[functions.share-page]
+verify_jwt = false
+
+# Issues LiveKit tokens to the web studio connector, which has no Supabase
+# session of its own.
+[functions.livekit-token]
+verify_jwt = false

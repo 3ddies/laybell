@@ -41,11 +41,21 @@ caught by review, not by testing. Assume there are more.
 
 **Owner, unblocked, today:**
 
-1. Tick **Enforce HTTPS** — GitHub repo → Settings → Pages.
+1. Tick **Enforce HTTPS** — GitHub repo → Settings → Pages. (Greyed out until the
+   certificate finishes provisioning; allow up to 24h and don't re-save the domain.)
 2. ~~Confirm `support@` and `dmca@` aliases exist in ImprovMX.~~ **Done 2026-07-29.**
-   Mail for the domain routes through ImprovMX (MX + SPF verified in DNS).
-3. **App Store Connect → restrict availability to the United States.** Still set to 175
-   countries, which is what the DSA trader banner is about and what multiplies the tax forms.
+3. ~~Restrict App Store availability to the United States.~~ **Done 2026-07-29.**
+4. **🔴 Redeploy `revenuecat-webhook` with JWT verification OFF.** It authenticates with a
+   shared secret in the Authorization header, but was deployed with `verify_jwt: true` — so
+   Supabase's gateway rejects RevenueCat with 401 **before the function runs**. Users would
+   pay Apple and receive no credits, with no logs to find. `supabase/config.toml` now records
+   the correct setting for this and the three other non-JWT callers:
+
+   ```
+   npx supabase functions deploy revenuecat-webhook --no-verify-jwt --project-ref wawpaokvtptfmuygjnns
+   ```
+
+   Confirm with `npx supabase functions list` — `verify_jwt` must read `false`.
 
 **Owner, in flight:**
 
