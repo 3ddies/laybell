@@ -23,7 +23,7 @@ const supabase = createClient(
 // straight to the domain in one hop — the previous github.io constant sent
 // them through a redirect that landed on plain http.
 //
-// REACH THIS FUNCTION VIA api.laybell.app, NOT *.supabase.co. The shared
+// REACH THIS FUNCTION VIA open.laybell.app, NOT *.supabase.co. The shared
 // functions domain force-serves HTML as text/plain + nosniff, which Apple's
 // LinkPresentation parser refuses to read — the reason per-post cards never
 // unfurled in iMessage. The custom domain (live 2026-07-29) is not sanitised.
@@ -38,7 +38,11 @@ const LOGO = `${WEB}/logo.png`;
 // one. og:url silently advertised that internal URL until this was spotted.
 // Keep in sync with lib/appLinks.SHARE_PAGE_CUSTOM_BASE — the app builds share
 // links from that constant, so the two must name the same endpoint.
-const PUBLIC_BASE = 'https://api.laybell.app/functions/v1/share-page';
+//
+// `open.` rather than `api.` because this hostname is READ BY PEOPLE: Apple
+// prints the domain at the foot of every card and no meta tag overrides it, so
+// the subdomain IS the branding. Mirrors open.spotify.com.
+const PUBLIC_BASE = 'https://open.laybell.app/functions/v1/share-page';
 const AUDIO_TYPES = ['audio', 'podcast', 'audiobook'];
 
 // Poster frame for a Cloudflare Stream video — every Stream VOD serves one at

@@ -48,18 +48,27 @@ export function profileShareUrl(userId: string): string {
 // or a post's thumbnail — and bounces humans who tap through open.html into the
 // app.
 //
-// The host matters more than the function. On the SHARED *.supabase.co
-// functions domain, Supabase force-rewrites HTML to `Content-Type: text/plain`
-// with `nosniff` (anti-phishing); Apple's LinkPresentation parser respects the
-// content type, so the tags were never read and shared posts silently showed no
-// card while QR links — which have always used open.html — worked fine. A
-// Supabase CUSTOM domain is not sanitised, which is the entire reason
-// api.laybell.app exists.
+// The host matters more than the function, TWICE OVER.
 //
-// api.laybell.app: CNAME → wawpaokvtptfmuygjnns.supabase.co, ACME TXT verified,
-// SSL provisioned, activated 2026-07-29. Confirmed live on activation that it
-// returns `text/html; charset=utf-8` with no nosniff, and that a song and a
-// video post each unfurl with the right og:type and a fetchable image.
+// 1. It decides whether a card renders at all. On the SHARED *.supabase.co
+//    functions domain, Supabase force-rewrites HTML to `Content-Type:
+//    text/plain` with `nosniff` (anti-phishing); Apple's LinkPresentation
+//    parser respects the content type, so the tags were never read and shared
+//    posts silently showed no card while QR links — which have always used
+//    open.html — worked fine. A Supabase CUSTOM domain is not sanitised.
+// 2. It decides what the card SAYS at the bottom. Per Apple's TN3156 that line
+//    is the domain, and no meta tag replaces it — og:site_name is "Laybell" and
+//    the card still printed the hostname. The subdomain is therefore the only
+//    lever, which is why this is `open.` and not the original `api.`: Spotify's
+//    cards read `open.spotify.com`, so Laybell's now read `open.laybell.app`.
+//
+// open.laybell.app: CNAME → wawpaokvtptfmuygjnns.supabase.co, ACME + ownership
+// TXT verified, SSL provisioned, activated 2026-07-29 (replacing api.laybell.app
+// the same day — Supabase allows one custom domain per project, so the old
+// hostname is gone and links shared before the swap are dead). Confirmed live on
+// activation that it returns `text/html; charset=utf-8` with no nosniff, and
+// that a song and a video post each unfurl with the right og:type and a
+// fetchable image.
 //
 // Set this back to null to fall back to the open.html smart link (the branded
 // generic Laybell card) — that is the only line that would need to change.
@@ -68,7 +77,7 @@ export function profileShareUrl(userId: string): string {
 // uses the wawpaokvtptfmuygjnns.supabase.co URL, and REST/storage/auth were
 // re-verified 200 there after activation. A custom domain adds a hostname, it
 // doesn't withdraw the original.
-export const SHARE_PAGE_CUSTOM_BASE: string | null = 'https://api.laybell.app/functions/v1/share-page';
+export const SHARE_PAGE_CUSTOM_BASE: string | null = 'https://open.laybell.app/functions/v1/share-page';
 
 export function postShareUrl(postId: string): string {
   return SHARE_PAGE_CUSTOM_BASE
