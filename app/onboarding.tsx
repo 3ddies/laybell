@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, FlatList, Image, ActivityIndicator,
-  Dimensions, TextInput, Keyboard, Modal, Pressable,
+  Dimensions, TextInput, Keyboard, Modal, Pressable, Alert,
 } from 'react-native';
 import { useState, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,6 +12,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { GENDER_OPTIONS, genderLabel, MIN_AGE, parseDob, ageFromDob, dobToISO } from '../lib/profileOptions';
 import { captureAndSaveLocation } from '../lib/location';
+import { setRegion, regionName } from '../lib/geoBlock';
+import RegionPicker from '../components/RegionPicker';
 import { requestContactsPermission, readContactHashes } from '../lib/contacts';
 import { saveOwnPhone, upsertOwnIdentifiers } from '../lib/identifiers';
 import { fetchSuggestedAccounts, reasonLabel } from '../lib/suggestions';
@@ -53,6 +55,9 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(0);
   const [langPickerOpen, setLangPickerOpen] = useState(false);
   const [gender, setGender] = useState<string | null>(null);
+  // US state. Laybell launches US-only, and a small number of states impose
+  // obligations a pre-revenue service can't meet — see lib/geoBlock.ts.
+  const [regionCode, setRegionCode] = useState<string | null>(null);
   // Parental consent for users aged 13–17 (captured in the About-you step).
   const [parentEmail, setParentEmail] = useState('');
   const [minorConsent, setMinorConsent] = useState(false);
@@ -107,7 +112,7 @@ export default function OnboardingScreen() {
 
   async function handleAboutContinue() {
     const dob = parseDob(dobYear, dobMonth, dobDay);
-    if (!gender || !dob) return;
+    if (!gender || !dob || !regionCode) return;
     const ageNum = ageFromDob(dob);
     if (ageNum < MIN_AGE || ageNum > 120) return;
     // Users 13–17 must supply a parent/guardian email + attest to consent before
@@ -115,6 +120,23 @@ export default function OnboardingScreen() {
     const isMinor = ageNum < 18;
     if (isMinor && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim()) || !minorConsent)) return;
     setSavingAbout(true);
+
+    // Region first, and stop here if it's blocked. The server decides — setRegion
+    // returns the verdict from the `blocked_regions` table, not from the app's
+    // copy of the list — so a stale build can't let someone through. Doing this
+    // before the gender/dob writes means a blocked account never accumulates
+    // profile data it shouldn't have.
+    const blocked = await setRegion(regionCode);
+    if (blocked) {
+      setSavingAbout(false);
+      await supabase.auth.signOut();
+      Alert.alert(
+        t('geoBlock.title'),
+        t('geoBlock.body', { region: regionName(regionCode) }),
+      );
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     // Save privately on the profile (no-ops gracefully if the columns aren't
     // migrated yet — the user still proceeds through onboarding). dob is written
@@ -355,7 +377,7 @@ export default function OnboardingScreen() {
     const ageNum = dob ? ageFromDob(dob) : NaN;
     const isMinor = Number.isFinite(ageNum) && ageNum >= MIN_AGE && ageNum < 18;
     const parentEmailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim());
-    const valid = !!gender && dob != null && ageNum >= MIN_AGE && ageNum <= 120
+    const valid = !!gender && !!regionCode && dob != null && ageNum >= MIN_AGE && ageNum <= 120
       && (!isMinor || (parentEmailOk && minorConsent));
     return (
       <View style={styles.container}>
@@ -385,6 +407,9 @@ export default function OnboardingScreen() {
               );
             })}
           </View>
+
+          <Text style={[styles.aboutLabel, { marginTop: SPACING.lg }]}>{t('onboarding.region')}</Text>
+          <RegionPicker value={regionCode} onChange={setRegionCode} />
 
           <Text style={[styles.aboutLabel, { marginTop: SPACING.lg }]}>{t('onboarding.dob')}</Text>
           <View style={styles.dobRow}>

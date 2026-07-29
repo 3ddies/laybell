@@ -352,6 +352,23 @@ export default function RootLayout() {
       return;
     }
 
+    // A region Laybell has decided not to operate in (see supabase/sql/geo_block.sql).
+    // Onboarding blocks and signs out the moment the state is chosen; this is the
+    // backstop for an account already stamped — one that signs in on another
+    // device, or that was stamped retroactively when a region was added.
+    //
+    // The stamp is what's checked, not the current list, so removing a region
+    // from `blocked_regions` doesn't silently readmit everyone. Lifting a block
+    // is deliberate: clear region_blocked_at.
+    if (profile && (profile as any).region_blocked_at) {
+      await supabase.auth.signOut();
+      Alert.alert(
+        tg('geoBlock.title'),
+        tg('geoBlock.body', { region: (profile as any).region_code ?? '' }),
+      );
+      return;
+    }
+
     if (profile && profile.onboarded === false) {
       router.replace('/onboarding');
     } else if (!silent) {

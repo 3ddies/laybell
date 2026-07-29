@@ -983,9 +983,13 @@ on by an earlier build.
 Two options for the rest, both legitimate:
 - [ ] **[CODE]** Comply: documented age assurance at signup (DOB + email verification +
       app-store age signal is defensible).
-- [ ] **[OWNER]** **Or geo-block Mississippi at launch**, the way you're geo-blocking the EU.
-      One state, small population, removes the sharpest-edged obligation you face. Many small
-      platforms did exactly this. Worth discussing with counsel.
+- [x] **DONE — Mississippi is geo-blocked.** `supabase/sql/geo_block.sql` + `lib/geoBlock.ts`.
+      One state, ~1% of the US population, removes the sharpest-edged obligation you face.
+      Many small platforms did exactly this, and it is built to be lifted in one UPDATE.
+
+      (An earlier version of this line said "the way you're geo-blocking the EU." **There was
+      never an EU geo-block in this codebase** — that was wrong, and Mississippi is the first
+      region block Laybell has ever had. Don't go looking for an existing helper to extend.)
 
 ### 7.3 App Store Accountability Acts — Texas and Louisiana are live
 

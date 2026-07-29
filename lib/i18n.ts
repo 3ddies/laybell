@@ -36,6 +36,11 @@ export function isLang(v: any): v is Lang {
 }
 
 const en: Record<string, string> = {
+  'geoBlock.title': 'Not available in your state yet',
+  'geoBlock.body': 'Laybell isn\'t available in {region} right now. New state rules require age-verification systems we\'re not able to offer yet. We hope to open up soon.',
+  'onboarding.region': 'State',
+  'onboarding.regionPlaceholder': 'Select your state',
+  'onboarding.regionSearch': 'Search states',
   'a11y.add': 'Add',
   'a11y.camera': 'Camera',
   'a11y.colour': 'Colour',
@@ -2257,6 +2262,11 @@ const en: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  'geoBlock.title': 'Aún no disponible en tu estado',
+  'geoBlock.body': 'Laybell no está disponible en {region} por ahora. Las nuevas normas estatales exigen sistemas de verificación de edad que todavía no podemos ofrecer. Esperamos abrir pronto.',
+  'onboarding.region': 'Estado',
+  'onboarding.regionPlaceholder': 'Selecciona tu estado',
+  'onboarding.regionSearch': 'Buscar estados',
   'a11y.add': 'Añadir',
   'a11y.back': 'Atrás',
   'a11y.camera': 'Cámara',
@@ -3943,6 +3953,11 @@ const es: Record<string, string> = {
 };
 
 const fr: Record<string, string> = {
+  'geoBlock.title': 'Pas encore disponible dans votre État',
+  'geoBlock.body': 'Laybell n\'est pas disponible en {region} pour le moment. De nouvelles règles imposent des systèmes de vérification d\'âge que nous ne pouvons pas encore proposer. Nous espérons ouvrir bientôt.',
+  'onboarding.region': 'État',
+  'onboarding.regionPlaceholder': 'Sélectionnez votre État',
+  'onboarding.regionSearch': 'Rechercher un État',
   'a11y.add': 'Ajouter',
   'a11y.back': 'Retour',
   'a11y.camera': 'Appareil photo',
@@ -5629,6 +5644,11 @@ const fr: Record<string, string> = {
 };
 
 const de: Record<string, string> = {
+  'geoBlock.title': 'In deinem Bundesstaat noch nicht verfügbar',
+  'geoBlock.body': 'Laybell ist derzeit in {region} nicht verfügbar. Neue Vorschriften verlangen Systeme zur Altersverifizierung, die wir noch nicht anbieten können. Wir hoffen, bald zu öffnen.',
+  'onboarding.region': 'Bundesstaat',
+  'onboarding.regionPlaceholder': 'Bundesstaat auswählen',
+  'onboarding.regionSearch': 'Bundesstaaten suchen',
   'a11y.add': 'Hinzufügen',
   'a11y.back': 'Zurück',
   'a11y.camera': 'Kamera',
@@ -7315,6 +7335,11 @@ const de: Record<string, string> = {
 };
 
 const pt: Record<string, string> = {
+  'geoBlock.title': 'Ainda não disponível no seu estado',
+  'geoBlock.body': 'O Laybell não está disponível em {region} no momento. Novas regras estaduais exigem sistemas de verificação de idade que ainda não podemos oferecer. Esperamos abrir em breve.',
+  'onboarding.region': 'Estado',
+  'onboarding.regionPlaceholder': 'Selecione seu estado',
+  'onboarding.regionSearch': 'Buscar estados',
   'a11y.add': 'Adicionar',
   'a11y.back': 'Voltar',
   'a11y.camera': 'Câmera',
@@ -9001,6 +9026,11 @@ const pt: Record<string, string> = {
 };
 
 const it: Record<string, string> = {
+  'geoBlock.title': 'Non ancora disponibile nel tuo stato',
+  'geoBlock.body': 'Laybell non è disponibile in {region} al momento. Nuove norme statali richiedono sistemi di verifica dell\'età che non possiamo ancora offrire. Speriamo di aprire presto.',
+  'onboarding.region': 'Stato',
+  'onboarding.regionPlaceholder': 'Seleziona il tuo stato',
+  'onboarding.regionSearch': 'Cerca stati',
   'a11y.add': 'Aggiungi',
   'a11y.back': 'Indietro',
   'a11y.camera': 'Fotocamera',
@@ -10687,6 +10717,11 @@ const it: Record<string, string> = {
 };
 
 const ru: Record<string, string> = {
+  'geoBlock.title': 'Пока недоступно в вашем штате',
+  'geoBlock.body': 'Laybell сейчас недоступен в {region}. Новые правила штата требуют систем проверки возраста, которые мы пока не можем предложить. Надеемся открыться скоро.',
+  'onboarding.region': 'Штат',
+  'onboarding.regionPlaceholder': 'Выберите штат',
+  'onboarding.regionSearch': 'Поиск штатов',
   'a11y.add': 'Добавить',
   'a11y.back': 'Назад',
   'a11y.camera': 'Камера',
@@ -12338,6 +12373,11 @@ const ru: Record<string, string> = {
 };
 
 const zh: Record<string, string> = {
+  'geoBlock.title': '您所在的州暂不支持',
+  'geoBlock.body': 'Laybell 目前在{region}不可用。当地新规要求年龄验证系统，我们暂时无法提供。希望不久后开放。',
+  'onboarding.region': '州',
+  'onboarding.regionPlaceholder': '选择您所在的州',
+  'onboarding.regionSearch': '搜索州',
   'a11y.add': '添加',
   'a11y.back': '返回',
   'a11y.camera': '相机',
@@ -13989,6 +14029,11 @@ const zh: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  'geoBlock.title': 'お住まいの州ではまだご利用いただけません',
+  'geoBlock.body': 'Laybellは現在{region}でご利用いただけません。新しい州法で求められる年齢確認の仕組みを、まだご用意できていません。近日中の開始を目指しています。',
+  'onboarding.region': '州',
+  'onboarding.regionPlaceholder': '州を選択',
+  'onboarding.regionSearch': '州を検索',
   'a11y.add': '追加',
   'a11y.back': '戻る',
   'a11y.camera': 'カメラ',
@@ -15640,6 +15685,11 @@ const ja: Record<string, string> = {
 };
 
 const hi: Record<string, string> = {
+  'geoBlock.title': 'आपके राज्य में अभी उपलब्ध नहीं',
+  'geoBlock.body': 'Laybell फ़िलहाल {region} में उपलब्ध नहीं है। नए राज्य नियमों के लिए आयु सत्यापन प्रणाली ज़रूरी है, जो हम अभी नहीं दे सकते। हमें जल्द खुलने की उम्मीद है।',
+  'onboarding.region': 'राज्य',
+  'onboarding.regionPlaceholder': 'अपना राज्य चुनें',
+  'onboarding.regionSearch': 'राज्य खोजें',
   'a11y.add': 'जोड़ें',
   'a11y.back': 'वापस',
   'a11y.camera': 'कैमरा',
