@@ -258,6 +258,13 @@ export default function NowPlaying() {
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [isSaved, setIsSaved] = useState(false);
+  // Gate + fade for the stat bar. False from the moment a DIFFERENT track
+  // renders (see the render-phase reset below `const pid`) until that track's
+  // own numbers arrive — the previous song's streams/likes/saved state must
+  // never be shown (or tappable) under the new song's title.
+  const [statsReady, setStatsReady] = useState(false);
+  const statsFade = useRef(new Animated.Value(0)).current;
+  const prevStatsPidRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (expanded) {
@@ -314,6 +321,16 @@ export default function NowPlaying() {
     collapse();
   }, [currentTrack, render, expanded]);
 
+  // Fade the stat bar in when a track's fresh values land. The bar is held at
+  // static opacity 0 while !statsReady (style below), so this only ever
+  // animates the reveal — there is no fade-out to race with a track change.
+  useEffect(() => {
+    if (statsReady) {
+      statsFade.setValue(0);
+      Animated.timing(statsFade, { toValue: 1, duration: 200, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
+    }
+  }, [statsReady]);
+
   // Load post stats + like state + comments for the current track (when open).
   useEffect(() => {
     const pid = currentTrack?.id;
@@ -349,6 +366,9 @@ export default function NowPlaying() {
       }
       setIsLiked(!!likeRes.data);
       setIsSaved(!!saveRes.data);
+      // Reveal (fade in) even when the post row came back empty — a fetch
+      // failure degrades to visible zeros, never to a permanently hidden bar.
+      setStatsReady(true);
     })();
     return () => { cancelled = true; };
   }, [currentTrack?.id, expanded]);
@@ -389,6 +409,24 @@ export default function NowPlaying() {
   const track = currentTrack ?? lastTrackRef.current;
   if (!render || !track) return null;
   const pid = track.id;
+  // Render-phase reset (repo convention, same as the FlashList recycling
+  // guards): the frame that first shows a NEW track's title must be the same
+  // frame the old track's stats disappear. An effect would run a commit late —
+  // one visible frame of "102k streams" under the new song, exactly the flash
+  // this exists to kill. React re-renders once before committing, so nothing
+  // stale ever paints. Runs after the early return, so track changes while the
+  // sheet is closed don't churn state.
+  if (prevStatsPidRef.current !== pid) {
+    prevStatsPidRef.current = pid;
+    setStatsReady(false);
+    setStreams(0); setSaves(0); setLikeCount(0);
+    setIsLiked(false); setIsSaved(false);
+    // Owner identity is per-track too: without this, tapping the artist name
+    // during the fetch window routed to the PREVIOUS song's artist. The row
+    // falls back to track.artist (queue metadata) and goProfile is disabled
+    // (`disabled={!ownerId}`) until the fresh row lands.
+    setOwnerId(null); setOwnerName(undefined); setOwnerBadge(null);
+  }
   // Opaque backdrop — no see-through (the earlier translucent stop looked glitchy
   // in Light mode). Dark themes keep the rich warm gradient; Light mode gets a
   // subtle, OPAQUE lift only at the very top that fades quickly to the solid page
@@ -556,8 +594,12 @@ export default function NowPlaying() {
             ListHeaderComponent={
               <>
                 <View style={styles.artWrap}>
+                  {/* Always-on transition (unlike the first-seen list fade):
+                      this view stays MOUNTED across track changes, so the fade
+                      fires exactly when the source swaps — a native
+                      cross-dissolve from the old cover to the new one. */}
                   {track.cover ? (
-                    <ExpoImage source={{ uri: track.cover }} style={styles.art} contentFit="cover" cachePolicy="memory-disk" />
+                    <ExpoImage source={{ uri: track.cover }} style={styles.art} contentFit="cover" cachePolicy="memory-disk" transition={250} />
                   ) : (
                     <LinearGradient colors={GRADIENTS.primary} style={styles.art}>
                       <Ionicons name="musical-notes" size={64} color={colors.text} />
@@ -586,8 +628,15 @@ export default function NowPlaying() {
                 <Progress />
                 <Controls />
 
-                {/* Like (tap) · Streams (display) · Saves (tap) */}
-                <View style={styles.statBar}>
+                {/* Like (tap) · Streams (display) · Saves (tap).
+                    Hidden (static 0, not the Animated value — the reset frame
+                    must not wait for an effect) until THIS track's numbers
+                    load, then faded in. pointerEvents gate: a hidden bar must
+                    not accept a like/save tap that would act on unknown state. */}
+                <Animated.View
+                  style={[styles.statBar, { opacity: statsReady ? statsFade : 0 }]}
+                  pointerEvents={statsReady ? 'auto' : 'none'}
+                >
                   <TouchableOpacity style={[styles.tapStat, isLiked && styles.tapStatActiveLike]} onPress={handleLike} activeOpacity={0.8}>
                     <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={26} color={isLiked ? colors.like : colors.text} />
                     <Text style={styles.tapStatNum}>{formatCount(likeCount)}</Text>
@@ -600,7 +649,7 @@ export default function NowPlaying() {
                     <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color={colors.text} />
                     <Text style={styles.tapStatNum}>{formatCount(saves)}</Text>
                   </TouchableOpacity>
-                </View>
+                </Animated.View>
 
                 {/* Laybell TV card — mirror of the music card in the TV remote.
                     Isolated component so its per-tick cast re-renders don't drag

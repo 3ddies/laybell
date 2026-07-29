@@ -261,7 +261,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           accessibilityLabel={t('a11y.openPlayer')}
         >
           {track.cover ? (
-            <ExpoImage source={{ uri: track.cover }} style={styles.compactCover} contentFit="cover" cachePolicy="memory-disk" />
+            <ExpoImage source={{ uri: track.cover }} style={styles.compactCover} contentFit="cover" cachePolicy="memory-disk" transition={200} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.compactCover}>
               <Ionicons name="musical-notes" size={13} color={colors.primary} />
@@ -311,7 +311,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           accessibilityLabel={t('a11y.openPlayer')}
         >
           {track.cover ? (
-            <ExpoImage source={{ uri: track.cover }} style={styles.compactCover} contentFit="cover" cachePolicy="memory-disk" />
+            <ExpoImage source={{ uri: track.cover }} style={styles.compactCover} contentFit="cover" cachePolicy="memory-disk" transition={200} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.compactCover}>
               <Ionicons name="musical-notes" size={13} color={colors.primary} />
@@ -390,8 +390,10 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           accessibilityRole="button"
           accessibilityLabel={t('a11y.openPlayer')}
         >
+          {/* transition: cross-dissolve when the track (and so the source)
+              changes under this mounted view — smooths song-to-song swaps. */}
           {track.cover ? (
-            <ExpoImage source={{ uri: track.cover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" />
+            <ExpoImage source={{ uri: track.cover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" transition={200} />
           ) : (
             <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
               <Ionicons name="musical-notes" size={16} color={colors.primary} />
