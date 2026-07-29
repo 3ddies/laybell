@@ -321,12 +321,14 @@ export default function NowPlaying() {
     collapse();
   }, [currentTrack, render, expanded]);
 
-  // Fade the stat bar in when a track's fresh values land. The bar is held at
+  // Fade the stat numbers in when a track's fresh values land. statsFade is
+  // zeroed BEFORE setStatsReady(true) (in the fetch effect) — zeroing here
+  // would be a commit late: the reveal render would paint one frame at the
+  // previous track's full opacity before this effect ran. Numbers are held at
   // static opacity 0 while !statsReady (style below), so this only ever
   // animates the reveal — there is no fade-out to race with a track change.
   useEffect(() => {
     if (statsReady) {
-      statsFade.setValue(0);
       Animated.timing(statsFade, { toValue: 1, duration: 200, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
     }
   }, [statsReady]);
@@ -367,7 +369,9 @@ export default function NowPlaying() {
       setIsLiked(!!likeRes.data);
       setIsSaved(!!saveRes.data);
       // Reveal (fade in) even when the post row came back empty — a fetch
-      // failure degrades to visible zeros, never to a permanently hidden bar.
+      // failure degrades to visible zeros, never to permanently hidden
+      // numbers. setValue(0) must precede the flip (see the fade effect).
+      statsFade.setValue(0);
       setStatsReady(true);
     })();
     return () => { cancelled = true; };
@@ -629,27 +633,28 @@ export default function NowPlaying() {
                 <Controls />
 
                 {/* Like (tap) · Streams (display) · Saves (tap).
-                    Hidden (static 0, not the Animated value — the reset frame
-                    must not wait for an effect) until THIS track's numbers
-                    load, then faded in. pointerEvents gate: a hidden bar must
-                    not accept a like/save tap that would act on unknown state. */}
-                <Animated.View
-                  style={[styles.statBar, { opacity: statsReady ? statsFade : 0 }]}
-                  pointerEvents={statsReady ? 'auto' : 'none'}
-                >
-                  <TouchableOpacity style={[styles.tapStat, isLiked && styles.tapStatActiveLike]} onPress={handleLike} activeOpacity={0.8}>
+                    The CHROME (heart/bookmark icons, pill shapes, the "Streams"
+                    label) is identical for every song, so it stays put across
+                    track changes — hiding it per track made the constant
+                    elements blink. Only the per-song DATA breathes: the three
+                    numbers hold at static 0 opacity from the reset frame (not
+                    the Animated value — that would wait a commit) and fade in
+                    together when THIS track's values land. Taps are disabled
+                    until then so like/save can't act on unknown state. */}
+                <View style={styles.statBar}>
+                  <TouchableOpacity disabled={!statsReady} style={[styles.tapStat, isLiked && styles.tapStatActiveLike]} onPress={handleLike} activeOpacity={0.8}>
                     <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={26} color={isLiked ? colors.like : colors.text} />
-                    <Text style={styles.tapStatNum}>{formatCount(likeCount)}</Text>
+                    <Animated.Text style={[styles.tapStatNum, { opacity: statsReady ? statsFade : 0 }]}>{formatCount(likeCount)}</Animated.Text>
                   </TouchableOpacity>
                   <View style={styles.centerStat}>
-                    <Text style={styles.centerStatNum}>{formatCount(streams)}</Text>
+                    <Animated.Text style={[styles.centerStatNum, { opacity: statsReady ? statsFade : 0 }]}>{formatCount(streams)}</Animated.Text>
                     <Text style={styles.centerStatLbl}>{t('nowPlaying.streams')}</Text>
                   </View>
-                  <TouchableOpacity style={[styles.tapStat, isSaved && styles.tapStatActiveSave]} onPress={handleSave} activeOpacity={0.8}>
+                  <TouchableOpacity disabled={!statsReady} style={[styles.tapStat, isSaved && styles.tapStatActiveSave]} onPress={handleSave} activeOpacity={0.8}>
                     <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color={colors.text} />
-                    <Text style={styles.tapStatNum}>{formatCount(saves)}</Text>
+                    <Animated.Text style={[styles.tapStatNum, { opacity: statsReady ? statsFade : 0 }]}>{formatCount(saves)}</Animated.Text>
                   </TouchableOpacity>
-                </Animated.View>
+                </View>
 
                 {/* Laybell TV card — mirror of the music card in the TV remote.
                     Isolated component so its per-tick cast re-renders don't drag

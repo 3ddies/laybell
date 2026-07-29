@@ -30,8 +30,22 @@ export function Marquee({ centered, children }: { centered?: boolean; children: 
   const [boxW, setBoxW] = useState(0);
   const [contentW, setContentW] = useState(0);
   const x = useRef(new Animated.Value(0)).current;
+  // Content is held INVISIBLE until both measurements land, then faded in at
+  // its final position. Without this, every fresh mount (= every song change,
+  // since the title is keyed) painted the first frames unmeasured: short
+  // titles appeared left-aligned then SNAPPED to center, and long titles
+  // wrapped to multiple lines then collapsed to the single marquee row —
+  // the sideways/vertical title lurch visible on song transitions.
+  const reveal = useRef(new Animated.Value(0)).current;
   const overflow = Math.max(0, contentW - boxW);
   const fits = boxW > 0 && overflow <= 2;
+  const measured = boxW > 0 && contentW > 0;
+
+  useEffect(() => {
+    if (measured) {
+      Animated.timing(reveal, { toValue: 1, duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+    }
+  }, [measured, reveal]);
 
   useEffect(() => {
     x.stopAnimation();
@@ -62,8 +76,16 @@ export function Marquee({ centered, children }: { centered?: boolean; children: 
         </View>
       </View>
       {/* Visible content, sized to its true width so it lays out on one line and
-          overflows the clip (scrolled by translateX). */}
-      <Animated.View style={[styles.row, contentW ? { width: contentW } : null, { transform: [{ translateX: x }] }]}>
+          overflows the clip (scrolled by translateX). Pre-measure it gets the
+          measurer's unbounded width — hidden anyway, but it keeps the row a
+          single line tall so the surrounding layout never jumps vertically. */}
+      <Animated.View
+        style={[
+          styles.row,
+          { width: contentW || MEASURE_W },
+          { transform: [{ translateX: x }], opacity: measured ? reveal : 0 },
+        ]}
+      >
         {children}
       </Animated.View>
     </View>
