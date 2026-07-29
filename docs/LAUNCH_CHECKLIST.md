@@ -93,6 +93,15 @@ caught by review, not by testing. Assume there are more.
    → **then** Small Business Program. Confirm the **Team ID didn't change** before running
    `scripts/set-store-ids.mjs`, because it is baked into the AASA file.
 
+   ⚠️ **This blocks the five money tests below, and it was not obvious until the first
+   build ran (2026-07-29).** While Paid Applications is not `Active`, App Store Connect
+   serves NO in-app purchase products to StoreKit, so RevenueCat fails at startup with
+   "None of the products registered in the RevenueCat dashboard could be fetched from
+   App Store Connect." Credits fund tips, shop and offers, so tests 5–8 are all gated on
+   an Apple agreement rather than on any code. Test 9 (Stripe) is not — do that one first.
+   The app degrades correctly meanwhile (`getCreditPacks()` returns `[]`), and the red
+   LogBox errors are dev-only.
+
 **Then the build, and the five tests that cover every money path:**
 
 5. Buy credits → ledger balance moves
