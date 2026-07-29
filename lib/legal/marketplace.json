@@ -1,11 +1,11 @@
 {
   "title": "Laybell Marketplace & Beat Licensing Terms",
-  "effective": "July 22, 2026",
+  "effective": "July 29, 2026",
   "sections": [
     {
       "heading": "1. What These Terms Cover and Who They Bind",
       "blocks": [
-        { "type": "p", "text": "Last Updated: July 22, 2026" },
+        { "type": "p", "text": "Last Updated: July 29, 2026" },
         { "type": "p", "text": "These Marketplace & Beat Licensing Terms (\"Marketplace Terms\") govern the Laybell Shop — the marketplace inside Laybell where users list, sell, lease, and claim digital music goods such as beats, songs, sample packs, presets, and creative services (\"Listings\"). They apply to every user who opens a shop, publishes a Listing, sends a purchase request or offer, claims a free item, or receives a delivered file." },
         { "type": "p", "text": "These Marketplace Terms are the separate written agreement contemplated by Section 7 of the Laybell Terms of Service. They supplement the Terms of Service and the Community Guidelines, which continue to apply. If these Marketplace Terms conflict with the Terms of Service on a marketplace-specific topic, these Marketplace Terms control for that topic; on everything else the Terms of Service control." },
         { "type": "p", "text": "PLEASE READ THESE TERMS CAREFULLY. By using the Shop as a buyer or a seller you agree to them. If you do not agree, do not use the Shop." }
@@ -25,11 +25,13 @@
       ]
     },
     {
-      "heading": "3. Laybell Is a Venue, Not a Party",
+      "heading": "3. How Payment Works and What Laybell Is Responsible For",
       "blocks": [
-        { "type": "p", "text": "Every sale, lease, claim, and offer is a deal directly between the Buyer and the Seller. Laybell provides the venue: Listings, purchase requests, delivery, file storage and unlocking, and messaging. Laybell is not a party to the transaction, does not take ownership of any Work, does not guarantee any Work's quality, legality, or fitness, and does not guarantee that a Buyer will pay or that a Seller will deliver." },
-        { "type": "p", "text": "Laybell does not process marketplace payments. Payment is arranged between Buyer and Seller (for example through the payment method they agree on in chat). Keep the whole deal on Laybell: use the in-app request, chat, and delivery flow so there is a record, prefer payment methods with buyer protection, and never pay by gift card or cryptocurrency. Report anything suspicious." },
-        { "type": "p", "text": "Platform fee. Laybell's platform fee is 15% of the sale price. The fee rate in effect when an order is placed is locked to that order and is not changed retroactively. Displayed tax estimates are added on top of the price for the Buyer's information and never reduce the Seller's earnings figure shown in the app." }
+        { "type": "p", "text": "The license in every sale, lease, claim, and offer is granted directly by the Seller to the Buyer. Laybell is not the author or owner of any Work, does not take ownership of any Work, and does not guarantee any Work's quality, legality, or fitness for your purpose. Laybell does, however, process the payment for the transaction, as described below." },
+        { "type": "p", "text": "Paying with credits. Marketplace purchases are paid for with Laybell credits. Credits are bought inside the app through Apple's or Google's in-app purchase system, and Apple or Google is the merchant of record for that purchase — they take their own store commission and handle any sales tax on it. When you buy, lease, or make an accepted Offer, Laybell debits the credits from your balance, credits the Seller's earnings balance, and unlocks the file. Neither party arranges payment privately, and you should never be asked to pay a Seller outside Laybell — report anyone who asks." },
+        { "type": "p", "text": "Credits are not money. Credits can be spent inside Laybell but are never redeemable for cash and cannot be transferred between users. Where these Terms refer to a refund, the Buyer's credits are returned to their Laybell balance, not paid out as cash." },
+        { "type": "p", "text": "Seller earnings and payouts. A Seller's share of a completed sale lands in their Laybell earnings balance, which is separate from credits and is withdrawable to the Seller's own bank account through our payments partner, subject to identity verification, a minimum payout amount, and a holding period before newly earned funds become available. Those thresholds are shown in the app and may change." },
+        { "type": "p", "text": "Platform fee. Laybell's platform fee is 30% of the sale price; the Seller receives the remaining 70%. This fee covers the app-store commission charged on the credit purchase, which Laybell pays out of the same amount. The fee rate in effect when an order is placed is locked to that order and is not changed retroactively, and the Seller's app shows the store's share on its own line. Free Claims carry no fee because no payment is made." }
       ]
     },
     {
@@ -47,8 +49,9 @@
       "heading": "5. How Buying Works",
       "blocks": [
         { "type": "p", "text": "A Listing can offer any combination of deal types, each with its own button and price: Lease, Buy (Exclusive Purchase), and Free. What you tap is what you get — the corresponding license in Sections 6-8." },
-        { "type": "bullet", "text": "Paid orders (Lease, Buy, accepted Offers): you send a request, arrange payment with the Seller, and the Seller delivers in the app. Your file unlocks at Delivery." },
-        { "type": "bullet", "text": "You may cancel your own request any time before Delivery. The Seller may decline a request for any reason before Delivery." },
+        { "type": "bullet", "text": "Lease and Buy: your credits are spent at the moment you purchase, and the file unlocks immediately. You need enough credits in your balance first; if you do not have them, the app will offer to sell you more." },
+        { "type": "bullet", "text": "Offers: when you send an Offer, the credits are held aside straight away. If the Seller accepts, they complete the purchase and the file unlocks. If the Seller declines, or you cancel before they respond, the held credits are returned to your balance in full." },
+        { "type": "bullet", "text": "You may cancel your own Offer any time before the Seller responds, and the Seller may decline for any reason. Either way your held credits come back in full." },
         { "type": "bullet", "text": "Free Claims deliver instantly and automatically once the unlock conditions are met — no Seller action is needed." },
         { "type": "bullet", "text": "Anti-abuse limits apply (for example a cap on purchase requests per day and a maximum listing price). These protect the marketplace and may change." },
         { "type": "bullet", "text": "Download promptly. Your access to a deliverable can end in the limited situations described in Section 9 (for example a refund). A delivered, non-refunded license continues to cover works you already created with the Work, but the file itself may not remain available forever — save your copy." }
@@ -93,8 +96,9 @@
     {
       "heading": "9. Refunds, Takedowns, and When Access Ends",
       "blocks": [
-        { "type": "p", "text": "Refunds. A Seller may refund a delivered order. A refund reverses the deal on Laybell: the order is marked refunded, the Buyer's download access ends, and the license granted by that order terminates for future use. The Seller is responsible for actually returning any payment received, through the method the parties used. Works the Buyer already created and released in good faith before the refund are not retroactively infringing, but no NEW uses of the Work may begin after the refund." },
-        { "type": "p", "text": "Takedown protection. A Listing that has delivered purchases cannot simply be removed. The only way to take such a Listing down is the refund-and-remove flow, which refunds every delivered Buyer first. This is enforced by the platform so a paid Buyer can never silently lose their deal while the Seller keeps the money." },
+        { "type": "p", "text": "Refunds. Because the file is delivered the instant a purchase completes, there is no buyer-initiated refund for a delivered order — treat a purchase as final and preview carefully before you buy. A Seller can still reverse a delivered order by taking the Listing down (below), and Laybell may issue a goodwill refund at its discretion, for example where a Listing turns out to be infringing or fraudulent." },
+        { "type": "p", "text": "When an order is refunded, Laybell returns the Buyer's credits to their balance in full and reverses both the Seller's share and Laybell's fee. The order is marked refunded, the Buyer's download access ends, and the license granted by that order terminates for future use. Works the Buyer already created and released in good faith before the refund are not retroactively infringing, but no NEW uses of the Work may begin after the refund." },
+        { "type": "p", "text": "Takedown protection. A Listing that has delivered purchases cannot simply be removed. The only way to take such a Listing down is the refund-and-remove flow, which refunds every delivered Buyer first. This is enforced by the platform so a paid Buyer can never silently lose their deal while the Seller keeps the money. A Seller who has already withdrawn those earnings cannot fund the refunds, and the takedown will fail — you cannot remove a Listing you can no longer refund." },
         { "type": "p", "text": "Access can end only in limited ways: your order is refunded; the Listing is taken down through refund-and-remove (which refunds you); the content is removed for legal or policy reasons (for example a valid DMCA claim — see the Terms of Service); or an account is deleted. Save local copies of your delivered files." }
       ]
     },
@@ -105,7 +109,7 @@
         { "type": "bullet", "text": "No misrepresenting deal types: do not sell as \"exclusive\" what you have already exclusively sold elsewhere, on or off Laybell, and do not keep exploiting a Work you exclusively sold." },
         { "type": "bullet", "text": "No bait-and-switch: the delivered file must be the promised Work at the promised quality." },
         { "type": "bullet", "text": "No fee circumvention: do not use the Shop to advertise deals you then move off Laybell specifically to avoid the platform fee." },
-        { "type": "bullet", "text": "No payment abuse: paying with fraudulent methods, reversing legitimate payments while keeping files, or demanding payment after a Free Claim are all prohibited." },
+        { "type": "bullet", "text": "No payment abuse: obtaining credits fraudulently, charging back a legitimate credit purchase while keeping delivered files, asking a Buyer to pay outside Laybell, or demanding payment after a Free Claim are all prohibited." },
         { "type": "bullet", "text": "No engagement gaming of Free-Claim conditions (Section 8)." },
         { "type": "bullet", "text": "No prohibited content: everything in the Terms of Service Acceptable Use Policy and the Community Guidelines applies to Listings, previews, cover art, and descriptions." },
         { "type": "p", "text": "Violations can lead to listing removal, shop closure, account suspension or termination, and — where purchases exist — the refund obligations of Section 9. Repeated or serious violations close shops and accounts." }
@@ -114,7 +118,7 @@
     {
       "heading": "11. Disputes Between Buyers and Sellers",
       "blocks": [
-        { "type": "p", "text": "Because Laybell is a venue (Section 3), disputes about payment, delivery quality, or license scope are between Buyer and Seller. Keep your deal on Laybell — the request, chat, and delivery records are your evidence. Laybell may, but is not obligated to, review reported transactions, remove Listings, restrict accounts, or preserve records for legitimate legal process." },
+        { "type": "p", "text": "Laybell processes the payment, but the license itself is granted by the Seller to the Buyer (Section 3), so disputes about delivery quality or license scope are between Buyer and Seller. Keep your deal on Laybell — the request, chat, and delivery records are your evidence. Laybell may, but is not obligated to, review reported transactions, issue a goodwill refund, remove Listings, restrict accounts, or preserve records for legitimate legal process." },
         { "type": "p", "text": "Report problems in-app (every listing has a Report option). Nothing in this section limits either party's rights against the other under applicable law, and nothing makes Laybell responsible for the other party's performance." },
         { "type": "p", "text": "Any dispute between you and LAYBELL about the Shop is governed by the Terms of Service, including its dispute-resolution, arbitration, governing-law, disclaimer, and limitation-of-liability sections." }
       ]
