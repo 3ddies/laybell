@@ -36,6 +36,10 @@ export function isLang(v: any): v is Lang {
 }
 
 const en: Record<string, string> = {
+  'spotlight.attachFailedTitle': 'Post published',
+  'spotlight.attachFailedBody': 'Your Spotlight couldn’t be attached to it just now. It’s still paid for and waiting in your Spotlights — you can apply it there.',
+  'adDetail.endedTitle': 'Campaign ended',
+  'adDetail.endedRefunded': '{amount} of unspent budget went back to your credits.',
   'adCreate.errBudgetMin': 'Campaigns start at {min}.',
   'adCreate.needCreditsTitle': 'Not enough credits',
   'adCreate.needCreditsBody': 'Your campaign is saved. Top up your credits and launch it from Ad Manager.',
@@ -2235,7 +2239,7 @@ const en: Record<string, string> = {
   'shop.marketplaceTerms': 'Marketplace & licensing terms',
   'shop.rightsNote': 'By publishing you confirm you own or control all rights to this content.',
   'shop.safetyTitle': 'How buying works',
-  'shop.safetyBody': 'You pay with credits and the file unlocks straight away — no waiting for the seller. Because the download is instant, paid purchases cannot be refunded. Check the preview first.',
+  'shop.safetyBody': 'Buying outright pays with credits and unlocks the file straight away — because the download is instant, those purchases can’t be refunded, so check the preview first. Making an offer holds your credits until the seller replies, and returns them in full if they decline.',
   'shop.safetyOk': 'Got it',
   'shop.report': 'Report listing',
   'shop.rateLimited': 'You’ve sent a lot of requests today — try again tomorrow.',
@@ -2269,7 +2273,7 @@ const en: Record<string, string> = {
   'shop.pickPostsDone': 'Done',
   'shop.pickPostsEmpty': 'No public posts yet.',
   'shop.refundRemoveTitle': 'Refund buyers & remove?',
-  'shop.refundRemoveMsg': 'This listing has purchases, so taking it down removes every buyer’s access to the file. Payment was arranged directly between you and them, so refunding is yours to settle. This can’t be undone.',
+  'shop.refundRemoveMsg': 'This listing has purchases. Taking it down refunds every buyer their credits and removes their access to the file. If your earnings no longer cover the refunds, the takedown won’t go through.',
   'shop.refundRemove': 'Refund & remove',
   'shop.hasPurchasesNote': 'This listing has purchases, so it can only be taken down by refunding every buyer.',
   'report.titleListing': 'Report listing',
@@ -2277,6 +2281,10 @@ const en: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  'spotlight.attachFailedTitle': 'Publicación creada',
+  'spotlight.attachFailedBody': 'No se pudo aplicar tu Spotlight ahora. Sigue pagado y te espera en tus Spotlights, donde puedes aplicarlo.',
+  'adDetail.endedTitle': 'Campaña finalizada',
+  'adDetail.endedRefunded': '{amount} de presupuesto no gastado volvió a tus créditos.',
   'adCreate.needCreditsBody': 'Tu campaña está guardada. Recarga créditos y lánzala desde el Ad Manager.',
   'adCreate.errBudgetMin': 'Las campañas empiezan en {min}.',
   'adCreate.needCreditsTitle': 'Créditos insuficientes',
@@ -2461,7 +2469,7 @@ const es: Record<string, string> = {
   'shop.marketplaceTerms': 'Términos del mercado y licencias',
   'shop.rightsNote': 'Al publicar confirmas que posees o controlas todos los derechos de este contenido.',
   'shop.safetyTitle': 'Cómo funciona la compra',
-  'shop.safetyBody': 'Pagas con créditos y el archivo se desbloquea al instante, sin esperar al vendedor. Como la descarga es inmediata, las compras pagadas no se pueden reembolsar. Revisa la vista previa antes.',
+  'shop.safetyBody': 'Comprar directamente se paga con créditos y desbloquea el archivo al instante: como la descarga es inmediata, esas compras no se reembolsan, así que revisa la vista previa. Hacer una oferta retiene tus créditos hasta que el vendedor responda y los devuelve íntegros si la rechaza.',
   'shop.safetyOk': 'Entendido',
   'shop.report': 'Reportar publicación',
   'shop.rateLimited': 'Has enviado muchas solicitudes hoy — inténtalo mañana.',
@@ -2495,7 +2503,7 @@ const es: Record<string, string> = {
   'shop.pickPostsDone': 'Listo',
   'shop.pickPostsEmpty': 'Aún no hay publicaciones públicas.',
   'shop.refundRemoveTitle': '¿Reembolsar y eliminar?',
-  'shop.refundRemoveMsg': 'Esta publicación tiene compras, así que retirarla quita a cada comprador el acceso al archivo. El pago se acordó directamente entre ustedes, así que el reembolso te corresponde a ti. No se puede deshacer.',
+  'shop.refundRemoveMsg': 'Este anuncio tiene compras. Al retirarlo se devuelven los créditos a cada comprador y pierden acceso al archivo. Si tus ganancias ya no cubren los reembolsos, la retirada no se completará.',
   'shop.refundRemove': 'Reembolsar y eliminar',
   'shop.hasPurchasesNote': 'Esta publicación tiene compras: solo puede retirarse reembolsando a todos los compradores.',
   'report.titleListing': 'Reportar publicación',
@@ -3983,6 +3991,10 @@ const es: Record<string, string> = {
 };
 
 const fr: Record<string, string> = {
+  'spotlight.attachFailedTitle': 'Publication en ligne',
+  'spotlight.attachFailedBody': 'Votre Spotlight n’a pas pu y être appliqué. Il reste payé et vous attend dans vos Spotlights, où vous pouvez l’appliquer.',
+  'adDetail.endedTitle': 'Campagne terminée',
+  'adDetail.endedRefunded': '{amount} de budget non dépensé est retourné dans vos crédits.',
   'adCreate.errBudgetMin': 'Les campagnes démarrent à {min}.',
   'adCreate.needCreditsTitle': 'Crédits insuffisants',
   'adCreate.needCreditsBody': 'Votre campagne est enregistrée. Rechargez vos crédits et lancez-la depuis l’Ad Manager.',
@@ -4167,7 +4179,7 @@ const fr: Record<string, string> = {
   'shop.marketplaceTerms': 'Conditions du marché et licences',
   'shop.rightsNote': 'En publiant, tu confirmes posséder ou contrôler tous les droits sur ce contenu.',
   'shop.safetyTitle': 'Comment fonctionne l\'achat',
-  'shop.safetyBody': 'Vous payez en crédits et le fichier se débloque immédiatement, sans attendre le vendeur. Le téléchargement étant instantané, les achats payants ne sont pas remboursables. Écoutez l\'aperçu d\'abord.',
+  'shop.safetyBody': 'L’achat direct se règle en crédits et débloque le fichier immédiatement — le téléchargement étant instantané, ces achats ne sont pas remboursables, écoutez donc l’aperçu. Une offre retient vos crédits jusqu’à la réponse du vendeur et vous les rend intégralement en cas de refus.',
   'shop.safetyOk': 'Compris',
   'shop.report': 'Signaler l’annonce',
   'shop.rateLimited': 'Tu as envoyé beaucoup de demandes aujourd’hui — réessaie demain.',
@@ -4201,7 +4213,7 @@ const fr: Record<string, string> = {
   'shop.pickPostsDone': 'Terminé',
   'shop.pickPostsEmpty': 'Pas encore de publication publique.',
   'shop.refundRemoveTitle': 'Rembourser et retirer ?',
-  'shop.refundRemoveMsg': 'Cette annonce a des achats : la retirer supprime l’accès au fichier pour chaque acheteur. Le paiement a été convenu directement entre vous, donc le remboursement vous revient. Irréversible.',
+  'shop.refundRemoveMsg': 'Cette annonce a des ventes. La retirer rembourse leurs crédits à tous les acheteurs et leur retire l’accès au fichier. Si vos gains ne couvrent plus les remboursements, le retrait échouera.',
   'shop.refundRemove': 'Rembourser et retirer',
   'shop.hasPurchasesNote': 'Cette annonce a des achats : elle ne peut être retirée qu’en remboursant tous les acheteurs.',
   'report.titleListing': 'Signaler l’annonce',
@@ -5689,6 +5701,10 @@ const fr: Record<string, string> = {
 };
 
 const de: Record<string, string> = {
+  'spotlight.attachFailedTitle': 'Beitrag veröffentlicht',
+  'spotlight.attachFailedBody': 'Dein Spotlight konnte gerade nicht zugewiesen werden. Es ist weiterhin bezahlt und wartet in deinen Spotlights.',
+  'adDetail.endedTitle': 'Kampagne beendet',
+  'adDetail.endedRefunded': '{amount} nicht ausgegebenes Budget ist zurück auf deinen Credits.',
   'adCreate.needCreditsBody': 'Deine Kampagne ist gespeichert. Lade Credits auf und starte sie im Ad Manager.',
   'adCreate.errBudgetMin': 'Kampagnen starten ab {min}.',
   'adCreate.needCreditsTitle': 'Nicht genug Credits',
@@ -5873,7 +5889,7 @@ const de: Record<string, string> = {
   'shop.marketplaceTerms': 'Marktplatz- & Lizenzbedingungen',
   'shop.rightsNote': 'Mit dem Veröffentlichen bestätigst du, dass du alle Rechte an diesem Inhalt besitzt oder kontrollierst.',
   'shop.safetyTitle': 'So funktioniert der Kauf',
-  'shop.safetyBody': 'Du zahlst mit Credits und die Datei wird sofort freigeschaltet — ohne auf den Verkäufer zu warten. Da der Download sofort erfolgt, sind bezahlte Käufe nicht erstattungsfähig. Hör dir vorher die Vorschau an.',
+  'shop.safetyBody': 'Ein Direktkauf wird mit Credits bezahlt und schaltet die Datei sofort frei — weil der Download sofort erfolgt, sind diese Käufe nicht erstattungsfähig, hör dir also vorher die Vorschau an. Ein Angebot hält deine Credits zurück, bis der Verkäufer antwortet, und erstattet sie bei Ablehnung vollständig.',
   'shop.safetyOk': 'Verstanden',
   'shop.report': 'Angebot melden',
   'shop.rateLimited': 'Du hast heute viele Anfragen gesendet — versuch es morgen wieder.',
@@ -5907,7 +5923,7 @@ const de: Record<string, string> = {
   'shop.pickPostsDone': 'Fertig',
   'shop.pickPostsEmpty': 'Noch keine öffentlichen Beiträge.',
   'shop.refundRemoveTitle': 'Erstatten & entfernen?',
-  'shop.refundRemoveMsg': 'Dieses Inserat hat Käufe — es zu entfernen nimmt jedem Käufer den Zugriff auf die Datei. Die Zahlung wurde direkt zwischen euch vereinbart, die Erstattung liegt also bei dir. Das lässt sich nicht rückgängig machen.',
+  'shop.refundRemoveMsg': 'Dieses Angebot hat Käufe. Es zu entfernen erstattet allen Käufern ihre Credits und entzieht ihnen den Zugriff auf die Datei. Decken deine Einnahmen die Erstattungen nicht mehr, schlägt die Entfernung fehl.',
   'shop.refundRemove': 'Erstatten & entfernen',
   'shop.hasPurchasesNote': 'Dieses Inserat hat Käufe — es kann nur entfernt werden, wenn alle Käufer erstattet werden.',
   'report.titleListing': 'Angebot melden',
@@ -7395,6 +7411,10 @@ const de: Record<string, string> = {
 };
 
 const pt: Record<string, string> = {
+  'spotlight.attachFailedTitle': 'Publicação criada',
+  'spotlight.attachFailedBody': 'Não foi possível aplicar seu Spotlight agora. Ele continua pago e está nos seus Spotlights, onde você pode aplicá-lo.',
+  'adDetail.endedTitle': 'Campanha encerrada',
+  'adDetail.endedRefunded': '{amount} de orçamento não gasto voltou para seus créditos.',
   'adCreate.errBudgetMin': 'As campanhas começam em {min}.',
   'adCreate.needCreditsTitle': 'Créditos insuficientes',
   'adCreate.needCreditsBody': 'Sua campanha foi salva. Recarregue créditos e lance pelo Ad Manager.',
@@ -7579,7 +7599,7 @@ const pt: Record<string, string> = {
   'shop.marketplaceTerms': 'Termos do mercado e licenças',
   'shop.rightsNote': 'Ao publicar, você confirma que possui ou controla todos os direitos deste conteúdo.',
   'shop.safetyTitle': 'Como funciona a compra',
-  'shop.safetyBody': 'Você paga com créditos e o arquivo é liberado na hora, sem esperar pelo vendedor. Como o download é instantâneo, compras pagas não podem ser reembolsadas. Ouça a prévia antes.',
+  'shop.safetyBody': 'A compra direta é paga com créditos e libera o arquivo na hora — como o download é instantâneo, essas compras não são reembolsáveis, então ouça a prévia. Fazer uma oferta retém seus créditos até o vendedor responder e devolve tudo se ele recusar.',
   'shop.safetyOk': 'Entendi',
   'shop.report': 'Denunciar anúncio',
   'shop.rateLimited': 'Você enviou muitas solicitações hoje — tente de novo amanhã.',
@@ -7613,7 +7633,7 @@ const pt: Record<string, string> = {
   'shop.pickPostsDone': 'Concluir',
   'shop.pickPostsEmpty': 'Ainda não há publicações públicas.',
   'shop.refundRemoveTitle': 'Reembolsar e remover?',
-  'shop.refundRemoveMsg': 'Este anúncio tem compras: removê-lo tira o acesso ao arquivo de cada comprador. O pagamento foi combinado diretamente entre vocês, então o reembolso é você quem resolve. Não dá para desfazer.',
+  'shop.refundRemoveMsg': 'Este anúncio tem compras. Removê-lo devolve os créditos a cada comprador e tira o acesso ao arquivo. Se seus ganhos não cobrirem mais os reembolsos, a remoção não será concluída.',
   'shop.refundRemove': 'Reembolsar e remover',
   'shop.hasPurchasesNote': 'Este anúncio tem compras — só pode ser removido reembolsando todos os compradores.',
   'report.titleListing': 'Denunciar anúncio',
@@ -9101,6 +9121,10 @@ const pt: Record<string, string> = {
 };
 
 const it: Record<string, string> = {
+  'spotlight.attachFailedTitle': 'Post pubblicato',
+  'spotlight.attachFailedBody': 'Non è stato possibile applicare il tuo Spotlight. Resta pagato e ti aspetta nei tuoi Spotlight, dove puoi usarlo.',
+  'adDetail.endedTitle': 'Campagna terminata',
+  'adDetail.endedRefunded': '{amount} di budget non speso è tornato nei tuoi crediti.',
   'adCreate.errBudgetMin': 'Le campagne partono da {min}.',
   'adCreate.needCreditsTitle': 'Crediti insufficienti',
   'adCreate.needCreditsBody': 'La tua campagna è salvata. Ricarica i crediti e avviala dall’Ad Manager.',
@@ -9285,7 +9309,7 @@ const it: Record<string, string> = {
   'shop.marketplaceTerms': 'Termini del marketplace e licenze',
   'shop.rightsNote': 'Pubblicando confermi di possedere o controllare tutti i diritti su questo contenuto.',
   'shop.safetyTitle': 'Come funziona l’acquisto',
-  'shop.safetyBody': 'Paghi con i crediti e il file si sblocca subito, senza attendere il venditore. Poiché il download è immediato, gli acquisti a pagamento non sono rimborsabili. Ascolta prima l’anteprima.',
+  'shop.safetyBody': 'L’acquisto diretto si paga con i crediti e sblocca subito il file: poiché il download è immediato, questi acquisti non sono rimborsabili, quindi ascolta prima l’anteprima. Un’offerta blocca i tuoi crediti finché il venditore non risponde e li restituisce per intero se rifiuta.',
   'shop.safetyOk': 'Capito',
   'shop.report': 'Segnala annuncio',
   'shop.rateLimited': 'Hai inviato molte richieste oggi — riprova domani.',
@@ -9319,7 +9343,7 @@ const it: Record<string, string> = {
   'shop.pickPostsDone': 'Fatto',
   'shop.pickPostsEmpty': 'Ancora nessun post pubblico.',
   'shop.refundRemoveTitle': 'Rimborsare e rimuovere?',
-  'shop.refundRemoveMsg': 'Questo annuncio ha acquisti: rimuoverlo toglie a ogni acquirente l’accesso al file. Il pagamento è stato concordato direttamente tra voi, quindi il rimborso spetta a te. Irreversibile.',
+  'shop.refundRemoveMsg': 'Questo annuncio ha vendite. Rimuoverlo rimborsa i crediti a ogni acquirente e revoca l’accesso al file. Se i tuoi guadagni non coprono più i rimborsi, la rimozione non andrà a buon fine.',
   'shop.refundRemove': 'Rimborsa e rimuovi',
   'shop.hasPurchasesNote': 'Questo annuncio ha acquisti — può essere rimosso solo rimborsando tutti gli acquirenti.',
   'report.titleListing': 'Segnala annuncio',
@@ -10807,6 +10831,10 @@ const it: Record<string, string> = {
 };
 
 const ru: Record<string, string> = {
+  'spotlight.attachFailedTitle': 'Пост опубликован',
+  'spotlight.attachFailedBody': 'Spotlight не удалось применить к посту. Он оплачен и ждёт в разделе Spotlight — примените его там.',
+  'adDetail.endedTitle': 'Кампания завершена',
+  'adDetail.endedRefunded': 'Неизрасходованный бюджет {amount} вернулся на ваши кредиты.',
   'adCreate.errBudgetMin': 'Минимальный бюджет кампании — {min}.',
   'adCreate.needCreditsTitle': 'Недостаточно кредитов',
   'adCreate.needCreditsBody': 'Кампания сохранена. Пополните кредиты и запустите её в Ad Manager.',
@@ -10991,7 +11019,7 @@ const ru: Record<string, string> = {
   'shop.marketplaceTerms': 'Условия маркетплейса и лицензий',
   'shop.rightsNote': 'Публикуя, вы подтверждаете, что владеете всеми правами на этот контент или контролируете их.',
   'shop.safetyTitle': 'Как проходит покупка',
-  'shop.safetyBody': 'Вы платите кредитами, и файл открывается сразу — ждать продавца не нужно. Так как загрузка мгновенная, платные покупки не подлежат возврату. Сначала послушайте превью.',
+  'shop.safetyBody': 'Прямая покупка оплачивается кредитами и сразу открывает файл — так как загрузка мгновенная, такие покупки не возвращаются, поэтому сначала послушайте превью. Предложение удерживает кредиты до ответа продавца и полностью возвращает их при отказе.',
   'shop.safetyOk': 'Понятно',
   'shop.report': 'Пожаловаться на объявление',
   'shop.rateLimited': 'Сегодня вы отправили много запросов — попробуйте завтра.',
@@ -11025,7 +11053,7 @@ const ru: Record<string, string> = {
   'shop.pickPostsDone': 'Готово',
   'shop.pickPostsEmpty': 'Публичных постов пока нет.',
   'shop.refundRemoveTitle': 'Вернуть деньги и удалить?',
-  'shop.refundRemoveMsg': 'У этого объявления есть покупки: снятие лишит каждого покупателя доступа к файлу. Оплата была согласована напрямую между вами, поэтому возврат — на вас. Это нельзя отменить.',
+  'shop.refundRemoveMsg': 'У этого товара есть покупки. Снятие вернёт кредиты каждому покупателю и закроет им доступ к файлу. Если дохода не хватит на возвраты, снять товар не получится.',
   'shop.refundRemove': 'Вернуть и удалить',
   'shop.hasPurchasesNote': 'У объявления есть покупки — снять его можно, только вернув деньги всем покупателям.',
   'report.titleListing': 'Пожаловаться на объявление',
@@ -12478,6 +12506,10 @@ const ru: Record<string, string> = {
 };
 
 const zh: Record<string, string> = {
+  'spotlight.attachFailedTitle': '帖子已发布',
+  'spotlight.attachFailedBody': '暂时无法为该帖子应用 Spotlight。它已付款并保留在你的 Spotlight 中，可在那里使用。',
+  'adDetail.endedTitle': '广告已结束',
+  'adDetail.endedRefunded': '{amount} 未花完的预算已退回你的积分。',
   'adCreate.errBudgetMin': '广告最低预算为 {min}。',
   'adCreate.needCreditsTitle': '积分不足',
   'adCreate.needCreditsBody': '广告已保存。充值积分后可在广告管理中启动。',
@@ -12662,7 +12694,7 @@ const zh: Record<string, string> = {
   'shop.marketplaceTerms': '市场与授权条款',
   'shop.rightsNote': '发布即表示你确认拥有或掌控此内容的全部版权。',
   'shop.safetyTitle': '购买方式',
-  'shop.safetyBody': '使用积分付款后文件立即解锁，无需等待卖家。由于可即时下载，付费购买不支持退款，请先试听。',
+  'shop.safetyBody': '直接购买使用积分支付并立即解锁文件——由于可即时下载，此类购买不支持退款，请先试听。发出报价会冻结积分直到卖家回复，若被拒绝将全额退还。',
   'shop.safetyOk': '知道了',
   'shop.report': '举报商品',
   'shop.rateLimited': '你今天发送的请求过多——请明天再试。',
@@ -12696,7 +12728,7 @@ const zh: Record<string, string> = {
   'shop.pickPostsDone': '完成',
   'shop.pickPostsEmpty': '还没有公开帖子。',
   'shop.refundRemoveTitle': '退款并下架？',
-  'shop.refundRemoveMsg': '该商品已有购买记录：下架会使每位买家失去文件访问权限。付款是你与买家直接商定的，因此退款需由你自行处理。此操作无法撤销。',
+  'shop.refundRemoveMsg': '该商品已有成交。下架将向每位买家退还积分并收回文件访问权限。若你的收入已不足以退款，下架将无法完成。',
   'shop.refundRemove': '退款并下架',
   'shop.hasPurchasesNote': '该商品已有购买记录——只有向所有买家退款后才能下架。',
   'report.titleListing': '举报商品',
@@ -14149,6 +14181,10 @@ const zh: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  'spotlight.attachFailedTitle': '投稿しました',
+  'spotlight.attachFailedBody': 'この投稿にSpotlightを適用できませんでした。支払い済みのままSpotlight一覧に残っているので、そこから適用できます。',
+  'adDetail.endedTitle': 'キャンペーンを終了しました',
+  'adDetail.endedRefunded': '未使用の予算{amount}をクレジットに返金しました。',
   'adCreate.errBudgetMin': 'キャンペーンは{min}からです。',
   'adCreate.needCreditsTitle': 'クレジットが不足しています',
   'adCreate.needCreditsBody': 'キャンペーンは保存されました。クレジットをチャージしてAd Managerから開始してください。',
@@ -14333,7 +14369,7 @@ const ja: Record<string, string> = {
   'shop.marketplaceTerms': 'マーケットとライセンスの規約',
   'shop.rightsNote': '公開することで、このコンテンツのすべての権利を所有または管理していることを確認したことになります。',
   'shop.safetyTitle': 'ご購入の流れ',
-  'shop.safetyBody': 'クレジットで支払うとファイルはすぐに解放され、出品者を待つ必要はありません。即時ダウンロードのため、有料購入は返金できません。先にプレビューをご確認ください。',
+  'shop.safetyBody': '直接購入はクレジットで支払い、ファイルはすぐ解放されます。即時ダウンロードのため返金はできませんので、先にプレビューをご確認ください。オファーは出品者が応じるまでクレジットを保留し、断られた場合は全額返金されます。',
   'shop.safetyOk': 'わかりました',
   'shop.report': '出品を通報',
   'shop.rateLimited': '今日は多くのリクエストを送信しました。明日もう一度お試しください。',
@@ -14367,7 +14403,7 @@ const ja: Record<string, string> = {
   'shop.pickPostsDone': '完了',
   'shop.pickPostsEmpty': '公開投稿はまだありません。',
   'shop.refundRemoveTitle': '返金して削除しますか？',
-  'shop.refundRemoveMsg': 'この出品には購入があります。取り下げると全購入者がファイルにアクセスできなくなります。支払いは当事者間で直接取り決めたものなので、返金はあなたが対応してください。元に戻せません。',
+  'shop.refundRemoveMsg': 'この出品には購入があります。取り下げると各購入者にクレジットを返金し、ファイルへのアクセスも取り消されます。収益が返金額に足りない場合、取り下げは完了しません。',
   'shop.refundRemove': '返金して削除',
   'shop.hasPurchasesNote': 'この出品には購入があるため、全員に返金しない限り取り下げられません。',
   'report.titleListing': '出品を通報',
@@ -15820,6 +15856,10 @@ const ja: Record<string, string> = {
 };
 
 const hi: Record<string, string> = {
+  'spotlight.attachFailedTitle': 'पोस्ट प्रकाशित',
+  'spotlight.attachFailedBody': 'अभी इस पोस्ट पर Spotlight लागू नहीं हो सका। यह भुगतान किया हुआ है और आपके Spotlights में मौजूद है — वहाँ से लगा सकते हैं।',
+  'adDetail.endedTitle': 'कैंपेन समाप्त',
+  'adDetail.endedRefunded': '{amount} का अनखर्च बजट आपके क्रेडिट में वापस आ गया।',
   'adCreate.errBudgetMin': 'कैंपेन {min} से शुरू होते हैं।',
   'adCreate.needCreditsTitle': 'क्रेडिट पर्याप्त नहीं',
   'adCreate.needCreditsBody': 'आपका कैंपेन सेव है। क्रेडिट टॉप-अप करके Ad Manager से लॉन्च करें।',
@@ -16004,7 +16044,7 @@ const hi: Record<string, string> = {
   'shop.marketplaceTerms': 'मार्केटप्लेस और लाइसेंस शर्तें',
   'shop.rightsNote': 'प्रकाशित करके आप पुष्टि करते हैं कि इस कॉन्टेंट के सभी अधिकार आपके पास हैं या आपके नियंत्रण में हैं।',
   'shop.safetyTitle': 'खरीदारी कैसे होती है',
-  'shop.safetyBody': 'आप क्रेडिट से भुगतान करते हैं और फ़ाइल तुरंत अनलॉक हो जाती है — विक्रेता का इंतज़ार नहीं। डाउनलोड तुरंत होने के कारण, सशुल्क खरीद वापस नहीं की जा सकती। पहले प्रीव्यू देखें।',
+  'shop.safetyBody': 'सीधी खरीद क्रेडिट से होती है और फ़ाइल तुरंत अनलॉक हो जाती है — तुरंत डाउनलोड के कारण इनका रिफ़ंड नहीं होता, इसलिए पहले प्रीव्यू देखें। ऑफ़र देने पर आपके क्रेडिट विक्रेता के जवाब तक रुकते हैं और अस्वीकार होने पर पूरे वापस मिल जाते हैं।',
   'shop.safetyOk': 'समझ गया',
   'shop.report': 'लिस्टिंग रिपोर्ट करें',
   'shop.rateLimited': 'आज आपने बहुत सारे अनुरोध भेजे हैं — कल फिर कोशिश करें।',
@@ -16038,7 +16078,7 @@ const hi: Record<string, string> = {
   'shop.pickPostsDone': 'हो गया',
   'shop.pickPostsEmpty': 'अभी कोई सार्वजनिक पोस्ट नहीं।',
   'shop.refundRemoveTitle': 'रिफ़ंड कर हटाएँ?',
-  'shop.refundRemoveMsg': 'इस लिस्टिंग की खरीदारियाँ हैं: हटाने पर हर खरीदार की फ़ाइल तक पहुँच चली जाएगी। भुगतान आपके और खरीदार के बीच सीधे तय हुआ था, इसलिए रिफ़ंड आपको ही करना होगा। इसे पलटा नहीं जा सकता।',
+  'shop.refundRemoveMsg': 'इस लिस्टिंग पर खरीद हुई है। हटाने पर हर खरीदार को क्रेडिट वापस मिलेंगे और फ़ाइल तक पहुँच खत्म हो जाएगी। यदि आपकी कमाई रिफ़ंड के लिए पर्याप्त नहीं है, तो यह पूरा नहीं होगा।',
   'shop.refundRemove': 'रिफ़ंड कर हटाएँ',
   'shop.hasPurchasesNote': 'इस लिस्टिंग की खरीदारियाँ हैं — सभी खरीदारों को रिफ़ंड करके ही इसे हटाया जा सकता है।',
   'report.titleListing': 'लिस्टिंग रिपोर्ट करें',

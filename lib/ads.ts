@@ -1010,12 +1010,17 @@ export async function resumeAdCampaign(id: string): Promise<boolean> {
  * With real credits that sentence would have been false about money, so it is
  * now true instead.
  */
-export async function endAdCampaign(id: string): Promise<boolean> {
+export async function endAdCampaign(id: string): Promise<{ ok: boolean; refundedCents: number }> {
   try {
-    const { error } = await supabase.rpc('ad_campaign_end', { p_campaign_id: id });
-    return !error;
+    // The RPC returns the refunded amount. Discarding it meant the screen
+    // confirmed "whatever you haven't spent goes back to your credits" without
+    // ever showing how much — and reported success even when the RPC returned 0
+    // because the campaign wasn't endable.
+    const { data, error } = await supabase.rpc('ad_campaign_end', { p_campaign_id: id });
+    if (error) return { ok: false, refundedCents: 0 };
+    return { ok: true, refundedCents: Number(data ?? 0) };
   } catch {
-    return false;
+    return { ok: false, refundedCents: 0 };
   }
 }
 

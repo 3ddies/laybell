@@ -75,13 +75,25 @@ export default function AdManagerScreen() {
     else Alert.alert(t('adManager.errorTitle'), failMsg);
   }
 
+  // Separate from doAction because ending returns money — see the detail screen.
+  async function doEnd(id: string) {
+    setBusyId(id);
+    const res = await endAdCampaign(id);
+    setBusyId(null);
+    if (!res.ok) { Alert.alert(t('adManager.errorTitle'), t('adManager.errEnd')); return; }
+    load();
+    if (res.refundedCents > 0) {
+      Alert.alert(t('adDetail.endedTitle'), t('adDetail.endedRefunded', { amount: fmtPrice(res.refundedCents) }));
+    }
+  }
+
   function confirmEnd(c: AdCampaign) {
     Alert.alert(
       t('adManager.endTitle'),
       t('adManager.endBody'),
       [
         { text: t('adManager.keepRunning'), style: 'cancel' },
-        { text: t('adManager.endConfirm'), style: 'destructive', onPress: () => doAction(c.id, endAdCampaign, t('adManager.errEnd')) },
+        { text: t('adManager.endConfirm'), style: 'destructive', onPress: () => doEnd(c.id) },
       ],
     );
   }

@@ -1105,7 +1105,15 @@ export default function PostScreen() {
       const ps = peekPendingSpotlight();
       if (ps && newPost?.id) {
         const ok = await activateCampaign(ps.campaignId, newPost.id, ps.days);
-        if (ok) spotLabel = ps.label;
+        if (ok) {
+          spotLabel = ps.label;
+        } else {
+          // The post published but the Spotlight didn't attach. The campaign is
+          // paid for and still sitting in the user's Spotlights — say so, rather
+          // than clearing the handoff silently and leaving them to wonder why
+          // the post they paid to promote isn't promoted.
+          Alert.alert(t('spotlight.attachFailedTitle'), t('spotlight.attachFailedBody'));
+        }
         clearPendingSpotlight();
         setPendingSpotBanner(null);
       }

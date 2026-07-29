@@ -63,10 +63,25 @@ export default function AdDetailScreen() {
     else Alert.alert(t('adDetail.errorTitle'), failMsg);
   }
 
+  // Ending has its own handler because it returns money. The confirm dialog
+  // promises the unspent budget comes back; the advertiser should be told how
+  // much did, rather than being asked to go and check their balance.
+  async function doEnd() {
+    if (!id) return;
+    setBusy(true);
+    const res = await endAdCampaign(id);
+    setBusy(false);
+    if (!res.ok) { Alert.alert(t('adDetail.errorTitle'), t('adDetail.endFailed')); return; }
+    load();
+    if (res.refundedCents > 0) {
+      Alert.alert(t('adDetail.endedTitle'), t('adDetail.endedRefunded', { amount: fmtPrice(res.refundedCents) }));
+    }
+  }
+
   function confirmEnd() {
     Alert.alert(t('adDetail.endConfirmTitle'), t('adDetail.endConfirmBody'), [
       { text: t('adDetail.keepRunning'), style: 'cancel' },
-      { text: t('adDetail.endCampaign'), style: 'destructive', onPress: () => doAction(endAdCampaign, t('adDetail.endFailed')) },
+      { text: t('adDetail.endCampaign'), style: 'destructive', onPress: doEnd },
     ]);
   }
 
