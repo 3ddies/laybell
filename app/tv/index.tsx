@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Image, RefreshControl, Dimensions, Platform,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Image, RefreshControl, Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -228,14 +228,17 @@ export default function LaybellTVScreen() {
             <Text style={styles.headerTitle}>{t('tv.title')}</Text>
           </View>
           <View style={styles.headerRight}>
-            {/* The SAME live button as the Home header (tv glyph + red LIVE
-                disc) → the live feed. All connect affordances live in the
-                "Watch on TV" banner below — one obvious way in, no icon soup. */}
-            <TouchableOpacity style={styles.liveBtn} onPress={() => confirmLeaveListen(() => router.push('/live'))} activeOpacity={0.7}>
-              <Ionicons name="tv-outline" size={30} color={colors.text} />
-              <View style={styles.liveDisc}>
-                <Text style={styles.liveDiscText}>LIVE</Text>
-              </View>
+            {/* Search lives here, in the header, rather than beside the tabs —
+                it acts on the whole screen, not on one tab. The live button
+                that used to sit here is redundant: the Home header carries the
+                same one, and this screen is already reached from it. */}
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={t('tv.searchPlaceholder')}
+              style={[styles.searchCircle, searchOpen && styles.searchCircleActive]}
+              onPress={() => { setSearchOpen((v) => !v); if (searchOpen) setQuery(''); }}
+            >
+              <Ionicons name={searchOpen ? 'close' : 'search'} size={18} color={searchOpen ? colors.primary : colors.text} />
             </TouchableOpacity>
           </View>
         </View>
@@ -270,22 +273,7 @@ export default function LaybellTVScreen() {
           )}
         </TouchableOpacity>
 
-        {/* AirPlay to Apple TV — a SEPARATE, dedicated path (iOS only). The phone
-            plays Laybell TV and iOS routes it to the TV, following the phone's
-            algorithm + autoplay. Kept apart from the Chromecast wizard above. */}
-        {Platform.OS === 'ios' && (
-          <TouchableOpacity
-            onPress={() => confirmLeaveListen(() => router.push('/tv/airplay'))}
-            activeOpacity={0.85}
-            style={styles.airplayEntry}
-          >
-            <Ionicons name="tv-outline" size={17} color={colors.primary} />
-            <Text style={styles.airplayEntryText}>{t('tv.airplay.entry')}</Text>
-            <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />
-          </TouchableOpacity>
-        )}
-
-        {/* Segmented tabs + search circle */}
+        {/* Segmented tabs. Search moved up into the header. */}
         <View style={styles.tabRow}>
           <View style={styles.segment}>
             {(['videos', 'lives'] as Tab[]).map((k) => (
@@ -298,12 +286,6 @@ export default function LaybellTVScreen() {
               </TouchableOpacity>
             ))}
           </View>
-          <TouchableOpacity
-            style={[styles.searchCircle, searchOpen && styles.searchCircleActive]}
-            onPress={() => { setSearchOpen((v) => !v); if (searchOpen) setQuery(''); }}
-          >
-            <Ionicons name={searchOpen ? 'close' : 'search'} size={18} color={searchOpen ? colors.primary : colors.text} />
-          </TouchableOpacity>
         </View>
 
         {searchOpen && (
@@ -443,14 +425,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 6 },
-  // Mirrors the Home header's live button (tv glyph + red LIVE disc on its screen).
-  liveBtn: { position: 'relative', padding: 2, marginTop: 2 },
-  liveDisc: {
-    position: 'absolute',
-    top: 7, left: 8.5, width: 17, height: 17, borderRadius: 8.5,
-    backgroundColor: '#F43F5E', alignItems: 'center', justifyContent: 'center',
-  },
-  liveDiscText: { color: '#fff', fontSize: 5.5, fontWeight: '800', letterSpacing: 0.2 },
   titleWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   headerTitle: { color: c.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
   tvBannerWrap: { marginHorizontal: SPACING.md, marginTop: 6 },
@@ -461,13 +435,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   tvBannerText: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: -0.1 },
   tvBannerConnected: { backgroundColor: c.success },
   tvBannerConnectedText: { flex: 1, color: '#fff', fontSize: 13.5, fontWeight: '700' },
-  airplayEntry: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: SPACING.md, marginTop: 8,
-    borderRadius: RADIUS.full, paddingVertical: 10, paddingHorizontal: 16,
-    backgroundColor: c.surfaceLight, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
-  },
-  airplayEntryText: { flex: 1, color: c.text, fontSize: 13.5, fontWeight: '700' },
   tabRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, marginTop: 4, marginBottom: 10 },
   segment: { flex: 1, flexDirection: 'row', backgroundColor: c.surfaceLight, borderRadius: RADIUS.full, padding: 3 },
   segmentBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: RADIUS.full },
