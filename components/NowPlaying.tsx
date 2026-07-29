@@ -41,6 +41,26 @@ function formatMs(ms: number): string {
   return `${m}:${String(s % 60).padStart(2, '0')}`;
 }
 
+// Session cache of per-track player stats, keyed `${uid}:${pid}`. A track the
+// user has already viewed reveals its numbers with ZERO network wait on
+// revisit (skip back, reopen, queue loops) — the single biggest "final
+// product" feel win available without touching AudioContext. Entries are
+// mutated in place by handleLike/handleSave so like/save state survives
+// skip-away-and-back; the TTL bounds staleness of counts that changed
+// elsewhere. Keyed by uid so an account switch can never leak another
+// account's like/save state.
+type TrackStats = {
+  streams: number; saves: number; likeCount: number;
+  isLiked: boolean; isSaved: boolean;
+  ownerId: string | null; ownerName?: string;
+  ownerBadge: { badge_tier?: string | null; badge_show?: boolean | null } | null;
+  spotlighted: boolean;
+  at: number;
+};
+const statsCache = new Map<string, TrackStats>();
+const STATS_TTL_MS = 90_000;
+const statsKey = (uid: string | null, pid: string) => `${uid ?? 'anon'}:${pid}`;
+
 // The cycling title lives in its OWN position subscription (like Progress), so
 // only this small block re-renders 4×/sec — not the whole player. Flips the
 // large centered title between the song name and its collaborator credits.
@@ -334,17 +354,44 @@ export default function NowPlaying() {
   }, [statsReady]);
 
   // Load post stats + like state + comments for the current track (when open).
+  // Cache-first: a previously-viewed track reveals instantly; a fresh one pays
+  // one round trip behind the fade. The per-track visual reset lives in the
+  // render-phase block above, not here.
   useEffect(() => {
     const pid = currentTrack?.id;
     if (!pid || !expanded) return;
     let cancelled = false;
-    // Reset per track, then promote if this song is currently spotlighted.
-    setSpotlighted(false);
-    isPostSpotlighted(pid).then((s) => { if (!cancelled && s) setSpotlighted(true); });
+
+    const applyStats = (s: TrackStats) => {
+      setStreams(s.streams); setSaves(s.saves); setLikeCount(s.likeCount);
+      setIsLiked(s.isLiked); setIsSaved(s.isSaved);
+      setOwnerId(s.ownerId); setOwnerName(s.ownerName); setOwnerBadge(s.ownerBadge);
+      setSpotlighted(s.spotlighted);
+      // setValue(0) must precede the flip (see the fade effect).
+      statsFade.setValue(0);
+      setStatsReady(true);
+    };
+
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      // getSession reads the LOCAL session — getUser() here was a network
+      // round trip paid before the cache was even consulted, which would make
+      // "instant revisit" quietly cost a full RTT. Identity only keys the
+      // cache and the membership checks; RLS enforces truth server-side.
+      const { data: { session } } = await supabase.auth.getSession();
       if (cancelled) return;
-      setUserId(user?.id ?? null);
+      const user = session?.user ?? null;
+      const uid = user?.id ?? null;
+      setUserId(uid);
+
+      const hit = statsCache.get(statsKey(uid, pid));
+      if (hit && Date.now() - hit.at < STATS_TTL_MS) {
+        applyStats(hit);
+        return;
+      }
+
+      // Concurrent with the stats fetch; may resolve after the reveal, in
+      // which case the sparkle joins late (idempotent either way).
+      const spotlightP = isPostSpotlighted(pid).catch(() => false);
       // like_count is the trigger-maintained denormalized column
       // (post_engagement_counts.sql) — the same one the feed and reels read via
       // attachEngagementCounts. The old path here downloaded EVERY likes row for
@@ -357,22 +404,28 @@ export default function NowPlaying() {
         user ? supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', pid).maybeSingle() : Promise.resolve({ data: null }),
       ]);
       if (cancelled) return;
-      if (postRes.data) {
-        const d: any = postRes.data;
-        setStreams(d.stream_count || 0);
-        setSaves(d.save_count || 0);
-        setLikeCount(d.like_count || 0);
-        setOwnerId(d.user_id);
-        setOwnerName(d.profiles?.username);
-        setOwnerBadge(d.profiles ?? null);
-      }
-      setIsLiked(!!likeRes.data);
-      setIsSaved(!!saveRes.data);
-      // Reveal (fade in) even when the post row came back empty — a fetch
-      // failure degrades to visible zeros, never to permanently hidden
-      // numbers. setValue(0) must precede the flip (see the fade effect).
-      statsFade.setValue(0);
-      setStatsReady(true);
+      const d: any = postRes.data;
+      const entry: TrackStats = {
+        streams: d?.stream_count || 0,
+        saves: d?.save_count || 0,
+        likeCount: d?.like_count || 0,
+        isLiked: !!likeRes.data,
+        isSaved: !!saveRes.data,
+        ownerId: d?.user_id ?? null,
+        ownerName: d?.profiles?.username,
+        ownerBadge: d?.profiles ?? null,
+        spotlighted: false,
+        at: Date.now(),
+      };
+      // A failed fetch is applied (visible zeros beat a hidden bar forever)
+      // but never cached — the next visit retries.
+      if (d) statsCache.set(statsKey(uid, pid), entry);
+      applyStats(entry);
+      spotlightP.then((s) => {
+        if (!s) return;
+        entry.spotlighted = true;
+        if (!cancelled) setSpotlighted(true);
+      });
     })();
     return () => { cancelled = true; };
   }, [currentTrack?.id, expanded]);
@@ -430,6 +483,11 @@ export default function NowPlaying() {
     // falls back to track.artist (queue metadata) and goProfile is disabled
     // (`disabled={!ownerId}`) until the fresh row lands.
     setOwnerId(null); setOwnerName(undefined); setOwnerBadge(null);
+    // Same stale-frame class: the previous song's spotlight sparkle and
+    // collaborator credits must vanish the frame the new title appears —
+    // their effects reset one commit late.
+    setSpotlighted(false);
+    setFeatures([]);
   }
   // Opaque backdrop — no see-through (the earlier translucent stop looked glitchy
   // in Light mode). Dark themes keep the rich warm gradient; Light mode gets a
@@ -444,11 +502,20 @@ export default function NowPlaying() {
 
   const goProfile = () => { if (ownerId) { collapse(); router.push(`/profile/${ownerId}`); } };
 
+  // Mirror an optimistic like/save into the cached entry, so skipping away and
+  // back inside the TTL shows the state the user just set, not the pre-toggle
+  // snapshot.
+  function mutateCachedStats(mut: (s: TrackStats) => void) {
+    const s = statsCache.get(statsKey(userId, pid));
+    if (s) mut(s);
+  }
+
   async function handleLike() {
     if (!userId) return;
     const liked = isLiked;
     setIsLiked(!liked);
     setLikeCount(c => (liked ? c - 1 : c + 1));
+    mutateCachedStats((s) => { s.isLiked = !liked; s.likeCount = Math.max(0, s.likeCount + (liked ? -1 : 1)); });
     if (liked) {
       await supabase.from('likes').delete().eq('user_id', userId).eq('post_id', pid);
     } else {
@@ -463,6 +530,7 @@ export default function NowPlaying() {
     const saved = isSaved;
     setIsSaved(!saved);
     setSaves(c => (saved ? Math.max(c - 1, 0) : c + 1));
+    mutateCachedStats((s) => { s.isSaved = !saved; s.saves = Math.max(0, s.saves + (saved ? -1 : 1)); });
     if (saved) {
       await supabase.from('saves').delete().eq('user_id', userId).eq('post_id', pid);
     } else {
@@ -623,8 +691,13 @@ export default function NowPlaying() {
                       <Text style={styles.artist} numberOfLines={1}>
                         {track.artist || (ownerName ? `@${ownerName}` : '')}
                       </Text>
-                      <BadgeEmblem profile={ownerBadge} ownerId={ownerId} size={13} />
-                      {spotlighted && <Ionicons name="sparkles" size={13} color={colors.primaryLight} />}
+                      {/* Per-track data (badge tier, spotlight sparkle) joins
+                          the same coordinated reveal as the stat numbers —
+                          the artist NAME stays immediate (queue metadata). */}
+                      <Animated.View style={[styles.artistExtras, { opacity: statsReady ? statsFade : 0 }]}>
+                        <BadgeEmblem profile={ownerBadge} ownerId={ownerId} size={13} />
+                        {spotlighted && <Ionicons name="sparkles" size={13} color={colors.primaryLight} />}
+                      </Animated.View>
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -694,6 +767,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   meta: { marginTop: SPACING.md, alignItems: 'center', gap: SPACING.xs },
   title: { color: colors.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
   artistRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  // Same gap as artistRow so wrapping the badge+sparkle changes no spacing.
+  artistExtras: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   artist: { color: colors.textSecondary, fontSize: 15 },
 
   progressBlock: { marginTop: SPACING.md },
