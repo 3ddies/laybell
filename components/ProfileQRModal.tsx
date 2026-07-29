@@ -1,4 +1,5 @@
-import { Modal, View, Text, TouchableOpacity, Image, StyleSheet, Share, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet, Share } from 'react-native';
+import SlideUpSheet from './SlideUpSheet';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -36,10 +37,11 @@ export default function ProfileQRModal({ visible, onClose, userId, username, dis
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        {/* Stop taps inside the sheet from closing it. */}
-        <Pressable style={[styles.sheet, { backgroundColor: colors.surface ?? colors.background }]} onPress={() => {}}>
+    <SlideUpSheet
+      visible={visible}
+      onClose={onClose}
+      sheetStyle={[styles.sheet, { backgroundColor: colors.surface ?? colors.background }]}
+    >
           <View style={styles.grabber} />
 
           <View style={styles.headerRow}>
@@ -82,18 +84,13 @@ export default function ProfileQRModal({ visible, onClose, userId, username, dis
             <Ionicons name="share-outline" size={18} color="#ffffff" />
             <Text style={styles.shareLabel}>{t('qr.share')}</Text>
           </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    </SlideUpSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'flex-end',
-  },
+  // The backdrop lives in SlideUpSheet now — it has to be animated, and its
+  // 0.55 dim is that component's default.
   sheet: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,

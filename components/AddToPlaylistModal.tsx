@@ -1,10 +1,11 @@
 import {
-  View, Text, StyleSheet, Modal, FlatList,
+  View, Text, StyleSheet, FlatList,
   TouchableOpacity, ActivityIndicator, Alert, Platform, TextInput, KeyboardAvoidingView,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import SlideUpSheet from './SlideUpSheet';
 import { supabase } from '../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -122,10 +123,10 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
     setAdding(null);
   }
 
-  const content = (
-    <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <TouchableOpacity style={styles.overlay} onPress={onClose} activeOpacity={1}>
-        <TouchableOpacity style={styles.sheet} activeOpacity={1}>
+  // Just what sits INSIDE the sheet — SlideUpSheet supplies the animated
+  // backdrop, the sheet surface and the keyboard avoidance below.
+  const body = (
+    <>
           {/* Handle */}
           <View style={styles.handle} />
 
@@ -219,18 +220,27 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
               }}
             />
           )}
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </KeyboardAvoidingView>
+    </>
   );
 
+  // Escape hatch for hosting inside an existing iOS overlay (no nested Modal).
+  // Unused by all three call sites today, so it keeps the original plain
+  // presentation rather than the animated sheet.
   if (inOverlay && Platform.OS === 'ios') {
-    return visible ? <View style={StyleSheet.absoluteFill}>{content}</View> : null;
+    return visible ? (
+      <View style={StyleSheet.absoluteFill}>
+        <KeyboardAvoidingView style={styles.fill} behavior="padding">
+          <TouchableOpacity style={styles.overlay} onPress={onClose} activeOpacity={1}>
+            <TouchableOpacity style={styles.sheet} activeOpacity={1}>{body}</TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </View>
+    ) : null;
   }
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      {content}
-    </Modal>
+    <SlideUpSheet visible={visible} onClose={onClose} sheetStyle={styles.sheet} dim={0.6} avoidKeyboard>
+      {body}
+    </SlideUpSheet>
   );
 }
 
