@@ -14,6 +14,7 @@ import { useProfile } from './ProfileContext';
 import { useTranslation } from './LanguageContext';
 import { createNotification } from '../lib/createNotification';
 import { postShareUrl } from '../lib/appLinks';
+import { isAudioPost } from '../lib/genres';
 import { tg, countLabel } from '../lib/i18n';
 import VideoThumb from '../components/VideoThumb';
 import { AvatarRowSkeleton } from '../components/Skeleton';
@@ -42,6 +43,15 @@ export function useShare() {
   return useContext(ShareContext);
 }
 
+// Module-level opener for hosts that sit ABOVE ShareProvider in the tree and
+// therefore can't useShare() — the 3-dot sheet lives in PostOptionsProvider,
+// which WRAPS ShareProvider, so its useShare() would resolve to the no-op
+// default. Same registration idiom as lib/postActions' reportHandler: the
+// provider registers on mount, and the opener silently no-ops in the
+// (impossible in practice) window where no provider is mounted.
+let shareHandler: ((p: SharePayload) => void) | null = null;
+export function openShareGlobal(p: SharePayload) { shareHandler?.(p); }
+
 export function ShareProvider({ children }: { children: React.ReactNode }) {
   const [payload, setPayload] = useState<SharePayload | null>(null);
   const [visible, setVisible] = useState(false);
@@ -51,6 +61,11 @@ export function ShareProvider({ children }: { children: React.ReactNode }) {
   const share = useCallback((p: SharePayload) => { setPayload(p); setVisible(true); }, []);
   const value = useMemo(() => ({ share }), [share]);
   const close = useCallback(() => setVisible(false), []);
+  // Register the module-level opener (see openShareGlobal above).
+  useEffect(() => {
+    shareHandler = share;
+    return () => { if (shareHandler === share) shareHandler = null; };
+  }, [share]);
 
   return (
     <ShareContext.Provider value={value}>
@@ -73,18 +88,23 @@ function rubber(drag: number, max = 32): number {
 const WEB_BASE = 'https://laybell.app';
 
 function buildShareText(p: SharePayload) {
-  // External link = the server-rendered OG share page (lib/appLinks): chats
-  // outside the app unfurl a rich thumbnail card instead of dead text.
+  // External link = the smart open.html link (lib/appLinks): unfurls the
+  // branded card and deep-links into the exact post on tap.
   const link = postShareUrl(p.postId);
   // In-app DMs keep the canonical laybell.app/post form — the chat renders
   // its OWN rich preview card by parsing this exact pattern.
   const dmLink = `${WEB_BASE}/post/${p.postId}`;
   const handle = p.username ? `@${p.username}` : '';
-  const text = p.caption
-    ? tg('share.textCaption', { caption: p.caption, handle })
-    : handle
-      ? tg('share.textPlain', { handle })
-      : tg('share.textPlainNoUser');
+  // Songs read like a music share ("🎵 Title — @artist"), the way Spotify and
+  // Apple Music captions their links, instead of the generic post phrasing.
+  const isSong = isAudioPost(p.type) && !!p.caption;
+  const text = isSong
+    ? tg('share.textSong', { caption: p.caption!, handle })
+    : p.caption
+      ? tg('share.textCaption', { caption: p.caption, handle })
+      : handle
+        ? tg('share.textPlain', { handle })
+        : tg('share.textPlainNoUser');
   const title = p.caption || (handle ? tg('share.titleUser', { handle }) : 'Laybell');
   return { link, dmLink, title, message: `${text}\n${link}` };
 }

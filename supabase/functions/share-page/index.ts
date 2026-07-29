@@ -35,6 +35,16 @@ const WEB = 'https://laybell.app';
 const LOGO = `${WEB}/logo.png`;
 const AUDIO_TYPES = ['audio', 'podcast', 'audiobook'];
 
+// Poster frame for a Cloudflare Stream video — every Stream VOD serves one at
+// a URL derivable from its manifest. Mirrors lib/cast.cfStreamThumbnail (this
+// Deno function can't import app modules). Without it, a video post that has
+// no stored thumbnail_url fell back to the generic logo instead of its frame.
+const CF_HLS_SUFFIX = /\/manifest\/video\.m3u8(\?.*)?$/;
+function cfStreamThumbnail(url: string | null | undefined): string | null {
+  if (!url || !url.includes('cloudflarestream.com') || !CF_HLS_SUFFIX.test(url)) return null;
+  return url.replace(CF_HLS_SUFFIX, '/thumbnails/thumbnail.jpg?height=720');
+}
+
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -70,7 +80,9 @@ serve(async (req: Request) => {
             ? `Watch ${who} on Laybell`
             : `See ${who}'s post on Laybell`;
         image = (p as any).thumbnail_url || (p as any).cover_url
-          || ((p as any).type === 'image' ? (p as any).media_url : null) || LOGO;
+          || ((p as any).type === 'image' ? (p as any).media_url : null)
+          || ((p as any).type === 'video' ? cfStreamThumbnail((p as any).media_url) : null)
+          || LOGO;
         ogType = isAudio ? 'music.song' : (p as any).type === 'video' ? 'video.other' : 'article';
         openPath = `post/${(p as any).id}`;
       }
@@ -128,7 +140,7 @@ serve(async (req: Request) => {
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:image" content="${esc(image)}">
 <meta property="og:url" content="${esc(url.href)}">
-<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:card" content="${ogType === 'music.song' ? 'summary' : 'summary_large_image'}">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(desc)}">
 <meta name="twitter:image" content="${esc(image)}">

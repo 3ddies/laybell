@@ -56,13 +56,33 @@ export function profileShareUrl(userId: string): string {
 // while QR links (which always used open.html) did.
 //
 // share-page stays deployed with its OG logic intact: per-post rich cards come
-// back the day the function sits behind a CUSTOM domain (e.g. the planned
-// Cloudflare move, which the AASA content-type fix wants anyway) — then these
-// two builders are the only lines that change.
+// back the day the function sits behind a CUSTOM domain — then SHARE_PAGE_
+// CUSTOM_BASE below is the ONLY line that changes.
+//
+// ── THE UNLOCK for Spotify-identical song cards / per-post thumbnails ───────
+// Set this to the share-page URL on a domain Laybell controls, e.g. after
+// adding a Supabase custom domain (Dashboard → Settings → Custom Domains,
+// CNAME api.laybell.app at the registrar):
+//
+//   'https://api.laybell.app/functions/v1/share-page'
+//
+// On a custom domain Supabase stops force-sanitising HTML to text/plain, so
+// iMessage's LinkPresentation parser reads the per-item OG tags: songs unfurl
+// a square album-cover card (like Spotify/Apple Music — the function sends
+// twitter:card 'summary' for music), posts unfurl their large thumbnail, and
+// humans who tap still bounce through open.html into the app. While null,
+// shares use the open.html smart link with the branded Laybell card — the
+// configuration verified working in iMessage.
+export const SHARE_PAGE_CUSTOM_BASE: string | null = null;
+
 export function postShareUrl(postId: string): string {
-  return `${STATIC_WEB_ORIGIN}/open.html?p=${encodeURIComponent('post/' + postId)}`;
+  return SHARE_PAGE_CUSTOM_BASE
+    ? `${SHARE_PAGE_CUSTOM_BASE}?t=post&id=${encodeURIComponent(postId)}`
+    : `${STATIC_WEB_ORIGIN}/open.html?p=${encodeURIComponent('post/' + postId)}`;
 }
 
 export function profileRichShareUrl(userId: string): string {
-  return profileShareUrl(userId);
+  return SHARE_PAGE_CUSTOM_BASE
+    ? `${SHARE_PAGE_CUSTOM_BASE}?t=profile&id=${encodeURIComponent(userId)}`
+    : profileShareUrl(userId);
 }

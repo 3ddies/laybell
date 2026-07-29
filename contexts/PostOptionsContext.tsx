@@ -24,6 +24,7 @@ import { useDownloadAction } from '../hooks/useDownloadAction';
 import { aspectToNumber } from '../lib/aspectRatio';
 import { postToCastItem, type CastItem } from '../lib/cast';
 import { useCast } from './CastContext';
+import { openShareGlobal } from './ShareContext';
 import AddToPlaylistModal from '../components/AddToPlaylistModal';
 import GifMakerModal from '../components/GifMakerModal';
 import TVConnectModal from '../components/TVConnectModal';
@@ -520,6 +521,36 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
       active: liked, activeColor: colors.like, onPress: toggleLike });
     options.push({ key: 'save', label: saved ? t('postOptions.unsave') : t('postOptions.save'), icon: saved ? 'bookmark' : 'bookmark-outline',
       active: saved, activeColor: colors.primary, onPress: toggleSave });
+    // Share, from the music 3-dot: track rows have no visible share button
+    // (unlike feed cards and reels), so this was the one music surface where a
+    // song couldn't be sent anywhere. Opens the SAME global share sheet the
+    // rest of the app uses — via the module-level opener, because this sheet
+    // renders ABOVE ShareProvider and a useShare() here would be the no-op
+    // default (see openShareGlobal).
+    // The dl* states are the download row's lazy back-fill (title/cover/url
+    // fetched for every audio post) — reusing them here means the share text
+    // carries the song title even from the many call sites that don't pass
+    // `caption`, with no extra query and no call-site changes.
+    {
+      const shareCaption = opts?.caption ?? (dlTitle || null);
+      const shareCover = opts?.cover ?? dlCover;
+      const shareMedia = opts?.mediaUrl ?? dlUrl;
+      options.push({ key: 'share', label: t('postOptions.share'), icon: 'share-social-outline',
+        onPress: () => {
+          const o = optsRef.current;
+          dismissThen(() => {
+            if (!o?.postId) return;
+            openShareGlobal({
+              postId: o.postId,
+              caption: shareCaption,
+              username: o.authorName ?? null,
+              cover: shareCover,
+              type: o.mediaType ?? null,
+              mediaUrl: shareMedia,
+            });
+          });
+        } });
+    }
     // Download for offline (any viewer). Pinned → "Remove download"; otherwise
     // "Download". useDownloadAction owns all the failure alerts (tier/space/opt-out).
     {
