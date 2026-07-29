@@ -30,6 +30,15 @@ const supabase = createClient(
 // lib/appLinks.SHARE_PAGE_CUSTOM_BASE is what points the app at it.
 const WEB = 'https://laybell.app';
 const LOGO = `${WEB}/logo.png`;
+
+// This function's own PUBLIC address, and it has to be a constant: req.url
+// inside the edge runtime is the internal request
+// (`http://edge-runtime.supabase.com/share-page`), wrong on scheme, host and
+// path all three, and neither `host` nor `x-forwarded-host` carries the real
+// one. og:url silently advertised that internal URL until this was spotted.
+// Keep in sync with lib/appLinks.SHARE_PAGE_CUSTOM_BASE — the app builds share
+// links from that constant, so the two must name the same endpoint.
+const PUBLIC_BASE = 'https://api.laybell.app/functions/v1/share-page';
 const AUDIO_TYPES = ['audio', 'podcast', 'audiobook'];
 
 // Poster frame for a Cloudflare Stream video — every Stream VOD serves one at
@@ -58,6 +67,10 @@ serve(async (req: Request) => {
   let image = LOGO;
   let ogType = 'website';
   let openPath = '';
+  // Author, kept separate from `desc` now that the description line carries the
+  // "Listen/Watch on Laybell" call to action — music:musician must still name a
+  // person, not a CTA.
+  let musician = '';
 
   try {
     if (t === 'post' && id) {
@@ -71,12 +84,13 @@ serve(async (req: Request) => {
         const who = prof?.display_name || (prof?.username ? `@${prof.username}` : 'Laybell');
         const isAudio = AUDIO_TYPES.includes((p as any).type);
         title = (p as any).caption?.trim() || `${who} on Laybell`;
-        // Apple's LinkPresentation renders og:title as the headline and
-        // og:description as the grey line under it, then the domain. Spotify's
-        // card is exactly: song name / ARTIST / open.spotify.com — so a song's
-        // description is the artist alone, not a marketing sentence. Video
-        // matches TikTok's: caption / creator / domain.
-        desc = who;
+        musician = who;
+        // The line under the headline. It reads as the card's call to action
+        // rather than the author, because the author is already the fallback
+        // title and the owner wants the card to say "Laybell" in words — the
+        // domain line underneath is Apple's and can't be replaced (TN3156:
+        // Messages shows "the page title, domain, and small icon").
+        desc = isAudio ? 'Listen on Laybell' : 'Watch on Laybell';
         // Songs lead with COVER ART (album square); video/photo lead with the
         // frame. Apple sizes the card from the image's own aspect ratio, so a
         // square cover gives Spotify's square card and a 16:9 still gives
@@ -111,6 +125,37 @@ serve(async (req: Request) => {
   // landing page; crawlers never execute this and just read the tags.
   const target = `${WEB}/open.html${openPath ? `?p=${encodeURIComponent(openPath)}` : ''}`;
 
+  const q = (extra?: Record<string, string>) =>
+    `${PUBLIC_BASE}?${new URLSearchParams({ t, ...(id ? { id } : {}), ...extra })}`;
+  const canonicalUrl = q();
+
+  // ActivityStreams representation of the same item. Messages only renders
+  // og:description for "user posts on social network services", and per TN3156
+  // it recognises one by TWO signals together: a twitter:card of summary /
+  // summary_large_image (we send both) AND a <link> of type
+  // application/activity+json. Without this the description line is dropped and
+  // the card is title + domain only — which is why the CTA needs it.
+  //
+  // Served for real rather than pointed at a dead URL: a Laybell post genuinely
+  // IS a user post on a social network, so the document is honest and cheap.
+  const activityUrl = q({ f: 'activity' });
+  if (url.searchParams.get('f') === 'activity') {
+    return new Response(JSON.stringify({
+      '@context': 'https://www.w3.org/ns/activitystreams',
+      type: 'Note',
+      id: activityUrl,
+      url: target,
+      name: title,
+      content: title,
+      attributedTo: musician || 'Laybell',
+    }), {
+      headers: {
+        'content-type': 'application/activity+json; charset=utf-8',
+        'cache-control': 'public, max-age=300, s-maxage=600',
+      },
+    });
+  }
+
   // Split by user-agent: BROWSERS get a real 302 straight to open.html, link
   // CRAWLERS get the OG document. Originally a workaround (on *.supabase.co the
   // sanitised HTML meant a human saw raw source and the meta-refresh never
@@ -141,17 +186,20 @@ serve(async (req: Request) => {
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:image" content="${esc(image)}">
 <meta property="og:image:alt" content="${esc(title)}">
-<meta property="og:url" content="${esc(url.href)}">${ogType === 'music.song' ? `
+<meta property="og:url" content="${esc(canonicalUrl)}">${ogType === 'music.song' ? `
 <!-- Square cover: declaring the dimensions lets Apple lay the card out BEFORE
      the image finishes downloading, so the song card doesn't reflow — the
      detail that makes Spotify's link feel instant in the bubble. -->
 <meta property="og:image:width" content="640">
 <meta property="og:image:height" content="640">
-<meta property="music:musician" content="${esc(desc)}">` : ''}
+<meta property="music:musician" content="${esc(musician)}">` : ''}
 <meta name="twitter:card" content="${ogType === 'music.song' ? 'summary' : 'summary_large_image'}">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(desc)}">
-<meta name="twitter:image" content="${esc(image)}">
+<meta name="twitter:image" content="${esc(image)}">${openPath ? `
+<!-- Required alongside twitter:card for Messages to render og:description at
+     all — see the activityUrl note above. -->
+<link rel="alternate" type="application/activity+json" href="${esc(activityUrl)}">` : ''}
 <meta http-equiv="refresh" content="0;url=${esc(target)}">
 <style>body{margin:0;background:#0d0d0f;color:#f5f4f2;font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh}a{color:#F26522}</style>
 </head><body>

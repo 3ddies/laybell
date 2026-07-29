@@ -106,6 +106,12 @@ function buildShareText(p: SharePayload) {
         ? tg('share.textPlain', { handle })
         : tg('share.textPlainNoUser');
   const title = p.caption || (handle ? tg('share.titleUser', { handle }) : 'Laybell');
+  // `message` = caption line + link. Only EMAIL uses it now: mail clients don't
+  // render a link card, so a bare URL body would arrive as a naked link.
+  // Everywhere else sends the LINK ALONE, so the recipient gets the unfurled
+  // card by itself instead of a text bubble repeating the caption above a
+  // second bubble with the card — the card already shows the caption as its
+  // title, so the text was pure duplication.
   return { link, dmLink, title, message: `${text}\n${link}` };
 }
 
@@ -128,29 +134,34 @@ type ExternalApp = {
 };
 
 const EXTERNAL_APPS: ExternalApp[] = [
+  // Every card-rendering target below sends the LINK ONLY (see buildShareText):
+  // the unfurled card already carries the caption as its title, so attaching the
+  // text too produced two bubbles saying the same thing.
   {
     key: 'sms', label: 'Messages', labelKey: 'share.messages', icon: 'chatbubble-ellipses', color: '#34C759',
-    urls: ({ message }) => [Platform.OS === 'ios' ? `sms:&body=${enc(message)}` : `sms:?body=${enc(message)}`],
+    urls: ({ link }) => [Platform.OS === 'ios' ? `sms:&body=${enc(link)}` : `sms:?body=${enc(link)}`],
   },
   {
     key: 'whatsapp', label: 'WhatsApp', icon: 'logo-whatsapp', color: '#25D366',
-    urls: ({ message }) => [`whatsapp://send?text=${enc(message)}`, `https://wa.me/?text=${enc(message)}`],
+    urls: ({ link }) => [`whatsapp://send?text=${enc(link)}`, `https://wa.me/?text=${enc(link)}`],
   },
   {
     key: 'facebook', label: 'Facebook', icon: 'logo-facebook', color: '#1877F2',
     urls: ({ link }) => [`https://www.facebook.com/sharer/sharer.php?u=${enc(link)}`],
   },
   {
+    // The exception: mail clients don't unfurl a card, so this keeps the caption
+    // line — otherwise the email body would be a naked URL.
     key: 'email', label: 'Email', labelKey: 'share.email', icon: 'mail', color: '#EA4335',
     urls: ({ message, title }) => [`mailto:?subject=${enc(title)}&body=${enc(message)}`],
   },
   {
     key: 'telegram', label: 'Telegram', icon: 'paper-plane', color: '#229ED9',
-    urls: ({ message, link }) => [`tg://msg_url?url=${enc(link)}&text=${enc(message)}`, `https://t.me/share/url?url=${enc(link)}&text=${enc(message)}`],
+    urls: ({ link }) => [`tg://msg_url?url=${enc(link)}`, `https://t.me/share/url?url=${enc(link)}`],
   },
   {
     key: 'x', label: 'X', icon: 'logo-twitter', color: '#1DA1F2',
-    urls: ({ message }) => [`twitter://post?message=${enc(message)}`, `https://twitter.com/intent/tweet?text=${enc(message)}`],
+    urls: ({ link }) => [`twitter://post?message=${enc(link)}`, `https://twitter.com/intent/tweet?text=${enc(link)}`],
   },
   {
     key: 'reddit', label: 'Reddit', icon: 'logo-reddit', color: '#FF4500',
@@ -316,22 +327,30 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
     if (id) supabase.rpc('increment_share_count', { p_post_id: id }).then(() => {}, () => {});
   }
 
-  function nativeShare(message: string, link: string) {
+  function nativeShare(link: string) {
     dismiss();
     // Open the OS sheet after ours has closed, so the two modals don't fight.
-    setTimeout(() => { Share.share({ message, url: link }).catch(() => {}); }, 280);
+    //
+    // The LINK ALONE, no accompanying text. Handing iOS both `message` and
+    // `url` makes Messages send two bubbles — the caption as plain text, then
+    // the card — and the card already shows that caption as its title. `url` is
+    // the iOS-only field (Android ignores it and reads `message`), so each
+    // platform gets the one field it actually honours.
+    setTimeout(() => {
+      Share.share(Platform.OS === 'ios' ? { url: link } : { message: link }).catch(() => {});
+    }, 280);
   }
 
   async function openApp(app: ExternalApp) {
     if (!payload) return;
     const { message, link, title } = buildShareText(payload);
     bumpShare();
-    if (app.native || !app.urls) { nativeShare(message, link); return; }
+    if (app.native || !app.urls) { nativeShare(link); return; }
     // Try the app scheme, then the web fallback, then the OS sheet.
     for (const url of app.urls({ message, link, title })) {
       try { await Linking.openURL(url); dismiss(); return; } catch {}
     }
-    nativeShare(message, link);
+    nativeShare(link);
   }
 
   const content = (
