@@ -52,7 +52,23 @@ const AUDIO_TYPES = ['audio', 'podcast', 'audiobook'];
 const CF_HLS_SUFFIX = /\/manifest\/video\.m3u8(\?.*)?$/;
 function cfStreamThumbnail(url: string | null | undefined): string | null {
   if (!url || !url.includes('cloudflarestream.com') || !CF_HLS_SUFFIX.test(url)) return null;
-  return url.replace(CF_HLS_SUFFIX, '/thumbnails/thumbnail.jpg?height=720');
+  // Size on WIDTH, because width is what Apple judges: "images should be at
+  // least 900 pixels in width", and under 150 they may be shown as a mere icon
+  // (TN3156). Aspect is preserved, so a reel still comes back tall — it just
+  // arrives big enough for Messages to give it a full-size card.
+  //
+  // This was `height=720`, which pinned the wrong edge and starved exactly the
+  // portrait video that most needs the space: reels came back 404x720. Measured
+  // across the live library, 1280 is the value that regresses nothing —
+  // landscape frames return byte-identical to before (1280x720), low-res
+  // landscape is unchanged (1276x720 -> 1280x722), and portrait goes
+  // 404x720 -> 1280x2274. Largest frame stays 148KB, far inside Apple's 10MB
+  // budget for a preview's assets.
+  //
+  // `fit` is deliberately left at Cloudflare's default: an explicit fit=clip
+  // refuses to upscale, which quietly SHRANK the one low-resolution landscape
+  // video in the library from 1276x720 to its native 638x360.
+  return url.replace(CF_HLS_SUFFIX, '/thumbnails/thumbnail.jpg?width=1280');
 }
 
 function esc(s: string): string {
@@ -89,21 +105,27 @@ serve(async (req: Request) => {
         const isAudio = AUDIO_TYPES.includes((p as any).type);
         title = (p as any).caption?.trim() || `${who} on Laybell`;
         musician = who;
-        // The line under the headline. It reads as the card's call to action
-        // rather than the author, because the author is already the fallback
-        // title and the owner wants the card to say "Laybell" in words — the
-        // domain line underneath is Apple's and can't be replaced (TN3156:
-        // Messages shows "the page title, domain, and small icon").
-        desc = isAudio ? 'Listen on Laybell' : 'Watch on Laybell';
+        // The line under the headline, matched to whichever app the card is
+        // impersonating: Spotify puts the ARTIST under a song title, TikTok puts
+        // a call to action under a video. (The domain line below it is Apple's
+        // and can't be replaced — TN3156: Messages shows "the page title,
+        // domain, and small icon" — which is why the subdomain is `open.`)
+        desc = isAudio ? who : 'Watch on Laybell';
         // Songs lead with COVER ART (album square); video/photo lead with the
         // frame. Apple sizes the card from the image's own aspect ratio, so a
         // square cover gives Spotify's square card and a 16:9 still gives
         // TikTok's wide one — no card-type flag involved.
         image = isAudio
           ? ((p as any).cover_url || (p as any).thumbnail_url || LOGO)
-          : ((p as any).thumbnail_url || (p as any).cover_url
+          // The Cloudflare frame now leads for video, ahead of the stored
+          // thumbnail_url. They're the same frame, but the stored copy is
+          // baked at whatever size the app saved it (portrait ones measure
+          // 404x720 in the live library) while Cloudflare re-renders on demand
+          // at native resolution. Falls through unchanged for anything not on
+          // Stream, since cfStreamThumbnail returns null there.
+          : (((p as any).type === 'video' ? cfStreamThumbnail((p as any).media_url) : null)
+              || (p as any).thumbnail_url || (p as any).cover_url
               || ((p as any).type === 'image' ? (p as any).media_url : null)
-              || ((p as any).type === 'video' ? cfStreamThumbnail((p as any).media_url) : null)
               || LOGO);
         ogType = isAudio ? 'music.song' : (p as any).type === 'video' ? 'video.other' : 'article';
         openPath = `post/${(p as any).id}`;
