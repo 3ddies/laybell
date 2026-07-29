@@ -23,11 +23,17 @@ export const STORE_URLS = {
   android: 'https://play.google.com/store/apps/details?id=com.laybell.app',
 } as const;
 
-// Where the static landing pages actually LIVE right now: GitHub Pages
-// auto-publishes web/ on every push. laybell.app (GoDaddy builder) can't host
-// these files — open.html 404s there — so QR/share links must use this origin
-// until the domain is mapped onto Pages (go-live checklist item).
-export const STATIC_WEB_ORIGIN = 'https://3ddies.github.io/laybell';
+// The static pages now live on the real domain. laybell.app points at GitHub
+// Pages (four apex A records + a www CNAME), which publishes web/ on every push
+// to dev — so open.html, the legal pages and /.well-known/ are all served from
+// the domain root.
+//
+// This used to be https://3ddies.github.io/laybell, because the GoDaddy website
+// builder that previously answered for laybell.app could not host arbitrary
+// files and open.html 404'd there. Every QR code minted before this change
+// encodes the github.io URL; those keep working, because GitHub redirects the
+// old origin to the custom domain.
+export const STATIC_WEB_ORIGIN = 'https://laybell.app';
 
 // The QR/share URL for a user's profile. `userId` is the profiles.id used by the
 // in-app /profile/[id] route.
