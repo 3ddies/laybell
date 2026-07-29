@@ -706,7 +706,11 @@ export default function ReelScreen() {
       // Ads warm too (ReelAd is pooled now) — an unwarmed ad page used to
       // cold-start at the swipe, which reads as "reel N+1 is broken".
       setWarmNextId(next && next.media_url ? next.id : null);
-    }, 900); // was 600 — give the settled reel's stream a longer solo head start
+    }, 450); // 600 → 900 in the raw-MP4 era (neighbor fetches starved the settled
+             // reel's first seconds); halved back post-HLS-migration — adaptive
+             // segments + the 8s buffer cap bound the warm stream, and 450ms still
+             // clears the landed reel's first-segment window. Faster swipers now
+             // land on a ready player instead of outrunning the warm timer.
     return () => clearTimeout(t);
   }, [settledId, posts]);
 

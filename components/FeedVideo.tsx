@@ -28,12 +28,27 @@ type Props = {
   onProgress?: (currentTimeMs: number, durationMs: number) => void;
 };
 
-// 1100ms (was 500): the playing video's first seconds are its most fragile —
-// the owner's screen recording showed neighbor pre-loads starving them into a
-// multi-second rebuffer on fat raw-MP4 posts. With the pool's buffer caps
-// bounding every download, a longer head start costs nothing visible
-// (neighbors sit behind their thumbnails) and protects the watched stream.
-const NEIGHBOR_LOAD_DELAY_MS = 1100;
+// How long the landed video gets the network to itself before its neighbor
+// starts pre-loading.
+//
+// HISTORY, because this number has been tuned in both directions: it went
+// 500 → 1100 when the owner's screen recording showed neighbor pre-loads
+// starving the playing video into multi-second rebuffers — ON FAT RAW-MP4
+// POSTS, which AVPlayer buffers unbounded at full throttle. That world is
+// gone: the 2026-07-16 backfill moved every legacy video to Cloudflare Stream
+// HLS (verified, and all new uploads go there), and every pooled player now
+// carries an 8s forward-buffer cap. Adaptive segments + a bounded appetite
+// mean ONE capped neighbor stream can no longer starve the watched one.
+//
+// What 1100ms cost in that new world: a normal browse cadence is ~0.8–1.5s
+// per post, so users routinely swiped BEFORE the neighbor ever started
+// loading — every such landing was a cold start (manifest + first segment +
+// decode), which is exactly the "takes a few extra milliseconds" feel. 350ms
+// still hands the landing video its manifest + first-segment window solo
+// (~100–300ms on a decent connection), but has the next video buffered well
+// inside any realistic dwell. THE KNOB: if slow-network landings ever feel
+// worse, raise this before touching anything else.
+const NEIGHBOR_LOAD_DELAY_MS = 350;
 
 const FeedVideo = memo(function FeedVideo({ id, uri, play, muted, onProgress }: Props) {
   const [player, setPlayer] = useState<VideoPlayer | null>(null);
