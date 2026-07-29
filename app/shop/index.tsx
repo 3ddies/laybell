@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import ShopListingCard from '../../components/ShopListingCard';
+import LegalUpdateNotice from '../../components/LegalUpdateNotice';
 import { GridSkeleton, ListRowsSkeleton } from '../../components/Skeleton';
 import { reactionPop, tabTick } from '../../lib/haptics';
 import { RADIUS, SPACING, type ThemePalette } from '../../constants/theme';
@@ -63,6 +64,10 @@ export default function ShopHubScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* Marketplace Terms §11 — material changes are communicated in the
+            app. Self-dismissing, shown once per user; renders null otherwise. */}
+        <LegalUpdateNotice />
 
         {/* Segmented tabs */}
         <View style={styles.segment}>
