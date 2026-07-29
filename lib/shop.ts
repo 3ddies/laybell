@@ -88,11 +88,30 @@ export type ShopOrder = {
 export const LISTING_CATEGORIES: ListingCategory[] = ['beat', 'song', 'sample_pack', 'preset', 'service', 'other'];
 
 // ── Marketplace economics ─────────────────────────────────────────────────────
-// Laybell takes 15% of every sale. Sales tax is the BUYER's cost (added on top
-// at purchase, Poshmark-style) — it never reduces the seller's take-home.
-export const SHOP_FEE_RATE = 0.15;
-// Estimated sales tax shown to sellers for context (varies by buyer location).
-export const SHOP_TAX_RATE = 0.06;
+// Laybell takes 25% of every sale. Mirrors shop_fee_rate() in
+// supabase/sql/shop_credits.sql, which is authoritative — this copy exists only
+// so the app can show the split before the server confirms it.
+//
+// WHY 25% AND NOT THE OLD 15%. Purchases are paid in credits, and credits are
+// bought through Apple and Google, who take their commission first:
+//
+//   $10 beat = 1000 credits
+//   Buyer pays Apple $10 → Apple keeps 15% → LAYBELL RECEIVES $8.50
+//   At the old 15% fee the seller was owed 85% = $8.50 → Laybell kept $0.00
+//
+// The platform fee and the store commission cancelled out exactly. At 25% the
+// seller gets $7.50 and Laybell nets $1.00. The gap between 75% and BeatStars'
+// ~90% is Apple's commission, not margin — and the seller UI says so, because a
+// creator who expected 90% and discovers 75% at payout leaves, loudly.
+//
+// ⚠️ This assumes the App Store Small Business Program (15%). At the standard
+// 30%, Laybell RECEIVES $7.00 and owes $7.50 — a loss on every sale. Enrol.
+export const SHOP_FEE_RATE = 0.25;
+// No longer charged. Credits are bought through Apple and Google, who are
+// merchant of record and already collect and remit sales tax on that purchase;
+// adding tax again at spend time would tax the same money twice. Kept at 0 so
+// buyerTaxCents() and its callers keep their shape.
+export const SHOP_TAX_RATE = 0;
 
 /** What the seller keeps after Laybell's 15% fee. */
 export function sellerEarningsCents(priceCents: number): number {
@@ -107,6 +126,32 @@ export function shopFeeCents(priceCents: number): number {
 /** Estimated tax the BUYER pays on top of the listing price. */
 export function buyerTaxCents(priceCents: number): number {
   return Math.max(0, Math.round(priceCents * SHOP_TAX_RATE));
+}
+
+/**
+ * The whole split on a sale, for showing a seller before they list.
+ *
+ * `storeCents` is Apple's or Google's commission on the credit purchase that
+ * funded the sale. Laybell never receives it, so leaving it out would make
+ * Laybell's own cut look twice the size it is — and a seller comparing 75% here
+ * against BeatStars' 90% deserves to see where the other 25% actually went.
+ *
+ * Assumes the App Store Small Business Program rate (15%).
+ */
+export const STORE_COMMISSION_RATE = 0.15;
+
+export function shopSplit(priceCents: number): {
+  priceCents: number; storeCents: number; laybellCents: number; sellerCents: number;
+} {
+  const sellerCents = sellerEarningsCents(priceCents);
+  const storeCents = Math.round(priceCents * STORE_COMMISSION_RATE);
+  return {
+    priceCents,
+    storeCents,
+    // What Laybell actually keeps: its fee less the store's commission.
+    laybellCents: Math.max(0, priceCents - sellerCents - storeCents),
+    sellerCents,
+  };
 }
 
 export function formatPrice(cents: number, currency = 'USD'): string {
@@ -439,35 +484,31 @@ export async function requestToBuy(
   const priceCents = kind === 'offer'
     ? Math.max(0, Math.round(offerCents))
     : priceForKind(listing, kind);
-  const base = {
-    listing_id: listing.id,
-    buyer_id: buyerId,
-    seller_id: listing.user_id,
-    price_cents: priceCents,
-    // Snapshot Laybell's 15% at order time, so a future fee change can't
-    // retroactively alter a deal's bookkeeping.
-    fee_cents: shopFeeCents(priceCents),
-    currency: listing.currency,
-    note: note.trim() || null,
-  };
-  let { data, error } = await supabase
-    .from('shop_orders')
-    .insert({ ...base, kind })
-    .select(ORDER_COLS)
-    .single();
-  if (error && kind !== 'offer' && `${error.message}`.includes('kind')) {
-    // Pre-migration database (no kind column) — legacy single-type request.
-    // Offers genuinely need the migration, so those stay failed.
-    ({ data, error } = await supabase.from('shop_orders').insert(base).select(ORDER_COLS).single());
-  }
+
+  // Money moves here now, so the price, the fee and the delivery decision are
+  // all the server's. The client names a listing and a deal type and nothing
+  // else — it used to send `price_cents` and `fee_cents`, which was harmless
+  // while nothing was charged and is not harmless once delivery unlocks a file.
+  const { data: res, error: rpcErr } = await supabase.rpc('shop_buy_with_credits', {
+    p_listing_id: listing.id,
+    p_kind: kind,
+    p_offer_cents: kind === 'offer' ? priceCents : null,
+  });
+  if (rpcErr) throw rpcErr;
+
+  const { data, error } = await supabase
+    .from('shop_orders').select(ORDER_COLS).eq('id', (res as any).order_id).single();
   if (error) throw error;
 
   const priceText = formatPrice(priceCents, listing.currency);
+  // sell/lease are now completed purchases, not requests — the DM opens a
+  // conversation between two people who have already done business, so it says
+  // so rather than asking the seller to do something.
   const body = kind === 'offer'
     ? `💰 ${priceText} — ${listing.title}\n${note.trim() ? note.trim() + '\n' : ''}`
     : kind === 'free'
       ? `🎁 ${listing.title}`
-      : `🛍 ${listing.title} — ${priceText}\n${note.trim() ? note.trim() + '\n' : ''}`;
+      : `✅ ${listing.title} — ${priceText}\n${note.trim() ? note.trim() + '\n' : ''}`;
   supabase
     .from('messages')
     .insert({ sender_id: buyerId, receiver_id: listing.user_id, body: body.trim() })

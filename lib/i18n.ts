@@ -36,6 +36,9 @@ export function isLang(v: any): v is Lang {
 }
 
 const en: Record<string, string> = {
+  'shop.earnStore': 'App Store fee',
+  'shop.needCredits': 'You need more credits to buy this.',
+  'shop.cannotBuyOwn': 'You can\'t buy your own listing.',
   'wallet.transferFailed': 'Couldn\'t transfer',
   'wallet.err.below_minimum': 'Payouts start at {min}.',
   'wallet.err.insufficient_available': 'Some of your earnings are still clearing. Try again once they arrive.',
@@ -2204,7 +2207,7 @@ const en: Record<string, string> = {
   'shop.earnFee': 'Laybell fee (15%)',
   'shop.earnTax': 'Est. sales tax (buyer pays)',
   'shop.earnYou': 'You earn',
-  'shop.earnNote': 'Tax is added to the buyer’s total at purchase — it never comes out of your earnings.',
+  'shop.earnNote': 'Buyers pay with credits. Laybell pays you out to your bank; earnings become withdrawable 14 days after a sale.',
   'shop.sort.new': 'Newest',
   'shop.sort.price': 'Lowest price',
   'shop.sort.popular': 'Best sellers',
@@ -2226,8 +2229,8 @@ const en: Record<string, string> = {
   'shop.agreeTerms': 'Marketplace & Beat Licensing Terms',
   'shop.marketplaceTerms': 'Marketplace & licensing terms',
   'shop.rightsNote': 'By publishing you confirm you own or control all rights to this content.',
-  'shop.safetyTitle': 'Before you buy',
-  'shop.safetyBody': 'Laybell doesn’t process payments — you arrange payment with the seller in chat. Your file unlocks here when they deliver, so keep the whole deal on Laybell, use payment methods with buyer protection, and never pay by gift card or crypto. Report anything suspicious.',
+  'shop.safetyTitle': 'How buying works',
+  'shop.safetyBody': 'You pay with credits and the file unlocks straight away — no waiting for the seller. Because the download is instant, paid purchases cannot be refunded. Check the preview first.',
   'shop.safetyOk': 'Got it',
   'shop.report': 'Report listing',
   'shop.rateLimited': 'You’ve sent a lot of requests today — try again tomorrow.',
@@ -2269,6 +2272,9 @@ const en: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  'shop.earnStore': 'Comisión de la tienda',
+  'shop.needCredits': 'Necesitas más créditos para comprarlo.',
+  'shop.cannotBuyOwn': 'No puedes comprar tu propio anuncio.',
   'wallet.transferFailed': 'No se pudo transferir',
   'wallet.err.below_minimum': 'Los pagos empiezan en {min}.',
   'wallet.err.insufficient_available': 'Parte de tus ganancias aún se está liberando. Inténtalo cuando estén disponibles.',
@@ -2422,7 +2428,7 @@ const es: Record<string, string> = {
   'shop.earnFee': 'Comisión de Laybell (15%)',
   'shop.earnTax': 'Impuesto estimado (lo paga el comprador)',
   'shop.earnYou': 'Tú recibes',
-  'shop.earnNote': 'El impuesto se suma al total del comprador al momento de la compra — nunca sale de tus ganancias.',
+  'shop.earnNote': 'Los compradores pagan con créditos. Laybell te paga a tu banco; las ganancias se pueden retirar 14 días después de la venta.',
   'shop.sort.new': 'Más recientes',
   'shop.sort.price': 'Menor precio',
   'shop.sort.popular': 'Más vendidos',
@@ -2444,8 +2450,8 @@ const es: Record<string, string> = {
   'shop.agreeTerms': 'Términos del Mercado y Licencias de Beats',
   'shop.marketplaceTerms': 'Términos del mercado y licencias',
   'shop.rightsNote': 'Al publicar confirmas que posees o controlas todos los derechos de este contenido.',
-  'shop.safetyTitle': 'Antes de comprar',
-  'shop.safetyBody': 'Laybell no procesa pagos: el pago se acuerda con el vendedor por chat. Tu archivo se desbloquea aquí cuando entregue, así que mantén todo el trato en Laybell, usa métodos de pago con protección al comprador y nunca pagues con tarjetas de regalo o cripto. Reporta cualquier cosa sospechosa.',
+  'shop.safetyTitle': 'Cómo funciona la compra',
+  'shop.safetyBody': 'Pagas con créditos y el archivo se desbloquea al instante, sin esperar al vendedor. Como la descarga es inmediata, las compras pagadas no se pueden reembolsar. Revisa la vista previa antes.',
   'shop.safetyOk': 'Entendido',
   'shop.report': 'Reportar publicación',
   'shop.rateLimited': 'Has enviado muchas solicitudes hoy — inténtalo mañana.',
@@ -3967,6 +3973,9 @@ const es: Record<string, string> = {
 };
 
 const fr: Record<string, string> = {
+  'shop.earnStore': 'Frais de la boutique',
+  'shop.needCredits': 'Il vous faut plus de crédits pour cet achat.',
+  'shop.cannotBuyOwn': 'Vous ne pouvez pas acheter votre propre annonce.',
   'wallet.transferFailed': 'Transfert impossible',
   'wallet.err.below_minimum': 'Les virements démarrent à {min}.',
   'wallet.err.insufficient_available': 'Une partie de vos gains est encore en cours de validation. Réessayez une fois disponibles.',
@@ -4120,7 +4129,7 @@ const fr: Record<string, string> = {
   'shop.earnFee': 'Commission Laybell (15 %)',
   'shop.earnTax': 'Taxe estimée (payée par l’acheteur)',
   'shop.earnYou': 'Tu reçois',
-  'shop.earnNote': 'La taxe s’ajoute au total de l’acheteur au moment de l’achat — elle n’est jamais prélevée sur tes gains.',
+  'shop.earnNote': 'Les acheteurs paient en crédits. Laybell vous verse les fonds sur votre compte ; les gains sont retirables 14 jours après la vente.',
   'shop.sort.new': 'Plus récents',
   'shop.sort.price': 'Prix croissant',
   'shop.sort.popular': 'Meilleures ventes',
@@ -4142,8 +4151,8 @@ const fr: Record<string, string> = {
   'shop.agreeTerms': 'Conditions du Marché et des Licences de Beats',
   'shop.marketplaceTerms': 'Conditions du marché et licences',
   'shop.rightsNote': 'En publiant, tu confirmes posséder ou contrôler tous les droits sur ce contenu.',
-  'shop.safetyTitle': 'Avant d’acheter',
-  'shop.safetyBody': 'Laybell ne traite pas les paiements : tu t’arranges avec le vendeur par chat. Ton fichier se débloque ici à la livraison — garde tout l’échange sur Laybell, utilise des moyens de paiement avec protection acheteur et ne paie jamais par carte cadeau ou crypto. Signale tout ce qui semble suspect.',
+  'shop.safetyTitle': 'Comment fonctionne l\'achat',
+  'shop.safetyBody': 'Vous payez en crédits et le fichier se débloque immédiatement, sans attendre le vendeur. Le téléchargement étant instantané, les achats payants ne sont pas remboursables. Écoutez l\'aperçu d\'abord.',
   'shop.safetyOk': 'Compris',
   'shop.report': 'Signaler l’annonce',
   'shop.rateLimited': 'Tu as envoyé beaucoup de demandes aujourd’hui — réessaie demain.',
@@ -5665,6 +5674,9 @@ const fr: Record<string, string> = {
 };
 
 const de: Record<string, string> = {
+  'shop.earnStore': 'App-Store-Gebühr',
+  'shop.needCredits': 'Dafür brauchst du mehr Credits.',
+  'shop.cannotBuyOwn': 'Du kannst dein eigenes Angebot nicht kaufen.',
   'wallet.transferFailed': 'Überweisung fehlgeschlagen',
   'wallet.err.below_minimum': 'Auszahlungen ab {min}.',
   'wallet.err.insufficient_available': 'Ein Teil deiner Einnahmen wird noch freigegeben. Versuche es erneut, sobald sie verfügbar sind.',
@@ -5818,7 +5830,7 @@ const de: Record<string, string> = {
   'shop.earnFee': 'Laybell-Gebühr (15 %)',
   'shop.earnTax': 'Geschätzte Steuer (zahlt der Käufer)',
   'shop.earnYou': 'Du erhältst',
-  'shop.earnNote': 'Die Steuer kommt beim Kauf auf den Gesamtpreis des Käufers — sie geht nie von deinem Erlös ab.',
+  'shop.earnNote': 'Käufer zahlen mit Credits. Laybell zahlt an dein Bankkonto aus; Einnahmen sind 14 Tage nach dem Verkauf auszahlbar.',
   'shop.sort.new': 'Neueste',
   'shop.sort.price': 'Niedrigster Preis',
   'shop.sort.popular': 'Bestseller',
@@ -5840,8 +5852,8 @@ const de: Record<string, string> = {
   'shop.agreeTerms': 'Marktplatz- & Beat-Lizenzbedingungen',
   'shop.marketplaceTerms': 'Marktplatz- & Lizenzbedingungen',
   'shop.rightsNote': 'Mit dem Veröffentlichen bestätigst du, dass du alle Rechte an diesem Inhalt besitzt oder kontrollierst.',
-  'shop.safetyTitle': 'Bevor du kaufst',
-  'shop.safetyBody': 'Laybell wickelt keine Zahlungen ab — die Bezahlung vereinbarst du mit dem Verkäufer im Chat. Deine Datei wird hier bei Lieferung freigeschaltet. Halte den ganzen Deal auf Laybell, nutze Zahlungsarten mit Käuferschutz und zahle nie per Geschenkkarte oder Krypto. Melde alles Verdächtige.',
+  'shop.safetyTitle': 'So funktioniert der Kauf',
+  'shop.safetyBody': 'Du zahlst mit Credits und die Datei wird sofort freigeschaltet — ohne auf den Verkäufer zu warten. Da der Download sofort erfolgt, sind bezahlte Käufe nicht erstattungsfähig. Hör dir vorher die Vorschau an.',
   'shop.safetyOk': 'Verstanden',
   'shop.report': 'Angebot melden',
   'shop.rateLimited': 'Du hast heute viele Anfragen gesendet — versuch es morgen wieder.',
@@ -7363,6 +7375,9 @@ const de: Record<string, string> = {
 };
 
 const pt: Record<string, string> = {
+  'shop.earnStore': 'Taxa da loja',
+  'shop.needCredits': 'Você precisa de mais créditos para comprar.',
+  'shop.cannotBuyOwn': 'Você não pode comprar seu próprio anúncio.',
   'wallet.transferFailed': 'Não foi possível transferir',
   'wallet.err.below_minimum': 'Os saques começam em {min}.',
   'wallet.err.insufficient_available': 'Parte dos seus ganhos ainda está sendo liberada. Tente novamente quando estiverem disponíveis.',
@@ -7516,7 +7531,7 @@ const pt: Record<string, string> = {
   'shop.earnFee': 'Taxa da Laybell (15%)',
   'shop.earnTax': 'Imposto estimado (pago pelo comprador)',
   'shop.earnYou': 'Você recebe',
-  'shop.earnNote': 'O imposto é somado ao total do comprador na compra — nunca sai dos seus ganhos.',
+  'shop.earnNote': 'Os compradores pagam com créditos. A Laybell paga para o seu banco; os ganhos podem ser sacados 14 dias após a venda.',
   'shop.sort.new': 'Mais recentes',
   'shop.sort.price': 'Menor preço',
   'shop.sort.popular': 'Mais vendidos',
@@ -7538,8 +7553,8 @@ const pt: Record<string, string> = {
   'shop.agreeTerms': 'Termos do Mercado e Licenciamento de Beats',
   'shop.marketplaceTerms': 'Termos do mercado e licenças',
   'shop.rightsNote': 'Ao publicar, você confirma que possui ou controla todos os direitos deste conteúdo.',
-  'shop.safetyTitle': 'Antes de comprar',
-  'shop.safetyBody': 'A Laybell não processa pagamentos — você combina o pagamento com o vendedor no chat. Seu arquivo é liberado aqui na entrega, então mantenha todo o negócio na Laybell, use meios de pagamento com proteção ao comprador e nunca pague com cartão-presente ou cripto. Denuncie qualquer coisa suspeita.',
+  'shop.safetyTitle': 'Como funciona a compra',
+  'shop.safetyBody': 'Você paga com créditos e o arquivo é liberado na hora, sem esperar pelo vendedor. Como o download é instantâneo, compras pagas não podem ser reembolsadas. Ouça a prévia antes.',
   'shop.safetyOk': 'Entendi',
   'shop.report': 'Denunciar anúncio',
   'shop.rateLimited': 'Você enviou muitas solicitações hoje — tente de novo amanhã.',
@@ -9061,6 +9076,9 @@ const pt: Record<string, string> = {
 };
 
 const it: Record<string, string> = {
+  'shop.earnStore': 'Commissione dello store',
+  'shop.needCredits': 'Ti servono più crediti per acquistarlo.',
+  'shop.cannotBuyOwn': 'Non puoi acquistare il tuo annuncio.',
   'wallet.transferFailed': 'Trasferimento non riuscito',
   'wallet.err.below_minimum': 'I pagamenti partono da {min}.',
   'wallet.err.insufficient_available': 'Parte dei tuoi guadagni è ancora in fase di sblocco. Riprova quando saranno disponibili.',
@@ -9214,7 +9232,7 @@ const it: Record<string, string> = {
   'shop.earnFee': 'Commissione Laybell (15%)',
   'shop.earnTax': 'Imposta stimata (a carico dell’acquirente)',
   'shop.earnYou': 'Tu ricevi',
-  'shop.earnNote': 'L’imposta si aggiunge al totale dell’acquirente al momento dell’acquisto — non viene mai detratta dai tuoi guadagni.',
+  'shop.earnNote': 'Gli acquirenti pagano con i crediti. Laybell ti paga sul tuo conto; i guadagni sono prelevabili 14 giorni dopo la vendita.',
   'shop.sort.new': 'Più recenti',
   'shop.sort.price': 'Prezzo più basso',
   'shop.sort.popular': 'Più venduti',
@@ -9236,8 +9254,8 @@ const it: Record<string, string> = {
   'shop.agreeTerms': 'Termini del Marketplace e Licenze dei Beat',
   'shop.marketplaceTerms': 'Termini del marketplace e licenze',
   'shop.rightsNote': 'Pubblicando confermi di possedere o controllare tutti i diritti su questo contenuto.',
-  'shop.safetyTitle': 'Prima di comprare',
-  'shop.safetyBody': 'Laybell non gestisce i pagamenti: li concordi con il venditore in chat. Il file si sblocca qui alla consegna — tieni tutto l’accordo su Laybell, usa metodi di pagamento con protezione acquirenti e non pagare mai con gift card o cripto. Segnala qualsiasi cosa sospetta.',
+  'shop.safetyTitle': 'Come funziona l’acquisto',
+  'shop.safetyBody': 'Paghi con i crediti e il file si sblocca subito, senza attendere il venditore. Poiché il download è immediato, gli acquisti a pagamento non sono rimborsabili. Ascolta prima l’anteprima.',
   'shop.safetyOk': 'Capito',
   'shop.report': 'Segnala annuncio',
   'shop.rateLimited': 'Hai inviato molte richieste oggi — riprova domani.',
@@ -10759,6 +10777,9 @@ const it: Record<string, string> = {
 };
 
 const ru: Record<string, string> = {
+  'shop.earnStore': 'Комиссия магазина',
+  'shop.needCredits': 'Для покупки нужно больше кредитов.',
+  'shop.cannotBuyOwn': 'Нельзя купить собственный товар.',
   'wallet.transferFailed': 'Не удалось перевести',
   'wallet.err.below_minimum': 'Минимальная выплата — {min}.',
   'wallet.err.insufficient_available': 'Часть дохода ещё не разблокирована. Повторите попытку позже.',
@@ -10912,7 +10933,7 @@ const ru: Record<string, string> = {
   'shop.earnFee': 'Комиссия Laybell (15%)',
   'shop.earnTax': 'Прим. налог (платит покупатель)',
   'shop.earnYou': 'Вы получаете',
-  'shop.earnNote': 'Налог добавляется к сумме покупателя при покупке — он никогда не вычитается из вашего заработка.',
+  'shop.earnNote': 'Покупатели платят кредитами. Laybell переводит деньги на ваш счёт; вывести доход можно через 14 дней после продажи.',
   'shop.sort.new': 'Новые',
   'shop.sort.price': 'Сначала дешёвые',
   'shop.sort.popular': 'Хиты продаж',
@@ -10934,8 +10955,8 @@ const ru: Record<string, string> = {
   'shop.agreeTerms': 'Условия маркетплейса и лицензирования битов',
   'shop.marketplaceTerms': 'Условия маркетплейса и лицензий',
   'shop.rightsNote': 'Публикуя, вы подтверждаете, что владеете всеми правами на этот контент или контролируете их.',
-  'shop.safetyTitle': 'Перед покупкой',
-  'shop.safetyBody': 'Laybell не обрабатывает платежи — об оплате вы договариваетесь с продавцом в чате. Файл открывается здесь после доставки, поэтому ведите всю сделку в Laybell, используйте способы оплаты с защитой покупателя и никогда не платите подарочными картами или криптовалютой. Сообщайте обо всём подозрительном.',
+  'shop.safetyTitle': 'Как проходит покупка',
+  'shop.safetyBody': 'Вы платите кредитами, и файл открывается сразу — ждать продавца не нужно. Так как загрузка мгновенная, платные покупки не подлежат возврату. Сначала послушайте превью.',
   'shop.safetyOk': 'Понятно',
   'shop.report': 'Пожаловаться на объявление',
   'shop.rateLimited': 'Сегодня вы отправили много запросов — попробуйте завтра.',
@@ -12422,6 +12443,9 @@ const ru: Record<string, string> = {
 };
 
 const zh: Record<string, string> = {
+  'shop.earnStore': '应用商店抽成',
+  'shop.needCredits': '积分不足，无法购买。',
+  'shop.cannotBuyOwn': '不能购买自己的商品。',
   'wallet.transferFailed': '转账失败',
   'wallet.err.below_minimum': '提现起步金额为 {min}。',
   'wallet.err.insufficient_available': '部分收入仍在解冻中，请稍后再试。',
@@ -12575,7 +12599,7 @@ const zh: Record<string, string> = {
   'shop.earnFee': 'Laybell 服务费（15%）',
   'shop.earnTax': '预计税费（买家支付）',
   'shop.earnYou': '你的收入',
-  'shop.earnNote': '税费在购买时加到买家的总价中——绝不会从你的收入中扣除。',
+  'shop.earnNote': '买家使用积分付款。Laybell 将款项打到你的银行账户；收入在售出 14 天后可提现。',
   'shop.sort.new': '最新',
   'shop.sort.price': '价格最低',
   'shop.sort.popular': '最畅销',
@@ -12597,8 +12621,8 @@ const zh: Record<string, string> = {
   'shop.agreeTerms': '市场与节拍授权条款',
   'shop.marketplaceTerms': '市场与授权条款',
   'shop.rightsNote': '发布即表示你确认拥有或掌控此内容的全部版权。',
-  'shop.safetyTitle': '购买须知',
-  'shop.safetyBody': 'Laybell 不处理付款——付款方式由你与卖家在聊天中商定。卖家交付后文件在此解锁，请把整个交易留在 Laybell 内，使用带买家保护的付款方式，切勿用礼品卡或加密货币付款。发现可疑情况请举报。',
+  'shop.safetyTitle': '购买方式',
+  'shop.safetyBody': '使用积分付款后文件立即解锁，无需等待卖家。由于可即时下载，付费购买不支持退款，请先试听。',
   'shop.safetyOk': '知道了',
   'shop.report': '举报商品',
   'shop.rateLimited': '你今天发送的请求过多——请明天再试。',
@@ -14085,6 +14109,9 @@ const zh: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  'shop.earnStore': 'ストア手数料',
+  'shop.needCredits': '購入にはクレジットが不足しています。',
+  'shop.cannotBuyOwn': '自分の出品は購入できません。',
   'wallet.transferFailed': '送金できませんでした',
   'wallet.err.below_minimum': '出金は{min}からです。',
   'wallet.err.insufficient_available': '収益の一部がまだ解放されていません。反映後にもう一度お試しください。',
@@ -14238,7 +14265,7 @@ const ja: Record<string, string> = {
   'shop.earnFee': 'Laybell 手数料（15%）',
   'shop.earnTax': '推定税額（購入者負担）',
   'shop.earnYou': 'あなたの受取額',
-  'shop.earnNote': '税金は購入時に購入者の合計に加算されます。あなたの収益から引かれることはありません。',
+  'shop.earnNote': '購入者はクレジットで支払います。Laybellがあなたの口座へ送金し、収益は販売から14日後に出金できます。',
   'shop.sort.new': '新着順',
   'shop.sort.price': '価格が安い順',
   'shop.sort.popular': '売れ筋順',
@@ -14260,8 +14287,8 @@ const ja: Record<string, string> = {
   'shop.agreeTerms': 'マーケットプレイス・ビートライセンス規約',
   'shop.marketplaceTerms': 'マーケットとライセンスの規約',
   'shop.rightsNote': '公開することで、このコンテンツのすべての権利を所有または管理していることを確認したことになります。',
-  'shop.safetyTitle': '購入の前に',
-  'shop.safetyBody': 'Laybell は決済を行いません。支払いはチャットで出品者と取り決めます。ファイルは納品時にここで解錠されるので、取引はすべて Laybell 内で行い、購入者保護のある支払い方法を使い、ギフトカードや暗号資産では決して支払わないでください。不審な点は通報を。',
+  'shop.safetyTitle': 'ご購入の流れ',
+  'shop.safetyBody': 'クレジットで支払うとファイルはすぐに解放され、出品者を待つ必要はありません。即時ダウンロードのため、有料購入は返金できません。先にプレビューをご確認ください。',
   'shop.safetyOk': 'わかりました',
   'shop.report': '出品を通報',
   'shop.rateLimited': '今日は多くのリクエストを送信しました。明日もう一度お試しください。',
@@ -15748,6 +15775,9 @@ const ja: Record<string, string> = {
 };
 
 const hi: Record<string, string> = {
+  'shop.earnStore': 'ऐप स्टोर शुल्क',
+  'shop.needCredits': 'इसे खरीदने के लिए और क्रेडिट चाहिए।',
+  'shop.cannotBuyOwn': 'आप अपनी ही लिस्टिंग नहीं खरीद सकते।',
   'wallet.transferFailed': 'ट्रांसफ़र नहीं हो सका',
   'wallet.err.below_minimum': 'भुगतान {min} से शुरू होता है।',
   'wallet.err.insufficient_available': 'आपकी कुछ कमाई अभी क्लियर हो रही है। उपलब्ध होने पर दोबारा कोशिश करें।',
@@ -15901,7 +15931,7 @@ const hi: Record<string, string> = {
   'shop.earnFee': 'Laybell शुल्क (15%)',
   'shop.earnTax': 'अनुमानित कर (खरीदार देता है)',
   'shop.earnYou': 'आपको मिलेंगे',
-  'shop.earnNote': 'कर खरीद के समय खरीदार के कुल में जुड़ता है — यह कभी आपकी कमाई से नहीं कटता।',
+  'shop.earnNote': 'खरीदार क्रेडिट से भुगतान करते हैं। Laybell आपके बैंक में भुगतान करता है; कमाई बिक्री के 14 दिन बाद निकाली जा सकती है।',
   'shop.sort.new': 'सबसे नए',
   'shop.sort.price': 'सबसे कम कीमत',
   'shop.sort.popular': 'सबसे ज़्यादा बिकने वाले',
@@ -15923,8 +15953,8 @@ const hi: Record<string, string> = {
   'shop.agreeTerms': 'मार्केटप्लेस और बीट लाइसेंसिंग शर्तें',
   'shop.marketplaceTerms': 'मार्केटप्लेस और लाइसेंस शर्तें',
   'shop.rightsNote': 'प्रकाशित करके आप पुष्टि करते हैं कि इस कॉन्टेंट के सभी अधिकार आपके पास हैं या आपके नियंत्रण में हैं।',
-  'shop.safetyTitle': 'खरीदने से पहले',
-  'shop.safetyBody': 'Laybell भुगतान प्रोसेस नहीं करता — भुगतान आप विक्रेता से चैट में तय करते हैं। डिलीवरी पर फ़ाइल यहीं अनलॉक होती है, इसलिए पूरा सौदा Laybell पर रखें, खरीदार सुरक्षा वाले भुगतान तरीके इस्तेमाल करें, और कभी भी गिफ़्ट कार्ड या क्रिप्टो से भुगतान न करें। कुछ भी संदिग्ध लगे तो रिपोर्ट करें।',
+  'shop.safetyTitle': 'खरीदारी कैसे होती है',
+  'shop.safetyBody': 'आप क्रेडिट से भुगतान करते हैं और फ़ाइल तुरंत अनलॉक हो जाती है — विक्रेता का इंतज़ार नहीं। डाउनलोड तुरंत होने के कारण, सशुल्क खरीद वापस नहीं की जा सकती। पहले प्रीव्यू देखें।',
   'shop.safetyOk': 'समझ गया',
   'shop.report': 'लिस्टिंग रिपोर्ट करें',
   'shop.rateLimited': 'आज आपने बहुत सारे अनुरोध भेजे हैं — कल फिर कोशिश करें।',

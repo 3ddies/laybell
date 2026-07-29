@@ -15,8 +15,8 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { supabase } from '../../lib/supabase';
 import {
-  LISTING_CATEGORIES, buyerTaxCents, createListing, fetchListing, formatPrice, saleTypes,
-  sellerEarningsCents, shopFeeCents, updateListing, updateListingTypes,
+  LISTING_CATEGORIES, createListing, fetchListing, formatPrice, saleTypes,
+  sellerEarningsCents, shopSplit, updateListing, updateListingTypes,
   uploadListingCover, uploadListingFile, uploadListingPreview,
   type ListingCategory, type ListingTypesInput,
 } from '../../lib/shop';
@@ -340,13 +340,17 @@ export default function NewListingScreen() {
                 <Text style={styles.earnLabel}>{t('shop.earnPrice')}</Text>
                 <Text style={styles.earnValue}>{formatPrice(earnPreviewCents)}</Text>
               </View>
+              {/* Apple's and Google's commission is shown as its own line.
+                  Folding it into "Laybell's fee" would make Laybell's cut look
+                  twice its real size, and a seller comparing 75% here against
+                  BeatStars' 90% is owed the reason for the difference. */}
               <View style={styles.earnRow}>
-                <Text style={styles.earnLabel}>{t('shop.earnFee')}</Text>
-                <Text style={styles.earnValue}>−{formatPrice(shopFeeCents(earnPreviewCents))}</Text>
+                <Text style={styles.earnLabel}>{t('shop.earnStore')}</Text>
+                <Text style={styles.earnValue}>−{formatPrice(shopSplit(earnPreviewCents).storeCents)}</Text>
               </View>
               <View style={styles.earnRow}>
-                <Text style={styles.earnLabel}>{t('shop.earnTax')}</Text>
-                <Text style={styles.earnValueMuted}>+{formatPrice(buyerTaxCents(earnPreviewCents))}</Text>
+                <Text style={styles.earnLabel}>{t('shop.earnFee')}</Text>
+                <Text style={styles.earnValue}>−{formatPrice(shopSplit(earnPreviewCents).laybellCents)}</Text>
               </View>
               <View style={styles.earnDivider} />
               <View style={styles.earnRow}>

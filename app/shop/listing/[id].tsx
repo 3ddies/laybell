@@ -145,8 +145,11 @@ export default function ListingScreen() {
     try {
       const o = await requestToBuy(listing, '', kind, offerCents);
       setOrders((prev) => [o, ...prev]);
-      if (kind === 'free' && o.status === 'delivered') notifySuccess(); // instant claim!
-      else reactionPop(); // request sent — small physical confirmation
+      // Paid sell/lease now DELIVERS on the spot — the credits have already
+      // moved, so the file is unlocked before this line runs. Only offers are
+      // still a request, because they need the seller to agree a price.
+      if (o.status === 'delivered') notifySuccess();
+      else reactionPop();
       if (kind === 'offer') { setOfferOpen(false); setOfferText(''); }
     } catch (e) {
       const msg = (e as Error)?.message ?? '';
@@ -154,7 +157,13 @@ export default function ListingScreen() {
       else if (msg.includes('free_follow_required') || msg.includes('free_likes_required')) {
         setError(t('shop.freeCondUnmetErr'));
         checkFreeConditions(listing).then(setConds).catch(() => {});
-      } else await load(); // unique violation / kind gone → resync
+      } else if (msg.includes('insufficient funds')) {
+        // Send them where the problem is solvable instead of showing an error
+        // they can't act on. Same routing the tip flow uses.
+        setError(t('shop.needCredits'));
+        router.push('/credits');
+      } else if (msg.includes('cannot_buy_own')) setError(t('shop.cannotBuyOwn'));
+      else await load(); // unique violation / kind gone → resync
     }
     setBusyKind(null);
   }
