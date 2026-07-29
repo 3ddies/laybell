@@ -186,13 +186,19 @@ export default function MusicScreen() {
       innerSwipeRef.current = true;
       setTabSwipe(false); // outer pager off — swipes now belong to the pills
     };
-    t = setTimeout(arm, 4000);
+    // The 4s dwell exists so a user passing THROUGH Music can still swipe on to
+    // the next app page. Listen mode removes that possibility entirely — the
+    // pager is locked to Music (_layout gates swipeEnabled on !listenMode and
+    // snaps any in-flight swipe back), so a horizontal gesture has nothing left
+    // to mean except a pill step. Waiting 4s to allow the only gesture that can
+    // still happen is pure dead time, so arm immediately instead.
+    t = setTimeout(arm, listenMode ? 0 : 4000);
     return () => {
       clearTimeout(t);
       innerSwipeRef.current = false;
       setTabSwipe(true); // leaving Music resets the dwell rule
     };
-  }, [setTabSwipe]));
+  }, [setTabSwipe, listenMode]));
 
   const VIEW_ORDER = ['discover', 'playlists', 'liked', 'saved'] as const;
 
@@ -201,17 +207,29 @@ export default function MusicScreen() {
   // moving back) — fired by both pill taps and the dwell-swipe gesture.
   const viewAnimX = useRef(new Animated.Value(0)).current;
   const prevViewIdxRef = useRef(0);
+  const pendingViewSlideRef = useRef(false);
+  // Seeded DURING RENDER, not in an effect. These views mount fresh on switch
+  // (each is `activeView === 'x' && ...`), so an effect-time seed let the frame
+  // that first showed the incoming view paint it AT REST while it was still
+  // laying out, and only the NEXT frame moved it off-screen to start the slide.
+  // Same one-frame flash the profile sub-tabs had. Seeding here means the view
+  // is already off-screen the frame it mounts, so it lays out unseen.
+  const viewIdx = VIEW_ORDER.indexOf(activeView as any);
+  if (viewIdx >= 0 && viewIdx !== prevViewIdxRef.current) {
+    const dir = viewIdx > prevViewIdxRef.current ? 1 : -1;
+    prevViewIdxRef.current = viewIdx;
+    // A slide still running drives toward 0 on its own clock; stop it or a fast
+    // double-swipe has the old animation fighting the new seed.
+    viewAnimX.stopAnimation();
+    viewAnimX.setValue(dir * SCREEN_W);
+    pendingViewSlideRef.current = true;
+  }
   useEffect(() => {
-    const idx = VIEW_ORDER.indexOf(activeView as any);
-    if (idx < 0) return; // community detail — not part of the pill carousel
-    if (idx !== prevViewIdxRef.current) {
-      const dir = idx > prevViewIdxRef.current ? 1 : -1;
-      viewAnimX.setValue(dir * SCREEN_W);
-      Animated.timing(viewAnimX, {
-        toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true,
-      }).start();
-    }
-    prevViewIdxRef.current = idx;
+    if (!pendingViewSlideRef.current) return;
+    pendingViewSlideRef.current = false;
+    Animated.timing(viewAnimX, {
+      toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+    }).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView]);
   // Horizontal rails (genres, playlist cards, artists, view pills): while a
@@ -224,6 +242,34 @@ export default function MusicScreen() {
   const railTouchRef = useRef(false);
   const railGuardStart = () => { railTouchRef.current = true; setTabSwipe(false); };
   const railGuardEnd = () => { railTouchRef.current = false; setTabSwipe(!innerSwipeRef.current); };
+
+  // One step per gesture — armed on grant, spent by stepView (mirrors the
+  // profile sub-tab stepper).
+  const swipeFiredRef = useRef(false);
+
+  // Step the pill view for a decisive horizontal gesture. `allowExit` is false
+  // mid-drag: the two EDGE cases leave the Music page entirely, and that may
+  // only happen on release. Listen mode seals both edges — the user is locked
+  // to Music until they exit via the button, while pill steps stay available.
+  const stepView = (dx: number, allowExit: boolean) => {
+    const idx = VIEW_ORDER.indexOf(activeViewRef.current as any);
+    if (idx < 0) return; // community detail etc. — leave swipes alone
+    const go = (v: (typeof VIEW_ORDER)[number]) => {
+      swipeFiredRef.current = true;
+      setActiveView(v);
+      setSelectedPlaylist(null);
+      setSelectedCommunity(null);
+    };
+    if (dx < 0) {
+      if (idx === VIEW_ORDER.length - 1) {
+        if (allowExit && !listenModeRef.current) { swipeFiredRef.current = true; tabTick(); navigation.navigate('profile'); }
+      } else go(VIEW_ORDER[idx + 1]);
+    } else {
+      if (idx === 0) {
+        if (allowExit && !listenModeRef.current) { swipeFiredRef.current = true; tabTick(); navigation.navigate('post'); }
+      } else go(VIEW_ORDER[idx - 1]);
+    }
+  };
 
   const viewSwipePan = useRef(PanResponder.create({
     // Claim horizontal moves once the rule is armed — horizontal rails win the
@@ -239,23 +285,25 @@ export default function MusicScreen() {
     // Once claimed, NEVER surrender mid-gesture — a child stealing the responder
     // meant the release handler never ran and the swipe silently vanished.
     onPanResponderTerminationRequest: () => false,
-    onPanResponderRelease: (_e, g) => {
-      // Register on distance OR a quick flick — short fast side-swipes count.
+    onPanResponderGrant: () => { swipeFiredRef.current = false; },
+    // Step the moment the gesture is DECISIVE, not on finger lift — the same
+    // rule the profile sub-tabs use, and the reason those feel immediate while
+    // these felt delayed. Waiting for release meant the view only started
+    // moving after the finger stopped, so the 240ms slide read as lag on top of
+    // however long the user kept dragging.
+    onPanResponderMove: (_e, g) => {
+      if (swipeFiredRef.current) return;
       if (Math.abs(g.dx) < 40 && Math.abs(g.vx) < 0.3) return;
-      const idx = VIEW_ORDER.indexOf(activeViewRef.current as any);
-      if (idx < 0) return; // community detail etc. — leave swipes alone
-      if (g.dx < 0) {
-        // Finger moved left → forward. Past Saved → next app page — UNLESS
-        // Listen mode is on: the user is locked to Music until they exit via
-        // the button (the pill steps inside Music stay available).
-        if (idx === VIEW_ORDER.length - 1) { if (!listenModeRef.current) { tabTick(); navigation.navigate('profile'); } }
-        else { setActiveView(VIEW_ORDER[idx + 1]); setSelectedPlaylist(null); setSelectedCommunity(null); }
-      } else {
-        // Finger moved right → back. Past Discover → previous app page —
-        // sealed in Listen mode (same lock as above).
-        if (idx === 0) { if (!listenModeRef.current) { tabTick(); navigation.navigate('post'); } }
-        else { setActiveView(VIEW_ORDER[idx - 1]); setSelectedPlaylist(null); setSelectedCommunity(null); }
-      }
+      stepView(g.dx, false);
+    },
+    onPanResponderRelease: (_e, g) => {
+      // Release is now only a fallback (the move never crossed the bar, e.g. a
+      // slow drag released just past it) and the ONLY place an edge swipe may
+      // leave the page — navigating away mid-drag would yank the screen out
+      // from under a finger that is still down.
+      if (swipeFiredRef.current) return;
+      if (Math.abs(g.dx) < 40 && Math.abs(g.vx) < 0.3) return;
+      stepView(g.dx, true);
     },
   })).current;
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
