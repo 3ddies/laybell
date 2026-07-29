@@ -282,8 +282,16 @@ export default function NowPlaying() {
   // renders (see the render-phase reset below `const pid`) until that track's
   // own numbers arrive — the previous song's streams/likes/saved state must
   // never be shown (or tappable) under the new song's title.
-  const [statsReady, setStatsReady] = useState(false);
+  // A COUNTER, not a boolean: re-opening the sheet on the same song re-applies
+  // the (cached) numbers without the value changing, and a boolean would not
+  // re-fire the reveal effect — the numbers would sit invisible forever.
+  const [statsSeq, setStatsSeq] = useState(0);
+  const statsReady = statsSeq > 0;
   const statsFade = useRef(new Animated.Value(0)).current;
+  // Armed by the render-phase reset, consumed by the reveal effect, so the fade
+  // runs exactly once per hide — a same-track re-apply updates in place at full
+  // opacity instead of flickering through another fade.
+  const needsRevealRef = useRef(false);
   const prevStatsPidRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -341,17 +349,19 @@ export default function NowPlaying() {
     collapse();
   }, [currentTrack, render, expanded]);
 
-  // Fade the stat numbers in when a track's fresh values land. statsFade is
-  // zeroed BEFORE setStatsReady(true) (in the fetch effect) — zeroing here
-  // would be a commit late: the reveal render would paint one frame at the
-  // previous track's full opacity before this effect ran. Numbers are held at
-  // static opacity 0 while !statsReady (style below), so this only ever
-  // animates the reveal — there is no fade-out to race with a track change.
+  // Fade the stat numbers in once a track's fresh values have COMMITTED (this
+  // runs after that render, so the fade never reveals the outgoing numbers).
+  // The hide side is imperative — statsFade is zeroed during the render-phase
+  // reset — so this only ever animates the reveal.
+  //
+  // Depends on statsSeq (which changes on every apply) rather than a boolean,
+  // and gates on needsRevealRef so re-applying the same track doesn't re-fade.
   useEffect(() => {
-    if (statsReady) {
+    if (statsSeq > 0 && needsRevealRef.current) {
+      needsRevealRef.current = false;
       Animated.timing(statsFade, { toValue: 1, duration: 200, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
     }
-  }, [statsReady]);
+  }, [statsSeq]);
 
   // Load post stats + like state + comments for the current track (when open).
   // Cache-first: a previously-viewed track reveals instantly; a fresh one pays
@@ -367,9 +377,8 @@ export default function NowPlaying() {
       setIsLiked(s.isLiked); setIsSaved(s.isSaved);
       setOwnerId(s.ownerId); setOwnerName(s.ownerName); setOwnerBadge(s.ownerBadge);
       setSpotlighted(s.spotlighted);
-      // setValue(0) must precede the flip (see the fade effect).
-      statsFade.setValue(0);
-      setStatsReady(true);
+      // Always a change, so the reveal effect always runs (see statsSeq).
+      setStatsSeq(n => n + 1);
     };
 
     (async () => {
@@ -475,7 +484,13 @@ export default function NowPlaying() {
   // sheet is closed don't churn state.
   if (prevStatsPidRef.current !== pid) {
     prevStatsPidRef.current = pid;
-    setStatsReady(false);
+    setStatsSeq(0);
+    // Hide imperatively, in this same frame. stopAnimation FIRST: a timing
+    // animation keeps driving toward its own target on its own clock, so
+    // setValue alone would let an in-flight reveal snap the numbers back up.
+    needsRevealRef.current = true;
+    statsFade.stopAnimation();
+    statsFade.setValue(0);
     setStreams(0); setSaves(0); setLikeCount(0);
     setIsLiked(false); setIsSaved(false);
     // Owner identity is per-track too: without this, tapping the artist name
@@ -694,7 +709,7 @@ export default function NowPlaying() {
                       {/* Per-track data (badge tier, spotlight sparkle) joins
                           the same coordinated reveal as the stat numbers —
                           the artist NAME stays immediate (queue metadata). */}
-                      <Animated.View style={[styles.artistExtras, { opacity: statsReady ? statsFade : 0 }]}>
+                      <Animated.View style={[styles.artistExtras, { opacity: statsFade }]}>
                         <BadgeEmblem profile={ownerBadge} ownerId={ownerId} size={13} />
                         {spotlighted && <Ionicons name="sparkles" size={13} color={colors.primaryLight} />}
                       </Animated.View>
@@ -710,22 +725,30 @@ export default function NowPlaying() {
                     label) is identical for every song, so it stays put across
                     track changes — hiding it per track made the constant
                     elements blink. Only the per-song DATA breathes: the three
-                    numbers hold at static 0 opacity from the reset frame (not
-                    the Animated value — that would wait a commit) and fade in
-                    together when THIS track's values land. Taps are disabled
-                    until then so like/save can't act on unknown state. */}
+                    numbers are driven by statsFade — zeroed imperatively in the
+                    render-phase reset, faded in when THIS track's values land.
+                    Taps are disabled until then so like/save can't act on
+                    unknown state.
+
+                    opacity is ALWAYS the Animated value, never `ready ? v : 0`.
+                    Swapping a style prop between a plain number and an animated
+                    node detaches/re-attaches the native node, and on the FIRST
+                    such swap the attach raced the animation start: the view kept
+                    the static 0, so the very first song's numbers never appeared
+                    (every song after worked, the node being warm by then). One
+                    stable animated node makes the reveal deterministic. */}
                 <View style={styles.statBar}>
                   <TouchableOpacity disabled={!statsReady} style={[styles.tapStat, isLiked && styles.tapStatActiveLike]} onPress={handleLike} activeOpacity={0.8}>
                     <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={26} color={isLiked ? colors.like : colors.text} />
-                    <Animated.Text style={[styles.tapStatNum, { opacity: statsReady ? statsFade : 0 }]}>{formatCount(likeCount)}</Animated.Text>
+                    <Animated.Text style={[styles.tapStatNum, { opacity: statsFade }]}>{formatCount(likeCount)}</Animated.Text>
                   </TouchableOpacity>
                   <View style={styles.centerStat}>
-                    <Animated.Text style={[styles.centerStatNum, { opacity: statsReady ? statsFade : 0 }]}>{formatCount(streams)}</Animated.Text>
+                    <Animated.Text style={[styles.centerStatNum, { opacity: statsFade }]}>{formatCount(streams)}</Animated.Text>
                     <Text style={styles.centerStatLbl}>{t('nowPlaying.streams')}</Text>
                   </View>
                   <TouchableOpacity disabled={!statsReady} style={[styles.tapStat, isSaved && styles.tapStatActiveSave]} onPress={handleSave} activeOpacity={0.8}>
                     <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color={colors.text} />
-                    <Animated.Text style={[styles.tapStatNum, { opacity: statsReady ? statsFade : 0 }]}>{formatCount(saves)}</Animated.Text>
+                    <Animated.Text style={[styles.tapStatNum, { opacity: statsFade }]}>{formatCount(saves)}</Animated.Text>
                   </TouchableOpacity>
                 </View>
 
