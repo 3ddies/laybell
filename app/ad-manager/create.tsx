@@ -12,7 +12,7 @@ import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/
 import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, streamUidFromUrl, untrackStreamUpload } from '../../lib/streamUpload';
 import { probeAudioDurationSec } from '../../lib/audioProbe';
 import {
-  purchaseAdCampaign, estimatedImpressions, fmtPrice,
+  purchaseAdCampaign, estimatedImpressions, fmtPrice, AD_MIN_BUDGET_CENTS,
   AD_DEFAULT_CPM_CENTS, AD_CREATIVE_BUCKET, AD_UNSKIPPABLE_MAX_SEC, AD_SKIP_LONG_MIN_SEC, AD_PREMIUM_RATE, isPremiumPlacement,
   adVolumeBonus, AD_VOLUME_BONUS_MAX_PCT,
   type AdPlacement, type AdObjective, type AdMediaType, type NewCreativeInput, type AdSkipMode,
@@ -397,6 +397,13 @@ export default function CreateAdScreen() {
     }
     if (s === 'budget') {
       if (!(parseFloat(budget) > 0)) return t('adCreate.errBudget');
+      // Checked here because the server minimum was otherwise discovered at the
+      // very END of the flow — after uploading every creative, including a
+      // Cloudflare Stream video transcode — and surfaced as a raw Postgres
+      // string. Mirrors ad_min_budget_cents().
+      if (Math.round(parseFloat(budget) * 100) < AD_MIN_BUDGET_CENTS) {
+        return t('adCreate.errBudgetMin', { min: fmtPrice(AD_MIN_BUDGET_CENTS) });
+      }
       if (!(parseInt(days, 10) > 0)) return t('adCreate.errDays');
     }
     return null;
@@ -589,7 +596,19 @@ export default function CreateAdScreen() {
       if (typeof r.replace === 'function') r.replace(`/ad-manager/${id}`);
       else r.back();
     } catch (e: any) {
-      Alert.alert(t('adCreate.uploadFailedTitle'), e?.message ?? t('adCreate.uploadFailedBody'));
+      // Funding failures are not upload failures. purchaseAdCampaign rethrows
+      // the insufficient-funds error specifically so this can route the
+      // advertiser to buy credits — presenting it as "Upload failed" with a raw
+      // Postgres message underneath was how a paying customer got turned away.
+      const msg = String(e?.message ?? '');
+      if (msg.includes('insufficient funds')) {
+        Alert.alert(t('adCreate.needCreditsTitle'), t('adCreate.needCreditsBody'));
+        (router as any).push('/credits');
+      } else if (msg.includes('below_minimum')) {
+        Alert.alert(t('adCreate.uploadFailedTitle'), t('adCreate.errBudgetMin', { min: fmtPrice(AD_MIN_BUDGET_CENTS) }));
+      } else {
+        Alert.alert(t('adCreate.uploadFailedTitle'), e?.message ?? t('adCreate.uploadFailedBody'));
+      }
     } finally {
       publishingRef.current = false;
       setPublishing(false);

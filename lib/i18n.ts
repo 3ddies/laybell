@@ -36,6 +36,9 @@ export function isLang(v: any): v is Lang {
 }
 
 const en: Record<string, string> = {
+  'adCreate.errBudgetMin': 'Campaigns start at {min}.',
+  'adCreate.needCreditsTitle': 'Not enough credits',
+  'adCreate.needCreditsBody': 'Your campaign is saved. Top up your credits and launch it from Ad Manager.',
   'spotlight.needCredits': 'You need more credits for this package.',
   'spotlight.purchasedNotShown': 'Your Spotlight was purchased, but we couldn’t load it just now. Pull to refresh — it’s waiting in your Spotlights.',
   'shop.earnStore': 'App Store fee',
@@ -2274,6 +2277,9 @@ const en: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  'adCreate.needCreditsBody': 'Tu campaña está guardada. Recarga créditos y lánzala desde el Ad Manager.',
+  'adCreate.errBudgetMin': 'Las campañas empiezan en {min}.',
+  'adCreate.needCreditsTitle': 'Créditos insuficientes',
   'spotlight.needCredits': 'Necesitas más créditos para este paquete.',
   'spotlight.purchasedNotShown': 'Tu Spotlight se compró, pero no pudimos cargarlo ahora. Desliza para actualizar: está en tus Spotlights.',
   'shop.earnStore': 'Comisión de la tienda',
@@ -3977,6 +3983,9 @@ const es: Record<string, string> = {
 };
 
 const fr: Record<string, string> = {
+  'adCreate.errBudgetMin': 'Les campagnes démarrent à {min}.',
+  'adCreate.needCreditsTitle': 'Crédits insuffisants',
+  'adCreate.needCreditsBody': 'Votre campagne est enregistrée. Rechargez vos crédits et lancez-la depuis l’Ad Manager.',
   'spotlight.needCredits': 'Il vous faut plus de crédits pour ce forfait.',
   'spotlight.purchasedNotShown': 'Votre Spotlight a bien été acheté mais n’a pas pu être chargé. Tirez pour actualiser, il vous attend dans vos Spotlights.',
   'shop.earnStore': 'Frais de la boutique',
@@ -5680,6 +5689,9 @@ const fr: Record<string, string> = {
 };
 
 const de: Record<string, string> = {
+  'adCreate.needCreditsBody': 'Deine Kampagne ist gespeichert. Lade Credits auf und starte sie im Ad Manager.',
+  'adCreate.errBudgetMin': 'Kampagnen starten ab {min}.',
+  'adCreate.needCreditsTitle': 'Nicht genug Credits',
   'spotlight.needCredits': 'Für dieses Paket brauchst du mehr Credits.',
   'spotlight.purchasedNotShown': 'Dein Spotlight wurde gekauft, konnte aber gerade nicht geladen werden. Zieh zum Aktualisieren — es wartet in deinen Spotlights.',
   'shop.earnStore': 'App-Store-Gebühr',
@@ -7383,6 +7395,9 @@ const de: Record<string, string> = {
 };
 
 const pt: Record<string, string> = {
+  'adCreate.errBudgetMin': 'As campanhas começam em {min}.',
+  'adCreate.needCreditsTitle': 'Créditos insuficientes',
+  'adCreate.needCreditsBody': 'Sua campanha foi salva. Recarregue créditos e lance pelo Ad Manager.',
   'spotlight.needCredits': 'Você precisa de mais créditos para este pacote.',
   'spotlight.purchasedNotShown': 'Seu Spotlight foi comprado, mas não conseguimos carregá-lo agora. Puxe para atualizar — ele está nos seus Spotlights.',
   'shop.earnStore': 'Taxa da loja',
@@ -9086,6 +9101,9 @@ const pt: Record<string, string> = {
 };
 
 const it: Record<string, string> = {
+  'adCreate.errBudgetMin': 'Le campagne partono da {min}.',
+  'adCreate.needCreditsTitle': 'Crediti insufficienti',
+  'adCreate.needCreditsBody': 'La tua campagna è salvata. Ricarica i crediti e avviala dall’Ad Manager.',
   'spotlight.needCredits': 'Ti servono più crediti per questo pacchetto.',
   'spotlight.purchasedNotShown': 'Il tuo Spotlight è stato acquistato ma non è stato possibile caricarlo. Trascina per aggiornare: è nei tuoi Spotlight.',
   'shop.earnStore': 'Commissione dello store',
@@ -10789,6 +10807,9 @@ const it: Record<string, string> = {
 };
 
 const ru: Record<string, string> = {
+  'adCreate.errBudgetMin': 'Минимальный бюджет кампании — {min}.',
+  'adCreate.needCreditsTitle': 'Недостаточно кредитов',
+  'adCreate.needCreditsBody': 'Кампания сохранена. Пополните кредиты и запустите её в Ad Manager.',
   'spotlight.needCredits': 'Для этого пакета нужно больше кредитов.',
   'spotlight.purchasedNotShown': 'Spotlight куплен, но сейчас его не удалось загрузить. Потяните для обновления — он в ваших Spotlight.',
   'shop.earnStore': 'Комиссия магазина',
@@ -12457,6 +12478,9 @@ const ru: Record<string, string> = {
 };
 
 const zh: Record<string, string> = {
+  'adCreate.errBudgetMin': '广告最低预算为 {min}。',
+  'adCreate.needCreditsTitle': '积分不足',
+  'adCreate.needCreditsBody': '广告已保存。充值积分后可在广告管理中启动。',
   'spotlight.needCredits': '积分不足，无法购买该套餐。',
   'spotlight.purchasedNotShown': 'Spotlight 已购买成功，但暂时无法加载。下拉刷新即可在你的 Spotlight 中找到。',
   'shop.earnStore': '应用商店抽成',
@@ -14125,6 +14149,9 @@ const zh: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  'adCreate.errBudgetMin': 'キャンペーンは{min}からです。',
+  'adCreate.needCreditsTitle': 'クレジットが不足しています',
+  'adCreate.needCreditsBody': 'キャンペーンは保存されました。クレジットをチャージしてAd Managerから開始してください。',
   'spotlight.needCredits': 'このパッケージにはクレジットが不足しています。',
   'spotlight.purchasedNotShown': 'Spotlightは購入済みですが、いま読み込めませんでした。引っ張って更新してください。Spotlight一覧にあります。',
   'shop.earnStore': 'ストア手数料',
@@ -15793,6 +15820,9 @@ const ja: Record<string, string> = {
 };
 
 const hi: Record<string, string> = {
+  'adCreate.errBudgetMin': 'कैंपेन {min} से शुरू होते हैं।',
+  'adCreate.needCreditsTitle': 'क्रेडिट पर्याप्त नहीं',
+  'adCreate.needCreditsBody': 'आपका कैंपेन सेव है। क्रेडिट टॉप-अप करके Ad Manager से लॉन्च करें।',
   'spotlight.needCredits': 'इस पैकेज के लिए और क्रेडिट चाहिए।',
   'spotlight.purchasedNotShown': 'आपका Spotlight खरीद लिया गया, पर अभी लोड नहीं हो सका। रिफ़्रेश करें — यह आपके Spotlights में है।',
   'shop.earnStore': 'ऐप स्टोर शुल्क',

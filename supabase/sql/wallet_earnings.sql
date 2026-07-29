@@ -18,9 +18,12 @@ create or replace function public.delivered_earnings()
 returns table (total_cents bigint, sale_count bigint)
 language sql stable security definer set search_path = public as $$
   select
-    -- SHOP_FEE_RATE = 0.15 → seller keeps 85%, rounded per order (matches JS
-    -- Math.round on positive values), then summed.
-    coalesce(sum(round(price_cents * 0.85)), 0)::bigint,
+    -- Derived from shop_fee_rate(), never a hardcoded rate. This was `* 0.85`
+    -- for a 15% fee, and stayed 0.85 when the fee moved to 30% — so every seller
+    -- was shown 15 points of gross MORE than they had actually earned, and would
+    -- have discovered the real number at payout. Rounded per order to match the
+    -- client's Math.round, then summed.
+    coalesce(sum(round(price_cents * (1 - public.shop_fee_rate()))), 0)::bigint,
     count(*)::bigint
   from public.shop_orders
   where seller_id = auth.uid() and status = 'delivered';

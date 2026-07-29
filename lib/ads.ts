@@ -130,6 +130,12 @@ export const AD_CREATIVE_BUCKET = 'posts';
 // every campaign uses this rate and amount-paid → views is budget ÷ this × 1,000.
 export const AD_DEFAULT_CPM_CENTS = 1000;
 
+// $5.00. Mirrors ad_min_budget_cents() in supabase/sql/promo_credits.sql.
+// There was no client mirror at all, so the server minimum was only discovered
+// after the advertiser had uploaded every creative — including a Cloudflare
+// Stream video transcode — and arrived as a raw Postgres error string.
+export const AD_MIN_BUDGET_CENTS = 500;
+
 // Music + Laybell TV are premium UNSKIPPABLE placements — they cost 20% more per
 // view (the surcharge is Laybell's). Applied server-side in record_ad_event; the
 // create flow surfaces it as a note. Keep in sync with the RPC in ad_ecosystem.sql.

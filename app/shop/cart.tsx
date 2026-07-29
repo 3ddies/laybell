@@ -79,6 +79,14 @@ export default function CartScreen() {
           setError(t('shop.rateLimited'));
           break; // stop the run; leave the rest in the cart to try later
         }
+        // Out of credits: stop immediately. Counting this as "skipped" made the
+        // run finish and report that the items were no longer available — the
+        // items are fine, the balance isn't, and the buyer is one tap from
+        // fixing it.
+        if (msg.includes('insufficient funds')) {
+          setError(t('shop.needCredits'));
+          break;
+        }
         // Unique violation = already requested earlier → treat as done, clear it.
         if (msg.toLowerCase().includes('duplicate') || msg.includes('unique')) {
           removeFromCart(item.listingId);
