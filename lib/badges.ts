@@ -26,7 +26,9 @@ export type BadgeDef = {
   title: string;        // short label for the Badges page
   criteria: string;     // human-readable requirement
   permanent: boolean;   // (Per) — never revoked once earned
-  locked: boolean;      // stub — no underlying system yet ("coming soon")
+  locked: boolean;      // reserved: renders "coming soon" and never auto-earns.
+                        // Every badge in the catalog is now `false` — kept so a
+                        // future category can ship its UI before its backing system.
 };
 
 export const TIER_WEIGHT: Record<Tier, number> = { bronze: 1, silver: 2, gold: 4, diamond: 8 };
@@ -47,8 +49,8 @@ export function tierLabel(tier: Tier | null | undefined): string {
 }
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────
-// Mirrors the user's notes. Community / Ads / App-sharing have no underlying
-// system yet, so they're `locked: true` (shown as "coming soon", never auto-earned).
+// Mirrors the user's notes. Community / Ads / App-sharing were once `locked: true`
+// stubs; all three now have backing systems and every badge here is earnable.
 export const BADGES: BadgeDef[] = [
   // Login (streak; TWO diamonds — temporary at 30 days, permanent at 90. The only
   // category with two badges of the same tier; see qualifyingKeys for the special

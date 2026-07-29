@@ -13,7 +13,8 @@ import { isPremium } from './entitlements';
 //
 // Model
 // ─────
-// Pay first (simulated checkout → ad_payments) → campaign starts `pending`
+// Pay first (spotlight_buy_with_credits debits the credit ledger server-side and
+// writes ad_payments in the same transaction) → campaign starts `pending`
 // with no post → attaching a post (an existing public one, or one created
 // fresh from the composer via the pending handoff below) activates it for the
 // paid duration (1 / 3 / 7 days).

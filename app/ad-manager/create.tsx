@@ -34,9 +34,10 @@ type TargetProfile = { id: string; username: string | null; display_name: string
 
 // Self-serve ad campaign creation: objective → placements → creative upload per
 // placement → optional targeting → budget/schedule → review (with required ad
-// policy acceptance) → simulated checkout. Reuses the app's media pickers and
-// the progress uploader; on publish the creatives are uploaded to the `ads`
-// bucket and the live campaign + payment rows are written (lib/ads).
+// policy acceptance) → checkout against the advertiser's credit balance. Reuses
+// the app's media pickers and the progress uploader; on publish the creatives are
+// uploaded to the `ads` bucket, then ad_campaign_fund_with_credits debits the
+// ledger and writes the campaign + payment rows atomically (lib/ads).
 
 type Step = 'basics' | 'placements' | 'creatives' | 'targeting' | 'budget' | 'review';
 const STEPS: Step[] = ['basics', 'placements', 'creatives', 'targeting', 'budget', 'review'];

@@ -26,7 +26,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { countLabel } from '../lib/i18n';
 
 // Spotlight manager (reached from the profile's Spotlight button and Settings).
-// Pay (simulated) → the campaign is born `pending` → attach a post (an
+// Pay (real — credits are debited server-side) → the campaign is born `pending` → attach a post (an
 // existing public one via the grid here, or a brand-new one via the composer
 // handoff in lib/spotlight) → it launches as the Home feed's #3 post (climbing
 // toward #1 only when genuinely trending) and holds placement as long as

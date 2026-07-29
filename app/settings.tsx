@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Switch, Alert, Image,
+  ScrollView, Switch, Alert, Image, Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -34,6 +34,7 @@ const DISPLAY_MODES: { key: ThemeMode; label: string; sub: string; swatch: strin
 ];
 
 const APP_VERSION = '1.0.0';
+const SUPPORT_EMAIL = 'support@laybell.app';
 
 type SectionItem = {
   icon: any;
@@ -446,7 +447,15 @@ export default function SettingsScreen() {
       icon: 'help-circle-outline',
       label: t('about.help'),
       subtitle: t('about.helpSub'),
-      onPress: () => Alert.alert(t('about.help'), t('help.body')),
+      // Opens the mail app pre-addressed to support, with the app version in the
+      // subject so replies don't start with "which build are you on?". Falls back
+      // to showing the address, so this is never a dead end on a device with no
+      // mail client set up.
+      onPress: () => {
+        const subject = encodeURIComponent(`Laybell support (v${APP_VERSION})`);
+        Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${subject}`)
+          .catch(() => Alert.alert(t('about.help'), t('help.body')));
+      },
     },
     {
       icon: 'document-text-outline',

@@ -21,9 +21,10 @@ import type { UserAffinityProfile } from './feedScorer';
 // spaced positions once per fetch; REELS run a dynamic two-metric scheduler
 // (posts scrolled AND time elapsed both gate when an ad is due — see
 // app/reel/[id].tsx — with the due ad inserted as the next post); AUDIO is
-// time-gated (1 min first, then 3-5 min between breaks). Billing is simulated:
-// each genuinely-new impression accrues CPM spend via the RPC and the campaign
-// auto-ends when the budget is spent.
+// time-gated (1 min first, then 3-5 min between breaks). Billing is REAL: the
+// campaign is funded from the advertiser's credit balance up front
+// (ad_campaign_fund_with_credits), each genuinely-new impression accrues CPM
+// spend via the RPC, and the campaign auto-ends when the budget is spent.
 
 // ─── Flags & constants ─────────────────────────────────────────────────────────
 
@@ -831,10 +832,11 @@ export type NewCampaignInput = {
   };
 };
 
-// Create a live campaign + its creatives + the (simulated) payment record. The
-// creatives are already uploaded by the time this runs, so the campaign goes
-// straight to `active` (gated by schedule/budget at serve time). When a real
-// provider lands, only this function + ad_ecosystem.sql change.
+// Create a live campaign + its creatives, funded from the advertiser's credit
+// balance server-side (ad_campaign_fund_with_credits — it debits the ledger and
+// records the payment atomically; a client cannot fund a campaign it hasn't paid
+// for). The creatives are already uploaded by the time this runs, so the campaign
+// goes straight to `active` (gated by schedule/budget at serve time).
 export async function purchaseAdCampaign(input: NewCampaignInput): Promise<string | null> {
   try {
     const { data: { user } } = await supabase.auth.getUser();

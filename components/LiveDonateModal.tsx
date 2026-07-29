@@ -17,8 +17,11 @@ import type { LiveProfile, LiveStream } from '../lib/live';
 
 // Bottom-sheet donation flow for the live viewer. The host must be Premium to
 // receive (checked here for the UI + enforced server-side by donation_guard).
-// Payment is simulated; the sheet just shows the split (Laybell 15% + est. tax)
-// so the donor sees exactly what the host takes home.
+// Tips are charged for real, against the credit ledger (tip_with_credits). The
+// sheet shows the split + est. tax so the donor sees exactly what the host takes
+// home. The percentage is always derived from hostFeeRate() — never written as a
+// literal here, because the rate depends on the host's plan and changes when
+// Apple's Small Business rate lands (see LAUNCH_CHECKLIST §0.3).
 //
 // Two targets share the sheet: a LIVESTREAM (`stream`) or a LIVE STUDIO
 // broadcast (`studio`) — pass exactly one; only the insert target differs.
@@ -48,7 +51,7 @@ export default function LiveDonateModal({ visible, stream, studio, onClose, onDo
   const hostProfile = stream?.profile ?? studio?.hostProfile ?? null;
   const hostName = hostProfile?.display_name || hostProfile?.username || t('live.donate.host');
   const canReceive = hostCanReceive(hostProfile?.premium_until);
-  // The fee RATE depends on the host's plan (8% Premium / 35% standard), so the
+  // The fee RATE depends on the host's plan (30% Premium / 35% standard), so the
   // disclosed percentage has to be derived, never hardcoded — a donor must see the
   // rate that is actually applied to their tip.
   const feeRate = hostFeeRate(hostProfile?.premium_until);

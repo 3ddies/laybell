@@ -15,7 +15,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { reactionPop, notifySuccess } from '../lib/haptics';
 import { fmtCents } from '../lib/donations';
 import {
-  fetchWalletBalance, payoutsAvailable, type WalletBalance,
+  fetchWalletBalance, type WalletBalance,
 } from '../lib/wallet';
 import {
   fetchPayoutStatus, startPayoutOnboarding, requestPayout, PAYOUT_MIN_CENTS,
@@ -92,7 +92,6 @@ export default function WalletScreen() {
   }
 
   const total = balance?.totalCents ?? 0;
-  const canPayout = payoutsAvailable();
   // The headline is the AVAILABLE balance — the same number the Transfer button
   // acts on. It used to fall back to `lifetimeCents` whenever payoutsAvailable()
   // was false, which is hardcoded false: so the card read "$100 Earned on
