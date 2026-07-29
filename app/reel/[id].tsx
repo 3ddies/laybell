@@ -432,6 +432,27 @@ export default function ReelScreen() {
   // (played through), which drives autoplay-next. Declared up here so the frozen
   // onViewableItemsChanged below can reset it on every page change.
   const portraitLastPosRef = useRef(0);
+  // WHICH post that playhead belongs to. Without this the baseline is global,
+  // and it could be re-poisoned by the OUTGOING clip after a page change:
+  //
+  //   visibleIdRef mirrors state during RENDER (see below), while the reset on
+  //   page change runs synchronously inside the viewability callback. Between
+  //   those two moments visibleIdRef still names the previous post, so a tick
+  //   from the outgoing clip (they arrive every 250ms, all through the scroll)
+  //   passed the id check and wrote ITS playhead back over the fresh zero. The
+  //   incoming reel's first tick then looked like a huge backward jump — a
+  //   false "wrapped" signal — and auto-advance skipped a post the viewer had
+  //   not watched. Intermittent, because it needed a tick to land inside that
+  //   window.
+  //
+  //   The landscape pager never had this: overlayIdRef is assigned
+  //   synchronously in its viewability handler, so its id and its reset move
+  //   together.
+  //
+  // Scoping the baseline to a post makes the comparison meaningless across a
+  // page change instead of wrong: a playhead from post A is simply never
+  // compared against a position from post B.
+  const portraitLastPosIdRef = useRef<string | null>(null);
   // Only ONE auto-advance may be in flight. The outgoing clip keeps emitting
   // progress for the whole animated scroll, so without this it wraps again mid-
   // scroll and chain-skips several posts. Cleared when the next page actually
@@ -457,6 +478,7 @@ export default function ReelScreen() {
   const markManualSeek = (sec: number) => {
     seekSettleUntilRef.current = Date.now() + 800;
     portraitLastPosRef.current = sec * 1000;
+    portraitLastPosIdRef.current = visibleIdRef.current; // baseline belongs to the reel being seeked
     overlayLastPosRef.current = sec * 1000;
     positionRef.current = sec * 1000;
   };
@@ -542,6 +564,7 @@ export default function ReelScreen() {
     // New page → forget the previous clip's playhead, otherwise landing at ~0
     // reads as a backward jump and would instantly autoplay-next.
     portraitLastPosRef.current = 0;
+    portraitLastPosIdRef.current = null; // no baseline until the new reel ticks
     // A page committed, so any auto-advance is done — release the lock. This also
     // covers MANUAL swipes: they land here too, which resets the state cleanly so
     // hand-driven and automatic paging can't desync.
@@ -884,6 +907,7 @@ export default function ReelScreen() {
     portraitAdvancingRef.current = true;
     // Neutralise the outgoing clip's playhead so its next wrap can't re-trigger.
     portraitLastPosRef.current = 0;
+    portraitLastPosIdRef.current = null; // no baseline until the new reel ticks
     if (portraitAdvanceTimer.current) clearTimeout(portraitAdvanceTimer.current);
     portraitAdvanceTimer.current = setTimeout(() => { portraitAdvancingRef.current = false; }, 1500);
     try { listRef.current?.scrollToIndex({ index: idx + 1, animated: true }); }
@@ -1042,6 +1066,7 @@ export default function ReelScreen() {
     // neither carries a stale playhead across the rotation.
     rotationSettleUntilRef.current = Date.now() + 1200;
     portraitLastPosRef.current = 0;
+    portraitLastPosIdRef.current = null; // no baseline until the new reel ticks
     overlayLastPosRef.current = 0;
     portraitAdvancingRef.current = false;
     overlayAdvancingRef.current = false;
@@ -1333,7 +1358,14 @@ export default function ReelScreen() {
       if (visibleIdRef.current === pid) {
         // Backward jump = the clip wrapped (played through) → autoplay-next, the
         // same signal + rules the landscape pager and the TV receiver use.
-        if (pos < portraitLastPosRef.current - WRAP_BACKJUMP_MS) maybeAdvancePortrait();
+        // Only compare against a baseline from THIS post (see
+        // portraitLastPosIdRef). A mismatch means we have no baseline yet for
+        // the reel now on screen, so this tick just establishes one.
+        if (
+          portraitLastPosIdRef.current === pid &&
+          pos < portraitLastPosRef.current - WRAP_BACKJUMP_MS
+        ) maybeAdvancePortrait();
+        portraitLastPosIdRef.current = pid;
         portraitLastPosRef.current = pos;
         positionRef.current = pos;
       }
