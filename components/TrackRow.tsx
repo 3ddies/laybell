@@ -9,6 +9,7 @@ import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/them
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { formatCount } from '../lib/format';
+import { coverFade } from '../lib/coverFade';
 import { guardPress } from '../contexts/PagerContext';
 import HighlightText from './HighlightText';
 import BadgeEmblem from './BadgeEmblem';
@@ -68,7 +69,7 @@ export default function TrackRow({
           Long-press opens the options sheet from ANY part of the row. */}
       <TouchableOpacity style={styles.coverWrap} onPress={safeCover} onLongPress={onOptions}>
         {cover ? (
-          <ExpoImage source={{ uri: cover }} style={styles.cover} contentFit="cover" cachePolicy="memory-disk" />
+          <ExpoImage source={{ uri: cover }} style={[styles.cover, styles.coverImg]} contentFit="cover" cachePolicy="memory-disk" transition={coverFade(cover)} />
         ) : (
           <LinearGradient colors={GRADIENTS.primarySoft} style={styles.cover}>
             <Ionicons name="musical-notes" size={18} color={colors.primary} />
@@ -141,6 +142,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.borderSubtle,
   },
   cover: { width: 50, height: 50, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center' },
+  // Applied to the IMAGE only, never the shared no-cover gradient fallback
+  // (primarySoft is semi-transparent, so a background under it would tint it).
+  // Acts as the load placeholder: a neutral theme tile the cover fades in over.
+  coverImg: { backgroundColor: colors.surfaceLight },
   coverOverlayActive: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(224,64,28,0.5)',
