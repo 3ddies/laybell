@@ -42,7 +42,8 @@ caught by review, not by testing. Assume there are more.
 **Owner, unblocked, today:**
 
 1. Tick **Enforce HTTPS** — GitHub repo → Settings → Pages.
-2. Confirm `support@` and `dmca@` aliases exist in ImprovMX. Both are printed on the live site.
+2. ~~Confirm `support@` and `dmca@` aliases exist in ImprovMX.~~ **Done 2026-07-29.**
+   Mail for the domain routes through ImprovMX (MX + SPF verified in DNS).
 3. **App Store Connect → restrict availability to the United States.** Still set to 175
    countries, which is what the DSA trader banner is about and what multiplies the tax forms.
 
