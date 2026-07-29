@@ -557,23 +557,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   headerTitle: { color: colors.text, fontSize: 20, fontWeight: '800', letterSpacing: 0.2 },
 
   searchRow: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.sm + 4 },
-  // Raised, bordered pill so the search field reads as a distinct, polished element.
-  // The lift is a WIDE, FAINT shadow rather than the shared SHADOWS.sm, whose
-  // 0.4 opacity at 4pt radius reads as a hard drop shadow behind something this
-  // large — grubby on the light theme especially. Roughly a third the opacity
-  // spread over three times the radius: the pill still floats off the list, but
-  // the edge is soft enough that you notice the depth, not the shadow.
-  // (SHADOWS.sm is left alone — six other surfaces rely on it.)
+  // OUTLINE ONLY — no fill, no shadow. The filled `surfaceElevated` panel plus a
+  // drop shadow made the field read as a card sitting ON the page; against the
+  // page background that panel was just a pale block with a smudge under it.
+  // A hairline outline alone defines the field perfectly well and lets it sit IN
+  // the page instead. The border is the only thing drawing it now, so keep it.
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.full,
+    backgroundColor: 'transparent', borderRadius: RADIUS.full,
     paddingHorizontal: SPACING.md,
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.14,
-    shadowRadius: 12,
-    elevation: 2,
   },
   // System font (SF Pro / Roboto — same family Instagram's search uses), tuned light
   // and lightly tracked for that clean, airy search-field look.
@@ -584,9 +577,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   tabRow: {
     flexDirection: 'row',
     marginHorizontal: SPACING.md, marginBottom: SPACING.sm + 4,
-    // Recessed track (a touch darker than the raised selected pill) so the
-    // segmented control reads correctly in every theme.
-    backgroundColor: colors.surface, borderRadius: RADIUS.full, padding: 3, gap: 3,
+    // No track. The recessed `surface` fill behind the segments was the second
+    // pale block in this header; without it the selected pill carries the whole
+    // job of showing which filter is on — which it already did, being the
+    // highest-contrast element on the screen. Unselected segments are now plain
+    // text on the page, matching the outlined search field above.
+    backgroundColor: 'transparent', borderRadius: RADIUS.full, padding: 3, gap: 3,
   },
   tab: { flex: 1, paddingVertical: 9, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   // Selected segment: a high-contrast pill — white with black text in dark/grey,
