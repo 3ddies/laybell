@@ -6,9 +6,101 @@ Play Store." Written 2026-07-28.
 Every item is either **[CODE]** (work in this repo), **[OWNER]** (only you can do it —
 console access, money, identity), or **[LEGAL]** (needs a professional or a filing).
 
+> **Sections 1–4 below were written on 2026-07-28 and are now partly historical.**
+> Read §0.1 first — it is the current state. Sections 5–7 are legal research and remain
+> accurate; treat them as reference, not as a to-do list.
+
 ---
 
-## 0. Confidence — read this first
+## 0.1 WHERE THINGS ACTUALLY STAND — 2026-07-29
+
+### Done and verified against the live database
+
+| | |
+|---|---|
+| **Payments ledger** | Double-entry, append-only, server-authoritative. 24/24 checks pass. |
+| **All six money surfaces wired** | Credits (IAP→webhook→ledger), tips, shop, payouts, Spotlight, Ad Manager. Nothing charges $0 any more, and nothing claims to charge what it doesn't. |
+| **Three live exploits closed** | A crafted insert could mint a live 365-day Spotlight for $0, or a funded ad campaign at `bid_cpm_cents=1`; an advertiser could reset their own spend meter. 17/17 checks pass, and the verification file *attempts each exploit* rather than just looking for the fix. |
+| **Fee arithmetic corrected** | Every rate assumed Apple's 15% Small Business rate. Until that enrolment is approved Apple takes 30%, at which point shop (25%) and Premium tips (20%) **lost money on every transaction**. Both now 30% = break-even. Reverse after approval — see §0.3. |
+| **Mississippi geo-blocked** | HB 1126 has no size threshold. Server-enforced, because `profiles` rows are created by three paths that never run app code. |
+| **Legal docs corrected** | Terms, Advertiser Terms and Community Guidelines all said payments were simulated. Effective 2026-07-29 — **existing users should be notified.** |
+| **laybell.app is live** | Real landing page, all legal pages, `/.well-known/` at the domain root, share links moved onto the domain. Old QR codes still resolve (verified, one hop). |
+| **Accessibility** | 118 icon-only buttons labelled via an AST codemod; `a11y.*` had existed only in English, so nine languages were silently falling back. |
+
+### The gate
+
+**A build.** RevenueCat is a native module, so nothing payment-related can be tested in
+Expo Go. **Every line of the money code above has been reasoned about carefully and
+executed zero times.** Two bugs in it were caught only because Postgres rejected them at
+`CREATE` time, and a third — a guard that would have thrown on every ad impression — was
+caught by review, not by testing. Assume there are more.
+
+---
+
+## 0.2 NEXT, IN ORDER
+
+**Owner, unblocked, today:**
+
+1. Tick **Enforce HTTPS** — GitHub repo → Settings → Pages.
+2. Confirm `support@` and `dmca@` aliases exist in ImprovMX. Both are printed on the live site.
+3. **App Store Connect → restrict availability to the United States.** Still set to 175
+   countries, which is what the DSA trader banner is about and what multiplies the tax forms.
+
+**Owner, in flight:**
+
+4. **Apple organisation conversion.** D-U-N-S obtained; verification takes up to three weeks.
+   When it lands: re-sign Paid Apps as the LLC → bank account to the LLC's → W-9 with the EIN
+   → **then** Small Business Program. Confirm the **Team ID didn't change** before running
+   `scripts/set-store-ids.mjs`, because it is baked into the AASA file.
+
+**Then the build, and the five tests that cover every money path:**
+
+5. Buy credits → ledger balance moves
+6. Tip → 30%/35% split, earnings show a 14-day hold
+7. Buy a shop listing → instant delivery, file unlocks
+8. Make an offer, decline it → credits come back
+9. Connect a bank via Stripe → onboarding returns cleanly
+
+**After the build:**
+
+10. Three store identifiers → `node scripts/set-store-ids.mjs --check`
+11. Screenshots + a seeded demo account (listing copy is written — `docs/STORE_LISTING.md`)
+12. Fund the Stripe balance, **then** flip `payoutsAvailable()`. Credits money arrives in a
+    *bank* account, not Stripe, so transfers fail until it is topped up.
+
+---
+
+## 0.3 REVERSE THESE AFTER SMALL BUSINESS APPROVAL
+
+At Apple 15% the break-even rates net 15% each, which is more than either surface needs —
+and the surplus is better spent on creators than banked.
+
+| Where | Now | After |
+|---|---|---|
+| `shop_fee_rate()` + `SHOP_FEE_RATE` | 0.30 | 0.25 (seller keeps 75%) |
+| `tip_fee_rate()` premium + `DONATION_FEE_RATE_PREMIUM` | 0.30 | 0.20 (creator keeps 80%) |
+| `STORE_COMMISSION_RATE` (lib/shop.ts) | 0.30 | 0.15 — the seller-facing split currently overstates Apple's cut |
+
+At 70% versus a standard 65%, "Earn More" is barely a reason to buy Premium. That is the
+real cost of leaving it.
+
+---
+
+## 0.4 KNOWN, ACCEPTED, NOT BLOCKING
+
+- **`apple-app-site-association` is served as `application/octet-stream`.** Apple asks for
+  `application/json`; GitHub Pages cannot set headers and ignores `web/_headers`. Measured on
+  the live domain, not predicted. Android is unaffected. If iOS universal links fail once a
+  build exists, this is the first suspect and Cloudflare Pages is the fix — which would also
+  give free email routing.
+- **~76 icon-only buttons remain unlabelled.** State-dependent icons that need human
+  judgement; the codemod deliberately skips them rather than guessing.
+- **Spotlight and Ad Manager have no per-impression refund.** Spotlight is a flat price for a
+  time window; ad budgets refund only the unspent remainder.
+
+---
+
+## 0. Confidence — read this first (2026-07-28)
 
 | Area | Status |
 |---|---|
