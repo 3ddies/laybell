@@ -3,10 +3,10 @@
 -- monetization lookups. Companion to scale_indexes.sql (which already covered
 -- the feed, follow-graph, and notifications).
 --
--- ⚠️ REVIEW-ONLY / RUN IT YOURSELF. This file was prepared by an automated
---    scalability audit but has NOT been applied to your database. Read it, then
---    run it in the Supabase SQL editor when you're ready. Nothing here touches
---    app code or changes behavior.
+-- ✅ APPLIED 2026-07-28, as part of _RUN_LAUNCH_2026-07-28_part3.sql.
+--    (This header used to say "REVIEW-ONLY / has NOT been applied", which was
+--    true when it was written and misleading afterwards. Nothing here touches
+--    app code or changes behavior; it is idempotent, so re-running is harmless.)
 --
 -- 100% additive and safe: an index only makes queries faster (or sits unused).
 -- `if not exists` = idempotent, so re-running is harmless.
