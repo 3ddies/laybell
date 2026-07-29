@@ -13,7 +13,8 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { orderProfileTabs, tabContent } from '../../lib/profileTabOrder';
 import { supabase } from '../../lib/supabase';
 import { tabTick } from '../../lib/haptics';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
@@ -145,9 +146,37 @@ export default function ProfileScreen() {
     if (!gestureActiveRef.current) setTabSwipe(activeTab === 'posts');
   }, [activeTab, setTabSwipe]);
 
+  // Sub-tab ORDER follows what this profile actually has: Posts pinned first,
+  // the rest ranked by content (see lib/profileTabOrder). Derived from rows
+  // already loaded — no extra queries. The PAGES below are deliberately NOT
+  // reordered: inactive ones are display:none so they occupy no layout, which
+  // makes their DOM order invisible; reordering them would churn mounted
+  // grids for zero visual gain.
+  const orderedKeys = useMemo(() => orderProfileTabs(
+    TAB_KEYS,
+    {
+      music: tabContent(userPosts.filter((p: any) => p.type === 'audio')),
+      videos: tabContent(userPosts.filter((p: any) => p.type === 'video')),
+      reposts: tabContent(repostedPosts),
+      playlists: tabContent(publicPlaylists),
+    },
+    userPosts.length > 0,
+  ), [userPosts, repostedPosts, publicPlaylists]);
+  // The gesture handler is created once and reads refs, so the order it steps
+  // through has to be a ref too.
+  const orderedKeysRef = useRef(orderedKeys);
+  orderedKeysRef.current = orderedKeys;
+  const orderedTabs = useMemo(
+    () => orderedKeys.map((k) => TABS.find((tb) => tb.key === k)).filter(Boolean) as typeof TABS,
+    [orderedKeys],
+  );
+
   // Slide the incoming sub-tab in from the travel direction (Music-pill style).
   const tabAnimX = useRef(new Animated.Value(0)).current;
-  const prevTabIdxRef = useRef(0);
+  // Tracked by KEY, not index: the order can change under us when content
+  // loads, and an index-based check would read that as a tab switch and fire a
+  // spurious slide on a tab the user never touched.
+  const prevTabKeyRef = useRef(activeTab);
   const pendingSlideRef = useRef(false);
   // The start offset is seeded DURING RENDER (repo convention, same as the
   // FlashList recycling guards), not in an effect. Hidden pages use
@@ -158,10 +187,10 @@ export default function ProfileScreen() {
   // the slide: the brief flash of a half-built grid. Seeding here puts the page
   // off-screen in the very same frame it becomes visible, so the fresh layout
   // happens out of sight and the slide reveals a settled page.
-  const tabIdx = TAB_KEYS.indexOf(activeTab);
-  if (tabIdx !== prevTabIdxRef.current) {
-    const dir = tabIdx > prevTabIdxRef.current ? 1 : -1;
-    prevTabIdxRef.current = tabIdx;
+  if (prevTabKeyRef.current !== activeTab) {
+    const prevIdx = orderedKeys.indexOf(prevTabKeyRef.current);
+    const dir = prevIdx < 0 || orderedKeys.indexOf(activeTab) > prevIdx ? 1 : -1;
+    prevTabKeyRef.current = activeTab;
     // A slide already in flight drives toward 0 on its own clock; stop it or it
     // fights the new seed and lands early.
     tabAnimX.stopAnimation();
@@ -185,15 +214,16 @@ export default function ProfileScreen() {
   // moves never reach here (the outer pager owns the live exit drag); the
   // navigate('music') branch is only a release-time safety net.
   const stepForGesture = (dx: number, allowExit: boolean) => {
-    const idx = TAB_KEYS.indexOf(activeTabRef.current);
+    const keys = orderedKeysRef.current;
+    const idx = keys.indexOf(activeTabRef.current);
     if (dx < 0) {
-      if (idx < TAB_KEYS.length - 1) { swipeFiredRef.current = true; setActiveTab(TAB_KEYS[idx + 1]); }
+      if (idx < keys.length - 1) { swipeFiredRef.current = true; setActiveTab(keys[idx + 1]); }
     } else if (idx === 0) {
       // Swipe-driven exit to the Music tab (release-time fallback when the outer
       // pager didn't claim the drag) — tick like any swipe landing on a new tab.
       if (allowExit) { swipeFiredRef.current = true; tabTick(); (navigation as any).navigate('music'); }
     } else {
-      swipeFiredRef.current = true; setActiveTab(TAB_KEYS[idx - 1]);
+      swipeFiredRef.current = true; setActiveTab(keys[idx - 1]);
     }
   };
 
@@ -762,7 +792,7 @@ export default function ProfileScreen() {
         onTouchCancel={() => { tabsRowTouchRef.current = false; }}
       >
         <View style={styles.tabsRow}>
-          {TABS.map((tab) => (
+          {orderedTabs.map((tab) => (
             <TouchableOpacity
               key={tab.key}
               style={[styles.tab, activeTab === tab.key && activeTabDyn]}

@@ -9,7 +9,8 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { orderProfileTabs, tabContent } from '../../lib/profileTabOrder';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { useAudio } from '../../contexts/AudioContext';
@@ -103,18 +104,41 @@ export default function PublicProfileScreen() {
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
 
+  // Sub-tab ORDER follows what this profile has — Posts pinned first, the rest
+  // ranked by content. See the twin block in app/(tabs)/profile.tsx; the PAGES
+  // below are deliberately left in their authored order (display:none makes
+  // their DOM order invisible).
+  const orderedKeys = useMemo(() => orderProfileTabs(
+    TAB_KEYS,
+    {
+      music: tabContent(posts.filter((p: any) => p.type === 'audio')),
+      videos: tabContent(posts.filter((p: any) => p.type === 'video')),
+      reposts: tabContent(reposts),
+      playlists: tabContent(publicPlaylists),
+    },
+    posts.length > 0,
+  ), [posts, reposts, publicPlaylists]);
+  const orderedKeysRef = useRef(orderedKeys);
+  orderedKeysRef.current = orderedKeys;
+  const orderedTabs = useMemo(
+    () => orderedKeys.map((k) => TABS.find((tb) => tb.key === k)).filter(Boolean) as typeof TABS,
+    [orderedKeys],
+  );
+
   // Slide the incoming sub-tab in from the travel direction (Music-pill style).
   const tabAnimX = useRef(new Animated.Value(0)).current;
-  const prevTabIdxRef = useRef(0);
+  // Tracked by KEY, not index — the order shifts when content loads, and an
+  // index check would misread that as a tab switch and fire a spurious slide.
+  const prevTabKeyRef = useRef(activeTab);
   const pendingSlideRef = useRef(false);
   // Start offset seeded DURING RENDER — see the twin block in
   // app/(tabs)/profile.tsx for why. Short version: hidden pages are
   // display:none, so revealing one lays it out fresh; seeding in an effect
   // painted that fresh layout at rest for one frame before the slide began.
-  const tabIdx = TAB_KEYS.indexOf(activeTab);
-  if (tabIdx !== prevTabIdxRef.current) {
-    const dir = tabIdx > prevTabIdxRef.current ? 1 : -1;
-    prevTabIdxRef.current = tabIdx;
+  if (prevTabKeyRef.current !== activeTab) {
+    const prevIdx = orderedKeys.indexOf(prevTabKeyRef.current);
+    const dir = prevIdx < 0 || orderedKeys.indexOf(activeTab) > prevIdx ? 1 : -1;
+    prevTabKeyRef.current = activeTab;
     tabAnimX.stopAnimation();
     tabAnimX.setValue(dir * SCREEN_W);
     pendingSlideRef.current = true;
@@ -133,13 +157,14 @@ export default function PublicProfileScreen() {
   // (popping the screen) only ever runs on release — navigating away under a
   // live finger is glitch-prone — so mid-gesture calls pass allowExit=false.
   const stepForGesture = (dx: number, allowExit: boolean) => {
-    const idx = TAB_KEYS.indexOf(activeTabRef.current);
+    const keys = orderedKeysRef.current;
+    const idx = keys.indexOf(activeTabRef.current);
     if (dx < 0) {
-      if (idx < TAB_KEYS.length - 1) { swipeFiredRef.current = true; setActiveTab(TAB_KEYS[idx + 1]); }
+      if (idx < keys.length - 1) { swipeFiredRef.current = true; setActiveTab(keys[idx + 1]); }
     } else if (idx === 0) {
       if (allowExit && router.canGoBack()) { swipeFiredRef.current = true; router.back(); }
     } else {
-      swipeFiredRef.current = true; setActiveTab(TAB_KEYS[idx - 1]);
+      swipeFiredRef.current = true; setActiveTab(keys[idx - 1]);
     }
   };
 
@@ -645,7 +670,7 @@ export default function PublicProfileScreen() {
 
       {/* Tabs — tap or swipe anywhere on the page to switch */}
       <View style={styles.tabsRow}>
-        {TABS.map((tab) => (
+        {orderedTabs.map((tab) => (
           <TouchableOpacity
             key={tab.key}
             style={[styles.tab, activeTab === tab.key && styles.activeTab, activeTab === tab.key && activeTabDyn]}
