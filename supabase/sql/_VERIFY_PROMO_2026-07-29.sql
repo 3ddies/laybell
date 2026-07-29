@@ -55,6 +55,16 @@ begin
     then fails := fails || 'ad_campaigns_guard_trg MISSING — every hole below is still open';
     else passes := passes + 1; end if;
 
+  -- The guard must allow spend to RISE. Its first version froze spent_millicents
+  -- outright, which would have thrown on every ad impression: record_ad_event
+  -- accrues spend and knows nothing about the trusted flag. Ad metering would
+  -- have been silently dead, and only visible as ads that never stop serving.
+  if not exists (select 1 from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
+                  where ns.nspname='public' and p.proname='ad_campaigns_guard'
+                    and pg_get_functiondef(p.oid) like '%spent_millicents < old.spent_millicents%')
+    then fails := fails || 'ad_campaigns_guard freezes spend instead of requiring it to be monotonic — EVERY AD IMPRESSION WILL THROW. Re-run promo_credits.sql.';
+    else passes := passes + 1; end if;
+
   -- The Premium free spotlight must have been redefined to set the trusted flag,
   -- or the guard rejects its legitimate $0 insert.
   if not exists (select 1 from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace

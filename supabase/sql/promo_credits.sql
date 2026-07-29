@@ -324,12 +324,27 @@ begin
     return new;
   end if;
 
+  -- Spend may only ever go UP.
+  --
+  -- The first version of this guard froze spent_millicents entirely unless the
+  -- trusted flag was set — which would have thrown on EVERY AD IMPRESSION, because
+  -- record_ad_event (ad_ecosystem.sql) accrues spend and knows nothing about this
+  -- trigger. Ad metering would have been completely dead.
+  --
+  -- Monotonic is the right rule anyway, because it targets the actual attack
+  -- rather than the mechanism: what an advertiser wants is to RESET the meter to
+  -- zero and keep serving. Driving your own spend up is self-harm, not an exploit,
+  -- and the budget ceiling above it is still immovable.
+  if new.spent_millicents < old.spent_millicents
+     or new.spent_cents   < old.spent_cents
+  then
+    raise exception 'protected_column';
+  end if;
+
   -- UPDATE: the owner may pause, resume, end, and edit presentation. Nothing
   -- else. Note `is distinct from` throughout — plain <> is null-blind, and most
   -- of these columns are nullable.
   if new.budget_cents_total is distinct from old.budget_cents_total
-     or new.spent_cents      is distinct from old.spent_cents
-     or new.spent_millicents is distinct from old.spent_millicents
      or new.bid_cpm_cents    is distinct from old.bid_cpm_cents
      or new.price_cents      is distinct from old.price_cents
      or new.weight           is distinct from old.weight
