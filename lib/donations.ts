@@ -59,13 +59,31 @@ export function donationFeeCents(amountCents: number, feeRate: number): number {
 export function donationPayoutCents(amountCents: number, feeRate: number): number {
   return Math.max(0, amountCents - donationFeeCents(amountCents, feeRate));
 }
-/** Estimated tax added on top of the tip (the donor's extra cost). */
-export function donationTaxCents(amountCents: number): number {
-  return Math.round(amountCents * DONATION_TAX_RATE);
+/**
+ * Always 0. Tips are paid in credits, and credits were already taxed when they
+ * were bought.
+ *
+ * This used to return 6% of the tip and the UI showed it as "Est. tax" on top of
+ * the amount. The server never charged it — `tip_post_internal` writes
+ * `tax_cents = 0` — so the app was displaying a tax line that no one collected
+ * and no one remitted. Two separate problems: the arithmetic shown to the donor
+ * didn't match what left their balance, and presenting a "tax" you don't remit
+ * is not a rounding error.
+ *
+ * It also would have been wrong to start charging it. Credits are bought through
+ * Apple and Google, who are merchant of record and already collect and remit
+ * sales tax on that purchase. Adding 6% again at spend time would tax the same
+ * money twice.
+ *
+ * Kept as a function returning 0, rather than deleted, so the breakdown type and
+ * every caller stay stable.
+ */
+export function donationTaxCents(_amountCents: number): number {
+  return 0;
 }
-/** Total the donor is charged: tip + estimated tax. */
+/** What the donor is charged. Equal to the tip — see donationTaxCents. */
 export function donationTotalChargeCents(amountCents: number): number {
-  return amountCents + donationTaxCents(amountCents);
+  return amountCents;
 }
 
 export type DonationBreakdown = {

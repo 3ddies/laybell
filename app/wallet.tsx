@@ -15,9 +15,12 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { reactionPop, notifySuccess } from '../lib/haptics';
 import { fmtCents } from '../lib/donations';
 import {
-  fetchWalletBalance, requestPayout, payoutsAvailable, type WalletBalance,
+  fetchWalletBalance, payoutsAvailable, type WalletBalance,
 } from '../lib/wallet';
-import { fetchPayoutStatus, startPayoutOnboarding, type PayoutStatus } from '../lib/payouts';
+import {
+  fetchPayoutStatus, startPayoutOnboarding, requestPayout, PAYOUT_MIN_CENTS,
+  type PayoutStatus,
+} from '../lib/payouts';
 
 // The Wallet — earned balance and the path to move it to a bank.
 //
@@ -49,6 +52,11 @@ export default function WalletScreen() {
 
   const [confirmTransfer, setConfirmTransfer] = useState(false);
   const [transferred, setTransferred] = useState(false);
+  // A payout is a network round trip that moves real money; the button has to
+  // stop accepting taps for the duration or a double-tap becomes a double
+  // request. (The server refuses the second one — one pending payout per user —
+  // but the user would see a confusing error rather than nothing happening.)
+  const [transferring, setTransferring] = useState(false);
 
   const load = useCallback(async () => {
     const [b, p] = await Promise.all([fetchWalletBalance(), fetchPayoutStatus()]);
@@ -91,16 +99,39 @@ export default function WalletScreen() {
 
   async function doTransfer() {
     setConfirmTransfer(false);
+    setTransferring(true);
     const res = await requestPayout(total);
-    if (res.ok) { notifySuccess(); setTransferred(true); }
+    setTransferring(false);
+    if (res.ok) {
+      notifySuccess();
+      setTransferred(true);
+      load();  // the ledger is already debited — reflect it rather than waiting
+      return;
+    }
+    // Every failure gets a specific message. The previous version of this
+    // function silently did nothing on failure, which read as "it worked".
+    const known = ['below_minimum', 'insufficient_available', 'payout_already_pending',
+                   'no_connected_account', 'payouts_not_enabled'];
+    Alert.alert(
+      t('wallet.transferFailed'),
+      known.includes(res.error)
+        ? t(`wallet.err.${res.error}` as any, { min: fmtCents(PAYOUT_MIN_CENTS) })
+        : t('wallet.err.generic'),
+    );
   }
 
   function onCashOut() {
-    if (total <= 0) return;
+    if (total <= 0 || transferring) return;
     // No Stripe account able to receive money yet — send them to set it up
     // rather than into a confirm dialog for a transfer that cannot complete.
     // `payoutsEnabled`, not `connected`: someone mid-verification can't be paid.
     if (!payout.payoutsEnabled) { reactionPop(); openOnboarding(); return; }
+    // Checked here as well as on the server so the common case is a clear
+    // explanation instead of a round trip that comes back with an error.
+    if (total < PAYOUT_MIN_CENTS) {
+      Alert.alert(t('wallet.transferFailed'), t('wallet.err.below_minimum', { min: fmtCents(PAYOUT_MIN_CENTS) }));
+      return;
+    }
     setConfirmTransfer(true);
   }
 

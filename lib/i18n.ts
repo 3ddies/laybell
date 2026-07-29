@@ -36,6 +36,13 @@ export function isLang(v: any): v is Lang {
 }
 
 const en: Record<string, string> = {
+  'wallet.transferFailed': 'Couldn\'t transfer',
+  'wallet.err.below_minimum': 'Payouts start at {min}.',
+  'wallet.err.insufficient_available': 'Some of your earnings are still clearing. Try again once they arrive.',
+  'wallet.err.payout_already_pending': 'You already have a transfer on the way.',
+  'wallet.err.no_connected_account': 'Connect a bank account first.',
+  'wallet.err.payouts_not_enabled': 'Your bank details are still being verified. This usually takes a day or two.',
+  'wallet.err.generic': 'That didn\'t go through. Your balance is unchanged — please try again.',
   'geoBlock.title': 'Not available in your state yet',
   'geoBlock.body': 'Laybell isn\'t available in {region} right now. New state rules require age-verification systems we\'re not able to offer yet. We hope to open up soon.',
   'onboarding.region': 'State',
@@ -1912,7 +1919,7 @@ const en: Record<string, string> = {
   'wallet.save': 'Save',
   'wallet.confirmTitle': 'Transfer {amount}?',
   'wallet.confirmBody': 'Send your balance to {label}. Payouts are simulated for now — no money moves until Laybell’s payment processor goes live.',
-  'wallet.scaffoldNote': 'This is a record of what you’ve earned, not a balance Laybell is holding. Shop sales are paid to you directly by the buyer, and tips aren’t being charged yet. Transfers open when Laybell’s payment processor launches.',
+  'wallet.scaffoldNote': 'Tips are paid from credits and reach you as real earnings. Shop sales are arranged directly between you and the buyer — Laybell never holds that money. Earnings become withdrawable 14 days after they arrive.',
   'live.donate.title': 'Support {name}',
   'live.donate.host': 'this creator',
   'live.donate.custom': 'Custom amount',
@@ -1925,7 +1932,7 @@ const en: Record<string, string> = {
   // The old copy claimed a flat 15% — the real rate is 8% Premium / 35% standard,
   // and the breakdown above now shows the host's actual rate, so this line no
   // longer restates it.
-  'live.donate.note': 'Tax is estimated and added on top, so it never reduces what the host receives. Payments are simulated while tipping is in preview — no real charge is made.',
+  'live.donate.note': 'Tips are paid from your credits. Laybell\'s fee is shown above, so you always see exactly what the creator takes home.',
   'live.donate.lockedBody': '{name} isn’t accepting tips right now.',
   'live.donate.errNotPremium': 'This creator can’t receive tips right now.',
   'live.donate.errSelf': 'You can’t tip your own stream.',
@@ -2262,6 +2269,13 @@ const en: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  'wallet.transferFailed': 'No se pudo transferir',
+  'wallet.err.below_minimum': 'Los pagos empiezan en {min}.',
+  'wallet.err.insufficient_available': 'Parte de tus ganancias aún se está liberando. Inténtalo cuando estén disponibles.',
+  'wallet.err.payout_already_pending': 'Ya tienes una transferencia en camino.',
+  'wallet.err.no_connected_account': 'Primero conecta una cuenta bancaria.',
+  'wallet.err.payouts_not_enabled': 'Tus datos bancarios aún se están verificando. Suele tardar uno o dos días.',
+  'wallet.err.generic': 'No se completó. Tu saldo no ha cambiado; inténtalo de nuevo.',
   'geoBlock.title': 'Aún no disponible en tu estado',
   'geoBlock.body': 'Laybell no está disponible en {region} por ahora. Las nuevas normas estatales exigen sistemas de verificación de edad que todavía no podemos ofrecer. Esperamos abrir pronto.',
   'onboarding.region': 'Estado',
@@ -3953,6 +3967,13 @@ const es: Record<string, string> = {
 };
 
 const fr: Record<string, string> = {
+  'wallet.transferFailed': 'Transfert impossible',
+  'wallet.err.below_minimum': 'Les virements démarrent à {min}.',
+  'wallet.err.insufficient_available': 'Une partie de vos gains est encore en cours de validation. Réessayez une fois disponibles.',
+  'wallet.err.payout_already_pending': 'Un virement est déjà en cours.',
+  'wallet.err.no_connected_account': 'Connectez d\'abord un compte bancaire.',
+  'wallet.err.payouts_not_enabled': 'Vos coordonnées bancaires sont en cours de vérification. Cela prend généralement un jour ou deux.',
+  'wallet.err.generic': 'Cela n\'a pas abouti. Votre solde est inchangé — réessayez.',
   'geoBlock.title': 'Pas encore disponible dans votre État',
   'geoBlock.body': 'Laybell n\'est pas disponible en {region} pour le moment. De nouvelles règles imposent des systèmes de vérification d\'âge que nous ne pouvons pas encore proposer. Nous espérons ouvrir bientôt.',
   'onboarding.region': 'État',
@@ -5644,6 +5665,13 @@ const fr: Record<string, string> = {
 };
 
 const de: Record<string, string> = {
+  'wallet.transferFailed': 'Überweisung fehlgeschlagen',
+  'wallet.err.below_minimum': 'Auszahlungen ab {min}.',
+  'wallet.err.insufficient_available': 'Ein Teil deiner Einnahmen wird noch freigegeben. Versuche es erneut, sobald sie verfügbar sind.',
+  'wallet.err.payout_already_pending': 'Eine Überweisung ist bereits unterwegs.',
+  'wallet.err.no_connected_account': 'Verbinde zuerst ein Bankkonto.',
+  'wallet.err.payouts_not_enabled': 'Deine Bankdaten werden noch geprüft. Das dauert meist ein bis zwei Tage.',
+  'wallet.err.generic': 'Das hat nicht geklappt. Dein Guthaben ist unverändert — bitte versuche es erneut.',
   'geoBlock.title': 'In deinem Bundesstaat noch nicht verfügbar',
   'geoBlock.body': 'Laybell ist derzeit in {region} nicht verfügbar. Neue Vorschriften verlangen Systeme zur Altersverifizierung, die wir noch nicht anbieten können. Wir hoffen, bald zu öffnen.',
   'onboarding.region': 'Bundesstaat',
@@ -7335,6 +7363,13 @@ const de: Record<string, string> = {
 };
 
 const pt: Record<string, string> = {
+  'wallet.transferFailed': 'Não foi possível transferir',
+  'wallet.err.below_minimum': 'Os saques começam em {min}.',
+  'wallet.err.insufficient_available': 'Parte dos seus ganhos ainda está sendo liberada. Tente novamente quando estiverem disponíveis.',
+  'wallet.err.payout_already_pending': 'Você já tem uma transferência a caminho.',
+  'wallet.err.no_connected_account': 'Conecte uma conta bancária primeiro.',
+  'wallet.err.payouts_not_enabled': 'Seus dados bancários ainda estão em verificação. Costuma levar um ou dois dias.',
+  'wallet.err.generic': 'Não foi concluído. Seu saldo não mudou — tente novamente.',
   'geoBlock.title': 'Ainda não disponível no seu estado',
   'geoBlock.body': 'O Laybell não está disponível em {region} no momento. Novas regras estaduais exigem sistemas de verificação de idade que ainda não podemos oferecer. Esperamos abrir em breve.',
   'onboarding.region': 'Estado',
@@ -9026,6 +9061,13 @@ const pt: Record<string, string> = {
 };
 
 const it: Record<string, string> = {
+  'wallet.transferFailed': 'Trasferimento non riuscito',
+  'wallet.err.below_minimum': 'I pagamenti partono da {min}.',
+  'wallet.err.insufficient_available': 'Parte dei tuoi guadagni è ancora in fase di sblocco. Riprova quando saranno disponibili.',
+  'wallet.err.payout_already_pending': 'Hai già un trasferimento in corso.',
+  'wallet.err.no_connected_account': 'Collega prima un conto bancario.',
+  'wallet.err.payouts_not_enabled': 'I tuoi dati bancari sono ancora in verifica. Di solito richiede uno o due giorni.',
+  'wallet.err.generic': 'Non è andata a buon fine. Il tuo saldo è invariato: riprova.',
   'geoBlock.title': 'Non ancora disponibile nel tuo stato',
   'geoBlock.body': 'Laybell non è disponibile in {region} al momento. Nuove norme statali richiedono sistemi di verifica dell\'età che non possiamo ancora offrire. Speriamo di aprire presto.',
   'onboarding.region': 'Stato',
@@ -10717,6 +10759,13 @@ const it: Record<string, string> = {
 };
 
 const ru: Record<string, string> = {
+  'wallet.transferFailed': 'Не удалось перевести',
+  'wallet.err.below_minimum': 'Минимальная выплата — {min}.',
+  'wallet.err.insufficient_available': 'Часть дохода ещё не разблокирована. Повторите попытку позже.',
+  'wallet.err.payout_already_pending': 'Перевод уже в пути.',
+  'wallet.err.no_connected_account': 'Сначала подключите банковский счёт.',
+  'wallet.err.payouts_not_enabled': 'Банковские данные ещё проверяются. Обычно это занимает день-два.',
+  'wallet.err.generic': 'Не получилось. Баланс не изменился — попробуйте ещё раз.',
   'geoBlock.title': 'Пока недоступно в вашем штате',
   'geoBlock.body': 'Laybell сейчас недоступен в {region}. Новые правила штата требуют систем проверки возраста, которые мы пока не можем предложить. Надеемся открыться скоро.',
   'onboarding.region': 'Штат',
@@ -12373,6 +12422,13 @@ const ru: Record<string, string> = {
 };
 
 const zh: Record<string, string> = {
+  'wallet.transferFailed': '转账失败',
+  'wallet.err.below_minimum': '提现起步金额为 {min}。',
+  'wallet.err.insufficient_available': '部分收入仍在解冻中，请稍后再试。',
+  'wallet.err.payout_already_pending': '你已有一笔转账正在处理。',
+  'wallet.err.no_connected_account': '请先绑定银行账户。',
+  'wallet.err.payouts_not_enabled': '你的银行信息仍在验证中，通常需要一到两天。',
+  'wallet.err.generic': '未能完成。你的余额未变，请重试。',
   'geoBlock.title': '您所在的州暂不支持',
   'geoBlock.body': 'Laybell 目前在{region}不可用。当地新规要求年龄验证系统，我们暂时无法提供。希望不久后开放。',
   'onboarding.region': '州',
@@ -14029,6 +14085,13 @@ const zh: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  'wallet.transferFailed': '送金できませんでした',
+  'wallet.err.below_minimum': '出金は{min}からです。',
+  'wallet.err.insufficient_available': '収益の一部がまだ解放されていません。反映後にもう一度お試しください。',
+  'wallet.err.payout_already_pending': 'すでに送金手続き中です。',
+  'wallet.err.no_connected_account': '先に銀行口座を連携してください。',
+  'wallet.err.payouts_not_enabled': '銀行情報を確認中です。通常1〜2日ほどかかります。',
+  'wallet.err.generic': '完了しませんでした。残高は変わっていません。もう一度お試しください。',
   'geoBlock.title': 'お住まいの州ではまだご利用いただけません',
   'geoBlock.body': 'Laybellは現在{region}でご利用いただけません。新しい州法で求められる年齢確認の仕組みを、まだご用意できていません。近日中の開始を目指しています。',
   'onboarding.region': '州',
@@ -15685,6 +15748,13 @@ const ja: Record<string, string> = {
 };
 
 const hi: Record<string, string> = {
+  'wallet.transferFailed': 'ट्रांसफ़र नहीं हो सका',
+  'wallet.err.below_minimum': 'भुगतान {min} से शुरू होता है।',
+  'wallet.err.insufficient_available': 'आपकी कुछ कमाई अभी क्लियर हो रही है। उपलब्ध होने पर दोबारा कोशिश करें।',
+  'wallet.err.payout_already_pending': 'आपका एक ट्रांसफ़र पहले से चल रहा है।',
+  'wallet.err.no_connected_account': 'पहले बैंक खाता जोड़ें।',
+  'wallet.err.payouts_not_enabled': 'आपके बैंक विवरण अभी सत्यापित हो रहे हैं। इसमें आमतौर पर एक-दो दिन लगते हैं।',
+  'wallet.err.generic': 'यह पूरा नहीं हुआ। आपका बैलेंस अपरिवर्तित है — कृपया दोबारा कोशिश करें।',
   'geoBlock.title': 'आपके राज्य में अभी उपलब्ध नहीं',
   'geoBlock.body': 'Laybell फ़िलहाल {region} में उपलब्ध नहीं है। नए राज्य नियमों के लिए आयु सत्यापन प्रणाली ज़रूरी है, जो हम अभी नहीं दे सकते। हमें जल्द खुलने की उम्मीद है।',
   'onboarding.region': 'राज्य',

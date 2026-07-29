@@ -17,8 +17,16 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // money transmission, a federal offence under 18 U.S.C. §1960.
 //
 // ACTIONS
-//   { action: 'onboard' } → returns { url } to Stripe's hosted onboarding
-//   { action: 'status'  } → returns { connected, payoutsEnabled, detailsSubmitted }
+//   { action: 'onboard' }                     → { url } to Stripe's hosted onboarding
+//   { action: 'status'  }                     → { connected, payoutsEnabled, detailsSubmitted }
+//   { action: 'payout', amountCents: 2500 }   → { payoutId, transferId }
+//
+// ⚠️ THE PLATFORM STRIPE BALANCE MUST BE FUNDED. A transfer moves money from
+// Laybell's Stripe balance to the creator's connected account. Credits are bought
+// through Apple and Google, so that money arrives in a BANK account, not in
+// Stripe — meaning Stripe's balance has to be topped up before transfers can
+// succeed. An unfunded balance surfaces as `balance_insufficient`, which this
+// function reverses cleanly, but the creator still sees a failed payout.
 //
 // Deploy:
 //   supabase secrets set STRIPE_SECRET_KEY=sk_test_…
@@ -34,6 +42,8 @@ const CORS = {
 const STRIPE_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+// Used to call RPCs AS THE SIGNED-IN USER, so their own auth checks still run.
+const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 // Where Stripe returns the user after onboarding. A deep link back into the app.
 const RETURN_URL = Deno.env.get('STRIPE_CONNECT_RETURN_URL') ?? 'https://laybell.app/payouts';
 
@@ -50,18 +60,42 @@ function userIdFromJwt(req: Request): string | null {
   } catch { return null; }
 }
 
+// Pinned deliberately. Without this header Stripe uses whatever default version
+// the account happens to be on, which means Stripe can change response shapes
+// under a running deployment — and this code now moves money. Bump it
+// intentionally, after reading the changelog, never by accident.
+const STRIPE_VERSION = '2024-06-20';
+
 // Stripe's API is form-encoded, not JSON.
-async function stripe(path: string, body?: Record<string, string>, method = 'POST') {
+//
+// `idempotencyKey` is what makes a retried transfer safe: Stripe returns the
+// ORIGINAL result for a repeated key rather than performing the action twice. A
+// network timeout on a transfer is otherwise indistinguishable from a failure,
+// and retrying without a key pays the creator twice.
+async function stripe(
+  path: string,
+  body?: Record<string, string>,
+  method = 'POST',
+  idempotencyKey?: string,
+) {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${STRIPE_KEY}`,
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Stripe-Version': STRIPE_VERSION,
+  };
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+
   const res = await fetch(`https://api.stripe.com/v1/${path}`, {
     method,
-    headers: {
-      Authorization: `Bearer ${STRIPE_KEY}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers,
     body: body ? new URLSearchParams(body).toString() : undefined,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message ?? 'stripe_error');
+  if (!res.ok) {
+    const err = new Error(data?.error?.message ?? 'stripe_error');
+    (err as any).code = data?.error?.code ?? null;
+    throw err;
+  }
   return data;
 }
 
@@ -127,6 +161,75 @@ serve(async (req) => {
         type: 'account_onboarding',
       });
       return json({ url: link.url });
+    }
+
+    if (action === 'payout') {
+      if (!acct) return json({ error: 'no_connected_account' }, 400);
+      const amountCents = Math.floor(Number(body?.amountCents ?? 0));
+      if (!Number.isFinite(amountCents) || amountCents <= 0) {
+        return json({ error: 'invalid_amount' }, 400);
+      }
+
+      // payouts_enabled is the only field that means the creator can actually be
+      // paid. Checking it here turns a confusing failed payout into a clear
+      // "finish your onboarding".
+      const a = await stripe(`accounts/${acct}`, undefined, 'GET');
+      if (!a.payouts_enabled) return json({ error: 'payouts_not_enabled' }, 400);
+
+      // request_payout runs as the CALLER, not the service role, so its
+      // auth.uid() checks, its balance check and its one-pending-payout
+      // constraint all apply. Reaching for the service role here would bypass
+      // exactly the guards that make this safe.
+      const asUser = createClient(SUPABASE_URL, ANON_KEY, {
+        auth: { persistSession: false },
+        global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+      });
+      const { data: payoutId, error: reqErr } = await asUser
+        .rpc('request_payout', { p_amount_cents: amountCents });
+      if (reqErr || !payoutId) {
+        // These come back as Postgres exception messages; pass the recognisable
+        // ones through so the app can say something specific.
+        return json({ error: reqErr?.message ?? 'payout_request_failed' }, 400);
+      }
+
+      // The ledger is already debited. From here every failure path must either
+      // complete the transfer or reverse that debit — never simply return.
+      try {
+        const transfer = await stripe(
+          'transfers',
+          {
+            amount: String(amountCents),
+            currency: 'usd',
+            destination: acct,
+            'metadata[laybell_payout_id]': String(payoutId),
+            'metadata[laybell_user_id]': uid,
+          },
+          'POST',
+          // The payout row's uuid IS the idempotency key. A retry of this exact
+          // payout returns Stripe's original transfer instead of creating a
+          // second one.
+          `laybell_payout_${payoutId}`,
+        );
+
+        await db.rpc('settle_payout', {
+          p_payout_id: payoutId,
+          p_status: 'paid',
+          p_transfer_id: transfer.id,
+        });
+        return json({ payoutId, transferId: transfer.id });
+      } catch (err) {
+        const reason = String((err as any)?.code ?? err ?? 'transfer_failed');
+        // Give the money back. If THIS fails the payout is stuck 'pending' and
+        // the creator's balance is short — the query for that case is in
+        // payouts.sql, and it's why the stuck-pending check exists.
+        await db.rpc('settle_payout', {
+          p_payout_id: payoutId,
+          p_status: 'failed',
+          p_reason: reason,
+        });
+        console.error('transfer failed, reversed:', payoutId, reason);
+        return json({ error: 'transfer_failed', reason }, 400);
+      }
     }
 
     return json({ error: 'unknown_action' }, 400);

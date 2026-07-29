@@ -92,14 +92,25 @@ begin
     'credits', 'succeeded', now()
   ) returning id into v_donation;
 
-  -- Available to the host immediately: the money was already collected when the
-  -- credits were bought, so there is no chargeback window to wait out. Shop sales
-  -- are different and DO need a hold — see the note at the bottom.
+  -- The host's earnings land behind a hold (payouts.sql → payout_hold_days).
+  --
+  -- An earlier version of this comment said the money was already collected when
+  -- the credits were bought, so there was no chargeback window to wait out. That
+  -- was wrong. The credits PURCHASE can be refunded by Apple or Google well after
+  -- the fact, and `ledger_post` refuses to settle a user account negative — so a
+  -- refund of already-spent credits fails and Laybell absorbs the loss with no
+  -- way to claw it back. The window is on the purchase, not the tip, but it is
+  -- real, and once a creator can actually withdraw it becomes a cash loss rather
+  -- than a number on a screen.
+  --
+  -- The donor's debit and the platform fee are NOT held — only money that can
+  -- leave the system needs to wait.
   v_tx := public.ledger_post(
     'tip',
     jsonb_build_array(
       jsonb_build_object('user', v_donor, 'kind', 'credits',  'amount_cents', -p_amount_cents),
-      jsonb_build_object('user', p_host,  'kind', 'earnings', 'amount_cents',  v_payout),
+      jsonb_build_object('user', p_host,  'kind', 'earnings', 'amount_cents',  v_payout,
+                         'available_at', now() + (public.payout_hold_days() || ' days')::interval),
       jsonb_build_object('user', null,    'kind', 'platform', 'amount_cents',  v_fee)
     ),
     'internal',

@@ -151,24 +151,31 @@ export async function clearPayoutMethod(): Promise<void> {
 }
 
 // ── Transfer ─────────────────────────────────────────────────────────────────
-// Inert until a real processor lands. It can only ever be reached with a non-zero
-// COLLECTED balance, which the flags above currently make impossible — so this
-// records nothing rather than logging a request that will never be honoured.
+// The real payout rail is lib/payouts.ts → requestPayout(), which goes through
+// Stripe Connect.
+//
+// What used to be here was a scaffold that wrote an AsyncStorage key and
+// returned { ok: true }. By the time the ledger shipped, `total` was a genuine
+// non-zero earnings balance, so the wallet's transfer button became live — and
+// it showed the user "This will send your available balance to your connected
+// bank account", then did nothing at all. No transfer, no error, no feedback.
+// Telling someone their money is on its way when it isn't is the worst failure
+// this screen can have, so the scaffold is gone rather than merely disabled.
 
 const LAST_PAYOUT_KEY = 'wallet_last_payout_v1';
 
 export type PayoutRequest = { amountCents: number; at: number };
 
-/** True once Laybell actually collects money it could pay out. */
+/**
+ * True once Laybell actually collects money it could pay out.
+ *
+ * Tips now settle through the ledger from real purchased credits, so donations
+ * ARE collected — that flag no longer gates the rail, it just records which
+ * revenue streams reach Laybell's own balance. The shop deliberately does not:
+ * buyers pay sellers directly, off-platform, and Laybell never touches it.
+ */
 export function payoutsAvailable(): boolean {
   return PLATFORM_COLLECTS_DONATIONS || PLATFORM_COLLECTS_SHOP;
-}
-
-export async function requestPayout(amountCents: number): Promise<{ ok: boolean }> {
-  if (amountCents <= 0 || !payoutsAvailable()) return { ok: false };
-  const req: PayoutRequest = { amountCents, at: Date.now() };
-  await AsyncStorage.setItem(LAST_PAYOUT_KEY, JSON.stringify(req)).catch(() => {});
-  return { ok: true };
 }
 
 export async function getLastPayout(): Promise<PayoutRequest | null> {

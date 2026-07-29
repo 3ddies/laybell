@@ -164,7 +164,13 @@ export default function LiveDonateModal({ visible, stream, studio, onClose, onDo
                 <View style={styles.breakdown}>
                   <Row k={t('live.donate.hostGets', { name: hostName })} v={fmtCents(b.payoutCents)} styles={styles} strong />
                   <Row k={t('live.donate.fee', { pct: feePct })} v={`-${fmtCents(b.feeCents)}`} styles={styles} />
-                  <Row k={t('live.donate.tax')} v={`+${fmtCents(b.taxCents)}`} styles={styles} />
+                  {/* Tax is 0 for credit-funded tips — Apple and Google already
+                      collected it when the credits were bought. Rendered only if
+                      it's ever non-zero, rather than showing a "+$0.00" line
+                      that invites the question it's meant to answer. */}
+                  {b.taxCents > 0 && (
+                    <Row k={t('live.donate.tax')} v={`+${fmtCents(b.taxCents)}`} styles={styles} />
+                  )}
                   <View style={styles.divider} />
                   <Row k={t('live.donate.youPay')} v={fmtCents(b.totalChargeCents)} styles={styles} strong />
                 </View>
