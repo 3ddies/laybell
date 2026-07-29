@@ -123,6 +123,11 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
     setAdding(null);
   }
 
+  // NOTE: deliberately no `if (!visible) return null` here. SlideUpSheet owns
+  // its own exit animation and stays mounted until it finishes, so bailing the
+  // moment `visible` flips would unmount it mid-slide and the sheet would
+  // vanish instead of closing.
+  //
   // Just what sits INSIDE the sheet — SlideUpSheet supplies the animated
   // backdrop, the sheet surface and the keyboard avoidance below.
   const body = (

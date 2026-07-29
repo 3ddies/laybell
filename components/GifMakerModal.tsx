@@ -286,6 +286,9 @@ export default function GifMakerModal({
     setBusy(null);
   }
 
+  // NOTE: deliberately no `if (!visible) return null` here. The <Modal> below
+  // plays its own dismissal animation and needs to stay mounted through it;
+  // bailing on `visible` would tear the window down instantly instead.
   const content = (
     <GestureHandlerRootView style={styles.container}>
       <View style={{ paddingTop: insets.top + SPACING.sm }}>

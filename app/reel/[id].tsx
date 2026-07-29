@@ -5,7 +5,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, Animated,
   useWindowDimensions,
 } from 'react-native';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import ReelVideo from '../../components/ReelVideo';
 import { reelPool } from '../../lib/feedVideoPool';
@@ -237,6 +237,19 @@ const ReelPage = memo(function ReelPage({
   isLiked: boolean; isSaved: boolean; spotlight: boolean; insetsBottom: number; mountPlayer: boolean; api: ReelPageApi;
 }) {
   const styles = useThemedStyles(makeStyles);
+  // Stable per page. Both used to be inline arrows, which handed ReelVideo a new
+  // prop identity on every render of this page — defeating its memo() entirely,
+  // so it re-rendered and pushed a fresh style down to the native VideoView each
+  // time. The ref one was worse: a new callback identity makes React detach
+  // (call with null) and re-attach the ref every render, churning the id->ref
+  // map. `api` is a permanently stable ref object and item.id doesn't change for
+  // a given page, so these can be created once.
+  const onVideoProgress = useCallback(
+    (pos: number, dur: number) => api.onProgress(item.id, pos, dur),
+    [api, item.id],
+  );
+  const setVideoRef = useCallback((r: any) => api.setVideoRef(item.id, r), [api, item.id]);
+  const setScrubRef = useCallback((r: any) => api.setScrubRef(item.id, r), [api, item.id]);
   const ratio = aspectToNumber(item.aspect_ratio, 16 / 9);
   // Landscape/square videos show in full (letterboxed) so nothing is cut;
   // portrait videos fill the screen edge-to-edge.
@@ -301,7 +314,7 @@ const ReelPage = memo(function ReelPage({
           // reel pre-buffer while this one plays (warmNextId in ReelScreen).
           // Landing on a pre-buffered reel plays the moment the swipe commits.
           <ReelVideo
-            ref={(r) => api.setVideoRef(item.id, r)}
+            ref={setVideoRef}
             id={item.id}
             uri={item.media_url}
             contentFit={landscape ? 'contain' : 'cover'}
@@ -310,7 +323,7 @@ const ReelPage = memo(function ReelPage({
             muted={!!item.song_id}
             trimStartSec={item.trim_start}
             trimEndSec={item.trim_end}
-            onProgress={(pos, dur) => api.onProgress(item.id, pos, dur)}
+            onProgress={onVideoProgress}
           />
         ) : null}
         </ZoomableView>
@@ -363,7 +376,7 @@ const ReelPage = memo(function ReelPage({
       {/* This reel's own progress bar — lives inside the page so it scrolls
           away with the video rather than one shared bar floating across pages. */}
       <VideoScrubBar
-        ref={(r) => api.setScrubRef(item.id, r)}
+        ref={setScrubRef}
         bottomInset={insetsBottom + 6}
         onScrubbingChange={api.setScrubbing}
         onSeek={(sec) => api.seek(item.id, sec)}

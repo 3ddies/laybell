@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions,
   Pressable, Animated, PanResponder, Easing, Platform, ActivityIndicator, Alert,
@@ -106,7 +106,22 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
   // here while the connect wizard runs, then plays the moment the TV connects.
   const [tvConnect, setTvConnect] = useState<CastItem | null>(null);
 
-  const show = (o: PostOptionsArgs) => { selection(); setOpts(o); setVisible(true); }; // native tick as the 3-dot / long-press sheet opens
+  // STABLE for the provider's lifetime. It only calls setState + a haptic, all
+  // of which are themselves stable, so there is nothing to re-create.
+  const show = useCallback((o: PostOptionsArgs) => {
+    selection(); // native tick as the 3-dot / long-press sheet opens
+    setOpts(o);
+    setVisible(true);
+  }, []);
+
+  // Memoised, and this matters more than it looks. The value used to be a fresh
+  // `{ show }` object on every provider render, and the provider re-renders on
+  // every sheet state change — so opening or closing the 3-dot menu re-rendered
+  // EVERY consumer of this context, the home feed included. That is why the
+  // sheet felt heavier from Home than from the reel viewer, which hosts its own
+  // copy instead of going through here. With a stable identity, consumers no
+  // longer re-render at all when the sheet opens or closes.
+  const ctxValue = useMemo(() => ({ show }), [show]);
 
   const sheets = (
     <>
@@ -142,7 +157,7 @@ export function PostOptionsProvider({ children }: { children: React.ReactNode })
   );
 
   return (
-    <PostOptionsContext.Provider value={{ show }}>
+    <PostOptionsContext.Provider value={ctxValue}>
       {children}
       {/* iOS: hosted in a FullWindowOverlay so the sheet presents ABOVE the
           native-modal swipe-back screens (playlist viewer, settings, …) —
