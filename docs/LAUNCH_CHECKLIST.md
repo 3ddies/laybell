@@ -39,7 +39,36 @@ caught by review, not by testing. Assume there are more.
 
 ## 0.2 NEXT, IN ORDER
 
+### Done in code, 2026-07-29 (second pass) — needs only the rebuild / a deploy
+
+| | |
+|---|---|
+| **Camera & mic prompts** | The webrtc plugin is registered after `expo-camera`/`expo-audio`, and an explicit prop always overwrites (`@expo/config-plugins/build/ios/Permissions.js:32`), so **every** camera prompt read *"to broadcast livestreams"* — including taking a story photo. All three plugins now carry one string covering both uses. |
+| **Unused location strings** | `NSLocationAlways*` were being written with generic defaults while the app only ever requests when-in-use. Now suppressed with `false`, which deletes the keys. |
+| **`expo-image-picker`** | Used in 8+ screens but absent from `plugins`, free-riding on other plugins' Info.plist keys. Now declared. |
+| **`webcredentials:laybell.app`** | Declared in the AASA but missing from `associatedDomains`, so AutoFill association was dead. Added. |
+| **`send-push` auth hole** | It took `actorId` from the request body and sent with the service role — any signed-in user could push any notification to any user, impersonating anyone. The actor is now the verified caller, and a matching `notifications` row must already exist. |
+| **`livekit-token` auth hole** | Deployed `--no-verify-jwt` **and** deriving identity from an unsigned base64 decode, so a forged `sub` could mint a full-publish token as any member of any open session (the membership lookup runs service-role and bypasses RLS). Now verifies against GoTrue. |
+| **`parent-consent-verify`** | Would have 401'd every guardian at the gateway — same silent failure as `revenuecat-webhook`. Now recorded as `verify_jwt = false` in `config.toml`; **deploy it with the flag.** |
+| **`profiles.name` → `display_name`** | `livekit-token` selected a column that doesn't exist, so every Studio participant showed as "Artist". |
+| **Help was a dead end** | Settings → Help alerted "the help center is coming soon". It now opens a `mailto:` to support@ with the build version in the subject, all 10 languages. |
+| **Badges copy lied** | The footnote said Community and App Sharing were "coming soon"; no badge has been `locked` for some time. Removed in all 10 languages. |
+| **"Payments are simulated"** | Six files of comments sitting directly on code that now debits real credits. Corrected, with the actual RPC names. |
+
 **Owner, unblocked, today:**
+
+0. **Run `supabase/sql/_RUN_PENDING_2026-07-29.sql`.** Six migrations were committed
+   2026-07-28/29 and added to **no** run bundle, so none has been applied:
+   `stripe_connect` (⚠️ **`payouts.sql` is already live and calls
+   `profiles.stripe_account_id` — plpgsql doesn't resolve columns at CREATE time, so
+   every payout throws at runtime until this lands**), `access_log`, `copyright_strikes`
+   (the DMCA repeat-infringer machinery Terms §8 already promises), `sound_optin`,
+   `live_replay`, `stream_hours`. All idempotent; the bundle carries its own verification
+   queries.
+0b. **Re-run `wallet_earnings.sql`.** It was applied 2026-07-28 with the fee hardcoded at
+   `* 0.85`, then changed 2026-07-29 to derive from `shop_fee_rate()`. Until it is re-run
+   the deployed function uses the old rate and **every seller sees 15 points more than
+   they earned**. `_VERIFY_MONEY_2026-07-29.sql:30` tests exactly this.
 
 1. Tick **Enforce HTTPS** — GitHub repo → Settings → Pages. (Greyed out until the
    certificate finishes provisioning; allow up to 24h and don't re-save the domain.)
@@ -209,7 +238,13 @@ and cannot reverse. Rewritten in **all 10 languages**: taking a listing down rev
 access, and because payment was arranged directly between the two users, settling any refund
 is the seller's own responsibility.
 
-### 1.5 Shop earnings cap bug — **CODE FIXED THIS SESSION / SQL STILL PENDING**
+### 1.5 Shop earnings cap bug — **CODE FIXED / SQL APPLIED 07-28, BUT NEEDS A RE-RUN**
+
+> **Superseded, read this first (2026-07-29).** `wallet_earnings.sql` *was* applied on
+> 2026-07-28 (§3.1 item 14), so the "still pending" text below is stale. But the file
+> changed again on 2026-07-29 to derive the fee from `shop_fee_rate()` instead of a
+> hardcoded `0.85`, so it must be **re-run** — see §0.2 item 0b. The bug is no longer an
+> under-count; it is now an **over**-count of 15 points until the re-run.
 
 `SCALE_HARDENING_2026-07-23.md` marks this fixed, but the fix routes through the
 `delivered_earnings()` RPC, which **only exists once `wallet_earnings.sql` is run**. Until
@@ -487,7 +522,14 @@ safe move is to **run the whole list top to bottom** rather than guess what's ap
 
 ### 3.2 Edge functions and secrets
 
-15 functions in `supabase/functions/`. Blocking for launch:
+**17** functions in `supabase/functions/` (the old count of 15 missed `stripe-connect` and
+`log-access` — which were also the two with no checklist coverage at all). Blocking for launch:
+
+- [ ] **[OWNER]** `STRIPE_SECRET_KEY` — **payouts are counted as a live money surface in §0.1,
+      but this secret appears nowhere else in the repo.** Without it `stripe-connect` cannot
+      onboard a creator, read status, or move money: every payout path no-ops.
+- [ ] **[OWNER]** `STRIPE_CONNECT_RETURN_URL` — defaults to `https://laybell.app/payouts`.
+      Confirm that page exists, or onboarding returns the creator to a 404.
 
 - [ ] **[OWNER]** `CF_ACCOUNT_ID` + `CF_STREAM_TOKEN` — powers **all** video posting and Live
       (`stream-direct-upload`, `stream-status`, `stream-delete`, `stream-sweep`, `live-input`).
@@ -590,7 +632,8 @@ apply only between two alphanumerics. 12/12 cases pass, including seven false-po
 ⚠️ It is a **speed bump, not a boundary** — it runs client-side, so a modified client bypasses
 it. Real enforcement remains the moderation console plus reporting.
 
-- [ ] **[OWNER]** Run `content_filter.sql`, then expand `blocked_terms` from the dashboard.
+- [x] ~~**[OWNER]** Run `content_filter.sql`~~ — **applied 2026-07-28** (§3.1 item 16).
+      Still to do: expand `blocked_terms` from the dashboard.
       The seed is deliberately minimal (unambiguous slurs + solicitation patterns) — an
       over-broad filter trains users to route around it and buries the queue in false
       positives.
@@ -679,6 +722,14 @@ have no royalty floor**. Your real cost is the fixed administrative assessment:
       available to you — miss it and the safe harbour lapses.
 - [ ] **[OWNER]** Publish on-site: full legal entity name, physical street address, **all
       trade names (including "Laybell" if the LLC name differs)**, and the agent's details.
+> **These four are BUILT, not pending code (2026-07-29).** `supabase/sql/copyright_strikes.sql`
+> implements notice intake, the §512(g) counter-notice clock (`add_business_days`),
+> override-free trigger-fired termination, and the append-only audit log. It was committed
+> 2026-07-28 and then left out of every run bundle, so **none of it exists in the database
+> yet** — it is now in `_RUN_PENDING_2026-07-29.sql` (§0.2 item 0). Until that runs, Terms §8
+> promises machinery that isn't there, which is the §512(i) "reasonably implemented" problem
+> *BMG v. Cox* turns on. The remaining real work is the **UI** to work the queue.
+
 - [ ] **[CODE]** §512(c)(3)-compliant notice intake with *expeditious* removal — build it as
       tooling, not an inbox. A solo founder cannot manually process notices at scale, and the
       failure mode isn't "slow", it's safe-harbour loss.
@@ -729,6 +780,12 @@ tracks only. The ToS sublicense **holds against the uploader** but **fails again
 uploader couldn't bind** — a co-writer, a publishing administrator, a sample owner. It changes
 your risk posture (good-faith reliance + indemnity + §512), it is not a licence.
 
+> **Both are BUILT, not pending code (2026-07-29).** `supabase/sql/sound_optin.sql` provides
+> `allow_sound()` (per-track consent) and `withdraw_sound()` (the global kill switch — it
+> works because the song is never baked into the video file, so clearing the attribution
+> reverts every derivative post). Same story as §5.3: committed 2026-07-28, in no run bundle,
+> **not in the database**. Now in `_RUN_PENDING_2026-07-29.sql` (§0.2 item 0).
+
 - [ ] **[CODE]** Separate **per-track opt-in** for "use this sound", distinct from the general
       upload grant — specific consent reads far better than a buried blanket clause.
 - [ ] **[CODE]** **Global kill-switch** pulling a sound from every derivative post at once.
@@ -739,6 +796,10 @@ performance. Twitch is the cautionary tale — PRO deals but no label deals, the
 notices in 2020.
 ✅ **[CODE] DONE 2026-07-28 — replay retention is now opt-in.** `live_replay.sql`,
       `supabase/functions/live-input` (redeployed), `lib/live.ts`, `app/live/go-live.tsx`.
+
+      ⚠️ **The CODE is done; `live_replay.sql` was never run** (it is in no bundle — corrected
+      2026-07-29, now in `_RUN_PENDING_2026-07-29.sql`). Until it is applied,
+      `live_streams.replay_*` doesn't exist, so the attestation has nowhere to land.
 
       Live inputs were being created with `recording: { mode: 'automatic' }`, so **every
       broadcast was being saved by default.** Now `mode: 'off'` unless the host explicitly
@@ -1060,8 +1121,9 @@ Deliberately a closed list of five events: this is a security log, not analytics
 - ✅ **[OWNER]** Privacy Policy updated — new §3.15 discloses the collection, limits it to
       three named purposes, states the 13-month retention, and explicitly rules out
       advertising/tracking/profiling use. Legal HTML pages rebuilt.
-- [ ] **[OWNER]** Run `access_log.sql`, then `supabase functions deploy log-access`
-      (keep the default `verify_jwt`).
+- [ ] **[OWNER]** Run `access_log.sql` — now bundled into
+      `supabase/sql/_RUN_PENDING_2026-07-29.sql` (§0.2 item 0) — then
+      `supabase functions deploy log-access` (keep the default `verify_jwt`).
 - [ ] **[OWNER]** Diary a monthly retention prune.
 - Optional and cheap: Cloudflare's CSAM Scanning Tool is free. Not required, but it converts a
   catastrophic risk into a managed one.

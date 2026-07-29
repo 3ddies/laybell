@@ -204,8 +204,11 @@ agreement "shall automatically terminate." No invoice, no warning, no notice. Ev
 performance afterwards is unlicensed. §8 also imposes an affirmative duty to inform
 BMI *before* crossing.
 
-✅ **Metered as of 2026-07-28** — `supabase/sql/stream_hours.sql` +
-`lib/listenMeter.ts`. Check monthly:
+⚠️ **Meter is WRITTEN but NOT YET LIVE (corrected 2026-07-29).** `supabase/sql/stream_hours.sql`
++ `lib/listenMeter.ts` were committed 2026-07-28, but the SQL was left out of every run bundle
+and has never been applied — so nothing is being counted, and the query below will error until
+it is. It is now in `supabase/sql/_RUN_PENDING_2026-07-29.sql`. **Run that first**, then check
+monthly:
 
 ```sql
 select * from public.bmi_license_usage('<start date>', '<end date>');
