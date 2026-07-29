@@ -87,7 +87,8 @@ export default function CastBar({ bottomDock = false, variant = 'bar' }: { botto
         // (story camera, Live) — mirrors the music side chip: poster (tap opens
         // the remote) + play/pause + disconnect, a vertical pill on the edge.
         <View style={styles.chip}>
-          <TouchableOpacity onPress={openRemote} style={styles.chipPosterWrap} activeOpacity={0.85}>
+          <TouchableOpacity onPress={openRemote} style={styles.chipPosterWrap} activeOpacity={0.85}
+            accessibilityRole="button" accessibilityLabel={t('a11y.castControls')}>
             {current?.poster ? (
               <Image source={{ uri: current.poster }} style={styles.chipPoster} />
             ) : (
@@ -98,14 +99,17 @@ export default function CastBar({ bottomDock = false, variant = 'bar' }: { botto
             <View style={styles.chipBadge}><Ionicons name="tv" size={8} color="#fff" /></View>
           </TouchableOpacity>
           {current && (
-            <TouchableOpacity onPress={() => { selection(); if (ended) retry(); else if (isPlaying) pause(); else play(); }} hitSlop={8}>
+            <TouchableOpacity onPress={() => { selection(); if (ended) retry(); else if (isPlaying) pause(); else play(); }} hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={ended ? t('a11y.retry') : isPlaying ? t('a11y.pause') : t('a11y.play')}>
               <Ionicons
                 name={busy ? 'hourglass' : ended ? 'refresh-circle' : isPlaying ? 'pause-circle' : 'play-circle'}
                 size={28} color={colors.primary}
               />
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.chipClose} onPress={disconnect} hitSlop={8}>
+          <TouchableOpacity style={styles.chipClose} onPress={disconnect} hitSlop={8}
+            accessibilityRole="button" accessibilityLabel={t('a11y.stopCasting')}>
             <Ionicons name="close" size={12} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
@@ -122,7 +126,8 @@ export default function CastBar({ bottomDock = false, variant = 'bar' }: { botto
               <Text style={styles.title} numberOfLines={1}>{t('tv.cast.connectedTo', { device })}</Text>
               <Text style={styles.sub} numberOfLines={1}>{t('tv.cast.pickVideo')}</Text>
             </View>
-            <TouchableOpacity onPress={disconnect} hitSlop={8} style={styles.ctrl}>
+            <TouchableOpacity onPress={disconnect} hitSlop={8} style={styles.ctrl}
+              accessibilityRole="button" accessibilityLabel={t('a11y.stopCasting')}>
               <Ionicons name="close" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -130,7 +135,8 @@ export default function CastBar({ bottomDock = false, variant = 'bar' }: { botto
           <>
             <View style={styles.row}>
               {/* Poster + title: tap opens the full-screen remote. */}
-              <TouchableOpacity style={styles.infoTap} activeOpacity={0.8} onPress={openRemote}>
+              <TouchableOpacity style={styles.infoTap} activeOpacity={0.8} onPress={openRemote}
+                accessibilityRole="button" accessibilityLabel={t('a11y.castControls')}>
                 <View style={styles.coverWrap}>
                   {current.poster ? (
                     <Image source={{ uri: current.poster }} style={styles.cover} />
@@ -157,14 +163,16 @@ export default function CastBar({ bottomDock = false, variant = 'bar' }: { botto
 
               {/* Transport (or Retry when the receiver rejected the stream) */}
               {mediaError ? (
-                <TouchableOpacity onPress={retry} hitSlop={8} style={styles.retryBtn}>
+                <TouchableOpacity onPress={retry} hitSlop={8} style={styles.retryBtn}
+                  accessibilityRole="button" accessibilityLabel={t('a11y.retry')}>
                   <Ionicons name="refresh" size={14} color="#fff" />
                   <Text style={styles.retryText}>{t('tv.cast.retry')}</Text>
                 </TouchableOpacity>
               ) : (
                 <>
                   {hasPrev && (
-                    <TouchableOpacity onPress={() => { selection(); prev(); }} hitSlop={8} style={styles.ctrl}>
+                    <TouchableOpacity onPress={() => { selection(); prev(); }} hitSlop={8} style={styles.ctrl}
+                      accessibilityRole="button" accessibilityLabel={t('a11y.previousTrack')}>
                       <Ionicons name="play-skip-back" size={20} color={colors.text} />
                     </TouchableOpacity>
                   )}
@@ -182,13 +190,15 @@ export default function CastBar({ bottomDock = false, variant = 'bar' }: { botto
                     )}
                   </TouchableOpacity>
                   {hasNext && (
-                    <TouchableOpacity onPress={() => { selection(); next(); }} hitSlop={8} style={styles.ctrl}>
+                    <TouchableOpacity onPress={() => { selection(); next(); }} hitSlop={8} style={styles.ctrl}
+                      accessibilityRole="button" accessibilityLabel={t('a11y.nextTrack')}>
                       <Ionicons name="play-skip-forward" size={20} color={colors.text} />
                     </TouchableOpacity>
                   )}
                 </>
               )}
-              <TouchableOpacity onPress={disconnect} hitSlop={8} style={styles.ctrl}>
+              <TouchableOpacity onPress={disconnect} hitSlop={8} style={styles.ctrl}
+              accessibilityRole="button" accessibilityLabel={t('a11y.stopCasting')}>
                 <Ionicons name="close" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>

@@ -22,6 +22,7 @@ import { WEB_ORIGIN } from '../../../lib/appLinks';
 import { reportListing } from '../../../lib/postActions';
 import {
   checkFreeConditions, fetchListing, formatPrice, getDeliverableUrl, hasDeliveredSales,
+  logDeliverableDownload,
   legacyKindOf, listingPriceLabel, myOrdersForListing, priceForKind, refundAndRemoveListing,
   requestToBuy, saleTypes, setOrderStatus, updateListing,
   type FreeConditionState, type SaleKind, type ShopListing, type ShopOrder,
@@ -178,6 +179,9 @@ export default function ListingScreen() {
     setBusyKind('download');
     try {
       const url = await getDeliverableUrl(listing.file_path);
+      // Log BEFORE opening: this row is the dispute evidence that the buyer took
+      // delivery, and it must not depend on the handoff to the browser succeeding.
+      logDeliverableDownload(deliveredOrder?.id, listing.file_path);
       Linking.openURL(url).catch(() => {});
     } catch { /* not delivered / revoked */ }
     setBusyKind(null);

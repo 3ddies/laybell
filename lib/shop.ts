@@ -9,7 +9,9 @@
 //   'shop-files' (private) <seller_id>/<listing_id>/<filename>
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
+import { logAccess } from './accessLog';
 
 export type Shop = {
   user_id: string;
@@ -247,6 +249,40 @@ export async function getDeliverableUrl(filePath: string): Promise<string> {
   const { data, error } = await supabase.storage.from('shop-files').createSignedUrl(filePath, 3600);
   if (error || !data?.signedUrl) throw error ?? new Error('no url');
   return data.signedUrl;
+}
+
+// Record that a buyer actually took delivery of a file they paid for.
+//
+// This is dispute evidence, not analytics. A downloaded beat is instant,
+// non-returnable and infinitely copyable, and on a chargeback the processor asks
+// for exactly one thing: server logs showing the customer accessed the product
+// after paying, with timestamps. Without this the claim is conceded by default.
+// Schema and the append-only RLS live in supabase/sql/shop_downloads.sql.
+//
+// Best-effort and never throws: a logging failure must not stop a paying customer
+// from getting the file they bought. Pre-migration it simply no-ops.
+export async function logDeliverableDownload(
+  orderId: string | null | undefined,
+  filePath: string,
+): Promise<void> {
+  if (!orderId) return;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from('shop_downloads').insert({
+      order_id: orderId,
+      buyer_id: user.id,
+      file_path: filePath,
+      // Advisory only — self-reported by the client. The authenticated buyer id,
+      // the order linkage and the server timestamp are what actually carry weight.
+      user_agent: typeof navigator !== 'undefined' ? (navigator as any)?.userAgent ?? null : null,
+      platform: Platform.OS,
+    });
+  } catch { /* evidence is best-effort; delivery is not */ }
+  // The IP has to be captured server-side — this row records WHAT was downloaded
+  // and by whom, the access log records FROM WHERE. Together they are the
+  // `access_activity_log` a card network asks for on a disputed digital sale.
+  logAccess('shop_download', 'shop_order', orderId);
 }
 
 // --- Listings ----------------------------------------------------------------------

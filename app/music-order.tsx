@@ -154,9 +154,10 @@ export default function MusicOrderScreen() {
 }
 
 function Header({ title, onBack, colors, styles }: { title: string; onBack: () => void; colors: ThemePalette; styles: any }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.header}>
-      <TouchableOpacity style={styles.backBtn} onPress={onBack}>
+      <TouchableOpacity style={styles.backBtn} onPress={onBack} accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
         <Ionicons name="chevron-back" size={24} color={colors.text} />
       </TouchableOpacity>
       <Text style={styles.headerTitle}>{title}</Text>

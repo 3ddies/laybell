@@ -178,9 +178,15 @@ export async function createLiveStream(
   title: string,
   mode: 'webrtc' | 'rtmp',
   orientation: LiveOrientation = 'vertical',
+  // Keep a replay after the broadcast ends. OFF unless the host explicitly asks:
+  // a live broadcast is a public performance (licensed), but a saved recording is
+  // a reproduction (not licensed by any PRO — BMI §3.B says so in terms). Must be
+  // decided here, at creation, because Cloudflare fixes the recording mode when
+  // the input is made and it cannot be changed mid-stream.
+  saveReplay = false,
 ): Promise<{ stream: LiveStream; keys: LiveStreamKeys }> {
   const { data, error } = await supabase.functions.invoke('live-input', {
-    body: { action: 'create', title },
+    body: { action: 'create', title, saveReplay },
   });
   if (error || !data?.inputUid) throw new Error(data?.error ?? error?.message ?? 'live input failed');
 
@@ -198,6 +204,9 @@ export async function createLiveStream(
       orientation,
       cf_input_uid: data.inputUid,
       playback_url: playbackUrl,
+      // Spread-conditional so a pre-migration database (no live_replay.sql yet)
+      // simply never sees these columns and the insert still succeeds.
+      ...(saveReplay ? { save_replay: true, replay_attested_at: new Date().toISOString() } : {}),
     })
     .select()
     .single();

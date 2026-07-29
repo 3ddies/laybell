@@ -322,7 +322,7 @@ export default function PostDetailScreen() {
       <Animated.View style={[StyleSheet.absoluteFill, contentStyle]}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={closeViewer}>
+        <TouchableOpacity style={styles.backBtn} onPress={closeViewer} accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('postView.title')}</Text>

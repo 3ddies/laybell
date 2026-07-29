@@ -776,7 +776,7 @@ export default function StoryCameraScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={[styles.roundBtn, { position: 'absolute', top: insets.top + 8, left: SPACING.md }]} onPress={retake}>
+        <TouchableOpacity style={[styles.roundBtn, { position: 'absolute', top: insets.top + 8, left: SPACING.md }]} onPress={retake} accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
           <Ionicons name="arrow-back" size={26} color="#fff" />
         </TouchableOpacity>
 
@@ -980,7 +980,7 @@ export default function StoryCameraScreen() {
       {/* Top controls */}
       <View style={[styles.topRow, { top: insets.top + 12 }]}>
         {!recording ? (
-          <TouchableOpacity style={styles.roundBtn} onPress={close}>
+          <TouchableOpacity style={styles.roundBtn} onPress={close} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
             <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
         ) : <View style={styles.roundBtn} />}
@@ -1073,7 +1073,7 @@ export default function StoryCameraScreen() {
         <View style={styles.shutterRow}>
           {/* Faded out (not unmounted) while recording so it doesn't pop. */}
           <Animated.View style={{ opacity: shutterStyle.controlsFade }} pointerEvents={recording ? 'none' : 'auto'}>
-            <TouchableOpacity style={styles.galleryBtn} onPress={pickFromLibrary}>
+            <TouchableOpacity style={styles.galleryBtn} onPress={pickFromLibrary} accessibilityRole="button" accessibilityLabel={t('a11y.chooseFromLibrary')}>
               {libThumb ? (
                 <ExpoImage source={{ uri: libThumb }} style={styles.galleryThumb} contentFit="cover" />
               ) : (
@@ -1103,7 +1103,7 @@ export default function StoryCameraScreen() {
           </Animated.View>
 
           <Animated.View style={{ opacity: shutterStyle.controlsFade }} pointerEvents={recording ? 'none' : 'auto'}>
-            <TouchableOpacity style={styles.galleryBtn} onPress={flipCamera}>
+            <TouchableOpacity style={styles.galleryBtn} onPress={flipCamera} accessibilityRole="button" accessibilityLabel={t('a11y.flipCamera')}>
               <Ionicons name="camera-reverse-outline" size={28} color="#fff" />
             </TouchableOpacity>
           </Animated.View>

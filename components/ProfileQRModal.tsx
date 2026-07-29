@@ -44,7 +44,7 @@ export default function ProfileQRModal({ visible, onClose, userId, username, dis
 
           <View style={styles.headerRow}>
             <Text style={[styles.title, { color: colors.text }]}>{t('qr.title')}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={10} style={styles.closeBtn}>
+            <TouchableOpacity onPress={onClose} hitSlop={10} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
               <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>

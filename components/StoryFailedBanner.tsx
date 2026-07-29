@@ -27,7 +27,7 @@ export default function StoryFailedBanner({ onRetry, onDismiss }: {
           <Ionicons name="refresh" size={14} color="#fff" />
           <Text style={styles.retryText}>{t('common.retry')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={onDismiss} hitSlop={8} style={styles.closeBtn}>
+        <TouchableOpacity onPress={onDismiss} hitSlop={8} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
           <Ionicons name="close" size={18} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>

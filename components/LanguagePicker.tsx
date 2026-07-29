@@ -29,7 +29,7 @@ export default function LanguagePicker({ visible, onClose }: LanguagePickerProps
     >
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+          <TouchableOpacity style={styles.closeBtn} onPress={onClose} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
             <Ionicons name="close" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('settings.section.language')}</Text>

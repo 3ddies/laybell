@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, Share, ActivityIndicator, Platform,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Share, ActivityIndicator, Platform, Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ import {
 import { WhipPublisher, getRTCView, webrtcAvailable } from '../../lib/whip';
 import { rtmpAvailable, getRtmpView, type RtmpPublisherHandle } from '../../lib/rtmp';
 import { displayedTier } from '../../lib/badges';
+import { viewerIsAdult } from '../../lib/minors';
 import LiveChatOverlay, { useBufferedChat } from '../../components/LiveChatOverlay';
 import LiveDonationAlerts from '../../components/LiveDonationAlerts';
 import LiveEarnedOverlay from '../../components/LiveEarnedOverlay';
@@ -53,6 +54,8 @@ export default function GoLiveScreen() {
   // Phone broadcast orientation — horizontal/both also land in Laybell TV.
   const [orientation, setOrientation] = useState<LiveOrientation>('vertical');
   const [title, setTitle] = useState('');
+  // Keep a replay after the stream ends. Off by default — see live_replay.sql.
+  const [saveReplay, setSaveReplay] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -179,6 +182,16 @@ export default function GoLiveScreen() {
     setBusy(true);
     setError(null);
     try {
+      // Broadcasting is 18+. Live combines minors, real-time unmoderated video, a
+      // chat, and money flowing to the broadcaster — the worst risk-to-value shape
+      // in the app, and the one most likely to draw a store or regulator response.
+      // WATCHING a stream is unaffected; only going live is gated. "Known adult",
+      // so a missing date of birth does not unlock it (see lib/minors).
+      if (!(await viewerIsAdult())) {
+        setError(t('live.adultOnly'));
+        setBusy(false);
+        return;
+      }
       // Horizontal phone lives publish RTMPS when the native engine is in this
       // binary — the row becomes mode 'rtmp' (live HLS: TV-castable, recorded,
       // played by the feed's existing AppVideo path).
@@ -186,7 +199,9 @@ export default function GoLiveScreen() {
       const ingest: Mode = mode === 'rtmp' || usePhoneRtmp ? 'rtmp' : 'webrtc';
       // Orientation only applies to phone broadcasts; encoders set their own
       // framing, so those default to vertical bookkeeping.
-      const { stream, keys } = await createLiveStream(title.trim(), ingest, mode === 'webrtc' ? orientation : 'vertical');
+      const { stream, keys } = await createLiveStream(
+        title.trim(), ingest, mode === 'webrtc' ? orientation : 'vertical', saveReplay,
+      );
       streamRef.current = stream;
       keysRef.current = keys;
       if (mode === 'webrtc') {
@@ -401,6 +416,24 @@ export default function GoLiveScreen() {
                 </View>
               )}
 
+              {/* Replay retention. Deliberately OFF by default and phrased as a
+                  rights question rather than a convenience one: going live with
+                  music is a licensed public performance, but KEEPING the recording
+                  is a reproduction that no performing-rights licence covers. The
+                  host is the one who knows whether they hold those rights. */}
+              <View style={styles.replayRow}>
+                <View style={styles.replayText}>
+                  <Text style={styles.replayLabel}>{t('live.saveReplay')}</Text>
+                  <Text style={styles.replayHelp}>{t('live.saveReplayHelp')}</Text>
+                </View>
+                <Switch
+                  value={saveReplay}
+                  onValueChange={setSaveReplay}
+                  trackColor={{ true: colors.primary, false: colors.surfaceLight }}
+                  thumbColor="#fff"
+                />
+              </View>
+
               {!!error && <Text style={styles.error}>{error}</Text>}
               <TouchableOpacity onPress={prepare} disabled={busy} activeOpacity={0.85} style={styles.primaryBtn}>
                 <LinearGradient colors={GRADIENTS.primary} style={styles.primaryBtnBg}>
@@ -540,4 +573,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   shareBtnText: { color: c.text, fontSize: 13, fontWeight: '600' },
   waitRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
   error: { color: c.error, fontSize: 13 },
+  replayRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4, marginBottom: 8 },
+  replayText: { flex: 1 },
+  replayLabel: { color: c.text, fontSize: 15, fontWeight: '600' },
+  replayHelp: { color: c.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
 });

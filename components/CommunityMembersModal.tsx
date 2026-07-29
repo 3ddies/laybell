@@ -103,7 +103,7 @@ export default function CommunityMembersModal({
           <View style={styles.handle} />
           <View style={styles.headerRow}>
             <Text style={styles.title}>{t('communities.manageMembers')}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={10}><Ionicons name="close" size={22} color={colors.textSecondary} /></TouchableOpacity>
+            <TouchableOpacity onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('a11y.close')}><Ionicons name="close" size={22} color={colors.textSecondary} /></TouchableOpacity>
           </View>
 
           {loading ? (

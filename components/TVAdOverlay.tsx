@@ -125,7 +125,7 @@ export default function TVAdOverlay({ item, active, insets, onDone, onSkip, onRe
               {canSkip && <Ionicons name="play-skip-forward" size={14} color="#fff" />}
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.optBtn} onPress={onReport} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity style={styles.optBtn} onPress={onReport} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
             <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
           </TouchableOpacity>
         </View>

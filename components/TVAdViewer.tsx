@@ -125,10 +125,10 @@ export default function TVAdViewer({ item, uid, onClose }: {
             <Text style={styles.sponsoredText}>{t('ad.sponsored')}</Text>
           </View>
           <View style={styles.topRight}>
-            <TouchableOpacity style={styles.iconBtn} onPress={onReport} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity style={styles.iconBtn} onPress={onReport} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
               <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity style={styles.iconBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
               <Ionicons name="close" size={24} color="#fff" />
             </TouchableOpacity>
           </View>

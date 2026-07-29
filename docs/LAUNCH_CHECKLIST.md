@@ -1,0 +1,1240 @@
+# Laybell — launch checklist
+
+Master scope for taking Laybell from "feature-complete" to "live on the App Store and
+Play Store." Written 2026-07-28.
+
+Every item is either **[CODE]** (work in this repo), **[OWNER]** (only you can do it —
+console access, money, identity), or **[LEGAL]** (needs a professional or a filing).
+
+---
+
+## 0. Confidence — read this first
+
+| Area | Status |
+|---|---|
+| Money/commerce surfaces (§2) | **Verified**, full file:line evidence |
+| Apple/Play billing rules (§2 Phase 1) | **Researched 2026-07-28**, cited to guideline sections and the Epic litigation record |
+| Pending SQL run list (§3) | **Verified** from git history |
+| App/EAS config + UGC requirements (§4) | **Verified** from `app.json` / `eas.json` / repo |
+| Cloudflare Stream orphans (§1) | **Fixed**, needs a device test |
+| Music licensing (§5) | **Researched 2026-07-28**, primary sources (copyright.gov, MLC, BMI, CFR, case law) |
+| Payments/money law (§6) | **Researched 2026-07-28**, primary sources (FinCEN, COMAR, IRS, Stripe docs) |
+| Privacy / minors / business setup (§7) | **Researched 2026-07-28**, primary sources (FTC, state legislatures, USPTO, Maryland) |
+
+All legal research is **informational, not legal advice**, and litigation status in the
+minors-safety area changes month to month. Sections 5–7 each end with the specific questions
+to bring to counsel. Where a conclusion turns on facts only you can supply — exact user counts
+by state, the precision of your stored location values, how shop revenue flows — that is
+flagged inline.
+
+---
+
+## 1. Blocking bugs — must be fixed before any submission
+
+### 1.1 Orphaned Cloudflare Stream assets — **FIXED THIS SESSION [CODE]**
+
+The composer prewarms a video upload on the details step, so Cloudflare creates and bills
+an asset *before* the user decides to post. The uid lived only in an in-memory `useRef`, so
+an app kill, crash, or OS eviction lost it forever — an unfindable asset billing storage
+indefinitely. Fixed in two layers:
+
+- **On-device tracker** (`lib/streamUpload.ts`) — every minted uid is persisted to
+  AsyncStorage *before the first byte moves*, stamped with its owner. Cleared when a post or
+  ad creative provably references it, or when the asset is deleted.
+- **Boot sweep** (`app/_layout.tsx`) — on each launch, leftovers from a dead process are
+  checked against `posts.video_uid`, `posts.media_url` and `ad_creatives.media_url`. Still
+  referenced → forget it. Unreferenced and older than 10 minutes → delete via the existing
+  ownership-checked `stream-delete` function. Capped at 20 per launch; a failed database
+  read aborts rather than assuming "no references."
+- **Server backstop** (`supabase/functions/stream-sweep/`, **new — not deployed**) — for
+  users who uninstall or never return. Dry-run by default, skips live recordings, skips
+  anything younger than 24h, requires a `STREAM_SWEEP_SECRET` header.
+
+✅ **RESOLVED AND VERIFIED IN PRODUCTION, 2026-07-28.**
+
+The sweeper's first real run confirmed the bug was live: **10 orphans out of 37 aged assets —
+a 27% leak rate.** The pattern was unmistakable — three uploads from one creator inside two
+minutes, two of them byte-identical, plus one **zero-byte** asset (an upload URL minted with
+nothing ever sent). Exactly the abandoned-prewarm signature. All 10 deleted, zero failures,
+after verifying each uid against `posts.video_uid`, `posts.media_url` and
+`ad_creatives.media_url`.
+
+Run `node scripts/stream-sweep.mjs` **monthly** (dry run; add `--apply` to delete). It rotates
+its own secret each run, so a leaked value dies on next use. The client-side tracker now
+catches the common case as it happens — **a large future number means that regressed.**
+
+- [ ] **[CODE]** Device test still worth doing on the production build: post a video,
+      force-quit mid-prewarm, relaunch, confirm the asset disappears and a *published* video
+      is untouched.
+
+### 1.2 Wallet payout trap — **FIXED THIS SESSION [CODE]**
+
+`lib/wallet.ts:19-27` sums a spendable balance from money Laybell never collected, and the
+UI offers to send it to a bank. Two independent legs:
+
+- **Donations** are a bare client-side `INSERT` with no processor (`lib/donations.ts:107`).
+  Two accounts can mint balance at $500 a tap.
+- **Shop earnings** count 85% of off-platform sales — money the seller *already received
+  in full, directly from the buyer*. The app itself says "Laybell doesn't process payments."
+  That number should never have been on this screen.
+
+`requestPayout()` was a single `AsyncStorage.setItem`, and the UI said *"Your money is safe
+and waiting."* Nothing was waiting.
+
+**The fix — a collected-funds gate.** `lib/wallet.ts` now has two explicit flags,
+`PLATFORM_COLLECTS_DONATIONS` and `PLATFORM_COLLECTS_SHOP`, both `false`. A wallet *balance*
+is a promise that Laybell is holding money for you, so it may now only count money Laybell
+actually collected — which today is nothing. Earnings are still shown, but as a **lifetime
+record** ("Earned on Laybell"), not a withdrawable balance. `payoutsAvailable()` gates the
+transfer path, and `requestPayout()` refuses while it is false. Flip a flag when that
+revenue stream genuinely settles into a Laybell-controlled account.
+
+The screen (`app/wallet.tsx`) shows the lifetime figure with an honest label while payouts
+are unavailable, and the standing note now explains that shop sales are paid directly by the
+buyer and tips aren't being charged yet.
+
+### 1.3 Wrong fee disclosed to donors — **FIXED THIS SESSION [CODE]**
+
+`lib/i18n.ts` hardcoded *"Laybell fee (15%)"* while the real rate is 8% Premium / **35%**
+standard. Now interpolated (`Laybell fee ({pct}%)`) and derived from the host's actual plan
+in `components/LiveDonateModal.tsx`, so a donor always sees the rate applied to their tip.
+
+### 1.4 Shop refund copy — **FIXED THIS SESSION [CODE]**
+
+The old copy promised buyers they "get their money back" on a transaction Laybell never held
+and cannot reverse. Rewritten in **all 10 languages**: taking a listing down revokes buyer
+access, and because payment was arranged directly between the two users, settling any refund
+is the seller's own responsibility.
+
+### 1.5 Shop earnings cap bug — **CODE FIXED THIS SESSION / SQL STILL PENDING**
+
+`SCALE_HARDENING_2026-07-23.md` marks this fixed, but the fix routes through the
+`delivered_earnings()` RPC, which **only exists once `wallet_earnings.sql` is run**. Until
+then the code silently falls back to a client-side sum capped at 100 rows
+(`lib/shop.ts:587-596`), so a busy seller's balance is short.
+
+The **second instance** the doc missed — the Shop hub's "Earned" stat, which never consulted
+the RPC at all — is **fixed this session**: `app/shop/index.tsx` now calls
+`fetchDeliveredShopEarningsCents()` like the Wallet does. Both paths still need
+`wallet_earnings.sql` (§3.1 item 14) to be run before the server-side sum exists.
+
+---
+
+## 2. The money decision — **make this first, it gates everything else**
+
+Nothing in the app charges real money. There is no Stripe, no PayPal, no working IAP.
+But **seven surfaces show real dollar amounts and four accept a "purchase" action**:
+
+| Surface | What the user sees | What happens |
+|---|---|---|
+| Premium $9.99/mo | Full paywall, 7 perks, "$9.99/month" | "Coming soon" card — RevenueCat keys are `""` |
+| Donations/tips | `$1–$50` presets, fee breakdown, **"You pay $2.12"** | Row insert. No processor. Credits a withdrawable balance |
+| Wallet | **"Available balance $X"**, "Transfer to bank" | `AsyncStorage.setItem` |
+| Spotlight | 4 tiers $5.99–$49.99, **"Pay $24.99"** | Simulated row — but the boost is *real* |
+| Ad Manager | Budget input, **"Launch campaign · $20.00"** | Simulated row — but the ads *really serve* |
+| Shop | `Buy · $X`, "You earn $X", 15% fee | Honestly off-platform. Real file unlocks in-app |
+| CPM engine | "Spent $X of $Y" | Correct arithmetic on fake money |
+
+Two things make this urgent:
+
+1. **Apple rejects shipped-but-nonfunctional features** (Guideline 2.1/2.2). A paywall that
+   says "coming soon" is a textbook rejection.
+2. **A "Pay $24.99" button that mints a real product for free is a business hole**, not just
+   a review risk.
+
+### DECISION (2026-07-28): wire everything properly
+
+The owner chose to build real payments across all surfaces rather than hide them for v1.
+That is a multi-week project with hard external dependencies, so it runs in phases.
+
+**Phase 0 — architecture-independent (DONE this session).** Correct under every payment
+design, so it was safe to do before the rails are chosen: the collected-funds gate (§1.2),
+the fee disclosure (§1.3), the refund copy (§1.4), and the earnings cap (§1.5).
+
+**Phase 1 — determine the rails. RESOLVED 2026-07-28 (researched, sourced).**
+
+The answer is worse than hoped: **five of the six surfaces require Apple IAP.** There is no
+user-to-user carve-out for digital goods, and Apple names post-boosting explicitly.
+
+| Surface | Apple | Guideline | Google Play | Confidence |
+|---|---|---|---|---|
+| Premium $9.99/mo | **IAP** | 3.1.1 | Play Billing | High |
+| Tips to a live host | **IAP as designed** | 3.2.1(vii) fails; 3.1.3(d) excludes one-to-many | **Exempt** if 100% to creator + no digital benefit | Med-high |
+| Shop (beat/song file) | **IAP** | 3.1.1; 3.1.3(e) is *physical* goods only | Play Billing | High |
+| Spotlight (boost own post) | **IAP — named explicitly** | 3.1.3(g): "sales of 'boosts' for posts in a social media app" | Not required in practice | Very high |
+| Ad Manager | **IAP** (Laybell displays the ads, so the campaign-management carve-out fails) | 3.1.3(g) | Not required in practice | High |
+| Wallet payouts | **Outside IAP** — Stripe Connect | n/a | Outside Play Billing | High |
+
+**Why tips fail the gift carve-out.** Guideline 3.2.1(vii) permits person-to-person gifts
+outside IAP only if the gift is optional **and 100% goes to the receiver**, and it dies if the
+gift is "connected to or associated at any point in time with receiving digital content or
+services." Laybell breaks it twice: the platform takes 8%/35%, and the **on-stream donation
+alert is consideration received in exchange for the tip** — the same mechanic as a Twitch bit.
+Separately, 3.1.3(d)'s person-to-person route is closed by its own terms: "One-to-few and
+one-to-many real-time services must use in-app purchase," and a livestream is one-to-many.
+Also: **never call these "donations" or "fundraising" in UI copy** (3.2.2(iv) pulls that into
+the charity rules, which only Apple-approved nonprofits may use in-app).
+✅ **DONE 2026-07-28** — every user-visible string is now "tip"; `grep` for donation copy in
+`lib/i18n.ts` returns zero. Only English defined these keys (the other nine languages fall
+back), so it was a single-block change. Database names (`donations`, `donation_guard`) are
+deliberately untouched — only the words a user reads matter here.
+
+Two stale claims went with it: the note said Laybell keeps a flat **15%** (the real rate is
+8%/35%, now shown live in the breakdown), and the locked-state copy claimed only Premium
+creators can receive tips (`hostCanReceive()` has always returned true).
+
+**Live enforcement signal:** Apple has told Patreon to move all creators to IAP by
+**November 2026** or face removal. This category is being actively policed, not ignored.
+
+**The US anti-steering window.** Since the April 2025 contempt ruling, US apps may include
+real buttons and calls-to-action linking to external web checkout, with **no entitlement
+required and, today, 0% Apple commission**. But the Ninth Circuit vacated the total
+commission ban as overbroad (Dec 2025), and **the Supreme Court granted cert in June 2026** —
+so a replacement cost-based fee is coming, at an unknown rate. **Do not build economics that
+only work at 0%.**
+
+**Play is now the permissive one**, which is the opposite of most people's intuition: US
+alternative billing costs ~10% vs ~15% via Play Billing — a 5-point saving, not 30. And Play
+explicitly exempts tips where 100% goes to the creator.
+
+### The architectural decision that makes this cheap
+
+Put a **single server-side ledger** between features and processors. Every surface debits or
+credits a Laybell balance; IAP, Play Billing and Stripe become interchangeable **funding
+sources** into that ledger. iOS funds via IAP, Android via Play Billing, web via Stripe,
+payouts drain via Stripe Connect. When Apple's external-link commission finally lands at
+whatever number, you change a funding source — not five features.
+
+Two consequences worth building around:
+
+1. **Copy Meta's ad pattern.** Fund an ad/promotion balance **on the web** (Stripe, outside
+   the app), and let the in-app Ad Manager and Spotlight *spend* that balance. Spending a
+   pre-funded balance is not a purchase transaction. This single move takes both surfaces out
+   of IAP scope legitimately.
+2. **The shop needs credits or a price ladder.** Prices are creator-set and per-listing, so
+   SKUs can't be enumerated. Either constrain sellers to a fixed IAP price-point ladder, or
+   sell a **Laybell Credits** consumable and denominate the shop in credits. Credits are
+   cleaner and cover tips too.
+
+### Phase 2 progress (2026-07-28)
+
+✅ **Ledger** — `ledger.sql`, verified working in production (§2.1).
+✅ **Premium + Credits configured on iOS** — App Store Connect products, RevenueCat project,
+   entitlement `premium`, `default` + `credits` offerings, SDK key in `app.json`, webhook
+   secret set and pointed at `revenuecat-webhook`.
+✅ **Credits funding** — `revenuecat-webhook` posts purchases into the ledger, idempotent on
+   RevenueCat's event id, with refund reversal. **Fixed a latent bug on the way:** the webhook
+   wrote `premium_until` on *every* event type, so buying credits (which arrive with
+   `expiration_at_ms: null`) would have silently cancelled the buyer's Premium subscription.
+✅ **Credits purchase screen** — `app/credits.tsx`. Says credits are *on the way* rather than
+   claiming a balance that hasn't landed: the store charges instantly, the webhook credits
+   asynchronously.
+✅ **Tips spend from the ledger** — `ledger_spend.sql`. Server computes amount bounds, fee
+   rate and split; the client names only a target and an amount. **Both livestream and studio**
+   tips go through one shared implementation, and a restrictive RLS policy now blocks direct
+   client INSERTs into `donations` — closing the "conjurable tip" hole in the database, not
+   just in the app.
+- [ ] **Stripe Connect payouts** — the last piece; earnings can accrue but not leave.
+- [ ] **Android** — blocked twice over: Play won't create in-app products until a bundle is
+      uploaded, and RevenueCat can't add the Play app until those products exist.
+- [ ] **Nothing is testable until a build exists** — RevenueCat is a native module and cannot
+      run in Expo Go.
+
+**Phase 2 — remaining.** Needs a Stripe account (owner), and an attorney + CPA engaged on §6
+before real money moves. Work, in dependency order:
+
+1. ✅ **The ledger — BUILT 2026-07-28** (`supabase/sql/ledger.sql`, `lib/ledger.ts`).
+   Double-entry, append-only, server-authoritative. See §2.1 below.
+2. **Funding sources** — StoreKit 2 / Play Billing consumables (credits), plus Stripe web
+   checkout for the ad balance and external-link purchases.
+3. **Server-side crediting** — tips must stop being a client-side insert
+   (`lib/donations.ts:107`); every credit arrives via a verified receipt or a webhook.
+4. **Stripe Connect** for payouts, then flip the §1.2 flags.
+5. **Rename "Donate" → "Tip"/"Support"** app-wide before submission (3.2.2(iv)).
+
+### 2.1 The ledger (built 2026-07-28)
+
+Every feature moves value against one ledger; each processor is merely a **funding source**
+into it. Wiring five surfaces to three processors directly would be fifteen integrations — and
+since Apple's external-purchase commission is actively being re-litigated, the rails *will*
+change. This way that's a funding-source swap, not five rewrites.
+
+```
+Apple IAP ─┐
+Play Bill. ─┼──▶ [ credits ] ──▶ purchases / tips ──▶ [ earnings ] ──▶ Stripe payout
+Stripe web ─┘
+```
+
+**The account split is load-bearing, not cosmetic.** `credits` are bought with real money but
+are **spend-only and never redeemable for cash** — that is precisely what keeps them out of
+stored-value/prepaid-access territory and away from state money-transmitter licensing (§6.3).
+`earnings` is the only cashable balance. **Never add a credits → bank path.**
+
+Five invariants, enforced by constraint rather than convention:
+
+1. **Entries are append-only** — update and delete raise, for the service role too.
+   Corrections are posted as new compensating transactions. A ledger you can edit isn't one.
+2. **Every transaction sums to zero** — money moves, never appears. `ledger_post` rejects
+   unbalanced legs.
+3. **Idempotent posting** — unique on `(source, external_id)`. A retried Stripe webhook or
+   re-validated Apple receipt cannot double-credit. Handles concurrent duplicate delivery too,
+   not just sequential retries: the loser of the race returns the winner's transaction id.
+4. **Balances can't drift** — maintained by trigger over an append-only log, so there is no
+   edit path that could desync them. `ledger_verify()` audits it anyway.
+5. **No client can write** — no write policy exists on any ledger table, and `ledger_post` is
+   revoked from `authenticated`. `lib/ledger.ts` is read-only by design and must stay that way.
+
+Also handled: user accounts can never settle negative (the platform account may, since
+absorbing a chargeback before recovering it is a real state worth showing); the
+negative-balance check runs *after* all legs post, because a single transaction may legitimately
+debit and re-credit the same account; the statement view uses `security_invoker` so RLS
+evaluates as the caller; and `ledger_verify` is revoked from `PUBLIC`, since Postgres grants
+EXECUTE to everyone by default and it would otherwise expose every balance on the platform.
+
+**The hold window** (§6.5) is built in: entries carry `available_at`, so a shop sale can sit
+14 days before becoming withdrawable and a chargeback lands before the seller cashes out.
+Available balance is computed rather than stored, because it changes with the clock rather than
+with any write. The wallet now shows held funds as "clearing".
+
+`fetchWalletBalance()` reads the ledger when it exists and falls back to the old derived sums
+otherwise. Once applied, **the ledger supersedes the `PLATFORM_COLLECTS_*` flags** — it
+structurally guarantees what they only asserted by convention, since a balance can exist only
+because a server-side transaction created it.
+
+✅ **APPLIED AND VERIFIED on the live database, 2026-07-28.** All 20 migrations ran. A
+functional test then confirmed, end to end: money can enter; **a retried payment webhook
+cannot charge twice**; an unbalanced transaction is refused; nobody can spend money they don't
+have; no money was created or destroyed; and stored balances match the entry history. The test
+posted real transactions and rolled them all back, so the ledger is clean.
+
+To re-run that check any time (it ends in a deliberate error — that's what undoes it), see the
+verification block in the session notes, or just run the two audit queries at the bottom of
+`ledger.sql`:
+
+```sql
+select coalesce(sum(amount_cents), 0) from public.ledger_entries;  -- expect 0
+select * from public.ledger_verify();                              -- expect 0 rows
+```
+
+**One fix was needed to get here:** an unqualified `id` in a row-level-security policy was
+ambiguous across three joined tables and Postgres refused the whole file. Fixed, plus three
+more of the same shape found by an added lint check before they could bite.
+
+**Interim posture:** until Phase 2 ships, the money surfaces are honest but non-functional.
+Premium still shows "coming soon" — **that alone is a likely Apple 2.1 rejection**, so if
+submission comes before Phase 2, Premium must be either wired (it can be, independently of
+everything else) or hidden.
+
+---
+
+## 3. Backend — SQL and functions **[OWNER]**
+
+### 3.1 Pending SQL, in dependency order
+
+Derived from git history: every file authored or modified *after* the last aggregator
+(`_RUN_PREMIUM_2026-07-07.sql`, which already covers premium, donations v1, follower
+insights, spotlight credit, and Laybell communities). Almost all are idempotent, so the
+safe move is to **run the whole list top to bottom** rather than guess what's applied.
+
+> ✅✅ **ALL 20 MIGRATIONS APPLIED SUCCESSFULLY, 2026-07-28.** This section is now history —
+> keep it only as the record of what was run and in what order. The bundle files remain in
+> the repo and are idempotent if a fresh environment ever needs rebuilding.
+>
+> Bundled in dependency order into three parts:
+>
+> - `supabase/sql/_RUN_LAUNCH_2026-07-28_part1.sql` (68 kb)
+> - `supabase/sql/_RUN_LAUNCH_2026-07-28_part2.sql` (70 kb)
+> - `supabase/sql/_RUN_LAUNCH_2026-07-28_part3.sql` (88 kb)
+>
+> **Run the parts in order and let each finish before starting the next** — later files
+> depend on objects earlier ones create. Everything is idempotent, so re-running a part you
+> already applied is safe. Dollar-quoting was verified balanced in all three.
+
+```
+ 1. badges.sql              (re-run — updated 07-09)
+ 2. spotlight.sql           (re-run AFTER badges)
+ 3. tagged_mentions.sql     (re-run — updated 07-09)
+ 4. music_order.sql
+ 5. admin_console.sql       ─┐ strict order
+ 6. admin_console_rpcs.sql  ─┘
+ 7. originality.sql         (AFTER admin_console_rpcs)
+ 8. donations.sql           (re-run — adds the `message` column)
+ 9. studio_live.sql         (AFTER donations — rewrites donation_guard v3)
+10. live_heartbeat.sql
+11. ad_ecosystem.sql        (re-run — adds `objective` columns)
+12. post_top_caption.sql    (re-run — v2)
+13. shop_multi.sql
+14. wallet_earnings.sql     (fixes §1.5)
+15. scale_indexes_2.sql
+16. content_filter.sql      (NEW — term blocklist behind lib/contentFilter.ts)
+17. shop_downloads.sql      (NEW — dispute-evidence log; AFTER shop.sql)
+18. minor_safety.sql        (NEW — is_minor() + followers-only DMs for minors;
+                             AFTER profile_fields.sql)
+19. ledger.sql              (NEW — the payments ledger; no deps beyond auth.users)
+20. social_auth_trigger.sql (RUN LAST — rewrites the auth.users trigger;
+                             fixes Apple/Google "Database error saving new user")
+```
+
+- [ ] **[OWNER]** Verify the Tier-1 set really was applied (`message_reactions`,
+      `group_chats`, `conversation_reports`, `message_delete`, `user_gifs`, `scale_indexes`).
+- [ ] **[OWNER]** Storage buckets `posts` and `avatars` are **not created by any SQL file** —
+      they were made in the dashboard. They must exist in the launch project. (The old
+      "create an `ads` bucket" note is stale; `lib/ads.ts` reuses `posts`.)
+- [ ] **[OWNER]** Add your account to `laybell_admins` (bottom of the premium aggregator).
+
+### 3.2 Edge functions and secrets
+
+15 functions in `supabase/functions/`. Blocking for launch:
+
+- [ ] **[OWNER]** `CF_ACCOUNT_ID` + `CF_STREAM_TOKEN` — powers **all** video posting and Live
+      (`stream-direct-upload`, `stream-status`, `stream-delete`, `stream-sweep`, `live-input`).
+      Without these, video posting is dead.
+- [ ] **[OWNER]** `STREAM_SWEEP_SECRET` + deploy `stream-sweep` (§1.1).
+- ✅ **[OWNER] AUTH SMTP DONE 2026-07-28 — signup emails now deliver.** Resend on
+      `laybell.app`; DKIM (`resend._domainkey`), MX + SPF on the `send` subdomain, all four
+      records verified resolving from outside. Template carries `{{ .Token }}`, so the in-app
+      6-digit screen works.
+
+      **Three things went wrong, worth recording:**
+      1. GoDaddy Domain Connect reported *"successfully connected"* and wrote **nothing**.
+         Caught only by querying DNS directly — never trust the success screen.
+      2. Test signups were hitting `user_already_exists`, which sends no email and looks
+         identical to a broken mail setup. Gmail `+alias` addresses solve this.
+      3. **The actual cause: "Confirm email" was OFF.** Every signup was paired with an
+         instant `Login` event in the auth logs — a session issued immediately means no
+         confirmation email is ever sent, by any provider. The Resend setup was never the
+         problem. *Two events at the same timestamp was the tell.*
+
+- [ ] **[OWNER]** Remaining email polish: raise **Auth → Rate Limits** to ~30/hour (the
+      default is sized for Supabase's built-in sender), fix the **DMARC** record (`rua` to
+      your own address, `p=none` for the first week), and delete the `+test` users.
+- [ ] **[OWNER]** `REVENUECAT_WEBHOOK_SECRET` + webhook — only if Premium ships wired.
+- [ ] **[OWNER]** Confirm APNs (iOS) and FCM (Android) credentials in EAS for push.
+- Deferrable: LiveKit secrets (Studio), custom Google Cast receiver (Live→TV Phase 2).
+- Never set `SUPABASE_*` manually — those are auto-injected.
+
+---
+
+## 4. Store submission
+
+### 4.1 Config — verified this session
+
+| Item | State |
+|---|---|
+| Bundle / package | `com.laybell.app` both platforms ✅ |
+| Version | `1.0.0`; no `buildNumber`/`versionCode` — EAS `autoIncrement` handles it ✅ |
+| EAS `production` profile | Exists with `autoIncrement: true` ✅ |
+| `eas.json` → `submit.production` | **Empty `{}`** — needs Apple/Google submit credentials |
+| Encryption compliance | `ITSAppUsesNonExemptEncryption: false` declared ✅ |
+| Permission strings | Supplied by config plugins (camera, mic, photos, location, contacts) ✅ |
+| Sign in with Apple | `usesAppleSignIn: true` ✅ — **required**, since Google sign-in is offered |
+
+### 4.2 Gaps to close
+
+- [ ] **[OWNER]** **Apple App Store ID** — `id000000000` is still a placeholder in **two**
+      files that must stay in sync: `lib/appLinks.ts` (`STORE_URLS.ios`) and `web/open.html`
+      (`STORE` object). Until swapped, every iOS "get the app" link dead-ends.
+- [ ] **[OWNER]** **Deep links do not verify.** `app.json` declares
+      `applinks:laybell.app` (iOS) and Android `autoVerify` for `laybell.app/post`, but
+      laybell.app is a **GoDaddy builder site that cannot serve `/.well-known/` files**.
+      Universal links and branded share links silently fail. Share origin is currently the
+      off-brand `https://3ddies.github.io/laybell`. Fix = point laybell.app at GitHub Pages
+      (repo Settings → Pages → custom domain + GoDaddy A-records), then flip `WEB` in
+      `supabase/functions/share-page/index.ts` and `STATIC_WEB_ORIGIN` in `lib/appLinks.ts`
+      back to `https://laybell.app` and redeploy/rebuild.
+- [ ] **[CODE]** **Android `FOREGROUND_SERVICE` has no declared type.** Android 14+ requires
+      a typed foreground service and Play requires a justification form for several types.
+      Verify against current Play policy before submitting.
+- [ ] **[OWNER]** `READ_CONTACTS` and `ACCESS_COARSE_LOCATION` are sensitive permissions —
+      expect a Play Console declaration and Data Safety detail for both.
+- [ ] **[CODE]** **iOS privacy manifest** — confirm `PrivacyInfo.xcprivacy` is generated with
+      required-reason API declarations. Expo modules cover their own, but LiveKit, WebRTC,
+      Google Cast, Google Sign-In and RevenueCat each need theirs present. **Unverified.**
+- [ ] **[OWNER]** Store metadata: description, keywords, subtitle, promo text, support URL,
+      marketing URL, privacy-policy URL, and screenshots per device class.
+- [ ] **[OWNER]** Age rating questionnaires — answer honestly for UGC + livestreaming + DMs.
+- [ ] **[OWNER]** Data Safety (Play) and App Privacy nutrition label (Apple) — start from
+      `docs/STORE_PRIVACY_DISCLOSURES.md`.
+- [ ] **[OWNER]** First **production** build: everything so far shipped as `preview`/internal.
+      Needs `eas build --profile production` + `eas submit`.
+
+### 4.3 UGC requirements — both stores
+
+Apple Guideline 1.2 and Play's UGC policy require five things. Verified in the repo:
+
+| Requirement | State |
+|---|---|
+| **Report content** | ✅ Wired broadly — posts and authors via the 3-dot sheet (`contexts/PostOptionsContext.tsx:480`), comments (`components/Comments.tsx:307`), DMs (`app/messages/[id].tsx:704`), stories, GIFs |
+| **Block abusive users** | ✅ `lib/blocks.ts`, `app/blocked.tsx`, block-confirm flow |
+| **Account deletion in-app** | ✅ Settings (`app/settings.tsx:478`) and Privacy Center (`app/privacy-center.tsx:156`), backed by the `delete-account` function |
+| **Published contact info** | ✅ Legal docs + contact inboxes (per `LEGAL_ROLLOUT.md`) |
+| **Filter objectionable content from being posted** | ✅ **BUILT 2026-07-28** — `lib/contentFilter.ts` |
+
+**The content filter** (was the one gap). Modelled on the existing `blocked_link_domains`
+pattern: a small built-in seed merged over a curated `blocked_terms` table the owner tunes
+from the dashboard **without shipping an app update**, since moderation policy moves faster
+than release cycles. Two severities — `block` refuses the write, `review` allows it and flags
+for the queue. Wired into **post captions** (before any upload work, so a refusal never costs
+a long video upload) and **comments**.
+
+The real engineering is in normalisation, because naive substring matching is trivially
+evaded: full-width folding, diacritic stripping, zero-width character removal, leetspeak
+collapse and repeat collapse, with word-boundary matching to avoid the Scunthorpe problem.
+A unit test caught a genuine bug — `!` mapped to `i` as leetspeak, so an ordinary
+`"NUDES!!!"` normalised to `"nudesii"` and slipped straight through. Symbol substitutions now
+apply only between two alphanumerics. 12/12 cases pass, including seven false-positive guards.
+
+⚠️ It is a **speed bump, not a boundary** — it runs client-side, so a modified client bypasses
+it. Real enforcement remains the moderation console plus reporting.
+
+- [ ] **[OWNER]** Run `content_filter.sql`, then expand `blocked_terms` from the dashboard.
+      The seed is deliberately minimal (unambiguous slurs + solicitation patterns) — an
+      over-broad filter trains users to route around it and buries the queue in false
+      positives.
+- [ ] **[OWNER]** State the **24-hour moderation response commitment** in the App Review
+      notes, and make sure the admin console can actually meet it.
+
+### 4.4 Native rebuild debt
+
+A dev-client/production rebuild is required before submission — these are native modules
+that autolink but aren't in the current binary:
+
+- `react-native-video-trim` (trimming silently falls back to virtual until rebuilt)
+- `react-native-pager-view` haptic patch (`patches/`, via patch-package)
+- `expo-blur`, RevenueCat, NetInfo
+
+Three patch-package patches apply automatically on a clean EAS install.
+
+---
+
+## 5. Music licensing — **[LEGAL] RESEARCHED 2026-07-28**
+
+Informational research, not legal advice. Counsel is genuinely required on four points (§5.7).
+
+### 5.1 The answer you most need: yes, you need PRO licences
+
+**"All tracks are indie originals" does NOT exempt you.** The mechanism is *assignment*, not
+repertoire. A songwriter affiliated with ASCAP or BMI has **already granted the performance
+right to their PRO** — so they cannot grant it to you in your ToS. Your clause is void as to
+that right. Independent rappers and producers are overwhelmingly PRO-affiliated, because
+that's how performance royalties get collected and distributors push affiliation hard.
+
+📄 **Ready-to-send pack: `docs/PRO_LICENSING_PACK.md`** — fact sheet, both pre-written emails,
+the BMI form walkthrough, and the order of operations.
+
+- ✅ **[OWNER]** **ASCAP emailed** 2026-07-28 (`weblicense@ascap.com`) — awaiting reply.
+- ✅ **[OWNER]** **BMI LICENSED** 2026-07-28 — Digital Multi-Use Performance License
+      Agreement, **$385/year, one-year term, NO reporting requirements**, grants streaming
+      performance rights for the BMI repertoire. ⚠️ **Annual renewal — diary it**; a lapse
+      means performing BMI repertoire unlicensed.
+- [ ] **[OWNER]** Get written confirmation the licence covers **on-demand interactive audio
+      AND livestream audio-visual**. A "website & mobile app" audio licence may not, and
+      finding out post-launch is the expensive way. **Save the reply.**
+- [ ] **[OWNER]** Write the dated SESAC/GMR deferral note — deferring is defensible,
+      deferring by accident is not.
+- ⚠️ **BMI's gross-revenue base explicitly includes "donations, commissions from third party
+  transactions"** — your tips and your 15% shop cut are inside the royalty base.
+- SESAC and GMR publish nothing and must be negotiated. Small repertoire slices; defensible
+  to defer with a documented decision.
+
+**Masters are clean** — interactive services are excluded from the §114 statutory licence, so
+SoundExchange is irrelevant; your ToS grant from the uploader *is* the master licence.
+
+### 5.2 Mechanicals, the MLC, and a cost cliff to model NOW
+
+Offline caching makes this unavoidable: an offline copy that dies with entitlement is a
+**limited download**, a digital phonorecord delivery, a covered activity under §115.
+
+The **variable** royalty is near zero for you — the rate is the greater of ~15.35% of revenue
+or a content-cost prong, **minus** what you pay the PROs, and **free ad-supported services
+have no royalty floor**. Your real cost is the fixed administrative assessment:
+
+| Monthly unique recordings used | Annual assessment |
+|---|---|
+| ≤ 10,000 | **$2,500** |
+| 10,001–25,000 | **$5,000** |
+| **> 25,000** | **$60,000** |
+
+- [ ] **[OWNER]** **Model the 25,000-recording cliff against your growth curve before
+      launch.** A UGC music platform crosses 25k unique monthly recordings long before it
+      crosses $60k of revenue. This is the single most important number in this section. The
+      metric is recordings *used and reported*, not catalogue size — which is a product lever
+      worth asking counsel about.
+- [ ] **[LEGAL]** Decide your MLC posture (§5.7 item 2). Declining the blanket licence is not
+      free: you may become a "significant nonblanket licensee" owing a Notice of Nonblanket
+      Activity plus monthly reports, with **treble damages and attorney's fees** for
+      non-compliance.
+- [ ] **[CODE]** Monthly usage reporting pipeline (SURF format is Excel-completable early;
+      DDEX DSRF later) — this is an engineering task, not paperwork.
+- [ ] **[OWNER]** Annual report of usage requires **CPA certification** — a recurring
+      several-thousand-dollar line item.
+
+### 5.3 DMCA — the part beyond the agent
+
+- [ ] **[OWNER]** ⚠️ **Your agent designation expires every three years.** $6 to renew. Set a
+      calendar reminder with 60 days' lead. This is the cheapest catastrophic failure
+      available to you — miss it and the safe harbour lapses.
+- [ ] **[OWNER]** Publish on-site: full legal entity name, physical street address, **all
+      trade names (including "Laybell" if the LLC name differs)**, and the agent's details.
+- [ ] **[CODE]** §512(c)(3)-compliant notice intake with *expeditious* removal — build it as
+      tooling, not an inbox. A solo founder cannot manually process notices at scale, and the
+      failure mode isn't "slow", it's safe-harbour loss.
+- [ ] **[CODE]** §512(g) counter-notice with the 10–14 business-day putback window.
+- [ ] **[CODE]** **Deterministic repeat-infringer termination, enforced in code, with no
+      manual override.** *BMG v. Cox* lost the safe harbour on exactly that override — a
+      policy that existed on paper but bent for valuable accounts. *Ventura v. Motherless*
+      shows a **sole operator can win** with an informal policy — because he could prove he
+      had terminated 1,320–1,980 users with only nine slipping through. **You win on logs.**
+- [ ] **[CODE]** Immutable append-only audit log of every notice, strike and termination;
+      strikes attach to the *uploader* and survive post deletion; block re-registration by
+      email; termination must propagate across surfaces (pull their shop listings, their
+      sounds from the picker, their cached files).
+
+**Red-flag knowledge — a specific exposure for you.** A solo founder who personally curates
+(Spotlight, featured, communities, hand-ordered playlists) repeatedly puts his own eyes on
+specific items. Curation doesn't destroy the safe harbour, but "I featured it on the front
+page" + "it's plainly a major-label record" is the fact pattern a plaintiff builds on.
+
+### 5.4 The shop commission is your highest-risk revenue shape
+
+§512(c)(1)(B) strips the safe harbour where you get a "financial benefit **directly
+attributable** to the infringing activity" **and** have the right and ability to control it.
+Both halves must be met.
+
+Ad revenue is diffuse and untethered — that's why *Motherless* won. **A 15% commission on the
+sale of an infringing beat is revenue arithmetically derived from that specific infringing
+transaction.** On the "directly attributable" half, that's close to the worst-shaped revenue
+you could design. What normally saves you is the control half — but *Perfect 10 v. Cybernet*
+found control where a platform combined **revenue-share with curation/pre-screening**. Laybell
+already curates. **The combination is the danger, not either alone.**
+
+Mitigations, in order of value:
+- [ ] **[OWNER/CODE]** **Restructure the shop fee from a percentage to a flat listing fee or
+      seller subscription.** Highest-leverage change available — it attacks the "directly
+      attributable" half head-on. If you keep a percentage, keep it uniform and never vary it
+      by performance.
+- [ ] **[CODE]** **Keep editorial curation off the shop surface entirely** — that severs the
+      *Cybernet* "detailed policing" factor.
+- [ ] **[CODE]** Fingerprint the shop specifically (§5.6) — lowest volume, highest risk.
+- [ ] **[CODE]** Automatic refund-and-terminate on a substantiated shop takedown, logged.
+
+### 5.5 "Use this sound", livestreams, and the shop's contract bug
+
+**"Use this sound" is a synchronisation use** — no compulsory licence exists. TikTok bought
+negotiated, expiring publisher and label deals; you cannot. Restrict it to platform-uploaded
+tracks only. The ToS sublicense **holds against the uploader** but **fails against anyone the
+uploader couldn't bind** — a co-writer, a publishing administrator, a sample owner. It changes
+your risk posture (good-faith reliance + indemnity + §512), it is not a licence.
+
+- [ ] **[CODE]** Separate **per-track opt-in** for "use this sound", distinct from the general
+      upload grant — specific consent reads far better than a buried blanket clause.
+- [ ] **[CODE]** **Global kill-switch** pulling a sound from every derivative post at once.
+      Without it, one takedown is a thousand-post problem you cannot execute "expeditiously".
+
+**Livestreaming** adds sync (music + video) and master use (if hosts play records) on top of
+performance. Twitch is the cautionary tale — PRO deals but no label deals, then mass DMCA
+notices in 2020.
+✅ **[CODE] DONE 2026-07-28 — replay retention is now opt-in.** `live_replay.sql`,
+      `supabase/functions/live-input` (redeployed), `lib/live.ts`, `app/live/go-live.tsx`.
+
+      Live inputs were being created with `recording: { mode: 'automatic' }`, so **every
+      broadcast was being saved by default.** Now `mode: 'off'` unless the host explicitly
+      asks, and the opt-in is phrased as a rights question rather than a convenience, with the
+      attestation timestamped in `live_streams.replay_attested_at`.
+
+      The distinction is exactly the one BMI §3.B draws: performing live is a **public
+      performance** (licensed); saving it is a **reproduction** (licensed by no PRO, ever).
+      Same gap as offline downloads. Twitch is the cautionary version — PRO deals, no
+      reproduction rights, VODs on by default, then mass DMCA notices in 2020.
+
+- [ ] **[OWNER]** ⚠️ **Pre-existing recordings still exist and sit outside every licence you
+      hold.** `live_replay.sql` marks them (`replay_attested_at is null`) — the query is at the
+      bottom of that file. Note `stream-sweep` deliberately **skips** live recordings, so it
+      will not clean these up; review and delete them from the Cloudflare dashboard.
+- [ ] **[CODE]** Product copy and ToS currently allow hosts to "play music" — **affirmatively
+      disallow DJing commercial recordings.**
+
+✅ **CORRECTION (2026-07-28): the "sold-stops-leases contract bug" does not exist.** It was
+flagged from the feature's *description* rather than its implementation, and repeated here
+twice before anyone read the code. Verified:
+
+- `shop_multi.sql` declines orders `where status = 'requested'` — **pending requests only**.
+  Delivered leases are untouched and keep their file access.
+- Marketplace Terms §7 says exactly that: *"existing Leases survive… An exclusive Buyer takes
+  the Work subject to those previously granted non-exclusive licenses."*
+
+Code and Terms match, and match industry norm. The listing page even shows the sales count so
+an exclusive buyer can see prior copies exist before committing. **Nothing to fix.**
+
+✅ **Seller of record — already done.** Buyer-facing copy states *"Laybell is a venue — every
+sale is a deal between buyer and seller, and payment is arranged between you outside the
+app"*, translated across all languages.
+
+✅ **Standardised licence templates — already done.** Marketplace Terms define fixed Lease
+(non-exclusive, unlimited, no caps), Exclusive Purchase, and Free Claim types. Sellers pick a
+type; they don't write free-text licence terms.
+
+> **Lesson worth keeping:** three items sat on this list as outstanding work because a research
+> pass inferred them from feature descriptions. Reading the code took minutes. Verify before
+> building.
+- [ ] **[OWNER]** ⚠️ **Maryland marketplace facilitator sales tax** — the shop makes you a
+      facilitator of digital-product sales, requiring collection, remittance and **monthly
+      Form 202F filing**. Register before the first sale. CPA question as much as legal.
+
+### 5.6 Fingerprinting — not required, but target it
+
+§512(m) is explicit: the safe harbour is **not** conditioned on monitoring. So this is risk
+mitigation. Don't fingerprint the firehose; fingerprint the three surfaces where the financial
+benefit prong bites and volume is small: **shop listings**, **tracks opted into "use this
+sound"**, and **anything monetised**. ACRCloud has a free tier; Pex is ~$1/file/month; Audible
+Magic runs $10–25k/month at mid-size. Do not build your own — SoundCloud spent €5M and staffs
+seven people on theirs.
+
+### 5.7 Take these four to a music attorney
+
+1. **The shop commission and §512(c)(1)(B)** — does 15% per transaction plus Laybell's
+   curation supply both prongs? **Does a flat fee materially change it?** Does §512(c) even
+   reach the sale and file delivery, or only the listing (*Hendrickson v. eBay*)?
+2. **MLC posture** — blanket licence vs reliance on voluntary licences under §115(d)(1)(C),
+   and whether you must file a Notice of Nonblanket Activity regardless. Get it in writing;
+   treble damages make guessing expensive.
+3. **The "use this sound" sublicense** — does it hold against a co-writer the uploader
+   couldn't bind? And **co-owned works generally**: can one of three co-writers validly
+   licence the whole composition? Your ToS silently assumes yes, and that assumption carries
+   your entire rights chain for typical rap/beat collaborations.
+4. **Minors' contracts** — is a licence grant from a 15–17-year-old disaffirmable, and what
+   does that do to derivative posts and completed shop sales? Real hole in a 13+ platform.
+
+Also worth the hour: §204(a) writing requirement for click-through *exclusive* beat sales;
+the exclusive-terminates-leases design; written PRO scope confirmation.
+
+**Bring a written product spec, not a description** — every one of these turns on exact
+mechanics.
+
+### 5.8 Realistic cost floor
+
+**~$3,500–$6,000/year pre-revenue** (BMI ~$350 + ASCAP + MLC $2,500 + CPA certification),
+**jumping to $60,000+/year past 25,000 monthly unique recordings.**
+
+---
+
+## 6. Payments and money movement — **[LEGAL] RESEARCHED 2026-07-28**
+
+Informational research, not legal or financial advice.
+
+### 6.1 The one rule that carries most of your defence
+
+**Stripe Connect, Express accounts, destination charges** with `application_fee_amount` for
+your 8/15/35% cut. Funds live in Stripe balances under **Stripe Payments Company's money
+transmitter licences in 54 US jurisdictions**. The creator "wallet" becomes a ledger entry
+against a Stripe balance, not cash in a Laybell account.
+
+> ⚠️ **NEVER sweep creator funds into a Laybell-controlled bank account and pay out from
+> there.** That is textbook unlicensed money transmission — a federal crime under 18 U.S.C.
+> §1960, plus state cease-and-desist orders. This single rule is most of the licensing
+> defence.
+
+Correcting a common assumption: Twitch and Etsy did **not** avoid licensing — they bought it
+(Amazon Payments is licensed in all 50 states). The model to copy is the *small-platform*
+model: let a licensed processor be the transmitter and never take possession of funds.
+
+**Risk if you follow this:** genuinely low. Regulators pursue platforms holding customer funds
+in their own accounts. **Risk if you build your own escrow or cashable stored value:** jumps
+sharply.
+
+### 6.2 Tips are the legally soft flow — not the marketplace
+
+Both the federal payment-processor exemption (31 CFR 1010.100(ff)(5)(ii)(B)) and Maryland's
+agent-of-payee exemption (COMAR 09.03.14.03) are written around **"goods or services."** A
+viewer tip is arguably a gratuitous transfer, not payment for anything. **The beat marketplace
+fits the exemption language cleanly; tips do not.**
+
+- [ ] **[LEGAL]** Get an attorney memo on tips specifically **before shipping tipping**.
+- [ ] **[CODE]** Maryland's exemption also requires the payee to **publicly identify** Laybell
+      as collecting on its behalf, and that Laybell act for **only one party** — awkward if
+      the ToS positions you as protecting buyers too. Needs specific checkout disclosure text.
+
+### 6.3 ⚠️ Cross-cutting conflict: "Laybell Credits"
+
+§2 recommends a **Credits consumable** to solve the shop's un-enumerable SKU problem. §6
+warns that purchasable credits push you toward **stored value / prepaid access**, which is
+closer to money transmission in most states. **These are both right, and the resolution is a
+design constraint:**
+
+> Credits must be **non-refundable, non-cashable, spend-only** — purchased via IAP, spendable
+> inside Laybell, never redeemable for money. The *seller's* proceeds are what gets paid out,
+> through Connect, in dollars. If a credit can ever become cash in the buyer's hands, it's
+> stored value and the analysis changes completely.
+
+Take this exact design to the attorney — it sits at the intersection of both opinions.
+
+### 6.4 The economics will surprise you
+
+Stripe: **2.9% + 30¢** per charge, **$2/month per active connected account**, standard payouts
+**0.25% + 25¢**, disputes **$15 received + $15 countered**.
+
+**A $100 beat sale at a 15% headline rate nets Laybell ~$11.80 — an effective ~11.8%.**
+
+> **On a $5 tip at the 8% Premium rate, Laybell takes $0.40 while Stripe takes $0.45. You
+> lose money on small tips.**
+
+✅ **RESOLVED 2026-07-28 — owner chose a $6 minimum.** `DONATION_MIN_CENTS` is now **$6** and
+the presets are **$6 / $10 / $25 / $50 / $100**. $6 is the smallest whole-dollar tip that is
+profitable on *both* tiers:
+
+| tip | Stripe | net @8% Premium | net @35% standard |
+|---|---|---|---|
+| $5 | $0.45 | **−$0.045** | $1.30 |
+| **$6** | $0.47 | **+$0.006** | $1.63 |
+| $10 | $0.59 | +$0.21 | $2.91 |
+| $25 | $1.03 | +$0.98 | $7.72 |
+| $50 | $1.75 | +$2.25 | $15.75 |
+
+The margin on a floor-sized *Premium* tip is ~nil by design — the 8% rate **is** the "Earn
+More" perk, so giving margin back to the creator there is the point. It turns healthy above
+$10, where real tipping volume sits. The modal now explains the floor instead of silently
+disabling the button (the jump from $1 to $6 makes under-minimum entries common).
+
+- [ ] **[CODE]** ⚠️ The minimum is **client-side only**. The `donation_guard` trigger in
+      `donations.sql` should grow a matching server-side minimum during payments Phase 2, so
+      a crafted request can't mint a $1 tip.
+
+### 6.5 Chargebacks — your worst structural exposure
+
+Destination charges make Laybell **merchant of record**: a disputed amount is debited from
+*your platform balance*, and you recover by reversing the seller's transfer — which only works
+if the seller still has a balance. A fraud ring that uploads stolen beats, sells 200, and
+cashes out before chargebacks land leaves **Laybell absorbing 100%**.
+
+Note this is a **commercial** risk, not a licensing one — the money still never leaves Stripe's
+custody. Those two questions get conflated constantly; decide them separately.
+
+Build before launch, not after the first fraud ring:
+- ✅ **[CODE] Immutable download log — BUILT 2026-07-28.** `shop_downloads.sql` +
+      `logDeliverableDownload()`, logged *before* the file handoff so the evidence doesn't
+      depend on the browser open succeeding. Append-only by design: buyers may insert only
+      their own rows and only against a delivered order that is genuinely theirs, and there is
+      no update or delete policy for anyone. Stripe's `access_activity_log` is *the* winning
+      evidence field for digital-goods disputes. **Server timestamp, authenticated buyer id
+      and order linkage carry the weight; the user-agent is self-reported and advisory.**
+      IP capture must be added server-side when payments land — the client cannot self-report
+      it credibly.
+- [ ] **[CODE]** Timestamped **click-through no-refund acceptance** at checkout — a checkbox
+      with the policy visible, not a link.
+- [ ] **[CODE]** **7–14 day payout hold** after delivery. Non-negotiable for instant delivery.
+- [ ] **[CODE]** Rolling **reserve on new sellers**; velocity caps on new-account sales.
+- [ ] **[CODE]** Recognisable statement descriptor (`LAYBELL*` + seller) — "I don't recognise
+      this charge" is the most common friendly-fraud trigger.
+- [ ] **[OWNER]** Refund fast and generously. A $30 refund beats $30 + a $15 dispute fee +
+      dispute-rate damage. Past ~0.75–1% dispute rate the networks put you in monitoring.
+
+### 6.6 Tax — and a trap
+
+**1099-K for TY2026 is settled: $20,000 AND 200 transactions**, both required (restored
+retroactively by the One Big Beautiful Bill). The $600 threshold is dead federally.
+
+> **The trap:** Stripe issues 1099-Ks only when the *connected account* pays Stripe's fees.
+> Because Laybell controls pricing (8/15/35%), **Stripe will NOT file for you** — Laybell is
+> expected to file **1099-NEC/1099-MISC at $600** (or $10 for royalties).
+
+- [ ] **[CPA]** **The highest-value CPA question in this document:** is a beat sale a *sale of
+      goods* (no 1099-NEC), or a *licence generating royalties* (1099-MISC box 2, $10
+      threshold)? And are tips non-employee compensation or gifts? These change your filing
+      burden materially, and the Stripe fee-payer setting is a config flag today and a
+      migration later.
+- ⚠️ **Maryland is a $600 1099-K state** (as are DC, MA, MT, VT, VA; Rhode Island is **$100**).
+- [ ] **[OWNER]** Register for **Maryland sales & use tax as a marketplace facilitator** before
+      the first on-platform sale — Maryland taxes digital products at **6%**, and listing +
+      collecting + transmitting meets the statutory test exactly. (Note: Business Tax Tip #29
+      was revised to exclude certain *business* purchases — a beat lease to a commercial-use
+      buyer may fall in that exclusion. Real money, ask a SALT specialist.)
+- [ ] Keep the **payout geo-gate US-only** until W-8BEN and Chapter 3 withholding are handled.
+
+### 6.7 KYC / AML / OFAC
+
+Stripe Express collects and verifies identity, beneficial owners, and government ID. But
+Stripe says plainly: *"Don't rely on Stripe's verification to meet any independent legal KYC
+requirements."* **OFAC compliance is non-delegable and has no small-business exemption.**
+
+Minimum defensible program: no payout until Stripe reports `charges_enabled` and
+`payouts_enabled`; log which requirements were satisfied and when; a written suspension policy
+for suspected fraud/structuring/sanctions; a stated payout hold; enforced US-only payout gating.
+
+### 6.8 Costs and sequencing
+
+| Item | Cost |
+|---|---|
+| Fintech regulatory attorney memo on flow of funds | ~$3–8k — **the highest-value spend here** |
+| Marketplace ToS + Seller Agreement (transfer-reversal + negative-balance rights) | ~$3–7k |
+| Maryland sales & use tax registration | Free |
+| Maryland SDAT annual report | ~$300, due April 15 |
+| 1099 filing via Stripe | $2.99/form IRS + $1.49/form state |
+| Stripe active connected accounts | $2/month each |
+| **Total attorney + CPA before launch** | **~$10–20k** |
+
+**Do last, and it'll be the easiest thing you build:** self-serve ad buying is a plain B2B
+Stripe charge to Laybell's own account — no Connect, no money-transmission question, no 1099.
+
+---
+
+## 7. Privacy, minors, and business setup — **[LEGAL] partly done**
+
+Already done per `docs/LEGAL_ROLLOUT.md` (~90%): domain, contact inboxes, DMCA agent
+registered, mailing address, legal SQL run, and all documents built and wired — Privacy
+Policy, Terms, Community Guidelines, Advertiser Terms, and Marketplace & Beat Licensing
+Terms.
+
+Remaining, from that document:
+- [ ] **[OWNER]** Host the web copies of the legal documents (do at submission time)
+- [ ] **[OWNER]** Fill out the store privacy disclosures
+- [ ] **[LEGAL]** One-time attorney review — strongly recommended
+- [ ] **[LEGAL]** EU/UK representative, only if you target EU/UK
+
+**DECISION (2026-07-28): v1 launches US-only.** Set territory restrictions in App Store
+Connect and Play Console at submission. Removes GDPR, UK-GDPR, the Art. 27 representative and
+DSA obligations from v1 scope entirely.
+
+### 7.1 🚨 NCMEC / CSAM reporting — a genuine launch blocker (free, ~1 day)
+
+Highest-consequence item in this document: quasi-criminal, **no size threshold whatsoever**,
+and it attaches the moment you host user media with minors present. Section 230 gives you
+**nothing** here — §230(e)(1) expressly preserves Title 18 Chapter 110 enforcement.
+
+18 U.S.C. §2258A requires reporting apparent child sexual exploitation to NCMEC's CyberTipline
+"as soon as reasonably possible," and registering contact details. Penalty for knowing failure:
+**$600,000** first violation, **$850,000** after.
+
+**The relief you may not know about:** §2258A(f) is explicit — **no duty to monitor, and no
+duty to affirmatively search, screen or scan.** You do not need PhotoDNA or a scanning
+pipeline. You must report what you actually learn about.
+
+📄 **Full procedure written up: `docs/CSAM_RESPONSE_RUNBOOK.md`.**
+
+- ✅ **[OWNER] REGISTERED as an NCMEC ESP, 2026-07-28.** Declared data scope: reported media +
+      URL, the server snapshot that survives deletion, uploader username/email/display
+      name/self-declared DOB, timestamps, surrounding caption-comment-DM context, city-level
+      location. Explicitly declared **no IP addresses collected** — see §7.1a.
+- ✅ **[CODE]** Report buttons exist on every UGC surface including DMs, group chats and live
+      (verified §4.3).
+- ✅ **[CODE]** **Preservation is already wired** — `legal_hold` (`moderation_preservation.sql`)
+      blocks user deletion via RLS, `delete-account` **bans instead of deleting** when a hold
+      is set (`index.ts:45-48`), and the 3-month cleanup sweep skips held accounts
+      (`account_deletion_sweep.sql:53-55`). This is the hard part of the retention duty and
+      it's done.
+- [ ] **[OWNER]** Commit to checking the moderation queue **daily**. A queue nobody reads
+      turns a bounded, reactive obligation into a knowing failure — which is the version with
+      the $600k penalty.
+- ✅ Legal docs already cover this: Community Guidelines and Terms prohibit CSAM and name
+      NCMEC; the Privacy Policy discloses reporting to NCMEC and law enforcement (verified
+      2026-07-28). Reporting user data without that disclosure would have been its own problem.
+
+### 7.1a ⚠️ No IP addresses are logged anywhere
+
+Discovered while completing the NCMEC form: the app records **no IP addresses at all** — not
+on upload, not on post, not on messages — and `auth.audit_log_entries` is empty, so there are
+no sign-in IPs either. This was declared honestly on the registration.
+
+It costs Laybell twice over, which is why it's worth fixing rather than living with:
+- It is the field investigators most want after the media itself.
+- It is the field that **wins card chargebacks** (Stripe's `access_activity_log`, §6.5) — and
+  that starts mattering the moment real money moves through the ledger.
+
+✅ **BUILT 2026-07-28.** `supabase/sql/access_log.sql` + `supabase/functions/log-access/` +
+`lib/accessLog.ts`, wired into the three events that matter: **media upload**, **report
+submission** (post and user), and **shop download**.
+
+The client never sends an address — it only names the event. The IP is read from the request
+by the Edge Function, because a self-reported address is worth nothing in a dispute and worse
+than nothing in an investigation. The table records **which header** the address came from
+(`cf-connecting-ip` can't be forged; `x-forwarded-for` can), so the evidence is
+self-describing rather than falsely uniform. Append-only, no client writes, users can read
+their own rows (state privacy access rights).
+
+Retention is **13 months** — past the card-dispute window and past the 1-year CSAM
+preservation duty, without holding personal data indefinitely. Prune query is in the file.
+Deliberately a closed list of five events: this is a security log, not analytics.
+
+- ✅ **[OWNER]** Privacy Policy updated — new §3.15 discloses the collection, limits it to
+      three named purposes, states the 13-month retention, and explicitly rules out
+      advertising/tracking/profiling use. Legal HTML pages rebuilt.
+- [ ] **[OWNER]** Run `access_log.sql`, then `supabase functions deploy log-access`
+      (keep the default `verify_jwt`).
+- [ ] **[OWNER]** Diary a monthly retention prune.
+- Optional and cheap: Cloudflare's CSAM Scanning Tool is free. Not required, but it converts a
+  catastrophic risk into a managed one.
+
+### 7.2 🚨 Mississippi HB 1126 — the one state law with no size threshold
+
+**This changes your launch plan.** Most kids-safety laws have $25M/50,000-user thresholds you
+are far below. Mississippi's has **none**, and it is **currently enforceable** (Fifth Circuit
+stayed the injunction July 2025; SCOTUS declined emergency intervention August 2025).
+
+Its definition — a service that connects users socially, lets them create a sign-in profile,
+and lets them post content shared with others — describes Laybell exactly.
+
+Requirements: "commercially reasonable" age verification (the statute accepts **email
+verification** among other methods), a written strategy to protect minors from harmful
+material, data minimisation, and **a prohibition on collecting geolocation from minors**.
+
+✅ **The geolocation half is done (2026-07-28)** — `lib/location.ts` now refuses capture for
+anyone not a known adult, and *clears* stored coordinates for a minor whose location was left
+on by an earlier build.
+
+Two options for the rest, both legitimate:
+- [ ] **[CODE]** Comply: documented age assurance at signup (DOB + email verification +
+      app-store age signal is defensible).
+- [ ] **[OWNER]** **Or geo-block Mississippi at launch**, the way you're geo-blocking the EU.
+      One state, small population, removes the sharpest-edged obligation you face. Many small
+      platforms did exactly this. Worth discussing with counsel.
+
+### 7.3 App Store Accountability Acts — Texas and Louisiana are live
+
+These bind you **as a developer**, independent of your size, because you ship through Apple
+and Google. Texas SB 2420 is in effect; **Louisiana's took effect 1 July 2026 and notably
+rejects the developer safe harbor** that Texas and Utah grant; Utah's deadline is May 2027.
+
+- [ ] **[CODE]** Adopt **Apple's Declared Age Range API** and **Google Play's age-signal API**.
+      Consume and act on the age-bracket and parental-consent signals.
+- [ ] **[CODE]** Notify the app store of "significant changes" to terms, privacy policy or
+      monetisation features — and **re-obtain parental consent** after such a change.
+- [ ] **[CODE]** Use age/consent data only for compliance, transmit encrypted, delete after use.
+
+**Wiring these APIs is also your best liability shield.** California's AB 1043 (Jan 2027) makes
+the OS-provided age signal *authoritative* absent clear contrary evidence — converting "you
+should have known they were 12" into "the OS told me they were 13–17." The trap: once you
+*receive* a signal saying under 13 and keep collecting, you have **actual knowledge** and are
+squarely in COPPA.
+
+### 7.4 Minor-account defaults — cheap now, expensive to retrofit
+
+There is no federal statute covering 13–17; the FTC's lever is Section 5 unfairness, and its
+2024 staff report criticised platforms for treating teens exactly like adults. These are config
+flags in systems you already own:
+
+**ALL FOUR BUILT 2026-07-28**, on a shared foundation in `lib/minors.ts`. The key design
+decision there is an asymmetry worth preserving: `isMinor()` means *affirmatively known to be
+under 18* and applies restrictions; `isAdult()` means *affirmatively known to be 18+* and
+grants privileges. **An unknown age satisfies neither — so privileges require positive proof.**
+Getting that backwards is how platforms end up serving targeted ads to 14-year-olds whose age
+they "didn't have."
+
+- ✅ **Location off for under-18s** — `lib/location.ts`, applied globally rather than
+  geo-fenced, and it clears coordinates left over from an earlier build.
+- ✅ **No targeted advertising to minors** — `lib/ads.ts`. Reuses the existing personalization
+  flag, so minors fall through to the untargeted path that already existed: contextual ads
+  still serve, so this costs inventory rather than revenue outright.
+- ✅ **Minor accounts default to friends-only posting** — `app/(tabs)/post.tsx`. A default,
+  not a restriction: a teen can still choose public, but the safe option is the one they opt
+  out of.
+- ✅ **DMs to minors are followers-only** — and this one is **server-enforced**
+  (`minor_safety.sql`), because a client-side check is a UX affordance, not a control. A
+  restrictive RLS policy ANDs with the existing permissive ones rather than replacing them.
+  An adult stranger can't open a DM with a minor; the minor must have followed them first.
+  Group chats (`receiver_id is null`) are explicitly guarded — without that the null would
+  make the whole check null and Postgres would fail the policy, breaking group chat entirely.
+- ✅ **Live broadcasting gated to 18+** — `app/live/go-live.tsx`. Watching is unaffected.
+- [ ] **[CODE]** Prep for NY's SAFE for Kids Act (rules pending): ability to serve minors a
+      **chronological follows-only feed** and to **suppress notifications overnight**
+      (midnight–6am). Build as flags now; it targets exactly your reels pager, recommendation
+      engine and notification scheduler.
+
+### 7.5 COPPA — two documents are already overdue as a matter of form
+
+The amended Rule's **full compliance deadline was 22 April 2026** — already passed. It doesn't
+bind you unless you're "directed to children" or have actual knowledge of an under-13, but the
+paperwork is a weekend of writing and its absence looks bad:
+
+- [ ] **[OWNER]** **Written data retention policy**, published in your privacy notice
+      (16 CFR §312.10 — no indefinite retention, must state purposes and deletion timeframe).
+- [ ] **[OWNER]** **Written children's information security program.** 2–3 pages is fine.
+- [ ] **[CODE]** Neutral age gate at signup with **no back-button re-entry** in the same
+      session. On learning a user is under 13 → immediate disable + data deletion, logged.
+- [ ] **[CODE]** **Do not ingest phone contacts from under-18 users** — the least defensible
+      data you hold and a perennial FTC sore spot.
+- ✅ Helpful: the FTC's **February 2026 enforcement policy statement** says it won't pursue
+  operators who collect data *solely* to determine age, if they don't use it otherwise, delete
+  it promptly, and vet any recipients. Match those three conditions in your age-check path.
+
+### 7.6 Location precision — audit this, it may be good news
+
+**One correction to an earlier assumption in this doc: it is *precise* geolocation that is
+sensitive data, not coarse.** Maryland and most states define precise as within a
+**1,750-foot radius**, and MODPA expressly permits ads based on *less* precise data such as
+ZIP-code targeting.
+
+✅ **AUDITED 2026-07-28 — good news.** `lib/location.ts` rounds every coordinate to one
+decimal place (**~11 km**) before it is stored, and matching runs at that same resolution.
+That is orders of magnitude coarser than the 1,750-foot threshold, so **what Laybell stores is
+not precise geolocation and not sensitive data** under these laws. No consent regime attaches.
+
+A comment now marks the rounding as load-bearing for legal reasons, not just privacy taste —
+**do not increase that precision** without revisiting this section.
+
+### 7.7 State privacy laws — you're under every threshold, with two exceptions
+
+20 states have comprehensive laws in effect. Nearly all gate at ~100,000 state residents
+(Rhode Island 35,000; California needs $25M revenue). **You are under all of them.** Two reach
+you anyway:
+
+- **Texas and Nebraska** drop the count threshold and exempt SBA-defined small businesses —
+  **but even an exempt small business may not sell sensitive data without consent.**
+- **Maryland (MODPA)**, your home state, applies from April 2026 at 35,000 Maryland consumers.
+  Reachable. Two features worth designing to now, since they're becoming the template: MODPA
+  **bans the sale of sensitive data outright** (no consent exception), and prohibits targeted
+  advertising where the controller **"knew or should have known"** the user is under 18 — a
+  broader standard than "actual knowledge."
+
+Do regardless of size, all cheap: honour access/deletion/correction requests from anyone, keep
+a working privacy contact, never sell sensitive data, no targeted ads to minors, honour Global
+Privacy Control on any web surface.
+
+### 7.8 Section 230 — what survives it
+
+§230(c)(1) means you aren't liable for what users post, and (c)(2) means moderating doesn't
+forfeit that. What survives: **federal criminal law** (your CSAM obligations sit entirely
+outside §230), **intellectual property** (§230 gives you *nothing* on copyright — the §512 safe
+harbour in §5.3 is what protects you, and a music app is a copyright-notice magnet), **ECPA**
+(don't scan DMs outside your stated policy), **FOSTA-SESTA**, and product-liability/
+negligent-design theories — the live frontier in teen-harm litigation.
+
+### 7.9 Maryland business housekeeping
+
+- [ ] **[OWNER]** ⚠️ **Annual Report + Personal Property Return (Form 1) to SDAT, due April 15,
+      $300 for LLCs.** Missing it forfeits good standing — **which means losing the liability
+      shield.** Calendar it now.
+- [ ] **[OWNER]** Registered agent — you can self-serve with a Maryland street address, but
+      your home address becomes public record. A commercial agent is ~$50–150/yr and worth it
+      for a founder with a public consumer app.
+- [ ] **[OWNER]** EIN — free from the IRS. Never pay a third party.
+- ✅ **Trader's licence: almost certainly NOT required** — it covers tangible goods with
+  inventory value. You sell digital products. (Free phone call to your Circuit Court clerk to
+  confirm.) You **do** need the sales-and-use tax account from §6.6.
+- ✅ **Foreign qualification is NOT triggered by having users in other states.** Triggers are
+  an office, in-state employees, leased space or inventory. Note: no foreign qualification ≠
+  no tax nexus — economic nexus for sales tax is a separate, lower bar.
+- ⚠️ **Maryland's new 3% tech-services tax** (from July 2025) may reach subscription/ad
+  revenue depending on NAICS classification. **[CPA]** — genuinely underrated, nobody warns
+  founders, and unpaid sales tax follows you personally through an LLC in many states.
+
+### 7.10 Trademark — ✅ owner reports search + registration already done
+
+Owner confirmed (2026-07-28) the clearance search was run and the mark registered before the
+LLC was formed. Worth a one-time sanity check that it was a **USPTO trademark filing** and not
+only a business-name registration — those are different things, and a state LLC name grants no
+trademark rights. Keep the serial/registration number with the NCMEC and DMCA records.
+
+Original guidance retained below for reference.
+
+- [ ] **[OWNER]** Free clearance search first: USPTO for "Laybell" + phonetic variants
+      (Laibell, Laybel, Labell, Lay Bell), then **music-industry common-law uses** — Spotify,
+      Apple Music, Bandcamp, SoundCloud, BMI/ASCAP repertory. **A band named Laybell is a real
+      conflict risk for a music app.**
+- [ ] **[LEGAL]** Then ~$500–1,500 for a clearance opinion. Worth it — a post-launch rebrand
+      costs your entire brand equity.
+- [ ] **[OWNER]** File **Section 1(b) intent-to-use now** to lock the priority date. **$350
+      per class.** Minimum: **Class 9 (app) + Class 41 (streaming/entertainment) = $700.**
+      Better: add **Class 45 (social networking) = $1,050**. Use pre-approved ID Manual
+      descriptions to avoid every surcharge. Timeline 12–18 months.
+
+### 7.11 Insurance — one detail matters more than the price
+
+- [ ] **[OWNER]** Buy a bundled **Tech E&O + Cyber policy with a media-liability endorsement
+      that explicitly covers third-party/user-generated content.** ⚠️ **Confirm in writing
+      that UGC is not excluded** — many tech E&O forms carve it out, which defeats the entire
+      purpose for a platform like yours. Realistic pre-revenue: ~$1,500–5,000/yr.
+
+### 7.12 Accessibility — do the cheap 80%
+
+DOJ's WCAG 2.1 AA rule binds only state/local government. Private apps are sued under Title III
+directly. 3,117 federal web-accessibility suits in 2025 (+27% YoY) — but serial plaintiffs
+target retail, restaurants and healthcare with revenue to extract. **Practical year-one risk
+for a pre-revenue app is low.** Still, a few days of work:
+
+**STARTED 2026-07-28 — partial, and honestly so.**
+
+Measured before touching anything: **819 interactive elements, 19 labels. Reduce Motion:
+zero coverage.** Run `node scripts/a11y-audit.mjs` any time — it counts icon-only buttons that
+announce nothing to a screen reader, and the number should only ever fall.
+
+- ✅ **Reduce Motion foundation** — `lib/a11y.ts` (`useReduceMotion`, `motionDuration`, one
+  shared OS subscription rather than a listener per component). Wired into the double-tap
+  heart burst, the most aggressive animation in the app. Note the design: Reduce Motion keeps
+  the *confirmation* and drops the *motion* — the heart still appears and fades, it just
+  doesn't leap. Removing it entirely would delete the only feedback that the like registered.
+- ✅ **All media controls labelled** — `NowPlaying` (play/pause with live state, next,
+  previous, minimise, options), `MiniPlayer` (all three layouts: ad, compact, full — play/pause,
+  stop, skip-ad, open-player), `CastBar` (cast controls, stop casting, transport, retry). Plus
+  `accessibilityState` carrying the disabled state that colour alone was conveying. These are
+  the controls a blind user depends on most, so they went first.
+  **Labels app-wide: 19 → 44.**
+- [ ] **~223 icon-only buttons still unlabelled.** Biggest clusters: `story-camera` (12),
+      `post` (10), `messages/[id]` (7), `TVRemote` (7). A real, incremental grind — best done a
+      file at a time rather than in one sweep, and not something to claim done.
+      ⚠️ Treat the audit count as **approximate**: its regex double-counts nested touchables,
+      so it over-reports slightly. Use it as a trend, not a total.
+- [ ] Wire Reduce Motion into the remaining animation surfaces (pager, tab bar, sheets).
+- ✅ Dynamic Type is **not blocked** — zero `allowFontScaling={false}` in the codebase, so text
+      already scales. What's untested is whether layouts survive it, which needs a device.
+- [ ] Contrast check, ≥44×44pt touch targets, and one signup→post→DM pass under VoiceOver and
+      TalkBack.
+- [ ] **[OWNER]** Publish an accessibility statement with a contact email — a responsive
+      address defuses most demand letters before they become filings.
+
+### 7.13 Take these to an attorney
+
+Budget **$3,000–8,000** for a focused privacy/tech engagement plus **$1,500–3,000** for
+trademark. Highest-ROI legal spend available to you.
+
+1. **Does Mississippi HB 1126 cover us, and is our age assurance "commercially reasonable"?
+   Is geo-blocking Mississippi a rational trade?** — the question that changes your launch plan.
+2. **Does Florida HB 3 capture us today?** Its gate needs ≥10% of DAU under 16 averaging 2+
+   hrs/day plus algorithmic/addictive features. A new app almost certainly fails that test —
+   but a successful teen-heavy music app could meet it. **Ask what monitoring tells you when
+   you cross it.** (Largely enforceable since the 11th Circuit lifted the injunction.)
+3. **Are we "directed to children" or "mixed audience" under amended COPPA?** Bring
+   screenshots — subject matter, visual style and music/celebrity presence are the FTC's
+   stated factors. Wrong answer here is the most expensive mistake available.
+4. **Is our coarse location "precise" under the 1,750-foot test?** Bring the code path.
+5. **Should minors livestream at all in v1?** Ask specifically about FOSTA-SESTA and
+   negligent-design theories that survive §230.
+6. **Can minors receive payouts at all?** Ties directly into §6.
+7. **Does the LLC need to convert?** Delaware C-corp if you plan to raise; and does a
+   single-member LLC adequately shield personal assets for a consumer UGC app?
+8. Review the Advertiser and Marketplace Terms you drafted — indemnities, and **whether the
+   arbitration clause is enforceable against minors**.
+
+### 7.14 Status of everything else (tracked, not actionable yet)
+
+- **Maryland Kids Code is LIVE law** (not enjoined — motion to dismiss denied Nov 2025) but
+  gated at $25M revenue / 50,000 Maryland residents. Not yet. Its 90-day cure safe harbour is
+  **conditioned on having completed a DPIA**, which argues for writing a lightweight one early.
+- **Nebraska AAOSC** ($25M + 50,000), **California AADC** (partially enjoined; the Ninth
+  Circuit upheld *age estimation* in March 2026 while striking vague data-use duties) — not yet.
+- **Vermont AADC (Jan 2027)** uses a *usage* test, not a size test: ≥2% of users aged 2–17.
+  **That will probably reach you.**
+- **Ohio's parental-consent law was REVIVED** by the Sixth Circuit in June 2026 — trackers
+  listing it as enjoined are stale. Utah, Texas HB 18, Arkansas, Georgia, Louisiana, Virginia
+  and Nebraska's LB 383 remain wholly or partly enjoined.
+- **Direction of travel: age-estimation mandates are surviving First Amendment challenge;
+  vague content duties are not. Plan for age assurance becoming general, not exceptional.**
+
+---
+
+## 8. Suggested order of operations
+
+1. ~~Decide §2 (money posture).~~ **Done — wire everything properly, US-only v1.**
+2. ~~Land the architecture-independent money fixes.~~ **Done — Phase 0 (§1.2–§1.5).**
+3. ~~Resolve the IAP-vs-processor question.~~ **Done — five of six surfaces need IAP (§2).**
+4. **This week, and they're nearly free:** register with NCMEC (§7.1), diary the DMCA agent
+   3-year renewal (§5.3) and the SDAT April 15 filing (§7.9), and run the trademark clearance
+   search (§7.10). Hours of work, catastrophic if skipped.
+5. **Start the long-lead items now:** apply to BMI and ASCAP — **90 days before launch**
+   (§5.1) — and book the attorney (§5.7, §6.8, §7.13) and CPA (§6.6) engagements.
+6. **Decide Mississippi** (§7.2) — comply or geo-block. It changes your launch plan.
+7. Land the minor-account defaults (§7.4) and the age-signal APIs (§7.3) — config flags in
+   systems you already own, far cheaper now than retrofitted.
+8. Run the §3.1 SQL list; set the §3.2 secrets; deploy functions.
+9. Sort hosting + the App Store ID (§4.2) — unblocks share links and deep links.
+10. Build the payments Phase 2 (§2) — ledger first, then funding sources.
+11. Native production build; device-test the Stream sweep (§1.1) and video posting end to end.
+12. Store metadata, privacy disclosures, age ratings; submit **US-only**.

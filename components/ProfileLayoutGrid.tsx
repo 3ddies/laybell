@@ -290,7 +290,7 @@ export default function ProfileLayoutGrid({
 
   function renderRemoveBtn(onPress: () => void) {
     return (
-      <TouchableOpacity style={styles.removeBtn} onPress={onPress} hitSlop={6}>
+      <TouchableOpacity style={styles.removeBtn} onPress={onPress} hitSlop={6} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
         <Ionicons name="close" size={14} color="#fff" />
       </TouchableOpacity>
     );

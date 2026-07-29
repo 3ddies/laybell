@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, ActivityIndicator,
   KeyboardAvoidingView, Platform, Pressable,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
@@ -33,16 +34,24 @@ export default function LiveDonateModal({ visible, stream, studio, onClose, onDo
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
 
-  const [amount, setAmount] = useState<number>(DONATION_PRESETS_CENTS[1]); // default $2
+  // Default to the cheapest preset ($6, the processing-economics floor). Was
+  // index 1 when the ladder started at $1; the ladder changed, this didn't.
+  const [amount, setAmount] = useState<number>(DONATION_PRESETS_CENTS[0]);
   const [customText, setCustomText] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   const hostProfile = stream?.profile ?? studio?.hostProfile ?? null;
   const hostName = hostProfile?.display_name || hostProfile?.username || t('live.donate.host');
   const canReceive = hostCanReceive(hostProfile?.premium_until);
-  const b = donationBreakdown(amount, hostFeeRate(hostProfile?.premium_until));
+  // The fee RATE depends on the host's plan (8% Premium / 35% standard), so the
+  // disclosed percentage has to be derived, never hardcoded — a donor must see the
+  // rate that is actually applied to their tip.
+  const feeRate = hostFeeRate(hostProfile?.premium_until);
+  const feePct = Math.round(feeRate * 100);
+  const b = donationBreakdown(amount, feeRate);
   const validAmount = amount >= DONATION_MIN_CENTS && amount <= DONATION_MAX_CENTS;
 
   function pickPreset(cents: number) {
@@ -70,6 +79,12 @@ export default function LiveDonateModal({ visible, stream, studio, onClose, onDo
       onDonated(amount, msg);
       setMessage('');
       onClose();
+    } else if (res.reason === 'insufficient') {
+      // The one failure the user can actually fix. Showing a generic error here
+      // would strand someone who wants to tip and simply needs to top up — so
+      // close the sheet and take them to buy credits instead.
+      onClose();
+      router.push('/credits');
     } else {
       const key =
         res.reason === 'not_premium' ? 'live.donate.errNotPremium'
@@ -92,7 +107,7 @@ export default function LiveDonateModal({ visible, stream, studio, onClose, onDo
                 <Ionicons name="gift" size={20} color={colors.primary} />
                 <Text style={styles.title} numberOfLines={1}>{t('live.donate.title', { name: hostName })}</Text>
               </View>
-              <TouchableOpacity onPress={onClose} hitSlop={8}>
+              <TouchableOpacity onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -148,13 +163,21 @@ export default function LiveDonateModal({ visible, stream, studio, onClose, onDo
                 {/* Split so the donor sees exactly what the host takes home. */}
                 <View style={styles.breakdown}>
                   <Row k={t('live.donate.hostGets', { name: hostName })} v={fmtCents(b.payoutCents)} styles={styles} strong />
-                  <Row k={t('live.donate.fee')} v={`-${fmtCents(b.feeCents)}`} styles={styles} />
+                  <Row k={t('live.donate.fee', { pct: feePct })} v={`-${fmtCents(b.feeCents)}`} styles={styles} />
                   <Row k={t('live.donate.tax')} v={`+${fmtCents(b.taxCents)}`} styles={styles} />
                   <View style={styles.divider} />
                   <Row k={t('live.donate.youPay')} v={fmtCents(b.totalChargeCents)} styles={styles} strong />
                 </View>
 
                 {!!error && <Text style={styles.error}>{error}</Text>}
+                {/* The floor is $6 (processing economics — see lib/donations.ts), high
+                    enough that a custom amount lands under it often. Say why the button
+                    is dead rather than leaving it greyed out with no explanation. */}
+                {!error && amount > 0 && amount < DONATION_MIN_CENTS && (
+                  <Text style={styles.error}>
+                    {t('live.donate.minimum', { amount: fmtCents(DONATION_MIN_CENTS) })}
+                  </Text>
+                )}
 
                 <TouchableOpacity
                   style={[styles.cta, (!validAmount || busy) && styles.ctaDisabled]}

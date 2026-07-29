@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useRef, useCallback, useMemo, type
 import { supabase } from '../lib/supabase';
 import { compressVideoIfPossible, ensureLocalFile } from '../lib/upload';
 import { trimVideoIfPossible } from '../lib/videoTrim';
-import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, pollStreamReady, deleteStreamVideo } from '../lib/streamUpload';
+import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, pollStreamReady, deleteStreamVideo, untrackStreamUpload } from '../lib/streamUpload';
 import { bumpBadge } from '../lib/badges';
 import { processMentions } from '../lib/mentions';
 import { createNotification } from '../lib/createNotification';
@@ -264,6 +264,9 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       }).select('id').single();
       if (error) throw error;
       const postId = newPost!.id as string;
+      // The row now references the asset, so the crash-recovery tracker can let go
+      // of it — otherwise the next launch's sweep would have to prove it's in use.
+      untrackStreamUpload(uid);
       update(tempId, { phase: 'processing', postId, progress: 1 });
 
       // Side effects — mirror the composer's inline publish path.

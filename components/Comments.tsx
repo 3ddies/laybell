@@ -28,6 +28,7 @@ import { openGifPicker } from '../lib/gifPicker';
 import { openImageViewer } from '../lib/imageViewer';
 import { openPhotoPicker } from '../lib/photoPicker';
 import { reportUser } from '../lib/postActions';
+import { checkTextAsync } from '../lib/contentFilter';
 
 type Row = {
   id: string; body: string; created_at: string; user_id: string;
@@ -250,6 +251,14 @@ export default function Comments({
     }
     setSending(true);
     const caption = text.trim();
+    // Objectionable-text gate (Apple 1.2 / Play UGC). Checked before the draft is
+    // cleared below, so a refusal leaves what they typed intact to edit.
+    const screened = await checkTextAsync(caption);
+    if (!screened.ok) {
+      setSending(false);
+      Alert.alert(t('filter.blockedTitle'), t('filter.blockedBody'));
+      return;
+    }
     const pending = pendingAttachment;
     // An attachment carries its caption in the body marker; mentions still run
     // over the human-typed caption only.
@@ -503,7 +512,7 @@ export default function Comments({
           </Pressable>
         )}
         <View style={styles.inputBar}>
-          <TouchableOpacity style={styles.attachBtn} onPress={attachImage} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.attachBtn} onPress={attachImage} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={t('a11y.attachImage')}>
             <Ionicons name="image-outline" size={22} color={colors.textTertiary} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.gifBtn} onPress={() => openGifPicker({ userId, onSelect: (g) => setPendingAttachment({ type: 'gif', url: g.url, w: g.w, h: g.h, src: g.src }) })} activeOpacity={0.7}>

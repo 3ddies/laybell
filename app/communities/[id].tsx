@@ -342,15 +342,16 @@ export default function CommunityDetailScreen() {
 
 function TopBar({ title, onBack, onMenu }: { title: string; onBack: () => void; onMenu?: () => void }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.topBar}>
-      <TouchableOpacity style={styles.topBtn} onPress={onBack} hitSlop={8}>
+      <TouchableOpacity style={styles.topBtn} onPress={onBack} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
         <Ionicons name="chevron-back" size={26} color={colors.text} />
       </TouchableOpacity>
       <Text style={styles.topTitle} numberOfLines={1}>{title}</Text>
       {onMenu ? (
-        <TouchableOpacity style={styles.topBtn} onPress={onMenu} hitSlop={8}>
+        <TouchableOpacity style={styles.topBtn} onPress={onMenu} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
           <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
         </TouchableOpacity>
       ) : (

@@ -756,16 +756,16 @@ export default function StoryViewerScreen() {
                   // Archived replay is read-only — manage (restore/delete) from the
                   // Archive screen, so no trash button here.
                   archived ? null : (
-                    <TouchableOpacity style={styles.headerBtn} onPress={onDelete} hitSlop={8}>
+                    <TouchableOpacity style={styles.headerBtn} onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.delete')}>
                       <Ionicons name="trash-outline" size={22} color="#fff" />
                     </TouchableOpacity>
                   )
                 ) : (
-                  <TouchableOpacity style={styles.headerBtn} onPress={onReport} hitSlop={8}>
+                  <TouchableOpacity style={styles.headerBtn} onPress={onReport} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
                     <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
                   </TouchableOpacity>
                 ))}
-                <TouchableOpacity style={styles.headerBtn} onPress={dismiss} hitSlop={8}>
+                <TouchableOpacity style={styles.headerBtn} onPress={dismiss} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
                   <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>
               </View>

@@ -106,7 +106,7 @@ export default function SongAttribution({
           <Text style={styles.song} numberOfLines={1}>{title || t('songAttr.audioTrack')}</Text>
         </TouchableOpacity>
       </View>
-      <TouchableOpacity onPress={openOptions} style={styles.dots} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      <TouchableOpacity onPress={openOptions} style={styles.dots} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
         <Ionicons name="ellipsis-horizontal" size={18} color="#fff" />
       </TouchableOpacity>
     </View>

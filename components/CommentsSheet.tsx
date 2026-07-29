@@ -200,7 +200,7 @@ function CommentsSheet({ visible, postId, ownerId, onClose, onPosted, inOverlay 
             <View style={styles.handle} />
             <Text style={styles.title}>{t('comments.title')}</Text>
           </View>
-          <TouchableOpacity style={styles.closeBtn} onPress={dismiss} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <TouchableOpacity style={styles.closeBtn} onPress={dismiss} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
             <Ionicons name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
           <View style={styles.divider} />

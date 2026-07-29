@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { impactLight } from '../lib/haptics';
+import { useReduceMotion } from '../lib/a11y';
 
 // ── Double-tap-to-like (global) ──────────────────────────────────────────────
 // One shared primitive so every surface (feed / post viewer / reels) behaves
@@ -21,6 +22,7 @@ const DOUBLE_TAP_MS = 260;
 function HeartBurst({ trigger }: { trigger: number }) {
   const scale = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const reduced = useReduceMotion();
   // The trigger value this instance MOUNTED with. Only a real change (a fresh
   // double-tap) bursts — never the mount itself. Without this, remounting the
   // burst with a stale non-zero trigger (the shared landscape-overlay heart
@@ -30,6 +32,20 @@ function HeartBurst({ trigger }: { trigger: number }) {
   useEffect(() => {
     if (trigger === seen.current) return; // mount, or no real change → no burst
     seen.current = trigger;
+    // Reduce Motion: keep the CONFIRMATION, drop the motion. A springing,
+    // scaling, full-screen heart is exactly the kind of animation that triggers
+    // nausea for someone with a vestibular disorder — but silently showing
+    // nothing would remove the only feedback that the like registered. So the
+    // heart still appears and fades, it just doesn't leap.
+    if (reduced) {
+      scale.setValue(1);
+      opacity.setValue(1);
+      Animated.sequence([
+        Animated.delay(420),
+        Animated.timing(opacity, { toValue: 0, duration: 160, useNativeDriver: true }),
+      ]).start();
+      return;
+    }
     scale.setValue(0.3);
     opacity.setValue(0);
     Animated.sequence([
@@ -44,7 +60,7 @@ function HeartBurst({ trigger }: { trigger: number }) {
       ]),
     ]).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trigger]);
+  }, [trigger, reduced]);
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.center]}>
       <Animated.View style={{ opacity, transform: [{ scale }] }}>

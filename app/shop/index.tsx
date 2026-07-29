@@ -18,6 +18,7 @@ import {
   LISTING_CATEGORIES, createShop, deliverOrder, exploreListings, fetchMyPurchases,
   fetchMySales, fetchSellerListings, formatPrice, getShop, hasOpenShop,
   markShopOrdersSeen, pendingSalesCount, sellerEarningsCents, setOrderStatus, updateShop,
+  fetchDeliveredShopEarningsCents,
   type ExploreSort, type ListingCategory, type SellerProfile, type Shop, type ShopListing, type ShopOrder,
 } from '../../lib/shop';
 import { useShopCart } from '../../lib/shopCart';
@@ -217,13 +218,16 @@ function MyShopTab({ myId, myAge }: { myId: string | null; myAge: number | null 
       const s = await getShop(myId);
       setShop(s);
       if (s) {
-        const [mine, sales] = await Promise.all([fetchSellerListings(myId, true), fetchMySales()]);
+        // Earnings come from the delivered_earnings() RPC, which sums EVERY
+        // delivered order server-side. Summing fetchMySales() here instead would
+        // undercount: that query is page-capped and ordered by recency across all
+        // statuses, so a busy seller loses every delivered order past the cap.
+        const [mine, earned] = await Promise.all([
+          fetchSellerListings(myId, true),
+          fetchDeliveredShopEarningsCents(),
+        ]);
         setListings(mine);
-        setEarnedCents(
-          sales
-            .filter((o) => o.status === 'delivered')
-            .reduce((sum, o) => sum + sellerEarningsCents(o.price_cents), 0),
-        );
+        setEarnedCents(earned);
       }
     } catch { /* pre-migration */ }
     setLoading(false);

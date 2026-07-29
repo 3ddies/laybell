@@ -66,13 +66,30 @@ serve(async (req) => {
 
     if (action === 'create') {
       const title = String(body?.title ?? '').slice(0, 120);
+      // Retaining a replay is OPT-IN, and defaults to off.
+      //
+      // Broadcasting music live is a public performance, which the BMI licence
+      // covers. SAVING the broadcast is a REPRODUCTION — a new fixation — and BMI
+      // §3.B grants "only public performing rights... and does not grant any
+      // reproduction, distribution, or any other intellectual property right(s)".
+      // No PRO licence ever covers it. So a saved VOD carrying music sits outside
+      // every licence Laybell holds, while a live-only broadcast sits inside them.
+      //
+      // This is the mistake Twitch made: PRO deals, no reproduction rights, VODs
+      // retained by default, then mass DMCA notices in 2020 and thousands of
+      // videos pulled with no warning to creators. Defaulting to off costs a
+      // feature nobody has asked for yet; defaulting to on costs a claim.
+      const saveReplay = body?.saveReplay === true;
       const { ok, data } = await cfFetch('', {
         method: 'POST',
         body: JSON.stringify({
           meta: { name: title || 'Laybell live', creator: uid },
-          // Automatic recording makes RTMP broadcasts watchable over HLS and
-          // saves a VOD; WebRTC (WHIP) broadcasts ignore it during the beta.
-          recording: { mode: 'automatic', timeoutSeconds: 30, requireSignedURLs: false },
+          // 'automatic' saves a VOD after the broadcast; 'off' keeps it ephemeral.
+          // Note RTMP playback works either way — HLS is served live regardless,
+          // so turning recording off does not break watching the stream.
+          recording: saveReplay
+            ? { mode: 'automatic', timeoutSeconds: 30, requireSignedURLs: false }
+            : { mode: 'off' },
         }),
       });
       const r = data?.result;

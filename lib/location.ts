@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { supabase } from './supabase';
+import { viewerIsAdult } from './minors';
 
 // Approximate-location capture for "people near you" recommendations. Everything is
 // guarded so the app keeps working before the dev client is rebuilt with
@@ -13,7 +14,20 @@ const ONE_DAY = 24 * 60 * 60 * 1000;
 
 // Round to 1 decimal (~11 km) so only a coarse area is ever stored, never a precise
 // position. Both the saved coords and matching are intentionally low-resolution.
+// This resolution matters legally as well as for privacy: state privacy laws define
+// "precise geolocation" as identifying a consumer within about 1,750 feet, and ~11 km
+// is far outside that — so what we store is not sensitive data under those laws.
+// Do NOT increase this precision without re-reading docs/LAUNCH_CHECKLIST.md §7.6.
 const coarse = (n: number) => Math.round(n * 10) / 10;
+
+// Minors are excluded from location collection entirely. Mississippi's HB 1126
+// prohibits collecting geolocation from minors and has NO size threshold, so this
+// is a hard requirement rather than a nicety — and it's applied globally rather
+// than per-state because geo-fencing our own compliance is more fragile than
+// simply not collecting. An unknown age does not unlock capture (see lib/minors).
+async function locationAllowed(): Promise<boolean> {
+  return viewerIsAdult();
+}
 
 export async function getLocationStatus(): Promise<PermInfo> {
   try {
@@ -31,6 +45,7 @@ export type CoarseLocation = { latitude: number; longitude: number; city: string
 // coarse location, or null if permission denied / anything failed.
 export async function captureAndSaveLocation(userId: string): Promise<CoarseLocation | null> {
   try {
+    if (!(await locationAllowed())) return null;
     const perm = await Location.requestForegroundPermissionsAsync();
     if (!perm.granted) return null;
 
@@ -70,6 +85,10 @@ export async function disableLocation(userId: string): Promise<void> {
 export async function maybeRefreshLocation(userId: string, locationEnabled?: boolean | null): Promise<void> {
   if (!locationEnabled) return;
   try {
+    // An account that turned 18-to-17 is impossible, but an account whose dob was
+    // only just filled in is not — so a minor with location left on from an earlier
+    // build gets it cleared here rather than quietly refreshed.
+    if (!(await locationAllowed())) { await disableLocation(userId); return; }
     const last = Number((await AsyncStorage.getItem(STALE_KEY)) ?? 0);
     if (Date.now() - last < ONE_DAY) return;
     const perm = await Location.getForegroundPermissionsAsync();

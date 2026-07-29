@@ -1,5 +1,6 @@
 import { Alert } from 'react-native';
 import { supabase } from './supabase';
+import { logAccess } from './accessLog';
 import { collectPostMediaUrls, removePublicUrls } from './storageCleanup';
 import { deleteStreamVideo } from './streamUpload';
 import { isPostSpotlighted } from './spotlight';
@@ -135,6 +136,9 @@ export async function submitReport(postId: string, reason = 'other') {
   await supabase.from('post_reports').insert({
     post_id: postId, reporter_id: user?.id ?? null, reason,
   });
+  // Server-captured IP for the reporting session. On a CSAM report this is part
+  // of what makes a CyberTipline filing actionable — see docs/CSAM_RESPONSE_RUNBOOK.md.
+  logAccess('report', 'post', postId);
 }
 
 // ── Report sheet bridge ──────────────────────────────────────────────────────
@@ -163,6 +167,7 @@ export async function submitUserReport(userId: string, reason = 'other') {
   await supabase.from('user_reports').insert({
     reported_id: userId, reporter_id: user?.id ?? null, reason,
   });
+  logAccess('report', 'user', userId);
 }
 
 // Records a shop-listing report (scams, stolen content, prohibited material).

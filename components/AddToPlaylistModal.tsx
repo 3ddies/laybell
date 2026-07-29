@@ -131,7 +131,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
 
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{t('addToPlaylist.title')}</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
               <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>

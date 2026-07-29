@@ -120,7 +120,7 @@ export default function WelcomeTour({ onDone }: { onDone: () => void }) {
           style={styles.closeBtn}
           onPress={dismiss}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
+         accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
           <Ionicons name="close" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
 

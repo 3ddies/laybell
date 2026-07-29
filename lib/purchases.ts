@@ -91,6 +91,83 @@ export async function purchase(pkg: Pkg): Promise<'ok' | 'cancelled' | 'error'> 
   }
 }
 
+// ── Credits (consumables) ────────────────────────────────────────────────────
+// Credits are bought with real money and are SPEND-ONLY — never redeemable for
+// cash. That constraint is what keeps them clear of stored-value and state
+// money-transmitter rules, and it is a legal boundary rather than a product
+// preference. Nothing here may ever pay a credit back out. See lib/ledger.ts.
+//
+// The balance is NOT granted by this code. The purchase completes on-device, then
+// RevenueCat's webhook posts the funding transaction into the ledger server-side
+// (supabase/functions/revenuecat-webhook). A client that could grant its own
+// credits could mint them, so the client only reports what it bought and waits.
+
+/** Product ids, cheapest first. Must match App Store Connect / Play Console AND
+ *  the CREDIT_PRODUCTS map in the revenuecat-webhook — a mismatch means the
+ *  purchase succeeds and grants nothing. */
+export const CREDIT_PRODUCT_IDS = [
+  'laybell_credits_499',
+  'laybell_credits_999',
+  'laybell_credits_1999',
+  'laybell_credits_4999',
+  'laybell_credits_9999',
+] as const;
+
+/** Credit packs available to buy, cheapest first. Empty until billing is wired. */
+export async function getCreditPacks(): Promise<Pkg[]> {
+  const Purchases = await load();
+  if (!Purchases) return [];
+  try {
+    const offerings = await Purchases.getOfferings();
+    // Look in every offering, not just `current`: credits usually live in their
+    // own offering alongside the Premium one, and `current` can only be a single
+    // offering at a time.
+    const all: any[] = [
+      ...(offerings?.current?.availablePackages ?? []),
+      ...Object.values(offerings?.all ?? {}).flatMap((o: any) => o?.availablePackages ?? []),
+    ];
+    const seen = new Set<string>();
+    return all
+      .filter((p: any) => {
+        const id = p?.product?.identifier ?? '';
+        if (!CREDIT_PRODUCT_IDS.includes(id) || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .sort((a, b) => (a.product?.price ?? 0) - (b.product?.price ?? 0))
+      .map((p: any) => ({
+        identifier: p.product?.identifier ?? p.identifier,
+        priceString: p.product?.priceString ?? '',
+        title: p.product?.title ?? '',
+        description: p.product?.description ?? '',
+        raw: p,
+      }));
+  } catch { return []; }
+}
+
+export type CreditPurchaseResult = 'ok' | 'cancelled' | 'error';
+
+/**
+ * Buy a credit pack. Returning 'ok' means the STORE charged the card — not that
+ * the balance has landed. Crediting happens when RevenueCat's webhook reaches our
+ * ledger, which is usually seconds but is not synchronous and can be delayed.
+ * Callers should tell the user their credits are on the way and refresh the
+ * balance, rather than displaying a total that hasn't updated yet.
+ */
+export async function purchaseCredits(pkg: Pkg): Promise<CreditPurchaseResult> {
+  const Purchases = await load();
+  if (!Purchases) return 'error';
+  try {
+    await Purchases.purchasePackage(pkg.raw);
+    // Deliberately NOT touching any local balance here. The ledger is the single
+    // source of truth and only the server may write to it.
+    return 'ok';
+  } catch (e: any) {
+    if (e?.userCancelled) return 'cancelled';
+    return 'error';
+  }
+}
+
 export async function restore(): Promise<boolean> {
   const Purchases = await load();
   if (!Purchases) return false;

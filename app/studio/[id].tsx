@@ -322,7 +322,7 @@ export default function StudioRoomScreen() {
               <Text style={styles.liveBadgeText}>{t('studio.onAir')}</Text>
             </View>
           )}
-          <TouchableOpacity onPress={invite} style={styles.headerBtn}>
+          <TouchableOpacity onPress={invite} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={t('a11y.addPeople')}>
             <Ionicons name="person-add-outline" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>

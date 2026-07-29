@@ -128,7 +128,7 @@ export default function ThumbnailPickerModal({ visible, videoUri, durationSec, c
         <View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md }]}>
           <View style={styles.header}>
             <Text style={styles.title}>{t('thumb.title')}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={10}>
+            <TouchableOpacity onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
               <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>
           </View>

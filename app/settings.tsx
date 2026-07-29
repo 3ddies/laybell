@@ -260,6 +260,16 @@ export default function SettingsScreen() {
       subtitle: t('account.walletSub'),
       onPress: () => router.push('/wallet'),
     },
+    // Credits sit next to the Wallet deliberately: they're the two halves of the
+    // same idea. The Wallet is money coming IN (earnings); Credits is money going
+    // OUT (what you spend on tips and the Shop). Putting them apart makes people
+    // look for one in the other.
+    {
+      icon: 'diamond-outline',
+      label: t('account.credits'),
+      subtitle: t('account.creditsSub'),
+      onPress: () => router.push('/credits'),
+    },
     {
       icon: 'person-remove-outline',
       label: t('account.followerInsights'),

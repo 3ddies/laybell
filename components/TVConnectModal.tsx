@@ -147,7 +147,7 @@ export default function TVConnectModal({ visible, onClose, pendingItem }: {
             <Ionicons name="tv" size={18} color={colors.primary} />
             <Text style={styles.headerTitle}>{t('tv.setup.title')}</Text>
           </View>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
             <Ionicons name="close" size={22} color={colors.text} />
           </TouchableOpacity>
         </View>

@@ -7,6 +7,8 @@ import { FullWindowOverlay } from 'react-native-screens';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../lib/supabase';
 import { ensureProfileForSession } from '../lib/socialAuth';
+import { sweepAbandonedStreamUploads } from '../lib/streamUpload';
+import { clearAgeCache } from '../lib/minors';
 import { Session } from '@supabase/supabase-js';
 import { COLORS } from '../constants/theme';
 import { tg } from '../lib/i18n';
@@ -261,8 +263,12 @@ export default function RootLayout() {
       setInitialized(true);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      // Drop the cached age on any identity change so a second account signing in
+      // on this device can't inherit the first one's adult status and unlock the
+      // 18+ gates. Token refreshes deliberately keep the cache.
+      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') clearAgeCache();
     });
 
     return () => subscription.unsubscribe();
@@ -279,6 +285,15 @@ export default function RootLayout() {
       .update({ last_seen_at: new Date().toISOString() })
       .eq('id', uid)
       .then(undefined, () => {});
+  }, [session?.user?.id]);
+
+  // Settle any Cloudflare Stream asset whose upload was orphaned by a crash or a
+  // force-quit last session — the composer prewarms uploads, so an abandoned clip
+  // is a real asset billing storage with nothing pointing at it. Anything that did
+  // get published is recognised and left alone. Deliberately fire-and-forget.
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    sweepAbandonedStreamUploads().catch(() => {});
   }, [session?.user?.id]);
 
   useEffect(() => {

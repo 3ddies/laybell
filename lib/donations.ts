@@ -15,8 +15,32 @@ export const DONATION_FEE_RATE_STANDARD = 0.35;  // everyone else keeps 65%
 export const DONATION_TAX_RATE = 0.06; // estimate for display; real tax varies by location/provider
 
 // Quick-pick tip amounts (cents).
-export const DONATION_PRESETS_CENTS = [100, 200, 500, 1000, 2000, 5000];
-export const DONATION_MIN_CENTS = 100;
+//
+// The $6 floor is set by processing economics, not product taste. A card charge
+// costs 2.9% + 30¢, which is a fixed cost Laybell pays on every tip regardless of
+// size — so on small tips the processor takes more than the platform does.
+// Break-even by tier: 35% standard → $0.93, 8% Premium → $5.88.
+//
+// Laybell's net at each amount, after Stripe:
+//
+//     tip   Stripe   net @8% Premium   net @35% standard
+//     $5    $0.45         -$0.045            $1.30      ← loses money
+//     $6    $0.47         +$0.006            $1.63      ← the floor
+//     $10   $0.59         +$0.21             $2.91
+//     $25   $1.03         +$0.98             $7.72
+//     $50   $1.75         +$2.25            $15.75
+//
+// $6 is the smallest whole-dollar tip that is profitable on BOTH tiers. The margin
+// on a floor-sized Premium tip is ~nil, and that is the Premium "Earn More" perk
+// working as intended — the 8% rate exists to give margin back to the creator. It
+// turns healthy above $10, where real tipping volume sits.
+//
+// ⚠️ DONATION_MIN_CENTS is enforced client-side only. The authoritative split is
+// computed by the donation_guard trigger in supabase/sql/donations.sql; if this
+// floor ever changes, the trigger should grow a matching minimum so a crafted
+// request can't mint a $1 tip. See docs/LAUNCH_CHECKLIST.md §6.4.
+export const DONATION_PRESETS_CENTS = [600, 1000, 2500, 5000, 10000];
+export const DONATION_MIN_CENTS = 600;
 export const DONATION_MAX_CENTS = 50000;
 
 /** True while `premium_until` is in the future. */
@@ -75,21 +99,72 @@ export function hostCanReceive(_premiumUntil?: string | null): boolean {
 
 export type DonateResult =
   | { ok: true }
-  | { ok: false; reason: 'not_premium' | 'self' | 'unavailable' | 'signed_out' };
+  // 'insufficient' = not enough credits. Distinct from 'unavailable' because it
+  // is the one failure the user can actually fix — it should route them to buy
+  // credits, not show a generic error.
+  | { ok: false; reason: 'not_premium' | 'self' | 'unavailable' | 'signed_out' | 'insufficient' };
 
 /**
- * Record a (simulated) donation. The trigger resolves the host from the stream,
- * enforces the premium lock, and computes the fee/tax/payout — so we only send the
- * donor, stream, and amount. Maps the server's error strings to a typed reason.
+ * Shared path for both tip targets. The amount is spent from the CREDITS balance
+ * through a server-side RPC that computes the fee and split itself
+ * (supabase/sql/ledger_spend.sql).
+ *
+ * The old path was a bare client INSERT into `donations`, which meant a tip could
+ * be conjured without anyone paying for it — two accounts could mint a
+ * withdrawable balance at will. The client no longer decides any of the numbers:
+ * it names a target and an amount, and even the amount is bounds-checked server
+ * side.
+ *
+ * One implementation on purpose. Livestream tips were secured first and studio
+ * tips were left on the old path, which is exactly the kind of drift that happens
+ * when the same logic is written twice.
  */
-export async function donate(streamId: string, amountCents: number, message = ''): Promise<DonateResult> {
-  return donateTo({ stream_id: streamId }, amountCents, message);
+async function tipViaRpc(
+  fn: 'tip_with_credits' | 'tip_studio_with_credits',
+  target: Record<string, string>,
+  amountCents: number,
+  message: string,
+  legacyFallback: () => Promise<DonateResult>,
+): Promise<DonateResult> {
+  const amount = Math.round(amountCents);
+  if (!(amount >= DONATION_MIN_CENTS)) return { ok: false, reason: 'unavailable' };
+  try {
+    const { data, error } = await supabase.rpc(fn, {
+      ...target,
+      p_amount_cents: amount,
+      p_message: message.trim().slice(0, 200) || null,
+    });
+    if (!error && data) return { ok: true };
+
+    const msg = `${error?.message ?? ''}`.toLowerCase();
+    // The ledger refuses to settle an account below zero, so "not enough credits"
+    // arrives as its insufficient-funds error rather than a bespoke check.
+    if (msg.includes('insufficient funds')) return { ok: false, reason: 'insufficient' };
+    if (msg.includes('cannot_tip_self')) return { ok: false, reason: 'self' };
+    if (msg.includes('amount_out_of_range')) return { ok: false, reason: 'unavailable' };
+    if (msg.includes('not_signed_in')) return { ok: false, reason: 'signed_out' };
+    // Pre-migration (ledger_spend.sql not applied) — fall back so tipping keeps
+    // working rather than breaking on a database that hasn't caught up.
+    if (msg.includes('could not find') || msg.includes('does not exist')) {
+      return legacyFallback();
+    }
+    return { ok: false, reason: 'unavailable' };
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
 }
 
-/** Tip the host of a LIVE STUDIO broadcast (donation_guard v3 resolves the
-    host from studio_sessions; requires studio_live.sql). */
+/** Tip the host of a LIVESTREAM, paid from the credits balance. */
+export async function donate(streamId: string, amountCents: number, message = ''): Promise<DonateResult> {
+  return tipViaRpc('tip_with_credits', { p_stream_id: streamId }, amountCents, message,
+    () => donateTo({ stream_id: streamId }, amountCents, message));
+}
+
+/** Tip the host of a LIVE STUDIO broadcast. Same ledger path as a livestream tip
+    — only the host lookup differs (studio_sessions instead of live_streams). */
 export async function donateStudio(sessionId: string, amountCents: number, message = ''): Promise<DonateResult> {
-  return donateTo({ studio_session_id: sessionId }, amountCents, message);
+  return tipViaRpc('tip_studio_with_credits', { p_session_id: sessionId }, amountCents, message,
+    () => donateTo({ studio_session_id: sessionId }, amountCents, message));
 }
 
 async function donateTo(

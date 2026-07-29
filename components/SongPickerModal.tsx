@@ -68,15 +68,27 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  async function runSearch(q: string) {
-    setLoading(true);
-    const term = q.trim();
+  // `consentFilter` is separated out so the search can be retried without it on a
+  // pre-migration database — see runSearch.
+  async function searchSounds(term: string, consentFilter: boolean) {
     let req = supabase
       .from('posts')
       .select('id, caption, cover_url, media_url, user_id, stream_count, profiles!posts_user_id_fkey(id, username, display_name, avatar_url)')
       .eq('is_public', true)
       .in('type', ['audio', 'podcast', 'audiobook'])
       .limit(30);
+
+    if (consentFilter) {
+      // Only sounds whose creator affirmatively allowed reuse and hasn't since
+      // withdrawn it. Attaching audio to a video is synchronisation — a right no
+      // performing-rights licence covers — so the uploader's own consent is the
+      // entire legal basis for this feature. See supabase/sql/sound_optin.sql.
+      //
+      // `.is(..., null)` rather than a negated comparison: in SQL, null is
+      // "unknown", so `.neq` would exclude every row that was never withdrawn —
+      // i.e. almost the whole catalogue.
+      req = req.eq('sound_opt_in', true).is('sound_withdrawn_at', null);
+    }
 
     if (term) {
       // Also match by artist: find matching profiles, then OR their tracks in.
@@ -89,8 +101,24 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
     } else {
       req = req.order('stream_count', { ascending: false });
     }
+    return req;
+  }
 
-    const { data } = await req;
+  async function runSearch(q: string) {
+    setLoading(true);
+    const term = q.trim();
+
+    const { data, error } = await searchSounds(term, true);
+    if (error && /sound_opt_in|sound_withdrawn_at/.test(error.message ?? '')) {
+      // sound_optin.sql hasn't been applied yet. Retry unfiltered so the picker
+      // keeps working, matching how every other feature here degrades before its
+      // migration lands. Once the migration runs the consent filter takes effect
+      // on its own, with no code change.
+      const { data: fallback } = await searchSounds(term, false);
+      setResults(fallback ?? []);
+      setLoading(false);
+      return;
+    }
     setResults(data ?? []);
     setLoading(false);
   }
@@ -120,7 +148,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
           <View style={styles.handle} />
           <View style={styles.head}>
             <Text style={styles.title}>{t('songPicker.title')}</Text>
-            <TouchableOpacity onPress={close} hitSlop={8}><Ionicons name="close" size={22} color={colors.textSecondary} /></TouchableOpacity>
+            <TouchableOpacity onPress={close} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.close')}><Ionicons name="close" size={22} color={colors.textSecondary} /></TouchableOpacity>
           </View>
 
           {/* Fixed-height capsule; the clear button is ALWAYS mounted (hidden

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions,
-  Pressable, Animated, PanResponder, Easing, Platform, ActivityIndicator,
+  Pressable, Animated, PanResponder, Easing, Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from './ThemeContext';
 import { confirmDeletePost, reportPost, reportUser, confirmArchivePost } from '../lib/postActions';
+import { withdrawSound, soundIsAvailable } from '../lib/sounds';
 import { confirmBlockUser, isBlocked, unblockUser } from '../lib/blocks';
 import { isAudioPost } from '../lib/genres';
 import { supabase } from '../lib/supabase';
@@ -207,6 +208,8 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   // Offline-download inputs for the audio post. Seeded from the args, then
   // back-filled by a lazy `posts` fetch when the args don't carry them (most
   // call sites don't select media_url/cover_url/downloadable).
+  // Is this audio still offered in the sound picker? Drives the withdraw action.
+  const [soundAvailable, setSoundAvailable] = useState(false);
   const [dlUrl, setDlUrl] = useState<string | null>(null);
   const [dlCover, setDlCover] = useState<string | null>(null);
   const [dlTitle, setDlTitle] = useState('');
@@ -266,8 +269,18 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
             if (o.downloadable === undefined) setDownloadable(d.downloadable ?? true);
             setDlTitle(d.caption ?? '');
           }, () => {});
+        // Sync-consent state, fetched separately from the download info above so a
+        // pre-migration database (no sound_* columns) fails only this query and
+        // doesn't take the Downloads row down with it.
+        setSoundAvailable(false);
+        supabase.from('posts').select('sound_opt_in, sound_withdrawn_at').eq('id', o.postId).maybeSingle()
+          .then(({ data }) => setSoundAvailable(soundIsAvailable({
+            optIn: (data as any)?.sound_opt_in,
+            withdrawnAt: (data as any)?.sound_withdrawn_at ?? null,
+          })), () => setSoundAvailable(false));
       } else {
         setDlUrl(null); setDlCover(null); setDownloadable(true); setDlTitle('');
+        setSoundAvailable(false);
       }
       // Video posts: resolve media_url + duration so "Make GIF" can open the
       // maker, plus aspect/caption/thumbnail so "Laybell TV" can appear on
@@ -306,6 +319,32 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
 
   // Run an action after the dismiss animation so the sheet is gone first.
   function dismissThen(fn: () => void) { dismiss(); setTimeout(fn, 280); }
+
+  // Withdrawing a sound edits OTHER people's posts — their video survives but the
+  // borrowed audio stops and the credit disappears. That is a bigger action than
+  // it sounds, so it confirms first and then reports how many posts it touched.
+  function confirmWithdrawSound(postId: string) {
+    Alert.alert(
+      t('postOptions.withdrawSound'),
+      t('postOptions.withdrawSoundBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('postOptions.withdrawSoundConfirm'),
+          style: 'destructive',
+          onPress: async () => {
+            const res = await withdrawSound(postId);
+            if (!res.ok) { Alert.alert(t('common.error'), res.error ?? ''); return; }
+            setSoundAvailable(false);
+            Alert.alert(
+              t('postOptions.withdrawSoundDoneTitle'),
+              t('postOptions.withdrawSoundDone', { count: String(res.postsUpdated) }),
+            );
+          },
+        },
+      ],
+    );
+  }
 
   function toggleRepost() {
     const o = optsRef.current;
@@ -474,6 +513,15 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
       onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) confirmArchivePost(o.postId, o.onArchived); }); } });
     options.push({ key: 'delete', label: t('postOptions.deletePost'), icon: 'trash-outline', destructive: true,
       onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) confirmDeletePost(o.postId, o.onDeleted); }); } });
+    // The sync kill switch. Only meaningful on audio, and only worth showing when
+    // the sound is still available — withdrawing twice does nothing. Destructive
+    // styling because it edits other people's posts: their video keeps playing,
+    // but the borrowed audio stops.
+    if (isAudioPost(optsRef.current?.mediaType) && soundAvailable) {
+      options.push({ key: 'withdraw-sound', label: t('postOptions.withdrawSound'),
+        icon: 'musical-notes-outline', destructive: true,
+        onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) confirmWithdrawSound(o.postId); }); } });
+    }
   } else if (hasPost && !isOwn) {
     options.push({ key: 'repost', label: reposted ? t('postOptions.removeFromReposts') : t('postOptions.repost'),
       icon: reposted ? 'repeat' : 'repeat-outline', onPress: toggleRepost });

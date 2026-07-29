@@ -119,6 +119,7 @@ function AdSkipButton({ canSkip, onSkip }: { canSkip: boolean; onSkip: () => voi
 
 function Controls() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const { isPlaying, isBuffering, pause, resume, next, previous, queueIndex, queueLength, hasMore } = useAudio();
   const hasQueue = queueLength > 1 || hasMore;
@@ -127,8 +128,20 @@ function Controls() {
   const canNext = queueIndex < queueLength - 1 || hasMore;
   return (
     <View style={styles.controls}>
+      {/* Every control here is icon-only, so without a label a screen reader
+          announces nothing but "button". These are the controls a blind user
+          depends on most, which is why they're labelled first. accessibilityState
+          carries the disabled/playing state that the colour change conveys
+          visually. */}
       {hasQueue && (
-        <TouchableOpacity style={styles.navBtn} onPress={previous} disabled={!canPrev}>
+        <TouchableOpacity
+          style={styles.navBtn}
+          onPress={previous}
+          disabled={!canPrev}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.previousTrack')}
+          accessibilityState={{ disabled: !canPrev }}
+        >
           <Ionicons name="play-skip-back" size={28} color={canPrev ? colors.text : colors.textTertiary} />
         </TouchableOpacity>
       )}
@@ -136,7 +149,13 @@ function Controls() {
           play-circle glyph at this size sits visibly low/off-axis because of
           the icon font's metrics — drawing the circle ourselves centers it
           exactly, Spotify-style). */}
-      <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())} activeOpacity={0.85}>
+      <TouchableOpacity
+        style={styles.playBtn}
+        onPress={() => (isPlaying ? pause() : resume())}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={isBuffering ? t('a11y.buffering') : isPlaying ? t('a11y.pause') : t('a11y.play')}
+      >
         {isBuffering ? (
           <ActivityIndicator color="#fff" />
         ) : (
@@ -144,7 +163,14 @@ function Controls() {
         )}
       </TouchableOpacity>
       {hasQueue && (
-        <TouchableOpacity style={styles.navBtn} onPress={next} disabled={!canNext}>
+        <TouchableOpacity
+          style={styles.navBtn}
+          onPress={next}
+          disabled={!canNext}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.nextTrack')}
+          accessibilityState={{ disabled: !canNext }}
+        >
           <Ionicons name="play-skip-forward" size={28} color={canNext ? colors.text : colors.textTertiary} />
         </TouchableOpacity>
       )}
@@ -412,7 +438,12 @@ export default function NowPlaying() {
           <View style={[styles.handle, { backgroundColor: handleColor }]} />
           <View style={styles.header}>
             <View style={styles.headerActions}>
-              <TouchableOpacity style={styles.headerBtn} onPress={collapse}>
+              <TouchableOpacity
+                style={styles.headerBtn}
+                onPress={collapse}
+                accessibilityRole="button"
+                accessibilityLabel={t('a11y.minimise')}
+              >
                 <Ionicons name="chevron-down" size={26} color={colors.text} />
               </TouchableOpacity>
             </View>
@@ -424,6 +455,8 @@ export default function NowPlaying() {
               <View style={styles.headerActions}>
                 <TouchableOpacity
                   style={styles.headerBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y.moreOptions')}
                   onPress={() => showOptions({
                     postId: pid,
                     isOwn: ownerId === userId,

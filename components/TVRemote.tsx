@@ -454,7 +454,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
     >
       {/* Header: collapse chevron + destination + 3-dot */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onClose} hitSlop={10} style={styles.headerBtn}>
+        <TouchableOpacity onPress={onClose} hitSlop={10} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={t('a11y.collapse')}>
           <Ionicons name="chevron-down" size={26} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
@@ -464,7 +464,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
           </Text>
         </View>
         {postId || current.authorId ? (
-          <TouchableOpacity onPress={openOptions} hitSlop={10} style={styles.headerBtn}>
+          <TouchableOpacity onPress={openOptions} hitSlop={10} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
             <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
           </TouchableOpacity>
         ) : (

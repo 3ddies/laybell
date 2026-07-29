@@ -159,7 +159,7 @@ export default function VideoStickerEditor({ visible, posterUri, initial, onSave
         {!editingId && (
           <>
             <View style={[styles.topBar, { top: insets.top + 8 }]}>
-              <TouchableOpacity style={styles.barBtn} onPress={onClose}>
+              <TouchableOpacity style={styles.barBtn} onPress={onClose} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
                 <Ionicons name="close" size={24} color="#fff" />
               </TouchableOpacity>
               <View style={{ flex: 1 }} />

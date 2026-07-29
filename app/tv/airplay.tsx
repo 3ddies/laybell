@@ -376,7 +376,7 @@ export default function AirPlayTvScreen() {
     <View style={[styles.root, { paddingTop: insets.top + 6, paddingBottom: insets.bottom + SPACING.lg }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={exit} hitSlop={10} style={styles.headerBtn}>
+        <TouchableOpacity onPress={exit} hitSlop={10} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={t('a11y.collapse')}>
           <Ionicons name="chevron-down" size={26} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
@@ -472,7 +472,7 @@ export default function AirPlayTvScreen() {
 
           {/* Transport */}
           <View style={styles.controls}>
-            <TouchableOpacity onPress={goPrev} disabled={adLocked} hitSlop={10} style={styles.sideBtn}>
+            <TouchableOpacity onPress={goPrev} disabled={adLocked} hitSlop={10} style={styles.sideBtn} accessibilityRole="button" accessibilityLabel={t('a11y.previousTrack')}>
               <Ionicons name="play-skip-back" size={26} color={adLocked ? colors.textTertiary : colors.text} />
             </TouchableOpacity>
             <TouchableOpacity onPress={togglePlay} disabled={buffering} activeOpacity={0.85}>
@@ -484,7 +484,7 @@ export default function AirPlayTvScreen() {
                 )}
               </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity onPress={goNext} disabled={adLocked} hitSlop={10} style={styles.sideBtn}>
+            <TouchableOpacity onPress={goNext} disabled={adLocked} hitSlop={10} style={styles.sideBtn} accessibilityRole="button" accessibilityLabel={t('a11y.nextTrack')}>
               <Ionicons name="play-skip-forward" size={26} color={adLocked ? colors.textTertiary : colors.text} />
             </TouchableOpacity>
           </View>

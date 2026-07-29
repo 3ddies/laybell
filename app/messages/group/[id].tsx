@@ -518,7 +518,7 @@ export default function GroupChatScreen() {
           </Pressable>
         )}
         <View style={[styles.inputBar, { paddingBottom: kbUp ? SPACING.sm + 2 : Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}>
-          <TouchableOpacity style={styles.attachBtn} onPress={attachImage} disabled={attaching} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.attachBtn} onPress={attachImage} disabled={attaching} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={t('a11y.attachImage')}>
             {attaching ? <ActivityIndicator size="small" color={colors.textSecondary} /> : <Ionicons name="image-outline" size={24} color={colors.textSecondary} />}
           </TouchableOpacity>
           <TouchableOpacity style={styles.gifBtn} onPress={() => setGifOpen(true)} activeOpacity={0.7}>

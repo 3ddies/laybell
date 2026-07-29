@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laybell TV — Live Receiver</title>
+
+<!-- ────────────────────────────────────────────────────────────────────────
+  Laybell TV — CUSTOM CHROMECAST RECEIVER that plays a phone (WHIP) livestream
+  directly over WebRTC/WHEP.
+
+  WHY THIS EXISTS
+  Phone lives are WebRTC end-to-end (phone publishes via WHIP, viewers pull via
+  WHEP — see lib/whip.ts). Google's Default Media Receiver (CC1AD845) can only
+  play HLS/DASH/MP4 URLs, and Cloudflare's WebRTC beta does NOT expose a WHIP
+  input over HLS/DASH — so there has never been a URL a normal receiver could
+  load. The insight: a Chromecast IS a Chrome browser, so it can be a WHEP
+  viewer itself. This page runs on the Cast device, opens its own
+  RTCPeerConnection, does the exact same SDP handshake the phone app already
+  does, and renders the live <video> full-screen. The phone's live pipeline is
+  never touched — the TV is simply one more WHEP consumer.
+
+  IT DOES NOT BREAK EXISTING TV CASTING
+  This is a CAF v3 receiver. Normal Laybell TV casts (landscape HLS/DASH video
+  posts, MP4 sponsor creatives, RTMP-ingested live HLS) fall straight through to
+  CAF's built-in PlayerManager and play exactly as they do on the Default Media
+  Receiver today. ONLY a WHEP live is intercepted and handled by the WebRTC path
+  below. So when the app is eventually pointed at this receiver, VOD/ads/RTMP
+  lives are unchanged; phone lives gain TV playback.
+
+  THREE WAYS TO TEST (cheapest first — prove each before the next)
+  1. DESKTOP CHROME, no Cast at all:
+       open  tv-live-receiver.html?whep=<a live webRTC/play url>
+       (or open it bare and paste the URL into the on-screen box).
+     Proves the WebRTC/WHEP/codec/autoplay path in ~30s on a laptop.
+  2. REAL CHROMECAST via Google's "Cast Command and Control" (CaC) tool:
+       register this hosted URL as a Custom Receiver, then LOAD with
+       customData = { "whep": "<webRTC/play url>" }.
+     Proves WebRTC actually decodes on the TV hardware.
+  3. IN-APP: swap the receiver id + send the whep url as cast customData.
+     (App wiring is a separate, additive step — only after 1 & 2 pass.)
+
+  HOW A WHEP LIVE IS RECOGNISED (any of):
+   • Cast customData.whep = "<url>"           (how the app will send it)
+   • ?whep=<url> query param                  (desktop test)
+   • a contentId/contentUrl ending /webRTC/play (Cloudflare WHEP shape)
+──────────────────────────────────────────────────────────────────────────── -->
+
+<style>
+  :root { --bg:#0d0d0f; --ink:#f5f4f2; --muted:#a4a3ab; --brand:#F26522; --line:#272630; --card:#16151a; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:#000; color:var(--ink);
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; overflow:hidden; }
+
+  /* The live surface — sits above the CAF media element and fills the screen. */
+  #live { position:fixed; inset:0; width:100%; height:100%; background:#000;
+    object-fit:contain; display:none; z-index:10; }
+  #live.on { display:block; }
+
+  /* Idle / branded screen when nothing is playing. */
+  #idle { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:18px; background:radial-gradient(120% 120% at 50% 0%, #1a1820 0%, #0d0d0f 60%); z-index:5; }
+  #idle img { width:96px; height:96px; border-radius:22px; }
+  #idle h1 { margin:0; font-size:26px; letter-spacing:-0.3px; }
+  #idle p { margin:0; color:var(--muted); font-size:15px; }
+
+  /* Manual paste box — shown only on desktop (no Cast device). */
+  #manual { display:none; margin-top:10px; width:min(560px,86vw); gap:10px; flex-direction:column; align-items:stretch; }
+  #manual.on { display:flex; }
+  #whepInput { padding:13px 15px; border-radius:12px; border:1px solid var(--line); background:var(--card);
+    color:var(--ink); font-size:14px; }
+  #connectBtn { padding:13px 18px; border-radius:12px; border:0; cursor:pointer; font-weight:800; font-size:15px;
+    color:#fff; background:linear-gradient(90deg,var(--brand),#E8401C); }
+
+  /* Gesture-required unmute (desktop autoplay policy only — never fires on a
+     Cast receiver, which is allowed to autoplay with sound). */
+  #tapStart { position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,0.55); color:#fff; font-size:18px; font-weight:700; cursor:pointer; }
+  #tapStart.on { display:flex; }
+
+  /* Corner LIVE pill while connected. */
+  #livePill { position:fixed; top:22px; left:22px; z-index:15; display:none; align-items:center; gap:7px;
+    background:#F43F5E; color:#fff; font-weight:800; letter-spacing:0.6px; font-size:13px;
+    padding:5px 11px; border-radius:8px; }
+  #livePill.on { display:flex; }
+  #livePill .dot { width:7px; height:7px; border-radius:50%; background:#fff; }
+
+  /* On-screen status/debug — the TV has no easy console, so surface state here.
+     Add #debug to the URL (?whep=...&debug) to keep it visible while playing. */
+  #status { position:fixed; bottom:0; left:0; right:0; z-index:30; padding:8px 14px;
+    font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#c9c8d0;
+    background:rgba(0,0,0,0.6); white-space:pre-wrap; max-height:38vh; overflow:auto; }
+  #status:empty { display:none; }
+</style>
+</head><body>
+
+  <!-- CAF renders normal (HLS/DASH/MP4) casts into this element automatically. -->
+  <cast-media-player></cast-media-player>
+
+  <!-- Our WebRTC live surface, layered on top of the CAF player. -->
+  <video id="live" autoplay playsinline></video>
+  <div id="livePill"><span class="dot"></span>LIVE</div>
+
+  <div id="idle">
+    <img src="logo.png" alt="Laybell" onerror="this.style.display='none'">
+    <h1>Laybell TV</h1>
+    <p id="idleSub">Ready to cast a live</p>
+    <div id="manual">
+      <input id="whepInput" placeholder="Paste a webRTC/play (WHEP) URL to test…" autocomplete="off" spellcheck="false">
+      <button id="connectBtn">Connect</button>
+    </div>
+  </div>
+
+  <div id="tapStart">Tap to start with sound</div>
+  <div id="status"></div>
+
+<!-- CAF v3 receiver SDK. Loads fine in desktop Chrome too (we just don't
+     start() the receiver there — see below), so the manual test path works
+     with or without a Cast device. -->
+<script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var liveEl   = document.getElementById('live');
+  var idleEl    = document.getElementById('idle');
+  var pillEl    = document.getElementById('livePill');
+  var manualEl  = document.getElementById('manual');
+  var tapEl     = document.getElementById('tapStart');
+  var statusEl  = document.getElementById('status');
+
+  var params    = new URLSearchParams(location.search);
+  var showDebug = params.has('debug');
+
+  // Chromecast / Google-TV user agents carry "CrKey". Only there do we start the
+  // CAF receiver; on a normal browser we run the manual paste-to-test UI instead.
+  var isCastDevice = /\bCrKey\b/.test(navigator.userAgent || '');
+
+  // ── tiny on-screen logger ────────────────────────────────────────────────
+  var lines = [];
+  function log(msg) {
+    var t = new Date().toISOString().slice(11, 19);
+    lines.push('[' + t + '] ' + msg);
+    if (lines.length > 40) lines.shift();
+    statusEl.textContent = lines.join('\n');
+    // Also to the real console for `chrome://inspect` remote debugging.
+    try { console.log('[laybell-tv]', msg); } catch (e) {}
+  }
+
+  // ── WHEP client (mirrors lib/whip.ts negotiate(), browser-native) ─────────
+  var pc = null;          // current RTCPeerConnection
+  var resourceUrl = null; // WHEP session resource (DELETE to hang up)
+  var connectSeq = 0;     // guards against a stale connect finishing after a newer one
+
+  var ICE = { iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] };
+
+  // Cloudflare answers fastest when the offer already carries ICE candidates, so
+  // wait (briefly) for gathering to finish before POSTing — same as the app.
+  function waitForIce(peer, timeoutMs) {
+    if (peer.iceGatheringState === 'complete') return Promise.resolve();
+    return new Promise(function (resolve) {
+      var done = function () { clearTimeout(timer); peer.removeEventListener('icegatheringstatechange', check); resolve(); };
+      var check = function () { if (peer.iceGatheringState === 'complete') done(); };
+      var timer = setTimeout(done, timeoutMs || 2000);
+      peer.addEventListener('icegatheringstatechange', check);
+    });
+  }
+
+  function isWhepUrl(u) {
+    return typeof u === 'string' && /\/webRTC\/play\/?($|\?)/.test(u);
+  }
+
+  async function teardown() {
+    var res = resourceUrl; resourceUrl = null;
+    var peer = pc; pc = null;
+    if (res) { try { await fetch(res, { method: 'DELETE' }); } catch (e) {} }
+    if (peer) { try { peer.close(); } catch (e) {} }
+    try { liveEl.srcObject = null; } catch (e) {}
+  }
+
+  async function connectWhep(url) {
+    var seq = ++connectSeq;
+    await teardown();
+    if (seq !== connectSeq) return; // superseded while tearing down
+
+    log('WHEP connect → ' + String(url).slice(0, 90));
+    showState('connecting');
+
+    var peer = new RTCPeerConnection(ICE);
+    pc = peer;
+    var stream = new MediaStream();
+
+    peer.addEventListener('track', function (ev) {
+      if (ev.track) stream.addTrack(ev.track);
+      liveEl.srcObject = stream;
+      // Try to play with sound. Cast receivers may autoplay unmuted; desktop
+      // browsers may reject that until a gesture — fall back to a tap overlay.
+      liveEl.muted = false;
+      liveEl.play().then(function () {
+        showState('live');
+      }).catch(function () {
+        log('autoplay blocked — showing tap-to-start (desktop only)');
+        tapEl.classList.add('on');
+      });
+    });
+    peer.addEventListener('connectionstatechange', function () {
+      log('pc: ' + peer.connectionState);
+      if (peer.connectionState === 'connected') showState('live');
+      if (peer.connectionState === 'failed') log('connection FAILED — check codec/network');
+    });
+    peer.addEventListener('iceconnectionstatechange', function () { log('ice: ' + peer.iceConnectionState); });
+
+    peer.addTransceiver('video', { direction: 'recvonly' });
+    peer.addTransceiver('audio', { direction: 'recvonly' });
+
+    try {
+      var offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      await waitForIce(peer, 2000);
+      if (seq !== connectSeq) return;
+
+      var res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: peer.localDescription && peer.localDescription.sdp ? peer.localDescription.sdp : offer.sdp,
+      });
+      if (!res.ok) { log('WHEP HTTP ' + res.status + ' — negotiate failed'); return; }
+      var answer = await res.text();
+      if (seq !== connectSeq) return;
+      await peer.setRemoteDescription({ type: 'answer', sdp: answer });
+
+      var loc = res.headers.get('Location') || res.headers.get('location');
+      if (loc) resourceUrl = loc.indexOf('http') === 0 ? loc : new URL(loc, url).toString();
+      log('SDP answer applied — awaiting media…');
+    } catch (e) {
+      log('WHEP error: ' + (e && e.message ? e.message : String(e)));
+    }
+  }
+
+  // Four display states, so a WHEP live and a NORMAL cast never fight over the
+  // screen:
+  //   idle       → branded card (nothing playing)
+  //   connecting → branded card while the WebRTC handshake runs
+  //   live       → our WebRTC <video> on top, LIVE pill
+  //   caf        → hide everything of ours so CAF's <cast-media-player> (a
+  //                normal HLS/DASH/MP4 cast) shows through, exactly as today
+  function showState(state) {
+    var live = state === 'live';
+    liveEl.classList.toggle('on', live);
+    pillEl.classList.toggle('on', live);
+    // The branded idle card covers the CAF player, so only show it for our own
+    // idle/connecting states — NEVER over a normal cast (state 'caf').
+    idleEl.style.display = (state === 'idle' || state === 'connecting') ? 'flex' : 'none';
+    document.getElementById('idleSub').textContent =
+      state === 'connecting' ? 'Connecting to live…'
+      : isCastDevice ? 'Ready to cast a live'
+      : 'Manual test mode';
+    if (live) tapEl.classList.remove('on');
+    if (live && !showDebug) statusEl.textContent = ''; // clear the log once we're playing
+  }
+
+  // Tap-to-start (desktop autoplay fallback only).
+  tapEl.addEventListener('click', function () {
+    liveEl.muted = false;
+    liveEl.play().then(function () { showState('live'); }).catch(function (e) { log('play() still blocked: ' + e.message); });
+    tapEl.classList.remove('on');
+  });
+
+  // ── CAF receiver (only on an actual Cast device) ──────────────────────────
+  function startReceiver() {
+    var ctx = cast.framework.CastReceiverContext.getInstance();
+    var playerManager = ctx.getPlayerManager();
+    var LOAD = cast.framework.messages.MessageType.LOAD;
+
+    // Intercept LOAD: a WHEP live → our WebRTC path; everything else → default
+    // CAF playback (HLS/DASH/MP4), unchanged.
+    playerManager.setMessageInterceptor(LOAD, function (request) {
+      try {
+        var media  = request.media || {};
+        var custom = media.customData || request.customData || {};
+        var whep = custom.whep
+          || (isWhepUrl(media.contentId) ? media.contentId : null)
+          || (isWhepUrl(media.contentUrl) ? media.contentUrl : null);
+
+        if (whep) {
+          log('LOAD intercepted as WHEP live');
+          connectWhep(whep);
+          // Cancel default playback for THIS item — we render it ourselves.
+          // NOTE (Phase 2): returning null makes CAF report the load as failed,
+          // so the phone remote won't yet show live play/pause/position. Wiring
+          // proper MediaStatus for the WebRTC surface is the follow-up; for the
+          // POC the success criterion is simply "the live shows on the TV".
+          return null;
+        }
+      } catch (e) { log('interceptor error: ' + e.message); }
+      // Not a WHEP live — hand back untouched so CAF plays it as normal, and
+      // clear our surface so the branded card never covers CAF's video.
+      teardown(); showState('caf');
+      return request;
+    });
+
+    // Clean up the WebRTC surface whenever the receiver stops / a new sender
+    // takes over, so we never leave a dead peer connection around.
+    ctx.addEventListener(cast.framework.system.EventType.SENDER_DISCONNECTED, function () {
+      // Other senders may still be connected; only tear down if none remain.
+      if (ctx.getSenders().length === 0) { teardown(); showState('idle'); }
+    });
+
+    // A generous idle timeout — a live can sit connecting without the receiver
+    // deciding it's abandoned. (Default is 5 min; keep the branded idle up.)
+    var opts = new cast.framework.CastReceiverOptions();
+    opts.disableIdleTimeout = true;
+    ctx.start(opts);
+    log('CAF receiver started');
+  }
+
+  // ── boot ──────────────────────────────────────────────────────────────────
+  var urlWhep = params.get('whep');
+
+  if (isCastDevice && window.cast && cast.framework) {
+    // Real Cast device: start CAF. If a whep url was ALSO passed on the query
+    // string (unusual but handy for a receiver-only test), honour it too.
+    try { startReceiver(); } catch (e) { log('receiver start failed: ' + e.message); }
+    if (urlWhep) connectWhep(urlWhep);
+  } else {
+    // Desktop / no Cast: manual test mode. Either auto-connect a ?whep= url or
+    // show the paste box.
+    document.getElementById('idleSub').textContent = 'Manual test mode';
+    if (urlWhep) {
+      connectWhep(urlWhep);
+    } else {
+      manualEl.classList.add('on');
+      var input = document.getElementById('whepInput');
+      var go = function () { var v = input.value.trim(); if (v) connectWhep(v); };
+      document.getElementById('connectBtn').addEventListener('click', go);
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+    }
+    log('manual test mode (no Cast device detected)');
+  }
+})();
+</script>
+</body></html>

@@ -17,6 +17,9 @@ import { supabase } from '../../lib/supabase';
 import { bumpBadge, publicPostLimit, rawTier, tierLabel } from '../../lib/badges';
 import { useProfile } from '../../contexts/ProfileContext';
 import { processMentions, getActiveMentionQuery, applyMention } from '../../lib/mentions';
+import { checkFields } from '../../lib/contentFilter';
+import { DEFAULT_SOUND_OPT_IN } from '../../lib/sounds';
+import { viewerIsMinor } from '../../lib/minors';
 import { createNotification } from '../../lib/createNotification';
 import { notifySuccess } from '../../lib/haptics';
 import MentionSuggestions from '../../components/MentionSuggestions';
@@ -242,12 +245,26 @@ export default function PostScreen() {
   // communities the user is an active, non-muted member of are postable.
   const [communities, setCommunities] = useState<PostableCommunity[]>([]);
   const [showCommunityPicker, setShowCommunityPicker] = useState(false);
+  // Minors default to friends-only rather than public. It stays a DEFAULT, not a
+  // restriction — a teen can still choose to post publicly — but the safe option
+  // is the one they have to opt out of, which is what regulators and both app
+  // stores now expect. Adults are unaffected.
   const [isPublic, setIsPublic] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    viewerIsMinor().then((minor) => { if (minor && !cancelled) setIsPublic(false); });
+    return () => { cancelled = true; };
+  }, []);
   // Per-post creator controls — both default ON, so the poster only ever toggles
   // OFF to opt out. downloads → audio offline pin (posts.downloadable); gifs →
   // whether others may Make GIF from a video (posts.allow_gifs).
   const [allowDownloads, setAllowDownloads] = useState(true);
   const [allowGifs, setAllowGifs] = useState(true);
+  // Sync consent for audio uploads — see DEFAULT_SOUND_OPT_IN in lib/sounds.ts,
+  // where the opt-in vs opt-out tradeoff is spelled out. Kept separate from the
+  // general upload grant deliberately: a specific per-track choice is what makes
+  // the consent defensible.
+  const [allowSound, setAllowSound] = useState(DEFAULT_SOUND_OPT_IN);
   // "Learn more" explanation popup for the creator-control toggles.
   const [info, setInfo] = useState<{ icon: string; title: string; body: string } | null>(null);
   const infoAnim = useRef(new Animated.Value(0)).current;
@@ -867,6 +884,15 @@ export default function PostScreen() {
     }
     setLoading(true); setError('');
     try {
+      // Objectionable-text gate (Apple 1.2 / Play UGC) — before any upload work,
+      // so a refusal never costs the user a long video upload first.
+      const screened = await checkFields(caption, topCaption?.text, bottomCaption?.text);
+      if (!screened.ok) {
+        setLoading(false);
+        setError(t('filter.blockedBody'));
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
@@ -1039,6 +1065,13 @@ export default function PostScreen() {
         // Creator controls: only send the flag relevant to the media type.
         // (video's allow_gifs is set in the background queue, not here.)
         ...(postType === 'audio' ? { downloadable: allowDownloads } : {}),
+        // Sync consent, stamped with when it was given so the grant carries a
+        // timestamp rather than being inferred from a column's current value.
+        // Spread-conditional like the rest: a pre-migration database simply never
+        // sees these columns.
+        ...(postType === 'audio'
+          ? { sound_opt_in: allowSound, sound_opt_in_at: new Date().toISOString() }
+          : {}),
       }).select('id').single();
       if (postError) throw postError;
       notifySuccess(); // celebratory buzz on a published post
@@ -1467,6 +1500,25 @@ export default function PostScreen() {
               </TouchableOpacity>
             </View>
           )}
+          {/* Audio only. This is the per-track sync consent — the entire legal
+              basis for anyone attaching this song to their video. It has to be
+              visible and its own choice, not folded into the general upload
+              grant. See lib/sounds.ts and supabase/sql/sound_optin.sql. */}
+          {postType === 'audio' && (
+            <View style={styles.optRow}>
+              <Text style={styles.optLabel}>{t('post.allowSoundLabel')}</Text>
+              <Switch
+                style={styles.optSwitch}
+                value={allowSound}
+                onValueChange={setAllowSound}
+                trackColor={{ true: colors.primary, false: colors.surfaceLight }}
+                thumbColor="#fff"
+              />
+              <TouchableOpacity onPress={() => setInfo({ icon: 'musical-notes-outline', title: t('post.allowSoundLabel'), body: t('post.allowSoundHelp') })} hitSlop={8}>
+                <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {postType === 'video' && (
             <View style={styles.optRow}>
               <Text style={styles.optLabel}>{t('post.allowGifsLabel')}</Text>
@@ -1593,7 +1645,7 @@ export default function PostScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={exitToExplore}>
+        <TouchableOpacity style={styles.headerBtn} onPress={exitToExplore} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
           <Ionicons name="close" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('post.newPost')}</Text>
@@ -1754,7 +1806,7 @@ export default function PostScreen() {
             )}
             {/* Remove the selected media from the square (single mode) */}
             {!slideshowMode && media && (
-              <TouchableOpacity style={styles.removeBtn} onPress={clearMedia} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity style={styles.removeBtn} onPress={clearMedia} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
                 <Ionicons name="close" size={18} color="#fff" />
               </TouchableOpacity>
             )}

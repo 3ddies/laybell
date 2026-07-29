@@ -193,7 +193,12 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
         </View>
         <View style={styles.inner}>
           {/* Cover — tap to open the full ad view (just like a song). */}
-          <TouchableOpacity style={styles.coverWrap} onPress={() => expand()}>
+          <TouchableOpacity
+          style={styles.coverWrap}
+          onPress={() => expand()}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.openPlayer')}
+        >
             {adState.cover ? (
               <Image source={{ uri: adState.cover }} style={styles.cover} />
             ) : (
@@ -218,7 +223,15 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
               <Text style={styles.adCtaText} numberOfLines={1}>{adState.ctaLabel}</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.adSkip} disabled={!adState.canSkip} onPress={skipAudioAd} hitSlop={8}>
+          <TouchableOpacity
+            style={styles.adSkip}
+            disabled={!adState.canSkip}
+            onPress={skipAudioAd}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('a11y.skipAd')}
+            accessibilityState={{ disabled: !adState.canSkip }}
+          >
             <Text style={styles.adSkipText}>{adState.canSkip ? t('player.skip') : secsLeft}</Text>
           </TouchableOpacity>
         </View>
@@ -239,7 +252,12 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           },
         ]}
       >
-        <TouchableOpacity style={styles.compactCoverWrap} onPress={() => expand()}>
+        <TouchableOpacity
+          style={styles.compactCoverWrap}
+          onPress={() => expand()}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.openPlayer')}
+        >
           {track.cover ? (
             <Image source={{ uri: track.cover }} style={styles.compactCover} />
           ) : (
@@ -248,13 +266,24 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
             </LinearGradient>
           )}
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => (isPlaying ? pause() : resume())} hitSlop={8}>
+        <TouchableOpacity
+          onPress={() => (isPlaying ? pause() : resume())}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={isPlaying ? t('a11y.pause') : t('a11y.play')}
+        >
           <Ionicons
             name={isBuffering ? 'hourglass' : isPlaying ? 'pause-circle' : 'play-circle'}
             size={28} color={colors.primary}
           />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.compactClose} onPress={stop} hitSlop={8}>
+        <TouchableOpacity
+          style={styles.compactClose}
+          onPress={stop}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.stopPlayback')}
+        >
           <Ionicons name="close" size={13} color={colors.textSecondary} />
         </TouchableOpacity>
       </Animated.View>
@@ -273,7 +302,12 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           },
         ]}
       >
-        <TouchableOpacity style={styles.compactCoverWrap} onPress={() => expand()}>
+        <TouchableOpacity
+          style={styles.compactCoverWrap}
+          onPress={() => expand()}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.openPlayer')}
+        >
           {track.cover ? (
             <Image source={{ uri: track.cover }} style={styles.compactCover} />
           ) : (
@@ -285,13 +319,25 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
         <TouchableOpacity style={styles.compactBody} activeOpacity={0.7} onPress={() => expand()}>
           <Text style={styles.compactTitle} numberOfLines={1}>{track.caption || t('player.audioTrack')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.compactBtn} onPress={() => (isPlaying ? pause() : resume())} hitSlop={6}>
+        <TouchableOpacity
+          style={styles.compactBtn}
+          onPress={() => (isPlaying ? pause() : resume())}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel={isPlaying ? t('a11y.pause') : t('a11y.play')}
+        >
           <Ionicons
             name={isBuffering ? 'hourglass' : isPlaying ? 'pause-circle' : 'play-circle'}
             size={26} color={colors.primary}
           />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.compactClose} onPress={stop} hitSlop={6}>
+        <TouchableOpacity
+          style={styles.compactClose}
+          onPress={stop}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.stopPlayback')}
+        >
           <Ionicons name="close" size={13} color={colors.textSecondary} />
         </TouchableOpacity>
       </Animated.View>
@@ -336,7 +382,12 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
 
       <View style={styles.inner}>
         {/* Album cover — tap to open the full now-playing screen */}
-        <TouchableOpacity style={styles.coverWrap} onPress={() => expand()}>
+        <TouchableOpacity
+          style={styles.coverWrap}
+          onPress={() => expand()}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.openPlayer')}
+        >
           {track.cover ? (
             <Image source={{ uri: track.cover }} style={styles.cover} />
           ) : (
@@ -364,7 +415,12 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.playBtn} onPress={() => (isPlaying ? pause() : resume())}>
+        <TouchableOpacity
+          style={styles.playBtn}
+          onPress={() => (isPlaying ? pause() : resume())}
+          accessibilityRole="button"
+          accessibilityLabel={isPlaying ? t('a11y.pause') : t('a11y.play')}
+        >
           {isBuffering ? (
             <Ionicons name="hourglass" size={18} color={colors.primary} />
           ) : (
@@ -372,7 +428,12 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.stopBtn} onPress={stop}>
+        <TouchableOpacity
+          style={styles.stopBtn}
+          onPress={stop}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.stopPlayback')}
+        >
           <Ionicons name="close" size={15} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>

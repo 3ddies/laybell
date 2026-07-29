@@ -68,7 +68,7 @@ export default function SuggestedAccounts({ currentUserId }: { currentUserId: st
     <View style={styles.wrap}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>{t('friends.suggested')}</Text>
-        <TouchableOpacity onPress={handleDismiss} style={styles.dismissBtn} hitSlop={10} activeOpacity={0.6}>
+        <TouchableOpacity onPress={handleDismiss} style={styles.dismissBtn} hitSlop={10} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
           <Ionicons name="close" size={18} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>

@@ -356,6 +356,13 @@ export default function ChatScreen() {
       // the user wrote is silently dropped.
       setNewMessage(prevText);
       setPendingAttachment(prevAttachment);
+      // The minor-safety policy (supabase/sql/minor_safety.sql) rejects a first
+      // DM to an under-18 who doesn't follow you. That surfaces as a generic RLS
+      // violation, so translate it rather than leaving the sender staring at a
+      // failed send with no reason.
+      if (/row-level security|violates row/i.test(error?.message ?? '')) {
+        Alert.alert(t('messages.cannotMessageTitle'), t('messages.cannotMessageBody'));
+      }
     }
     setSending(false);
   }
@@ -421,7 +428,8 @@ export default function ChatScreen() {
     return (
       <View style={styles.container}>
         <View style={[styles.header, { paddingTop: insets.top }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}
+          accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
         </View>
@@ -433,7 +441,8 @@ export default function ChatScreen() {
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}
+          accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.headerUser} activeOpacity={0.7} onPress={() => router.push(`/profile/${id}`)}>
@@ -452,7 +461,8 @@ export default function ChatScreen() {
             {!!otherUser?.username && <Text style={styles.headerUsername} numberOfLines={1}>@{otherUser.username}</Text>}
           </View>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.headerMenuBtn} onPress={() => setMenuOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity style={styles.headerMenuBtn} onPress={() => setMenuOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
           <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
         </TouchableOpacity>
       </View>
@@ -610,7 +620,8 @@ export default function ChatScreen() {
         <Pressable style={styles.attachPreviewRow} onPress={() => Keyboard.dismiss()}>
           <View style={styles.attachPreviewItem}>
             <AttachmentView url={pendingAttachment.url} w={pendingAttachment.w} h={pendingAttachment.h} maxWidth={110} radius={12} />
-            <TouchableOpacity style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}>
+            <TouchableOpacity style={styles.attachRemove} onPress={() => setPendingAttachment(null)} hitSlop={8}
+              accessibilityRole="button" accessibilityLabel={t('a11y.removeAttachment')}>
               <Ionicons name="close-circle" size={22} color={colors.text} />
             </TouchableOpacity>
           </View>
@@ -621,7 +632,10 @@ export default function ChatScreen() {
         // messages, for a cleaner look.
         style={[styles.inputBar, { paddingBottom: kbUp ? SPACING.sm + 2 : Math.max(insets.bottom, SPACING.sm) + SPACING.sm }]}
       >
-        <TouchableOpacity style={styles.attachBtn} onPress={attachImage} disabled={attaching} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.attachBtn} onPress={attachImage} disabled={attaching} activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={attaching ? t('a11y.uploading') : t('a11y.attachImage')}
+          accessibilityState={{ disabled: attaching, busy: attaching }}>
           {attaching ? <ActivityIndicator size="small" color={colors.textSecondary} /> : <Ionicons name="image-outline" size={24} color={colors.textSecondary} />}
         </TouchableOpacity>
         <TouchableOpacity style={styles.gifBtn} onPress={() => setGifOpen(true)} activeOpacity={0.7}>
@@ -641,6 +655,12 @@ export default function ChatScreen() {
           onPress={sendMessage}
           disabled={(!newMessage.trim() && !pendingAttachment) || sending}
           style={(!newMessage.trim() && !pendingAttachment) && styles.sendBtnDisabled}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.send')}
+          accessibilityState={{
+            disabled: (!newMessage.trim() && !pendingAttachment) || sending,
+            busy: sending,
+          }}
         >
           <View style={[styles.sendBtn, { backgroundColor: colors.text }]}>
             {sending

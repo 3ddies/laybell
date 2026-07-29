@@ -3,6 +3,7 @@ import { tg } from './i18n';
 import { bumpBadge } from './badges';
 import { fetchBlockedIds } from './blocks';
 import { isAdPersonalizationEnabled } from './adPrefs';
+import { viewerIsAdult } from './minors';
 import { adFree, adSpacingMultiplier } from './entitlements';
 import type { UserAffinityProfile } from './feedScorer';
 
@@ -509,7 +510,16 @@ async function fetchEligibleCampaigns(viewer: AdViewer): Promise<AdCampaign[]> {
       .gt('ends_at', new Date().toISOString())
       .limit(50);
     if (error || !data) return [];
-    const personalized = await isAdPersonalizationEnabled();
+    // Minors never receive TARGETED advertising, regardless of their own
+    // personalization setting — Maryland's MODPA bars targeted ads where the
+    // controller "knew or should have known" the user is under 18, a broader
+    // standard than actual knowledge, and the FTC treats teen ad-targeting as a
+    // Section 5 unfairness question. Reusing the existing personalization flag
+    // means minors fall through to the untargeted path that already exists:
+    // contextual ads still serve, so this costs inventory, not revenue entirely.
+    // Note the gate is "known adult", not "not a minor" — an unknown age gets the
+    // safe treatment (see lib/minors).
+    const personalized = (await isAdPersonalizationEnabled()) && (await viewerIsAdult());
     const blocked = await fetchBlockedIds();
     return (data as any[]).filter((c) => {
       if (c.user_id === viewer.id) return false; // never serve your own ad

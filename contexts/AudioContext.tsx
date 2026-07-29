@@ -11,6 +11,7 @@ import { bumpBadge } from '../lib/badges';
 import { resolveLocalUri, markInUse, clearInUse, autoCache } from '../lib/offline';
 import { recordListen } from '../lib/listenHistory';
 import { recordStream as recordStreamDurable } from '../lib/streamOutbox';
+import { meterPlayback, flushMeter } from '../lib/listenMeter';
 import {
   pickAudioAd, recordAdImpression, recordAdComplete, recordAdSkip,
   firstAudioGateMs, nextAudioGateMs, adSkipAfterMs,
@@ -536,7 +537,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // ALWAYS have its iOS card.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
-      if (s !== 'active') return;
+      // Leaving the foreground: push the buffered licence meter before the OS can
+      // freeze or evict us. Losing a partial minute per session sounds trivial,
+      // but it compounds into a systematic undercount — and undercounting is what
+      // terminates the BMI licence without warning.
+      if (s !== 'active') { flushMeter(); return; }
       // Mid-ad: keep the card on the AD, not the paused song underneath it (the
       // ad status ticks would re-correct within ~1s anyway, but repaint now so
       // there's no flash of the song).
@@ -1033,6 +1038,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       if (uidRef.current && id && dur > 0) {
         const delta = pos - lastPosMsRef.current;
         if (delta > 0 && delta < 1500) {
+          // BMI licence meter. This sits alongside the creator-credit logic below
+          // rather than inside it, because the two count different things: stream
+          // CREDIT is capped and deduped, while the licence counts every hour
+          // actually transmitted. `delta` is already genuine forward playback —
+          // seeks and the end-of-track jump are excluded by the guard above —
+          // which is exactly BMI's definition. See lib/listenMeter.ts.
+          meterPlayback(delta, 'audio');
           // Daily music badge: only OTHER creators' songs (badgeEligibleRef),
           // capped per song (badgeSongMsRef) so loops can't farm it.
           if (badgeEligibleRef.current && badgeSongMsRef.current < BADGE_SONG_CAP_MS) {

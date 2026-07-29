@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator,
-  TextInput, RefreshControl,
+  RefreshControl, Alert, Linking, AppState,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,14 +15,20 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { reactionPop, notifySuccess } from '../lib/haptics';
 import { fmtCents } from '../lib/donations';
 import {
-  fetchWalletBalance, getPayoutMethod, savePayoutMethod, clearPayoutMethod,
-  requestPayout, type WalletBalance, type PayoutMethod,
+  fetchWalletBalance, requestPayout, payoutsAvailable, type WalletBalance,
 } from '../lib/wallet';
+import { fetchPayoutStatus, startPayoutOnboarding, type PayoutStatus } from '../lib/payouts';
 
-// The Wallet — earned balance (live donations + shop sales, real numbers) and a
-// scaffolded path to move it to a bank. Real payouts land when Laybell's payment
-// processor goes live; until then Transfer records a simulated request and the
-// payout method is a display-only label (see lib/wallet).
+// The Wallet — earned balance and the path to move it to a bank.
+//
+// Payout setup is real Stripe Connect: bank details go to Stripe, which verifies
+// identity and owns the payout rails. Laybell stores only an account id and never
+// sees an account number. This replaced a local scaffold that stored a typed
+// label like "Chase ••1234" and did nothing.
+//
+// The TRANSFER itself is still gated behind PLATFORM_COLLECTS_* in lib/wallet —
+// a creator can connect a bank before Laybell is ready to send money, and being
+// ready to receive is worth doing early.
 
 const GREEN: [string, string] = ['#22C55E', '#16A34A'];
 
@@ -34,36 +40,54 @@ export default function WalletScreen() {
   const insets = useSafeAreaInsets();
 
   const [balance, setBalance] = useState<WalletBalance | null>(null);
-  const [method, setMethod] = useState<PayoutMethod | null>(null);
+  const [payout, setPayout] = useState<PayoutStatus>({
+    connected: false, payoutsEnabled: false, detailsSubmitted: false,
+  });
+  const [onboarding, setOnboarding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  // Add-method inline form.
-  const [adding, setAdding] = useState(false);
-  const [kind, setKind] = useState<'bank' | 'card'>('bank');
-  const [label, setLabel] = useState('');
 
   const [confirmTransfer, setConfirmTransfer] = useState(false);
   const [transferred, setTransferred] = useState(false);
 
   const load = useCallback(async () => {
-    const [b, m] = await Promise.all([fetchWalletBalance(), getPayoutMethod()]);
+    const [b, p] = await Promise.all([fetchWalletBalance(), fetchPayoutStatus()]);
     setBalance(b);
-    setMethod(m);
+    setPayout(p);
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const total = balance?.totalCents ?? 0;
+  // Onboarding happens in the system browser, so the app is backgrounded while it
+  // runs. Re-check on return: Stripe won't tell us the user finished, and without
+  // this the screen keeps saying "set up payouts" to someone who just did.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') fetchPayoutStatus().then(setPayout);
+    });
+    return () => sub.remove();
+  }, []);
 
-  async function saveMethod() {
-    if (!label.trim()) return;
-    await savePayoutMethod(kind, label.trim());
-    reactionPop();
-    setAdding(false);
-    setLabel('');
-    setMethod(await getPayoutMethod());
+  async function openOnboarding() {
+    if (onboarding) return;
+    setOnboarding(true);
+    const res = await startPayoutOnboarding();
+    setOnboarding(false);
+    if ('error' in res) { Alert.alert(t('wallet.payoutSetupFailed')); return; }
+    // The system browser, never a WebView: the flow includes identity
+    // verification and bank entry, which people are right to want in a browser
+    // they recognise — and Stripe's own guidance is that embedded WebViews break
+    // parts of it.
+    Linking.openURL(res.url).catch(() => Alert.alert(t('wallet.payoutSetupFailed')));
   }
+
+  // `total` is the WITHDRAWABLE figure (money Laybell collected) and drives the
+  // transfer flow; `headline` is what the card shows. Until a processor lands the
+  // two differ, and the card must present a lifetime record — not a balance the
+  // company is holding on the user's behalf. See lib/wallet.ts.
+  const total = balance?.totalCents ?? 0;
+  const canPayout = payoutsAvailable();
+  const headline = canPayout ? total : (balance?.lifetimeCents ?? 0);
 
   async function doTransfer() {
     setConfirmTransfer(false);
@@ -73,7 +97,10 @@ export default function WalletScreen() {
 
   function onCashOut() {
     if (total <= 0) return;
-    if (!method) { setAdding(true); return; }
+    // No Stripe account able to receive money yet — send them to set it up
+    // rather than into a confirm dialog for a transfer that cannot complete.
+    // `payoutsEnabled`, not `connected`: someone mid-verification can't be paid.
+    if (!payout.payoutsEnabled) { reactionPop(); openOnboarding(); return; }
     setConfirmTransfer(true);
   }
 
@@ -103,8 +130,8 @@ export default function WalletScreen() {
           >
             {/* Balance card */}
             <LinearGradient colors={GREEN} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.balanceCard}>
-              <Text style={styles.balanceLabel}>{t('wallet.available')}</Text>
-              <Text style={styles.balanceValue}>{fmtCents(total)}</Text>
+              <Text style={styles.balanceLabel}>{canPayout ? t('wallet.available') : t('wallet.earnedTotal')}</Text>
+              <Text style={styles.balanceValue}>{fmtCents(headline)}</Text>
               <View style={styles.balanceBreak}>
                 <View style={styles.breakItem}>
                   <Ionicons name="gift" size={13} color="rgba(255,255,255,0.9)" />
@@ -114,6 +141,15 @@ export default function WalletScreen() {
                   <Ionicons name="bag-handle" size={13} color="rgba(255,255,255,0.9)" />
                   <Text style={styles.breakText}>{t('wallet.fromShop', { amount: fmtCents(balance?.shopCents ?? 0) })}</Text>
                 </View>
+                {/* Money on a hold is the seller's, but not yet withdrawable — a
+                    chargeback window has to pass first. Saying so up front avoids
+                    the "where is my money" support ticket. */}
+                {!!balance?.heldCents && (
+                  <View style={styles.breakItem}>
+                    <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.9)" />
+                    <Text style={styles.breakText}>{t('wallet.pending', { amount: fmtCents(balance.heldCents) })}</Text>
+                  </View>
+                )}
               </View>
             </LinearGradient>
 
@@ -136,54 +172,58 @@ export default function WalletScreen() {
               </View>
             )}
 
-            {/* Payout method */}
+            {/* Credits live here too. Earnings and credits are the two directions
+                money moves for a user, and someone who came looking for "my money"
+                will look in exactly one place. */}
+            <TouchableOpacity
+              style={styles.creditsRow}
+              onPress={() => router.push('/credits')}
+              activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel={t('account.credits')}
+            >
+              <View style={styles.creditsIcon}>
+                <Ionicons name="diamond-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={styles.creditsBody}>
+                <Text style={styles.creditsLabel}>{t('account.credits')}</Text>
+                <Text style={styles.creditsSub}>{t('account.creditsSub')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+
+            {/* Payouts — real Stripe Connect onboarding.
+                This replaced a local scaffold that stored a user-typed label like
+                "Chase ••1234" and did nothing. Bank details now go to Stripe and
+                never touch Laybell: Stripe collects them, verifies identity, and
+                owns the payout rails. Laybell holds only an account id. */}
             <Text style={styles.sectionTitle}>{t('wallet.payoutMethod')}</Text>
-            {method ? (
+            {payout.payoutsEnabled ? (
               <View style={styles.methodRow}>
                 <View style={styles.methodIcon}>
-                  <Ionicons name={method.kind === 'card' ? 'card' : 'business'} size={18} color={colors.text} />
+                  <Ionicons name="checkmark-circle" size={18} color={colors.success} />
                 </View>
                 <View style={styles.flex}>
-                  <Text style={styles.methodLabel} numberOfLines={1}>{method.label}</Text>
-                  <Text style={styles.methodSub}>{t(method.kind === 'card' ? 'wallet.methodCard' : 'wallet.methodBank')}</Text>
-                </View>
-                <TouchableOpacity onPress={async () => { await clearPayoutMethod(); setMethod(null); }} hitSlop={8}>
-                  <Ionicons name="trash-outline" size={18} color={colors.error} />
-                </TouchableOpacity>
-              </View>
-            ) : adding ? (
-              <View style={styles.addCard}>
-                <View style={styles.kindRow}>
-                  {(['bank', 'card'] as const).map((k) => (
-                    <TouchableOpacity key={k} style={[styles.kindBtn, kind === k && styles.kindBtnOn]} onPress={() => setKind(k)}>
-                      <Ionicons name={k === 'card' ? 'card-outline' : 'business-outline'} size={16} color={kind === k ? colors.success : colors.textSecondary} />
-                      <Text style={[styles.kindText, kind === k && { color: colors.success }]}>{t(k === 'card' ? 'wallet.methodCard' : 'wallet.methodBank')}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('wallet.labelPlaceholder')}
-                  placeholderTextColor={colors.textTertiary}
-                  value={label}
-                  onChangeText={setLabel}
-                  maxLength={40}
-                  autoFocus
-                />
-                <Text style={styles.hint}>{t('wallet.labelHint')}</Text>
-                <View style={styles.addActions}>
-                  <TouchableOpacity style={styles.cancelBtn} onPress={() => { setAdding(false); setLabel(''); }}>
-                    <Text style={styles.cancelText}>{t('common.cancel')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.saveBtn, !label.trim() && { opacity: 0.5 }]} onPress={saveMethod} disabled={!label.trim()}>
-                    <Text style={styles.saveText}>{t('wallet.save')}</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.methodLabel}>{t('wallet.payoutsReady')}</Text>
+                  <Text style={styles.methodSub}>{t('wallet.payoutsReadySub')}</Text>
                 </View>
               </View>
+            ) : payout.connected ? (
+              // Form submitted, Stripe still verifying. Distinguished from "not
+              // started" on purpose — telling someone to sign up again when they
+              // already have is how you get duplicate accounts and support tickets.
+              <TouchableOpacity style={styles.addRow} onPress={openOnboarding} activeOpacity={0.8} disabled={onboarding}>
+                {onboarding
+                  ? <ActivityIndicator size="small" color={colors.success} />
+                  : <Ionicons name="time-outline" size={20} color={colors.textSecondary} />}
+                <Text style={styles.addText}>{t('wallet.payoutsPending')}</Text>
+              </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.addRow} onPress={() => setAdding(true)} activeOpacity={0.8}>
-                <Ionicons name="add-circle-outline" size={20} color={colors.success} />
-                <Text style={styles.addText}>{t('wallet.addMethod')}</Text>
+              <TouchableOpacity style={styles.addRow} onPress={openOnboarding} activeOpacity={0.8} disabled={onboarding}>
+                {onboarding
+                  ? <ActivityIndicator size="small" color={colors.success} />
+                  : <Ionicons name="add-circle-outline" size={20} color={colors.success} />}
+                <Text style={styles.addText}>{t('wallet.setUpPayouts')}</Text>
               </TouchableOpacity>
             )}
 
@@ -195,10 +235,13 @@ export default function WalletScreen() {
           </ScrollView>
         )}
 
+        {/* Stripe holds the bank details, so Laybell has no account label to show
+            — and shouldn't. "your connected bank account" is both accurate and the
+            most it can honestly say. */}
         <ConfirmDialog
           visible={confirmTransfer}
           title={t('wallet.confirmTitle', { amount: fmtCents(total) })}
-          message={t('wallet.confirmBody', { label: method?.label ?? '' })}
+          message={t('wallet.confirmBodyStripe')}
           confirmLabel={t('wallet.transfer')}
           cancelLabel={t('common.cancel')}
           icon="arrow-up-circle-outline"
@@ -235,6 +278,18 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   pendingText: { color: c.textSecondary, fontSize: 12.5, fontWeight: '600' },
 
   sectionTitle: { color: c.text, fontSize: 15, fontWeight: '800', marginTop: SPACING.sm },
+  creditsRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: c.surface, borderRadius: RADIUS.md,
+    padding: SPACING.md, marginTop: SPACING.sm,
+  },
+  creditsIcon: {
+    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.surfaceLight,
+  },
+  creditsBody: { flex: 1 },
+  creditsLabel: { color: c.text, fontSize: 15, fontWeight: '600' },
+  creditsSub: { color: c.textSecondary, fontSize: 12, marginTop: 1 },
   methodRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: c.surface, borderRadius: RADIUS.md,

@@ -1485,7 +1485,7 @@ export default function ReelScreen() {
           )}
 
           {/* Back button */}
-          <TouchableOpacity style={[styles.back, { top: insets.top + 8 }]} onPress={dismiss}>
+          <TouchableOpacity style={[styles.back, { top: insets.top + 8 }]} onPress={dismiss} accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
             <Ionicons name="chevron-back" size={28} color="#fff" />
           </TouchableOpacity>
 

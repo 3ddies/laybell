@@ -9,7 +9,7 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../../lib/supabase';
 import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/upload';
-import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl } from '../../lib/streamUpload';
+import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, streamUidFromUrl, untrackStreamUpload } from '../../lib/streamUpload';
 import { probeAudioDurationSec } from '../../lib/audioProbe';
 import {
   purchaseAdCampaign, estimatedImpressions, fmtPrice,
@@ -577,7 +577,13 @@ export default function CreateAdScreen() {
         Alert.alert(t('adCreate.couldNotLaunchTitle'), t('adCreate.couldNotLaunchBody'));
         return;
       }
-      // Launched — the draft is done; drop it so a fresh ad starts clean.
+      // Launched — the draft is done; drop it so a fresh ad starts clean. Video
+      // creatives now live on a saved campaign, so release them from the Stream
+      // crash-recovery tracker (see lib/streamUpload).
+      for (const c of creatives) {
+        const vuid = streamUidFromUrl(c.media_url);
+        if (vuid) untrackStreamUpload(vuid);
+      }
       clearAdDraft();
       const r = router as any;
       if (typeof r.replace === 'function') r.replace(`/ad-manager/${id}`);
