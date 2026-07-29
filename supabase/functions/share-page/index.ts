@@ -18,11 +18,20 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_ANON_KEY') ?? '',
 );
 
-// Where the static web pages actually LIVE. laybell.app is currently a
-// GoDaddy builder site that can't host these files (open.html/logo.png 404
-// there) — GitHub Pages auto-publishes the repo's web/ folder instead. When
-// the laybell.app domain is mapped onto Pages, flip this back.
-const WEB = 'https://3ddies.github.io/laybell';
+// Where the static web pages actually LIVE. laybell.app now points at GitHub
+// Pages (the old GoDaddy-builder limitation is gone), so humans bounce
+// straight to the domain in one hop — the previous github.io constant sent
+// them through a redirect that landed on plain http.
+//
+// STATUS 2026-07-29: nothing links here anymore. Verified live that the
+// shared *.supabase.co functions domain force-serves HTML as text/plain +
+// nosniff, which iMessage's LinkPresentation parser refuses to read — so
+// per-post OG cards silently never unfurled. External shares now use
+// laybell.app/open.html (lib/appLinks). This function is kept deployed, OG
+// logic intact, for the day it sits behind a CUSTOM domain (the planned
+// Cloudflare move) — at which point the app's two share builders are the only
+// lines that need to change back.
+const WEB = 'https://laybell.app';
 const LOGO = `${WEB}/logo.png`;
 const AUDIO_TYPES = ['audio', 'podcast', 'audiobook'];
 

@@ -41,21 +41,28 @@ export function profileShareUrl(userId: string): string {
   return `${STATIC_WEB_ORIGIN}/open.html?p=${encodeURIComponent('profile/' + userId)}`;
 }
 
-// ── Rich share pages (server-rendered Open Graph) ───────────────────────────
-// Links shared OUTSIDE the app point at the `share-page` Supabase Edge
-// Function, which serves real OG tags — the post's thumbnail, title and
-// author — so iMessage/WhatsApp/Discord/X unfurl a rich preview card,
-// Instagram/TikTok-style (a bare laybell.app/post link has no page behind it
-// on the static site, so chats rendered it as dead text). Humans who tap are
-// bounced through open.html into the app or on to the store. If laybell.app
-// ever gains serverless routing, alias these paths onto the domain and only
-// this constant changes.
-export const SHARE_PAGE_BASE = 'https://wawpaokvtptfmuygjnns.supabase.co/functions/v1/share-page';
-
+// ── External share links ────────────────────────────────────────────────────
+// Links shared OUTSIDE the app use the SAME open.html smart link the QR code
+// uses — a real https laybell.app URL that unfurls the branded Laybell card
+// and, on tap, deep-links into the exact post (or forwards to the store).
+//
+// These USED to point at the `share-page` Supabase Edge Function for per-post
+// OG cards (thumbnail/title/author). Verified live 2026-07-29: that cannot
+// work from the shared *.supabase.co functions domain — Supabase force-serves
+// HTML as `Content-Type: text/plain` with `X-Content-Type-Options: nosniff`,
+// and Apple's LinkPresentation parser (iMessage) respects the content type, so
+// the card never unfurled; worse, the human 302 bounced through the stale
+// github.io origin onto plain http. Result: shares from Messages "never worked"
+// while QR links (which always used open.html) did.
+//
+// share-page stays deployed with its OG logic intact: per-post rich cards come
+// back the day the function sits behind a CUSTOM domain (e.g. the planned
+// Cloudflare move, which the AASA content-type fix wants anyway) — then these
+// two builders are the only lines that change.
 export function postShareUrl(postId: string): string {
-  return `${SHARE_PAGE_BASE}?t=post&id=${encodeURIComponent(postId)}`;
+  return `${STATIC_WEB_ORIGIN}/open.html?p=${encodeURIComponent('post/' + postId)}`;
 }
 
 export function profileRichShareUrl(userId: string): string {
-  return `${SHARE_PAGE_BASE}?t=profile&id=${encodeURIComponent(userId)}`;
+  return profileShareUrl(userId);
 }
