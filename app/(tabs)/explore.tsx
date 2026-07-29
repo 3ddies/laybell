@@ -1,15 +1,16 @@
 import {
   View, Text, StyleSheet, TextInput,
   FlatList, TouchableOpacity, Image, Keyboard, ScrollView,
-  Animated, Easing, Dimensions,
+  Animated, Easing, Dimensions, Platform,
 } from 'react-native';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { useSearchSwipeLock } from '../../contexts/PagerContext';
 import ExploreGrid from '../../components/ExploreGrid';
 import TrackRow from '../../components/TrackRow';
 import FollowButton from '../../components/FollowButton';
@@ -21,6 +22,7 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { badgeRingColors, chosenTier, specialRingTier, rawTier, tierRank } from '../../lib/badges';
 import { postMatchTier, profileMatchTier } from '../../lib/searchRank';
+import { attachEngagementCountsAll } from '../../lib/postCounts';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { fetchBlockedIds } from '../../lib/blocks';
 import { useNowPlaying, useAudioControls } from '../../contexts/AudioContext';
@@ -84,6 +86,10 @@ export default function ExploreScreen() {
   // the tabs filter client-side (no re-query when switching tabs).
   const [searchTab, setSearchTab] = useState<'relevancy' | 'posts' | 'music' | 'videos' | 'accounts'>('relevancy');
   const [searchFocused, setSearchFocused] = useState(false);
+  // No tab swiping while the search is in use — with the keyboard up, a
+  // horizontal drag is far more likely to be a mistyped gesture than a request
+  // to leave the screen (and it would throw the query away).
+  useSearchSwipeLock(searchFocused || searchQuery.length > 0);
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [posts, setPosts] = useState<Post[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -120,6 +126,18 @@ export default function ExploreScreen() {
   // this, and a response only applies if it's still the latest (last-issued wins,
   // not last-to-resolve).
   const searchSeqRef = useRef(0);
+  // The sequence guard alone only stops a superseded RESULT from being applied —
+  // the request still completes, and the client still parses a 40-row payload on
+  // the JS thread for something already thrown away. Typing six characters
+  // quickly meant several of those decoding at once, which is felt directly as
+  // dropped frames. Aborting kills them at the socket instead.
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const abortSearch = () => {
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
+  };
+  // A screen left mid-search must not leave a request running.
+  useEffect(() => abortSearch, []);
   useEffect(() => {
     const idx = orderedGenres.indexOf(selectedGenre);
     if (idx < 0) return;
@@ -138,10 +156,18 @@ export default function ExploreScreen() {
 
   useEffect(() => {
     if (searchQuery.trim().length > 0) {
-      const t = setTimeout(() => handleSearch(), 500);
+      // 500ms was long enough that a normal typing cadence fired a full search
+      // between words; 350 matches the other search surfaces.
+      const t = setTimeout(() => handleSearch(), 350);
       return () => clearTimeout(t);
     } else {
-      setProfiles([]); setPosts([]); setSearchTab('relevancy');
+      // Bumping the sequence here is load-bearing: without it a search still in
+      // flight when the field is cleared passed the staleness check below and
+      // re-populated the results it had just emptied, painting stale rows over
+      // the grid.
+      searchSeqRef.current += 1;
+      abortSearch();
+      setProfiles([]); setPosts([]); setSearchTab('relevancy'); setSearching(false);
     }
   }, [searchQuery]);
 
@@ -374,6 +400,9 @@ export default function ExploreScreen() {
   async function handleSearch() {
     if (!searchQuery.trim()) return;
     const seq = ++searchSeqRef.current;
+    abortSearch();
+    const ac = new AbortController();
+    searchAbortRef.current = ac;
     setSearching(true);
 
     const q = searchQuery.toLowerCase().trim();
@@ -384,24 +413,42 @@ export default function ExploreScreen() {
       .from('profiles')
       .select('id, username, display_name, avatar_url, badge_tier, badge_show, profile_theme, hidden')
       .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
-      .limit(20);
+      .limit(20)
+      .abortSignal(ac.signal);
     // A newer keystroke superseded this query while it was in flight — drop it.
     if (seq !== searchSeqRef.current) return;
     // Hidden accounts never appear in search.
     const matched = (profData ?? []).filter((p: any) => !p.hidden);
-    setProfiles([...matched].sort((a: any, b: any) => profileMatchTier(b, q) - profileMatchTier(a, q)));
+    // Tier once per profile, not twice per comparison: profileMatchTier
+    // lowercases and scans the name each call, and a comparator calls it
+    // O(n log n) times.
+    const rankedProfiles = matched
+      .map((p: any) => ({ p, tier: profileMatchTier(p, q) }))
+      .sort((a, b) => b.tier - a.tier)
+      .map((x) => x.p);
+    setProfiles(rankedProfiles);
 
     const authorIds = matched.map((p: any) => p.id);
     let query = supabase
       .from('posts')
+      // like_count/comment_count are the trigger-maintained columns
+      // (post_engagement_counts.sql); attachEngagementCounts reshapes them into
+      // the likes[0].count / comments[0].count form the rows are read in, with
+      // no read-site change. The old likes(count)/comments(count) aggregates
+      // made Postgres run two correlated subqueries per row and inflated the
+      // payload the JS thread had to parse right as the user was still typing.
       .select(`
         *,
-        profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme),
-        likes(count),
-        comments(count)
+        profiles!posts_user_id_fkey (username, display_name, avatar_url, badge_tier, badge_show, profile_theme)
       `)
       .eq('is_public', true)
-      .limit(40);
+      // Archived posts were fetched, counted against the 40-row budget, then
+      // dropped client-side by visiblePosts. Filtering server-side means the
+      // budget is spent on rows that can actually appear. (music.tsx already
+      // did this.)
+      .is('archived_at', null)
+      .limit(40)
+      .abortSignal(ac.signal);
 
     if (authorIds.length > 0) {
       query = query.or(`caption.ilike.%${searchQuery}%,user_id.in.(${authorIds.join(',')})`);
@@ -414,20 +461,42 @@ export default function ExploreScreen() {
     if (data) {
       // Relevancy = closeness of match first, then the post's algorithm score
       // (scorePost). No seen-penalty — the user is actively searching.
+      //
+      // Scored ONCE per post, then sorted on the precomputed pair. The previous
+      // comparator called postMatchTier twice and scorePost twice per
+      // comparison — and allocated two throwaway Sets each time — so a 40-row
+      // result meant ~400 Set allocations and ~800 date parses in one
+      // synchronous burst, landing exactly when the user was mid-word.
       const now = Date.now();
-      const ranked = visiblePosts(data).sort((a: any, b: any) => {
-        const ta = postMatchTier(a, q), tb = postMatchTier(b, q);
-        if (tb !== ta) return tb - ta;
-        return scorePost(b, affinityProfile.current, followingSetRef.current, new Set(), now) -
-               scorePost(a, affinityProfile.current, followingSetRef.current, new Set(), now);
-      });
-      setPosts(ranked as any);
+      const noSeen = new Set<string>();
+      const rows = attachEngagementCountsAll(visiblePosts(data));
+      const scored = rows.map((p: any) => ({
+        p,
+        tier: postMatchTier(p, q),
+        score: scorePost(p, affinityProfile.current, followingSetRef.current, noSeen, now),
+      }));
+      scored.sort((a, b) => (b.tier - a.tier) || (b.score - a.score));
+      setPosts(scored.map((x) => x.p) as any);
     }
 
     setSearching(false);
   }
 
   const isSearching = searchQuery.trim().length > 0;
+  const hasSearchResults = posts.length > 0 || profiles.length > 0;
+  // Both were rebuilt inline on every render. A new array/style identity makes
+  // VirtualizedList treat the data as changed and re-render every mounted cell —
+  // on EVERY keystroke, since searchQuery lives at the root of this screen.
+  const searchTabData = useMemo(() => (
+    searchTab === 'posts' ? posts.filter((p: any) => p.type === 'image' || p.type === 'slideshow')
+      : searchTab === 'music' ? posts.filter((p: any) => isAudioPost(p.type))
+      : searchTab === 'videos' ? posts.filter((p: any) => p.type === 'video')
+      : posts
+  ), [posts, searchTab]);
+  const listContentStyle = useMemo(
+    () => [styles.listContent, { paddingBottom: barClear }],
+    [styles.listContent, barClear],
+  );
 
   // Tapping (NOT swiping) any non-interactive area of the search results exits
   // search back to Explore — an easy escape hatch when the little "x" is hard to
@@ -583,7 +652,14 @@ export default function ExploreScreen() {
 
       {/* Content — slides in from the travel direction on genre change */}
       <Animated.View style={[styles.contentWrap, { transform: [{ translateX: genreAnimX }] }]}>
-      {loading || searching ? (
+      {/* The skeleton stands in only when there is genuinely NOTHING to show.
+          It used to appear on every `searching` flip, which meant each debounce
+          cycle unmounted the whole results list, mounted eight skeleton rows,
+          then rebuilt the list from scratch — a full teardown per word typed,
+          and the single largest source of the choppiness. Now the previous
+          results stay on screen while the next query runs and are replaced in
+          place, so refining a search never tears the tree down. */}
+      {loading || (searching && !hasSearchResults) ? (
         isSearching ? (
           <ListRowsSkeleton rows={8} trailing />
         ) : (
@@ -619,17 +695,15 @@ export default function ExploreScreen() {
         ) : (
         <FlatList
           key={searchTab}
-          data={searchTab === 'posts'
-            ? posts.filter(p => p.type === 'image' || p.type === 'slideshow')
-            : searchTab === 'music'
-            ? posts.filter(p => isAudioPost(p.type))
-            : searchTab === 'videos'
-            ? posts.filter(p => p.type === 'video')
-            : posts}
+          data={searchTabData}
           keyExtractor={item => item.id}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          contentContainerStyle={[styles.listContent, { paddingBottom: barClear }]}
+          contentContainerStyle={listContentStyle}
+          initialNumToRender={8}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS === 'android'}
           {...chromeScrollProps}
           ListHeaderComponent={
             searchTab === 'relevancy' && profiles.length > 0 ? (

@@ -25,7 +25,7 @@ import PlaylistOptionsSheet from '../../components/PlaylistOptionsSheet';
 import TrackRow from '../../components/TrackRow';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTranslation } from '../../contexts/LanguageContext';
-import { useTabSwipeControl, isSwipeTap } from '../../contexts/PagerContext';
+import { useTabSwipeControl, isSwipeTap, useSearchSwipeLock } from '../../contexts/PagerContext';
 import { useListenMode } from '../../contexts/ListenModeContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { fetchBlockedIds } from '../../lib/blocks';
@@ -317,6 +317,8 @@ export default function MusicScreen() {
   // ─── Search state ──────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  // No page swiping while searching — see the twin call in explore.tsx.
+  useSearchSwipeLock(searchFocused || searchQuery.length > 0);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchProfiles, setSearchProfiles] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
