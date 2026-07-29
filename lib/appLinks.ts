@@ -42,38 +42,33 @@ export function profileShareUrl(userId: string): string {
 }
 
 // ── External share links ────────────────────────────────────────────────────
-// Links shared OUTSIDE the app use the SAME open.html smart link the QR code
-// uses — a real https laybell.app URL that unfurls the branded Laybell card
-// and, on tap, deep-links into the exact post (or forwards to the store).
+// Links shared OUTSIDE the app (post / song / reel) point at the `share-page`
+// Edge Function, which serves per-item Open Graph tags so iMessage, WhatsApp,
+// Discord etc. unfurl a real card — a song's square album cover (Spotify-style)
+// or a post's thumbnail — and bounces humans who tap through open.html into the
+// app.
 //
-// These USED to point at the `share-page` Supabase Edge Function for per-post
-// OG cards (thumbnail/title/author). Verified live 2026-07-29: that cannot
-// work from the shared *.supabase.co functions domain — Supabase force-serves
-// HTML as `Content-Type: text/plain` with `X-Content-Type-Options: nosniff`,
-// and Apple's LinkPresentation parser (iMessage) respects the content type, so
-// the card never unfurled; worse, the human 302 bounced through the stale
-// github.io origin onto plain http. Result: shares from Messages "never worked"
-// while QR links (which always used open.html) did.
+// The host matters more than the function. On the SHARED *.supabase.co
+// functions domain, Supabase force-rewrites HTML to `Content-Type: text/plain`
+// with `nosniff` (anti-phishing); Apple's LinkPresentation parser respects the
+// content type, so the tags were never read and shared posts silently showed no
+// card while QR links — which have always used open.html — worked fine. A
+// Supabase CUSTOM domain is not sanitised, which is the entire reason
+// api.laybell.app exists.
 //
-// share-page stays deployed with its OG logic intact: per-post rich cards come
-// back the day the function sits behind a CUSTOM domain — then SHARE_PAGE_
-// CUSTOM_BASE below is the ONLY line that changes.
+// api.laybell.app: CNAME → wawpaokvtptfmuygjnns.supabase.co, ACME TXT verified,
+// SSL provisioned, activated 2026-07-29. Confirmed live on activation that it
+// returns `text/html; charset=utf-8` with no nosniff, and that a song and a
+// video post each unfurl with the right og:type and a fetchable image.
 //
-// ── THE UNLOCK for Spotify-identical song cards / per-post thumbnails ───────
-// Set this to the share-page URL on a domain Laybell controls, e.g. after
-// adding a Supabase custom domain (Dashboard → Settings → Custom Domains,
-// CNAME api.laybell.app at the registrar):
+// Set this back to null to fall back to the open.html smart link (the branded
+// generic Laybell card) — that is the only line that would need to change.
 //
-//   'https://api.laybell.app/functions/v1/share-page'
-//
-// On a custom domain Supabase stops force-sanitising HTML to text/plain, so
-// iMessage's LinkPresentation parser reads the per-item OG tags: songs unfurl
-// a square album-cover card (like Spotify/Apple Music — the function sends
-// twitter:card 'summary' for music), posts unfurl their large thumbnail, and
-// humans who tap still bounce through open.html into the app. While null,
-// shares use the open.html smart link with the branded Laybell card — the
-// configuration verified working in iMessage.
-export const SHARE_PAGE_CUSTOM_BASE: string | null = null;
+// This does NOT affect how the app talks to Supabase: lib/supabase.ts still
+// uses the wawpaokvtptfmuygjnns.supabase.co URL, and REST/storage/auth were
+// re-verified 200 there after activation. A custom domain adds a hostname, it
+// doesn't withdraw the original.
+export const SHARE_PAGE_CUSTOM_BASE: string | null = 'https://api.laybell.app/functions/v1/share-page';
 
 export function postShareUrl(postId: string): string {
   return SHARE_PAGE_CUSTOM_BASE

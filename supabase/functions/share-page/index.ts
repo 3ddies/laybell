@@ -23,14 +23,11 @@ const supabase = createClient(
 // straight to the domain in one hop — the previous github.io constant sent
 // them through a redirect that landed on plain http.
 //
-// STATUS 2026-07-29: nothing links here anymore. Verified live that the
-// shared *.supabase.co functions domain force-serves HTML as text/plain +
-// nosniff, which iMessage's LinkPresentation parser refuses to read — so
-// per-post OG cards silently never unfurled. External shares now use
-// laybell.app/open.html (lib/appLinks). This function is kept deployed, OG
-// logic intact, for the day it sits behind a CUSTOM domain (the planned
-// Cloudflare move) — at which point the app's two share builders are the only
-// lines that need to change back.
+// REACH THIS FUNCTION VIA api.laybell.app, NOT *.supabase.co. The shared
+// functions domain force-serves HTML as text/plain + nosniff, which Apple's
+// LinkPresentation parser refuses to read — the reason per-post cards never
+// unfurled in iMessage. The custom domain (live 2026-07-29) is not sanitised.
+// lib/appLinks.SHARE_PAGE_CUSTOM_BASE is what points the app at it.
 const WEB = 'https://laybell.app';
 const LOGO = `${WEB}/logo.png`;
 const AUDIO_TYPES = ['audio', 'podcast', 'audiobook'];
@@ -114,14 +111,11 @@ serve(async (req: Request) => {
   // landing page; crawlers never execute this and just read the tags.
   const target = `${WEB}/open.html${openPath ? `?p=${encodeURIComponent(openPath)}` : ''}`;
 
-  // Supabase HARD-SANITIZES HTML on the shared *.supabase.co functions domain
-  // (Content-Type forced to text/plain + a sandbox CSP, anti-phishing) — so a
-  // human tapping the link saw raw HTML source and the meta-refresh/JS bounce
-  // never ran. Redirects pass through untouched: send BROWSERS a real 302 to
-  // open.html, and keep the OG document only for link CRAWLERS (matched by
-  // user-agent), which parse the tags out of the body regardless of the forced
-  // content type. If the function ever moves behind a custom domain, the
-  // sanitizer stops applying and both paths keep working as-is.
+  // Split by user-agent: BROWSERS get a real 302 straight to open.html, link
+  // CRAWLERS get the OG document. Originally a workaround (on *.supabase.co the
+  // sanitised HTML meant a human saw raw source and the meta-refresh never
+  // ran); kept on the custom domain because a 302 is simply the faster, more
+  // reliable bounce — one hop, no parsing, no flash of the interstitial.
   const ua = (req.headers.get('user-agent') ?? '').toLowerCase();
   const isCrawler = /facebookexternalhit|whatsapp|discordbot|twitterbot|telegrambot|slackbot|linkedinbot|pinterest|redditbot|skypeuripreview|applebot|googlebot|bingbot|snapchat|vkshare|embedly|quora link preview|bot|crawler|spider/.test(ua);
   if (!isCrawler) {
