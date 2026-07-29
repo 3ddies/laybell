@@ -134,7 +134,11 @@ begin
   end if;
 
   -- Tiered platform fee — the Premium "Earn More" perk (8% Premium, 35% standard).
-  new.laybell_fee_cents     := round(new.amount_cents * (case when public.is_premium(v_host) then 0.08 else 0.35 end));
+  -- 20% Premium / 35% standard. Was 8% Premium, which lost money once tips were
+  -- funded by credits: Apple and Google take ~15% of the credit purchase, so
+  -- Laybell received 85% of a tip it owed 92% of. Keep in step with
+  -- tip_fee_rate() in ledger_spend.sql, which supersedes this trigger.
+  new.laybell_fee_cents     := round(new.amount_cents * (case when public.is_premium(v_host) then 0.20 else 0.35 end));
   new.tax_cents             := round(new.amount_cents * 0.06);
   new.streamer_payout_cents := new.amount_cents - new.laybell_fee_cents;
   new.provider              := coalesce(new.provider, 'simulated');

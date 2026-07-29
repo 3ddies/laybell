@@ -10,7 +10,14 @@ import { supabase } from './supabase';
 // Laybell's cut depends on the host's plan — this IS the Premium "Earn More"
 // perk. Estimated tax is added ON TOP (the donor's cost, Poshmark-style, like the
 // shop) so it never reduces the host's take-home.
-export const DONATION_FEE_RATE_PREMIUM = 0.08;   // Premium hosts keep 92%
+// Premium hosts keep 80%. Mirrors tip_fee_rate() in ledger_spend.sql, which is
+// authoritative — this copy only drives the breakdown shown before sending.
+//
+// It was 8% (creator keeps 92%), which LOST money on every Premium tip: credits
+// are bought through Apple and Google, who take ~15% first, so Laybell received
+// 85% of a tip it then owed 92% of. Break-even is 15%; 20% nets 5%. See the full
+// reasoning in supabase/sql/ledger_spend.sql.
+export const DONATION_FEE_RATE_PREMIUM = 0.20;
 export const DONATION_FEE_RATE_STANDARD = 0.35;  // everyone else keeps 65%
 export const DONATION_TAX_RATE = 0.06; // estimate for display; real tax varies by location/provider
 

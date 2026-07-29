@@ -21,6 +21,28 @@
 -- Laybell's cut, mirroring lib/donations.ts. Premium hosts keep more; that lower
 -- rate IS the "Earn More" perk. This is the authority — the client displays a
 -- rate, the server applies one, and only this one is real.
+--
+-- WHY PREMIUM IS 20% AND NOT THE ORIGINAL 8%. Tips are paid in credits, and
+-- credits are bought through Apple and Google, who take their commission before
+-- Laybell sees anything:
+--
+--   $10 tip: buyer paid Apple $10 → Apple keeps 15% → LAYBELL RECEIVES $8.50
+--   At 8%, the creator was owed 92%                                    = $9.20
+--   Laybell LOST $0.70 ON EVERY PREMIUM TIP.
+--
+-- Break-even is 15%. At 20% the creator keeps 80% and Laybell nets 5% — and the
+-- 5% is not really the point: the tip rate is the reason to BUY Premium, and the
+-- $9.99/month subscription is where Premium actually earns. "Keep 80% instead of
+-- 65%" is a concrete reason to subscribe; two more points of margin is not.
+--
+-- 80% also beats what creators are used to: YouTube Super Thanks pays 70%,
+-- Twitch's standard split is 50%, TikTok is around 50%.
+--
+-- Raise to 0.25 if direct margin matters more than the perk being compelling —
+-- that nets 10%, matching the shop, and the creator still keeps 75%.
+--
+-- ⚠️ Assumes the App Store Small Business Program (15%). At the standard 30%,
+-- Laybell receives $7.00 on a $10 tip and 20% would lose money again.
 create or replace function public.tip_fee_rate(p_host uuid)
 returns numeric
 language sql
@@ -30,9 +52,49 @@ set search_path = public
 as $$
   select case
     when coalesce((select premium_until from public.profiles where id = p_host), 'epoch'::timestamptz) > now()
-    then 0.08 else 0.35
+    then 0.20 else 0.35
   end;
 $$;
+
+
+-- ─── donation_guard v4 ──────────────────────────────────────────────────────
+-- The guard trigger fires on EVERY insert into `donations` — including the one
+-- tip_post_internal performs — and v3 recomputed the fee and the tax over
+-- whatever it was handed. That made the donations row disagree with the ledger
+-- entry created microseconds later from the same tip: the ledger moved 20%, the
+-- row recorded 8%, and the row recorded a 6% tax that no ledger entry ever moved.
+--
+-- v4 stops deriving the fee independently and asks tip_fee_rate() instead, so
+-- there is one definition of the rate. Tax is zero: tips are paid in credits,
+-- and Apple and Google already collected sales tax when the credits were bought.
+--
+-- Everything else v3 did — resolving the host from a live stream OR a studio
+-- session, rejecting self-tips, clamping the message — is preserved, because the
+-- legacy insert path still relies on it.
+create or replace function public.donation_guard()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_host uuid;
+begin
+  if new.stream_id is not null then
+    select ls.user_id into v_host from public.live_streams ls where ls.id = new.stream_id;
+  elsif new.studio_session_id is not null then
+    select ss.host_id into v_host from public.studio_sessions ss where ss.id = new.studio_session_id;
+  end if;
+  if v_host is null then raise exception 'stream_not_found'; end if;
+  new.streamer_id := v_host;
+
+  if new.donor_id = v_host then raise exception 'cannot_donate_to_self'; end if;
+
+  new.laybell_fee_cents     := round(new.amount_cents * public.tip_fee_rate(v_host));
+  new.tax_cents             := 0;
+  new.streamer_payout_cents := new.amount_cents - new.laybell_fee_cents;
+  new.provider              := coalesce(new.provider, 'credits');
+  new.status                := coalesce(new.status, 'succeeded');
+  new.processed_at          := now();
+  new.message               := nullif(left(trim(coalesce(new.message, '')), 200), '');
+  return new;
+end; $$;
 
 
 -- ─── Shared posting core ────────────────────────────────────────────────────
