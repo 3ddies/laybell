@@ -74,15 +74,22 @@ serve(async (req: Request) => {
         const who = prof?.display_name || (prof?.username ? `@${prof.username}` : 'Laybell');
         const isAudio = AUDIO_TYPES.includes((p as any).type);
         title = (p as any).caption?.trim() || `${who} on Laybell`;
-        desc = isAudio
-          ? `Listen to ${who} on Laybell 🎵`
-          : (p as any).type === 'video'
-            ? `Watch ${who} on Laybell`
-            : `See ${who}'s post on Laybell`;
-        image = (p as any).thumbnail_url || (p as any).cover_url
-          || ((p as any).type === 'image' ? (p as any).media_url : null)
-          || ((p as any).type === 'video' ? cfStreamThumbnail((p as any).media_url) : null)
-          || LOGO;
+        // Apple's LinkPresentation renders og:title as the headline and
+        // og:description as the grey line under it, then the domain. Spotify's
+        // card is exactly: song name / ARTIST / open.spotify.com — so a song's
+        // description is the artist alone, not a marketing sentence. Video
+        // matches TikTok's: caption / creator / domain.
+        desc = who;
+        // Songs lead with COVER ART (album square); video/photo lead with the
+        // frame. Apple sizes the card from the image's own aspect ratio, so a
+        // square cover gives Spotify's square card and a 16:9 still gives
+        // TikTok's wide one — no card-type flag involved.
+        image = isAudio
+          ? ((p as any).cover_url || (p as any).thumbnail_url || LOGO)
+          : ((p as any).thumbnail_url || (p as any).cover_url
+              || ((p as any).type === 'image' ? (p as any).media_url : null)
+              || ((p as any).type === 'video' ? cfStreamThumbnail((p as any).media_url) : null)
+              || LOGO);
         ogType = isAudio ? 'music.song' : (p as any).type === 'video' ? 'video.other' : 'article';
         openPath = `post/${(p as any).id}`;
       }
@@ -139,7 +146,14 @@ serve(async (req: Request) => {
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:image" content="${esc(image)}">
-<meta property="og:url" content="${esc(url.href)}">
+<meta property="og:image:alt" content="${esc(title)}">
+<meta property="og:url" content="${esc(url.href)}">${ogType === 'music.song' ? `
+<!-- Square cover: declaring the dimensions lets Apple lay the card out BEFORE
+     the image finishes downloading, so the song card doesn't reflow — the
+     detail that makes Spotify's link feel instant in the bubble. -->
+<meta property="og:image:width" content="640">
+<meta property="og:image:height" content="640">
+<meta property="music:musician" content="${esc(desc)}">` : ''}
 <meta name="twitter:card" content="${ogType === 'music.song' ? 'summary' : 'summary_large_image'}">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(desc)}">
