@@ -73,6 +73,9 @@ export default function ListingScreen() {
   const [safetyOpen, setSafetyOpen] = useState(false);
   const pendingBuyRef = useRef<{ kind: SaleKind; offerCents: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which CTA's caption is expanded. One at a time: two open explainers push
+  // the buttons apart and turn a decision into a wall of text.
+  const [expanded, setExpanded] = useState<'sell' | 'lease' | null>(null);
 
   const isOwner = !!listing && listing.user_id === profile?.id;
 
@@ -227,6 +230,10 @@ export default function ListingScreen() {
   const sellerName = listing?.seller?.display_name || listing?.seller?.username || '';
   const types = listing ? saleTypes(listing) : { sell: false, lease: false, free: false };
   const offerable = !!listing && types.lease && !types.sell && listing.status === 'active';
+  // Lease-ONLY (nothing to buy, nothing free) makes the offer the only route
+  // to owning it, so it stops being a quiet secondary button and goes green
+  // like the other primary CTAs.
+  const offerPrimary = offerable && !types.free;
   const offerCents = Math.round((parseFloat(offerText.replace(',', '.')) || 0) * 100);
   const enabledLabels = [
     types.sell && t('shop.license.exclusive'),
@@ -254,25 +261,29 @@ export default function ListingScreen() {
     // grants. It matters most on a listing offering several at once, where
     // "Buy $40 / Lease $15 / Free" alone doesn't say what separates them.
     //
-    // A GATED free listing deliberately gets no caption: the unlock checklist
-    // already sits under this button and says exactly what is required, so a
-    // caption would only repeat it in vaguer words. Only the ungated case needs
-    // explaining, because otherwise nothing tells you it is simply free.
-    //
-    // That is read from the LISTING rather than from `conds`, which arrives over
-    // the network and is null on first paint — keying off it would flash
-    // "Anyone can download" onto a gated listing before correcting itself.
+    // A GATED free listing gets no caption: tapping it opens a screen that
+    // states the conditions in full, so a one-liner here would only preview it
+    // in vaguer words. Read from the LISTING rather than from `conds`, which
+    // arrives over the network and is null on first paint — keying off it would
+    // flash "Anyone can download" onto a gated listing before correcting itself.
+    const gatedFree = kind === 'free' && freeHasConditions(listing);
     const caption =
       kind === 'sell' ? t('shop.cta.sellDesc')
         : kind === 'lease' ? t('shop.cta.leaseDesc')
-          : freeHasConditions(listing) ? null : t('shop.cta.freeDesc');
+          : gatedFree ? null : t('shop.cta.freeDesc');
+    // The long-form explainer, revealed by tapping the caption.
+    const longDesc = kind === 'sell' ? t('shop.licenseInfo.exclusive')
+      : kind === 'lease' ? t('shop.licenseInfo.nonexclusive') : null;
 
     if (kind === 'free') {
       return (
         <View key="free" style={styles.ctaBlock}>
           <TouchableOpacity
             style={[styles.greenBtn, styles.freeBtn, conds && !conds.allMet && styles.btnLocked]}
-            onPress={() => buy('free')}
+            // Gated claims get their own screen rather than a checklist wedged
+            // under the button: the conditions are a task list, and a task list
+            // deserves the room to be read and acted on.
+            onPress={() => (gatedFree ? router.push(`/shop/free/${listing.id}`) : buy('free'))}
             disabled={!!busyKind}
             activeOpacity={0.85}
           >
@@ -288,6 +299,7 @@ export default function ListingScreen() {
       );
     }
     const price = formatPrice(priceForKind(listing, kind), listing.currency);
+    const open = expanded === kind;
     return (
       <View key={kind} style={styles.ctaBlock}>
         <TouchableOpacity
@@ -305,7 +317,21 @@ export default function ListingScreen() {
             </>
           )}
         </TouchableOpacity>
-        {!!caption && <Text style={styles.ctaDesc}>{caption}</Text>}
+        {!!caption && (
+          <TouchableOpacity
+            onPress={() => setExpanded(open ? null : kind)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('shop.ctaMore')}
+            accessibilityState={{ expanded: open }}
+          >
+            <View style={styles.ctaDescRow}>
+              <Text style={styles.ctaDesc}>{caption}</Text>
+              <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={12} color={colors.textTertiary} />
+            </View>
+            {open && !!longDesc && <Text style={styles.ctaLong}>{longDesc}</Text>}
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
@@ -398,16 +424,11 @@ export default function ListingScreen() {
             {listing.sales_count > 0 && (
               <Text style={styles.sales}>{t('shop.salesCount', { n: listing.sales_count })}</Text>
             )}
-            {/* What each offered deal type MEANS, in plain words — inexperienced
-                buyers shouldn't need marketplace jargon to buy safely. */}
-            {(['sell', 'lease', 'free'] as const).filter((k) => types[k]).map((k) => (
-              <View key={k} style={styles.licenseInfo}>
-                <Ionicons name="information-circle-outline" size={15} color={colors.textSecondary} />
-                <Text style={styles.licenseInfoText}>
-                  {t(`shop.licenseInfo.${k === 'sell' ? 'exclusive' : k === 'lease' ? 'nonexclusive' : 'free'}`)}
-                </Text>
-              </View>
-            ))}
+            {/* The plain-words explainer for each deal type used to sit here as
+                a permanent block. It now lives inside the caption under its own
+                button, revealed on tap — same words, attached to the thing they
+                describe, and not three paragraphs between the price and the
+                buy button. */}
             {!!listing.description && <Text style={styles.description}>{listing.description}</Text>}
 
             {/* Seller — the row is the shop entrance ("View shop" → their shop
@@ -486,56 +507,19 @@ export default function ListingScreen() {
                     {types.lease && renderKindCta('lease')}
                     {types.free && renderKindCta('free')}
 
-                    {/* Free-unlock checklist */}
-                    {types.free && conds?.hasConditions && !orderFor('free') && (
-                      <View style={styles.unlockCard}>
-                        <Text style={styles.unlockTitle}>{t('shop.unlockTitle')}</Text>
-                        {!!listing.free_requires_follow && (
-                          <TouchableOpacity
-                            style={styles.unlockRow}
-                            onPress={() => { if (!conds.followMet) toggleFollow(listing.user_id); }}
-                            activeOpacity={conds.followMet ? 1 : 0.7}
-                          >
-                            <Ionicons
-                              name={conds.followMet ? 'checkmark-circle' : 'person-add-outline'}
-                              size={19}
-                              color={conds.followMet ? colors.success : colors.textSecondary}
-                            />
-                            <Text style={[styles.unlockText, conds.followMet && styles.unlockTextMet]}>
-                              {t('shop.unlockFollow', { name: sellerName || '—' })}
-                            </Text>
-                            {!conds.followMet && <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />}
-                          </TouchableOpacity>
-                        )}
-                        {conds.likes.map((lk, i) => (
-                          <TouchableOpacity
-                            key={lk.postId}
-                            style={styles.unlockRow}
-                            onPress={() => router.push(`/post/${lk.postId}`)}
-                            activeOpacity={0.7}
-                          >
-                            <Ionicons
-                              name={lk.met ? 'checkmark-circle' : 'heart-outline'}
-                              size={19}
-                              color={lk.met ? colors.success : colors.textSecondary}
-                            />
-                            <Text style={[styles.unlockText, lk.met && styles.unlockTextMet]}>
-                              {t('shop.unlockLike', { n: i + 1 })}
-                            </Text>
-                            {!lk.met && <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />}
-                          </TouchableOpacity>
-                        ))}
-                        <Text style={[styles.unlockHint, conds.allMet && { color: colors.success }]}>
-                          {conds.allMet ? t('shop.unlockReady') : t('shop.unlockUnmet')}
-                        </Text>
-                      </View>
-                    )}
-
+                    {/* The unlock checklist used to live here. It now has its
+                        own screen (/shop/free/[id]), reached by tapping the Free
+                        button — a task list needs room to be read and acted on,
+                        and half of those tasks navigate away anyway. */}
                     {/* Lease-only: name your price for the beat itself. */}
                     {offerable && !orderFor('offer') && (
-                      <TouchableOpacity style={styles.offerBtn} onPress={() => setOfferOpen(true)} activeOpacity={0.85}>
-                        <Ionicons name="pricetag-outline" size={17} color={colors.text} />
-                        <Text style={styles.offerBtnText}>{t('shop.makeOffer')}</Text>
+                      <TouchableOpacity
+                        style={[styles.offerBtn, offerPrimary && styles.offerBtnPrimary]}
+                        onPress={() => setOfferOpen(true)}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="pricetag-outline" size={17} color={offerPrimary ? "#fff" : colors.text} />
+                        <Text style={[styles.offerBtnText, offerPrimary && styles.offerBtnTextPrimary]}>{t('shop.makeOffer')}</Text>
                       </TouchableOpacity>
                     )}
                     {orderFor('offer')?.status === 'requested' && (
@@ -689,13 +673,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   priceText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   sales: { color: c.textSecondary, fontSize: 12, fontWeight: '600' },
   // Deal-type explainer (Lease / Sell / Free in plain words).
-  licenseInfo: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    backgroundColor: c.surface, borderRadius: RADIUS.md,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
-    paddingHorizontal: 12, paddingVertical: 10,
-  },
-  licenseInfoText: { flex: 1, color: c.textSecondary, fontSize: 12.5, lineHeight: 18 },
   description: { color: c.textSecondary, fontSize: 14, lineHeight: 20 },
   sellerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -721,6 +698,11 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   ctaDesc: {
     color: c.textTertiary, fontSize: 11.5, lineHeight: 15,
     textAlign: 'center', paddingHorizontal: 8,
+  },
+  ctaDescRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  ctaLong: {
+    color: c.textSecondary, fontSize: 12, lineHeight: 17,
+    paddingHorizontal: 10, paddingTop: 6,
   },
   greenBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -748,6 +730,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     borderWidth: 1.5, borderColor: c.text, borderRadius: RADIUS.full, paddingVertical: 12,
   },
   offerBtnText: { color: c.text, fontSize: 14, fontWeight: '700' },
+  offerBtnPrimary: { backgroundColor: c.success, borderColor: c.success },
+  offerBtnTextPrimary: { color: '#fff' },
   pendingBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     backgroundColor: c.surfaceLight, borderRadius: RADIUS.full, paddingVertical: 13,
