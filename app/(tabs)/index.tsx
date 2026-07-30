@@ -1752,15 +1752,20 @@ export default function HomeScreen() {
             style={styles.headerIconBtn}
             onPress={() => { setUnreadCount(0); router.push('/notifications'); }}
           >
-            {/* The Laybell bell rings itself when something is waiting. Gated
-                on isFocused as well as the count, so the animation and its
-                timer exist only while this tab is actually on screen. */}
-            <LaybellBell size={28} color={colors.text} active={unreadCount > 0 && isFocused} />
-            {unreadCount > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-              </View>
-            )}
+            {/* No count badge here by design — the MARK is the indicator. It
+                turns the same red the badge used, rings itself while something
+                is waiting, and drops back to normal the moment notifications
+                are opened (onPress zeroes unreadCount). Gated on isFocused too,
+                so the animation and its timer exist only while this tab is on
+                screen. The messages button beside it keeps its badge, since a
+                count is the useful thing there. */}
+            <LaybellBell
+              size={28}
+              color={colors.text}
+              unreadColor={colors.error}
+              unread={unreadCount > 0}
+              focused={isFocused}
+            />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/messages')}>

@@ -41,18 +41,29 @@ const FIRST_DELAY_MS = 2400;
 const GAP_MIN_MS = 17_000;
 const GAP_MAX_MS = 33_000;
 
-export default function LaybellBell({ size = 28, color, accent = '#F26522', active, style }: {
+export default function LaybellBell({
+  size = 28, color, unreadColor, accent = '#FF8095', unread, focused, style,
+}: {
   size?: number;
+  /** Resting colour when everything has been read. */
   color: string;
-  /** Colour flashed at the moment the clapper strikes. Defaults to the brand
-   *  orange rather than the theme's `error` red: this marks "something is
-   *  waiting", not "something went wrong", and the count badge beside it
-   *  already owns the alarm colour. */
+  /** Colour the whole mark takes while notifications are unread. This replaces
+   *  the old count badge: the bell IS the indicator now, so the state has to be
+   *  legible from the mark alone. */
+  unreadColor: string;
+  /** Flashed at the moment of each strike. Default is a LIFT of the theme's
+   *  error red, not a different hue — the bell is already red while unread, so
+   *  a red flash would be invisible. A lighter tone reads as the strike
+   *  catching the light. */
   accent?: string;
-  /** True when unread notifications exist AND the screen is focused. */
-  active: boolean;
+  unread: boolean;
+  /** Animation runs only while the screen is on. */
+  focused: boolean;
   style?: ViewStyle;
 }) {
+  // Ring only when there is something to ring about and someone to see it.
+  const active = unread && focused;
+  const tint = unread ? unreadColor : color;
   const swing = useRef(new Animated.Value(0)).current;   // -1 … 1
   const hit = useRef(new Animated.Value(0)).current;     // accent layer opacity
   const loop = useRef<Animated.CompositeAnimation | null>(null);
@@ -138,7 +149,7 @@ export default function LaybellBell({ size = 28, color, accent = '#F26522', acti
           { transform: [{ translateY: -pivot }, { rotate }, { translateY: pivot }] },
         ]}
       >
-        <Image source={BELL} style={[img, { tintColor: color }]} resizeMode="contain" />
+        <Image source={BELL} style={[img, { tintColor: tint }]} resizeMode="contain" />
         {/* The same logo in the accent colour, faded in at the moment of impact.
             Cross-fading two tinted copies keeps this on the native driver —
             animating tintColor itself would force the JS driver and put the
