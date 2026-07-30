@@ -14,6 +14,7 @@ import { PlacedStickers } from '../../components/StickerLayer';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
+import LaybellBell from '../../components/LaybellBell';
 import { isSwipeTap } from '../../contexts/PagerContext';
 import {
   setVisibleVideoId, setWarmVideoIds, setFeedFastScrolling, setFeedFocused, resetFeedVideo, useCardPlayback, getVisibleVideoId,
@@ -1751,7 +1752,10 @@ export default function HomeScreen() {
             style={styles.headerIconBtn}
             onPress={() => { setUnreadCount(0); router.push('/notifications'); }}
           >
-            <Ionicons name="notifications-outline" size={28} color={colors.text} />
+            {/* The Laybell bell rings itself when something is waiting. Gated
+                on isFocused as well as the count, so the animation and its
+                timer exist only while this tab is actually on screen. */}
+            <LaybellBell size={28} color={colors.text} active={unreadCount > 0 && isFocused} />
             {unreadCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
