@@ -11,6 +11,7 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { isAdPersonalizationEnabled, setAdPersonalization } from '../lib/adPrefs';
+import { isCrashReportingEnabled, setCrashReporting } from '../lib/monitoring';
 import { buildDataExport } from '../lib/dataExport';
 import { confirmDeleteAccount } from '../lib/accountDeletion';
 
@@ -70,8 +71,10 @@ export default function PrivacyCenterScreen() {
   const router = useRouter();
   const { profile } = useProfile();
   const [adsOn, setAdsOn] = useState(false);
+  const [crashOn, setCrashOn] = useState(true);
   const [exporting, setExporting] = useState(false);
   useEffect(() => { isAdPersonalizationEnabled().then(setAdsOn); }, []);
+  useEffect(() => { isCrashReportingEnabled().then(setCrashOn); }, []);
 
   async function handleExport() {
     try {
@@ -121,6 +124,19 @@ export default function PrivacyCenterScreen() {
               subtitle={t('privacyCenter.personalizedAdsSub')}
               value={adsOn}
               onValueChange={(v) => { setAdsOn(v); setAdPersonalization(v); }}
+            />
+            <Sep />
+            {/* Defaults ON, unlike the ads toggle above it. Diagnostic reports
+                carry no identity and rest on legitimate interests, whereas
+                personalised ads need consent — and a crash reporter nobody opts
+                into reports nothing. Turning it off stops reports leaving the
+                device immediately (lib/monitoring gates at send time). */}
+            <ToggleRow
+              icon="bug-outline"
+              label={t('privacyCenter.crashReports')}
+              subtitle={t('privacyCenter.crashReportsSub')}
+              value={crashOn}
+              onValueChange={(v) => { setCrashOn(v); setCrashReporting(v); }}
             />
             <Sep />
             <Row

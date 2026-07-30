@@ -1,6 +1,6 @@
 {
   "title": "Laybell Privacy Policy",
-  "effective": "July 3, 2026",
+  "effective": "July 30, 2026",
   "sections": [
     {
       "heading": "1. Introduction, Who We Are, Defined Terms & Scope",
@@ -68,7 +68,7 @@
         },
         {
           "type": "bullet",
-          "text": "We do NOT sell your personal data. We do NOT share it for cross-context behavioral advertising with third parties. We use NO third-party advertising, analytics, or crash-reporting tools. All advertising on Laybell is first-party and self-serve."
+          "text": "We do NOT sell your personal data. We do NOT share it for cross-context behavioral advertising with third parties. We use NO third-party advertising or analytics tools. All advertising on Laybell is first-party and self-serve. We use one third-party service for crash and error reporting (Sentry), which receives diagnostic data only — never your name, email, messages, or content — and which you can turn off at any time in the Privacy Center."
         },
         {
           "type": "bullet",
@@ -201,7 +201,7 @@
         },
         {
           "type": "p",
-          "text": "We track engagement using FIRST-PARTY tools only. This includes likes, comments, saves, shares, views, streams, follower growth, and peak engagement times, which we use to power creator analytics dashboards. We do not use Google Analytics, Firebase Analytics, Mixpanel, Amplitude, Sentry, the Meta SDK, or any other third-party analytics, advertising, or crash-reporting tool."
+          "text": "We track engagement using FIRST-PARTY tools only. This includes likes, comments, saves, shares, views, streams, follower growth, and peak engagement times, which we use to power creator analytics dashboards. We do not use Google Analytics, Firebase Analytics, Mixpanel, Amplitude, the Meta SDK, or any other third-party analytics or advertising tool. We do use Sentry for crash and error reporting only; it is never used for analytics, advertising, or profiling. See section 3.16."
         },
         {
           "type": "subheading",
@@ -234,6 +234,34 @@
         {
           "type": "p",
           "text": "We retain these records for 13 months and then delete them, except where a specific record must be preserved longer because it relates to an open investigation or a legal obligation. You can request a copy of the IP records associated with your own account at any time using the contact details in this policy."
+        },
+        {
+          "type": "subheading",
+          "text": "3.16 Crash and Error Reports (Diagnostics)"
+        },
+        {
+          "type": "p",
+          "text": "When the app crashes or hits an error, we send a diagnostic report to Sentry (Functional Software, Inc.), our sole third-party processor for this purpose, so that we can find and fix the problem."
+        },
+        {
+          "type": "p",
+          "text": "What is sent: the error and its technical stack trace, the app version and build, your device model and operating system version, and a short trail of recent in-app events (which screens were opened and which network calls were made)."
+        },
+        {
+          "type": "p",
+          "text": "What is NOT sent: your name, username, email address, password, messages, comments, posts, photos, videos, audio, or payment details. We do not attach your account identity to these reports, we do not record your screen (session replay is deliberately disabled), and we do not collect your IP address for this purpose. Before any report leaves your device it is automatically scrubbed of access tokens, email addresses, authorization headers, and database query parameters."
+        },
+        {
+          "type": "p",
+          "text": "Why we do this: to detect and fix crashes and failures, in particular failures in purchases, payouts, and uploads, where a silent error could otherwise cost you money without either of us noticing. Legal basis: our legitimate interests in providing a working and secure Service (GDPR Article 6(1)(f))."
+        },
+        {
+          "type": "p",
+          "text": "Your control: you can turn crash reporting off at any time in Settings, Privacy Center, \"Crash reports\". When it is off, no diagnostic report leaves your device. Retention: reports are deleted automatically after the retention period configured in Sentry, which is at most 90 days."
+        },
+        {
+          "type": "p",
+          "text": "We do NOT use these reports for advertising, profiling, personalization, or tracking you across apps or websites."
         }
       ]
     },
@@ -417,7 +445,7 @@
         },
         {
           "type": "p",
-          "text": "We do NOT sell your personal data. We do NOT share it for cross-context behavioral advertising. We do NOT use advertising networks or data brokers, and we use NO third-party advertising, analytics, or crash-reporting tools (no Google Analytics, Firebase Analytics, Mixpanel, Amplitude, Sentry, or Meta SDK). All advertising on the Service is first-party and self-serve."
+          "text": "We do NOT sell your personal data. We do NOT share it for cross-context behavioral advertising. We do NOT use advertising networks or data brokers, and we use NO third-party advertising or analytics tools (no Google Analytics, Firebase Analytics, Mixpanel, Amplitude, or Meta SDK). Our only third-party processor of this kind is Sentry, used solely for crash and error reporting and described in section 3.16. All advertising on the Service is first-party and self-serve."
         }
       ]
     },
@@ -737,7 +765,7 @@
       "blocks": [
         {
           "type": "p",
-          "text": "Laybell is primarily a mobile app and does not use third-party advertising or analytics cookies, and it does not perform cross-app or cross-site tracking. We use NO third-party advertising, analytics, or crash-reporting SDKs."
+          "text": "Laybell is primarily a mobile app and does not use third-party advertising or analytics cookies, and it does not perform cross-app or cross-site tracking. We use NO third-party advertising or analytics SDKs. We use one crash-reporting SDK (Sentry), which sets no cookies and does not track you across apps or websites."
         },
         {
           "type": "p",

@@ -9,9 +9,45 @@
 // It is a NO-OP until EXPO_PUBLIC_SENTRY_DSN is set, so the app builds and runs
 // identically with or without an account behind it.
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 // Types only — this import is erased at compile time and pulls in no code, so
 // the real module is loaded solely by the guarded require() below.
 type SentryModule = typeof import('@sentry/react-native');
+
+// ── User opt-out ────────────────────────────────────────────────────────────
+// Settings → Privacy Center → "Crash reports". Defaults ON, unlike ad
+// personalization next to it, and the difference is deliberate: personalised
+// ads need consent, whereas diagnostic reports carrying no identity rest on
+// legitimate interests. A crash reporter nobody opts into reports nothing.
+//
+// The gate is applied at SEND time rather than at init, because wrapRoot() runs
+// synchronously at module scope to catch render errors — deferring init until
+// AsyncStorage resolved would leave the root unwrapped. So the SDK always
+// starts, and beforeSend decides whether anything actually leaves the device.
+//
+// It fails CLOSED: until the preference has been read, `allowSend` is null and
+// beforeSend drops everything. That costs a few milliseconds of early-crash
+// coverage for everyone, which is the right trade against a user who opted out
+// having a single report escape during startup.
+const PREF_KEY = 'crash_reporting_v1';
+let allowSend: boolean | null = null;
+
+export async function isCrashReportingEnabled(): Promise<boolean> {
+  if (allowSend != null) return allowSend;
+  try {
+    const raw = await AsyncStorage.getItem(PREF_KEY);
+    allowSend = raw == null ? true : raw === '1';
+  } catch {
+    allowSend = true;
+  }
+  return allowSend;
+}
+
+export async function setCrashReporting(enabled: boolean): Promise<void> {
+  allowSend = enabled;
+  try { await AsyncStorage.setItem(PREF_KEY, enabled ? '1' : '0'); } catch {}
+}
 
 const DSN = process.env.EXPO_PUBLIC_SENTRY_DSN ?? '';
 
@@ -88,6 +124,10 @@ export function initMonitoring(): void {
   if (!S) return;
   started = true;
 
+  // Start the preference read immediately. Until it lands, beforeSend drops
+  // every event (see the opt-out note above).
+  isCrashReportingEnabled();
+
   S.init({
     dsn: DSN,
 
@@ -114,6 +154,9 @@ export function initMonitoring(): void {
     dist: process.env.EXPO_PUBLIC_BUILD_ID || undefined,
 
     beforeSend(event: any) {
+      // The opt-out, and the last gate before anything leaves the device.
+      // Returning null discards the event entirely.
+      if (allowSend !== true) return null;
       return scrub(event);
     },
 
