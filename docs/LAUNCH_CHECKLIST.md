@@ -177,6 +177,97 @@ real cost of leaving it.
 
 ---
 
+## 0.5 POST-LAUNCH FEATURE IDEAS — not launch scope
+
+Parked deliberately. Neither belongs in the first release; both are recorded here with the
+research already done so the next look starts from facts rather than from scratch.
+
+### Public-domain music section
+
+Highlight genuinely out-of-copyright music that anyone can use freely.
+
+**Legal in principle. The hard part is proof, not permission.**
+
+Correct the usual premise first: sampling is **not** a public-domain practice. Producers who
+sample clear the sample — a licence on both the recording and the composition — or
+interpolate (re-record the melody, which still needs a publishing licence), or infringe and
+settle. Don't model the feature on how sampling works.
+
+**Every recorded song carries two separate copyrights**, and both must have expired:
+the **composition** (melody/lyrics, songwriter and publisher) and the **sound recording**
+(that specific performance, the label). Clearing one gets you nothing.
+
+Where the US lines fall, as of July 2026:
+
+| | Public domain |
+|---|---|
+| Compositions | published **1930** and earlier (95 years from publication) |
+| Sound recordings | published **1925** and earlier |
+
+Recordings are the binding constraint. The Music Modernization Act put pre-1923 recordings
+into the public domain in 2022, then 100 years for 1923–1946 — 1925 rolled in this January,
+1926 arrives next January. **So the catalogue is acoustic-era**: early jazz, ragtime, blues,
+marches, opera. Nothing from the 40s, 50s or 60s — a 1957 recording is locked until 2067.
+
+Three traps:
+
+- A **modern recording of a public-domain composition is fully protected.** A 2015 orchestra
+  playing Beethoven is Beethoven-free and recording-locked. The most common mistake by far.
+- Modern **arrangements and editions** carry their own new copyright.
+- Public domain is **per-country**. The US-only App Store restriction (§0.2) helps here —
+  only one jurisdiction has to be right. Revisit if availability ever widens; the EU is
+  *more* permissive on old recordings (70 years from publication) and less on some
+  compositions.
+
+**Build shape, if it ever happens:** a small curated catalogue — hundreds of tracks, not
+millions — sourced from places that already did the verification (Library of Congress
+National Jukebox, Musopen for classical), with per-track provenance stored: publication
+year, source, verification date, which of the two copyrights was checked how. The version
+that gets sued is letting users upload and self-certify something as public domain. Keep the
+`copyright_strikes` machinery (§0.2 item 0) pointed at it regardless.
+
+**The upside that makes it worth considering:** public-domain tracks have no rights holder,
+so they sit outside the PRO obligations in §5. It is the only music servable at zero
+licensing cost.
+
+⚠️ **[LEGAL]** Have counsel confirm the specific catalogue before shipping, not the concept.
+The downside is a rights-holder claim against an LLC with real money moving through it.
+
+### AI-assisted search and personalisation
+
+Worth doing **only once there are enough users to have data**, which is the whole point of
+parking it. Both halves are data-hungry and would launch worse than what exists today.
+
+**Search.** Currently `ilike '%term%'` across `username`, `display_name` and `caption`
+(`app/(tabs)/explore.tsx`). That is substring matching: it cannot handle typos, synonyms,
+or "sad late-night beats". Two upgrades, in increasing order of cost:
+
+1. **Postgres full-text search** — `tsvector` + a GIN index. No AI, no new infrastructure,
+   handles stemming and ranking, and would be a real improvement on `ilike` on its own.
+   **Do this one first regardless**; it may be enough.
+2. **Semantic search over embeddings** — `pgvector` is available in Supabase, so captions,
+   song titles and bios can be embedded and matched by meaning. Embedding is cheap and
+   happens once per item at write time; the per-query embedding call is the recurring cost
+   and adds latency to a screen that was just optimised hard for responsiveness. Measure
+   before adopting.
+
+**Personalisation.** `lib/feedScorer.ts` and the Explore genre clusters already rank on
+affinity signals, so this is a refinement rather than a new system. The blocker is the cold
+start: collaborative filtering needs many users interacting with many items before it beats
+the current heuristics, and on a small library it will confidently recommend the same twenty
+posts to everyone. **Rule of thumb: don't start until the interaction table is large enough
+that the current affinity ordering is visibly the weak link.**
+
+Two things to settle *before* building, not after:
+
+- **Privacy.** Personalisation on user behaviour has to be disclosed in the Privacy Policy
+  and Privacy Center, and the existing opt-in-ads precedent suggests users should be able to
+  turn it off. Cheaper to design in than to retrofit.
+- **Cost per request.** Unlike everything else in the app, inference bills per call. Any
+  design that runs a model on every feed render needs a cache and a ceiling.
+
+---
+
 ## 0. Confidence — read this first (2026-07-28)
 
 | Area | Status |
