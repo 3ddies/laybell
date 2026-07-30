@@ -105,9 +105,15 @@ re-verified against the live project, not just marked off:
      (the trigger raises `listing_sold` and the whole RPC rolls back, money included).
      Until this runs, the app is the only thing standing in the way of either.
 
-**Owner, OPEN — added 2026-07-30. Two steps, and they must BOTH happen.**
+**Owner — added 2026-07-30. Both steps done.**
 
-6. **Run `supabase/sql/offer_messages.sql`**, then **redeploy `send-push`**:
+6. ~~**Run `supabase/sql/offer_messages.sql`**, then **redeploy `send-push`**.~~
+   **Done 2026-07-30** — SQL run by the owner, and `send-push` deployed to project
+   `wawpaokvtptfmuygjnns` (the Docker warning is expected and harmless; the CLI
+   uploads the asset rather than building a local container). `send-push` has no
+   entry in `config.toml`, so it keeps the default `verify_jwt: true`, which is
+   correct for it — it authenticates the caller itself and the app invokes it with
+   a real session token.
 
    ```
    npx supabase functions deploy send-push
