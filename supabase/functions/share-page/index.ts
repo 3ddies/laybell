@@ -71,6 +71,15 @@ function cfStreamThumbnail(url: string | null | undefined): string | null {
   return url.replace(CF_HLS_SUFFIX, '/thumbnails/thumbnail.jpg?width=1280');
 }
 
+// Trim to a word boundary near `max`. Used to cap the caption inside og:title
+// so the author appended after it can't be truncated away by Apple.
+function clip(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const sp = cut.lastIndexOf(' ');
+  return (sp > max * 0.6 ? cut.slice(0, sp) : cut).trimEnd() + '…';
+}
+
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -103,7 +112,20 @@ serve(async (req: Request) => {
         const prof: any = (p as any).profiles;
         const who = prof?.display_name || (prof?.username ? `@${prof.username}` : 'Laybell');
         const isAudio = AUDIO_TYPES.includes((p as any).type);
-        title = (p as any).caption?.trim() || `${who} on Laybell`;
+        // The author rides IN THE TITLE, because on Apple that's the only text
+        // line there is. Confirmed on device: Messages renders og:title and the
+        // domain and nothing between them — tested both WITH the twitter:card +
+        // application/activity+json pair that TN3156 says gates og:description
+        // and, after diffing against a live Spotify page, without it. Neither
+        // produced a third line. Spotify's artist line almost certainly comes
+        // from special handling for music links rather than from markup we can
+        // copy.
+        //
+        // The caption is capped BEFORE the author is appended, so a long one
+        // can't push the name past Apple's truncation — which is also why the
+        // author goes last rather than first: the caption stays the headline.
+        const cap = (p as any).caption?.trim();
+        title = cap ? `${clip(cap, 58)} · ${who}` : `${who} on Laybell`;
         musician = who;
         // The line between the title and the domain: WHO POSTED IT, on every
         // post type. This is the line Spotify uses for the artist ("Migos ·
@@ -140,10 +162,9 @@ serve(async (req: Request) => {
         .single();
       if (c) {
         const cc: any = c;
-        title = cc.name || 'Community on Laybell';
-        // The community's #hashtag is its handle, so it takes the same slot a
-        // post's author does — the line above the domain always identifies WHO
-        // or WHAT you're being sent to.
+        // Same reasoning as a post's title: the #hashtag is the community's
+        // handle, and the title is the only line Apple shows.
+        title = cc.hashtag ? `${cc.name || 'Community'} · #${cc.hashtag}` : (cc.name || 'Community on Laybell');
         desc = cc.hashtag ? `#${cc.hashtag}` : (cc.description?.trim() || 'Community on Laybell');
         image = cc.banner_url || LOGO;
         ogType = 'website';
