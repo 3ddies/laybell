@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { View, Image, Animated, Easing, StyleSheet, AccessibilityInfo, type ViewStyle } from 'react-native';
+import { View, Text, Image, Animated, Easing, StyleSheet, AccessibilityInfo, type ViewStyle } from 'react-native';
 
 // The Laybell bell — the actual logo, not an approximation of it.
 //
@@ -30,6 +30,21 @@ import { View, Image, Animated, Easing, StyleSheet, AccessibilityInfo, type View
 
 const BELL = require('../assets/bell-icon.png');
 
+// ── Where the notehead is, measured not guessed ─────────────────────────────
+// Found with a distance transform over the artwork's alpha: the largest circle
+// that fits inside the mark is the note's head, centred here.
+const HEAD_X = 0.463;   // of icon width
+const HEAD_Y = 0.723;   // of icon height
+
+// The counter is drawn as an ENLARGED notehead rather than text inside the
+// existing one. The real head measures only 19% of the icon's width — about 5pt
+// at header size — which cannot legibly hold a digit at any font size. Growing
+// it to 40% keeps it unmistakably the note's head (same centre, same colour,
+// still on the stem) while leaving room for a readable number.
+const HEAD_SCALE = 0.40;
+const HEAD_FONT = 0.25;   // of icon size, for a single digit
+const HEAD_FONT_2 = 0.20; // slightly tighter for "9+"
+
 // Rock angle. A bell swings from its crown, so this is a modest arc — enough to
 // read as motion at 28pt without the icon looking like it came loose.
 const SWING_DEG = 13;
@@ -42,7 +57,7 @@ const GAP_MIN_MS = 17_000;
 const GAP_MAX_MS = 33_000;
 
 export default function LaybellBell({
-  size = 28, color, unreadColor, accent = '#FF8095', unread, focused, style,
+  size = 34, color, unreadColor, accent = '#FF8095', count, focused, style,
 }: {
   size?: number;
   /** Resting colour when everything has been read. */
@@ -56,12 +71,14 @@ export default function LaybellBell({
    *  a red flash would be invisible. A lighter tone reads as the strike
    *  catching the light. */
   accent?: string;
-  unread: boolean;
+  /** How many are unread. Drawn into the notehead; 0 means nothing is shown. */
+  count: number;
   /** Animation runs only while the screen is on. */
   focused: boolean;
   style?: ViewStyle;
 }) {
   // Ring only when there is something to ring about and someone to see it.
+  const unread = count > 0;
   const active = unread && focused;
   const tint = unread ? unreadColor : color;
   const swing = useRef(new Animated.Value(0)).current;   // -1 … 1
@@ -140,6 +157,18 @@ export default function LaybellBell({
   const pivot = size * 0.42;
   const img = { width: size, height: size } as const;
 
+  // The enlarged notehead, centred on the measured one.
+  const headSize = Math.round(size * HEAD_SCALE);
+  const head = {
+    position: 'absolute' as const,
+    width: headSize,
+    height: headSize,
+    borderRadius: headSize / 2,
+    left: Math.round(size * HEAD_X - headSize / 2),
+    top: Math.round(size * HEAD_Y - headSize / 2),
+  };
+  const label = count > 9 ? '9+' : String(count);
+
   return (
     <View style={[img, styles.wrap, style]}>
       <Animated.View
@@ -150,13 +179,32 @@ export default function LaybellBell({
         ]}
       >
         <Image source={BELL} style={[img, { tintColor: tint }]} resizeMode="contain" />
+        {unread && <View style={[head, { backgroundColor: tint }]} pointerEvents="none" />}
+
         {/* The same logo in the accent colour, faded in at the moment of impact.
             Cross-fading two tinted copies keeps this on the native driver —
             animating tintColor itself would force the JS driver and put the
-            work back on the thread that renders the feed. */}
-        <Animated.View style={[StyleSheet.absoluteFill, { opacity: hit }]}>
+            work back on the thread that renders the feed. The notehead lifts
+            with it, so the counter is part of the strike rather than a sticker
+            sitting still on a flashing bell. */}
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: hit }]} pointerEvents="none">
           <Image source={BELL} style={[img, { tintColor: accent }]} resizeMode="contain" />
+          {unread && <View style={[head, { backgroundColor: accent }]} />}
         </Animated.View>
+
+        {/* The number sits ABOVE both layers so it stays solid white through the
+            flash instead of being washed out by it. */}
+        {unread && (
+          <View style={[head, styles.center]} pointerEvents="none">
+            <Text
+              style={[styles.count, { fontSize: Math.round(size * (label.length > 1 ? HEAD_FONT_2 : HEAD_FONT)) }]}
+              numberOfLines={1}
+              allowFontScaling={false}
+            >
+              {label}
+            </Text>
+          </View>
+        )}
       </Animated.View>
     </View>
   );
@@ -164,4 +212,8 @@ export default function LaybellBell({
 
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', justifyContent: 'center' },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  // allowFontScaling is off on the Text itself: this glyph has to fit a fixed
+  // circle, and a user's larger text setting would push it outside the notehead.
+  count: { color: '#FFFFFF', fontWeight: '800', textAlign: 'center', includeFontPadding: false },
 });
