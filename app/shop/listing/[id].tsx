@@ -101,6 +101,12 @@ export default function ListingScreen() {
     setLoading(false);
   }, [id, profile?.id]);
   useEffect(() => { load(); }, [load]);
+  // Opening the sheet re-reads the conditions: a post liked on another screen
+  // would otherwise still show unticked until the listing itself refocused.
+  useEffect(() => {
+    if (freeOpen && listing) checkFreeConditions(listing).then(setConds).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freeOpen]);
   // Coming back from a post (liking it for a free claim) or a profile → the
   // unlock checklist re-verifies itself.
   useFocusEffect(useCallback(() => {
@@ -138,7 +144,7 @@ export default function ListingScreen() {
   async function claimFree() {
     if (!listing || busyKind) return;
     setError(null);
-    if (conds && !conds.allMet) { setError(t('shop.freeCondUnmetErr')); return; }
+    if (!readyToClaim) { setError(t('shop.freeCondUnmetErr')); return; }
     setBusyKind('free');
     try {
       const o = await requestToBuy(listing, '', 'free', 0);
@@ -159,8 +165,13 @@ export default function ListingScreen() {
     setError(null);
     // Free claims aren't payments — no primer; instead the unlock conditions
     // must be met (client check for UX; the server re-verifies).
+    //
+    // Only GATED listings are checked. readyToClaim requires `conds` to have
+    // loaded, and an ungated listing reaches this path straight from the Free
+    // button — gating it on a fetch that may not have returned yet would refuse
+    // a download that has no conditions to fail.
     if (kind === 'free') {
-      if (conds && !conds.allMet) { setError(t('shop.freeCondUnmetErr')); return; }
+      if (freeHasConditions(listing) && !readyToClaim) { setError(t('shop.freeCondUnmetErr')); return; }
     } else {
       const acked = await AsyncStorage.getItem(SAFETY_ACK_KEY).catch(() => null);
       if (!acked) {
@@ -253,6 +264,21 @@ export default function ListingScreen() {
   }
 
   const sellerName = listing?.seller?.display_name || listing?.seller?.username || '';
+
+  // ── Live unlock progress ─────────────────────────────────────────────────
+  // The follow condition is answered from the FollowContext, not from the
+  // fetched `conds` snapshot. Two reasons, and the second is the point of the
+  // feature: following updates the context optimistically, so the row ticks
+  // the instant it is tapped instead of after a round trip — and UNfollowing
+  // un-ticks it just as fast. Progress here is a live reading, never a
+  // high-water mark; it only becomes permanent once the claim is delivered,
+  // which is an order, not a checkbox.
+  const needFollow = !!listing?.free_requires_follow;
+  const followOk = !needFollow || (!!listing && following.has(listing.user_id));
+  // Likes still come from the snapshot — whether a post is liked is not in any
+  // context here — so they refresh when the sheet opens and on screen focus.
+  const likesOk = (conds?.likes ?? []).every((l) => l.met);
+  const readyToClaim = !!conds && followOk && likesOk;
   const types = listing ? saleTypes(listing) : { sell: false, lease: false, free: false };
   const offerable = !!listing && types.lease && !types.sell && listing.status === 'active';
   // Lease-ONLY (nothing to buy, nothing free) makes the offer the only route
@@ -304,7 +330,12 @@ export default function ListingScreen() {
       return (
         <View key="free" style={styles.ctaBlock}>
           <TouchableOpacity
-            style={[styles.greenBtn, styles.freeBtn, conds && !conds.allMet && styles.btnLocked]}
+            // Always full green. It used to dim while conditions were unmet,
+            // which read as "disabled" on the one button that is always
+            // tappable — it opens the sheet where the conditions get done. The
+            // locked look belongs on the claim button inside, which really is
+            // blocked.
+            style={[styles.greenBtn, styles.freeBtn]}
             // Gated claims open a full-screen sheet rather than a checklist
             // wedged under the button: the conditions are a task list and
             // deserve the room to be read and acted on.
@@ -628,14 +659,14 @@ export default function ListingScreen() {
                 {!!listing?.free_requires_follow && (
                   <TouchableOpacity
                     style={styles.unlockRow}
-                    onPress={() => { if (!conds?.followMet && listing) toggleFollow(listing.user_id); }}
-                    activeOpacity={conds?.followMet ? 1 : 0.7}
+                    onPress={() => { if (!followOk && listing) toggleFollow(listing.user_id); }}
+                    activeOpacity={followOk ? 1 : 0.7}
                   >
-                    <Ionicons name={conds?.followMet ? 'checkmark-circle' : 'person-add-outline'} size={20} color={conds?.followMet ? colors.success : colors.textSecondary} />
-                    <Text style={[styles.unlockText, conds?.followMet && styles.unlockTextMet]}>
+                    <Ionicons name={followOk ? 'checkmark-circle' : 'person-add-outline'} size={20} color={followOk ? colors.success : colors.textSecondary} />
+                    <Text style={[styles.unlockText, followOk && styles.unlockTextMet]}>
                       {t('shop.unlockFollow', { name: sellerName || '—' })}
                     </Text>
-                    {!conds?.followMet && <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />}
+                    {!followOk && <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />}
                   </TouchableOpacity>
                 )}
                 {(conds?.likes ?? []).map((lk, i) => (
@@ -653,22 +684,22 @@ export default function ListingScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-              <Text style={[styles.unlockHint, conds?.allMet && { color: colors.success }]}>
-                {conds?.allMet ? t('shop.unlockReady') : t('shop.unlockUnmet')}
+              <Text style={[styles.unlockHint, readyToClaim && { color: colors.success }]}>
+                {readyToClaim ? t('shop.unlockReady') : t('shop.unlockUnmet')}
               </Text>
               {!!error && <Text style={styles.errorText}>{error}</Text>}
               {/* Locked until every box is ticked — the same condition
                   shop_order_precheck enforces server-side, so this never
                   promises something the backend will refuse. */}
               <TouchableOpacity
-                style={[styles.greenBtn, !conds?.allMet && styles.btnLocked]}
+                style={[styles.greenBtn, !readyToClaim && styles.btnLocked]}
                 onPress={claimFree}
-                disabled={!conds?.allMet || busyKind === 'free'}
+                disabled={!readyToClaim || busyKind === 'free'}
                 activeOpacity={0.85}
               >
                 {busyKind === 'free' ? <ActivityIndicator color="#fff" /> : (
                   <>
-                    <Ionicons name={conds?.allMet ? 'gift' : 'lock-closed'} size={18} color="#fff" />
+                    <Ionicons name={readyToClaim ? 'gift' : 'lock-closed'} size={18} color="#fff" />
                     <Text style={styles.greenBtnText}>{t('shop.freeClaimBtn')}</Text>
                   </>
                 )}
