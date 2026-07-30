@@ -115,9 +115,13 @@ development, so the daily dev client never spends quota. Takes effect on the nex
 
 **Still owner-side:**
 
-1. 🔴 **`SENTRY_AUTH_TOKEN` as an EAS secret**, or released stack traces are unreadable
-   minified frames. Scopes `project:releases` + `org:read`:
-   `npx eas-cli env:create --name SENTRY_AUTH_TOKEN --value <token> --visibility secret --environment production --scope project`
+1. ~~**`SENTRY_AUTH_TOKEN` as an EAS secret**~~ **Done 2026-07-30.** Verified via
+   `eas env:list --environment production`: present, secret visibility, value unreadable.
+   Source maps will upload on the next production build, so stack traces arrive with real
+   file names and line numbers instead of minified frames.
+   ⚠️ It is scoped to **production only**. The `preview` profile also carries the DSN, so a
+   preview build reports crashes but its traces stay minified. Add the same variable with
+   `--environment preview` if preview builds ever need readable traces.
 2. ~~**Notify existing users** of the policy change.~~ **N/A 2026-07-30** — owner confirms
    every account is a test account. The obligation returns the moment real users exist, so
    any *future* policy change needs the notification the 2026-07-29 correction in §0.1
