@@ -83,6 +83,46 @@ re-verified against the live project, not just marked off:
    `npx supabase functions list`: `revenuecat-webhook`, `parent-consent-verify`,
    `livekit-token` and `share-page` all read `verify_jwt: false`.
 
+**Crash and error reporting — CODE DONE 2026-07-29, DELIBERATELY INERT.**
+
+Wired but switched off. `@sentry/react-native` (~7.2.0, via `npx expo install`), the config
+plugin, `metro.config.js` for Debug IDs, `lib/monitoring.ts`, and `Sentry.wrap` on the root
+layout. It no-ops entirely until `EXPO_PUBLIC_SENTRY_DSN` is set — the module is behind a
+guarded `require()` (same pattern `_layout.tsx` uses for LiveKit), so without a DSN it is
+never even loaded and existing dev clients without the natives are unaffected.
+
+The webhook logging is live NOW and needed no account: `revenuecat-webhook` emitted **no
+logs at all** on failure, so a user could pay Apple, the ledger call could fail, and the 500
+would vanish. It now writes one `[money-failure]` JSON line per failure — credit grant,
+refund reversal, premium update, unhandled — with responses byte-identical. Deployed,
+`verify_jwt` still `false`.
+
+🔴 **Turning it on is a LEGAL-DOC change, not a config change.** The Privacy Policy currently
+promises the opposite, in **6 places in `privacy.json` plus 1 in `terms.json`**, and names
+the tool: *"We do not use Google Analytics, Firebase Analytics, Mixpanel, Amplitude,
+**Sentry**, the Meta SDK, or any other third-party analytics, advertising, or crash-reporting
+tool."* That text is live on `laybell.app/privacy.html` (verified). Setting a DSN without
+editing it first makes the published policy false — on an app with 13–17 year olds and real
+money. In order:
+
+1. Rewrite those 7 claims; add a diagnostics section (what is collected, retention, that it
+   is not advertising or profiling).
+2. Bump the effective date and notify existing users — the same obligation as the
+   2026-07-29 correction in §0.1.
+3. Declare the **Diagnostics** data type in the App Store Connect privacy nutrition label.
+4. Only then set `EXPO_PUBLIC_SENTRY_DSN`, and `SENTRY_AUTH_TOKEN` as an EAS secret so
+   source maps upload — without them a released stack trace is unreadable minified frames.
+
+Already hardened for that review, so the disclosure can be narrow: `sendDefaultPii: false`,
+`tracesSampleRate: 0`, **Session Replay deliberately NOT enabled** (Sentry's own guide
+suggests `mobileReplayIntegration`, which records the screen — unacceptable on an app with
+DMs and minors), no automatic user identity, and a scrubber that strips JWTs, emails, auth
+headers and Supabase query strings from every event and breadcrumb.
+
+⚠️ Sentry is a config plugin, so it needs a **native rebuild**. It is in the tree now
+specifically so the submission build contains it — retrofitting later costs another build,
+and means the first real users' crashes are invisible.
+
 **Owner, in flight:**
 
 4. **Apple organisation conversion.** D-U-N-S obtained; verification takes up to three weeks.

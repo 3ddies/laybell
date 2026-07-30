@@ -47,13 +47,41 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            { "scheme": "https", "host": "laybell.app", "pathPrefix": "/post" },
-            { "scheme": "https", "host": "laybell.app", "pathPrefix": "/reel" },
-            { "scheme": "https", "host": "laybell.app", "pathPrefix": "/profile" },
-            { "scheme": "https", "host": "laybell.app", "pathPrefix": "/playlist" },
-            { "scheme": "https", "host": "laybell.app", "pathPrefix": "/communities" },
-            { "scheme": "https", "host": "laybell.app", "pathPrefix": "/shop" },
-            { "scheme": "https", "host": "laybell.app", "pathPrefix": "/story" }
+            {
+              "scheme": "https",
+              "host": "laybell.app",
+              "pathPrefix": "/post"
+            },
+            {
+              "scheme": "https",
+              "host": "laybell.app",
+              "pathPrefix": "/reel"
+            },
+            {
+              "scheme": "https",
+              "host": "laybell.app",
+              "pathPrefix": "/profile"
+            },
+            {
+              "scheme": "https",
+              "host": "laybell.app",
+              "pathPrefix": "/playlist"
+            },
+            {
+              "scheme": "https",
+              "host": "laybell.app",
+              "pathPrefix": "/communities"
+            },
+            {
+              "scheme": "https",
+              "host": "laybell.app",
+              "pathPrefix": "/shop"
+            },
+            {
+              "scheme": "https",
+              "host": "laybell.app",
+              "pathPrefix": "/story"
+            }
           ],
           "category": [
             "BROWSABLE",
@@ -158,7 +186,8 @@
             ]
           }
         }
-      ]
+      ],
+      "@sentry/react-native"
     ],
     "extra": {
       "router": {},

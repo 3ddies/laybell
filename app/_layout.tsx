@@ -6,6 +6,7 @@ import { View, Platform, Alert } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../lib/supabase';
+import { initMonitoring, wrapRoot } from '../lib/monitoring';
 import { ensureProfileForSession } from '../lib/socialAuth';
 import { sweepAbandonedStreamUploads } from '../lib/streamUpload';
 import { clearAgeCache } from '../lib/minors';
@@ -251,7 +252,12 @@ function AppContent() {
   );
 }
 
-export default function RootLayout() {
+// Started at module scope, before React mounts, so an error thrown during the
+// first render is still captured. No-ops until EXPO_PUBLIC_SENTRY_DSN is set —
+// see lib/monitoring.
+initMonitoring();
+
+function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [initialized, setInitialized] = useState(false);
   const segments = useSegments();
@@ -451,3 +457,8 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+// Captures React render errors with a component stack, which a plain global
+// handler cannot produce. Passes RootLayout straight through when monitoring
+// is disabled, so the tree is byte-identical without a DSN.
+export default wrapRoot(RootLayout);

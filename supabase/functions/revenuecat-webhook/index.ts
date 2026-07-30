@@ -44,6 +44,17 @@ const SUBSCRIPTION_EVENTS = new Set([
   'UNCANCELLATION', 'BILLING_ISSUE', 'SUBSCRIPTION_PAUSED', 'EXPIRATION', 'TRANSFER',
 ]);
 
+// Structured failure logging. Supabase captures a function's stdout/stderr, so
+// a console.error here is the ONLY trace a money failure leaves — without it a
+// 500 returns to RevenueCat and disappears. One JSON line per failure, prefixed
+// so it can be grepped or alerted on in the dashboard logs.
+//
+// Deliberately no user email, no auth header, no raw event body: this webhook
+// runs service-role and its logs are not a place to accumulate personal data.
+function logFailure(stage: string, detail: Record<string, unknown>) {
+  console.error(`[money-failure] ${JSON.stringify({ stage, ...detail })}`);
+}
+
 serve(async (req) => {
   try {
     // Shared-secret auth: RevenueCat sends the Authorization header we configured.
@@ -92,7 +103,13 @@ serve(async (req) => {
         p_memo: `Credits top-up (${productId})`,
         p_metadata: { product_id: productId, store: event.store ?? null },
       });
-      if (error) return json({ status: 'error', message: error.message }, 500);
+      if (error) {
+        // The user has ALREADY paid Apple at this point. A 500 makes RevenueCat
+        // retry, which is the right recovery, but if it keeps failing they are
+        // out of pocket with nothing to show — so this must leave a trace.
+        logFailure('credit_grant', { user: appUserId, product: productId, cents, error: error.message });
+        return json({ status: 'error', message: error.message }, 500);
+      }
       return json({ status: 'ok', type, credited_cents: cents, transaction: txId });
     }
 
@@ -118,6 +135,7 @@ serve(async (req) => {
       // ledger refuses to drive an account negative. Surface it rather than
       // swallowing: that is a real support case, not a glitch.
       if (error) {
+        logFailure('refund_reversal', { user: appUserId, product: productId, cents, error: error.message });
         return json({ status: 'refund_failed', message: error.message, user: appUserId }, 200);
       }
       return json({ status: 'ok', type, reversed_cents: cents, transaction: txId });
@@ -135,7 +153,10 @@ serve(async (req) => {
         .from('profiles')
         .update({ premium_until: premiumUntil })
         .eq('id', appUserId);
-      if (error) return json({ status: 'error', message: error.message }, 500);
+      if (error) {
+        logFailure('premium_update', { user: appUserId, type, premium_until: premiumUntil, error: error.message });
+        return json({ status: 'error', message: error.message }, 500);
+      }
       return json({ status: 'ok', type, premium_until: premiumUntil });
     }
 
@@ -143,6 +164,7 @@ serve(async (req) => {
     // Returning 2xx matters: a non-2xx makes RevenueCat retry forever.
     return json({ status: 'ignored', type });
   } catch (e) {
+    logFailure('unhandled', { error: String(e) });
     return json({ status: 'error', message: String(e) }, 500);
   }
 });
