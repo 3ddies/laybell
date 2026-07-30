@@ -1769,7 +1769,11 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/messages')}>
-            <Ionicons name="chatbubbles-outline" size={28} color={colors.text} />
+            {/* 31, deliberately larger than the bell's matchIconSize of 28 —
+                the two are NOT height-matched any more, by choice. Raising this
+                without raising matchIconSize is what creates that difference,
+                so don't "fix" one to the other without asking. */}
+            <Ionicons name="chatbubbles-outline" size={31} color={colors.text} />
             {unreadMessages > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
