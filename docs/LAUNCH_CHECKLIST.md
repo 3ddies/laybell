@@ -118,8 +118,10 @@ development, so the daily dev client never spends quota. Takes effect on the nex
 1. 🔴 **`SENTRY_AUTH_TOKEN` as an EAS secret**, or released stack traces are unreadable
    minified frames. Scopes `project:releases` + `org:read`:
    `npx eas-cli env:create --name SENTRY_AUTH_TOKEN --value <token> --visibility secret --environment production --scope project`
-2. **Notify existing users** of the policy change — the same obligation as the 2026-07-29
-   correction in §0.1.
+2. ~~**Notify existing users** of the policy change.~~ **N/A 2026-07-30** — owner confirms
+   every account is a test account. The obligation returns the moment real users exist, so
+   any *future* policy change needs the notification the 2026-07-29 correction in §0.1
+   describes.
 3. Declare the **Diagnostics** data type in the App Store Connect privacy nutrition label:
    Crash Data + Other Diagnostic Data, **not** linked to identity, **not** used for
    tracking, purpose App Functionality. Those answers match the shipped configuration.
