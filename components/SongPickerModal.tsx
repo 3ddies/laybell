@@ -27,8 +27,8 @@ export type PickedSong = {
 // post-music player.
 const PREVIEW_HOST = 'song-picker';
 
-type Tab = 'trending' | 'liked' | 'saved';
-const TABS: Tab[] = ['trending', 'liked', 'saved'];
+type Tab = 'all' | 'liked' | 'saved';
+const TABS: Tab[] = ['all', 'liked', 'saved'];
 
 // The embed used for Liked/Saved. Mirrors the shape searchSounds() returns, so
 // both feed the same row renderer and the same pick().
@@ -46,7 +46,7 @@ const MINE_EMBED_LEGACY =
   'id, caption, cover_url, media_url, user_id, stream_count, type, archived_at, profiles!posts_user_id_fkey(id, username, display_name, avatar_url)';
 
 // Pick another creator's track to use on your image/video/story. Searches public
-// audio (music/podcast/audiobook) by song name or artist; defaults to trending.
+// audio (music/podcast/audiobook) by song name or artist; defaults to the most-streamed.
 // Tap a row's cover to PREVIEW the track; tap the row (or ＋) to select it.
 export default function SongPickerModal({ visible, onClose, onSelect }: {
   visible: boolean;
@@ -61,7 +61,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('trending');
+  const [tab, setTab] = useState<Tab>('all');
 
   // Per-tab result cache for this opening of the sheet. Revisiting a tab paints
   // from here in the same commit as the tab highlight, so there is no skeleton
@@ -99,7 +99,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
     if (visible) return;
     stopPreview();
     setQuery('');
-    setTab('trending');
+    setTab('all');
     setResults([]);
     setLoading(false);
     cache.current = {};
@@ -108,7 +108,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
   }, [visible]);
 
   // ONE effect owns every load. It used to be two, plus imperative calls in
-  // switchTab, and that is what made Trending flash twice: switchTab fetched
+  // switchTab, and that is what made the All tab flash twice: switchTab fetched
   // immediately AND changing `tab` re-ran the effect, so two identical searches
   // raced, each toggling the skeleton on and off.
   //
@@ -126,7 +126,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
 
     // Liked / Saved. Cached means the switch is a pure render — the list is on
     // screen in the same commit as the tab highlight, with no skeleton between.
-    if (tab !== 'trending') {
+    if (tab !== 'all') {
       if (cached) { setLoading(false); setResults(filterLocal(cached, term)); return; }
       setLoading(true);
       loadMine(tab).then(({ rows, droppedCount }) => {
@@ -139,21 +139,21 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
       return;
     }
 
-    // Trending with an empty box: the default listing, also cached, so coming
+    // All with an empty box: the default listing, also cached, so coming
     // back from Liked is instant instead of re-fetching what it already had.
     if (!term) {
       if (cached) { setLoading(false); setResults(cached); return; }
       setLoading(true);
       runSearch('').then((rows) => {
         if (!fresh()) return;
-        cache.current.trending = rows;
+        cache.current.all = rows;
         setResults(rows);
         setLoading(false);
       });
       return;
     }
 
-    // Trending while typing. Deliberately does NOT raise `loading`: swapping the
+    // All while typing. Deliberately does NOT raise `loading`: swapping the
     // list for a skeleton on every keystroke is the stutter this was reported
     // for. The current results stay put and are replaced once the answer lands.
     const timer = setTimeout(() => {
@@ -314,7 +314,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
             <TouchableOpacity onPress={close} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.close')}><Ionicons name="close" size={22} color={colors.textSecondary} /></TouchableOpacity>
           </View>
 
-          {/* Source picker. Trending searches the whole public catalogue;
+          {/* Source picker. All searches the whole public catalogue;
               Liked and Saved read your own library. */}
           <View style={styles.tabs}>
             {TABS.map((tb) => {
@@ -370,7 +370,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
                 {/* A tab that is empty ONLY because every song in it is
                     reuse-restricted says so, rather than claiming you have no
                     likes — the difference is the user's to know about. */}
-                {tab === 'trending' || query.trim()
+                {tab === 'all' || query.trim()
                   ? t('songPicker.empty')
                   : (dropped.current[tab] ?? 0) > 0
                     ? t('songPicker.noneReusable')
