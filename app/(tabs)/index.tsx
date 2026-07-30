@@ -1760,7 +1760,7 @@ export default function HomeScreen() {
                 screen. The messages button beside it keeps its badge, since a
                 count is the useful thing there. */}
             <LaybellBell
-              size={34}
+              bodySize={28}
               color={colors.text}
               unreadColor={colors.error}
               count={unreadCount}
