@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIn
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import SwipeBackPager from '../components/SwipeBackPager';
@@ -28,6 +29,7 @@ export default function CreditsScreen() {
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
 
   const [packs, setPacks] = useState<Pkg[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,7 +75,11 @@ export default function CreditsScreen() {
 
   return (
     <SwipeBackPager>
-      <View style={styles.screen}>
+      {/* This screen is pushed as a transparentModal (app/_layout.tsx), so
+          nothing above it reserves the status bar — the header has to clear the
+          notch itself. insets.top + 8 is what every sibling uses (wallet, cart,
+          shop, listing), and this one had simply never been given it. */}
+      <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.back()}
