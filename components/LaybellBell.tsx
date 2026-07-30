@@ -35,6 +35,23 @@ const BELL = require('../assets/bell-icon.png');
 const SIBLING_INK_H = 449 / 512;
 const SIBLING_INK_DY = -22 / 512;
 
+// Final correction, and the one number here that is NOT derivable from the font.
+//
+// The tables give the glyph's ink box exactly (449 units, confirmed against all
+// 120 outline points, not just the header bbox). What they cannot say is where
+// iOS puts the baseline inside the text box, because that depends on how the
+// platform distributes the font's 46-unit lineGap — above the ascent, below the
+// descent, or split. Those three choices differ by up to 2.5pt at size 28.
+//
+// With the top confirmed aligned on device, this stretches the bell DOWNWARD
+// only: the box grows by this much and is shifted down by half of it, so the
+// dome apex stays exactly where it is and the base descends. Expressed per
+// matchIconSize so it scales with the icon.
+//
+// If the base ever overshoots or undershoots, this is the single number to
+// change — nothing else in this file needs touching.
+const BASE_EXTEND = 1.0 / 28;
+
 // The note's stem and flag stick out ABOVE the dome, so the image is taller than
 // the bell. These bound the BODY only — apex of the dome to the base.
 //
@@ -150,8 +167,11 @@ export default function LaybellBell({
   // thing is nudged up by the same amount that glyph's ink sits above its own
   // text box centre. Both come from the font, so the two line up top and bottom
   // in a row that centres its children.
-  const bodySize = matchIconSize * SIBLING_INK_H;
-  const nudgeY = matchIconSize * SIBLING_INK_DY;
+  // Grow by `extend` and shift down by half of it: the top lands exactly where
+  // it did, the base descends by `extend`. See BASE_EXTEND.
+  const extend = matchIconSize * BASE_EXTEND;
+  const bodySize = matchIconSize * SIBLING_INK_H + extend;
+  const nudgeY = matchIconSize * SIBLING_INK_DY + extend / 2;
 
   const imgSize = bodySize / BODY_H;
   const imgTop = bodySize / 2 - BODY_MID * imgSize;
