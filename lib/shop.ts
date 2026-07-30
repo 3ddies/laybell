@@ -9,6 +9,7 @@
 //   'shop-files' (private) <seller_id>/<listing_id>/<filename>
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { reportError, reportIssue } from './monitoring';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { logAccess } from './accessLog';
@@ -671,7 +672,13 @@ export async function fetchDeliveredShopEarningsCents(): Promise<number> {
   try {
     const { data, error } = await supabase.rpc('delivered_earnings');
     if (!error && data?.[0]) return Number(data[0].total_cents ?? 0);
-  } catch {}
+    // Falling through returns 0, which the wallet renders as "you have earned
+    // nothing" — indistinguishable from a seller who genuinely has no sales.
+    // That is the exact shape of failure worth reporting.
+    if (error) reportIssue('shop.deliveredEarnings failed', { error: error.message });
+  } catch (e) {
+    reportError(e, { stage: 'shop.deliveredEarnings' });
+  }
   const sales = await fetchMySales().catch(() => [] as ShopOrder[]);
   return sales
     .filter((o) => o.status === 'delivered')

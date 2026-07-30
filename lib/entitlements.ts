@@ -1,4 +1,5 @@
 import { offlinePinLimit, setBadgePremiumGetter, type Tier } from './badges';
+import { reportError } from './monitoring';
 
 // Single source of truth for the user's PREMIUM (paid) status. Set from
 // PremiumContext (which reads RevenueCat) and readable SYNCHRONOUSLY anywhere —
@@ -17,7 +18,10 @@ export function isPremium(): boolean { return _premium; }
 export function setPremium(v: boolean): void {
   if (v === _premium) return;
   _premium = v;
-  listeners.forEach((l) => { try { l(); } catch {} });
+  // One broken listener must not stop the others from learning that Premium
+  // changed — but a listener that throws here is a piece of UI that silently
+  // failed to reflect a paid entitlement, which is worth knowing about.
+  listeners.forEach((l) => { try { l(); } catch (e) { reportError(e, { stage: 'entitlements.notify', premium: v }); } });
 }
 
 export function subscribePremium(fn: () => void): () => void {

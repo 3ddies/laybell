@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { reportError } from './monitoring';
 import Constants from 'expo-constants';
 import { setPremium } from './entitlements';
 
@@ -50,7 +51,11 @@ export async function initPurchases(userId: string | null): Promise<void> {
       Purchases.configure({ apiKey: key, appUserID: userId ?? undefined });
       configured = true;
     } else if (userId) {
-      try { await Purchases.logIn(userId); } catch {}
+      // A failed logIn is the dangerous one: RevenueCat keeps attributing to
+      // the PREVIOUS app user id, so a purchase can be credited to the wrong
+      // account. Swallowed on purpose (it must not block startup) but no longer
+      // swallowed silently.
+      try { await Purchases.logIn(userId); } catch (e) { reportError(e, { stage: 'purchases.logIn', userId }); }
     }
     if (!listenerAttached) {
       Purchases.addCustomerInfoUpdateListener((info: any) => setPremium(activeFromInfo(info)));
@@ -58,7 +63,12 @@ export async function initPurchases(userId: string | null): Promise<void> {
     }
     const info = await Purchases.getCustomerInfo();
     setPremium(activeFromInfo(info));
-  } catch {}
+  } catch (e) {
+    // Purchases are now impossible for this session and the user's Premium
+    // state may be wrong, with nothing on screen to say so. Still non-fatal —
+    // the app must run without billing — so it stays caught, but it reports.
+    reportError(e, { stage: 'purchases.init', hasUserId: !!userId });
+  }
 }
 
 export async function getPackages(): Promise<Pkg[]> {
@@ -87,6 +97,10 @@ export async function purchase(pkg: Pkg): Promise<'ok' | 'cancelled' | 'error'> 
     return 'ok';
   } catch (e: any) {
     if (e?.userCancelled) return 'cancelled';
+    // A real failure, not a change of mind. The UI shows a generic error and
+    // the reason is otherwise lost — including the cases where the store has
+    // already taken the money.
+    reportError(e, { stage: 'purchases.subscribe', product: pkg.identifier, code: e?.code });
     return 'error';
   }
 }
@@ -164,6 +178,11 @@ export async function purchaseCredits(pkg: Pkg): Promise<CreditPurchaseResult> {
     return 'ok';
   } catch (e: any) {
     if (e?.userCancelled) return 'cancelled';
+    // The most expensive failure in the app. Credits fund tips, shop and
+    // offers, and the store may have charged before this threw — pair this with
+    // the webhook's [money-failure] logs to tell "never charged" apart from
+    // "charged but never credited".
+    reportError(e, { stage: 'purchases.credits', product: pkg.identifier, code: e?.code });
     return 'error';
   }
 }
@@ -186,6 +205,8 @@ export function purchasesConfigured(): boolean { return !!apiKey(); }
 export async function logOutPurchases(): Promise<void> {
   const Purchases = await load();
   if (!Purchases || !configured) return;
-  try { await Purchases.logOut(); } catch {}
+  // A failed logOut leaves the previous user's entitlements attached, so the
+  // NEXT person to sign in on this device can inherit their Premium.
+  try { await Purchases.logOut(); } catch (e) { reportError(e, { stage: 'purchases.logOut' }); }
   setPremium(false);
 }
