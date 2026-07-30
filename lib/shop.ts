@@ -579,6 +579,14 @@ export type FreeConditionState = {
   hasConditions: boolean;
 };
 
+/** Whether a free claim is gated at all. Derivable from the listing alone, with
+    no network — checkFreeConditions() below needs a round trip because it
+    answers whether the conditions are MET, which is a different question. Use
+    this where the UI has to render immediately, e.g. a button's caption. */
+export function freeHasConditions(l: ShopListing): boolean {
+  return !!l.free_requires_follow || (l.free_like_post_ids?.length ?? 0) > 0;
+}
+
 /** Client-side mirror of the server's free-claim gate — powers the checklist
     UI. The shop_order_precheck trigger re-verifies everything on claim. */
 export async function checkFreeConditions(listing: ShopListing): Promise<FreeConditionState> {

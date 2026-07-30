@@ -23,7 +23,7 @@ import { reportListing } from '../../../lib/postActions';
 import {
   checkFreeConditions, fetchListing, formatPrice, getDeliverableUrl, hasDeliveredSales,
   logDeliverableDownload,
-  legacyKindOf, listingPriceLabel, myOrdersForListing, priceForKind, refundAndRemoveListing,
+  freeHasConditions, legacyKindOf, listingPriceLabel, myOrdersForListing, priceForKind, refundAndRemoveListing,
   requestToBuy, saleTypes, setOrderStatus, updateListing,
   type FreeConditionState, type SaleKind, type ShopListing, type ShopOrder,
 } from '../../../lib/shop';
@@ -250,42 +250,63 @@ export default function ListingScreen() {
         </TouchableOpacity>
       );
     }
+    // Each button carries a one-line caption saying what that deal actually
+    // grants. It matters most on a listing offering several at once, where
+    // "Buy $40 / Lease $15 / Free" alone doesn't say what separates them.
+    //
+    // A GATED free listing deliberately gets no caption: the unlock checklist
+    // already sits under this button and says exactly what is required, so a
+    // caption would only repeat it in vaguer words. Only the ungated case needs
+    // explaining, because otherwise nothing tells you it is simply free.
+    //
+    // That is read from the LISTING rather than from `conds`, which arrives over
+    // the network and is null on first paint — keying off it would flash
+    // "Anyone can download" onto a gated listing before correcting itself.
+    const caption =
+      kind === 'sell' ? t('shop.cta.sellDesc')
+        : kind === 'lease' ? t('shop.cta.leaseDesc')
+          : freeHasConditions(listing) ? null : t('shop.cta.freeDesc');
+
     if (kind === 'free') {
       return (
-        <TouchableOpacity
-          key="free"
-          style={[styles.greenBtn, styles.freeBtn, conds && !conds.allMet && styles.btnLocked]}
-          onPress={() => buy('free')}
-          disabled={!!busyKind}
-          activeOpacity={0.85}
-        >
-          {busyKind === 'free' ? <ActivityIndicator color="#fff" /> : (
-            <View style={styles.freeBtnInner}>
-              <Text style={styles.greenBtnText}>{t('shop.freeWord')}</Text>
-              <Text style={styles.claimNowText}>{t('shop.claimNow')}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View key="free" style={styles.ctaBlock}>
+          <TouchableOpacity
+            style={[styles.greenBtn, styles.freeBtn, conds && !conds.allMet && styles.btnLocked]}
+            onPress={() => buy('free')}
+            disabled={!!busyKind}
+            activeOpacity={0.85}
+          >
+            {busyKind === 'free' ? <ActivityIndicator color="#fff" /> : (
+              <View style={styles.freeBtnInner}>
+                <Text style={styles.greenBtnText}>{t('shop.freeWord')}</Text>
+                <Text style={styles.claimNowText}>{t('shop.claimNow')}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          {!!caption && <Text style={styles.ctaDesc}>{caption}</Text>}
+        </View>
       );
     }
     const price = formatPrice(priceForKind(listing, kind), listing.currency);
     return (
-      <TouchableOpacity
-        key={kind}
-        style={[styles.greenBtn, kind === 'lease' && styles.leaseBtn]}
-        onPress={() => buy(kind)}
-        disabled={!!busyKind}
-        activeOpacity={0.85}
-      >
-        {busyKind === kind ? <ActivityIndicator color="#fff" /> : (
-          <>
-            <Ionicons name={kind === 'sell' ? 'flash' : 'repeat'} size={18} color="#fff" />
-            <Text style={styles.greenBtnText}>
-              {kind === 'sell' ? t('shop.buyFor', { price }) : t('shop.leaseFor', { price })}
-            </Text>
-          </>
-        )}
-      </TouchableOpacity>
+      <View key={kind} style={styles.ctaBlock}>
+        <TouchableOpacity
+          style={[styles.greenBtn, kind === 'lease' && styles.leaseBtn]}
+          onPress={() => buy(kind)}
+          disabled={!!busyKind}
+          activeOpacity={0.85}
+        >
+          {busyKind === kind ? <ActivityIndicator color="#fff" /> : (
+            <>
+              <Ionicons name={kind === 'sell' ? 'flash' : 'repeat'} size={18} color="#fff" />
+              <Text style={styles.greenBtnText}>
+                {kind === 'sell' ? t('shop.buyFor', { price }) : t('shop.leaseFor', { price })}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+        {!!caption && <Text style={styles.ctaDesc}>{caption}</Text>}
+      </View>
     );
   }
 
@@ -694,6 +715,13 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   protectedRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingHorizontal: 4 },
   protectedText: { flex: 1, color: c.textTertiary, fontSize: 11.5, lineHeight: 16 },
   buyerActions: { gap: 8 },
+  // A CTA and its caption. Small gap so the caption reads as belonging to the
+  // button above it rather than floating between two.
+  ctaBlock: { gap: 5 },
+  ctaDesc: {
+    color: c.textTertiary, fontSize: 11.5, lineHeight: 15,
+    textAlign: 'center', paddingHorizontal: 8,
+  },
   greenBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: c.success, borderRadius: RADIUS.full, paddingVertical: 13,
