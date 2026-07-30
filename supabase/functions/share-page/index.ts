@@ -105,12 +105,14 @@ serve(async (req: Request) => {
         const isAudio = AUDIO_TYPES.includes((p as any).type);
         title = (p as any).caption?.trim() || `${who} on Laybell`;
         musician = who;
-        // The line under the headline, matched to whichever app the card is
-        // impersonating: Spotify puts the ARTIST under a song title, TikTok puts
-        // a call to action under a video. (The domain line below it is Apple's
-        // and can't be replaced — TN3156: Messages shows "the page title,
-        // domain, and small icon" — which is why the subdomain is `open.`)
-        desc = isAudio ? who : 'Watch on Laybell';
+        // The line between the title and the domain: WHO POSTED IT, on every
+        // post type. This is the line Spotify uses for the artist ("Migos ·
+        // Rap Kings Vol 4 · Song · 2023") and it's the whole reason their card
+        // reads like a record rather than a link.
+        //
+        // It briefly said "Watch on Laybell" for video. Apple only renders one
+        // line here, so that spent it on branding the domain already provides.
+        desc = who;
         // Songs lead with COVER ART (album square); video/photo lead with the
         // frame. Apple sizes the card from the image's own aspect ratio, so a
         // square cover gives Spotify's square card and a 16:9 still gives
@@ -129,6 +131,23 @@ serve(async (req: Request) => {
               || LOGO);
         ogType = isAudio ? 'music.song' : (p as any).type === 'video' ? 'video.other' : 'article';
         openPath = `post/${(p as any).id}`;
+      }
+    } else if (t === 'community' && id) {
+      const { data: c } = await supabase
+        .from('communities')
+        .select('id, name, description, hashtag, banner_url, member_count')
+        .eq('id', id)
+        .single();
+      if (c) {
+        const cc: any = c;
+        title = cc.name || 'Community on Laybell';
+        // The community's #hashtag is its handle, so it takes the same slot a
+        // post's author does — the line above the domain always identifies WHO
+        // or WHAT you're being sent to.
+        desc = cc.hashtag ? `#${cc.hashtag}` : (cc.description?.trim() || 'Community on Laybell');
+        image = cc.banner_url || LOGO;
+        ogType = 'website';
+        openPath = `communities/${cc.id}`;
       }
     } else if (t === 'profile' && id) {
       const { data: u } = await supabase
@@ -155,32 +174,6 @@ serve(async (req: Request) => {
     `${PUBLIC_BASE}?${new URLSearchParams({ t, ...(id ? { id } : {}), ...extra })}`;
   const canonicalUrl = q();
 
-  // ActivityStreams representation of the same item. Messages only renders
-  // og:description for "user posts on social network services", and per TN3156
-  // it recognises one by TWO signals together: a twitter:card of summary /
-  // summary_large_image (we send both) AND a <link> of type
-  // application/activity+json. Without this the description line is dropped and
-  // the card is title + domain only — which is why the CTA needs it.
-  //
-  // Served for real rather than pointed at a dead URL: a Laybell post genuinely
-  // IS a user post on a social network, so the document is honest and cheap.
-  const activityUrl = q({ f: 'activity' });
-  if (url.searchParams.get('f') === 'activity') {
-    return new Response(JSON.stringify({
-      '@context': 'https://www.w3.org/ns/activitystreams',
-      type: 'Note',
-      id: activityUrl,
-      url: target,
-      name: title,
-      content: title,
-      attributedTo: musician || 'Laybell',
-    }), {
-      headers: {
-        'content-type': 'application/activity+json; charset=utf-8',
-        'cache-control': 'public, max-age=300, s-maxage=600',
-      },
-    });
-  }
 
   // ONE response for everybody. There used to be a user-agent split here —
   // browsers got a 302 to open.html, "crawlers" got the OG document — which was
@@ -214,19 +207,24 @@ serve(async (req: Request) => {
 <meta property="og:image" content="${esc(image)}">
 <meta property="og:image:alt" content="${esc(title)}">
 <meta property="og:url" content="${esc(canonicalUrl)}">${ogType === 'music.song' ? `
-<!-- Square cover: declaring the dimensions lets Apple lay the card out BEFORE
-     the image finishes downloading, so the song card doesn't reflow — the
-     detail that makes Spotify's link feel instant in the bubble. -->
-<meta property="og:image:width" content="640">
-<meta property="og:image:height" content="640">
 <meta property="music:musician" content="${esc(musician)}">` : ''}
-<meta name="twitter:card" content="${ogType === 'music.song' ? 'summary' : 'summary_large_image'}">
+<!-- Deliberately NO twitter:card, and no og:image:width/height. This head is
+     modelled on a real Spotify track page, fetched and diffed against ours
+     because Spotify's card is the one being matched. Spotify sends og:title,
+     og:description, og:type=music.song, og:site_name, og:image and the twitter
+     title/description/image — and NO twitter:card element whatsoever. Its card
+     still renders square, which confirms the shape comes from the image's own
+     aspect ratio, not from a card-type flag.
+     twitter:card=summary was in here for exactly that shape, and is the likely
+     reason the description line vanished: it selects a compact layout that
+     drops it.
+     The dimensions were hardcoded 640x640 to match Spotify's covers. Measured
+     against the real library, ours are 542x543, 777x577, 1176x1176 — mostly
+     NOT square and never 640, so the tag was telling Apple the wrong aspect and
+     inviting a reflow or a bad crop. Omitted, so Apple measures for itself. -->
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(desc)}">
-<meta name="twitter:image" content="${esc(image)}">${openPath ? `
-<!-- Required alongside twitter:card for Messages to render og:description at
-     all — see the activityUrl note above. -->
-<link rel="alternate" type="application/activity+json" href="${esc(activityUrl)}">` : ''}
+<meta name="twitter:image" content="${esc(image)}">
 <meta http-equiv="refresh" content="0;url=${esc(target)}">
 <style>body{margin:0;background:#0d0d0f;color:#f5f4f2;font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh}a{color:#F26522}</style>
 </head><body>

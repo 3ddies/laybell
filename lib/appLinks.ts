@@ -90,3 +90,12 @@ export function profileRichShareUrl(userId: string): string {
     ? `${SHARE_PAGE_CUSTOM_BASE}?t=profile&id=${encodeURIComponent(userId)}`
     : profileShareUrl(userId);
 }
+
+// A community's share link. Unfurls a card with the community's name, its
+// #hashtag and its banner; tapping deep-links to /communities/<id>, or forwards
+// to the store for anyone without the app.
+export function communityShareUrl(communityId: string): string {
+  return SHARE_PAGE_CUSTOM_BASE
+    ? `${SHARE_PAGE_CUSTOM_BASE}?t=community&id=${encodeURIComponent(communityId)}`
+    : `${STATIC_WEB_ORIGIN}/open.html?p=${encodeURIComponent('communities/' + communityId)}`;
+}

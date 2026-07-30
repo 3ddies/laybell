@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, Pressable, Image, Alert,
-  Animated, Dimensions, Easing,
+  Animated, Dimensions, Easing, Share, Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { reportCommunity } from '../../lib/postActions';
+import { communityShareUrl } from '../../lib/appLinks';
 import { LinearGradient } from 'expo-linear-gradient';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import ExploreGrid from '../../components/ExploreGrid';
@@ -308,6 +309,24 @@ export default function CommunityDetailScreen() {
           <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
             <Pressable style={styles.menuSheet} onPress={() => {}}>
               <View style={styles.handle} />
+              {/* Share sits first, and is the one row EVERYONE gets — members,
+                  managers, owners and passers-by alike. Sends the link alone
+                  (no accompanying text) so the recipient gets just the unfurled
+                  card, matching how posts and songs share; `url` is the
+                  iOS-only field and Android reads `message`. */}
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setMenuOpen(false);
+                  const link = communityShareUrl(id);
+                  setTimeout(() => {
+                    Share.share(Platform.OS === 'ios' ? { url: link } : { message: link }).catch(() => {});
+                  }, 280);
+                }}
+              >
+                <Ionicons name="share-social-outline" size={20} color={colors.text} />
+                <Text style={styles.menuText}>{t('postOptions.share')}</Text>
+              </TouchableOpacity>
               {role === 'owner' && (
                 <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push(`/communities/edit?id=${id}`); }}>
                   <Ionicons name="create-outline" size={20} color={colors.text} />
