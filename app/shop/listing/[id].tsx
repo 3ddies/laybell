@@ -79,6 +79,10 @@ export default function ListingScreen() {
   // The gated free-claim sheet. Owned by this screen rather than being its own
   // route — see the note on the Free button.
   const [freeOpen, setFreeOpen] = useState(false);
+  // Set when a condition row sends the user away, so returning re-opens the
+  // sheet instead of stranding them on the listing. A ref, not state: it must
+  // survive the navigation without causing a render of its own.
+  const reopenFreeRef = useRef(false);
 
   const isOwner = !!listing && listing.user_id === profile?.id;
 
@@ -108,11 +112,24 @@ export default function ListingScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [freeOpen]);
   // Coming back from a post (liking it for a free claim) or a profile → the
-  // unlock checklist re-verifies itself.
+  // unlock checklist re-verifies itself, and the sheet REOPENS if that is where
+  // the user came from. Leaving them on the listing would make finishing a
+  // three-post checklist a matter of re-opening the sheet after every single
+  // one, when the sheet is the whole reason they left.
+  //
+  // The reopen is deferred rather than immediate: SwipeBackPager runs a ~280ms
+  // return animation, and presenting a modal into the middle of that is exactly
+  // the kind of two-animations-at-once problem this screen has already had.
   useFocusEffect(useCallback(() => {
     if (listing && saleTypes(listing).free && !isOwner) {
       checkFreeConditions(listing).then(setConds).catch(() => {});
     }
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (reopenFreeRef.current) {
+      reopenFreeRef.current = false;
+      timer = setTimeout(() => setFreeOpen(true), 320);
+    }
+    return () => { if (timer) clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listing?.id, following]));
   // Stop the preview on unmount ONLY. stopSong's identity changes on every
@@ -673,7 +690,10 @@ export default function ListingScreen() {
                   <TouchableOpacity
                     key={lk.postId}
                     style={styles.unlockRow}
-                    onPress={() => { setFreeOpen(false); router.push(`/post/${lk.postId}`); }}
+                    // Closing first is required — a route pushed while a
+                    // pageSheet is up presents behind it on iOS. The ref is what
+                    // brings the user back here afterwards.
+                    onPress={() => { reopenFreeRef.current = true; setFreeOpen(false); router.push(`/post/${lk.postId}`); }}
                     activeOpacity={0.7}
                   >
                     <Ionicons name={lk.met ? 'checkmark-circle' : 'heart-outline'} size={20} color={lk.met ? colors.success : colors.textSecondary} />
