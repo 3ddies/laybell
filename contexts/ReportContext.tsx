@@ -23,10 +23,25 @@ import { submitReport, submitUserReport, submitConversationReport, submitListing
 // the grab handle drags continuously (the sheet tracks the finger, then closes on
 // release past a threshold or springs back). No per-step animation (instant swaps).
 //
+// The DISMISS GESTURE is deliberately identical to the 3-dot sheet
+// (contexts/PostOptionsContext.tsx) — same grab strip, same activation, same
+// rubber band, same release thresholds, same spring, same backdrop lift. They are
+// the same gesture on the same kind of surface, and they used to disagree on every
+// one of those: this sheet wanted a 90px pull off a strip half the size, and did
+// nothing at all when tugged upward. That sheet's numbers are the reference
+// because they were tuned against real thumbs; see the note on its release
+// handler. Keep the two in step.
+//
 // Stored in *_reports.reason: a quick reason is its code, optionally suffixed
 // with the elaboration ("impersonation: they cloned my voice"); "Something else"
 // stores the raw typed text. Codes map to the Community Guidelines categories.
 const { height: SCREEN_H } = Dimensions.get('window');
+// Both from PostOptionsContext, and meaningful only as a matched pair: the
+// distance the backdrop fades over, and the pull/flick that commits a dismiss.
+// vy there is px/MS (PanResponder); PanGestureHandler reports px/S, hence ×1000.
+const DISMISS_DIST = 300;
+const DISMISS_DY = 48;
+const DISMISS_VY = 0.85 * 1000;
 
 const REASON_CODES = [
   'spam', 'harassment', 'hate', 'nudity', 'violence',
@@ -53,14 +68,30 @@ export function ReportProvider({ children }: { children: React.ReactNode }) {
   // and the backdrop fades with sheetY — all stable nodes (created once).
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
   const dragY = useRef(new Animated.Value(0)).current;
-  const dragClamped = useRef(
-    dragY.interpolate({ inputRange: [0, SCREEN_H], outputRange: [0, SCREEN_H], extrapolate: 'clamp' }),
+  // Downward: 1:1 with the finger. Upward: the SAME rubber band as the 3-dot
+  // sheet — rubber(d) = 32 · (1 − e^(−d/32)), asymptotic at 32px — sampled at
+  // enough control points to reproduce that curve here. It is sampled rather than
+  // computed because Animated.event drives this on the native driver, where a JS
+  // function cannot run per frame; the previous clamp at 0 meant an upward tug did
+  // nothing at all, which is the one place the two sheets felt least alike.
+  const dragCurved = useRef(
+    dragY.interpolate({
+      inputRange: [-300, -128, -64, -32, -16, 0, SCREEN_H],
+      outputRange: [-32, -31.4, -27.7, -20.2, -12.6, 0, SCREEN_H],
+      extrapolate: 'clamp',
+    }),
   ).current;
-  const sheetY = useRef(Animated.add(translateY, dragClamped)).current;
-  // Backdrop fades with the entrance/exit only (steady during a drag) — a single
-  // value interpolation, so it's rock-solid on the native driver.
+  const sheetY = useRef(Animated.add(translateY, dragCurved)).current;
+  // Two independent fades, multiplied: the entrance/exit (translateY) and the drag
+  // (dragY over DISMISS_DIST, pinned at 1 while dragging UP, exactly as the 3-dot
+  // sheet pins it). Multiplying rather than deriving both from sheetY leaves the
+  // entrance identical to what it was while letting the backdrop lift with the
+  // finger — it used to sit flat until release, so a half-pull gave no feedback.
   const backdropOpacity = useRef(
-    translateY.interpolate({ inputRange: [0, SCREEN_H], outputRange: [1, 0], extrapolate: 'clamp' }),
+    Animated.multiply(
+      translateY.interpolate({ inputRange: [0, SCREEN_H], outputRange: [1, 0], extrapolate: 'clamp' }),
+      dragY.interpolate({ inputRange: [0, DISMISS_DIST], outputRange: [1, 0], extrapolate: 'clamp' }),
+    ),
   ).current;
   const onDragEvent = useRef(
     Animated.event([{ nativeEvent: { translationY: dragY } }], { useNativeDriver: true }),
@@ -99,13 +130,16 @@ export function ReportProvider({ children }: { children: React.ReactNode }) {
   }
 
   function springBack() {
-    Animated.spring(dragY, { toValue: 0, speed: 18, bounciness: 0, useNativeDriver: true }).start();
+    Animated.spring(dragY, { toValue: 0, speed: 16, bounciness: 5, useNativeDriver: true }).start();
   }
 
   function onDragState(e: any) {
     const { state, translationY, velocityY } = e.nativeEvent;
     if (state === State.END) {
-      if (translationY > 90 || velocityY > 800) close();
+      // The gesture can only start on the grab strip, where there is nothing else
+      // to do, so any downward drag reaching here is already a dismiss attempt.
+      // Was (90, 800), which made this sheet noticeably stickier than the 3-dot one.
+      if (translationY > DISMISS_DY || velocityY > DISMISS_VY) close();
       else springBack();
     } else if (state === State.CANCELLED || state === State.FAILED) {
       springBack();
@@ -161,11 +195,15 @@ export function ReportProvider({ children }: { children: React.ReactNode }) {
         pointerEvents="box-none"
       >
         <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md, transform: [{ translateY: sheetY }] }]}>
-          {/* Grab handle — drag down here to dismiss (tracks the finger). */}
+          {/* Grab handle — drag down here to dismiss (tracks the finger).
+              activeOffsetY matches the 3-dot sheet's `Math.abs(g.dy) > 3`, and is
+              two-sided so the upward rubber band can engage at all. failOffsetX
+              stays: it yields to a horizontal swipe, which that sheet has no
+              equivalent of and doesn't need. */}
           <PanGestureHandler
             onGestureEvent={onDragEvent}
             onHandlerStateChange={onDragState}
-            activeOffsetY={6}
+            activeOffsetY={[-3, 3]}
             failOffsetX={[-20, 20]}
           >
             <View style={styles.grabZone}>
@@ -276,8 +314,10 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
     maxHeight: '82%',
   },
-  // Enlarged touch target around the handle so the drag is easy to grab.
-  grabZone: { paddingTop: SPACING.sm, paddingBottom: SPACING.sm, alignItems: 'center' },
+  // The 3-dot sheet's `grab` strip, to the pixel. Bottom-heavy on purpose: a
+  // thumb coming up from below lands under the handle, not on it, and the extra
+  // room beneath is what catches that low approach.
+  grabZone: { paddingTop: SPACING.md, paddingBottom: SPACING.lg, alignItems: 'center' },
   handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: c.border },
 
   title: { color: c.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
