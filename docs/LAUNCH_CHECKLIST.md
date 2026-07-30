@@ -241,10 +241,31 @@ real cost of leaving it.
   **10** files lacking `useTranslation` in scope. None blocking.
 - **Spotlight and Ad Manager have no per-impression refund.** Spotlight is a flat price for a
   time window; ad budgets refund only the unspent remainder.
-- ~~**The Premium paywall is English-only.**~~ **Done 2026-07-30.** All 38 `premium.*` keys
-  now carry all 10 locales, verified 10/10 each with the `{premium}` / `{standard}` fee
-  placeholders intact in every one. Worth checking `musicOrder.*` and `followerInsights.*`
-  for the same gap — those perk screens were added in the same pass.
+- ~~**The Premium paywall is English-only.**~~ **Done 2026-07-30.** The whole Premium surface
+  now carries all 10 locales — `premium.*` (38), `musicOrder.*` (5) and
+  `followerInsights.*` (9), verified 10/10 each with the `{premium}` / `{standard}` / `{when}`
+  placeholders intact in every one.
+
+- **462 of 2143 i18n keys are still not at 10 locales** (78% translated). Measured
+  2026-07-30 by counting occurrences per key; the "i18n ADOPTION COMPLETE" note elsewhere is
+  stale. `translate()` falls back `DICTS[lang] ?? en ?? key`, so every one of these renders
+  readable English rather than breaking — which is why it went unnoticed. Not a launch
+  blocker while the App Store listing is **US-only** (§0.2), and it becomes one the day
+  availability widens. Largest gaps, all English-only unless noted:
+
+  | Keys | Namespace | |
+  |---|---|---|
+  | 112 | `communities.*` | the biggest single gap |
+  | 50 | `gif.*` | |
+  | 34 | `offline.*` | **at 6 locales, not 1** — a partial pass that stopped |
+  | 27 | `live.*` | |
+  | 25 | `groups.*` | |
+  | 23 | `report.*` | user-facing moderation copy |
+  | 23 | `wallet.*` | money-facing |
+  | 18 | `a11y.*` | screen-reader labels |
+
+  `offline.*` sitting at 6 is worth a look on its own — it means a translation pass covered
+  six languages and stopped, rather than never starting.
 
 ---
 
