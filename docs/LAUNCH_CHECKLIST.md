@@ -241,6 +241,13 @@ real cost of leaving it.
   **10** files lacking `useTranslation` in scope. None blocking.
 - **Spotlight and Ad Manager have no per-impression refund.** Spotlight is a flat price for a
   time window; ad budgets refund only the unspent remainder.
+- **The Premium paywall is English-only.** All ~39 `premium.*` strings exist in `en` alone,
+  while translated keys carry all 10 locales. `translate()` falls back
+  `DICTS[lang] ?? en ?? key`, so a Spanish or Japanese user sees readable English rather than
+  raw keys — it degrades, it doesn't break. Still worth closing: this is the single
+  highest-value conversion screen in the app, and it is the one screen not in the user's
+  language. Same for the `musicOrder.*` and `followerInsights.*` perk screens if they share
+  the gap.
 
 ---
 
