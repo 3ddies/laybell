@@ -211,15 +211,24 @@ update public.shop_listings l
 -- ── Checking it ───────────────────────────────────────────────────────────────
 --   Counters against the orders they claim to describe (returns rows ONLY on
 --   drift):
+--
+--   count(o.id), NOT count(*) — the join is a LEFT one, so a listing with no
+--   delivered orders still produces a null-extended row, and count(*) counts it.
+--   The filter does not save you: shop_order_kind(NULL, license) coalesces the
+--   null kind into the LICENSE-derived kind, so that phantom row passes
+--   `= 'lease'` on any nonexclusive listing and the check reports drift on
+--   listings that have never sold anything. count(o.id) ignores the null.
+--   (The backfill above joins INNER and so was never exposed to this.)
+--
 --     select l.id, l.title, l.lease_count, l.free_count,
---            count(*) filter (where public.shop_order_kind(o.kind, l.license) = 'lease') as real_leased,
---            count(*) filter (where public.shop_order_kind(o.kind, l.license) = 'free')  as real_claimed
+--            count(o.id) filter (where public.shop_order_kind(o.kind, l.license) = 'lease') as real_leased,
+--            count(o.id) filter (where public.shop_order_kind(o.kind, l.license) = 'free')  as real_claimed
 --       from public.shop_listings l
 --       left join public.shop_orders o
 --         on o.listing_id = l.id and o.status = 'delivered'
 --      group by l.id, l.title, l.lease_count, l.free_count, l.license
---     having l.lease_count <> count(*) filter (where public.shop_order_kind(o.kind, l.license) = 'lease')
---         or l.free_count  <> count(*) filter (where public.shop_order_kind(o.kind, l.license) = 'free');
+--     having l.lease_count <> count(o.id) filter (where public.shop_order_kind(o.kind, l.license) = 'lease')
+--         or l.free_count  <> count(o.id) filter (where public.shop_order_kind(o.kind, l.license) = 'free');
 --
 --   Sold listings that somehow still have an open order:
 --     select o.* from public.shop_orders o
