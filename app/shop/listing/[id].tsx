@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, ActivityIndicator, Linking, RefreshControl, Share,
-  Modal, TextInput, KeyboardAvoidingView, Platform, Pressable,
+  Modal, TextInput, KeyboardAvoidingView, Platform, Pressable, BackHandler,
+  Animated, Easing, useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -47,6 +48,7 @@ export default function ListingScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { profile } = useProfile();
   const { following, toggleFollow } = useFollow();
@@ -79,10 +81,12 @@ export default function ListingScreen() {
   // The gated free-claim sheet. Owned by this screen rather than being its own
   // route — see the note on the Free button.
   const [freeOpen, setFreeOpen] = useState(false);
-  // Set when a condition row sends the user away, so returning re-opens the
-  // sheet instead of stranding them on the listing. A ref, not state: it must
-  // survive the navigation without causing a render of its own.
-  const reopenFreeRef = useRef(false);
+  // The slide the pageSheet used to provide. It is driven by an Animated value
+  // rather than a mount transition on purpose: the overlay STAYS MOUNTED while
+  // the user detours to a post, so a mount animation would either not exist or
+  // replay on the way back. This runs on open and on close and at no other
+  // time, which is exactly the "it never exited" reading we want.
+  const sheetAnim = useRef(new Animated.Value(0)).current;
 
   const isOwner = !!listing && listing.user_id === profile?.id;
 
@@ -111,25 +115,41 @@ export default function ListingScreen() {
     if (freeOpen && listing) checkFreeConditions(listing).then(setConds).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [freeOpen]);
-  // Coming back from a post (liking it for a free claim) or a profile → the
-  // unlock checklist re-verifies itself, and the sheet REOPENS if that is where
-  // the user came from. Leaving them on the listing would make finishing a
-  // three-post checklist a matter of re-opening the sheet after every single
-  // one, when the sheet is the whole reason they left.
-  //
-  // The reopen is deferred rather than immediate: SwipeBackPager runs a ~280ms
-  // return animation, and presenting a modal into the middle of that is exactly
-  // the kind of two-animations-at-once problem this screen has already had.
+
+  const openFreeSheet = useCallback(() => { sheetAnim.setValue(0); setFreeOpen(true); }, [sheetAnim]);
+
+  // The slide in runs from an effect, not from openFreeSheet, so it cannot start
+  // before the overlay has mounted — otherwise the first frame the user sees is
+  // already part-way through the travel.
+  useEffect(() => {
+    if (!freeOpen) return;
+    Animated.timing(sheetAnim, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [freeOpen, sheetAnim]);
+
+  // Unmounts only once the slide-out has finished, so the sheet is never yanked
+  // off the screen a frame before it has left it.
+  const closeFreeSheet = useCallback(() => {
+    Animated.timing(sheetAnim, { toValue: 0, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+      .start(({ finished }) => { if (finished) setFreeOpen(false); });
+  }, [sheetAnim]);
+
+  // Android back used to close the sheet for free via the Modal's onRequestClose.
+  // As an overlay it has to claim the press, otherwise back pops the listing and
+  // takes the sheet with it. Bound only while open, so it is the most recently
+  // registered handler and runs ahead of the navigator's.
+  useEffect(() => {
+    if (!freeOpen || Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { closeFreeSheet(); return true; });
+    return () => sub.remove();
+  }, [freeOpen, closeFreeSheet]);
+
+  // Returning from a post (liked for a free claim) or a profile re-verifies the
+  // checklist. Nothing needs re-opening: the sheet is part of this screen, so it
+  // was never closed — only covered.
   useFocusEffect(useCallback(() => {
     if (listing && saleTypes(listing).free && !isOwner) {
       checkFreeConditions(listing).then(setConds).catch(() => {});
     }
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    if (reopenFreeRef.current) {
-      reopenFreeRef.current = false;
-      timer = setTimeout(() => setFreeOpen(true), 320);
-    }
-    return () => { if (timer) clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listing?.id, following]));
   // Stop the preview on unmount ONLY. stopSong's identity changes on every
@@ -167,7 +187,7 @@ export default function ListingScreen() {
       const o = await requestToBuy(listing, '', 'free', 0);
       setOrders((prev) => [o, ...prev]);
       notifySuccess();
-      setFreeOpen(false);
+      closeFreeSheet();
     } catch {
       // A refusal means our view of the conditions was stale — re-read it so
       // the checklist tells the truth rather than staying green.
@@ -362,7 +382,7 @@ export default function ListingScreen() {
             // and the pager's animation fights the stack's. A Modal owned by
             // this screen cannot be mis-registered, and reads the same to the
             // user.
-            onPress={() => (gatedFree ? setFreeOpen(true) : buy('free'))}
+            onPress={() => (gatedFree ? openFreeSheet() : buy('free'))}
             disabled={!!busyKind}
             activeOpacity={0.85}
           >
@@ -416,8 +436,9 @@ export default function ListingScreen() {
   }
 
   return (
-    <SwipeBackPager>
-      <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
+    <SwipeBackPager scrollEnabled={!freeOpen}>
+      <View style={styles.root}>
+        <View style={[styles.rootInner, { paddingTop: insets.top + 8 }]}>
         <View style={styles.header}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => router.back()} style={styles.headerBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
@@ -656,17 +677,37 @@ export default function ListingScreen() {
             )}
           </ScrollView>
         )}
+        </View>
 
-        {/* Offer sheet — buyer names a buy-out price on a lease-only beat. */}
-        {/* Gated free claim. A Modal owned by this screen, deliberately not a
-            route: as its own screen it had to be listed in app/_layout's
+        {/* Gated free claim. An in-screen OVERLAY — not a route, and not a
+            Modal, and both of those are deliberate.
+
+            Not a route: it would have to be listed in app/_layout's
             transparentModal array, and missing that made the pager and the
-            stack animate against each other. */}
-        <Modal visible={freeOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setFreeOpen(false)}>
-          <View style={styles.freeSheet}>
+            stack animate against each other.
+
+            Not a Modal: a route pushed while a pageSheet is up presents
+            BEHIND it on iOS, so tapping a "like this post" condition had to
+            dismiss the sheet first and re-present it on return — which reads
+            as the sheet exiting, when the post is meant to be a detour inside
+            it. As part of this screen it never closes at all: the pushed post
+            covers the whole screen on the way out and uncovers it on the way
+            back, still open and still scrolled where it was.
+
+            It is the last child of the root and absolutely fills it, so it
+            paints over the listing — including the safe area, which is why the
+            padding moved to rootInner. */}
+        {freeOpen && (
+          <Animated.View
+            style={[
+              styles.freeSheet,
+              { paddingTop: insets.top + 8 },
+              { transform: [{ translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [winH, 0] }) }] },
+            ]}
+          >
             <View style={styles.freeSheetHead}>
               <Text style={styles.freeSheetTitle} numberOfLines={1}>{t('shop.unlockTitle')}</Text>
-              <TouchableOpacity onPress={() => setFreeOpen(false)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
+              <TouchableOpacity onPress={closeFreeSheet} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
                 <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
@@ -690,10 +731,9 @@ export default function ListingScreen() {
                   <TouchableOpacity
                     key={lk.postId}
                     style={styles.unlockRow}
-                    // Closing first is required — a route pushed while a
-                    // pageSheet is up presents behind it on iOS. The ref is what
-                    // brings the user back here afterwards.
-                    onPress={() => { reopenFreeRef.current = true; setFreeOpen(false); router.push(`/post/${lk.postId}`); }}
+                    // Deliberately does NOT close the sheet — see the overlay
+                    // below. The post covers it and returning uncovers it.
+                    onPress={() => router.push(`/post/${lk.postId}`)}
                     activeOpacity={0.7}
                   >
                     <Ionicons name={lk.met ? 'checkmark-circle' : 'heart-outline'} size={20} color={lk.met ? colors.success : colors.textSecondary} />
@@ -725,9 +765,10 @@ export default function ListingScreen() {
                 )}
               </TouchableOpacity>
             </ScrollView>
-          </View>
-        </Modal>
+          </Animated.View>
+        )}
 
+        {/* Offer sheet — buyer names a buy-out price on a lease-only beat. */}
         <Modal visible={offerOpen} transparent animationType="slide" onRequestClose={() => setOfferOpen(false)}>
           <Pressable style={styles.offerBackdrop} onPress={() => setOfferOpen(false)}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -794,6 +835,9 @@ export default function ListingScreen() {
 
 const makeStyles = (c: ThemePalette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: c.background },
+  // Holds the safe-area padding that used to sit on the root, so the free
+  // overlay can fill the root edge to edge instead of starting below it.
+  rootInner: { flex: 1 },
   flex: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 6 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
@@ -853,7 +897,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     color: c.textSecondary, fontSize: 12, lineHeight: 17,
     paddingHorizontal: 10, paddingTop: 6,
   },
-  freeSheet: { flex: 1, backgroundColor: c.background },
+  // Fills the root and paints above the listing. zIndex is for Android, where
+  // paint order does not follow tree order on its own.
+  freeSheet: { ...StyleSheet.absoluteFillObject, backgroundColor: c.background, zIndex: 20 },
   freeSheetHead: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
