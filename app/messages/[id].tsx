@@ -17,6 +17,9 @@ import { scanText } from '../../lib/linkSafety';
 import { createNotification } from '../../lib/createNotification';
 import { reportUser } from '../../lib/postActions';
 import { parseAttachment, attachmentBody, pickImageAttachment, type Attachment } from '../../lib/attachments';
+import { parseOffer } from '../../lib/offerMessage';
+import { fetchOrdersByIds, type OrderStatus } from '../../lib/shop';
+import OfferMessageCard from '../../components/OfferMessageCard';
 import { openGifAttachment } from '../../lib/gifAttachmentActions';
 import GifPickerModal from '../../components/GifPickerModal';
 import AttachmentView from '../../components/AttachmentView';
@@ -72,6 +75,15 @@ export default function ChatScreen() {
   // Sending forces it true (you always follow your own sent message).
   const stickToBottomRef = useRef(true);
   const [messages, setMessages] = useState<Message[]>([]);
+  // Live status for every offer card in the thread, keyed by order id. The
+  // MESSAGE can't carry it: a sent message is immutable, so an offer accepted an
+  // hour ago would still be showing Accept and Decline. Read in one query for the
+  // whole thread and re-read whenever the transcript changes.
+  const [offerStatuses, setOfferStatuses] = useState<Record<string, OrderStatus>>({});
+  // Bumped after a card settles an order, to re-read from the server rather than
+  // trusting what the button thinks it did — accepting also declines every other
+  // pending offer on that listing, so one tap can change several cards at once.
+  const [offerNonce, setOfferNonce] = useState(0);
   // Reactions keyed by message id. Loaded with the thread, kept live via realtime,
   // and updated optimistically the instant the user taps an emoji.
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({});
@@ -188,6 +200,26 @@ export default function ChatScreen() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId, id]);
+
+  // Offer cards read their state from the ORDER, so any change to the transcript
+  // (loaded, an offer arriving live, one just answered) re-reads them. Keyed on
+  // the joined order ids rather than the message array, so an unrelated incoming
+  // message doesn't cost a query.
+  const offerOrderIds = messages.map(m => parseOffer(m.body)?.orderId).filter(Boolean).join(',');
+  useEffect(() => {
+    const ids = offerOrderIds ? offerOrderIds.split(',') : [];
+    if (!ids.length) return;
+    let alive = true;
+    fetchOrdersByIds(ids)
+      .then((orders) => {
+        if (!alive) return;
+        const next: Record<string, OrderStatus> = {};
+        for (const o of orders) next[o.id] = o.status;
+        setOfferStatuses(next);
+      })
+      .catch(() => { /* the card simply withholds its buttons */ });
+    return () => { alive = false; };
+  }, [offerOrderIds, offerNonce]);
 
   async function setup() {
     try {
@@ -563,6 +595,25 @@ export default function ChatScreen() {
                     </View>
                   )
                 ) : null}
+                <Animated.Text style={[styles.cardTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>
+                {renderReactions(item.id, isOwn)}
+              </View>
+            );
+          }
+          const offer = parseOffer(item.body);
+          // A buy-offer: a standalone card the seller answers in place. No chat
+          // bubble — the amount is the message, and Accept/Decline belong on it.
+          if (offer) {
+            return (
+              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
+                <TouchableOpacity activeOpacity={1} onLongPress={() => openPicker(item.id)} delayLongPress={280}>
+                  <OfferMessageCard
+                    offer={offer}
+                    status={offerStatuses[offer.orderId]}
+                    isOwn={isOwn}
+                    onSettled={() => setOfferNonce((n) => n + 1)}
+                  />
+                </TouchableOpacity>
                 <Animated.Text style={[styles.cardTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>
                 {renderReactions(item.id, isOwn)}
               </View>

@@ -105,6 +105,32 @@ re-verified against the live project, not just marked off:
      (the trigger raises `listing_sold` and the whole RPC rolls back, money included).
      Until this runs, the app is the only thing standing in the way of either.
 
+**Owner, OPEN — added 2026-07-30. Two steps, and they must BOTH happen.**
+
+6. **Run `supabase/sql/offer_messages.sql`**, then **redeploy `send-push`**:
+
+   ```
+   npx supabase functions deploy send-push
+   ```
+
+   Buy-offers now arrive as an offer card in the DM thread with Accept/Decline,
+   and carry their own `'offer'` notification type. The SQL widens the
+   `notifications` type constraint to admit it; the redeploy teaches `send-push`
+   the copy for it.
+
+   **Neither half works alone, and both fail quietly.** Without the SQL the
+   notification insert is rejected by the constraint and no push is even
+   attempted. Without the redeploy `send-push` rejects the unknown type with a
+   400 — the offer still arrives in the thread, the seller just never hears about
+   it. Do them together.
+
+   The push copy is `"@buyer sent you an offer."` and names no figure, by
+   design: what someone will pay for a beat is between the two of them, and a
+   lock screen is read by whoever is holding the phone. Same reasoning governs
+   the inbox preview. If you ever want the amount surfaced, it has to be a
+   deliberate decision in `supabase/functions/send-push` **and**
+   `messages.preview.offer` — not an accident.
+
 **Crash and error reporting — CODE DONE 2026-07-29, DELIBERATELY INERT.**
 
 Wired but switched off. `@sentry/react-native` (~7.2.0, via `npx expo install`), the config

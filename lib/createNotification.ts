@@ -8,7 +8,9 @@ export async function createNotification({
 }: {
   userId: string;
   actorId: string;
-  type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag';
+  // 'offer' is a shop buy-offer awaiting an answer. Its push deliberately names
+  // the sender and NOTHING else — see supabase/functions/send-push.
+  type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer';
   postId?: string | null;
 }) {
   if (userId === actorId) return; // Never notify yourself

@@ -10,6 +10,8 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { reportError, reportIssue } from './monitoring';
+import { createNotification } from './createNotification';
+import { offerBody } from './offerMessage';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { logAccess } from './accessLog';
@@ -516,8 +518,21 @@ export async function requestToBuy(
   // sell/lease are now completed purchases, not requests — the DM opens a
   // conversation between two people who have already done business, so it says
   // so rather than asking the seller to do something.
+  //
+  // An OFFER is the exception: it is the one kind still waiting on the seller, so
+  // it goes as an encoded offer card the seller can accept or decline in place,
+  // rather than a line of text asking them to go and find the Orders tab.
   const body = kind === 'offer'
-    ? `💰 ${priceText} — ${listing.title}\n${note.trim() ? note.trim() + '\n' : ''}`
+    ? offerBody(
+      {
+        orderId: (data as ShopOrder).id,
+        listingId: listing.id,
+        cents: priceCents,
+        currency: listing.currency,
+        title: listing.title,
+      },
+      note,
+    )
     : kind === 'free'
       ? `🎁 ${listing.title}`
       : `✅ ${listing.title} — ${priceText}\n${note.trim() ? note.trim() + '\n' : ''}`;
@@ -525,6 +540,15 @@ export async function requestToBuy(
     .from('messages')
     .insert({ sender_id: buyerId, receiver_id: listing.user_id, body: body.trim() })
     .then(undefined, () => { /* best effort */ });
+
+  // An offer needs an answer, so it earns its own push — and its own TYPE, whose
+  // copy names the sender and stops there. A seller finds out what they have been
+  // offered by opening Laybell, not off a lock screen. The other kinds are
+  // completed sales that need nothing from anyone, so they stay silent here.
+  if (kind === 'offer') {
+    createNotification({ userId: listing.user_id, actorId: buyerId, type: 'offer' })
+      .catch(() => { /* best effort — the DM is the real delivery */ });
+  }
 
   return data as ShopOrder;
 }
@@ -561,6 +585,18 @@ export async function pendingSalesCount(): Promise<number> {
 
 /** The caller's orders on a listing, one per deal type at most (drives the
     per-kind CTA states on the listing screen). */
+/** Orders by id, for the offer cards in a DM thread.
+ *
+ *  One query for the whole thread rather than one per card — a long negotiation
+ *  can carry several offers, and RLS already limits the rows to the two people
+ *  in the conversation, so nothing here needs a buyer/seller filter of its own. */
+export async function fetchOrdersByIds(ids: string[]): Promise<ShopOrder[]> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return [];
+  const { data } = await supabase.from('shop_orders').select(ORDER_COLS).in('id', unique);
+  return (data ?? []) as ShopOrder[];
+}
+
 export async function myOrdersForListing(listingId: string): Promise<ShopOrder[]> {
   const { data: auth } = await supabase.auth.getUser();
   const uid = auth?.user?.id;

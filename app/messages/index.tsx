@@ -15,6 +15,7 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { timeAgo } from '../../lib/timeAgo';
 import { sharedPostId, parseStoryReply } from '../../lib/postLinks';
 import { parseAttachment } from '../../lib/attachments';
+import { isOfferBody } from '../../lib/offerMessage';
 import { fetchBlockedIds } from '../../lib/blocks';
 import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import HighlightText from '../../components/HighlightText';
@@ -61,6 +62,16 @@ type Conversation = DmConversation | GroupConversation;
 function matchingMessage(c: Conversation, q: string): string | null {
   if (!q) return null;
   return c.bodies.find(b => !sharedPostId(b) && b.toLowerCase().includes(q)) ?? null;
+}
+
+// An offer that has ARRIVED and has not been opened yet.
+//
+// `unread` only ever counts messages sent TO me, so this cannot match an offer
+// I sent myself — the buyer sees their own offer sitting in the thread at its
+// natural place in the timeline, which is right, because there is nothing for
+// them to do about it.
+function pendingOfferRow(c: Conversation): boolean {
+  return c.kind === 'dm' && c.unread > 0 && isOfferBody(c.last_message);
 }
 
 // First shared-post caption in the convo that contains the query, or null.
@@ -145,7 +156,17 @@ export default function MessagesScreen() {
     // Merge DMs + groups, newest activity first, and commit.
     const finish = (dmConvos: Conversation[]) => {
       const merged = [...dmConvos, ...groupConvos];
-      merged.sort((a, b) => new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime());
+      // An UNREAD OFFER outranks recency and goes to the very top. It is the one
+      // thing in this inbox that costs someone something to ignore — the buyer's
+      // credits sit in escrow until it is answered — so it must not slide down the
+      // list as ordinary chatter arrives above it. Everything else stays
+      // newest-first, and the moment it is read it rejoins them.
+      merged.sort((a, b) => {
+        const ao = pendingOfferRow(a) ? 1 : 0;
+        const bo = pendingOfferRow(b) ? 1 : 0;
+        if (ao !== bo) return bo - ao;
+        return new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime();
+      });
       setConversations(merged);
     };
 
@@ -470,14 +491,22 @@ export default function MessagesScreen() {
           const showShared = !matchMsg && !matchCaption && !usernamePreview && sharedPostId(item.last_message);
           const storyReply = !matchMsg && !matchCaption && !usernamePreview && parseStoryReply(item.last_message);
           const dmAtt = !matchMsg && !matchCaption && !usernamePreview && parseAttachment(item.last_message);
+          // Deliberately says only THAT an offer arrived. The amount is on the card
+          // inside the thread, matching the push — an inbox is read over shoulders.
+          const isOffer = !matchMsg && !matchCaption && !usernamePreview && isOfferBody(item.last_message);
+          const offerPending = isOffer && unread;
           const preview = matchMsg ?? (dmAtt ? (dmAtt.type === 'gif' ? t('messages.preview.gif') : t('messages.preview.photo')) : item.last_message);
           return (
           <Pressable
-            style={({ pressed }) => [styles.conversationRow, pressed && styles.conversationRowPressed]}
+            style={({ pressed }) => [
+              styles.conversationRow,
+              offerPending && styles.conversationRowOffer,
+              pressed && styles.conversationRowPressed,
+            ]}
             onPress={() => router.push(`/messages/${item.other_user.id}`)}
           >
             <View style={styles.unreadGutter}>
-              {unread ? <View style={styles.unreadDot} /> : null}
+              {unread ? <View style={[styles.unreadDot, offerPending && styles.unreadDotOffer]} /> : null}
             </View>
             <StoryAvatar
               userId={item.other_user.id}
@@ -518,6 +547,16 @@ export default function MessagesScreen() {
                   highlightStyle={styles.highlight}
                   numberOfLines={1}
                 />
+              ) : isOffer ? (
+                <View style={styles.sharedPreview}>
+                  <Ionicons name="pricetag" size={12} color={offerPending ? colors.success : colors.textSecondary} />
+                  <Text
+                    style={[styles.lastMessage, unread && styles.lastMessageUnread, offerPending && styles.lastMessageOffer]}
+                    numberOfLines={1}
+                  >
+                    {t('messages.preview.offer')}
+                  </Text>
+                </View>
               ) : storyReply ? (
                 <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>{t('messages.preview.storyReply')}</Text>
               ) : showShared ? (
@@ -607,10 +646,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingVertical: 10, paddingLeft: SPACING.sm, paddingRight: SPACING.md,
     gap: SPACING.sm + 4, backgroundColor: colors.background,
   },
+  // An unopened offer, highlighted green. A tint rather than a left accent bar:
+  // a border would shift the avatar 3px and make the pinned row sit out of line
+  // with the ones under it.
+  conversationRowOffer: { backgroundColor: colors.success + '1A' },
   conversationRowPressed: { backgroundColor: colors.surfaceLight },
   // Leading unread dot — reserves its width even when read so avatars stay aligned.
   unreadGutter: { width: 12, alignItems: 'center', justifyContent: 'center' },
   unreadDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.primary },
+  unreadDotOffer: { backgroundColor: colors.success },
   // Hairline separator inset to the avatar's edge (iOS Messages style).
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: SPACING.sm + 12 + (SPACING.sm + 4) + 56 },
   avatar: { width: 50, height: 50, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
@@ -624,6 +668,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   timeUnread: { color: colors.primary, fontWeight: '600' },
   lastMessage: { color: colors.textSecondary, fontSize: 14, lineHeight: 19 },
   lastMessageUnread: { color: colors.text, fontWeight: '500' },
+  lastMessageOffer: { color: colors.success, fontWeight: '700' },
   sharedPreview: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.md },

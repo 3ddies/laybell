@@ -20,7 +20,7 @@ import SwipeBackPager from '../components/SwipeBackPager';
 import { NotificationsSkeleton } from '../components/Skeleton';
 
 type Notification = {
-  id: string; type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag';
+  id: string; type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer';
   post_id: string | null; actor_id: string; read: boolean; created_at: string;
   actor: { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null } | null;
 };
@@ -43,6 +43,7 @@ function groupedText(t: TFunc, type: string, count: number): string {
     case 'tag': return t('notifications.groupTagged', { count });
     case 'song_used': return t('notifications.groupSongUsed', { count });
     case 'song_story': return t('notifications.groupSongStory', { count });
+    case 'offer': return t('notifications.groupOffers', { count });
     default: return notificationText(t, type);
   }
 }
@@ -90,6 +91,9 @@ function notificationText(t: TFunc, type: string) {
     case 'tag': return t('notifications.tagged');
     case 'song_used': return t('notifications.songUsed');
     case 'song_story': return t('notifications.songStory');
+    // Names the sender and stops there, exactly as the push does — the amount
+    // is on the offer card in the thread this row opens.
+    case 'offer': return t('notifications.offered');
     default: return t('notifications.interacted');
   }
 }
@@ -105,6 +109,7 @@ function notificationIcon(type: string): { name: any; color: string } {
     case 'tag': return { name: 'pricetag', color: COLORS.primary };
     case 'song_used': return { name: 'musical-notes', color: COLORS.primaryLight };
     case 'song_story': return { name: 'musical-notes', color: COLORS.primaryLight };
+    case 'offer': return { name: 'pricetags', color: COLORS.success };
     default: return { name: 'notifications', color: COLORS.primary };
   }
 }
@@ -218,7 +223,8 @@ export default function NotificationsScreen() {
 
   function handlePress(notif: Notification) {
     markReadLocally([notif.id]);
-    if (notif.type === 'message') router.push(`/messages/${notif.actor_id}`);
+    // An offer lives in the DM thread, where it can actually be answered.
+    if (notif.type === 'message' || notif.type === 'offer') router.push(`/messages/${notif.actor_id}`);
     // A song-in-story notification opens the poster's story (only up for 24h).
     else if (notif.type === 'song_story') router.push(`/story/${notif.actor_id}`);
     else if (notif.post_id) router.push(`/post/${notif.post_id}`);
