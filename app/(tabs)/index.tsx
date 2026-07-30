@@ -1763,7 +1763,7 @@ export default function HomeScreen() {
               matchIconSize={28}
               color={colors.text}
               unreadColor={colors.error}
-              count={unreadCount}
+              unread={unreadCount > 0}
               focused={isFocused}
             />
           </TouchableOpacity>

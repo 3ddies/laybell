@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { View, Text, Image, Animated, Easing, StyleSheet, AccessibilityInfo, type ViewStyle } from 'react-native';
+import { View, Image, Animated, Easing, StyleSheet, AccessibilityInfo, type ViewStyle } from 'react-native';
 
 // The Laybell bell — the actual logo, sized and aligned off the BELL BODY.
 //
@@ -17,7 +17,7 @@ import { View, Text, Image, Animated, Easing, StyleSheet, AccessibilityInfo, typ
 // rocks instead, which is what a struck bell does.
 //
 // ── Everything below is MEASURED from the artwork ───────────────────────────
-// Per-row ink analysis, and a distance transform for the notehead. Nothing here
+// Per-row ink analysis of the alpha channel. Nothing here
 // is eyeballed, which is why the alignment holds if the asset is ever regenerated
 // (re-run the measurement, update these six numbers).
 const BELL = require('../assets/bell-icon.png');
@@ -43,23 +43,13 @@ const BODY_BOT = 0.9468;    // base
 const BODY_H = BODY_BOT - BODY_TOP;              // 0.6835
 const BODY_MID = (BODY_TOP + BODY_BOT) / 2;      // 0.6051
 
-// The note's head: centre and diameter as fractions of the image, from the
-// largest circle that fits inside the mark.
-const HEAD_X = 0.463;
-const HEAD_Y = 0.723;
-const HEAD_D = 0.194;
-// Digits are narrow, so they can run a little larger than the inscribed circle
-// without touching the head's edge.
-const HEAD_FONT = 0.80;     // of the head's diameter, single digit
-const HEAD_FONT_2 = 0.58;   // for "9+"
-
 const SWING_DEG = 13;
 const FIRST_DELAY_MS = 2400;
 const GAP_MIN_MS = 17_000;
 const GAP_MAX_MS = 33_000;
 
 export default function LaybellBell({
-  matchIconSize = 28, color, unreadColor, accent = '#FF8095', count, focused, style,
+  matchIconSize = 28, color, unreadColor, accent = '#FF8095', unread, focused, style,
 }: {
   /** The `size` prop given to the Ionicon beside this one. The bell's BODY is
    *  then matched to that glyph's real drawn height and vertical position — not
@@ -73,13 +63,14 @@ export default function LaybellBell({
   /** Flashed at each strike. A LIFT of the unread red, not another hue — the
    *  bell is already red, so a red flash would be invisible. */
   accent?: string;
-  /** Unread count, drawn inside the note's head. 0 shows nothing. */
-  count: number;
+  /** Whether anything is unread. The mark is the whole indicator — there is no
+   *  count anywhere on it, deliberately: the bell answers "is there something
+   *  new", and the messages icon beside it is where a number belongs. */
+  unread: boolean;
   /** Animation runs only while the screen is on. */
   focused: boolean;
   style?: ViewStyle;
 }) {
-  const unread = count > 0;
   const active = unread && focused;
   const tint = unread ? unreadColor : color;
 
@@ -160,18 +151,6 @@ export default function LaybellBell({
   // Rotate about the dome's apex — a bell hangs from its crown, not its middle.
   const pivotFromCentre = BODY_TOP * imgSize + imgTop - bodySize / 2;
 
-  // The number, centred on the real notehead. Deliberately NOT an enlarged
-  // circle: the head is part of the logo and stays the size it was drawn.
-  const headD = HEAD_D * imgSize;
-  const label = count > 9 ? '9+' : String(count);
-  const headBox = {
-    position: 'absolute' as const,
-    left: imgLeft + HEAD_X * imgSize - headD / 2,
-    top: imgTop + HEAD_Y * imgSize - headD / 2,
-    width: headD,
-    height: headD,
-  };
-
   // overflow visible is declared rather than assumed on both levels below: the
   // note's flag deliberately hangs ~11pt ABOVE this box (that is the whole point
   // of sizing off the body), and a clipped ancestor would lop the top off the
@@ -203,27 +182,8 @@ export default function LaybellBell({
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: hit }]}>
           <Image source={BELL} style={[img, { tintColor: accent }]} resizeMode="contain" />
         </Animated.View>
-
-        {/* Above both tints, so the digit stays solid white through the flash.
-            allowFontScaling off: this has to sit inside a fixed circle, and a
-            larger system text setting would push it outside the head. */}
-        {unread && (
-          <View style={[headBox, styles.center]}>
-            <Text
-              style={[styles.count, { fontSize: Math.round(headD * (label.length > 1 ? HEAD_FONT_2 : HEAD_FONT)) }]}
-              numberOfLines={1}
-              allowFontScaling={false}
-            >
-              {label}
-            </Text>
-          </View>
-        )}
       </Animated.View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  center: { alignItems: 'center', justifyContent: 'center' },
-  count: { color: '#FFFFFF', fontWeight: '800', textAlign: 'center', includeFontPadding: false },
-});
