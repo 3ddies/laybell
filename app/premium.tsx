@@ -8,6 +8,7 @@ import { usePremium } from '../contexts/PremiumContext';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import type { Pkg } from '../lib/purchases';
+import { DONATION_FEE_RATE_PREMIUM, DONATION_FEE_RATE_STANDARD } from '../lib/donations';
 import { Skeleton, SkeletonLine } from '../components/Skeleton';
 
 // Laybell Premium paywall. Reads offerings/status from RevenueCat via PremiumContext;
@@ -24,7 +25,17 @@ export default function PremiumScreen() {
 
   // Earn Money leads and is highlighted so the eye lands on it first.
   const perks = [
-    { icon: 'cash-outline' as const, label: t('premium.perkEarn'), desc: t('premium.perkEarnDesc'), highlight: true },
+    // The two rates come from the constants that actually charge, not from
+    // prose — see the note on premium.perkEarnDesc in lib/i18n.
+    {
+      icon: 'cash-outline' as const,
+      label: t('premium.perkEarn'),
+      desc: t('premium.perkEarnDesc', {
+        premium: String(Math.round(DONATION_FEE_RATE_PREMIUM * 100)),
+        standard: String(Math.round(DONATION_FEE_RATE_STANDARD * 100)),
+      }),
+      highlight: true,
+    },
     { icon: 'people-outline' as const, label: t('premium.perkFollowers'), desc: t('premium.perkFollowersDesc') },
     { icon: 'musical-notes-outline' as const, label: t('premium.perkLessAds'), desc: t('premium.perkLessAdsDesc') },
     { icon: 'flash-outline' as const, label: t('premium.perkSpotlight'), desc: t('premium.perkSpotlightDesc') },

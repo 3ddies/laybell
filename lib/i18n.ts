@@ -858,7 +858,13 @@ const en: Record<string, string> = {
   'premium.perksTitle': 'What you get',
   'premium.tagline': 'Earn money, cut the ads, and get more from Laybell — $9.99/month.',
   'premium.perkEarn': 'Earn More',
-  'premium.perkEarnDesc': 'Keep more of every tip on Laybell Live. Premium takes just 8% vs 35% standard — so far more of each tip lands in your pocket.',
+  // Rates are INTERPOLATED, never written in prose. This line used to promise
+  // "just 8%" while every fee path — the client constant, the donations and
+  // studio triggers, and the authoritative tip_fee_rate() — charged 30%. A
+  // subscriber was told they kept 92% of a tip and actually kept 70%.
+  // app/premium.tsx fills these from lib/donations' constants, so the claim
+  // tracks the real rate through the Small Business change (§0.3) on its own.
+  'premium.perkEarnDesc': 'Keep more of every tip on Laybell Live. Premium pays a {premium}% platform fee instead of {standard}% — so more of each tip lands in your pocket.',
   'premium.perkFollowers': 'See Unfollowers',
   'premium.perkFollowersDesc': 'See who doesn’t follow you back and who unfollowed you.',
   'premium.perkLessAds': '50% fewer ads',
