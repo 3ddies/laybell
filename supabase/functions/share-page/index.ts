@@ -182,23 +182,24 @@ serve(async (req: Request) => {
     });
   }
 
-  // Split by user-agent: BROWSERS get a real 302 straight to open.html, link
-  // CRAWLERS get the OG document. Originally a workaround (on *.supabase.co the
-  // sanitised HTML meant a human saw raw source and the meta-refresh never
-  // ran); kept on the custom domain because a 302 is simply the faster, more
-  // reliable bounce — one hop, no parsing, no flash of the interstitial.
-  const ua = (req.headers.get('user-agent') ?? '').toLowerCase();
-  const isCrawler = /facebookexternalhit|whatsapp|discordbot|twitterbot|telegrambot|slackbot|linkedinbot|pinterest|redditbot|skypeuripreview|applebot|googlebot|bingbot|snapchat|vkshare|embedly|quora link preview|bot|crawler|spider/.test(ua);
-  if (!isCrawler) {
-    return new Response(null, {
-      status: 302,
-      headers: {
-        location: target,
-        'cache-control': 'public, max-age=300, s-maxage=600',
-      },
-    });
-  }
-
+  // ONE response for everybody. There used to be a user-agent split here —
+  // browsers got a 302 to open.html, "crawlers" got the OG document — which was
+  // a workaround for the old *.supabase.co domain, where sanitised HTML meant a
+  // human saw raw source and the meta-refresh never ran.
+  //
+  // On the custom domain it stopped being a workaround and became the bug.
+  // Measured against real user-agent strings: a plain iOS Safari or macOS
+  // LinkPresentation UA got the 302 and was carried off to open.html, so Apple
+  // read THAT page's generic tags and rendered the stock Laybell card — the
+  // per-post title, artist and thumbnail never reached it. Only a UA carrying
+  // the literal `facebookexternalhit` token landed on the real document, and
+  // whether iOS appends that token is not something to depend on.
+  //
+  // Serving the document to everyone is also what TN3156 assumes: previews do
+  // not follow meta redirects and do not run JavaScript, so a crawler reads the
+  // tags and stops, while a human is bounced on by the refresh and the script
+  // below. It removes a redirect hop from the preview fetch too, which is the
+  // kind of thing that makes Messages fall back to "Tap to Load Preview".
   const html = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
