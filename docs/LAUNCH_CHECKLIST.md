@@ -228,8 +228,17 @@ real cost of leaving it.
   the live domain, not predicted. Android is unaffected. If iOS universal links fail once a
   build exists, this is the first suspect and Cloudflare Pages is the fix — which would also
   give free email routing.
-- **~76 icon-only buttons remain unlabelled.** State-dependent icons that need human
-  judgement; the codemod deliberately skips them rather than guessing.
+- **Icon-only buttons — largely closed 2026-07-30.** The "~76 unlabelled" figure was
+  misleading: **538** of the codemod's skips are touchables with visible text, which
+  VoiceOver already reads and where a label would *override* the words on screen. The real
+  gap was 26 state-dependent icons (mute, like, play/pause, save, password visibility) —
+  the controls a screen-reader user needs most, announcing as bare "button". The codemod now
+  emits a ternary label mirroring the component's own condition, spliced verbatim from
+  source so icon and label cannot drift; 19 applied across 16 files, and 13 new `a11y.*`
+  keys added in all 10 locales.
+  Left: **3** story-camera toggles (caption / song / save) whose pairs are reported rather
+  than guessed because they need copy decisions, and **28** "no icon child" touchables plus
+  **10** files lacking `useTranslation` in scope. None blocking.
 - **Spotlight and Ad Manager have no per-impression refund.** Spotlight is a flat price for a
   time window; ad budgets refund only the unspent remainder.
 
