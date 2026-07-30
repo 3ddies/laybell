@@ -274,7 +274,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
         <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
         {commentCount > 0 && <Text style={styles.socialCount}>{formatCount(commentCount)}</Text>}
       </TouchableOpacity>
-      <TouchableOpacity onPress={toggleSave} hitSlop={8} style={styles.socialBtn}>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={saved ? t('a11y.unsave') : t('a11y.save')} onPress={toggleSave} hitSlop={8} style={styles.socialBtn}>
         <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={22} color={saved ? colors.primary : colors.text} />
       </TouchableOpacity>
       <TouchableOpacity
@@ -430,7 +430,7 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
         <Text style={styles.musicTitle} numberOfLines={1}>{currentTrack.caption}</Text>
         {!!currentTrack.artist && <Text style={styles.musicArtist} numberOfLines={1}>{currentTrack.artist}</Text>}
       </View>
-      <TouchableOpacity
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={musicPlaying ? t('a11y.pause') : t('a11y.play')}
         onPress={() => { selection(); musicPlaying ? pauseMusic() : resumeMusic(); }}
         hitSlop={10}
         style={styles.musicPlayBtn}

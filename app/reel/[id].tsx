@@ -1575,7 +1575,7 @@ export default function ReelScreen() {
 
           {/* Sound toggle for the attached song (when the focused reel has one) */}
           {!!visibleItem?.song_id && (
-            <TouchableOpacity style={[styles.muteBtn, { top: insets.top + 8 }]} onPress={toggleSongMuted}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={songMuted ? t('a11y.unmute') : t('a11y.mute')} style={[styles.muteBtn, { top: insets.top + 8 }]} onPress={toggleSongMuted}>
               <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={22} color="#fff" />
             </TouchableOpacity>
           )}

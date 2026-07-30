@@ -230,7 +230,7 @@ function NowPlayingTVCard() {
         </View>
         <Text style={styles.tvCardTitle} numberOfLines={1}>{current.title}</Text>
       </View>
-      <TouchableOpacity onPress={() => (isPlaying ? pause() : play())} hitSlop={10} style={styles.tvCardBtn}>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={isPlaying ? t('a11y.pause') : t('a11y.play')} onPress={() => (isPlaying ? pause() : play())} hitSlop={10} style={styles.tvCardBtn}>
         <Ionicons name={isPlaying ? 'pause' : 'play'} size={22} color={colors.text} />
       </TouchableOpacity>
     </View>

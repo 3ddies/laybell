@@ -157,7 +157,7 @@ export default function SharedPostCard({ postId }: { postId: string }) {
           </View>
 
           {/* Like the post directly from the thread — centered on the caption bar. */}
-          <TouchableOpacity style={styles.likeBtn} activeOpacity={0.8} hitSlop={8} onPress={toggleLike}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={liked ? t('a11y.unlike') : t('a11y.like')} style={styles.likeBtn} activeOpacity={0.8} hitSlop={8} onPress={toggleLike}>
             <Animated.View style={{ transform: [{ scale: heartScale }] }}>
               <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? colors.like : colors.textSecondary} />
             </Animated.View>

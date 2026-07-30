@@ -824,7 +824,7 @@ export default function StoryCameraScreen() {
                 <Text style={styles.songCardArtist} numberOfLines={1}>{song.artist}</Text>
               </View>
               {/* Preview the chosen track — the app's signature orange circle */}
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={previewing ? t('a11y.pause') : t('a11y.play')}
                 onPress={() => (previewing ? stopSong('story-editor') : playSong('story-editor', song.id))}
                 hitSlop={6}
               >

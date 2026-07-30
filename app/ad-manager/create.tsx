@@ -787,7 +787,7 @@ export default function CreateAdScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.container}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backBtn} onPress={back}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={step === 'basics' ? t('a11y.close') : t('a11y.back')} style={styles.backBtn} onPress={back}>
               <Ionicons name={step === 'basics' ? 'close' : 'chevron-back'} size={24} color={colors.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{stepTitle[step]}</Text>

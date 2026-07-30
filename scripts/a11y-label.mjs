@@ -143,6 +143,53 @@ const ICON_KEYS = {
   'flag-outline': 'report',
 };
 
+// ── State-dependent icons ───────────────────────────────────────────────────
+// An icon written as `cond ? 'pause' : 'play'` was previously skipped as a
+// "dynamic icon name", which left the app's most important buttons — mute,
+// like, play/pause, password visibility — announcing as a bare "button". They
+// were skipped for a good reason: one label cannot describe two states.
+//
+// The answer is a label that is ALSO a ternary, reusing the component's own
+// condition verbatim so the two can never disagree:
+//
+//   <Ionicons name={muted ? 'volume-mute' : 'volume-high'} />
+//   → accessibilityLabel={muted ? t('a11y.unmute') : t('a11y.mute')}
+//
+// Note the inversion. The icon shows the CURRENT state; the label must describe
+// the ACTION the button performs, which is the opposite. A muted button shows a
+// crossed-out speaker and its job is to unmute.
+//
+// Keyed "consequentIcon|alternateIcon" → [consequentKey, alternateKey].
+const DYNAMIC_PAIRS = {
+  'volume-mute|volume-high': ['unmute', 'mute'],
+  'volume-high|volume-mute': ['mute', 'unmute'],
+  'pause|play': ['pause', 'play'],
+  'play|pause': ['play', 'pause'],
+  'pause-circle|play-circle': ['pause', 'play'],
+  'play-circle|pause-circle': ['play', 'pause'],
+  'heart|heart-outline': ['unlike', 'like'],
+  'heart-outline|heart': ['like', 'unlike'],
+  'bookmark|bookmark-outline': ['unsave', 'save'],
+  'bookmark-outline|bookmark': ['save', 'unsave'],
+  'eye-off-outline|eye-outline': ['hidePassword', 'showPassword'],
+  'eye-outline|eye-off-outline': ['showPassword', 'hidePassword'],
+  'mic-off|mic': ['unmuteMic', 'muteMic'],
+  'mic|mic-off': ['muteMic', 'unmuteMic'],
+  'checkmark-circle|ellipse-outline': ['deselect', 'select'],
+  'ellipse-outline|checkmark-circle': ['select', 'deselect'],
+  'close|chevron-back': ['close', 'back'],
+  'chevron-back|close': ['back', 'close'],
+};
+
+// Icon pairs that indicate CONTENT TYPE rather than button state — a grid tile
+// showing a music note or a video camera depending on what the post is. The
+// button does the same thing either way, so both branches get one constant
+// label and no ternary is emitted.
+const DYNAMIC_SAME = {
+  'musical-notes|videocam': 'openPost',
+  'videocam|musical-notes': 'openPost',
+};
+
 function walk(dir, out = []) {
   for (const e of readdirSync(dir)) {
     if (e === 'node_modules' || e.startsWith('.')) continue;
@@ -184,7 +231,18 @@ function scanChildren(node, found = { icons: [], hasText: false }) {
       if (n === 'Text' || n === 'AppText') found.hasText = true;
       if (n && ICON_LIBS.test(n)) {
         const a = attr(child.openingElement, 'name');
-        found.icons.push(a?.value?.type === 'StringLiteral' ? a.value.value : null);
+          // A ternary between two string literals is kept as a node rather
+          // than collapsed to null, so the caller can build a matching ternary
+          // label. Anything else stays null and is still skipped.
+          const v = a?.value;
+          if (v?.type === 'StringLiteral') found.icons.push(v.value);
+          else if (
+            v?.type === 'JSXExpressionContainer' &&
+            v.expression.type === 'ConditionalExpression' &&
+            v.expression.consequent.type === 'StringLiteral' &&
+            v.expression.alternate.type === 'StringLiteral'
+          ) found.icons.push({ cond: v.expression });
+          else found.icons.push(null);
       }
       scanChildren(child, found);
     }
@@ -248,6 +306,44 @@ for (const file of files) {
       if (hasText) return skip('has visible text');
       if (icons.length === 0) return skip('no icon child');
       if (icons.some((i) => i === null)) return skip('dynamic icon name');
+
+      // ── The state-dependent case ──────────────────────────────────────
+      // Exactly one icon, written as `cond ? 'a' : 'b'`. The label mirrors
+      // that same condition — see DYNAMIC_PAIRS.
+      const dyn = icons.length === 1 && typeof icons[0] === 'object' ? icons[0].cond : null;
+      if (!dyn && icons.some((i) => typeof i === 'object')) {
+        return skip('dynamic icon among several');
+      }
+      if (dyn) {
+        const pairKey = `${dyn.consequent.value}|${dyn.alternate.value}`;
+        const pair = DYNAMIC_PAIRS[pairKey];
+        const same = DYNAMIC_SAME[pairKey];
+        if (!pair && !same) {
+          unmapped.set(pairKey, (unmapped.get(pairKey) ?? 0) + 1);
+          return skip('dynamic icon name');
+        }
+        if (!hasTranslate(path)) {
+          noTranslate.add(file);
+          return skip('no useTranslation in scope');
+        }
+        // The test is spliced from the ORIGINAL source rather than printed
+        // from the AST, so an expression like `(a ? b : c) === d` keeps its
+        // exact text and parenthesisation.
+        const test = src.slice(dyn.test.start, dyn.test.end);
+        let label;
+        if (same) {
+          usedKeys.add(same);
+          label = `t('a11y.${same}')`;
+        } else {
+          usedKeys.add(pair[0]); usedKeys.add(pair[1]);
+          label = `${test} ? t('a11y.${pair[0]}') : t('a11y.${pair[1]}')`;
+        }
+        edits.push({
+          at: opening.name.end,
+          text: ` accessibilityRole="button" accessibilityLabel={${label}}`,
+        });
+        return;
+      }
 
       // Several icons inside one button (e.g. a play/pause pair) means the
       // label depends on state — a human has to write it.

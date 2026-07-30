@@ -119,7 +119,7 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions, vide
           </TouchableOpacity>
           {/* Tap to mute/unmute — same control real feed videos have. */}
           {isVisibleVideo && (
-            <TouchableOpacity style={styles.videoAudioBtn} onPress={() => onToggleMuted?.()}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={videoMuted ? t('a11y.unmute') : t('a11y.mute')} style={styles.videoAudioBtn} onPress={() => onToggleMuted?.()}>
               <Ionicons name={videoMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
             </TouchableOpacity>
           )}

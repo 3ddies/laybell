@@ -510,7 +510,7 @@ export default function StudioRoomScreen() {
 
         {/* Controls */}
         <View style={[styles.controls, { paddingBottom: insets.bottom + 14 }]}>
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={muted ? t('a11y.unmuteMic') : t('a11y.muteMic')}
             style={[styles.controlBtn, muted && styles.controlBtnActive]}
             onPress={toggleMute}
             disabled={conn !== 'connected'}

@@ -118,7 +118,7 @@ export default function SignupScreen() {
                 maxLength={f.maxLength}
               />
               {f.secure && (
-                <TouchableOpacity onPress={() => setShowPass(p => !p)}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={showPass ? t('a11y.hidePassword') : t('a11y.showPassword')} onPress={() => setShowPass(p => !p)}>
                   <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textTertiary} />
                 </TouchableOpacity>
               )}

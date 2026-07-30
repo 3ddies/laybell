@@ -500,7 +500,7 @@ export default function SpotlightScreen() {
       <Modal visible={flowOpen} animationType="slide" onRequestClose={() => setFlowOpen(false)}>
         <View style={styles.flowContainer}>
           <View style={styles.flowHeader}>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={flowStep === 'pay' || flowStep === 'grid' ? t('a11y.back') : t('a11y.close')}
               style={styles.backBtn}
               onPress={() => {
                 if (flowStep === 'pay') setFlowStep('package');

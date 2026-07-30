@@ -210,7 +210,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
                       </Text>
                     </View>
                     {/* Preview + select, side by side, matched size */}
-                    <TouchableOpacity onPress={() => togglePreview(item)} hitSlop={8}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={previewing ? t('a11y.pause') : t('a11y.play')} onPress={() => togglePreview(item)} hitSlop={8}>
                       <Ionicons name={previewing ? 'pause-circle' : 'play-circle'} size={30} color={colors.primary} />
                     </TouchableOpacity>
                     <Ionicons name="add-circle" size={30} color={colors.primary} />

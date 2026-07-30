@@ -748,7 +748,7 @@ export default function StoryViewerScreen() {
 
               <View style={styles.headerRight}>
                 {ready && !!story.song_id && (
-                  <TouchableOpacity style={styles.headerBtn} onPress={toggleSongMuted} hitSlop={8}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={songMuted ? t('a11y.unmute') : t('a11y.mute')} style={styles.headerBtn} onPress={toggleSongMuted} hitSlop={8}>
                     <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={21} color="#fff" />
                   </TouchableOpacity>
                 )}
@@ -849,7 +849,7 @@ export default function StoryViewerScreen() {
                 <TouchableOpacity style={styles.replyPill} activeOpacity={0.8} onPress={openReply}>
                   <Text style={styles.replyPillText}>{t('story.replyTo', { name: group?.user.display_name || group?.user.username || t('story.fallbackName') })}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={liked ? t('a11y.unlike') : t('a11y.like')}
                   onPress={toggleStoryLike}
                   activeOpacity={0.7}
                   hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
