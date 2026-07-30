@@ -137,6 +137,37 @@ real cost of leaving it.
 
 ## 0.4 KNOWN, ACCEPTED, NOT BLOCKING
 
+- **Perfect the custom Laybell link appearance.** [OWNER-REQUESTED, 2026-07-29] Shared links
+  work — they unfurl a card with the post's own thumbnail, the caption and the author
+  (`Heee · Observer`), and tap into the app. They do not yet look the way Spotify's and
+  TikTok's do. Two gaps, both understood, neither cheap:
+
+  1. **No second text line.** Apple's card renders `og:title` and the domain and nothing
+     between them, so the author had to be folded into the title after a `·` instead of
+     sitting on its own line under it. `og:description` was tested on-device twice — once
+     WITH the `twitter:card` + `application/activity+json` pair that
+     [TN3156](https://developer.apple.com/documentation/technotes/tn3156-create-rich-previews-for-messages)
+     says gates it for social-network posts, and once without, after diffing our `<head>`
+     against a live Spotify track page. Neither produced a third line. **Do not spend more
+     time on markup here** — Spotify's artist line is almost certainly special handling for
+     music links, not something reproducible. The remaining lead is `og:video` pointing at a
+     downloadable MP4, which TN3156 says Messages downloads and plays inline; that is what
+     makes TikTok's cards feel alive. Cloudflare Stream can expose per-video MP4 downloads,
+     so this is real work rather than a tag.
+  2. **No blue "View" button.** That is the Universal Link affordance, confirmed by TikTok's
+     AASA covering `/@*`, `/v/*` and `/share/video/*`. Laybell cannot get it as things stand:
+     `open.laybell.app` 404s `/.well-known/apple-app-site-association` because Supabase can't
+     serve arbitrary paths, and `laybell.app` does serve one but with a literal `TEAMID`
+     placeholder, so its universal links are inert regardless. Needs the real Team ID **and**
+     share links served from a host that can do both the AASA and per-post OG — i.e. moving
+     `laybell.app` off GitHub Pages to Cloudflare Pages / Vercel / Netlify. That migration
+     also fixes the `octet-stream` item directly below, so do them together.
+
+  Already fixed and not to be re-litigated: the shared `*.supabase.co` domain force-serving
+  `text/plain` (hence the custom domain); the user-agent split that redirected Apple to
+  `open.html` and made every card generic; portrait thumbnails sized on the wrong edge
+  (404x720); a hardcoded `og:image:width/height` of 640x640 that no real cover matched.
+
 - **`apple-app-site-association` is served as `application/octet-stream`.** Apple asks for
   `application/json`; GitHub Pages cannot set headers and ignores `web/_headers`. Measured on
   the live domain, not predicted. Android is unaffected. If iOS universal links fail once a
