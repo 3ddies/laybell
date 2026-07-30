@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, Pressable, Image, Alert,
-  Animated, Dimensions, Easing, Share, Platform,
+  Animated, Dimensions, Easing, Share, Platform, PanResponder,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -305,60 +305,55 @@ export default function CommunityDetailScreen() {
         />
 
         {/* Member menu */}
-        <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
-          <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
-            <Pressable style={styles.menuSheet} onPress={() => {}}>
-              <View style={styles.handle} />
-              {/* Share sits first, and is the one row EVERYONE gets — members,
-                  managers, owners and passers-by alike. Sends the link alone
-                  (no accompanying text) so the recipient gets just the unfurled
-                  card, matching how posts and songs share; `url` is the
-                  iOS-only field and Android reads `message`. */}
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {
-                  setMenuOpen(false);
-                  const link = communityShareUrl(id);
-                  setTimeout(() => {
-                    Share.share(Platform.OS === 'ios' ? { url: link } : { message: link }).catch(() => {});
-                  }, 280);
-                }}
-              >
-                <Ionicons name="share-social-outline" size={20} color={colors.text} />
-                <Text style={styles.menuText}>{t('postOptions.share')}</Text>
-              </TouchableOpacity>
-              {role === 'owner' && (
-                <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push(`/communities/edit?id=${id}`); }}>
-                  <Ionicons name="create-outline" size={20} color={colors.text} />
-                  <Text style={styles.menuText}>{t('communities.editCommunity')}</Text>
-                </TouchableOpacity>
-              )}
-              {canManage && (
-                <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setMembersOpen(true); }}>
-                  <Ionicons name="people-outline" size={20} color={colors.text} />
-                  <Text style={styles.menuText}>{t('communities.manageMembers')}</Text>
-                </TouchableOpacity>
-              )}
-              {/* Reporting your own community is meaningless — an owner who
-                  wants it gone deletes or edits it instead. */}
-              {role !== 'owner' && (
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => { setMenuOpen(false); reportCommunity(id); }}
-                >
-                  <Ionicons name="flag-outline" size={20} color={colors.text} />
-                  <Text style={styles.menuText}>{t('communities.report')}</Text>
-                </TouchableOpacity>
-              )}
-              {isMember && (
-                <TouchableOpacity style={styles.menuItem} onPress={confirmLeave}>
-                  <Ionicons name="exit-outline" size={20} color={colors.error} />
-                  <Text style={[styles.menuText, { color: colors.error }]}>{t('communities.leave')}</Text>
-                </TouchableOpacity>
-              )}
-            </Pressable>
-          </Pressable>
-        </Modal>
+        <DragSheet visible={menuOpen} onClose={() => setMenuOpen(false)}>
+          {/* Share sits first, and is the one row EVERYONE gets — members,
+              managers, owners and passers-by alike. Sends the link alone
+              (no accompanying text) so the recipient gets just the unfurled
+              card, matching how posts and songs share; `url` is the
+              iOS-only field and Android reads `message`. */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setMenuOpen(false);
+              const link = communityShareUrl(id);
+              setTimeout(() => {
+                Share.share(Platform.OS === 'ios' ? { url: link } : { message: link }).catch(() => {});
+              }, 280);
+            }}
+          >
+            <Ionicons name="share-social-outline" size={20} color={colors.text} />
+            <Text style={styles.menuText}>{t('postOptions.share')}</Text>
+          </TouchableOpacity>
+          {role === 'owner' && (
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push(`/communities/edit?id=${id}`); }}>
+              <Ionicons name="create-outline" size={20} color={colors.text} />
+              <Text style={styles.menuText}>{t('communities.editCommunity')}</Text>
+            </TouchableOpacity>
+          )}
+          {canManage && (
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setMembersOpen(true); }}>
+              <Ionicons name="people-outline" size={20} color={colors.text} />
+              <Text style={styles.menuText}>{t('communities.manageMembers')}</Text>
+            </TouchableOpacity>
+          )}
+          {/* Reporting your own community is meaningless — an owner who
+              wants it gone deletes or edits it instead. */}
+          {role !== 'owner' && (
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => { setMenuOpen(false); reportCommunity(id); }}
+            >
+              <Ionicons name="flag-outline" size={20} color={colors.text} />
+              <Text style={styles.menuText}>{t('communities.report')}</Text>
+            </TouchableOpacity>
+          )}
+          {isMember && (
+            <TouchableOpacity style={styles.menuItem} onPress={confirmLeave}>
+              <Ionicons name="exit-outline" size={20} color={colors.error} />
+              <Text style={[styles.menuText, { color: colors.error }]}>{t('communities.leave')}</Text>
+            </TouchableOpacity>
+          )}
+        </DragSheet>
 
         {community && (
           <CommunityMembersModal
@@ -373,6 +368,101 @@ export default function CommunityDetailScreen() {
       </View>
     );
   }
+}
+
+// How far the sheet travels off-screen, and how it resists an upward over-drag.
+const SHEET_TRAVEL = 300;
+function rubber(drag: number, max = 32): number {
+  return max * (1 - Math.exp(-drag / max));
+}
+
+// The community 3-dot menu, as a sheet that slides up and can be flicked away.
+//
+// It used to be a fade-in Modal that drew a grab handle it never honoured — the
+// handle was decorative and the only way out was tapping the backdrop, which is
+// the one bottom sheet in the app that behaved that way. Everything here mirrors
+// the app-wide 3-dot sheet in contexts/PostOptionsContext: the same 260/220ms
+// entrance, the same 45pt grab strip weighted below the handle, and the same
+// softened (48pt, 0.85) release thresholds.
+//
+// `visible` is watched rather than passed straight to the Modal so that closing
+// PLAYS THE EXIT. The menu rows call setMenuOpen(false) directly, and handing
+// that to Modal.visible would rip the sheet off-screen with no animation — so
+// the flag drives the slide-out, and only when that finishes does the Modal
+// actually unmount.
+function DragSheet({ visible, onClose, children }: {
+  visible: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  const [mounted, setMounted] = useState(false);
+  const translateY = useRef(new Animated.Value(SHEET_TRAVEL)).current;
+  const backdrop = useRef(new Animated.Value(0)).current;
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+
+  const slideOut = useCallback((then?: () => void) => {
+    Animated.parallel([
+      Animated.timing(translateY, { toValue: SHEET_TRAVEL, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => then?.());
+  }, [translateY, backdrop]);
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      translateY.setValue(SHEET_TRAVEL);
+      backdrop.setValue(0);
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(backdrop, { toValue: 1, duration: 220, useNativeDriver: true }),
+      ]).start();
+    } else {
+      slideOut(() => setMounted(false));
+    }
+  }, [visible, slideOut, translateY, backdrop]);
+
+  const pan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 3,
+    onPanResponderMove: (_e, g) => {
+      if (g.dy < 0) {
+        translateY.setValue(-rubber(Math.abs(g.dy)));
+        backdrop.setValue(1);
+      } else {
+        translateY.setValue(g.dy);
+        backdrop.setValue(Math.max(0, 1 - g.dy / SHEET_TRAVEL));
+      }
+    },
+    onPanResponderRelease: (_e, g) => {
+      if (g.dy > 48 || g.vy > 0.85) {
+        slideOut(() => closeRef.current());
+      } else {
+        Animated.parallel([
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 5, speed: 16 }),
+          Animated.timing(backdrop, { toValue: 1, duration: 150, useNativeDriver: true }),
+        ]).start();
+      }
+    },
+  })).current;
+
+  if (!mounted) return null;
+
+  return (
+    <Modal visible transparent animationType="none" onRequestClose={() => closeRef.current()} statusBarTranslucent>
+      <View style={styles.menuOverlay}>
+        <Animated.View style={[styles.menuBackdrop, { opacity: backdrop }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => closeRef.current()} />
+        </Animated.View>
+        <Animated.View style={[styles.menuSheet, { transform: [{ translateY }] }]}>
+          <View style={styles.grab} {...pan.panHandlers}>
+            <View style={styles.handle} />
+          </View>
+          {children}
+        </Animated.View>
+      </View>
+    </Modal>
+  );
 }
 
 function TopBar({ title, onBack, onMenu }: { title: string; onBack: () => void; onMenu?: () => void }) {
@@ -467,9 +557,18 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
 
   // menus
-  menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  menuSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, paddingBottom: SPACING.xl },
-  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: SPACING.sm },
+  menuOverlay: { flex: 1, justifyContent: 'flex-end' },
+  // Absolute-filling now, because the sheet is its own sibling that slides
+  // independently — the backdrop has to fade on its own opacity while the sheet
+  // translates.
+  menuBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  // paddingTop moved into `grab`, which supplies the space above the handle.
+  menuSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: SPACING.md, paddingBottom: SPACING.xl },
+  // The drag target. 45pt (16 + 4 + 24) and weighted BELOW the handle, matching
+  // the app-wide 3-dot sheet — see the note on its `grab` style for why the
+  // bottom side is the one that needs the room.
+  grab: { alignItems: 'center', paddingTop: SPACING.md, paddingBottom: SPACING.lg },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingVertical: SPACING.md, paddingHorizontal: SPACING.sm },
   menuText: { color: colors.text, fontSize: 15, fontWeight: '600' },
   title: { color: colors.text, fontSize: 17, fontWeight: '800', marginBottom: SPACING.sm },
