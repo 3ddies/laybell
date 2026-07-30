@@ -76,6 +76,9 @@ export default function ListingScreen() {
   // Which CTA's caption is expanded. One at a time: two open explainers push
   // the buttons apart and turn a decision into a wall of text.
   const [expanded, setExpanded] = useState<'sell' | 'lease' | null>(null);
+  // The gated free-claim sheet. Owned by this screen rather than being its own
+  // route — see the note on the Free button.
+  const [freeOpen, setFreeOpen] = useState(false);
 
   const isOwner = !!listing && listing.user_id === profile?.id;
 
@@ -128,6 +131,28 @@ export default function ListingScreen() {
       && (o.status === 'requested' || o.status === 'delivered')) ?? null;
   }
   const deliveredOrder = orders.find((o) => o.status === 'delivered') ?? null;
+
+  // Claim from the free sheet. Kept apart from buy() so the sheet closes only
+  // when the claim actually lands: buy() signals failure through `error`
+  // state, which cannot be read back synchronously at the call site.
+  async function claimFree() {
+    if (!listing || busyKind) return;
+    setError(null);
+    if (conds && !conds.allMet) { setError(t('shop.freeCondUnmetErr')); return; }
+    setBusyKind('free');
+    try {
+      const o = await requestToBuy(listing, '', 'free', 0);
+      setOrders((prev) => [o, ...prev]);
+      notifySuccess();
+      setFreeOpen(false);
+    } catch {
+      // A refusal means our view of the conditions was stale — re-read it so
+      // the checklist tells the truth rather than staying green.
+      setError(t('shop.freeCondUnmetErr'));
+      checkFreeConditions(listing).then(setConds).catch(() => {});
+    }
+    setBusyKind(null);
+  }
 
   async function buy(kind: SaleKind, offerCents = 0) {
     if (!listing || busyKind) return;
@@ -280,10 +305,16 @@ export default function ListingScreen() {
         <View key="free" style={styles.ctaBlock}>
           <TouchableOpacity
             style={[styles.greenBtn, styles.freeBtn, conds && !conds.allMet && styles.btnLocked]}
-            // Gated claims get their own screen rather than a checklist wedged
-            // under the button: the conditions are a task list, and a task list
-            // deserves the room to be read and acted on.
-            onPress={() => (gatedFree ? router.push(`/shop/free/${listing.id}`) : buy('free'))}
+            // Gated claims open a full-screen sheet rather than a checklist
+            // wedged under the button: the conditions are a task list and
+            // deserve the room to be read and acted on.
+            //
+            // A SHEET, not a route. This was briefly its own screen, which meant
+            // registering it in app/_layout's transparentModal list — miss that
+            // and the pager's animation fights the stack's. A Modal owned by
+            // this screen cannot be mis-registered, and reads the same to the
+            // user.
+            onPress={() => (gatedFree ? setFreeOpen(true) : buy('free'))}
             disabled={!!busyKind}
             activeOpacity={0.85}
           >
@@ -507,10 +538,10 @@ export default function ListingScreen() {
                     {types.lease && renderKindCta('lease')}
                     {types.free && renderKindCta('free')}
 
-                    {/* The unlock checklist used to live here. It now has its
-                        own screen (/shop/free/[id]), reached by tapping the Free
-                        button — a task list needs room to be read and acted on,
-                        and half of those tasks navigate away anyway. */}
+                    {/* The unlock checklist used to live inline here. It is now a
+                        full-screen sheet opened by the Free button — a task list
+                        needs room to be read and acted on, and half of those
+                        tasks navigate away anyway. */}
                     {/* Lease-only: name your price for the beat itself. */}
                     {offerable && !orderFor('offer') && (
                       <TouchableOpacity
@@ -579,6 +610,73 @@ export default function ListingScreen() {
         )}
 
         {/* Offer sheet — buyer names a buy-out price on a lease-only beat. */}
+        {/* Gated free claim. A Modal owned by this screen, deliberately not a
+            route: as its own screen it had to be listed in app/_layout's
+            transparentModal array, and missing that made the pager and the
+            stack animate against each other. */}
+        <Modal visible={freeOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setFreeOpen(false)}>
+          <View style={styles.freeSheet}>
+            <View style={styles.freeSheetHead}>
+              <Text style={styles.freeSheetTitle} numberOfLines={1}>{t('shop.unlockTitle')}</Text>
+              <TouchableOpacity onPress={() => setFreeOpen(false)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('a11y.close')}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={styles.freeSheetBody} showsVerticalScrollIndicator={false}>
+              <Text style={styles.freeSheetIntro}>{t('shop.freeClaimIntro')}</Text>
+              <View style={styles.unlockCard}>
+                {!!listing?.free_requires_follow && (
+                  <TouchableOpacity
+                    style={styles.unlockRow}
+                    onPress={() => { if (!conds?.followMet && listing) toggleFollow(listing.user_id); }}
+                    activeOpacity={conds?.followMet ? 1 : 0.7}
+                  >
+                    <Ionicons name={conds?.followMet ? 'checkmark-circle' : 'person-add-outline'} size={20} color={conds?.followMet ? colors.success : colors.textSecondary} />
+                    <Text style={[styles.unlockText, conds?.followMet && styles.unlockTextMet]}>
+                      {t('shop.unlockFollow', { name: sellerName || '—' })}
+                    </Text>
+                    {!conds?.followMet && <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />}
+                  </TouchableOpacity>
+                )}
+                {(conds?.likes ?? []).map((lk, i) => (
+                  <TouchableOpacity
+                    key={lk.postId}
+                    style={styles.unlockRow}
+                    onPress={() => { setFreeOpen(false); router.push(`/post/${lk.postId}`); }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name={lk.met ? 'checkmark-circle' : 'heart-outline'} size={20} color={lk.met ? colors.success : colors.textSecondary} />
+                    <Text style={[styles.unlockText, lk.met && styles.unlockTextMet]}>
+                      {t('shop.unlockLike', { n: i + 1 })}
+                    </Text>
+                    {!lk.met && <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />}
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={[styles.unlockHint, conds?.allMet && { color: colors.success }]}>
+                {conds?.allMet ? t('shop.unlockReady') : t('shop.unlockUnmet')}
+              </Text>
+              {!!error && <Text style={styles.errorText}>{error}</Text>}
+              {/* Locked until every box is ticked — the same condition
+                  shop_order_precheck enforces server-side, so this never
+                  promises something the backend will refuse. */}
+              <TouchableOpacity
+                style={[styles.greenBtn, !conds?.allMet && styles.btnLocked]}
+                onPress={claimFree}
+                disabled={!conds?.allMet || busyKind === 'free'}
+                activeOpacity={0.85}
+              >
+                {busyKind === 'free' ? <ActivityIndicator color="#fff" /> : (
+                  <>
+                    <Ionicons name={conds?.allMet ? 'gift' : 'lock-closed'} size={18} color="#fff" />
+                    <Text style={styles.greenBtnText}>{t('shop.freeClaimBtn')}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </Modal>
+
         <Modal visible={offerOpen} transparent animationType="slide" onRequestClose={() => setOfferOpen(false)}>
           <Pressable style={styles.offerBackdrop} onPress={() => setOfferOpen(false)}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -704,6 +802,15 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     color: c.textSecondary, fontSize: 12, lineHeight: 17,
     paddingHorizontal: 10, paddingTop: 6,
   },
+  freeSheet: { flex: 1, backgroundColor: c.background },
+  freeSheetHead: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border,
+  },
+  freeSheetTitle: { flex: 1, color: c.text, fontSize: 17, fontWeight: '800' },
+  freeSheetBody: { padding: SPACING.md, gap: SPACING.md },
+  freeSheetIntro: { color: c.textSecondary, fontSize: 13.5, lineHeight: 19 },
   greenBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: c.success, borderRadius: RADIUS.full, paddingVertical: 13,
