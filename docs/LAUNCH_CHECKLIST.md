@@ -83,9 +83,14 @@ re-verified against the live project, not just marked off:
    `npx supabase functions list`: `revenuecat-webhook`, `parent-consent-verify`,
    `livekit-token` and `share-page` all read `verify_jwt: false`.
 
-**Owner, OPEN — added 2026-07-30.**
+**Owner — 2026-07-30. Done.**
 
-5. **Run `supabase/sql/shop_stats.sql`.** After `shop_multi.sql` and `shop_credits.sql`;
+5. ~~**Run `supabase/sql/shop_stats.sql`.**~~ **Done 2026-07-30**, verified: the drift check
+   returns no rows, and the one listing it first flagged was a false positive in the check
+   itself (`count(*)` over a LEFT join counts the null-extended row, and
+   `shop_order_kind(NULL, license)` coalesces it into the license-derived kind, so a listing
+   that had sold nothing reported a phantom lease — fixed to `count(o.id)`; the backfill
+   joins INNER and was never affected). After `shop_multi.sql` and `shop_credits.sql`;
    idempotent, and it backfills the new counters from existing orders. Two reasons, and
    only the first is cosmetic:
    - the listing page can now say *"Sold · 2 leased · 3 claimed"* instead of one
