@@ -187,7 +187,14 @@
           }
         }
       ],
-      "@sentry/react-native"
+      [
+        "@sentry/react-native",
+        {
+          "organization": "laybell-llc",
+          "project": "react-native",
+          "url": "https://sentry.io/"
+        }
+      ]
     ],
     "extra": {
       "router": {},
