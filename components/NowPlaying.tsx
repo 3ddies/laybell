@@ -602,8 +602,6 @@ export default function NowPlaying() {
                     onArchived: () => collapse(),
                     onBlocked: () => collapse(),
                     onNavigate: collapse,
-                    onLikeChanged: (l) => { setIsLiked(l); setLikeCount(c => Math.max(0, c + (l ? 1 : -1))); },
-                    onSaveChanged: (s) => { setIsSaved(s); setSaves(c => Math.max(0, c + (s ? 1 : -1))); },
                   })}
                 >
                   <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />

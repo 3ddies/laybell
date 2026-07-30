@@ -14,8 +14,6 @@ import { withdrawSound, soundIsAvailable } from '../lib/sounds';
 import { confirmBlockUser, isBlocked, unblockUser } from '../lib/blocks';
 import { isAudioPost } from '../lib/genres';
 import { supabase } from '../lib/supabase';
-import { bumpBadge } from '../lib/badges';
-import { createNotification } from '../lib/createNotification';
 import { selection } from '../lib/haptics';
 import { useProfile } from './ProfileContext';
 import { useTranslation } from './LanguageContext';
@@ -70,10 +68,6 @@ export type PostOptionsArgs = {
   onArchived?: () => void;
   onRepostChanged?: (reposted: boolean) => void;
   onBlocked?: () => void;
-  // Keep an external like/save button (e.g. Now Playing) in sync when the menu
-  // toggles it.
-  onLikeChanged?: (liked: boolean) => void;
-  onSaveChanged?: (saved: boolean) => void;
   // Called right before the sheet navigates away (Artist) — hosts that render an
   // overlay (Now Playing) pass their collapse() so the profile shows in front.
   onNavigate?: () => void;
@@ -218,8 +212,6 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   const closeRef = useRef(onClose); closeRef.current = onClose;
   const optsRef = useRef(opts); optsRef.current = opts;
   const [reposted, setReposted] = useState(false);
-  const [liked, setLiked] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [blocked, setBlocked] = useState(false);
   // Offline-download inputs for the audio post. Seeded from the args, then
   // back-filled by a lazy `posts` fetch when the args don't carry them (most
@@ -254,18 +246,12 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
       ]).start();
 
       // Resolve the dynamic option states for this post/user.
-      setReposted(false); setLiked(false); setSaved(false); setBlocked(false);
+      setReposted(false); setBlocked(false);
       const o = opts;
       const uid = profile?.id;
       if (o && !o.isOwn && uid) {
         if (o.postId) isReposted(o.postId, uid).then(setReposted);
         if (o.authorId) isBlocked(o.authorId).then(setBlocked);
-      }
-      if (o?.postId && isAudioPost(o.mediaType) && uid) {
-        supabase.from('likes').select('user_id').eq('post_id', o.postId).eq('user_id', uid).maybeSingle()
-          .then(({ data }) => setLiked(!!data));
-        supabase.from('saves').select('id').eq('post_id', o.postId).eq('user_id', uid).maybeSingle()
-          .then(({ data }) => setSaved(!!data));
       }
       // Download inputs: seed from args, then fetch the rest. We always fetch for
       // audio posts because the song TITLE (caption) is needed for the Downloads
@@ -388,37 +374,6 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
     dismiss();
   }
 
-  // Like/Save toggles keep the sheet OPEN so the filled state is visible and the
-  // user can chain actions (e.g. like, then add to playlist).
-  async function toggleLike() {
-    const o = optsRef.current;
-    const uid = profile?.id;
-    if (!o?.postId || !uid) return;
-    const next = !liked;
-    setLiked(next); // optimistic
-    if (next) {
-      await supabase.from('likes').insert({ user_id: uid, post_id: o.postId });
-      bumpBadge('likes');
-      if (o.authorId && o.authorId !== uid) {
-        createNotification({ userId: o.authorId, actorId: uid, type: 'like', postId: o.postId });
-      }
-    } else {
-      await supabase.from('likes').delete().eq('user_id', uid).eq('post_id', o.postId);
-    }
-    o.onLikeChanged?.(next);
-  }
-
-  async function toggleSave() {
-    const o = optsRef.current;
-    const uid = profile?.id;
-    if (!o?.postId || !uid) return;
-    const next = !saved;
-    setSaved(next); // optimistic
-    if (next) await supabase.from('saves').insert({ user_id: uid, post_id: o.postId });
-    else await supabase.from('saves').delete().eq('user_id', uid).eq('post_id', o.postId);
-    o.onSaveChanged?.(next);
-  }
-
   // Download / remove-download for any viewer. Keeps the sheet OPEN so the
   // pinned/removing state is reflected (and the spinner shows while pinning).
   function toggleDownload() {
@@ -506,6 +461,39 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
 
   const options: Opt[] = [];
 
+  // ── Share (ANY post, first in every menu) ─────────────────────────────────
+  // Was audio-only, sitting below Like/Save. Now that those are gone it leads,
+  // because it's the one action that means the same thing on every post type.
+  // Opens the SAME global share sheet the rest of the app uses — via the
+  // module-level opener, because this sheet renders ABOVE ShareProvider and a
+  // useShare() here would resolve to the no-op default (see openShareGlobal).
+  //
+  // The payload falls back through whichever lazy back-fill ran for this media
+  // type (dl* for audio, vid* for video), so the share sheet's preview shows a
+  // real title and thumbnail even from the many call sites that pass neither.
+  // Only the in-app preview depends on this: the link's own unfurl card is
+  // built server-side from the post id.
+  if (hasPost) {
+    const shareCaption = opts?.caption ?? (isAudio ? (dlTitle || null) : vidCaption);
+    const shareCover = opts?.cover ?? opts?.thumbnail ?? (isAudio ? dlCover : vidThumb);
+    const shareMedia = opts?.mediaUrl ?? (isAudio ? dlUrl : vidUrl);
+    options.push({ key: 'share', label: t('postOptions.share'), icon: 'share-social-outline',
+      onPress: () => {
+        const o = optsRef.current;
+        dismissThen(() => {
+          if (!o?.postId) return;
+          openShareGlobal({
+            postId: o.postId,
+            caption: shareCaption,
+            username: o.authorName ?? null,
+            cover: shareCover,
+            type: o.mediaType ?? null,
+            mediaUrl: shareMedia,
+          });
+        });
+      } });
+  }
+
   // ── Music actions (audio posts) ───────────────────────────────────────────
   if (hasPost && isAudio) {
     if (opts?.onRemoveFromPlaylist) {
@@ -516,40 +504,6 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
     } else {
       options.push({ key: 'playlist', label: t('postOptions.addToPlaylist'), icon: 'add-circle-outline',
         onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) onAddToPlaylist(o.postId); }); } });
-    }
-    options.push({ key: 'like', label: liked ? t('postOptions.unlike') : t('postOptions.like'), icon: liked ? 'heart' : 'heart-outline',
-      active: liked, activeColor: colors.like, onPress: toggleLike });
-    options.push({ key: 'save', label: saved ? t('postOptions.unsave') : t('postOptions.save'), icon: saved ? 'bookmark' : 'bookmark-outline',
-      active: saved, activeColor: colors.primary, onPress: toggleSave });
-    // Share, from the music 3-dot: track rows have no visible share button
-    // (unlike feed cards and reels), so this was the one music surface where a
-    // song couldn't be sent anywhere. Opens the SAME global share sheet the
-    // rest of the app uses — via the module-level opener, because this sheet
-    // renders ABOVE ShareProvider and a useShare() here would be the no-op
-    // default (see openShareGlobal).
-    // The dl* states are the download row's lazy back-fill (title/cover/url
-    // fetched for every audio post) — reusing them here means the share text
-    // carries the song title even from the many call sites that don't pass
-    // `caption`, with no extra query and no call-site changes.
-    {
-      const shareCaption = opts?.caption ?? (dlTitle || null);
-      const shareCover = opts?.cover ?? dlCover;
-      const shareMedia = opts?.mediaUrl ?? dlUrl;
-      options.push({ key: 'share', label: t('postOptions.share'), icon: 'share-social-outline',
-        onPress: () => {
-          const o = optsRef.current;
-          dismissThen(() => {
-            if (!o?.postId) return;
-            openShareGlobal({
-              postId: o.postId,
-              caption: shareCaption,
-              username: o.authorName ?? null,
-              cover: shareCover,
-              type: o.mediaType ?? null,
-              mediaUrl: shareMedia,
-            });
-          });
-        } });
     }
     // Download for offline (any viewer). Pinned → "Remove download"; otherwise
     // "Download". useDownloadAction owns all the failure alerts (tier/space/opt-out).
