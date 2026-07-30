@@ -36,12 +36,22 @@ const SIBLING_INK_H = 449 / 512;
 const SIBLING_INK_DY = -22 / 512;
 
 // The note's stem and flag stick out ABOVE the dome, so the image is taller than
-// the bell. Sizing off the image would leave the bell visibly smaller than the
-// icon beside it and sitting too low. These bound the BODY only.
-const BODY_TOP = 0.2633;    // dome apex, as a fraction of image height
+// the bell. These bound the BODY only — apex of the dome to the base.
+//
+// BODY_TOP is the row where the dome's arch first appears. Finding it needs
+// care: the note's stem runs down the middle and its FLAG curves out to the
+// right, so "first row wider than X" and "first ink outside the stem" both catch
+// the note instead of the bell. The dome is the only thing that ever puts ink
+// well LEFT of the stem, so that is the test — leftmost ink crossing clearly
+// left of the stem's edge, which happens at y 160 of 752.
+//
+// An earlier "45% of the widest row" heuristic put this at y 198, 38px too low.
+// That made the drawn bell 26.37pt apex-to-base against a 24.55pt chat bubble —
+// 1.82pt too tall, which is exactly the mismatch this replaces.
+const BODY_TOP = 0.2128;    // dome apex, as a fraction of image height
 const BODY_BOT = 0.9468;    // base
-const BODY_H = BODY_BOT - BODY_TOP;              // 0.6835
-const BODY_MID = (BODY_TOP + BODY_BOT) / 2;      // 0.6051
+const BODY_H = BODY_BOT - BODY_TOP;              // 0.7340
+const BODY_MID = (BODY_TOP + BODY_BOT) / 2;      // 0.5798
 
 const SWING_DEG = 13;
 const FIRST_DELAY_MS = 2400;
