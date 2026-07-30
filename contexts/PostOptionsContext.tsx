@@ -424,7 +424,12 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
       }
     },
     onPanResponderRelease: (_e, g) => {
-      if (g.dy > 60 || g.vy > 1.2) {
+      // Softened from (60, 1.2). The gesture can only start on the grab strip,
+      // where there is nothing else to do, so any downward drag that gets here
+      // is already a dismiss attempt — holding it to a long pull or a hard flick
+      // just made the sheet feel sticky. A short pull or an ordinary flick now
+      // counts.
+      if (g.dy > 48 || g.vy > 0.85) {
         Animated.parallel([
           Animated.timing(translateY, { toValue: DISMISS_DIST, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
           Animated.timing(backdrop, { toValue: 0, duration: 200, useNativeDriver: true }),
@@ -660,7 +665,17 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     borderTopRightRadius: RADIUS.xl,
     overflow: 'hidden',
   },
-  grab: { alignItems: 'center', paddingVertical: SPACING.sm },
+  // The drag-to-dismiss target, and it is ONLY this strip — the options below
+  // sit in a ScrollView that owns its own vertical gestures. At
+  // paddingVertical: SPACING.sm it measured 21pt tall (8 + 5 + 8), under half
+  // Apple's 44pt minimum, so a swipe that started even slightly below the
+  // handle landed on the first option row and the sheet just sat there.
+  //
+  // Now 45pt (16 + 5 + 24), weighted BELOW the handle because that's the side
+  // people undershoot from — the thumb travels up to the sheet and starts the
+  // drag a little low. Deliberately no more than that: the strip has to stay
+  // clear of the first option, which is a real tap target.
+  grab: { alignItems: 'center', paddingTop: SPACING.md, paddingBottom: SPACING.lg },
   handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: c.border },
   divider: { height: 0.5, backgroundColor: c.border },
   optionsScroll: { flexShrink: 1 },
