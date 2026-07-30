@@ -22,6 +22,19 @@ import { View, Text, Image, Animated, Easing, StyleSheet, AccessibilityInfo, typ
 // (re-run the measurement, update these six numbers).
 const BELL = require('../assets/bell-icon.png');
 
+// ── Matching the Ionicons sibling ──────────────────────────────────────────
+// `size={28}` on an Ionicon sets the EM, not the drawing. The glyph inside is
+// smaller than that and is not centred in its text box, so sizing the bell to 28
+// made it taller than the chat bubble beside it and sat it slightly low.
+//
+// Both numbers are read out of Ionicons.ttf for `chatbubbles-outline`
+// (unitsPerEm 512, ink y -34..415, hhea ascender 454 / descender -71 /
+// lineGap 46), not estimated:
+//   ink height        449/512 = 0.8770 em  -> 24.55pt at size 28
+//   ink centre offset  -22/512 = 0.0430 em ABOVE the text box centre
+const SIBLING_INK_H = 449 / 512;
+const SIBLING_INK_DY = -22 / 512;
+
 // The note's stem and flag stick out ABOVE the dome, so the image is taller than
 // the bell. Sizing off the image would leave the bell visibly smaller than the
 // icon beside it and sitting too low. These bound the BODY only.
@@ -46,12 +59,13 @@ const GAP_MIN_MS = 17_000;
 const GAP_MAX_MS = 33_000;
 
 export default function LaybellBell({
-  bodySize = 28, color, unreadColor, accent = '#FF8095', count, focused, style,
+  matchIconSize = 28, color, unreadColor, accent = '#FF8095', count, focused, style,
 }: {
-  /** Height the BELL BODY should occupy — set it to the size of the icon beside
-   *  it and the two line up top and bottom. The image itself is rendered larger
-   *  so the note's flag can overhang, which is why this isn't called `size`. */
-  bodySize?: number;
+  /** The `size` prop given to the Ionicon beside this one. The bell's BODY is
+   *  then matched to that glyph's real drawn height and vertical position — not
+   *  to the nominal size, which is the em and is bigger than the drawing. Pass
+   *  the same number the sibling icon uses and the two line up. */
+  matchIconSize?: number;
   /** Resting colour once everything has been read. */
   color: string;
   /** Colour the mark takes while unread. This replaces the old count badge. */
@@ -131,9 +145,13 @@ export default function LaybellBell({
   });
 
   // ── Layout ────────────────────────────────────────────────────────────────
-  // The box is bodySize square so it occupies the same room as the icon beside
-  // it. The image is bigger and overhangs, positioned so the BODY's midline
-  // lands on the box's midline — which is what makes the two line up.
+  // The bell BODY is matched to the sibling glyph's drawn height, and the whole
+  // thing is nudged up by the same amount that glyph's ink sits above its own
+  // text box centre. Both come from the font, so the two line up top and bottom
+  // in a row that centres its children.
+  const bodySize = matchIconSize * SIBLING_INK_H;
+  const nudgeY = matchIconSize * SIBLING_INK_DY;
+
   const imgSize = bodySize / BODY_H;
   const imgTop = bodySize / 2 - BODY_MID * imgSize;
   const imgLeft = (bodySize - imgSize) / 2;
@@ -160,7 +178,15 @@ export default function LaybellBell({
   // logo. Nothing in the header sets overflow hidden today — this keeps it
   // working if something later does.
   return (
-    <View style={[{ width: bodySize, height: bodySize, overflow: 'visible' }, style]}>
+    <View
+      style={[
+        { width: bodySize, height: bodySize, overflow: 'visible' },
+        // translateY, not margin: a transform shifts the drawing without
+        // changing the layout box, so the header's spacing is untouched.
+        { transform: [{ translateY: nudgeY }] },
+        style,
+      ]}
+    >
       <Animated.View
         pointerEvents="none"
         style={[
