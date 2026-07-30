@@ -62,13 +62,18 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
   const [loading, setLoading] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('trending');
-  // Liked/Saved are fetched once per open and filtered in memory, so typing in
-  // the search box doesn't re-query. `null` means "not loaded yet".
-  const [mine, setMine] = useState<any[] | null>(null);
-  // A liked song whose creator never allowed reuse is dropped, which would
-  // otherwise read as "your likes are empty". Counting the drops lets the empty
-  // state say what actually happened.
-  const [filteredOut, setFilteredOut] = useState(0);
+
+  // Per-tab result cache for this opening of the sheet. Revisiting a tab paints
+  // from here in the same commit as the tab highlight, so there is no skeleton
+  // and no flash — the list simply is what it was. Cleared on close so a song
+  // liked in between is picked up next time.
+  const cache = useRef<Partial<Record<Tab, any[]>>>({});
+  // How many songs a tab dropped for lacking reuse consent. A tab that is empty
+  // ONLY because of that must not claim you have no likes.
+  const dropped = useRef<Partial<Record<Tab, number>>>({});
+  // Monotonic id: a response from a tab you have already left is discarded
+  // rather than painted over the current one.
+  const reqId = useRef(0);
 
   function stopPreview() {
     stopSong(PREVIEW_HOST);
@@ -83,33 +88,93 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
     }
   }
 
+  // Reset on CLOSE, not on open. Resetting on open sets `tab` in one effect
+  // while the loader effect below runs in the same commit still seeing the
+  // PREVIOUS tab — so opening the sheet fired a throwaway query for whichever
+  // tab you happened to leave it on. Tearing down on the way out means the next
+  // open starts from already-correct state and loads exactly once.
+  //
+  // The caches go too: a song liked between openings should show up.
   useEffect(() => {
-    if (visible) { setQuery(''); setTab('trending'); setMine(null); runSearch(''); }
-    else stopPreview();
+    if (visible) return;
+    stopPreview();
+    setQuery('');
+    setTab('trending');
+    setResults([]);
+    setLoading(false);
+    cache.current = {};
+    dropped.current = {};
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  // Trending searches the server (debounced); Liked/Saved filter the fetched
-  // list in memory, so those tabs respond to typing instantly and never
-  // re-query.
+  // ONE effect owns every load. It used to be two, plus imperative calls in
+  // switchTab, and that is what made Trending flash twice: switchTab fetched
+  // immediately AND changing `tab` re-ran the effect, so two identical searches
+  // raced, each toggling the skeleton on and off.
+  //
+  // Now nothing fetches imperatively. The tab and the query are the inputs; this
+  // decides what that combination should show.
   useEffect(() => {
     if (!visible) return;
-    if (tab !== 'trending') { applyLocalFilter(query, mine); return; }
-    const timer = setTimeout(() => runSearch(query), 350);
+    const term = query.trim();
+    const id = ++reqId.current;
+    // Late responses from a tab you already left must not paint. Without this
+    // the previous tab's rows land on top of the new tab's.
+    const fresh = () => id === reqId.current;
+
+    const cached = cache.current[tab];
+
+    // Liked / Saved. Cached means the switch is a pure render — the list is on
+    // screen in the same commit as the tab highlight, with no skeleton between.
+    if (tab !== 'trending') {
+      if (cached) { setLoading(false); setResults(filterLocal(cached, term)); return; }
+      setLoading(true);
+      loadMine(tab).then(({ rows, droppedCount }) => {
+        if (!fresh()) return;
+        cache.current[tab] = rows;
+        dropped.current[tab] = droppedCount;
+        setResults(filterLocal(rows, term));
+        setLoading(false);
+      });
+      return;
+    }
+
+    // Trending with an empty box: the default listing, also cached, so coming
+    // back from Liked is instant instead of re-fetching what it already had.
+    if (!term) {
+      if (cached) { setLoading(false); setResults(cached); return; }
+      setLoading(true);
+      runSearch('').then((rows) => {
+        if (!fresh()) return;
+        cache.current.trending = rows;
+        setResults(rows);
+        setLoading(false);
+      });
+      return;
+    }
+
+    // Trending while typing. Deliberately does NOT raise `loading`: swapping the
+    // list for a skeleton on every keystroke is the stutter this was reported
+    // for. The current results stay put and are replaced once the answer lands.
+    const timer = setTimeout(() => {
+      runSearch(term).then((rows) => {
+        if (!fresh()) return;
+        setResults(rows);
+        setLoading(false);
+      });
+    }, 350);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, tab, mine]);
+  }, [visible, tab, query]);
 
   // Switching tab clears the search box: a term typed against the whole
   // catalogue rarely matches inside your own likes, and carrying it over makes
-  // a full tab look empty.
+  // a full tab look empty. Purely state — the effect above does the loading.
   function switchTab(next: Tab) {
     if (next === tab) return;
     stopPreview();
     setQuery('');
     setTab(next);
-    if (next === 'trending') { runSearch(''); return; }
-    if (mine === null || mineKind.current !== next) loadMine(next);
   }
 
   // `consentFilter` is separated out so the search can be retried without it on a
@@ -148,10 +213,10 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
     return req;
   }
 
-  async function runSearch(q: string) {
-    setLoading(true);
+  // RETURNS rows rather than setting state. Every caller is the one effect
+  // above, which decides whether the answer is still wanted before painting it.
+  async function runSearch(q: string): Promise<any[]> {
     const term = q.trim();
-
     const { data, error } = await searchSounds(term, true);
     if (error && /sound_opt_in|sound_withdrawn_at/.test(error.message ?? '')) {
       // sound_optin.sql hasn't been applied yet. Retry unfiltered so the picker
@@ -159,27 +224,17 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
       // migration lands. Once the migration runs the consent filter takes effect
       // on its own, with no code change.
       const { data: fallback } = await searchSounds(term, false);
-      setResults(fallback ?? []);
-      setLoading(false);
-      return;
+      return fallback ?? [];
     }
-    setResults(data ?? []);
-    setLoading(false);
+    return data ?? [];
   }
-
-  // Which kind `mine` currently holds, so re-entering a tab doesn't refetch but
-  // switching between Liked and Saved does.
-  const mineKind = useRef<Tab | null>(null);
 
   // Your liked or saved songs. One query per tab per open — the list is small
   // and bounded, so filtering it in memory beats round-tripping every keystroke.
-  async function loadMine(kind: Tab) {
-    setLoading(true);
-    setResults([]);
-    setFilteredOut(0);
+  async function loadMine(kind: Tab): Promise<{ rows: any[]; droppedCount: number }> {
     const { data: { user } } = await supabase.auth.getUser();
     const uid = user?.id;
-    if (!uid) { mineKind.current = kind; setMine([]); setLoading(false); return; }
+    if (!uid) return { rows: [], droppedCount: 0 };
 
     const table = kind === 'liked' ? 'likes' : 'saves';
     let rows: any[] = [];
@@ -216,23 +271,19 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
       ? songs.filter((p: any) => p.sound_opt_in === true && p.sound_withdrawn_at == null)
       : songs;
 
-    setFilteredOut(songs.length - reusable.length);
-    mineKind.current = kind;
-    setMine(reusable);
-    setLoading(false);
+    return { rows: reusable, droppedCount: songs.length - reusable.length };
   }
 
-  // Local search within Liked/Saved, over title and artist — the same two
+  // Pure. Local search within Liked/Saved, over title and artist — the same two
   // fields the server-side search matches on.
-  function applyLocalFilter(q: string, rows: any[] | null) {
-    if (rows === null) { setResults([]); return; }
-    const term = q.trim().toLowerCase();
-    if (!term) { setResults(rows); return; }
-    setResults(rows.filter((p: any) => {
+  function filterLocal(rows: any[], term: string): any[] {
+    const q = term.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((p: any) => {
       const title = String(p.caption ?? '').toLowerCase();
       const artist = `${p.profiles?.display_name ?? ''} ${p.profiles?.username ?? ''}`.toLowerCase();
-      return title.includes(term) || artist.includes(term);
-    }));
+      return title.includes(q) || artist.includes(q);
+    });
   }
 
   function pick(item: any) {
@@ -321,7 +372,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
                     likes — the difference is the user's to know about. */}
                 {tab === 'trending' || query.trim()
                   ? t('songPicker.empty')
-                  : filteredOut > 0
+                  : (dropped.current[tab] ?? 0) > 0
                     ? t('songPicker.noneReusable')
                     : t(tab === 'liked' ? 'songPicker.emptyLiked' : 'songPicker.emptySaved')}
               </Text>
