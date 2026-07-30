@@ -24,7 +24,7 @@ import { reportListing } from '../../../lib/postActions';
 import {
   checkFreeConditions, fetchListing, formatPrice, getDeliverableUrl, hasDeliveredSales,
   logDeliverableDownload,
-  freeHasConditions, legacyKindOf, listingPriceLabel, myOrdersForListing, priceForKind, refundAndRemoveListing,
+  freeHasConditions, legacyKindOf, listingPriceLabel, listingStats, myOrdersForListing, priceForKind, refundAndRemoveListing,
   requestToBuy, saleTypes, setOrderStatus, updateListing,
   type FreeConditionState, type SaleKind, type ShopListing, type ShopOrder,
 } from '../../../lib/shop';
@@ -239,7 +239,13 @@ export default function ListingScreen() {
         setError(t('shop.needCredits'));
         router.push('/credits');
       } else if (msg.includes('cannot_buy_own')) setError(t('shop.cannotBuyOwn'));
-      else await load(); // unique violation / kind gone → resync
+      else if (msg.includes('listing_not_available') || msg.includes('listing_sold')) {
+        // Sold, paused or pulled between this page loading and the tap. The
+        // reload is what actually closes the buttons off — the message is only
+        // so the page doesn't silently rearrange itself under their finger.
+        setError(t('shop.noLongerAvailable'));
+        await load();
+      } else await load(); // unique violation / kind gone → resync
     }
     setBusyKind(null);
   }
@@ -323,6 +329,16 @@ export default function ListingScreen() {
   // like the other primary CTAs.
   const offerPrimary = offerable && !types.free;
   const offerCents = Math.round((parseFloat(offerText.replace(',', '.')) || 0) * 100);
+  // What the listing has actually done. Sold leads, because it is the one that
+  // changes what the rest of the page is even offering; the two repeatable
+  // deals follow with their tallies. A deal nobody has taken shows NOTHING
+  // rather than a zero — "0 leased" only advertises the silence.
+  const stats = listing ? listingStats(listing) : null;
+  const statParts = (!stats ? [] : [
+    stats.sold && { key: 'sold', text: t('shop.sold'), sold: true },
+    stats.leased > 0 && { key: 'leased', text: t('shop.stat.leased', { n: stats.leased }), sold: false },
+    stats.claimed > 0 && { key: 'claimed', text: t('shop.stat.claimed', { n: stats.claimed }), sold: false },
+  ].filter(Boolean)) as { key: string; text: string; sold: boolean }[];
   const enabledLabels = [
     types.sell && t('shop.license.exclusive'),
     types.lease && t('shop.license.nonexclusive'),
@@ -521,8 +537,15 @@ export default function ListingScreen() {
               </View>
             </View>
 
-            {listing.sales_count > 0 && (
-              <Text style={styles.sales}>{t('shop.salesCount', { n: listing.sales_count })}</Text>
+            {statParts.length > 0 && (
+              <View style={styles.statsRow}>
+                {statParts.map((p, i) => (
+                  <View key={p.key} style={styles.statsItem}>
+                    {i > 0 && <Text style={styles.statsDot}>·</Text>}
+                    <Text style={[styles.sales, p.sold && styles.salesSold]}>{p.text}</Text>
+                  </View>
+                ))}
+              </View>
             )}
             {/* The plain-words explainer for each deal type used to sit here as
                 a permanent block. It now lives inside the caption under its own
@@ -865,6 +888,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   pricePill: { backgroundColor: c.success, borderRadius: RADIUS.full, paddingHorizontal: 13, paddingVertical: 6 },
   priceText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   sales: { color: c.textSecondary, fontSize: 12, fontWeight: '600' },
+  // Sold is the one stat that changes what the page is offering, so it is the
+  // only one that gets a colour.
+  salesSold: { color: c.success },
+  statsRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  statsItem: { flexDirection: 'row', alignItems: 'center' },
+  statsDot: { color: c.textTertiary, fontSize: 12, marginHorizontal: 6 },
   // Deal-type explainer (Lease / Sell / Free in plain words).
   description: { color: c.textSecondary, fontSize: 14, lineHeight: 20 },
   sellerRow: {

@@ -55,6 +55,11 @@ export type ShopListing = {
   free_enabled?: boolean;
   free_requires_follow?: boolean;
   free_like_post_ids?: string[];
+  // Per-kind tallies (shop_stats.sql). sales_count is the undifferentiated
+  // total and still drives the 'popular' sort; these two are what the listing
+  // actually shows, because "5 sold" said nothing about which deal happened.
+  lease_count?: number;
+  free_count?: number;
   seller?: SellerProfile;
 };
 
@@ -585,6 +590,24 @@ export type FreeConditionState = {
     this where the UI has to render immediately, e.g. a button's caption. */
 export function freeHasConditions(l: ShopListing): boolean {
   return !!l.free_requires_follow || (l.free_like_post_ids?.length ?? 0) > 0;
+}
+
+export type ListingStats = { claimed: number; leased: number; sold: boolean };
+
+/** What a listing has actually done, as the page states it.
+ *
+ *  `sold` is a flag rather than a count on purpose: an exclusive sale happens
+ *  exactly once and ends the listing, so "1 sold" would invite the reader to
+ *  wonder how many more there could be. Claims and leases repeat, so they count.
+ *
+ *  Zeroed on a pre-migration database (shop_stats.sql) — which reads as a
+ *  listing nobody has taken up yet, and shows nothing at all. */
+export function listingStats(l: ShopListing): ListingStats {
+  return {
+    claimed: Math.max(0, l.free_count ?? 0),
+    leased: Math.max(0, l.lease_count ?? 0),
+    sold: l.status === 'sold',
+  };
 }
 
 /** Client-side mirror of the server's free-claim gate — powers the checklist

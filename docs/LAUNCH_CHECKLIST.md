@@ -83,6 +83,23 @@ re-verified against the live project, not just marked off:
    `npx supabase functions list`: `revenuecat-webhook`, `parent-consent-verify`,
    `livekit-token` and `share-page` all read `verify_jwt: false`.
 
+**Owner, OPEN — added 2026-07-30.**
+
+5. **Run `supabase/sql/shop_stats.sql`.** After `shop_multi.sql` and `shop_credits.sql`;
+   idempotent, and it backfills the new counters from existing orders. Two reasons, and
+   only the first is cosmetic:
+   - the listing page can now say *"Sold · 2 leased · 3 claimed"* instead of one
+     undifferentiated `sales_count` that meant nothing in particular;
+   - **it closes two real holes.** Neither `shop_order_precheck()` nor
+     `shop_buy_with_credits()` ever looked at the listing's `status`. So a **paused
+     listing could still be bought outright** — pausing was cosmetic, the app hid the
+     buttons and the server honoured whatever arrived — and a **sold** listing could
+     still be **claimed for free**, because a free claim is inserted straight as
+     `delivered` by the precheck and never passes through the delivery trigger that
+     refuses everything else. Sell and lease on a sold listing already failed safely
+     (the trigger raises `listing_sold` and the whole RPC rolls back, money included).
+     Until this runs, the app is the only thing standing in the way of either.
+
 **Crash and error reporting — CODE DONE 2026-07-29, DELIBERATELY INERT.**
 
 Wired but switched off. `@sentry/react-native` (~7.2.0, via `npx expo install`), the config
