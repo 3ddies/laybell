@@ -29,7 +29,15 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ### The gate
 
-**A build.** RevenueCat is a native module, so nothing payment-related can be tested in
+**Two things, in this order: an Apple agreement, then a build.**
+
+**Apple first.** While Paid Applications is not `Active`, App Store Connect serves NO
+in-app-purchase products to StoreKit, so RevenueCat fails at startup and credits cannot be
+bought at all. Credits fund tips, shop and offers, so four of the five money tests are gated
+on paperwork rather than on code. The Stripe bank-connect test is the exception — it does
+not touch credits, so **do that one first.** See §0.2.
+
+**Then a build.** RevenueCat is a native module, so nothing payment-related can be tested in
 Expo Go. **Every line of the money code above has been reasoned about carefully and
 executed zero times.** Two bugs in it were caught only because Postgres rejected them at
 `CREATE` time, and a third — a guard that would have thrown on every ad impression — was
@@ -55,36 +63,25 @@ caught by review, not by testing. Assume there are more.
 | **Badges copy lied** | The footnote said Community and App Sharing were "coming soon"; no badge has been `locked` for some time. Removed in all 10 languages. |
 | **"Payments are simulated"** | Six files of comments sitting directly on code that now debits real credits. Corrected, with the actual RPC names. |
 
-**Owner, unblocked, today:**
+**Owner, unblocked, today — ALL CLEAR as of 2026-07-29 evening.** Every item below was
+re-verified against the live project, not just marked off:
 
-0. **Run `supabase/sql/_RUN_PENDING_2026-07-29.sql`.** Six migrations were committed
-   2026-07-28/29 and added to **no** run bundle, so none has been applied:
-   `stripe_connect` (⚠️ **`payouts.sql` is already live and calls
-   `profiles.stripe_account_id` — plpgsql doesn't resolve columns at CREATE time, so
-   every payout throws at runtime until this lands**), `access_log`, `copyright_strikes`
-   (the DMCA repeat-infringer machinery Terms §8 already promises), `sound_optin`,
-   `live_replay`, `stream_hours`. All idempotent; the bundle carries its own verification
-   queries.
-0b. **Re-run `wallet_earnings.sql`.** It was applied 2026-07-28 with the fee hardcoded at
-   `* 0.85`, then changed 2026-07-29 to derive from `shop_fee_rate()`. Until it is re-run
-   the deployed function uses the old rate and **every seller sees 15 points more than
-   they earned**. `_VERIFY_MONEY_2026-07-29.sql:30` tests exactly this.
-
-1. Tick **Enforce HTTPS** — GitHub repo → Settings → Pages. (Greyed out until the
-   certificate finishes provisioning; allow up to 24h and don't re-save the domain.)
+0. ~~**Run `supabase/sql/_RUN_PENDING_2026-07-29.sql`**~~ — six missing migrations
+   (`stripe_connect`, `access_log`, `copyright_strikes`, `sound_optin`, `live_replay`,
+   `stream_hours`). **Done 2026-07-29**, owner confirmed the bundle's own verification
+   queries all pass.
+0b. ~~**Re-run `wallet_earnings.sql`**~~ so the fee derives from `shop_fee_rate()` instead of
+   a hardcoded `* 0.85`. **Done 2026-07-29** — `_VERIFY_MONEY_2026-07-29.sql:30` passes.
+1. ~~Tick **Enforce HTTPS** — GitHub repo → Settings → Pages.~~ **Done 2026-07-29.**
+   Verified live: `http://laybell.app` and `http://www.laybell.app` both 301 to HTTPS.
 2. ~~Confirm `support@` and `dmca@` aliases exist in ImprovMX.~~ **Done 2026-07-29.**
 3. ~~Restrict App Store availability to the United States.~~ **Done 2026-07-29.**
-4. **🔴 Redeploy `revenuecat-webhook` with JWT verification OFF.** It authenticates with a
-   shared secret in the Authorization header, but was deployed with `verify_jwt: true` — so
-   Supabase's gateway rejects RevenueCat with 401 **before the function runs**. Users would
-   pay Apple and receive no credits, with no logs to find. `supabase/config.toml` now records
-   the correct setting for this and the three other non-JWT callers:
-
-   ```
-   npx supabase functions deploy revenuecat-webhook --no-verify-jwt --project-ref wawpaokvtptfmuygjnns
-   ```
-
-   Confirm with `npx supabase functions list` — `verify_jwt` must read `false`.
+4. ~~**Redeploy `revenuecat-webhook` with JWT verification OFF.**~~ **Done 2026-07-29.**
+   It authenticates with a shared secret in the Authorization header, so `verify_jwt: true`
+   made Supabase's gateway reject RevenueCat with 401 *before the function ran* — users
+   would have paid Apple and received no credits, with no logs to find. Verified live via
+   `npx supabase functions list`: `revenuecat-webhook`, `parent-consent-verify`,
+   `livekit-token` and `share-page` all read `verify_jwt: false`.
 
 **Owner, in flight:**
 
