@@ -97,21 +97,33 @@ would vanish. It now writes one `[money-failure]` JSON line per failure — cred
 refund reversal, premium update, unhandled — with responses byte-identical. Deployed,
 `verify_jwt` still `false`.
 
-🔴 **Turning it on is a LEGAL-DOC change, not a config change.** The Privacy Policy currently
-promises the opposite, in **6 places in `privacy.json` plus 1 in `terms.json`**, and names
-the tool: *"We do not use Google Analytics, Firebase Analytics, Mixpanel, Amplitude,
-**Sentry**, the Meta SDK, or any other third-party analytics, advertising, or crash-reporting
-tool."* That text is live on `laybell.app/privacy.html` (verified). Setting a DSN without
-editing it first makes the published policy false — on an app with 13–17 year olds and real
-money. In order:
+✅ **DONE 2026-07-30 — and it was a legal-doc change, not a config one.** The published
+policy promised the opposite in 4 passages plus 1 in the Terms and named Sentry outright.
+All corrected, plus a new Privacy Policy **§3.16 Crash and Error Reports (Diagnostics)**
+stating what is sent, what is not, that no identity is attached and session replay is off,
+the legitimate-interests basis, at-most-90-day retention, and that it is never used for
+advertising or profiling. Effective date moved to **July 30, 2026**, the five web pages
+regenerated, and `laybell.app/privacy.html` verified live with zero stale claims.
 
-1. Rewrite those 7 claims; add a diagnostics section (what is collected, retention, that it
-   is not advertising or profiling).
-2. Bump the effective date and notify existing users — the same obligation as the
-   2026-07-29 correction in §0.1.
-3. Declare the **Diagnostics** data type in the App Store Connect privacy nutrition label.
-4. Only then set `EXPO_PUBLIC_SENTRY_DSN`, and `SENTRY_AUTH_TOKEN` as an EAS secret so
-   source maps upload — without them a released stack trace is unreadable minified frames.
+A **user opt-out** ships with it — Settings → Privacy Center → "Crash reports", all ten
+languages. Defaults ON (personalised ads need consent; identity-free diagnostics rest on
+legitimate interests) and gates at SEND time, failing closed until the preference has been
+read so an opted-out user cannot leak a report during startup.
+
+`EXPO_PUBLIC_SENTRY_DSN` is set on the **preview and production** build profiles only — not
+development, so the daily dev client never spends quota. Takes effect on the next build.
+
+**Still owner-side:**
+
+1. 🔴 **`SENTRY_AUTH_TOKEN` as an EAS secret**, or released stack traces are unreadable
+   minified frames. Scopes `project:releases` + `org:read`:
+   `npx eas-cli env:create --name SENTRY_AUTH_TOKEN --value <token> --visibility secret --environment production --scope project`
+2. **Notify existing users** of the policy change — the same obligation as the 2026-07-29
+   correction in §0.1.
+3. Declare the **Diagnostics** data type in the App Store Connect privacy nutrition label:
+   Crash Data + Other Diagnostic Data, **not** linked to identity, **not** used for
+   tracking, purpose App Functionality. Those answers match the shipped configuration.
+4. Let the Sentry trial lapse to the free Developer plan — 5k errors/month is ample.
 
 Already hardened for that review, so the disclosure can be narrow: `sendDefaultPii: false`,
 `tracesSampleRate: 0`, **Session Replay deliberately NOT enabled** (Sentry's own guide
