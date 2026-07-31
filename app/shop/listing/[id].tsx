@@ -10,6 +10,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwipeBackPager from '../../../components/SwipeBackPager';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import CreditConfirmDialog from '../../../components/CreditConfirmDialog';
+import { fetchLedgerBalances } from '../../../lib/ledger';
 import { DetailSkeleton } from '../../../components/Skeleton';
 import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../../../constants/theme';
 import { useTheme, useThemedStyles } from '../../../contexts/ThemeContext';
@@ -73,6 +75,11 @@ export default function ListingScreen() {
   // One-time marketplace safety primer, shown before the FIRST buy request on
   // this device (payments happen off-platform, so buyers must know the rules).
   const [safetyOpen, setSafetyOpen] = useState(false);
+  // The pending purchase awaiting confirmation, with the balance already read
+  // so the dialog can state both numbers on its first frame.
+  const [confirmBuy, setConfirmBuy] = useState<
+    { kind: SaleKind; offerCents: number; priceCents: number; balanceCents: number } | null
+  >(null);
   const pendingBuyRef = useRef<{ kind: SaleKind; offerCents: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Which CTA's caption is expanded. One at a time: two open explainers push
@@ -209,6 +216,9 @@ export default function ListingScreen() {
     // a download that has no conditions to fail.
     if (kind === 'free') {
       if (freeHasConditions(listing) && !readyToClaim) { setError(t('shop.freeCondUnmetErr')); return; }
+      // Nothing to confirm — no money moves and the conditions ARE the gate.
+      await doPurchase(kind, offerCents);
+      return;
     } else {
       const acked = await AsyncStorage.getItem(SAFETY_ACK_KEY).catch(() => null);
       if (!acked) {
@@ -217,6 +227,31 @@ export default function ListingScreen() {
         return;
       }
     }
+    // Everything below this point spends credits, so it goes through the
+    // confirmation. The balance is read HERE rather than inside the dialog, so
+    // the price and the balance are both on screen the instant it opens.
+    // An OFFER is exempt: its own sheet already names a price and has its own
+    // send step, and stacking a second dialog on that reads as a double confirm.
+    if (kind !== 'offer') {
+      setBusyKind(kind);
+      const bal = await fetchLedgerBalances().catch(() => null);
+      setBusyKind(null);
+      setConfirmBuy({
+        kind,
+        offerCents,
+        priceCents: priceForKind(listing, kind),
+        // A failed read shows 0, which sends them to top up rather than into a
+        // purchase that would be refused. Wrong in the safe direction.
+        balanceCents: bal?.ready ? bal.credits.totalCents : 0,
+      });
+      return;
+    }
+    await doPurchase(kind, offerCents);
+  }
+
+  // The purchase itself, once confirmed.
+  async function doPurchase(kind: SaleKind, offerCents = 0) {
+    if (!listing) return;
     setBusyKind(kind);
     try {
       const o = await requestToBuy(listing, '', kind, offerCents);
@@ -256,7 +291,7 @@ export default function ListingScreen() {
     await AsyncStorage.setItem(SAFETY_ACK_KEY, '1').catch(() => {});
     const pending = pendingBuyRef.current;
     pendingBuyRef.current = null;
-    if (pending) buy(pending.kind, pending.offerCents);
+    if (pending) buy(pending.kind, pending.offerCents); // re-enters, now acked, and lands on the confirm
   }
 
   async function cancelRequest(order: ShopOrder) {
@@ -876,6 +911,21 @@ export default function ListingScreen() {
         </Modal>
 
         {/* One-time buyer safety primer (payments settle off-platform). */}
+        {/* Confirms the spend and says whether the balance covers it. */}
+        <CreditConfirmDialog
+          visible={!!confirmBuy}
+          priceCents={confirmBuy?.priceCents ?? 0}
+          balanceCents={confirmBuy?.balanceCents ?? 0}
+          currency={listing?.currency ?? 'USD'}
+          itemLabel={listing?.title ?? ''}
+          onBuy={() => {
+            const p = confirmBuy;
+            setConfirmBuy(null);
+            if (p) doPurchase(p.kind, p.offerCents);
+          }}
+          onCancel={() => setConfirmBuy(null)}
+        />
+
         <ConfirmDialog
           visible={safetyOpen}
           title={t('shop.safetyTitle')}

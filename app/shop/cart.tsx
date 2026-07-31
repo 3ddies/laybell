@@ -14,6 +14,8 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { reactionPop, notifySuccess } from '../../lib/haptics';
 import { fetchListing, formatPrice, requestToBuy } from '../../lib/shop';
+import { fetchLedgerBalances } from '../../lib/ledger';
+import CreditConfirmDialog from '../../components/CreditConfirmDialog';
 import {
   cartSubtotalCents, clearCart, removeFromCart, useShopCart, type CartItem,
 } from '../../lib/shopCart';
@@ -42,19 +44,32 @@ export default function CartScreen() {
   const [result, setResult] = useState<Result | null>(null);
 
   const subtotal = cartSubtotalCents(items);
+  // Credits held, read when checkout is tapped. null = no confirmation open.
+  const [confirmBalance, setConfirmBalance] = useState<number | null>(null);
 
   async function startCheckout() {
     if (busy || items.length === 0) return;
     // One-time off-platform-payment primer, same gate the single-listing buy uses.
     const acked = await AsyncStorage.getItem(SAFETY_ACK_KEY).catch(() => null);
     if (!acked) { setSafetyOpen(true); return; }
-    runCheckout();
+    askConfirm();
   }
 
   async function ackAndCheckout() {
     setSafetyOpen(false);
     await AsyncStorage.setItem(SAFETY_ACK_KEY, '1').catch(() => {});
-    runCheckout();
+    askConfirm();
+  }
+
+  // Same confirmation the listing buttons use, against the cart subtotal. It
+  // matters more here: a cart charges for several listings in one go, and the
+  // old flow discovered an empty balance mid-run and reported the ITEMS as
+  // unavailable, which was simply the wrong diagnosis.
+  async function askConfirm() {
+    setBusy(true);
+    const bal = await fetchLedgerBalances().catch(() => null);
+    setBusy(false);
+    setConfirmBalance(bal?.ready ? bal.credits.totalCents : 0);
   }
 
   async function runCheckout() {
@@ -180,6 +195,16 @@ export default function CartScreen() {
             </View>
           </>
         )}
+
+        {/* Same spend confirmation as the listing buttons, against the subtotal. */}
+        <CreditConfirmDialog
+          visible={confirmBalance !== null}
+          priceCents={subtotal}
+          balanceCents={confirmBalance ?? 0}
+          itemLabel={t('shop.cart.items', { n: items.length })}
+          onBuy={() => { setConfirmBalance(null); runCheckout(); }}
+          onCancel={() => setConfirmBalance(null)}
+        />
 
         <ConfirmDialog
           visible={safetyOpen}
