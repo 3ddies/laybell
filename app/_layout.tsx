@@ -175,29 +175,24 @@ function AppContent() {
             complete it before entering the app, so the global back-swipe is disabled
             here — the user can't swipe the welcome/setup screens away. */}
         <Stack.Screen name="onboarding" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
-        {/* Chat transcripts: a PUSH, explicitly — not a sheet.
-            MODAL PRESENTATION IS INHERITED in react-native-screens: a screen
-            pushed after a modal one is presented modally too unless it says
-            otherwise. Every route into a DM comes from a transparentModal —
-            messages/index and notifications are both in the list below — so the
-            transcripts were being presented as their own iOS sheets, complete
-            with the sheet's drag-down dismissal. That pan is separate from the
-            stack's back-swipe and is governed by neither gestureEnabled nor
-            fullScreenGestureEnabled; both were tried and neither stopped the drag
-            (gestureEnabled:false = isModalInPresentation, which only blocks the
-            dismissal from COMPLETING — the card still rubber-bands).
+        {/* Chat transcripts: NO navigator drag gesture at all. Header back only.
+            These screens are reached from messages/index, which is a
+            transparentModal — so they are presented inside a modal container and
+            carry iOS's SHEET dismissal, a pan that is separate from the stack's
+            back-swipe and is not governed by fullScreenGestureEnabled.
             UIKit arms that dismissal whenever the contained scroll view sits at
             contentOffset 0. On a normal transcript that is the top of history,
-            where a reader almost never is, so it stayed dormant for months. The
-            transcripts are inverted lists now, so offset 0 is the NEWEST message
-            — where the thread opens and mostly stays. That is why it appeared
-            with the inverted list and only ever fired dragging one way.
-            presentation:'card' opts out of the inheritance, so these push
-            normally and there is no sheet to drag. fullScreenGestureEnabled
-            stays off so the back-swipe stays on the edge and doesn't arbitrate
-            against the transcript's own vertical scrolling. */}
-        <Stack.Screen name="messages/[id]" options={{ presentation: 'card', fullScreenGestureEnabled: false }} />
-        <Stack.Screen name="messages/group/[id]" options={{ presentation: 'card', fullScreenGestureEnabled: false }} />
+            which a reader is almost never at. The transcripts are inverted
+            lists, so offset 0 is the NEWEST message — where the thread opens and
+            where it spends most of its time. Every downward drag from there was
+            being read as "dismiss the sheet", which is why it only ever happened
+            scrolling one way.
+            gestureEnabled:false maps to isModalInPresentation, which is what
+            actually disarms it. The header's back chevron is the way out; the
+            proper fix is to move these onto SwipeBackPager like their siblings,
+            which owns a horizontal swipe that arbitrates with vertical scroll. */}
+        <Stack.Screen name="messages/[id]" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
+        <Stack.Screen name="messages/group/[id]" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
         {/* The story viewer expands out of the tapped ring (Instagram shared-element
             style): transparent modal so the feed stays visible behind the growing
             post, no native animation/gesture — the in-screen rect animation drives it. */}
