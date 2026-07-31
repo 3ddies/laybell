@@ -151,7 +151,10 @@ re-verified against the live project, not just marked off:
    offer credits are held and settled by the escrow triggers, which never read the
    listing's deal types.
 
-8. **Run `supabase/sql/offer_expiry.sql`** (after `shop_offers_open.sql`; idempotent).
+8. ~~**Run `supabase/sql/offer_expiry.sql`**~~ **Done 2026-07-30**, run as one merged
+   script with item 9 (both rebuild the same two functions, so they were applied in
+   their final combined state rather than one over the other). Verified: `cron.job`
+   has `expire-stale-offers`.
 
    Buy-offers now expire after 24 hours and read "Offer expired" in the thread.
    This is **not cosmetic**: an offer holds the buyer's credits in escrow from the
@@ -165,7 +168,9 @@ re-verified against the live project, not just marked off:
    will still *draw* "Offer expired" past 24h — that half is client-side — which
    makes this the worst state to sit in: it looks handled and isn't.
 
-9. **Run `supabase/sql/shop_exclusivity_lock.sql`** (after `offer_expiry.sql`; idempotent).
+9. ~~**Run `supabase/sql/shop_exclusivity_lock.sql`**~~ **Done 2026-07-30.** Verified
+   live: both functions carry `for update` (2/2), no listing has ever delivered two
+   exclusive orders, and no sold listing has anything still pending.
 
    **A seventh way to double-spend, found 2026-07-30.** Auto-declining pending
    offers on an exclusive sale already worked; the check in front of it did not.
