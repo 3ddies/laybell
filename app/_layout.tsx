@@ -175,17 +175,24 @@ function AppContent() {
             complete it before entering the app, so the global back-swipe is disabled
             here — the user can't swipe the welcome/setup screens away. */}
         <Stack.Screen name="onboarding" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
-        {/* Chat transcripts: EDGE back-swipe only.
-            fullScreenGestureEnabled lets a pan anywhere on the screen pop the
-            route, and it arbitrates poorly with a vertical scroll — the same
-            reason SwipeBackPager doesn't use it (see the note on that component).
-            The transcripts are inverted lists, so they sit AT their content
-            boundary in the ordinary case rather than the rare one; the scroll
-            view stops consuming the pan there, the navigator's full-screen
-            recogniser takes it, and a scroll turns into a dismissal mid-gesture.
-            gestureEnabled stays on, so swiping from the edge still goes back. */}
-        <Stack.Screen name="messages/[id]" options={{ fullScreenGestureEnabled: false }} />
-        <Stack.Screen name="messages/group/[id]" options={{ fullScreenGestureEnabled: false }} />
+        {/* Chat transcripts: NO navigator drag gesture at all. Header back only.
+            These screens are reached from messages/index, which is a
+            transparentModal — so they are presented inside a modal container and
+            carry iOS's SHEET dismissal, a pan that is separate from the stack's
+            back-swipe and is not governed by fullScreenGestureEnabled.
+            UIKit arms that dismissal whenever the contained scroll view sits at
+            contentOffset 0. On a normal transcript that is the top of history,
+            which a reader is almost never at. The transcripts are inverted
+            lists, so offset 0 is the NEWEST message — where the thread opens and
+            where it spends most of its time. Every downward drag from there was
+            being read as "dismiss the sheet", which is why it only ever happened
+            scrolling one way.
+            gestureEnabled:false maps to isModalInPresentation, which is what
+            actually disarms it. The header's back chevron is the way out; the
+            proper fix is to move these onto SwipeBackPager like their siblings,
+            which owns a horizontal swipe that arbitrates with vertical scroll. */}
+        <Stack.Screen name="messages/[id]" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
+        <Stack.Screen name="messages/group/[id]" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
         {/* The story viewer expands out of the tapped ring (Instagram shared-element
             style): transparent modal so the feed stays visible behind the growing
             post, no native animation/gesture — the in-screen rect animation drives it. */}
