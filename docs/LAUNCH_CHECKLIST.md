@@ -187,8 +187,12 @@ re-verified against the live project, not just marked off:
    read and sees `sold` when it wakes. Lock order is listing → ledger accounts in
    every path, so no deadlock.
 
-10. **Run `supabase/sql/shop_offer_retry.sql`** (after `shop_exclusivity_lock.sql`;
-    idempotent).
+10. ~~**Run `supabase/sql/shop_offer_retry.sql`**~~ **Done 2026-07-31.** Verified: the
+    index carries `WHERE (status = ANY (ARRAY['requested','delivered']))`, and the
+    CREATE succeeding is itself proof no live duplicates exist. Three buyer/listing
+    pairs were already locked out in test data (one declined, one expired, one
+    cancelled) and can offer again. The `expired` one also confirms the pg_cron
+    offer sweep is running.
 
     `shop_orders_listing_buyer_kind_uq` counts DEAD orders, so the first offer a
     buyer makes permanently consumes their only `offer` slot on that listing.
