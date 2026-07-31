@@ -70,39 +70,17 @@ const BODY_BOT = 0.9468;    // base
 const BODY_H = BODY_BOT - BODY_TOP;              // 0.7340
 const BODY_MID = (BODY_TOP + BODY_BOT) / 2;      // 0.5798
 
-// ── The keyline, for the RED mark in light mode ONLY ───────────────────────
-// A one-pass dilation, not a stroke: eight copies of the silhouette offset
-// around the compass and drawn under the real one, so the glyph gains a rim of
-// `outline` all round. Diagonals are pulled in to ~0.707 so all eight offsets
-// sit the same DISTANCE from centre — at full 1.0 the corners bulge. Eight
-// rather than four, because four leaves flat spots on the dome's curve, which is
-// most of this logo's outline.
-//
-// WHEN TO PASS IT — narrowly. The unread mark is red on a warm off-white and
-// wants edge definition there. NOTHING ELSE DOES:
-//
-//   * The resting light-mode bell is already near-black, so a black dilation
-//     draws no visible rim. All it does is fatten the logo and close up the thin
-//     gap between the note and the dome. It was briefly applied there and looked
-//     exactly as bad as that description suggests.
-//   * Dark mode has all the contrast it needs in both states.
-//
-// Keep the radius small for the same reason: this logo's negative space is thin,
-// and a heavy dilation fills it in rather than outlining it.
-const OUTLINE_RATIO = 0.45 / 28;
-const D = Math.SQRT1_2;
-const OUTLINE_DIRS: [number, number][] = [
-  [1, 0], [-1, 0], [0, 1], [0, -1],
-  [D, D], [-D, D], [D, -D], [-D, -D],
-];
-
+// A black keyline under the mark was tried in light mode, first on both states
+// and then narrowed to the red one, and removed on 2026-07-30: dilating this
+// logo fills the thin gap between the note and the dome faster than it defines
+// the rim, in either colour. The mark is left exactly as the artwork draws it.
 const SWING_DEG = 13;
 const FIRST_DELAY_MS = 2400;
 const GAP_MIN_MS = 17_000;
 const GAP_MAX_MS = 33_000;
 
 export default function LaybellBell({
-  matchIconSize = 28, color, unreadColor, accent = '#FF8095', unread, focused, outline, style,
+  matchIconSize = 28, color, unreadColor, accent = '#FF8095', unread, focused, style,
 }: {
   /** The `size` prop given to the Ionicon beside this one. The bell's BODY is
    *  then matched to that glyph's real drawn height and vertical position — not
@@ -122,12 +100,6 @@ export default function LaybellBell({
   unread: boolean;
   /** Animation runs only while the screen is on. */
   focused: boolean;
-  /** Keyline colour, dilated under the mark — see OUTLINE_RATIO for when this is
-   *  wanted, which is narrower than it sounds: the RED unread mark in light mode
-   *  and nothing else. Omit it and nothing is drawn. The caller decides rather
-   *  than this component reading the theme, matching how `color` and
-   *  `unreadColor` already arrive. */
-  outline?: string;
   style?: ViewStyle;
 }) {
   const active = unread && focused;
@@ -236,27 +208,6 @@ export default function LaybellBell({
           { transform: [{ translateY: pivotFromCentre }, { rotate }, { translateY: -pivotFromCentre }] },
         ]}
       >
-        {/* Under the mark, so the real silhouette covers all but the rim. Inside
-            the rotating layer, so the outline swings with the bell rather than
-            sitting still behind a moving one. */}
-        {!!outline && OUTLINE_DIRS.map(([dx, dy], i) => (
-          <Image
-            key={i}
-            source={BELL}
-            style={[
-              img,
-              {
-                tintColor: outline,
-                transform: [
-                  { translateX: dx * matchIconSize * OUTLINE_RATIO },
-                  { translateY: dy * matchIconSize * OUTLINE_RATIO },
-                ],
-              },
-            ]}
-            resizeMode="contain"
-          />
-        ))}
-
         <Image source={BELL} style={[img, { tintColor: tint }]} resizeMode="contain" />
 
         {/* Accent copy, faded in at each strike. Cross-fading two tinted copies

@@ -1765,13 +1765,6 @@ export default function HomeScreen() {
               unreadColor={colors.error}
               unread={unreadCount > 0}
               focused={isFocused}
-              // ONLY the red unread mark, and only in light mode.
-              //
-              // Not the resting bell: that one is already near-black, so a black
-              // dilation gives it no keyline at all — it just fattens the logo
-              // and closes up the thin gap between the note and the dome. It is
-              // the RED mark on warm off-white that wants edge definition.
-              outline={mode === 'light' && unreadCount > 0 ? '#000' : undefined}
             />
           </TouchableOpacity>
 
