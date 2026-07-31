@@ -151,6 +151,20 @@ re-verified against the live project, not just marked off:
    offer credits are held and settled by the escrow triggers, which never read the
    listing's deal types.
 
+8. **Run `supabase/sql/offer_expiry.sql`** (after `shop_offers_open.sql`; idempotent).
+
+   Buy-offers now expire after 24 hours and read "Offer expired" in the thread.
+   This is **not cosmetic**: an offer holds the buyer's credits in escrow from the
+   moment it is made, so expiry has to be a real status change that returns them.
+   The file adds the `'expired'` status, refunds on it via the existing settle
+   trigger, refuses to *deliver* an offer past its deadline (closing the race where
+   a seller accepts in the same minute the sweep runs), and schedules
+   `expire_stale_offers()` on pg_cron every 10 minutes.
+
+   Until it runs, offers never expire and the escrow is held indefinitely. The app
+   will still *draw* "Offer expired" past 24h — that half is client-side — which
+   makes this the worst state to sit in: it looks handled and isn't.
+
 **Crash and error reporting — CODE DONE 2026-07-29, DELIBERATELY INERT.**
 
 Wired but switched off. `@sentry/react-native` (~7.2.0, via `npx expo install`), the config

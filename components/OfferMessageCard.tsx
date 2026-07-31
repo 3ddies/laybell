@@ -6,7 +6,7 @@ import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { notifySuccess, reactionPop } from '../lib/haptics';
-import { formatPrice, setOrderStatus, type OrderStatus } from '../lib/shop';
+import { formatPrice, setOrderStatus, OFFER_TTL_MS, type OrderStatus } from '../lib/shop';
 import type { ParsedOffer } from '../lib/offerMessage';
 
 // A buy-offer, rendered in the DM thread as a card instead of a chat bubble —
@@ -27,11 +27,16 @@ import type { ParsedOffer } from '../lib/offerMessage';
 export default function OfferMessageCard({
   offer,
   status,
+  createdAt,
   isOwn,
   onSettled,
 }: {
   offer: ParsedOffer;
   status?: OrderStatus;
+  // When the order was placed, for the 24h deadline. From the ORDER, not the
+  // message — they are made moments apart, but only one of them is what the
+  // server measures against.
+  createdAt?: string;
   // The BUYER sent it. Only the other side gets to accept or decline.
   isOwn: boolean;
   onSettled?: () => void;
@@ -45,7 +50,15 @@ export default function OfferMessageCard({
   const [failed, setFailed] = useState(false);
 
   const price = formatPrice(offer.cents, offer.currency);
-  const pending = status === 'requested';
+  // An offer stands for 24h. The sweep that formally expires it (and returns the
+  // buyer's escrowed credits) runs every ten minutes, so between the deadline and
+  // the next pass the row still says 'requested'. Reading it as expired here
+  // keeps the card honest in that window — and, more importantly, keeps Accept
+  // out of the seller's reach on an offer the server would now refuse to deliver.
+  const pastDue = !!createdAt && Date.now() - new Date(createdAt).getTime() > OFFER_TTL_MS;
+  const effective: OrderStatus | undefined =
+    status === 'requested' && pastDue ? 'expired' : status;
+  const pending = effective === 'requested';
   const canAnswer = !isOwn && pending;
 
   async function settle(next: 'delivered' | 'declined') {
@@ -70,11 +83,12 @@ export default function OfferMessageCard({
   }
 
   const outcome =
-    status === 'delivered' ? { icon: 'checkmark-circle' as const, text: t('offerMsg.accepted'), tone: colors.success }
-      : status === 'declined' ? { icon: 'close-circle' as const, text: t('offerMsg.declined'), tone: colors.textTertiary }
-        : status === 'cancelled' ? { icon: 'remove-circle' as const, text: t('offerMsg.cancelled'), tone: colors.textTertiary }
-          : status === 'refunded' ? { icon: 'arrow-undo-circle' as const, text: t('offerMsg.refunded'), tone: colors.textTertiary }
-            : null;
+    effective === 'delivered' ? { icon: 'checkmark-circle' as const, text: t('offerMsg.accepted'), tone: colors.success }
+      : effective === 'declined' ? { icon: 'close-circle' as const, text: t('offerMsg.declined'), tone: colors.textTertiary }
+        : effective === 'cancelled' ? { icon: 'remove-circle' as const, text: t('offerMsg.cancelled'), tone: colors.textTertiary }
+          : effective === 'expired' ? { icon: 'time' as const, text: t('offerMsg.expired'), tone: colors.textTertiary }
+            : effective === 'refunded' ? { icon: 'arrow-undo-circle' as const, text: t('offerMsg.refunded'), tone: colors.textTertiary }
+              : null;
 
   return (
     <View style={styles.card}>

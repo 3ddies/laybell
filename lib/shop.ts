@@ -72,7 +72,16 @@ export type SellerProfile = {
   avatar_url: string | null;
 };
 
-export type OrderStatus = 'requested' | 'delivered' | 'declined' | 'cancelled' | 'refunded';
+export type OrderStatus = 'requested' | 'delivered' | 'declined' | 'cancelled' | 'refunded' | 'expired';
+
+/** How long a buy-offer stands before it expires.
+ *
+ *  MUST match `offer_ttl()` in supabase/sql/offer_expiry.sql, which is the one
+ *  that counts — the server refuses to deliver an offer past its deadline and a
+ *  pg_cron sweep returns the escrowed credits. This copy exists only so the card
+ *  can read "Offer expired" in the gap between the deadline and the next sweep,
+ *  rather than showing Accept on something the server would now refuse. */
+export const OFFER_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type ShopOrder = {
   id: string;
@@ -812,9 +821,14 @@ export async function unseenShopActivityCount(): Promise<number> {
     for (const r of rows) {
       // Seller: a pending request is unaddressed — always counts.
       if (r.seller_id === uid && r.status === 'requested') { n += 1; continue; }
-      // Buyer: a delivered/declined outcome counts until the Orders tab has
-      // been opened with that exact status on record.
-      if (r.buyer_id === uid && (r.status === 'delivered' || r.status === 'declined') && seen[r.id] !== r.status) n += 1;
+      // Buyer: a delivered/declined/expired outcome counts until the Orders tab
+      // has been opened with that exact status on record. 'expired' belongs here
+      // for the same reason 'declined' does — the offer is over and the buyer's
+      // escrowed credits have just come back, which they should not have to
+      // discover by noticing their balance.
+      if (r.buyer_id === uid
+        && (r.status === 'delivered' || r.status === 'declined' || r.status === 'expired')
+        && seen[r.id] !== r.status) n += 1;
     }
     return n;
   } catch { return 0; } // pre-migration → no dot
