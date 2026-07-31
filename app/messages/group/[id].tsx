@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import SwipeBackPager from '../../../components/SwipeBackPager';
 import { supabase } from '../../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../../constants/theme';
 import { useTheme, useThemedStyles } from '../../../contexts/ThemeContext';
@@ -369,6 +370,7 @@ export default function GroupChatScreen() {
 
   if (loading) {
     return (
+      <SwipeBackPager>
       <View style={styles.container}>
         <View style={[styles.header, { paddingTop: insets.top }]}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
@@ -377,10 +379,12 @@ export default function GroupChatScreen() {
         </View>
         <ChatThreadSkeleton rows={9} />
       </View>
+      </SwipeBackPager>
     );
   }
 
   return (
+    <SwipeBackPager>
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.backBtn} onPress={() => router.back()}>
@@ -656,6 +660,7 @@ export default function GroupChatScreen() {
         </Pressable>
       </Modal>
     </View>
+    </SwipeBackPager>
   );
 }
 

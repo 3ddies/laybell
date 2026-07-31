@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import SwipeBackPager from '../../components/SwipeBackPager';
 import { supabase } from '../../lib/supabase';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
@@ -476,6 +477,7 @@ export default function ChatScreen() {
 
   if (loading) {
     return (
+      <SwipeBackPager>
       <View style={styles.container}>
         <View style={[styles.header, { paddingTop: insets.top }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}
@@ -485,10 +487,12 @@ export default function ChatScreen() {
         </View>
         <ChatThreadSkeleton rows={9} />
       </View>
+      </SwipeBackPager>
     );
   }
 
   return (
+    <SwipeBackPager>
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}
@@ -802,6 +806,7 @@ export default function ChatScreen() {
         </Pressable>
       </Modal>
     </View>
+    </SwipeBackPager>
   );
 }
 

@@ -175,24 +175,6 @@ function AppContent() {
             complete it before entering the app, so the global back-swipe is disabled
             here — the user can't swipe the welcome/setup screens away. */}
         <Stack.Screen name="onboarding" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
-        {/* Chat transcripts: NO navigator drag gesture at all. Header back only.
-            These screens are reached from messages/index, which is a
-            transparentModal — so they are presented inside a modal container and
-            carry iOS's SHEET dismissal, a pan that is separate from the stack's
-            back-swipe and is not governed by fullScreenGestureEnabled.
-            UIKit arms that dismissal whenever the contained scroll view sits at
-            contentOffset 0. On a normal transcript that is the top of history,
-            which a reader is almost never at. The transcripts are inverted
-            lists, so offset 0 is the NEWEST message — where the thread opens and
-            where it spends most of its time. Every downward drag from there was
-            being read as "dismiss the sheet", which is why it only ever happened
-            scrolling one way.
-            gestureEnabled:false maps to isModalInPresentation, which is what
-            actually disarms it. The header's back chevron is the way out; the
-            proper fix is to move these onto SwipeBackPager like their siblings,
-            which owns a horizontal swipe that arbitrates with vertical scroll. */}
-        <Stack.Screen name="messages/[id]" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
-        <Stack.Screen name="messages/group/[id]" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
         {/* The story viewer expands out of the tapped ring (Instagram shared-element
             style): transparent modal so the feed stays visible behind the growing
             post, no native animation/gesture — the in-screen rect animation drives it. */}
@@ -237,7 +219,18 @@ function AppContent() {
           // took the DEFAULT stack animation on top of the pager's own — the
           // exact double-animation this list exists to prevent. Found by
           // cross-checking every <SwipeBackPager> route against this array.
-          'credits', 'music-order', 'studio/listen/[id]'].map((name) => (
+          'credits', 'music-order', 'studio/listen/[id]',
+          // The chat transcripts. They were plain pushes, which meant they
+          // INHERITED modal presentation from whichever transparentModal opened
+          // them (messages/index, or notifications) and so carried iOS's sheet
+          // drag-down. UIKit arms that whenever the contained scroll view sits at
+          // contentOffset 0; a transcript is an inverted list, so offset 0 is the
+          // NEWEST message — where a thread opens and mostly stays. Dormant for
+          // months, then constant. Listed here they are transparent modals with
+          // no native gesture at all, and the SwipeBackPager inside each one owns
+          // the swipe — it arbitrates with vertical scrolling natively, which is
+          // why none of the screens above ever had this.
+          'messages/[id]', 'messages/group/[id]'].map((name) => (
           <Stack.Screen
             key={name}
             name={name}
