@@ -641,9 +641,10 @@ export default function ListingScreen() {
                     responder to the deepest view that claims it, so a tap in this
                     corner shortlists and a tap anywhere else on the square plays
                     the preview, with no hit-testing of our own.
-                    The labelled "Add to cart" further down does the same thing on
-                    purpose — corner for speed, stack entry for clarity. Both read
-                    the same `inCart`, so they can never disagree. */}
+                    This corner is now the ONLY cart control in the app: the
+                    full-width "Add to cart" that used to sit in the CTA stack is
+                    gone, so the action lives in one place and looks the same
+                    wherever a cover is shown. Don't reintroduce a second one. */}
                 {canCartHere && (
                   <TouchableOpacity
                     style={[styles.coverCartBtn, inCart && styles.coverCartBtnActive]}
@@ -776,24 +777,6 @@ export default function ListingScreen() {
                     {/* Lease without sell: name your price for the beat itself. */}
                     {offerSlot === 'inline' && renderOfferCta()}
 
-
-                    {/* Add to cart (shortlists the everyday deal type). The cover's
-                        corner disc does the same thing — deliberately, not by
-                        accident: the corner is the quick one that matches the grid
-                        tiles, this is the labelled one in the stack of actions.
-                        Both read the same `inCart` state, so they always agree. */}
-                    {!deliveredOrder && (
-                      <TouchableOpacity
-                        style={[styles.cartBtn, inCart && styles.cartBtnActive]}
-                        onPress={() => { reactionPop(); inCart ? removeFromCart(listing.id) : addToCart(listing); }}
-                        activeOpacity={0.85}
-                      >
-                        <Ionicons name={inCart ? 'checkmark' : 'cart-outline'} size={17} color={inCart ? colors.success : colors.text} />
-                        <Text style={[styles.cartBtnText, inCart && { color: colors.success }]}>
-                          {inCart ? t('shop.inCart') : t('shop.addToCart')}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
 
                     {/* Last, so it lands directly above "Message seller". */}
                     {offerSlot === 'aboveMessage' && renderOfferCta()}
@@ -1036,12 +1019,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     paddingHorizontal: 3, backgroundColor: c.success, alignItems: 'center', justifyContent: 'center',
   },
   cartBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
-  cartBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-    borderWidth: 1, borderColor: c.border, borderRadius: RADIUS.full, paddingVertical: 12,
-  },
-  cartBtnActive: { borderColor: c.success, backgroundColor: c.success + '14' },
-  cartBtnText: { color: c.text, fontSize: 14, fontWeight: '600' },
   content: { padding: SPACING.md, gap: 12, paddingBottom: 44 },
   coverWrap: { borderRadius: RADIUS.lg, overflow: 'hidden', aspectRatio: 1, backgroundColor: c.surfaceLight },
   cover: { width: '100%', height: '100%' },
