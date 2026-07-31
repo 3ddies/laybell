@@ -368,9 +368,11 @@ real cost of leaving it.
   `followerInsights.*` (9), verified 10/10 each with the `{premium}` / `{standard}` / `{when}`
   placeholders intact in every one.
 
-- **462 of 2143 i18n keys are still not at 10 locales** (78% translated). Measured
-  2026-07-30 by counting occurrences per key; the "i18n ADOPTION COMPLETE" note elsewhere is
-  stale. `translate()` falls back `DICTS[lang] ?? en ?? key`, so every one of these renders
+- **448 of 2180 i18n keys are still not at 10 locales** (79% translated; 414 of them are
+  English-only, the rest partial). Re-measured 2026-07-31 by counting occurrences per key —
+  the earlier 462/2143 figure predates the Premium-paywall translation pass. Every key added
+  since has shipped at 10/10, so this number only moves down. The "i18n ADOPTION COMPLETE"
+  note elsewhere is stale. `translate()` falls back `DICTS[lang] ?? en ?? key`, so every one of these renders
   readable English rather than breaking — which is why it went unnoticed. Not a launch
   blocker while the App Store listing is **US-only** (§0.2), and it becomes one the day
   availability widens. Largest gaps, all English-only unless noted:
