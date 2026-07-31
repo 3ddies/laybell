@@ -103,6 +103,13 @@ export default function ListingScreen() {
       const [l, os] = await Promise.all([fetchListing(id), myOrdersForListing(id)]);
       setListing(l);
       setOrders(os);
+      // Bought here, bought elsewhere, or sold to someone else — either way it
+      // can never check out again, so it leaves the cart the moment this screen
+      // finds out. The cart prunes on focus as well; this just catches it at the
+      // exact point the user is looking at the thing that changed.
+      if (!l || l.status !== 'active' || os.some((o) => o.status === 'delivered')) {
+        removeFromCart(id);
+      }
       if (l) {
         const types = saleTypes(l);
         if (types.free && l.user_id !== profile?.id) {

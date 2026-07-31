@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,11 +13,12 @@ import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../../constants/t
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { reactionPop, notifySuccess } from '../../lib/haptics';
-import { fetchListing, formatPrice, requestToBuy } from '../../lib/shop';
+import { fetchListing, formatPrice, myDeliveredListingIds, requestToBuy } from '../../lib/shop';
 import { fetchLedgerBalances } from '../../lib/ledger';
 import CreditConfirmDialog from '../../components/CreditConfirmDialog';
 import {
-  cartSubtotalCents, clearCart, removeFromCart, useShopCart, type CartItem,
+  cartSubtotalCents, clearCart, getCartItems, removeFromCart, removeManyFromCart,
+  useShopCart, type CartItem,
 } from '../../lib/shopCart';
 
 // The cart — a local shortlist of listings to request together. "Checkout" here
@@ -46,6 +47,40 @@ export default function CartScreen() {
   const subtotal = cartSubtotalCents(items);
   // Credits held, read when checkout is tapped. null = no confirmation open.
   const [confirmBalance, setConfirmBalance] = useState<number | null>(null);
+  // How many items the last prune dropped, so the cart can say why it shrank.
+  const [pruned, setPruned] = useState(0);
+
+  // ANYTHING THAT CAN NO LONGER BE BOUGHT LEAVES THE CART ON SIGHT — a listing
+  // sold out from under it (exclusivity closes the listing to everyone else), one
+  // the seller paused or pulled, and anything this buyer has since been delivered
+  // by any route. A cart is a promise to be able to check out; an item that can
+  // only ever fail is a promise it cannot keep, and leaving it there means the
+  // subtotal is wrong too.
+  //
+  // On FOCUS rather than on mount, because the usual way an item dies is the
+  // buyer walking to the listing and buying it there, then coming back.
+  // getCartItems() rather than the rendered `items` so the effect can hold empty
+  // deps and still read the live cart — with `items` in deps a successful prune
+  // would re-trigger itself and re-fetch every listing for nothing.
+  useFocusEffect(useCallback(() => {
+    let alive = true;
+    (async () => {
+      const ids = getCartItems().map((i) => i.listingId);
+      if (!ids.length) return;
+      const [listings, owned] = await Promise.all([
+        Promise.all(ids.map((id) => fetchListing(id).catch(() => null))),
+        myDeliveredListingIds(ids).catch(() => new Set<string>()),
+      ]);
+      if (!alive) return;
+      const dead = ids.filter((id, i) => {
+        const l = listings[i];
+        return !l || l.status !== 'active' || owned.has(id);
+      });
+      const n = removeManyFromCart(dead);
+      if (n > 0) setPruned(n);
+    })();
+    return () => { alive = false; };
+  }, []));
 
   async function startCheckout() {
     if (busy || items.length === 0) return;
@@ -82,8 +117,13 @@ export default function CartScreen() {
     for (const item of [...items]) {
       try {
         const listing = await fetchListing(item.listingId);
-        // Gone, paused, sold, or somehow your own listing → skip, keep in cart.
-        if (!listing || listing.status !== 'active') { skipped++; continue; }
+        // Gone, paused or sold. It can never check out, so it leaves rather than
+        // sitting in the cart being counted in the subtotal.
+        if (!listing || listing.status !== 'active') {
+          removeFromCart(item.listingId);
+          skipped++;
+          continue;
+        }
         // Request the deal type this item was added as (server re-validates it).
         await requestToBuy(listing, '', item.kind);
         removeFromCart(item.listingId);
@@ -183,6 +223,9 @@ export default function CartScreen() {
                   {subtotal <= 0 ? t('shop.free') : formatPrice(subtotal)}
                 </Text>
               </View>
+              {pruned > 0 && (
+                <Text style={styles.pruneNote}>{t('shop.cart.pruned', { n: pruned })}</Text>
+              )}
               {!!error && <Text style={styles.errorText}>{error}</Text>}
               <TouchableOpacity style={styles.greenBtn} onPress={startCheckout} disabled={busy} activeOpacity={0.85}>
                 {busy ? <ActivityIndicator color="#fff" /> : (
@@ -282,6 +325,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   subtotalLabel: { color: c.textSecondary, fontSize: 13, fontWeight: '600' },
   subtotalValue: { color: c.text, fontSize: 17, fontWeight: '800' },
   errorText: { color: c.error, fontSize: 12.5, textAlign: 'center' },
+  // Not an error — the cart corrected itself, which is the right outcome.
+  pruneNote: { color: c.textTertiary, fontSize: 12.5, textAlign: 'center', lineHeight: 17 },
   greenBtn: {
     alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: c.success, borderRadius: RADIUS.full, paddingVertical: 14,

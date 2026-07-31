@@ -606,6 +606,26 @@ export async function fetchOrdersByIds(ids: string[]): Promise<ShopOrder[]> {
   return (data ?? []) as ShopOrder[];
 }
 
+/** Of these listings, which have I already been DELIVERED?
+ *
+ *  One query for a whole cart rather than one per item. Used to drop things the
+ *  buyer already owns — an exclusive they bought, or a free claim — which would
+ *  otherwise sit in the cart forever failing at checkout. */
+export async function myDeliveredListingIds(listingIds: string[]): Promise<Set<string>> {
+  const unique = [...new Set(listingIds.filter(Boolean))];
+  if (!unique.length) return new Set();
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth?.user?.id;
+  if (!uid) return new Set();
+  const { data } = await supabase
+    .from('shop_orders')
+    .select('listing_id')
+    .eq('buyer_id', uid)
+    .eq('status', 'delivered')
+    .in('listing_id', unique);
+  return new Set((data ?? []).map((r: { listing_id: string }) => r.listing_id));
+}
+
 export async function myOrdersForListing(listingId: string): Promise<ShopOrder[]> {
   const { data: auth } = await supabase.auth.getUser();
   const uid = auth?.user?.id;

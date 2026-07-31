@@ -81,6 +81,11 @@ export function defaultCartKind(listing: ShopListing): Exclude<SaleKind, 'offer'
 /** Add a listing (no-op if already present). Returns the new count. */
 export function addToCart(listing: ShopListing, kind?: Exclude<SaleKind, 'offer'>): number {
   if (isInCart(listing.id)) return items.length;
+  // Sold, paused or pulled. The listing screen already hides the button in that
+  // state, so this is the backstop for a stale copy of the row — a grid tile
+  // rendered before the sale landed, say. Adding it would only produce an item
+  // that can never check out.
+  if (listing.status !== 'active') return items.length;
   const k = kind ?? defaultCartKind(listing);
   const item: CartItem = {
     listingId: listing.id,
@@ -104,6 +109,30 @@ export function removeFromCart(listingId: string): void {
   items = items.filter((i) => i.listingId !== listingId);
   persist();
   emit();
+}
+
+/** The current items, outside React. For effects that must read the LIVE cart
+    rather than a snapshot captured in a closure. */
+export function getCartItems(): CartItem[] {
+  return items;
+}
+
+/** Drop several at once, returning how many actually went.
+ *
+ *  For pruning: a listing sold out from under the cart, or one the buyer has
+ *  since bought elsewhere, can never check out again — leaving it sitting there
+ *  is a promise the cart cannot keep. One mutation for the whole sweep, so the
+ *  badge and every subscriber update once rather than per item. */
+export function removeManyFromCart(listingIds: string[]): number {
+  const drop = new Set(listingIds.filter(Boolean));
+  if (!drop.size) return 0;
+  const before = items.length;
+  const next = items.filter((i) => !drop.has(i.listingId));
+  if (next.length === before) return 0;
+  items = next;
+  persist();
+  emit();
+  return before - items.length;
 }
 
 export function clearCart(): void {
