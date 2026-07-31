@@ -830,19 +830,7 @@ export default function HomeScreen() {
           // containment is already right there.
           if (centerY < L.y + HEADER_FOCUS_ZONE && i > 0 && isPlayableVideoItem(data[i - 1])) {
             const LA = list.getLayout(i - 1);
-            // FULLY visible, not merely still on screen. The rule above was
-            // written for a video that "owned the middle of the screen", but the
-            // test only asked that some sliver of it remained (its bottom edge
-            // below bandTop). So the handoff kept firing as that video scrolled
-            // away: the card below could be the one the eye is on, playing its
-            // own frames, while the audio still came from a strip of video
-            // disappearing off the top — owner-reported as "audio plays from the
-            // video above the one currently playing".
-            //
-            // LA.y >= bandTop is the same sentence the comment already makes:
-            // the whole card above is inside the visible band. Once it starts
-            // leaving, containment takes over and the centred card wins.
-            if (LA && LA.y >= bandTop) activeId = (data[i - 1] as any).id;
+            if (LA && LA.y + LA.height > bandTop) activeId = (data[i - 1] as any).id;
           }
         } else {
           centerOnNonVideo = true;
