@@ -37,6 +37,11 @@ type DmConversation = {
   kind: 'dm';
   id: string;
   other_user: { id: string; username: string; display_name: string; avatar_url: string | null; badge_tier?: string | null; badge_show?: boolean | null };
+  // Who sent the latest message. Groups have always carried this (their
+  // preview is prefixed "Sender: …"); DMs need it too, because an offer preview
+  // reads differently from each end — "Sent you an offer" is nonsense to the
+  // person who sent it.
+  last_sender_id: string | null;
   last_message: string;
   last_message_time: string;
   unread: number;
@@ -225,6 +230,7 @@ export default function MessagesScreen() {
           kind: 'dm' as const,
           id: pid,
           other_user: p,
+          last_sender_id: latestMessages[pid]?.sender_id ?? null,
           last_message: latestMessages[pid]?.body || '',
           last_message_time: latestMessages[pid]?.created_at || '',
           unread: unreadCounts[pid] || 0,
@@ -491,9 +497,12 @@ export default function MessagesScreen() {
           const showShared = !matchMsg && !matchCaption && !usernamePreview && sharedPostId(item.last_message);
           const storyReply = !matchMsg && !matchCaption && !usernamePreview && parseStoryReply(item.last_message);
           const dmAtt = !matchMsg && !matchCaption && !usernamePreview && parseAttachment(item.last_message);
-          // Deliberately says only THAT an offer arrived. The amount is on the card
+          // Deliberately says only THAT an offer happened. The amount is on the card
           // inside the thread, matching the push — an inbox is read over shoulders.
           const isOffer = !matchMsg && !matchCaption && !usernamePreview && isOfferBody(item.last_message);
+          // Whose offer it is changes the sentence, not just the pronoun: the buyer
+          // is looking at something they did, not something that arrived.
+          const offerFromMe = isOffer && !!currentUserId && item.last_sender_id === currentUserId;
           const offerPending = isOffer && unread;
           const preview = matchMsg ?? (dmAtt ? (dmAtt.type === 'gif' ? t('messages.preview.gif') : t('messages.preview.photo')) : item.last_message);
           return (
@@ -554,7 +563,7 @@ export default function MessagesScreen() {
                     style={[styles.lastMessage, unread && styles.lastMessageUnread, offerPending && styles.lastMessageOffer]}
                     numberOfLines={1}
                   >
-                    {t('messages.preview.offer')}
+                    {t(offerFromMe ? 'messages.preview.offerSent' : 'messages.preview.offer')}
                   </Text>
                 </View>
               ) : storyReply ? (
