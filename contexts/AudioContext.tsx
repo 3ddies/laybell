@@ -663,6 +663,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   async function resume() {
     // Locked during an audio ad — this also covers the lock-screen play button.
     if (adPlayingRef.current) return;
+    silenceVideoForSong();  // after the lock, so a refused resume changes nothing
     if (mainLoadedRef.current) {
       // Pressing play supersedes a deferred song-end — the track isn't "finished" anymore.
       pendingFinishRef.current = false;
@@ -685,6 +686,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       pendingFinishRef.current = false;
       await play(currentTrack, true, true);
     }
+  }
+
+  // The other half of the rule below, and the reason feed audio could stack.
+  //
+  // toggleVideoMuted has always paused the song when video audio is turned ON, but
+  // only in that direction. `videoMuted` is a STICKY GLOBAL: once a user unmutes
+  // the feed it stays unmuted forever. So starting a song afterwards left BOTH
+  // running — the song (often promoted from a post scrolled past long ago) under
+  // whatever video is centred now. That is the "music from a video that isn't
+  // even in focus" overlap.
+  //
+  // Called from where playback is COMMANDED (play / resume / playQueue), NOT from
+  // an effect on isPlaying. toggleVideoMuted pauses asynchronously — TrackPlayer
+  // reports the stop through its event listener — so an effect would still see
+  // isPlaying true one tick after the user unmutes, and would instantly re-mute
+  // the video, undoing the tap it was meant to honour.
+  function silenceVideoForSong() {
+    setVideoMuted(true);
   }
 
   // Tap a video's audio button: turning video audio ON pauses the song so they
@@ -743,6 +762,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   async function playQueue(tracks: Track[], startIndex = 0, loadMore?: QueueLoader) {
     if (!tracks.length) return;
+    silenceVideoForSong();  // after the empty guard, so an empty queue changes nothing
     queueRef.current = tracks;
     queueIndexRef.current = startIndex;
     // No curated loader → fall back to the universal one, so even a finished
@@ -1243,6 +1263,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function play(track: Track, fromQueue = false, suppressToggle = false) {
+    silenceVideoForSong();             // a song and a video must never both be audible
     pendingFinishRef.current = false;  // a fresh play cancels any deferred advance/close
     engagedNearEndRef.current = false; // and resets near-end engagement for the new track
     progressRef.current = 0;
