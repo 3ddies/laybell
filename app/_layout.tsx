@@ -175,6 +175,17 @@ function AppContent() {
             complete it before entering the app, so the global back-swipe is disabled
             here — the user can't swipe the welcome/setup screens away. */}
         <Stack.Screen name="onboarding" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
+        {/* Chat transcripts: EDGE back-swipe only.
+            fullScreenGestureEnabled lets a pan anywhere on the screen pop the
+            route, and it arbitrates poorly with a vertical scroll — the same
+            reason SwipeBackPager doesn't use it (see the note on that component).
+            The transcripts are inverted lists, so they sit AT their content
+            boundary in the ordinary case rather than the rare one; the scroll
+            view stops consuming the pan there, the navigator's full-screen
+            recogniser takes it, and a scroll turns into a dismissal mid-gesture.
+            gestureEnabled stays on, so swiping from the edge still goes back. */}
+        <Stack.Screen name="messages/[id]" options={{ fullScreenGestureEnabled: false }} />
+        <Stack.Screen name="messages/group/[id]" options={{ fullScreenGestureEnabled: false }} />
         {/* The story viewer expands out of the tapped ring (Instagram shared-element
             style): transparent modal so the feed stays visible behind the growing
             post, no native animation/gesture — the in-screen rect animation drives it. */}
