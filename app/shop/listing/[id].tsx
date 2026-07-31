@@ -323,11 +323,30 @@ export default function ListingScreen() {
   const likesOk = (conds?.likes ?? []).every((l) => l.met);
   const readyToClaim = !!conds && followOk && likesOk;
   const types = listing ? saleTypes(listing) : { sell: false, lease: false, free: false };
-  const offerable = !!listing && types.lease && !types.sell && listing.status === 'active';
-  // Lease-ONLY (nothing to buy, nothing free) makes the offer the only route
-  // to owning it, so it stops being a quiet secondary button and goes green
-  // like the other primary CTAs.
-  const offerPrimary = offerable && !types.free;
+  // An offer can now be made on ANY active listing (shop_offers_open.sql lifted
+  // the server's lease-without-sell restriction). What changes per listing is
+  // WHERE the button sits and what colour it is — three arrangements, each
+  // chosen so the stack reads cleanly whatever the seller enabled:
+  //
+  //   aboveMessage — the listing has a green Buy button. The offer is the quiet
+  //                  alternative to it, so it is GREY and drops to the bottom of
+  //                  the stack, directly above "Message seller". Two green
+  //                  buttons would make the buyer choose before reading either.
+  //   underFree    — Free is the only deal. Nothing green to defer to, so the
+  //                  offer can carry weight — but BLUE, the lease button's blue,
+  //                  because green here means "the main way to get this" and on
+  //                  this listing that is the Free button.
+  //   inline       — lease without sell. UNCHANGED, deliberately: green when the
+  //                  offer is the only route to owning the beat, outlined when a
+  //                  Free button sits above it.
+  const offerSlot: 'aboveMessage' | 'underFree' | 'inline' = types.sell ? 'aboveMessage'
+    : (types.free && !types.lease) ? 'underFree'
+    : 'inline';
+  const offerable = !!listing && listing.status === 'active';
+  // Green stays exclusive to lease-ONLY (nothing to buy, nothing free), where the
+  // offer is the only route to owning the beat and so earns the same weight as
+  // the other primary CTAs. Everywhere else it is a secondary action and says so.
+  const offerPrimary = offerable && offerSlot === 'inline' && !types.free;
   const offerCents = Math.round((parseFloat(offerText.replace(',', '.')) || 0) * 100);
   // What the listing has actually done. Sold leads, because it is the one that
   // changes what the rest of the page is even offering; the two repeatable
@@ -344,6 +363,46 @@ export default function ListingScreen() {
     types.lease && t('shop.license.nonexclusive'),
     types.free && t('shop.license.free'),
   ].filter(Boolean).join(' · ');
+
+  // The offer control, rendered into whichever slot this listing calls for. The
+  // pending pill takes the SAME slot as the button it replaces, so sending an
+  // offer never reshuffles the stack under the buyer's finger.
+  function renderOfferCta() {
+    if (!listing || !offerable) return null;
+    const sent = orderFor('offer');
+    if (sent?.status === 'requested') {
+      return (
+        <TouchableOpacity key="offer" style={styles.pendingBtn} onPress={() => cancelRequest(sent)} disabled={!!busyKind}>
+          <Ionicons name="time-outline" size={17} color={colors.textSecondary} />
+          <Text style={styles.pendingBtnText}>
+            {t('shop.offerSent', { price: formatPrice(sent.price_cents, listing.currency) })}
+          </Text>
+        </TouchableOpacity>
+      );
+    }
+    // Anything other than a live request means it has already been settled, and a
+    // settled offer took the listing with it — there is nothing left to offer on.
+    if (sent) return null;
+    const blue = offerSlot === 'underFree';
+    const grey = offerSlot === 'aboveMessage';
+    const onFill = offerPrimary || blue;
+    return (
+      <TouchableOpacity
+        key="offer"
+        style={[
+          styles.offerBtn,
+          offerPrimary && styles.offerBtnPrimary,
+          blue && styles.offerBtnBlue,
+          grey && styles.offerBtnGrey,
+        ]}
+        onPress={() => setOfferOpen(true)}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="pricetag-outline" size={17} color={onFill ? '#fff' : colors.text} />
+        <Text style={[styles.offerBtnText, onFill && styles.offerBtnTextPrimary]}>{t('shop.makeOffer')}</Text>
+      </TouchableOpacity>
+    );
+  }
 
   // One CTA button per deal type; each has its own pending/owned state.
   function renderKindCta(kind: 'sell' | 'lease' | 'free') {
@@ -629,30 +688,14 @@ export default function ListingScreen() {
                     {types.sell && renderKindCta('sell')}
                     {types.lease && renderKindCta('lease')}
                     {types.free && renderKindCta('free')}
+                    {offerSlot === 'underFree' && renderOfferCta()}
 
                     {/* The unlock checklist used to live inline here. It is now a
                         full-screen sheet opened by the Free button — a task list
                         needs room to be read and acted on, and half of those
                         tasks navigate away anyway. */}
-                    {/* Lease-only: name your price for the beat itself. */}
-                    {offerable && !orderFor('offer') && (
-                      <TouchableOpacity
-                        style={[styles.offerBtn, offerPrimary && styles.offerBtnPrimary]}
-                        onPress={() => setOfferOpen(true)}
-                        activeOpacity={0.85}
-                      >
-                        <Ionicons name="pricetag-outline" size={17} color={offerPrimary ? "#fff" : colors.text} />
-                        <Text style={[styles.offerBtnText, offerPrimary && styles.offerBtnTextPrimary]}>{t('shop.makeOffer')}</Text>
-                      </TouchableOpacity>
-                    )}
-                    {orderFor('offer')?.status === 'requested' && (
-                      <TouchableOpacity style={styles.pendingBtn} onPress={() => cancelRequest(orderFor('offer')!)} disabled={!!busyKind}>
-                        <Ionicons name="time-outline" size={17} color={colors.textSecondary} />
-                        <Text style={styles.pendingBtnText}>
-                          {t('shop.offerSent', { price: formatPrice(orderFor('offer')!.price_cents, listing.currency) })}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                    {/* Lease without sell: name your price for the beat itself. */}
+                    {offerSlot === 'inline' && renderOfferCta()}
 
                     {/* Add to cart (shortlists the everyday deal type). */}
                     {!deliveredOrder && (
@@ -667,6 +710,9 @@ export default function ListingScreen() {
                         </Text>
                       </TouchableOpacity>
                     )}
+
+                    {/* Last, so it lands directly above "Message seller". */}
+                    {offerSlot === 'aboveMessage' && renderOfferCta()}
                   </>
                 ) : !deliveredOrder ? (
                   <View style={styles.pendingBtn}>
@@ -964,6 +1010,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   },
   offerBtnText: { color: c.text, fontSize: 14, fontWeight: '700' },
   offerBtnPrimary: { backgroundColor: c.success, borderColor: c.success },
+  // The lease button's blue, for a free-only listing where there is no green CTA.
+  offerBtnBlue: { backgroundColor: '#0EA5E9', borderColor: '#0EA5E9' },
+  // Filled grey, not outlined: "Message seller" sits right beneath it and is
+  // already an outline, and two stacked outlines read as one control. The text
+  // stays full-contrast so the fill reads as secondary rather than disabled.
+  offerBtnGrey: { backgroundColor: c.surfaceLight, borderColor: c.surfaceLight },
   offerBtnTextPrimary: { color: '#fff' },
   pendingBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,

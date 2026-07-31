@@ -137,6 +137,20 @@ re-verified against the live project, not just marked off:
    deliberate decision in `supabase/functions/send-push` **and**
    `messages.preview.offer` — not an accident.
 
+**Owner, OPEN — added 2026-07-30.**
+
+7. **Run `supabase/sql/shop_offers_open.sql`** (after `shop_stats.sql`; idempotent).
+
+   "Make an offer" now appears on every active listing, not just lease-without-sell:
+   grey above "Message seller" when there is a green Buy button, blue under the Free
+   button on a free-only listing. The old lease-only arrangement is untouched.
+
+   The server still refuses those offers until this runs — `shop_order_precheck`
+   raises `offers_not_available` for anything that isn't lease-without-sell, so the
+   new buttons would open the sheet and fail on send. Nothing financial changes:
+   offer credits are held and settled by the escrow triggers, which never read the
+   listing's deal types.
+
 **Crash and error reporting — CODE DONE 2026-07-29, DELIBERATELY INERT.**
 
 Wired but switched off. `@sentry/react-native` (~7.2.0, via `npx expo install`), the config
