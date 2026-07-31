@@ -528,9 +528,12 @@ export default function ChatScreen() {
         inverted
         data={orderedMessages}
         keyExtractor={item => item.id}
-        // iOS: drag the transcript down to interactively dismiss the keyboard
-        // (iMessage feel); keep taps (long-press to react) alive with the keyboard up.
-        keyboardDismissMode="interactive"
+        // 'on-drag', NOT 'interactive'. Interactive dismissal tracks the finger in
+        // the ScrollView's OWN coordinate space, and `inverted` flips that space —
+        // so a swipe up was read as a swipe down and the keyboard/compose bar moved
+        // the wrong way. on-drag needs no direction: any drag dismisses. Taps
+        // (long-press to react) stay alive with the keyboard up either way.
+        keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         // paddingTOP, not bottom: inverted flips the content, so the start of the
         // content is the visual bottom. This is the clearance under the floating

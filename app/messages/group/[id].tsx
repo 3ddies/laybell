@@ -404,7 +404,10 @@ export default function GroupChatScreen() {
           inverted
           data={orderedMessages}
           keyExtractor={item => item.id}
-          keyboardDismissMode="interactive"
+          // 'on-drag', not 'interactive' — see the note in app/messages/[id].tsx:
+          // interactive dismissal tracks the finger in the ScrollView's own
+          // coordinate space, which `inverted` flips.
+          keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           // paddingTOP, not bottom: inverted flips the content, so the start of
           // the content is the visual bottom — the clearance under the compose bar.
