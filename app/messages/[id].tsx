@@ -74,6 +74,21 @@ export default function ChatScreen() {
   // they're reading history would yank the transcript — the "glitchy shift".
   // Sending forces it true (you always follow your own sent message).
   const stickToBottomRef = useRef(true);
+  // Whether the USER has taken control of the scroll position, set only by a real
+  // drag. Until they do, every content-size change re-pins to the bottom.
+  //
+  // This is what makes a thread OPEN at its newest message. stickToBottomRef
+  // alone could not: it is driven by onScroll, which fires during the first
+  // layout at offset 0, and a tall transcript at offset 0 measures as "nowhere
+  // near the bottom" — so it latched false before the opening scrollToEnd had
+  // even landed. Everything that grows the list afterwards (a shared-post card
+  // resolving, an offer card appearing once its order loads, a GIF decoding)
+  // was then refused, leaving the thread parked a screenful short with the
+  // newest messages tucked under the compose bar.
+  //
+  // onScrollBeginDrag is the right signal because it fires ONLY for a finger,
+  // never for scrollToEnd or for layout.
+  const userScrolledRef = useRef(false);
   const [messages, setMessages] = useState<Message[]>([]);
   // The live ORDER behind every offer card in the thread, keyed by order id. The
   // MESSAGE can't carry this: a sent message is immutable, so an offer accepted an
@@ -518,10 +533,17 @@ export default function ChatScreen() {
           const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
           stickToBottomRef.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120;
         }}
-        // Follow the bottom only when we were already there. A blanket scrollToEnd
-        // here jumped the list whenever a reaction grew a bubble (or an off-screen
-        // message arrived) — that jump was the glitchy screen shift.
-        onContentSizeChange={() => { if (stickToBottomRef.current) flatListRef.current?.scrollToEnd({ animated: false }); }}
+        onScrollBeginDrag={() => { userScrolledRef.current = true; }}
+        // Before the first drag: always pin to the bottom, so the thread settles on
+        // its newest message however late the tall cards finish measuring.
+        // After it: follow the bottom only when we were already there. A blanket
+        // scrollToEnd there jumped the list whenever a reaction grew a bubble (or an
+        // off-screen message arrived) — that jump was the glitchy screen shift.
+        onContentSizeChange={() => {
+          if (!userScrolledRef.current || stickToBottomRef.current) {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          }
+        }}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>{t('messages.startConversation', { name: otherUser?.display_name ?? '' })}</Text>
