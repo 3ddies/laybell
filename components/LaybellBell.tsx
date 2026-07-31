@@ -70,24 +70,26 @@ const BODY_BOT = 0.9468;    // base
 const BODY_H = BODY_BOT - BODY_TOP;              // 0.7340
 const BODY_MID = (BODY_TOP + BODY_BOT) / 2;      // 0.5798
 
-// ── The light-mode outline ─────────────────────────────────────────────────
-// In light mode the mark is near-black on a warm off-white, and the asset's
-// anti-aliased edge fades into that background — the same softness that made it
-// read brownish before the density variants landed. Density fixed the COLOUR;
-// this fixes the EDGE.
+// ── The keyline, for the RED mark in light mode ONLY ───────────────────────
+// A one-pass dilation, not a stroke: eight copies of the silhouette offset
+// around the compass and drawn under the real one, so the glyph gains a rim of
+// `outline` all round. Diagonals are pulled in to ~0.707 so all eight offsets
+// sit the same DISTANCE from centre — at full 1.0 the corners bulge. Eight
+// rather than four, because four leaves flat spots on the dome's curve, which is
+// most of this logo's outline.
 //
-// It is a one-pass dilation, not a stroke: eight copies of the same silhouette,
-// offset around the compass and drawn under the real one. The glyph grows by
-// `outline` all round, so its boundary lands on solid colour instead of a
-// gradient into the page. Diagonals are pulled in to ~0.707 so all eight offsets
-// are the same DISTANCE from centre — at full 1.0 the corners would bulge.
+// WHEN TO PASS IT — narrowly. The unread mark is red on a warm off-white and
+// wants edge definition there. NOTHING ELSE DOES:
 //
-// Eight rather than four: four leaves visible flat spots on the dome's curve,
-// which is most of this logo's outline.
+//   * The resting light-mode bell is already near-black, so a black dilation
+//     draws no visible rim. All it does is fatten the logo and close up the thin
+//     gap between the note and the dome. It was briefly applied there and looked
+//     exactly as bad as that description suggests.
+//   * Dark mode has all the contrast it needs in both states.
 //
-// Dark mode passes no outline at all. A white mark on near-black already has the
-// contrast, and dilating it there would just thicken the logo.
-const OUTLINE_RATIO = 0.6 / 28;
+// Keep the radius small for the same reason: this logo's negative space is thin,
+// and a heavy dilation fills it in rather than outlining it.
+const OUTLINE_RATIO = 0.45 / 28;
 const D = Math.SQRT1_2;
 const OUTLINE_DIRS: [number, number][] = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
@@ -120,10 +122,11 @@ export default function LaybellBell({
   unread: boolean;
   /** Animation runs only while the screen is on. */
   focused: boolean;
-  /** Colour to dilate the silhouette with, under the mark — see OUTLINE_RATIO.
-   *  Pass it in LIGHT MODE ONLY; omit it and nothing is drawn, which is what dark
-   *  mode wants. The caller decides rather than this component reading the theme,
-   *  matching how `color` and `unreadColor` already arrive. */
+  /** Keyline colour, dilated under the mark — see OUTLINE_RATIO for when this is
+   *  wanted, which is narrower than it sounds: the RED unread mark in light mode
+   *  and nothing else. Omit it and nothing is drawn. The caller decides rather
+   *  than this component reading the theme, matching how `color` and
+   *  `unreadColor` already arrive. */
   outline?: string;
   style?: ViewStyle;
 }) {

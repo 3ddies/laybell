@@ -1765,10 +1765,13 @@ export default function HomeScreen() {
               unreadColor={colors.error}
               unread={unreadCount > 0}
               focused={isFocused}
-              // Light mode only. Dark mode already reads crisp — a white mark on
-              // near-black has the contrast; it is the near-black mark on warm
-              // off-white whose anti-aliased edge goes soft.
-              outline={mode === 'light' ? '#000' : undefined}
+              // ONLY the red unread mark, and only in light mode.
+              //
+              // Not the resting bell: that one is already near-black, so a black
+              // dilation gives it no keyline at all — it just fattens the logo
+              // and closes up the thin gap between the note and the dome. It is
+              // the RED mark on warm off-white that wants edge definition.
+              outline={mode === 'light' && unreadCount > 0 ? '#000' : undefined}
             />
           </TouchableOpacity>
 
