@@ -928,6 +928,11 @@ export default function ListingScreen() {
               <Pressable style={[styles.offerSheet, { paddingBottom: insets.bottom + SPACING.md }]}>
                 <Text style={styles.offerTitle}>{t('shop.makeOffer')}</Text>
                 <Text style={styles.offerSub}>{t('shop.offerSub')}</Text>
+                {/* The going-rate note is its own line, and dimmer: the line above
+                    is what the offer IS, this is only advice on what to put in the
+                    box. Buyers who have only ever leased anchor on the lease price
+                    and lowball an exclusive without realising. */}
+                <Text style={styles.offerNote}>{t('shop.offerNote')}</Text>
                 <View style={styles.offerRow}>
                   <Text style={styles.offerSymbol}>$</Text>
                   <TextInput
@@ -1164,6 +1169,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   },
   offerTitle: { color: c.text, fontSize: 16, fontWeight: '800' },
   offerSub: { color: c.textSecondary, fontSize: 12.5, lineHeight: 18 },
+  offerNote: { color: c.textTertiary, fontSize: 11.5, lineHeight: 16 },
   offerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   offerSymbol: { color: c.text, fontSize: 18, fontWeight: '800' },
   offerInput: {

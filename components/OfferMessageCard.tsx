@@ -109,6 +109,12 @@ export default function OfferMessageCard({
           <Text style={styles.listing} numberOfLines={2}>{offer.title}</Text>
         </TouchableOpacity>
       )}
+      {/* On the card itself, not only in the accept confirmation — both sides
+          should be able to see what kind of deal this is without tapping
+          anything. An offer is always a BUY-OUT; there is no such thing as an
+          offer to lease, and a seller skimming a thread could easily assume
+          otherwise. */}
+      <Text style={styles.toBuy}>{t('offerMsg.toBuy')}</Text>
       {!!offer.note && <Text style={styles.note}>{offer.note}</Text>}
 
       {outcome ? (
@@ -178,6 +184,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
 
   amount: { color: c.text, fontSize: 26, fontWeight: '800', letterSpacing: -0.5, marginTop: 2 },
   listing: { color: c.textSecondary, fontSize: 13, fontWeight: '600' },
+  toBuy: { color: c.textTertiary, fontSize: 11.5, fontWeight: '700', marginTop: 1 },
   note: { color: c.textSecondary, fontSize: 13, marginTop: 4, lineHeight: 18 },
 
   outcome: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: SPACING.sm },
