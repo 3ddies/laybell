@@ -70,13 +70,37 @@ const BODY_BOT = 0.9468;    // base
 const BODY_H = BODY_BOT - BODY_TOP;              // 0.7340
 const BODY_MID = (BODY_TOP + BODY_BOT) / 2;      // 0.5798
 
+// ── The light-mode outline ─────────────────────────────────────────────────
+// In light mode the mark is near-black on a warm off-white, and the asset's
+// anti-aliased edge fades into that background — the same softness that made it
+// read brownish before the density variants landed. Density fixed the COLOUR;
+// this fixes the EDGE.
+//
+// It is a one-pass dilation, not a stroke: eight copies of the same silhouette,
+// offset around the compass and drawn under the real one. The glyph grows by
+// `outline` all round, so its boundary lands on solid colour instead of a
+// gradient into the page. Diagonals are pulled in to ~0.707 so all eight offsets
+// are the same DISTANCE from centre — at full 1.0 the corners would bulge.
+//
+// Eight rather than four: four leaves visible flat spots on the dome's curve,
+// which is most of this logo's outline.
+//
+// Dark mode passes no outline at all. A white mark on near-black already has the
+// contrast, and dilating it there would just thicken the logo.
+const OUTLINE_RATIO = 0.6 / 28;
+const D = Math.SQRT1_2;
+const OUTLINE_DIRS: [number, number][] = [
+  [1, 0], [-1, 0], [0, 1], [0, -1],
+  [D, D], [-D, D], [D, -D], [-D, -D],
+];
+
 const SWING_DEG = 13;
 const FIRST_DELAY_MS = 2400;
 const GAP_MIN_MS = 17_000;
 const GAP_MAX_MS = 33_000;
 
 export default function LaybellBell({
-  matchIconSize = 28, color, unreadColor, accent = '#FF8095', unread, focused, style,
+  matchIconSize = 28, color, unreadColor, accent = '#FF8095', unread, focused, outline, style,
 }: {
   /** The `size` prop given to the Ionicon beside this one. The bell's BODY is
    *  then matched to that glyph's real drawn height and vertical position — not
@@ -96,6 +120,11 @@ export default function LaybellBell({
   unread: boolean;
   /** Animation runs only while the screen is on. */
   focused: boolean;
+  /** Colour to dilate the silhouette with, under the mark — see OUTLINE_RATIO.
+   *  Pass it in LIGHT MODE ONLY; omit it and nothing is drawn, which is what dark
+   *  mode wants. The caller decides rather than this component reading the theme,
+   *  matching how `color` and `unreadColor` already arrive. */
+  outline?: string;
   style?: ViewStyle;
 }) {
   const active = unread && focused;
@@ -204,6 +233,27 @@ export default function LaybellBell({
           { transform: [{ translateY: pivotFromCentre }, { rotate }, { translateY: -pivotFromCentre }] },
         ]}
       >
+        {/* Under the mark, so the real silhouette covers all but the rim. Inside
+            the rotating layer, so the outline swings with the bell rather than
+            sitting still behind a moving one. */}
+        {!!outline && OUTLINE_DIRS.map(([dx, dy], i) => (
+          <Image
+            key={i}
+            source={BELL}
+            style={[
+              img,
+              {
+                tintColor: outline,
+                transform: [
+                  { translateX: dx * matchIconSize * OUTLINE_RATIO },
+                  { translateY: dy * matchIconSize * OUTLINE_RATIO },
+                ],
+              },
+            ]}
+            resizeMode="contain"
+          />
+        ))}
+
         <Image source={BELL} style={[img, { tintColor: tint }]} resizeMode="contain" />
 
         {/* Accent copy, faded in at each strike. Cross-fading two tinted copies

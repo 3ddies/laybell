@@ -1765,6 +1765,10 @@ export default function HomeScreen() {
               unreadColor={colors.error}
               unread={unreadCount > 0}
               focused={isFocused}
+              // Light mode only. Dark mode already reads crisp — a white mark on
+              // near-black has the contrast; it is the near-black mark on warm
+              // off-white whose anti-aliased edge goes soft.
+              outline={mode === 'light' ? '#000' : undefined}
             />
           </TouchableOpacity>
 
