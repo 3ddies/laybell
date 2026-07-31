@@ -723,10 +723,6 @@ export default function HomeScreen() {
   const isFocusedRef = useRef(isFocused);
   isFocusedRef.current = isFocused;
   useEffect(() => { setFeedFocused(isFocused); syncAmbientSongRef.current(); }, [isFocused]);
-  // Muting the video hands audio BACK to the attached song, and unmuting takes
-  // it away again — syncAmbientSong reads videoMuted, so it has to re-run when
-  // that flips. Without this the change only took effect at the next scroll.
-  useEffect(() => { syncAmbientSongRef.current(); }, [videoMuted]);
   // Account-switch remounts start the store from a clean slate, exactly like
   // the old fresh useState.
   useEffect(() => () => resetFeedVideo(), []);
@@ -1224,26 +1220,7 @@ export default function HomeScreen() {
   musicCtl.current = { playSong, stopSong, prefetchSong, warmSongPlayer };
   function syncAmbientSong() {
     const target = isFocusedRef.current ? visibleMusicRef.current : null;
-    // A VIDEO WITH SOUND WINS — ambient stands down instead of stacking onto it.
-    //
-    // visibleMusicRef is resolved INDEPENDENTLY of which video is centred: it is
-    // just the first VIEWABLE post carrying a song (applyMusicViewables). So an
-    // image post merely being ON SCREEN started its song while a centred video
-    // played its own audio — two sources at once, from two posts. `videoMuted`
-    // defaults to FALSE, which made that the ORDINARY case rather than an edge
-    // one, and it is why the overlap showed up on the very first posts tested.
-    //
-    // The centred video is audible unless it carries a song itself (a song post
-    // mutes its own video — see the `muted` prop on the feed's video and its
-    // slideshow) or the user has switched video audio off.
-    //
-    // The slideAudioIds rule below is deliberately NOT this one: that is
-    // per-post ("this song post's OWN slideshow has video audio"), so it never
-    // covered a song on one post against a video on another.
-    const vid = getVisibleVideoId();
-    const vidPost = vid ? postsRef.current.find((p) => p.id === vid) : null;
-    const videoAudible = !!vidPost && !(vidPost as any).song_id && !videoMuted;
-    const want = target && !videoAudible && !slideAudioIdsRef.current.has(target.id) ? target : null;
+    const want = target && !slideAudioIdsRef.current.has(target.id) ? target : null;
     if (want) {
       // PLAY-FIRST handoff: do NOT stop the old host before playSong —
       // playSong replaces the player internally, and when consecutive posts
