@@ -853,18 +853,34 @@ export default function HomeScreen() {
     if (!sawLayout) return null; // layout not measured yet — let the caller fall back
     // STICKY CONTINUITY: when the focus line is momentarily over a NON-video (a
     // photo, a caption, or the gap between two posts), don't cut off the video
-    // that's already playing — keep it going as long as its card is still on
-    // screen. It stops only once it fully leaves the visible band OR a DIFFERENT
-    // video reaches center. This is the "keep playing until it's no longer
-    // supposed to play" feel: no pause-flash mid-scroll between posts.
+    // that's already playing — keep it going as long as its MEDIA is still on
+    // screen. It stops only once the media fully leaves the visible band OR a
+    // DIFFERENT video reaches center. This is the "keep playing until it's no
+    // longer supposed to play" feel: no pause-flash mid-scroll between posts.
+    //
+    // The MEDIA, not the card. The card starts with the author header and ends
+    // with the caption/actions, so "card still on screen" kept a video playing
+    // — audibly — while its only visible pixels were its header row peeking in
+    // at the bottom edge (owner-reported, caught on video: sound and frames
+    // from an off-screen video while an image post owned the whole viewport).
+    // The media rect is exact: header above it is HEADER_FOCUS_ZONE, and its
+    // height is the same expression the card renderer draws it with, so caption
+    // length never skews it.
     if (!activeId && centerOnNonVideo) {
       const prev = getVisibleVideoId();
       if (prev) {
         for (let i = range.startIndex; i <= range.endIndex; i++) {
-          if ((data[i] as any)?.id !== prev) continue;
+          const it: any = data[i];
+          if (it?.id !== prev) continue;
           const L = list.getLayout(i);
-          // Still overlapping the visible band → keep it playing.
-          if (L && L.y < bandBottom && L.y + L.height > bandTop) activeId = prev;
+          if (L) {
+            const mediaTop = L.y + HEADER_FOCUS_ZONE;
+            const mediaH = it.type === 'video'
+              ? Math.min(SCREEN_W / aspectToNumber(it.aspect_ratio, 16 / 9), MAX_VIDEO_H)
+              : SCREEN_W / aspectToNumber(it.aspect_ratio, 1); // slideshow card
+            // Media still overlapping the visible band → keep it playing.
+            if (mediaTop < bandBottom && mediaTop + mediaH > bandTop) activeId = prev;
+          }
           break;
         }
       }
@@ -1010,6 +1026,20 @@ export default function HomeScreen() {
         const pendingMusic = pendingMusicViewables.current;
         pendingMusicViewables.current = null;
         applyMusicViewables(pendingMusic);
+      } else {
+        // No new viewability tokens, but the scroll still moved something:
+        // syncAmbientSong READS the centred video (its stand-down rule), and
+        // WHICH video is centred updates live on every scroll frame — while
+        // this flush only ran when a 60%-viewability event had queued tokens.
+        // Short landscape cards fit two posts above 60% at once, so the focus
+        // line can hand between them without any event firing, and the rule
+        // was never consulted. Re-running the sync here reconciles ambient at
+        // every rest: it stops the song if a video took the line, and hands
+        // audio back to the still-remembered song post if the video left it.
+        // At-rest only, on purpose — a per-frame stop was considered and
+        // rejected (it strands the song in silence and defeats the shared-song
+        // fast handoff).
+        syncAmbientSongRef.current();
       }
     }, 150);
   }
