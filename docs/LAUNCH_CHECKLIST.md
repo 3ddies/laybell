@@ -187,6 +187,20 @@ re-verified against the live project, not just marked off:
    read and sees `sold` when it wakes. Lock order is listing → ledger accounts in
    every path, so no deadlock.
 
+10. **Run `supabase/sql/shop_offer_retry.sql`** (after `shop_exclusivity_lock.sql`;
+    idempotent).
+
+    `shop_orders_listing_buyer_kind_uq` counts DEAD orders, so the first offer a
+    buyer makes permanently consumes their only `offer` slot on that listing.
+    Declined? They can never offer again. Expired unanswered? Same — and offer
+    expiry turned that from an edge case into the normal path. The app shows the
+    button, they type a price, and the insert fails on a unique violation.
+
+    The fix scopes the index to `status in ('requested','delivered')`. Nothing
+    that was prevented before becomes possible: two pending offers, double
+    leasing and re-claiming a freebie are all still blocked by live orders
+    holding the slot.
+
 **Crash and error reporting — CODE DONE 2026-07-29, DELIBERATELY INERT.**
 
 Wired but switched off. `@sentry/react-native` (~7.2.0, via `npx expo install`), the config

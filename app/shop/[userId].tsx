@@ -11,7 +11,7 @@ import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../../constants/t
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { supabase } from '../../lib/supabase';
-import { fetchSellerListings, getShop, type Shop, type ShopListing } from '../../lib/shop';
+import { fetchSellerListings, getShop, paidSalesCount, type Shop, type ShopListing } from '../../lib/shop';
 
 // A specific seller's storefront — opened from the green Shop button on their
 // profile. Header shows the shop identity; the grid is their active listings.
@@ -95,7 +95,7 @@ export default function SellerShopScreen() {
                   {!!shop?.bio && <Text style={styles.sellerBio} numberOfLines={2}>{shop.bio}</Text>}
                   {listings.length > 0 && (
                     <Text style={styles.sellerMeta}>
-                      {t('shop.shopMeta', { n: listings.length, m: listings.reduce((s, l) => s + l.sales_count, 0) })}
+                      {t('shop.shopMeta', { n: listings.length, m: listings.reduce((s, l) => s + paidSalesCount(l), 0) })}
                     </Text>
                   )}
                 </View>

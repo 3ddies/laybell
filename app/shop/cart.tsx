@@ -13,7 +13,7 @@ import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../../constants/t
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { reactionPop, notifySuccess } from '../../lib/haptics';
-import { fetchListing, formatPrice, myDeliveredListingIds, requestToBuy } from '../../lib/shop';
+import { fetchListing, formatPrice, legacyKindOf, myDeliveredKinds, requestToBuy } from '../../lib/shop';
 import { fetchLedgerBalances } from '../../lib/ledger';
 import CreditConfirmDialog from '../../components/CreditConfirmDialog';
 import {
@@ -67,14 +67,20 @@ export default function CartScreen() {
     (async () => {
       const ids = getCartItems().map((i) => i.listingId);
       if (!ids.length) return;
-      const [listings, owned] = await Promise.all([
+      const [listings, held] = await Promise.all([
         Promise.all(ids.map((id) => fetchListing(id).catch(() => null))),
-        myDeliveredListingIds(ids).catch(() => new Set<string>()),
+        myDeliveredKinds(ids).catch(() => new Map<string, Set<string>>()),
       ]);
       if (!alive) return;
+      const cart = getCartItems();
       const dead = ids.filter((id, i) => {
         const l = listings[i];
-        return !l || l.status !== 'active' || owned.has(id);
+        if (!l || l.status !== 'active') return true;
+        // Only the KIND already held is spent. Leasing a beat, or claiming it
+        // free, leaves buying it outright perfectly available — so an item
+        // shortlisted as a buy survives a lease the buyer already has.
+        const kind = cart.find((c) => c.listingId === id)?.kind ?? legacyKindOf(l);
+        return held.get(id)?.has(kind) ?? false;
       });
       const n = removeManyFromCart(dead);
       if (n > 0) setPruned(n);

@@ -19,7 +19,7 @@ import { useProfile } from '../../contexts/ProfileContext';
 import {
   LISTING_CATEGORIES, createShop, deliverOrder, exploreListings, fetchMyPurchases,
   fetchMySales, fetchSellerListings, formatPrice, getShop, hasOpenShop,
-  markShopOrdersSeen, pendingSalesCount, sellerEarningsCents, setOrderStatus, updateShop,
+  markShopOrdersSeen, paidSalesCount, pendingSalesCount, sellerEarningsCents, setOrderStatus, updateShop,
   fetchDeliveredShopEarningsCents,
   type ExploreSort, type ListingCategory, type SellerProfile, type Shop, type ShopListing, type ShopOrder,
 } from '../../lib/shop';
@@ -443,7 +443,7 @@ function MyShopTab({ myId, myAge }: { myId: string | null; myAge: number | null 
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statCell}>
-              <Text style={styles.statValue}>{listings.reduce((s, l) => s + l.sales_count, 0)}</Text>
+              <Text style={styles.statValue}>{listings.reduce((s, l) => s + paidSalesCount(l), 0)}</Text>
               <Text style={styles.statLabel}>{t('shop.statsSold')}</Text>
             </View>
             <View style={styles.statDivider} />

@@ -606,24 +606,34 @@ export async function fetchOrdersByIds(ids: string[]): Promise<ShopOrder[]> {
   return (data ?? []) as ShopOrder[];
 }
 
-/** Of these listings, which have I already been DELIVERED?
+/** Which DEAL KINDS of these listings have I already been delivered?
  *
- *  One query for a whole cart rather than one per item. Used to drop things the
- *  buyer already owns — an exclusive they bought, or a free claim — which would
- *  otherwise sit in the cart forever failing at checkout. */
-export async function myDeliveredListingIds(listingIds: string[]): Promise<Set<string>> {
+ *  Per KIND, not per listing, and that distinction is the point: leasing a beat
+ *  or claiming it free does not end anything. The buyer can still come back and
+ *  buy it outright — that is what they would be paying for. Only the kind they
+ *  already hold is spent, because orders are unique per (listing, buyer, kind).
+ *
+ *  One query for a whole cart rather than one per item. Legacy orders predate
+ *  `kind` and are keyed 'legacy', which matches nothing a client adds today. */
+export async function myDeliveredKinds(listingIds: string[]): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
   const unique = [...new Set(listingIds.filter(Boolean))];
-  if (!unique.length) return new Set();
+  if (!unique.length) return out;
   const { data: auth } = await supabase.auth.getUser();
   const uid = auth?.user?.id;
-  if (!uid) return new Set();
+  if (!uid) return out;
   const { data } = await supabase
     .from('shop_orders')
-    .select('listing_id')
+    .select('listing_id, kind')
     .eq('buyer_id', uid)
     .eq('status', 'delivered')
     .in('listing_id', unique);
-  return new Set((data ?? []).map((r: { listing_id: string }) => r.listing_id));
+  for (const r of (data ?? []) as { listing_id: string; kind: string | null }[]) {
+    const set = out.get(r.listing_id) ?? new Set<string>();
+    set.add(r.kind ?? 'legacy');
+    out.set(r.listing_id, set);
+  }
+  return out;
 }
 
 export async function myOrdersForListing(listingId: string): Promise<ShopOrder[]> {
@@ -655,6 +665,15 @@ export type FreeConditionState = {
     this where the UI has to render immediately, e.g. a button's caption. */
 export function freeHasConditions(l: ShopListing): boolean {
   return !!l.free_requires_follow || (l.free_like_post_ids?.length ?? 0) > 0;
+}
+
+/** Deliveries that were actually PAID FOR — buys, leases and accepted offers.
+ *
+ *  sales_count counts every delivery including free claims, which are not sales
+ *  by any reading: nothing changed hands. A shop advertising "12 sold" on the
+ *  back of twelve giveaways is overstating itself to buyers and to its owner. */
+export function paidSalesCount(l: ShopListing): number {
+  return Math.max(0, l.sales_count - (l.free_count ?? 0));
 }
 
 export type ListingStats = { claimed: number; leased: number; sold: boolean };

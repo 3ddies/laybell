@@ -107,13 +107,14 @@ export default function ListingScreen() {
       const [l, os] = await Promise.all([fetchListing(id), myOrdersForListing(id)]);
       setListing(l);
       setOrders(os);
-      // Bought here, bought elsewhere, or sold to someone else — either way it
-      // can never check out again, so it leaves the cart the moment this screen
-      // finds out. The cart prunes on focus as well; this just catches it at the
-      // exact point the user is looking at the thing that changed.
-      if (!l || l.status !== 'active' || os.some((o) => o.status === 'delivered')) {
-        removeFromCart(id);
-      }
+      // Gone, or closed to everyone by an exclusive sale — it can never check out
+      // again, so it leaves the cart the moment this screen finds out.
+      //
+      // Deliberately NOT "has a delivered order": a lease or a free claim leaves
+      // the buy-out open, and evicting the cart item over one would take away a
+      // purchase the buyer is still entitled to make. Whether the shortlisted
+      // KIND itself is spent is the cart's own check, which knows which kind.
+      if (!l || l.status !== 'active') removeFromCart(id);
       if (l) {
         const types = saleTypes(l);
         if (types.free && l.user_id !== profile?.id) {
@@ -395,11 +396,25 @@ export default function ListingScreen() {
     : (types.free && !types.lease) ? 'underFree'
     : 'inline';
   const offerable = !!listing && listing.status === 'active';
-  // The cover's cart button. Same rule the grid tiles use — an active listing
-  // that is not yours — plus the one thing a tile cannot know and this screen
-  // can: whether you have already been delivered it, in which case there is
-  // nothing left to shortlist.
-  const canCartHere = !!listing && listing.status === 'active' && !isOwner && !deliveredOrder;
+  // Which deals this buyer already holds. Orders are unique per (listing, buyer,
+  // kind), so a kind already delivered is spent — but ONLY that kind. Leasing a
+  // beat or claiming it free ends nothing: buying it outright is still open, and
+  // is precisely what the buyer would be paying for.
+  const heldKinds = new Set(
+    orders
+      .filter((o) => o.status === 'delivered')
+      .map((o) => o.kind ?? (listing ? legacyKindOf(listing) : null))
+      .filter(Boolean) as string[],
+  );
+  // What the cover button would shortlist: the everyday deal first, then the
+  // buy-out, then the freebie — skipping any the buyer already has. Null when
+  // there is nothing left to add, which is the only case that hides the button.
+  const cartKindHere: Exclude<SaleKind, 'offer'> | null = !listing ? null
+    : types.lease && !heldKinds.has('lease') ? 'lease'
+      : types.sell && !heldKinds.has('sell') ? 'sell'
+        : types.free && !heldKinds.has('free') ? 'free'
+          : null;
+  const canCartHere = !!listing && listing.status === 'active' && !isOwner && !!cartKindHere;
   // Green stays exclusive to lease-ONLY (nothing to buy, nothing free), where the
   // offer is the only route to owning the beat and so earns the same weight as
   // the other primary CTAs. Everywhere else it is a secondary action and says so.
@@ -648,7 +663,7 @@ export default function ListingScreen() {
                 {canCartHere && (
                   <TouchableOpacity
                     style={[styles.coverCartBtn, inCart && styles.coverCartBtnActive]}
-                    onPress={() => { reactionPop(); inCart ? removeFromCart(listing.id) : addToCart(listing); }}
+                    onPress={() => { reactionPop(); inCart ? removeFromCart(listing.id) : addToCart(listing, cartKindHere ?? undefined); }}
                     hitSlop={10}
                     activeOpacity={0.8}
                     accessibilityRole="button"
