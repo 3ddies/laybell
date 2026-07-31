@@ -3,7 +3,7 @@ import {
   TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
   Keyboard, Animated, Alert, Modal, Pressable, Dimensions,
 } from 'react-native';
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -69,27 +69,28 @@ export default function ChatScreen() {
     }, 4000);
   };
   const flatListRef = useRef<FlatList>(null);
-  // Auto-scroll to the newest message ONLY when the user is already at the bottom.
-  // Otherwise a reaction (which grows a bubble) or an incoming message while
-  // they're reading history would yank the transcript — the "glitchy shift".
-  // Sending forces it true (you always follow your own sent message).
-  const stickToBottomRef = useRef(true);
-  // Whether the USER has taken control of the scroll position, set only by a real
-  // drag. Until they do, every content-size change re-pins to the bottom.
+  // NOTE ON SCROLL POSITION — there is deliberately none of it.
   //
-  // This is what makes a thread OPEN at its newest message. stickToBottomRef
-  // alone could not: it is driven by onScroll, which fires during the first
-  // layout at offset 0, and a tall transcript at offset 0 measures as "nowhere
-  // near the bottom" — so it latched false before the opening scrollToEnd had
-  // even landed. Everything that grows the list afterwards (a shared-post card
+  // The transcript is an INVERTED list: newest message first in the data, and
+  // scroll offset 0 IS the bottom of the conversation. So a thread does not
+  // scroll to its newest message on open, it STARTS there, with no scroll to be
+  // choppy about.
+  //
+  // Two rounds of pinning tried to do this by scrolling and both fought the same
+  // thing: in a normal list, a cell that measures late (a shared-post card
   // resolving, an offer card appearing once its order loads, a GIF decoding)
-  // was then refused, leaving the thread parked a screenful short with the
-  // newest messages tucked under the compose bar.
+  // pushes the newest message off the bottom, and the catch-up scroll IS the
+  // jump. Inverted, those cells grow towards the older end — away from the
+  // viewport — so the newest message never moves and there is nothing to catch.
   //
-  // onScrollBeginDrag is the right signal because it fires ONLY for a finger,
-  // never for scrollToEnd or for layout.
-  const userScrolledRef = useRef(false);
+  // It also retires the "glitchy shift" guard wholesale: a reaction growing a
+  // bubble in history now shifts only the content above the reader.
   const [messages, setMessages] = useState<Message[]>([]);
+  // Oldest-first everywhere else in this file (appending a sent message, the
+  // realtime insert, the initial fetch); reversed ONLY here, for the inverted
+  // list. Keeping the state in reading order means nothing else has to think
+  // about it.
+  const orderedMessages = useMemo(() => [...messages].reverse(), [messages]);
   // The live ORDER behind every offer card in the thread, keyed by order id. The
   // MESSAGE can't carry this: a sent message is immutable, so an offer accepted an
   // hour ago would still be showing Accept and Decline. The whole row rather than
@@ -391,10 +392,11 @@ export default function ChatScreen() {
       .select().single();
     if (!error && data) {
       impactLight(); // soft confirming tap on a sent message
-      stickToBottomRef.current = true; // always follow your own sent message
-      // Single scroll via onContentSizeChange — a second timed scrollToEnd here
-      // double-jumped the list (part of the glitchy shift on send).
       setMessages(prev => [...prev, data]);
+      // You always follow your own sent message. Offset 0 is the bottom on an
+      // inverted list, and this is a no-op unless they had scrolled up — the
+      // sent message lands at the bottom on its own.
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
       // Notify recipient — only on first message of session to avoid spam
       if (messages.filter(m => m.sender_id === currentUserId).length === 0) {
         createNotification({ userId: String(id), actorId: currentUserId, type: 'message' });
@@ -521,31 +523,23 @@ export default function ChatScreen() {
       <KeyboardAvoidingView style={styles.chatBody} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <FlatList
         ref={flatListRef}
-        data={messages}
+        // See the note by `orderedMessages`. Offset 0 is the bottom of the
+        // conversation, so the thread opens there without scrolling.
+        inverted
+        data={orderedMessages}
         keyExtractor={item => item.id}
         // iOS: drag the transcript down to interactively dismiss the keyboard
         // (iMessage feel); keep taps (long-press to react) alive with the keyboard up.
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[styles.messagesList, { paddingBottom: insets.bottom + 76 }]}
-        scrollEventThrottle={16}
-        onScroll={(e) => {
-          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-          stickToBottomRef.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120;
-        }}
-        onScrollBeginDrag={() => { userScrolledRef.current = true; }}
-        // Before the first drag: always pin to the bottom, so the thread settles on
-        // its newest message however late the tall cards finish measuring.
-        // After it: follow the bottom only when we were already there. A blanket
-        // scrollToEnd there jumped the list whenever a reaction grew a bubble (or an
-        // off-screen message arrived) — that jump was the glitchy screen shift.
-        onContentSizeChange={() => {
-          if (!userScrolledRef.current || stickToBottomRef.current) {
-            flatListRef.current?.scrollToEnd({ animated: false });
-          }
-        }}
+        // paddingTOP, not bottom: inverted flips the content, so the start of the
+        // content is the visual bottom. This is the clearance under the floating
+        // compose bar, which the transcript scrolls beneath.
+        contentContainerStyle={[styles.messagesList, { paddingTop: insets.bottom + 76 }]}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
+          // Counter-flipped: inverted applies scaleY(-1) to the list, and unlike
+          // the cells the empty component gets no correction of its own.
+          <View style={[styles.emptyContainer, styles.unflip]}>
             <Text style={styles.emptyText}>{t('messages.startConversation', { name: otherUser?.display_name ?? '' })}</Text>
           </View>
         }
@@ -937,6 +931,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   pickerEmoji: { fontSize: 28 },
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
+  unflip: { transform: [{ scaleY: -1 }] },
   emptyText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center' },
 
   // Story replies: the story's stillshot above the text bubble.

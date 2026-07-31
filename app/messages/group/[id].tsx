@@ -3,7 +3,7 @@ import {
   TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
   Keyboard, Animated, Modal, Pressable, Alert, Dimensions,
 } from 'react-native';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -49,13 +49,16 @@ export default function GroupChatScreen() {
   const bubbleBlue = ['#1FA0FF', '#0A7CFF'] as const;
 
   const flatListRef = useRef<FlatList>(null);
-  // Auto-scroll to the newest message ONLY when already at the bottom — so a
-  // reaction growing a bubble (or an incoming message while reading history)
-  // doesn't yank the transcript (the glitchy shift). Sending forces it true.
-  const stickToBottomRef = useRef(true);
+  // NOTE ON SCROLL POSITION — there is deliberately none of it. Same inverted
+  // list as the 1:1 thread, for the same reason: offset 0 IS the bottom of the
+  // conversation, so a group opens on its newest message without scrolling, and
+  // a cell that measures late grows towards the older end rather than shoving
+  // the newest one off the bottom. See app/messages/[id].tsx for the full note.
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [members, setMembers] = useState<GroupProfile[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  // Oldest-first in state, reversed only for the inverted list.
+  const orderedMessages = useMemo(() => [...messages].reverse(), [messages]);
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({});
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [reactorsFor, setReactorsFor] = useState<string | null>(null);
@@ -229,9 +232,10 @@ export default function GroupChatScreen() {
       .select('id, body, sender_id, conversation_id, created_at').single();
     if (!error && data) {
       impactLight(); // soft confirming tap on a sent message
-      stickToBottomRef.current = true; // always follow your own sent message
       setMessages(prev => [...prev, data as Message]);
-      // Single scroll via onContentSizeChange (no second timed jump).
+      // You always follow your own sent message. Offset 0 is the bottom on an
+      // inverted list, so this only does anything if they had scrolled up.
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
       // Notify the other members (fire-and-forget).
       members.filter(m => m.id !== currentUserId).forEach(m =>
         createNotification({ userId: m.id, actorId: currentUserId, type: 'message' }));
@@ -320,8 +324,8 @@ export default function GroupChatScreen() {
         .insert({ sender_id: currentUserId, conversation_id: id, body: renameEventBody(trimmed) })
         .select('id, body, sender_id, conversation_id, created_at').single();
       if (data) {
-        stickToBottomRef.current = true;
         setMessages(prev => [...prev, data as Message]);
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
       }
     }
   }
@@ -397,27 +401,28 @@ export default function GroupChatScreen() {
       <KeyboardAvoidingView style={styles.chatBody} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <FlatList
           ref={flatListRef}
-          data={messages}
+          inverted
+          data={orderedMessages}
           keyExtractor={item => item.id}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[styles.messagesList, { paddingBottom: insets.bottom + 76 }]}
-          scrollEventThrottle={16}
-          onScroll={(e) => {
-            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-            stickToBottomRef.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120;
-          }}
-          // Follow the bottom only when already there — a blanket scrollToEnd
-          // jumped the list on every reaction/incoming message (the glitchy shift).
-          onContentSizeChange={() => { if (stickToBottomRef.current) flatListRef.current?.scrollToEnd({ animated: false }); }}
+          // paddingTOP, not bottom: inverted flips the content, so the start of
+          // the content is the visual bottom — the clearance under the compose bar.
+          contentContainerStyle={[styles.messagesList, { paddingTop: insets.bottom + 76 }]}
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
+            // Counter-flipped: unlike the cells, the empty component gets no
+            // correction for the list's scaleY(-1) of its own.
+            <View style={[styles.emptyContainer, styles.unflip]}>
               <Text style={styles.emptyText}>{t('groups.startConversation')}</Text>
             </View>
           }
           renderItem={({ item, index }) => {
             const isOwn = item.sender_id === currentUserId;
-            const prev = messages[index - 1];
+            // The chronologically OLDER neighbour, which the clustering rules below
+            // compare against. The list is inverted and newest-first, so that is
+            // index + 1 — reading it from `messages[index - 1]` would compare each
+            // bubble against the message AFTER it and cluster the wrong ones.
+            const prev = orderedMessages[index + 1];
             // A group-name change renders as a centered system line with its time,
             // never as a chat bubble.
             const renameTo = parseRenameEvent(item.body);
@@ -743,6 +748,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   reactionCount: { fontSize: 11, color: colors.textSecondary, fontWeight: '700' },
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: SPACING.xxl },
+  unflip: { transform: [{ scaleY: -1 }] },
   emptyText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center' },
 
   attachCaption: { marginTop: 4 },
