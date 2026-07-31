@@ -395,6 +395,11 @@ export default function ListingScreen() {
     : (types.free && !types.lease) ? 'underFree'
     : 'inline';
   const offerable = !!listing && listing.status === 'active';
+  // The cover's cart button. Same rule the grid tiles use — an active listing
+  // that is not yours — plus the one thing a tile cannot know and this screen
+  // can: whether you have already been delivered it, in which case there is
+  // nothing left to shortlist.
+  const canCartHere = !!listing && listing.status === 'active' && !isOwner && !deliveredOrder;
   // Green stays exclusive to lease-ONLY (nothing to buy, nothing free), where the
   // offer is the only route to owning the beat and so earns the same weight as
   // the other primary CTAs. Everywhere else it is a secondary action and says so.
@@ -630,6 +635,23 @@ export default function ListingScreen() {
                     <Text style={styles.previewLabel}>{t('shop.preview')}</Text>
                   </View>
                 )}
+                {/* Bottom-right of the cover, exactly as on the grid tiles — one
+                    cart control per screen, in the same place every time. This
+                    REPLACED a full-width "Add to cart" that used to sit in the CTA
+                    stack; keeping both would have been the duplicate. */}
+                {canCartHere && (
+                  <TouchableOpacity
+                    style={[styles.coverCartBtn, inCart && styles.coverCartBtnActive]}
+                    onPress={() => { reactionPop(); inCart ? removeFromCart(listing.id) : addToCart(listing); }}
+                    hitSlop={10}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={inCart ? t('shop.inCart') : t('shop.addToCart')}
+                    accessibilityState={{ selected: inCart }}
+                  >
+                    <Ionicons name={inCart ? 'checkmark' : 'cart-outline'} size={19} color="#fff" />
+                  </TouchableOpacity>
+                )}
               </View>
             </TouchableOpacity>
 
@@ -749,19 +771,6 @@ export default function ListingScreen() {
                     {/* Lease without sell: name your price for the beat itself. */}
                     {offerSlot === 'inline' && renderOfferCta()}
 
-                    {/* Add to cart (shortlists the everyday deal type). */}
-                    {!deliveredOrder && (
-                      <TouchableOpacity
-                        style={[styles.cartBtn, inCart && styles.cartBtnActive]}
-                        onPress={() => { reactionPop(); inCart ? removeFromCart(listing.id) : addToCart(listing); }}
-                        activeOpacity={0.85}
-                      >
-                        <Ionicons name={inCart ? 'checkmark' : 'cart-outline'} size={17} color={inCart ? colors.success : colors.text} />
-                        <Text style={[styles.cartBtnText, inCart && { color: colors.success }]}>
-                          {inCart ? t('shop.inCart') : t('shop.addToCart')}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
 
                     {/* Last, so it lands directly above "Message seller". */}
                     {offerSlot === 'aboveMessage' && renderOfferCta()}
@@ -999,12 +1008,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     paddingHorizontal: 3, backgroundColor: c.success, alignItems: 'center', justifyContent: 'center',
   },
   cartBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
-  cartBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-    borderWidth: 1, borderColor: c.border, borderRadius: RADIUS.full, paddingVertical: 12,
-  },
-  cartBtnActive: { borderColor: c.success, backgroundColor: c.success + '14' },
-  cartBtnText: { color: c.text, fontSize: 14, fontWeight: '600' },
   content: { padding: SPACING.md, gap: 12, paddingBottom: 44 },
   coverWrap: { borderRadius: RADIUS.lg, overflow: 'hidden', aspectRatio: 1, backgroundColor: c.surfaceLight },
   cover: { width: '100%', height: '100%' },
@@ -1086,6 +1089,15 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   unlockText: { flex: 1, color: c.textSecondary, fontSize: 13, fontWeight: '600' },
   unlockTextMet: { color: c.text, textDecorationLine: 'line-through', opacity: 0.7 },
   unlockHint: { color: c.textTertiary, fontSize: 11.5, marginTop: 2 },
+  // The grid tile's cart disc, scaled for the larger cover. Dark rather than
+  // themed so it reads on any artwork; green with a tick once shortlisted.
+  coverCartBtn: {
+    position: 'absolute', right: 12, bottom: 12,
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  coverCartBtnActive: { backgroundColor: c.success },
   offerBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     borderWidth: 1.5, borderColor: c.text, borderRadius: RADIUS.full, paddingVertical: 12,
