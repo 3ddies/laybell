@@ -165,6 +165,23 @@ re-verified against the live project, not just marked off:
    will still *draw* "Offer expired" past 24h — that half is client-side — which
    makes this the worst state to sit in: it looks handled and isn't.
 
+9. **Run `supabase/sql/shop_exclusivity_lock.sql`** (after `offer_expiry.sql`; idempotent).
+
+   **A seventh way to double-spend, found 2026-07-30.** Auto-declining pending
+   offers on an exclusive sale already worked; the check in front of it did not.
+   Both `shop_order_precheck` and `shop_order_delivered` read the listing's status
+   with a plain `SELECT`, and under READ COMMITTED that sees the last *committed*
+   row without waiting on a transaction in flight. Two buyers hitting Buy in the
+   same instant both read `active`, both move credits, and both deliver — one
+   exclusive beat sold twice, both charged, both handed the file, and the listing
+   showing a single sale. Auto-declining can't help: at the moment each
+   transaction looked, there was nothing pending to decline. The same race lets a
+   free claim land on a listing being sold exclusively alongside it.
+
+   The fix is two `for update` clauses, so the second transaction blocks at the
+   read and sees `sold` when it wakes. Lock order is listing → ledger accounts in
+   every path, so no deadlock.
+
 **Crash and error reporting — CODE DONE 2026-07-29, DELIBERATELY INERT.**
 
 Wired but switched off. `@sentry/react-native` (~7.2.0, via `npx expo install`), the config
