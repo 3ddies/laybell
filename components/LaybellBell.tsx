@@ -75,9 +75,22 @@ const BODY_MID = (BODY_TOP + BODY_BOT) / 2;      // 0.5798
 // logo fills the thin gap between the note and the dome faster than it defines
 // the rim, in either colour. The mark is left exactly as the artwork draws it.
 const SWING_DEG = 13;
+// Not halved with the gaps below. This one is not a frequency — it is the pause
+// that keeps the first ring out of the tab's entrance animation.
 const FIRST_DELAY_MS = 2400;
-const GAP_MIN_MS = 17_000;
-const GAP_MAX_MS = 33_000;
+// Halved 2026-07-30 (was 17s/33s). Safe, because the ring is already boxed in on
+// three sides and doubling its rate does not widen any of them:
+//   * it only runs while `unread && focused`, so a read inbox or a backgrounded
+//     tab rings never, at any interval;
+//   * both animations are on the NATIVE driver, so the rate is nothing to the JS
+//     thread — the duty cycle goes from ~3% to ~7% of native compositing on an
+//     860ms sequence, against a screen that is already animating a feed;
+//   * Reduce Motion still short-circuits before any animation starts. It costs
+//     one extra no-op timer a minute there, which is not worth a special case.
+// The randomised spread is kept: a fixed period reads as a metronome, and the
+// point is a bell that occasionally rings, not one that ticks.
+const GAP_MIN_MS = 8_500;
+const GAP_MAX_MS = 16_500;
 
 export default function LaybellBell({
   matchIconSize = 28, color, unreadColor, accent = '#FF8095', unread, focused, style,
