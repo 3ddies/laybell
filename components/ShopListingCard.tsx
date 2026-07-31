@@ -3,6 +3,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { useProfile } from '../contexts/ProfileContext';
+import { reactionPop } from '../lib/haptics';
+import { addToCart, removeFromCart, useInCart } from '../lib/shopCart';
 import { listingPriceLabel, type ShopListing } from '../lib/shop';
 
 // One marketplace tile — used by Explore, seller shops, and My Shop grids.
@@ -20,7 +23,15 @@ export default function ShopListingCard({
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
+  const { profile } = useProfile();
+  const inCart = useInCart(listing.id);
   const sellerName = listing.seller?.display_name || listing.seller?.username || '';
+  // Shortlist straight from the grid. Hidden on a listing that can't be bought
+  // (the scrim already says why) and on your own, which is the whole My Shop
+  // grid. It does NOT check whether you already own it — that would be a query
+  // per tile; addToCart refuses a non-active listing, and the cart drops
+  // anything already delivered when it next opens.
+  const canCart = listing.status === 'active' && listing.user_id !== profile?.id;
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
@@ -36,6 +47,21 @@ export default function ShopListingCard({
         <View style={styles.priceTag}>
           <Text style={styles.priceText}>{listingPriceLabel(listing, t('shop.free'))}</Text>
         </View>
+        {/* Bottom-right, opposite the price tag. Its own TouchableOpacity inside
+            the card's, so a tap here shortlists instead of opening the listing. */}
+        {canCart && (
+          <TouchableOpacity
+            style={[styles.cartBtn, inCart && styles.cartBtnActive]}
+            onPress={() => { reactionPop(); inCart ? removeFromCart(listing.id) : addToCart(listing); }}
+            hitSlop={8}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={inCart ? t('shop.inCart') : t('shop.addToCart')}
+            accessibilityState={{ selected: inCart }}
+          >
+            <Ionicons name={inCart ? 'checkmark' : 'cart-outline'} size={15} color="#fff" />
+          </TouchableOpacity>
+        )}
         {listing.status !== 'active' && (
           <View style={styles.statusScrim}>
             <Text style={styles.statusText}>
@@ -64,6 +90,15 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3,
   },
   priceText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  // Mirrors the price tag across the cover: same 8pt inset, same bottom line.
+  // Dark disc rather than a themed fill so it reads on any cover art.
+  cartBtn: {
+    position: 'absolute', right: 8, bottom: 8,
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  cartBtnActive: { backgroundColor: c.success },
   statusScrim: {
     ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center', justifyContent: 'center',

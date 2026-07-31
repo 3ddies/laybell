@@ -80,6 +80,10 @@ export default function ListingScreen() {
   const [confirmBuy, setConfirmBuy] = useState<
     { kind: SaleKind; offerCents: number; priceCents: number; balanceCents: number } | null
   >(null);
+  // Shown once a paid purchase comes back delivered. The Download button below
+  // is already there and stays — this is the moment-of-purchase shortcut, so the
+  // buyer doesn't have to work out that the green button changed meaning.
+  const [boughtOpen, setBoughtOpen] = useState(false);
   const pendingBuyRef = useRef<{ kind: SaleKind; offerCents: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Which CTA's caption is expanded. One at a time: two open explainers push
@@ -266,8 +270,14 @@ export default function ListingScreen() {
       // Paid sell/lease now DELIVERS on the spot — the credits have already
       // moved, so the file is unlocked before this line runs. Only offers are
       // still a request, because they need the seller to agree a price.
-      if (o.status === 'delivered') notifySuccess();
-      else reactionPop();
+      if (o.status === 'delivered') {
+        notifySuccess();
+        // Paid kinds only. A free claim is already its own moment (the unlock
+        // sheet closes on success) and "Purchase successful" would be the wrong
+        // words for it; an offer is not delivered here at all — it waits on the
+        // seller.
+        if (kind !== 'free') setBoughtOpen(true);
+      } else reactionPop();
       if (kind === 'offer') { setOfferOpen(false); setOfferText(''); }
     } catch (e) {
       const msg = (e as Error)?.message ?? '';
@@ -918,6 +928,21 @@ export default function ListingScreen() {
         </Modal>
 
         {/* One-time buyer safety primer (payments settle off-platform). */}
+        {/* Purchase landed. Offers the file straight away when there is one —
+            a listing whose seller has not uploaded a deliverable yet gets a
+            plain acknowledgement instead of a button that would fail. */}
+        <ConfirmDialog
+          visible={boughtOpen}
+          icon="checkmark-circle"
+          accentColor={colors.success}
+          title={t('shop.bought.title')}
+          message={listing?.file_path ? t('shop.bought.body') : undefined}
+          confirmLabel={listing?.file_path ? t('shop.download') : t('shop.bought.done')}
+          cancelLabel={listing?.file_path ? t('shop.bought.done') : undefined}
+          onConfirm={() => { setBoughtOpen(false); if (listing?.file_path) download(); }}
+          onCancel={() => setBoughtOpen(false)}
+        />
+
         {/* Confirms the spend and says whether the balance covers it. */}
         <CreditConfirmDialog
           visible={!!confirmBuy}
