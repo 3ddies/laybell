@@ -225,10 +225,6 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     adRotRef.current += added;
     queueRef.current = [...q.slice(0, i), ...woven];
     bumpQueue();
-    if (__DEV__) {
-      console.log('[ADDEBUG] weaveCurrentQueue wove', added, 'sponsor(s); shape=',
-        queueRef.current.slice(i, i + 12).map((c) => (c.isAd ? 'AD' : 'v')).join(''));
-    }
   }, [bumpQueue]);
 
   // Fetch the sponsor pool once per session, with the SAME viewer every other
@@ -252,7 +248,6 @@ function RealCastProvider({ children }: { children: ReactNode }) {
       adPoolRef.current = ads
         .map((s, i) => adToCastItem(tvItemFor(s, i)))
         .filter(Boolean) as CastItem[];
-      if (__DEV__) console.log('[ADDEBUG] cast sponsor pool =', adPoolRef.current.length);
       if (adPoolRef.current.length) weaveCurrentQueue();
     } catch {
       // Offline / pre-migration: allow a later cast to retry rather than
@@ -303,12 +298,6 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     const loadReal = () => {
       try {
         const mi = buildMediaInfo(item);
-        // Dev-only probe for the open cast-TV sponsor issue: shows exactly what
-        // the receiver was handed (and whether it rejected it).
-        if (__DEV__) {
-          console.log('[ADDEBUG] loadReal idx=', i, item.isAd ? 'AD' : 'video',
-            'contentType=', mi.contentType, 'url=', String(mi.contentUrl).slice(0, 110));
-        }
         // An explicit startTime pins VOD to a real position (0 = the actual
         // beginning — without it the receiver picks its own join point a few
         // seconds in). Lives omit it so the receiver joins at the live edge.
@@ -320,8 +309,8 @@ function RealCastProvider({ children }: { children: ReactNode }) {
           mediaInfo: mi,
           autoplay: true,
           ...(item.isLive ? {} : { startTime: Math.max(0, startSec) }),
-        })?.catch?.((e: any) => { if (__DEV__) console.log('[ADDEBUG] loadMedia REJECTED', item.isAd ? 'AD' : 'video', String(e?.message ?? e)); });
-      } catch (e: any) { if (__DEV__) console.log('[ADDEBUG] loadMedia THREW', String(e?.message ?? e)); }
+        })?.catch?.(() => {});
+      } catch {}
     };
     if (!splash) { loadReal(); return; }
     // Moving between posts: flash the Laybell card on the TV for a beat, then
@@ -461,18 +450,6 @@ function RealCastProvider({ children }: { children: ReactNode }) {
       if (nextI < queueRef.current.length) loadIndex(nextI, 0, true);
     }
   }, [mediaStatus, loadIndex]);
-
-  // Dev-only probe: what the receiver reports while a sponsor is the current
-  // item. Separates load-vs-play (idle+error = rejected stream, idle+finished =
-  // bailed instantly, buffering/playing = actually fine) for the open cast-TV
-  // sponsor issue. Delete once that's confirmed working on hardware.
-  useEffect(() => {
-    if (!__DEV__ || !current?.isAd) return;
-    console.log('[ADDEBUG] AD on receiver: playerState=', mediaStatus?.playerState,
-      'idleReason=', mediaStatus?.idleReason,
-      'dur=', mediaStatus?.mediaInfo?.streamDuration,
-      'splashPending=', !!transitionRef.current);
-  }, [current, mediaStatus]);
 
   // Seeks and play on IDLE media silently fail (the receiver has unloaded it) —
   // exactly what happens when someone rewinds a video in its final seconds and

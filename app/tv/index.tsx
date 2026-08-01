@@ -190,18 +190,6 @@ export default function LaybellTVScreen() {
         if (ad) { queue.push(ad); adRot++; sinceAd = 0; need = TV_AD_EVERY_VIDEOS; }
       }
     }
-    // Dev-only probe for the open "sponsors never reach a real cast TV" issue —
-    // shows whether ads made it into the queue at all. Kept behind __DEV__ so it
-    // costs nothing in production; delete once that's confirmed working.
-    if (__DEV__) {
-      console.log('[ADDEBUG] castVideo realVideos=', realVideos.length,
-        'rawAdPool=', adPool.length,
-        'adsWovenInGrid=', source.filter((v: any) => v.__ad).length,
-        'queue=', queue.length,
-        'adsInQueue=', queue.filter((c) => c.isAd).length,
-        'shape=', queue.slice(0, 12).map((c) => (c.isAd ? 'AD' : 'v')).join(''));
-      if (adPool.length === 0) console.log('[ADDEBUG] !! no __ad items — fetchTvAds produced none');
-    }
     selection(); // a tick as the video leaves the phone for the TV
     cast.cast(item, queue);
   };
