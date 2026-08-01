@@ -289,7 +289,11 @@ and means the first real users' crashes are invisible.
 
 **After the build:**
 
-10. Three store identifiers → `node scripts/set-store-ids.mjs --check`
+10. Store identifiers → `node scripts/set-store-ids.mjs --check`. **Team ID DONE 2026-07-31**
+    (7X9PRLSGZC, read off the Membership page, wired into the AASA). Remaining two:
+    the App Store numeric ID (exists the moment the App Store Connect app record is
+    created — no need to be live) and the Android app-signing SHA-256 (exists after the
+    first Play upload, and it must be the APP SIGNING key, not the upload key).
 11. Screenshots + a seeded demo account (listing copy is written — `docs/STORE_LISTING.md`)
 12. Fund the Stripe balance, **then** flip `payoutsAvailable()`. Credits money arrives in a
     *bank* account, not Stripe, so transfers fail until it is topped up.
@@ -363,7 +367,7 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
     US-only availability to match the iOS decision.
 
 ### iOS-only items unchanged by this track
-Store IDs swap (2 files) · screenshots · Diagnostics privacy label · AASA content-type
+App Store numeric ID (Team ID ✅ 2026-07-31) · screenshots · Diagnostics privacy label · AASA content-type
 note (§0.4) · the production build itself.
 
 ---

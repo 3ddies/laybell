@@ -2,7 +2,7 @@
   "applinks": {
     "details": [
       {
-        "appIDs": ["TEAMID.com.laybell.app"],
+        "appIDs": ["7X9PRLSGZC.com.laybell.app"],
         "components": [
           { "/": "/post/*", "comment": "a single post" },
           { "/": "/reel/*", "comment": "a reel" },
@@ -22,6 +22,6 @@
     ]
   },
   "webcredentials": {
-    "apps": ["TEAMID.com.laybell.app"]
+    "apps": ["7X9PRLSGZC.com.laybell.app"]
   }
 }
