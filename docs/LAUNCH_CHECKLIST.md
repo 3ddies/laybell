@@ -327,11 +327,14 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
    organizational payments profile, submit LLC docs + the D-U-N-S. After it clears, the
    app dashboard should stop showing the 20-tester closed-test requirement (it is a
    personal-account rule); if it still shows, that is a support ticket, not a rebuild.
-3. **Apple organization conversion — SELF-SERVE, confirmed 2026-07-31.** Membership page
-   verified "Enrolled as: Individual", no case in flight (the D-U-N-S step was the
-   prerequisite, not the conversion). The flow: developer.apple.com/account →
-   "Update your information" → **"Switch to organization membership"** → Provide
-   updates. Enter: legal name exactly as SDAT spells it (`Laybell LLC`), the D-U-N-S,
+3. ✅ **Apple organization conversion — SUBMITTED 2026-07-31**, case ID emailed; Apple
+   replies within ~1 business day, then days-to-weeks of verification (often closing
+   with a phone call to the business number — answer unknown numbers for a while).
+   Nothing to do but wait. **The moment it clears → App Store Connect → Agreements →
+   Paid Applications.** Submitted as: Laybell LLC / laybell.app / D-U-N-S / founder
+   Yes / DBA No / org holds membership No / tax ID None. For reference, the flow was
+   developer.apple.com/account → "Update your information" →
+   **"Switch to organization membership"** → Provide updates. Enter: legal name exactly as SDAT spells it (`Laybell LLC`), the D-U-N-S,
    the address on the LLC's D&B record — Eddie's HOME address doubles as the business
    address, so that is likely it (Apple matches against D&B, not against a theory of
    where an LLC "should" be; the SDAT record separately keeps a Maryland resident
@@ -345,6 +348,15 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
    `npx eas build -p android --profile development` → install the APK on the Samsung →
    it connects to the same Metro server as the iPhone. First build auto-generates the
    signing keystore (needed by 7/8).
+   **Build-readiness VERIFIED 2026-07-31** — `google-services.json` is absent and
+   `android.googleServicesFile` unset, which normally breaks an Android build, but it
+   does NOT here: `@react-native-google-signin/google-signin` is configured WITH options
+   (`iosUrlScheme`), and its plugin's `withGoogleSignInRoot` then takes the
+   `withGoogleSignInWithoutFirebase` path — iOS URL scheme only, never adding the
+   `com.google.gms` classpath/apply-plugin to Gradle. expo-notifications doesn't require
+   it at build time either. Consequence: the build succeeds, but **Google Sign-In and
+   FCM push are inert on Android until Firebase is added** (steps 7/8) — expected, not a
+   regression.
 5. **First Android pass on the Samsung** — the surfaces that genuinely differ there:
    hardware back everywhere (chat threads, the freebie sheet, reels), tab bar (scrim,
    no iOS blur), keyboard `pan` mode in DMs/comments, SwipeBackPager feel, Chromecast
