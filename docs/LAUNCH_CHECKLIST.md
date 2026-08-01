@@ -323,7 +323,11 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
 1. ✅ ~~D-U-N-S number for the Maryland LLC~~ **IN HAND** — see above. The bottleneck
    is now the two verifications themselves (days-to-weeks of Apple/Google processing),
    so file BOTH now and let them run while everything else happens in parallel.
-2. ✅ **Google org conversion — SUBMITTED 2026-07-31.** New ORGANIZATION payments profile
+2. ✅ **Google org conversion — COMPLETED by the owner 2026-08-01** (CP 575 uploaded,
+   flow finished). **Two things to confirm on the dashboard:** Account type now reads
+   **Organization**, and — the whole point — the **20-tester / 14-day closed-testing
+   requirement is GONE** (personal-account rule). If it still shows after the org type
+   flips, that is a support ticket, not a rebuild. Original submission details: New ORGANIZATION payments profile
    created and linked (a personal profile can never convert; country + account type are
    permanent on a profile), org details filed: Private company / 1–10 employees /
    `+12408068282` / `https://laybell.app` (green "Website verified" from the Search
