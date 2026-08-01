@@ -63,6 +63,17 @@ export type AudioAdState = {
   elapsedMs: number;
   durationMs: number;
   canSkip: boolean;
+  // Objective destination fields — adDestination(adState) reads these to build
+  // the CTA. They were dropped here before, which silently killed the CTA on
+  // every awareness/engagement audio ad (only traffic's ctaUrl survived).
+  objective?: string | null;
+  targetProfileIds?: string[] | null;
+  // Simple shop ads: the featured listing (CTA → product page; the UI also
+  // titles the break like a song — product title on the title line).
+  listingId?: string | null;
+  // Resolved skip gate for THIS ad (ms; Infinity = unskippable) so the
+  // countdown labels agree with the actual unlock instead of assuming 10s.
+  skipAfterMs: number;
 };
 
 // Supplies MORE relevant tracks when the queue runs low, excluding ids already
@@ -403,6 +414,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         ctaLabel: ad.ctaLabel, ctaUrl: ad.ctaUrl, cover: ad.cover ?? null,
         viewerId: uidRef.current,
         elapsedMs: 0, durationMs: 0, canSkip: false,
+        objective: ad.objective ?? null,
+        targetProfileIds: ad.targetProfileIds ?? null,
+        listingId: ad.listingId ?? null,
+        skipAfterMs: adSkipAfterMs('audio', ad.skipMode),
       });
       recordAdImpression(ad, 'audio', uidRef.current);
       adCanSkipFiredRef.current = false;

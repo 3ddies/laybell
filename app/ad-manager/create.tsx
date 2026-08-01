@@ -12,9 +12,10 @@ import { uploadToStorageWithProgress, compressVideoIfPossible } from '../../lib/
 import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, streamUidFromUrl, untrackStreamUpload } from '../../lib/streamUpload';
 import { probeAudioDurationSec } from '../../lib/audioProbe';
 import {
-  purchaseAdCampaign, estimatedImpressions, fmtPrice, AD_MIN_BUDGET_CENTS,
+  purchaseAdCampaign, estimatedImpressions, fmtPrice,
   AD_DEFAULT_CPM_CENTS, AD_CREATIVE_BUCKET, AD_UNSKIPPABLE_MAX_SEC, AD_SKIP_LONG_MIN_SEC, AD_PREMIUM_RATE, isPremiumPlacement,
   adVolumeBonus, AD_VOLUME_BONUS_MAX_PCT,
+  adMinBudgetCents, adBundleDiscount, adChargedCents, AD_SIMPLE_MIN_PREVIEW_SEC, AD_SKIP10_MS,
   type AdPlacement, type AdObjective, type AdMediaType, type NewCreativeInput, type AdSkipMode,
 } from '../../lib/ads';
 import { analyzeUrl, scanText } from '../../lib/linkSafety';
@@ -138,6 +139,58 @@ export default function CreateAdScreen() {
     if (objective !== 'engagement' || myListings !== null || !profile?.id) return;
     fetchSellerListings(profile.id).then((ls) => setMyListings(ls)).catch(() => setMyListings([]));
   }, [objective, myListings, profile?.id]);
+
+  // ── Simple vs Customized shop ads ────────────────────────────────────────────
+  // 'simple' auto-builds every creative straight from the chosen listing (cover
+  // photo, title, description, preview clip — zero uploads, CTA opens the
+  // product). Only listings whose preview is PLAYABLE and at least 15s long
+  // qualify: the preview is the ad's media, and it must outlast the 10s skip
+  // gate. Everything else goes through the regular Customized flow.
+  // OPENS on 'simple' — the chooser must never paint Customized first and then
+  // visibly hop to Simple once the preview probe lands (looked unpolished).
+  // Optimistic start, and the demote-to-custom effect below corrects the only
+  // failure case (listing turns out ineligible). Inert for non-shop objectives.
+  const [adMode, setAdMode] = useState<'custom' | 'simple'>('simple');
+  // True once the user TAPS a mode card this session — from then on their
+  // choice is theirs and the auto-default below keeps its hands off.
+  const modeTouchedRef = useRef(false);
+  const SIMPLE_SKIP_SECS = Math.round(AD_SKIP10_MS / 1000);
+  // Probed duration of the chosen listing's preview clip. durationSec null =
+  // probe failed (treated as ineligible — "can't verify" is not "qualifies").
+  const [previewProbe, setPreviewProbe] = useState<{ listingId: string; durationSec: number | null } | null>(null);
+  useEffect(() => {
+    const l = chosenListing;
+    if (objective !== 'engagement' || !l?.preview_url) return;
+    let alive = true;
+    setPreviewProbe((prev) => (prev?.listingId === l.id ? prev : null));
+    probeAudioDurationSec(l.preview_url).then((d) => {
+      if (alive) setPreviewProbe({ listingId: l.id, durationSec: d != null ? Math.floor(d) : null });
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [objective, chosenListing?.id, chosenListing?.preview_url]);
+
+  const probing = objective === 'engagement' && !!chosenListing?.preview_url && previewProbe?.listingId !== chosenListing?.id;
+  const probedDurationSec = previewProbe?.listingId === chosenListing?.id ? (previewProbe?.durationSec ?? null) : null;
+  const simpleEligible = !!chosenListing?.cover_url && !!chosenListing?.preview_url
+    && probedDurationSec != null && probedDurationSec >= AD_SIMPLE_MIN_PREVIEW_SEC;
+  const simpleActive = objective === 'engagement' && adMode === 'simple';
+  // A listing swap (or failed probe) can strand 'simple' on an ineligible
+  // listing — drop back to Customized once the verdict is in. Only with a
+  // listing actually chosen: a resumed draft's listings load async, and
+  // flipping before they arrive would wipe the saved mode.
+  useEffect(() => {
+    if (adMode === 'simple' && chosenListing && !probing && !simpleEligible) setAdMode('custom');
+  }, [adMode, chosenListing, probing, simpleEligible]);
+  // Simple is the DEFAULT the moment the listing qualifies (it's the effortless
+  // path — that's its whole point). Only while still on Basics (a mid-flow flip
+  // would silently swap creatives the user already built) and only until the
+  // user taps a card themselves.
+  useEffect(() => {
+    if (step === 'basics' && simpleEligible && !modeTouchedRef.current && adMode !== 'simple') {
+      setAdMode('simple');
+    }
+  }, [step, simpleEligible, adMode]);
   // Business ads carry their own uploaded profile picture; regular-user ads reuse
   // the creator's own profile avatar (snapshotted at publish).
   const [businessAvatar, setBusinessAvatar] = useState<Pick | null>(null);
@@ -160,6 +213,18 @@ export default function CreateAdScreen() {
   const [cpm, setCpm] = useState(String(AD_DEFAULT_CPM_CENTS / 100));
   const [days, setDays] = useState('7');
 
+  // The budget field OPENS at the minimum for the chosen placements, so "just
+  // continue and pay" works with zero thought. Runs on ENTERING the step only
+  // (never while typing — `budget` is deliberately not a dep): a below-minimum
+  // value can't launch anyway, so raising it to the floor loses nothing real.
+  useEffect(() => {
+    if (step !== 'budget') return;
+    const minC = adMinBudgetCents(placements.length);
+    const cents = Math.round((parseFloat(budget) || 0) * 100);
+    if (cents < minC) setBudget(String(minC / 100));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, placements.length]);
+
   // Review
   const [terms, setTerms] = useState(false);
 
@@ -181,6 +246,7 @@ export default function CreateAdScreen() {
     if (typeof d.awarenessSelf === 'boolean') setAwarenessSelf(d.awarenessSelf);
     setAwarenessOthers((d.awarenessOthers ?? []) as TargetProfile[]);
     setShopListingId(d.shopListingId ?? null);
+    setAdMode(d.adMode === 'simple' ? 'simple' : 'custom');
     setWebsiteUrl(d.websiteUrl ?? '');
     setWebsiteCta(d.websiteCta ?? '');
     setPlacements((d.placements ?? []) as AdPlacement[]);
@@ -220,14 +286,14 @@ export default function CreateAdScreen() {
     const id = setTimeout(() => {
       saveAdDraft({
         step, objective, advertiserName, isBusiness, businessAvatar,
-        awarenessSelf, awarenessOthers, shopListingId, websiteUrl, websiteCta,
+        awarenessSelf, awarenessOthers, shopListingId, adMode, websiteUrl, websiteCta,
         placements, drafts, ageMin, ageMax, gender, genres, useLocation, radiusKm,
         budget, dailyCap, cpm, days,
       });
     }, 500);
     return () => clearTimeout(id);
   }, [hydrated, step, objective, advertiserName, isBusiness, businessAvatar,
-      awarenessSelf, awarenessOthers, shopListingId, websiteUrl, websiteCta,
+      awarenessSelf, awarenessOthers, shopListingId, adMode, websiteUrl, websiteCta,
       placements, drafts, ageMin, ageMax, gender, genres, useLocation, radiusKm,
       budget, dailyCap, cpm, days]);
 
@@ -368,9 +434,18 @@ export default function CreateAdScreen() {
     if (s === 'basics' && objective === 'engagement') {
       if (myListings !== null && myListings.length === 0) return t('adCreate.errNoShop');
       if (!shopListingId) return t('adCreate.errNoListing');
+      if (adMode === 'simple') {
+        if (probing) return t('shopAd.probing');
+        if (!simpleEligible) return t('shopAd.ineligible', { secs: AD_SIMPLE_MIN_PREVIEW_SEC });
+      }
     }
     if (s === 'placements' && placements.length === 0) return t('adCreate.errPlacement');
-    if (s === 'creatives') {
+    if (s === 'creatives' && simpleActive) {
+      // Everything is listing-sourced — just re-assert the listing still
+      // qualifies (it could have been edited/removed since Basics).
+      if (!simpleEligible) return t('shopAd.ineligible', { secs: AD_SIMPLE_MIN_PREVIEW_SEC });
+    }
+    if (s === 'creatives' && !simpleActive) {
       for (const p of placements) {
         const d = drafts[p];
         if (!d || d.picks.length === 0) return t('adCreate.errCreative', { placement: labelFor(p) });
@@ -401,9 +476,10 @@ export default function CreateAdScreen() {
       // Checked here because the server minimum was otherwise discovered at the
       // very END of the flow — after uploading every creative, including a
       // Cloudflare Stream video transcode — and surfaced as a raw Postgres
-      // string. Mirrors ad_min_budget_cents().
-      if (Math.round(parseFloat(budget) * 100) < AD_MIN_BUDGET_CENTS) {
-        return t('adCreate.errBudgetMin', { min: fmtPrice(AD_MIN_BUDGET_CENTS) });
+      // string. Mirrors ad_min_budget_cents(int): $20 per chosen placement.
+      const minCents = adMinBudgetCents(placements.length);
+      if (Math.round(parseFloat(budget) * 100) < minCents) {
+        return t('adCreate.errBudgetMinBundle', { count: placements.length, min: fmtPrice(minCents) });
       }
       if (!(parseInt(days, 10) > 0)) return t('adCreate.errDays');
     }
@@ -521,6 +597,43 @@ export default function CreateAdScreen() {
     };
   }
 
+  // Simple shop ad: every creative is materialized from the LISTING — no
+  // uploads at all (cover + preview already live at public shop URLs). Feed,
+  // reels and TV get the cover as an image with the preview as its song
+  // (reelItemFor/tvItemFor render that as art + soundtrack); the music break is
+  // the preview playing as a song with the cover as album art. All 'skip10'.
+  function buildSimpleCreatives(l: ShopListing): NewCreativeInput[] {
+    const base = {
+      headline: l.title,
+      body: l.description?.trim() || null,
+      cta_label: t('adCta.viewProduct'),
+      cta_url: null,
+      skip_mode: 'skip10',
+      song_url: l.preview_url,
+      listing_id: l.id,
+      duration_seconds: probedDurationSec ?? null,
+    };
+    return placements.map((p) => (p === 'audio'
+      ? {
+          ...base,
+          placement: p,
+          media_type: 'audio' as AdMediaType,
+          media_url: l.preview_url,
+          thumbnail_url: l.cover_url,
+          cover_url: l.cover_url,
+          aspect_ratio: null,
+        }
+      : {
+          ...base,
+          placement: p,
+          media_type: 'image' as AdMediaType,
+          media_url: l.cover_url,
+          thumbnail_url: l.cover_url,
+          cover_url: l.cover_url,
+          aspect_ratio: '1:1',
+        }));
+  }
+
   async function publish() {
     if (!terms) { Alert.alert(t('adCreate.acceptPolicyTitle'), t('adCreate.acceptPolicyBody')); return; }
     if (publishingRef.current) return;
@@ -532,8 +645,12 @@ export default function CreateAdScreen() {
       if (!user) { Alert.alert(t('adCreate.signInTitle'), t('adCreate.signInBody')); return; }
 
       const creatives: NewCreativeInput[] = [];
-      for (const p of placements) {
-        creatives.push(await buildCreative(user.id, p, drafts[p]));
+      if (simpleActive && chosenListing) {
+        creatives.push(...buildSimpleCreatives(chosenListing));
+      } else {
+        for (const p of placements) {
+          creatives.push(await buildCreative(user.id, p, drafts[p]));
+        }
       }
 
       // Advertiser identity. A business supplies its own name + uploaded picture.
@@ -606,7 +723,7 @@ export default function CreateAdScreen() {
         Alert.alert(t('adCreate.needCreditsTitle'), t('adCreate.needCreditsBody'));
         (router as any).push('/credits');
       } else if (msg.includes('below_minimum')) {
-        Alert.alert(t('adCreate.uploadFailedTitle'), t('adCreate.errBudgetMin', { min: fmtPrice(AD_MIN_BUDGET_CENTS) }));
+        Alert.alert(t('adCreate.uploadFailedTitle'), t('adCreate.errBudgetMinBundle', { count: placements.length, min: fmtPrice(adMinBudgetCents(placements.length)) }));
       } else {
         Alert.alert(t('adCreate.uploadFailedTitle'), e?.message ?? t('adCreate.uploadFailedBody'));
       }
@@ -629,6 +746,16 @@ export default function CreateAdScreen() {
   const estImps = Math.round(estimatedImpressions(budgetCents, AD_DEFAULT_CPM_CENTS) * volumeBonus);
   const bonusPct = Math.round((volumeBonus - 1) * 100);
   const hasPremiumPlacement = placements.some(isPremiumPlacement);
+  // Bundle pricing: each placement raises the minimum by $20; going wider than
+  // one placement discounts what's actually CHARGED (5/10/15% for 2/3/4) while
+  // delivery still runs against the full budget. Server-mirrored.
+  const minBudgetCents = adMinBudgetCents(placements.length);
+  const bundleDiscount = adBundleDiscount(placements.length);
+  const bundleDiscountPct = Math.round(bundleDiscount * 100);
+  const chargedCents = adChargedCents(budgetCents, placements.length);
+  // Live as-they-type: flips the input red + swaps the helper line the moment
+  // the amount drops under the floor (budgetCents re-derives every keystroke).
+  const budgetTooLow = budgetCents < minBudgetCents;
 
   const stepTitle: Record<Step, string> = {
     basics: t('adCreate.stepBasics'),
@@ -912,6 +1039,47 @@ export default function CreateAdScreen() {
                   </View>
                 )}
 
+                {/* Simple vs Customized — how the shop ad gets built. Simple is
+                    only offered when the listing carries a cover + a playable
+                    preview of at least 15s (the preview IS the ad's media). */}
+                {objective === 'engagement' && !!chosenListing && (
+                  <View style={styles.destCard}>
+                    <Text style={styles.destTitle}>{t('shopAd.modeTitle')}</Text>
+                    <TouchableOpacity
+                      style={[styles.selectCard, simpleActive && styles.selectCardOn, !probing && !simpleEligible && styles.modeCardDisabled]}
+                      onPress={() => { if (simpleEligible) { modeTouchedRef.current = true; setAdMode('simple'); } }}
+                      disabled={probing || !simpleEligible}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="flash-outline" size={20} color={simpleActive ? colors.primary : colors.textSecondary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.selectTitle, simpleActive && { color: colors.primary }]}>{t('shopAd.simpleLabel')}</Text>
+                        <Text style={styles.selectSub}>{t('shopAd.simpleBlurb')}</Text>
+                        {probing ? (
+                          <Text style={styles.selectMeta}>{t('shopAd.probing')}</Text>
+                        ) : simpleEligible ? (
+                          <Text style={[styles.selectMeta, { color: colors.success, fontStyle: 'normal' }]}>{t('shopAd.simpleReady', { secs: probedDurationSec ?? AD_SIMPLE_MIN_PREVIEW_SEC })}</Text>
+                        ) : (
+                          <Text style={styles.selectMeta}>{t('shopAd.simpleNeeds', { secs: AD_SIMPLE_MIN_PREVIEW_SEC })}</Text>
+                        )}
+                      </View>
+                      {simpleActive && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.selectCard, !simpleActive && styles.selectCardOn]}
+                      onPress={() => { modeTouchedRef.current = true; setAdMode('custom'); }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="color-palette-outline" size={20} color={!simpleActive ? colors.primary : colors.textSecondary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.selectTitle, !simpleActive && { color: colors.primary }]}>{t('shopAd.customLabel')}</Text>
+                        <Text style={styles.selectSub}>{t('shopAd.customBlurb')}</Text>
+                      </View>
+                      {!simpleActive && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 <View style={styles.switchRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.switchLabel}>{t('adCreate.isBusinessLabel')}</Text>
@@ -992,6 +1160,41 @@ export default function CreateAdScreen() {
             {step === 'creatives' && (
               placements.length === 0
                 ? <Text style={styles.lead}>{t('adCreate.creativesEmpty')}</Text>
+                : simpleActive && chosenListing
+                ? (<>
+                    {/* Simple shop ad: nothing to fill in — show what the listing
+                        provides so the advertiser sees exactly what will run. */}
+                    <Text style={styles.lead}>{t('shopAd.summaryLead', { secs: SIMPLE_SKIP_SECS })}</Text>
+                    <View style={styles.card}>
+                      <View style={styles.creativeHead}>
+                        <Ionicons name="flash" size={16} color={colors.primary} />
+                        <Text style={styles.creativeTitle}>{t('shopAd.summaryTitle')}</Text>
+                      </View>
+                      {!!chosenListing.cover_url && (
+                        <Image source={{ uri: chosenListing.cover_url }} style={styles.preview} />
+                      )}
+                      <Text style={styles.simpleTitleText}>{chosenListing.title}</Text>
+                      {!!chosenListing.description && (
+                        <Text style={styles.simpleBodyText} numberOfLines={3}>{chosenListing.description}</Text>
+                      )}
+                      <View style={styles.audioPreview}>
+                        <View style={[styles.audioCover, styles.audioCoverEmpty]}>
+                          <Ionicons name="musical-notes" size={20} color={colors.primary} />
+                        </View>
+                        <Text style={styles.audioPreviewText} numberOfLines={1}>
+                          {t('shopAd.summarySong', { secs: probedDurationSec ?? AD_SIMPLE_MIN_PREVIEW_SEC })}
+                        </Text>
+                      </View>
+                      <View style={styles.destNoteRow}>
+                        <Ionicons name="storefront-outline" size={15} color={colors.textSecondary} />
+                        <Text style={styles.destNoteText}>{t('shopAd.leadsListing')}</Text>
+                      </View>
+                      <View style={styles.destNoteRow}>
+                        <Ionicons name="play-skip-forward-outline" size={15} color={colors.textSecondary} />
+                        <Text style={styles.destNoteText}>{t('shopAd.skipNote', { secs: SIMPLE_SKIP_SECS })}</Text>
+                      </View>
+                    </View>
+                  </>)
                 : (<>
                     <Text style={styles.lead}>{t('adCreate.creativesLead')}</Text>
                     {placements.map(renderCreativeCard)}
@@ -1069,7 +1272,23 @@ export default function CreateAdScreen() {
                     rate is fixed ($5 / 1,000 views) so the amount-paid → views
                     correlation is simple; no CPM bid or daily cap to puzzle over. */}
                 <Text style={styles.label}>{t('adCreate.totalBudgetLabel')}</Text>
-                <TextInput style={styles.input} placeholder="20" placeholderTextColor={colors.textTertiary} value={budget} onChangeText={setBudget} keyboardType="decimal-pad" />
+                <TextInput
+                  style={[styles.input, budgetTooLow && styles.inputError]}
+                  placeholder={String(minBudgetCents / 100)}
+                  placeholderTextColor={colors.textTertiary}
+                  value={budget}
+                  onChangeText={setBudget}
+                  keyboardType="decimal-pad"
+                />
+                {/* Helper line, live per keystroke: neutral minimum note while
+                    valid, red shortfall ("add $X more") the moment it dips
+                    under — the floor is never discovered as an error on
+                    Continue. */}
+                {budgetTooLow ? (
+                  <Text style={styles.noteError}>{t('adCreate.budgetTooLow', { min: fmtPrice(minBudgetCents), diff: fmtPrice(minBudgetCents - budgetCents) })}</Text>
+                ) : (
+                  <Text style={styles.note}>{t('adCreate.bundleMinNote', { count: placements.length, min: fmtPrice(minBudgetCents) })}</Text>
+                )}
 
                 <Text style={styles.label}>{t('adCreate.runLengthLabel')}</Text>
                 <TextInput style={styles.input} placeholder="7" placeholderTextColor={colors.textTertiary} value={days} onChangeText={setDays} keyboardType="number-pad" maxLength={3} />
@@ -1081,6 +1300,9 @@ export default function CreateAdScreen() {
                     <Text style={styles.estimateSub}>
                       {t('adCreate.estExplain', { budget: fmtPrice(budgetCents), views: estImps.toLocaleString(), days: parseInt(days, 10) || 0, rate: fmtPrice(AD_DEFAULT_CPM_CENTS / 2) })}
                     </Text>
+                    {bundleDiscountPct > 0 && (
+                      <Text style={styles.estimateBonus}>{t('adCreate.bundleDiscount', { pct: bundleDiscountPct, price: fmtPrice(chargedCents) })}</Text>
+                    )}
                     {bonusPct > 0 && (
                       <Text style={styles.estimateBonus}>{t('adCreate.volumeBonus', { pct: bonusPct })}</Text>
                     )}
@@ -1100,8 +1322,17 @@ export default function CreateAdScreen() {
                 <View style={styles.card}>
                   <Text style={styles.reviewTitle}>{previewAdvertiserName || t('adCreate.untitled')}</Text>
                   <ReviewRow k={t('adCreate.reviewObjective')} v={t(`adCreate.objective.${objective}.label`)} styles={styles} />
+                  {objective === 'engagement' && (
+                    <ReviewRow k={t('adCreate.reviewStyle')} v={simpleActive ? t('shopAd.styleSimple') : t('shopAd.styleCustom')} styles={styles} />
+                  )}
                   <ReviewRow k={t('adCreate.reviewPlacements')} v={placements.map(labelFor).join(', ') || '—'} styles={styles} />
                   <ReviewRow k={t('adCreate.reviewBudget')} v={fmtPrice(budgetCents)} styles={styles} />
+                  {bundleDiscountPct > 0 && (
+                    <>
+                      <ReviewRow k={t('adCreate.reviewDiscount')} v={t('adCreate.discountValue', { pct: bundleDiscountPct, amount: fmtPrice(Math.max(0, budgetCents - chargedCents)) })} styles={styles} />
+                      <ReviewRow k={t('adCreate.reviewPay')} v={fmtPrice(chargedCents)} styles={styles} />
+                    </>
+                  )}
                   <ReviewRow k={t('adCreate.reviewRunLength')} v={`${parseInt(days, 10) || 0} ${t('adCreate.daysUnit')}`} styles={styles} />
                   <ReviewRow k={t('adCreate.reviewEstViews')} v={`~${estImps.toLocaleString()}`} styles={styles} />
                   {bonusPct > 0 && <ReviewRow k={t('adCreate.reviewBonus')} v={t('adCreate.bonusValue', { pct: bonusPct })} styles={styles} />}
@@ -1146,7 +1377,8 @@ export default function CreateAdScreen() {
           <View style={styles.footer}>
             {step === 'review' ? (
               <TouchableOpacity style={[styles.primaryBtn, (!terms || publishing) && styles.primaryBtnDisabled]} onPress={publish} disabled={!terms || publishing}>
-                {publishing ? <ActivityIndicator color={colors.text} size="small" /> : <Text style={styles.primaryBtnText}>{t('adCreate.launchBtn', { price: fmtPrice(budgetCents) })}</Text>}
+                {/* The button shows what's actually CHARGED (bundle discount off). */}
+                {publishing ? <ActivityIndicator color={colors.text} size="small" /> : <Text style={styles.primaryBtnText}>{t('adCreate.launchBtn', { price: fmtPrice(chargedCents) })}</Text>}
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={styles.primaryBtn} onPress={next}>
@@ -1272,6 +1504,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.border, padding: SPACING.md,
   },
   selectCardOn: { borderColor: colors.primary, backgroundColor: colors.primary + '11' },
+  modeCardDisabled: { opacity: 0.55 },
+  simpleTitleText: { color: colors.text, fontSize: 15, fontWeight: '800' },
+  simpleBodyText: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
   selectTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
   selectSub: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
   selectMeta: { color: colors.textTertiary, fontSize: 11, marginTop: 3, fontStyle: 'italic' },
@@ -1333,6 +1568,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     color: colors.text, fontSize: 14,
   },
   inputMulti: { minHeight: 64, textAlignVertical: 'top' },
+  inputError: { borderColor: colors.error, borderWidth: 1.5, backgroundColor: colors.error + '0D' },
+  noteError: { color: colors.error, fontSize: 12, fontWeight: '700', lineHeight: 17 },
 
   switchRow: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,

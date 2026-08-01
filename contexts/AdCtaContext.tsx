@@ -17,7 +17,8 @@ import { adDestination, adFullMeta, recordAdClick, type AdPlacement } from '../l
 // without every ad surface (feed / reels / TV / music) re-implementing it:
 //   awareness  → a Laybell profile (one profile → straight there; several →
 //                a chooser sheet so the viewer picks which to visit)
-//   engagement → the advertiser's shop
+//   engagement → the advertiser's shop — or, for a SIMPLE shop ad, straight to
+//                the featured listing's product page
 //   traffic / legacy → the external link, through the "leaving Laybell" guard.
 // Triggered imperatively via openAdCta(item, placement, viewerId) — `item` is
 // the same object the surface already passes to recordAdClick.
@@ -56,6 +57,11 @@ export function AdCtaProvider({ children }: { children: React.ReactNode }) {
           sourceName: meta?.advertiserName,
           onProceed: record,
         });
+        return;
+      }
+      if (dest.kind === 'listing') {
+        record();
+        router.push(`/shop/listing/${dest.id}`);
         return;
       }
       if (dest.kind === 'shop') {

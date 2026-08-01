@@ -22,6 +22,8 @@ export type AdDraft = {
   awarenessSelf?: boolean;
   awarenessOthers?: any[];
   shopListingId?: string | null;
+  // Shop-ad build mode: 'simple' (auto-built from the listing) | 'custom'.
+  adMode?: string;
   websiteUrl?: string;
   websiteCta?: string;
   placements: string[];

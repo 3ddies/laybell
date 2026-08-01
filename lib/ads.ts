@@ -106,16 +106,26 @@ export const AD_SKIP15_MS = 11_000;
 // skippable creatives must be >15s.
 export const AD_UNSKIPPABLE_MAX_SEC = 16;
 export const AD_SKIP_LONG_MIN_SEC = 15;
-export type AdSkipMode = 'unskippable' | 'skip15';
+// 'skip10' is the SIMPLE SHOP AD mode: listing-sourced ads are skippable after
+// 10s on every surface (reels/TV/music breaks; the feed scrolls freely anyway).
+export type AdSkipMode = 'unskippable' | 'skip15' | 'skip10';
+export const AD_SKIP10_MS = 10_000;
+
+// Simple shop ads only qualify when the listing's preview clip can actually
+// carry the ad — playable, and at least this long (it must outlast the 10s
+// skip gate). Anything shorter goes through the Customized flow.
+export const AD_SIMPLE_MIN_PREVIEW_SEC = 15;
 
 /**
  * Ms of genuine playback before an ad may be skipped — Infinity means it plays
- * fully (no skip). 'unskippable' → Infinity; 'skip15' → 15s. With no mode set
- * (regular reels, or legacy ads) fall back to the placement default.
+ * fully (no skip). 'unskippable' → Infinity; 'skip15' → 15s; 'skip10' → 10s
+ * (simple shop ads). With no mode set (regular reels, or legacy ads) fall back
+ * to the placement default.
  */
 export function adSkipAfterMs(placement: AdPlacement, skipMode?: string | null): number {
   if (skipMode === 'unskippable') return Infinity;
   if (skipMode === 'skip15') return AD_SKIP15_MS;
+  if (skipMode === 'skip10') return AD_SKIP10_MS;
   if (placement === 'reels') return AD_SKIP_MS;
   if (placement === 'audio') return AUDIO_AD_SKIP_MS;
   return Infinity; // Laybell TV default: play fully
@@ -160,6 +170,37 @@ export function adVolumeBonus(budgetCents: number): number {
   return 1.0;
 }
 
+// ─── Bundle pricing (per-placement minimum + multi-placement discount) ─────────
+// Every placement in a campaign raises the minimum budget by $20 — a 4-surface
+// bundle needs at least $80 behind it, which keeps oversaturated shotgun
+// campaigns out and serious ones in. To sweeten going wide, bundles with more
+// than one placement get a discount OFF THE CHARGE: the advertiser's budget
+// stays the delivery meter, but they pay 5% less for 2 placements, 10% for 3,
+// 15% for 4. BOTH functions are mirrored server-side in
+// supabase/sql/ad_bundle_pricing.sql (ad_min_budget_cents(int) /
+// ad_bundle_discount_pct(int)) — the server is authoritative; keep in sync.
+export const AD_MIN_BUDGET_PER_PLACEMENT_CENTS = 2_000; // $20 per placement
+
+export function adMinBudgetCents(placementCount: number): number {
+  const n = Math.max(1, placementCount);
+  return Math.max(AD_MIN_BUDGET_CENTS, n * AD_MIN_BUDGET_PER_PLACEMENT_CENTS);
+}
+
+/** Bundle discount as a fraction of the budget (0, 0.05, 0.10, 0.15). */
+export function adBundleDiscount(placementCount: number): number {
+  if (placementCount >= 4) return 0.15;
+  if (placementCount >= 3) return 0.10;
+  if (placementCount >= 2) return 0.05;
+  return 0;
+}
+
+/** What the advertiser is actually charged for a budget: the bundle discount
+ *  comes off the price, delivery still runs against the full budget. Ceil so
+ *  rounding never under-charges — mirrors the server. */
+export function adChargedCents(budgetCents: number, placementCount: number): number {
+  return Math.ceil(budgetCents * (1 - adBundleDiscount(placementCount)));
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type AdPlacement = 'feed' | 'reels' | 'audio' | 'tv';
@@ -183,8 +224,14 @@ export type AdCreative = {
   cta_label?: string | null;
   cta_url?: string | null;
   // Laybell TV + music ads only: 'unskippable' (plays fully, ≤15s) or 'skip15'
-  // (skippable after 15s, >15s). Null on reels (fixed 5s) and legacy creatives.
+  // (skippable after 15s, >15s). 'skip10' = simple shop ad (every placement).
+  // Null on reels (fixed 5s) and legacy creatives.
   skip_mode?: string | null;
+  // Simple shop ads (listing-sourced): the listing's preview clip that plays as
+  // the ad's song (feed song strip, reels/TV soundtrack), and the listing the
+  // CTA deep-links to. Both null on customized/legacy creatives.
+  song_url?: string | null;
+  listing_id?: string | null;
 };
 
 export type AdCampaign = {
@@ -239,6 +286,9 @@ export type AdMeta = {
   // null objective and fall back to opening ctaUrl.
   objective?: AdObjective | null;
   targetProfileIds?: string[] | null;
+  // Simple shop ads: the featured listing — the CTA opens the PRODUCT page
+  // (customized engagement ads keep opening the shop). Null otherwise.
+  listingId?: string | null;
 };
 
 // What the audio scheduler needs to play and bill an audio ad.
@@ -254,11 +304,13 @@ export type AudioAd = {
   uri: string;
   cover?: string | null;
   durationSeconds?: number | null;
-  // 'unskippable' (plays fully) | 'skip15' (skippable after 15s) | null (10s).
+  // 'unskippable' (plays fully) | 'skip15' (15s) | 'skip10' (simple shop ad,
+  // 10s) | null (placement default 10s).
   skipMode?: string | null;
   // Objective destination — same fields as AdMeta so openAdCta works on both.
   objective?: AdObjective | null;
   targetProfileIds?: string[] | null;
+  listingId?: string | null;
 };
 
 // A {campaign, creative} pair the reel weaver turns into full-screen ad items.
@@ -375,6 +427,7 @@ function metaFor(c: AdCampaign, cr: AdCreative, placement: AdPlacement): AdMeta 
     skipMode: cr.skip_mode ?? null,
     objective: c.objective ?? null,
     targetProfileIds: c.target_profile_ids ?? null,
+    listingId: cr.listing_id ?? null,
   };
 }
 
@@ -399,21 +452,30 @@ function feedItemFor(c: AdCampaign, cr: AdCreative): any {
     },
     likes: [{ count: 0 }],
     comments: [{ count: 0 }],
+    // Simple shop ads: the listing preview plays as the post's song strip.
+    song_url: cr.song_url ?? null,
     __ad: metaFor(c, cr, 'feed'),
   };
 }
 
 // Shape a reel ad like a full-screen video post (one entry per slot so the same
-// campaign can fill multiple slots without key collisions).
+// campaign can fill multiple slots without key collisions). Simple shop ads
+// have no video — they're the listing cover IMAGE with the preview clip as the
+// soundtrack — so `type` follows the creative and the page renders image+audio.
 export function reelItemFor(src: AdSource, slot: number): any {
   const { c, cr } = src;
+  const isImage = cr.media_type === 'image';
   return {
     id: `ad:${c.id}:${slot}`,
-    type: 'video',
-    media_url: cr.media_url,
+    type: isImage ? 'image' : 'video',
+    // Image ads keep media_url NULL on the item: the pager's prewarm keys on it
+    // and would hand the cover to the VIDEO pool. The poster path
+    // (thumbnail/cover) renders the image full-bleed instead.
+    media_url: isImage ? null : cr.media_url,
     aspect_ratio: cr.aspect_ratio ?? null,
-    thumbnail_url: cr.thumbnail_url ?? null,
-    cover_url: cr.cover_url ?? null,
+    thumbnail_url: cr.thumbnail_url ?? (isImage ? cr.media_url : null),
+    cover_url: cr.cover_url ?? (isImage ? cr.media_url : null),
+    song_url: cr.song_url ?? null,
     user_id: c.user_id,
     trim_start: null,
     trim_end: null,
@@ -426,14 +488,21 @@ export function reelItemFor(src: AdSource, slot: number): any {
 // surface). One entry per slot to avoid key collisions.
 export function tvItemFor(src: AdSource, slot: number): any {
   const { c, cr } = src;
+  // Simple shop ads are the listing cover image + preview audio, letterboxed
+  // on the landscape surface; everything else is a horizontal video. Image ads
+  // NULL media_url on the item (see reelItemFor) — which also keeps them out
+  // of the Chromecast/AirPlay queues, since adToCastItem requires a media_url
+  // (a TV can't be driven by the phone's audio player).
+  const isImage = cr.media_type === 'image';
   return {
     id: `ad:${c.id}:tv:${slot}`,
-    type: 'video',
-    media_url: cr.media_url,
+    type: isImage ? 'image' : 'video',
+    media_url: isImage ? null : cr.media_url,
     // Horizontal by contract; fall back to 16:9 if the creative didn't record it.
     aspect_ratio: cr.aspect_ratio ?? '1.7777777777777777',
-    thumbnail_url: cr.thumbnail_url ?? null,
-    cover_url: cr.cover_url ?? null,
+    thumbnail_url: cr.thumbnail_url ?? (isImage ? cr.media_url : null),
+    cover_url: cr.cover_url ?? (isImage ? cr.media_url : null),
+    song_url: cr.song_url ?? null,
     caption: cr.headline ?? '',
     user_id: c.user_id,
     profiles: {
@@ -464,7 +533,8 @@ export function adFullMeta(item: any): AdMetaLike | null {
 export type AdDestination =
   | { kind: 'website'; url: string }
   | { kind: 'profile'; ids: string[] }
-  | { kind: 'shop'; ownerId: string };
+  | { kind: 'shop'; ownerId: string }
+  | { kind: 'listing'; id: string };
 
 export function adDestination(item: any): AdDestination | null {
   const m = adFullMeta(item);
@@ -475,6 +545,9 @@ export function adDestination(item: any): AdDestination | null {
     return ids.length ? { kind: 'profile', ids } : null;
   }
   if (objective === 'engagement') {
+    // Simple shop ads carry the featured listing on the creative — the button
+    // goes straight to the PRODUCT. Customized ads keep opening the shop.
+    if (m.listingId) return { kind: 'listing', id: m.listingId };
     return m.ownerId ? { kind: 'shop', ownerId: m.ownerId } : null;
   }
   // traffic, or a legacy ad with no objective → open the link.
@@ -499,8 +572,29 @@ const CAMPAIGN_SELECT = `
   impression_count, click_count, advertiser_name, advertiser_avatar_url, is_business, objective, placements,
   target_age_min, target_age_max, target_gender, target_genres,
   target_lat, target_lng, target_radius_km, target_profile_ids, target_shop_listing_id, created_at,
-  ad_creatives ( id, campaign_id, placement, media_type, media_url, slides, thumbnail_url, cover_url, aspect_ratio, duration_seconds, headline, body, cta_label, cta_url, skip_mode )
+  ad_creatives ( id, campaign_id, placement, media_type, media_url, slides, thumbnail_url, cover_url, aspect_ratio, duration_seconds, headline, body, cta_label, cta_url, skip_mode, song_url, listing_id )
 `;
+
+// Pre-migration fallback: the same select without the simple-shop-ad columns
+// (song_url/listing_id land with ad_bundle_pricing.sql). An explicit column
+// list FAILS WHOLESALE when one column is unknown — which would silently turn
+// every ad off until the SQL runs — so queries try the full list first and
+// drop to this one when the error names the new columns.
+const CAMPAIGN_SELECT_LEGACY = CAMPAIGN_SELECT.replace(', song_url, listing_id', '');
+const NEW_CREATIVE_COLS_RE = /song_url|listing_id/i;
+let creativeExtrasSupported = true;
+
+function campaignSelect(): string {
+  return creativeExtrasSupported ? CAMPAIGN_SELECT : CAMPAIGN_SELECT_LEGACY;
+}
+
+// True when this error means "re-run with the legacy select" (and remembers it
+// for the rest of the session so every later query skips the failed round-trip).
+function noteSelectError(error: { message?: string } | null): boolean {
+  if (!creativeExtrasSupported || !error || !NEW_CREATIVE_COLS_RE.test(error.message ?? '')) return false;
+  creativeExtrasSupported = false;
+  return true;
+}
 
 // Live, eligible ad campaigns for this viewer — applies budget, schedule,
 // targeting, personalization, blocked-author and pacing filters in JS (so the
@@ -509,13 +603,15 @@ const CAMPAIGN_SELECT = `
 async function fetchEligibleCampaigns(viewer: AdViewer): Promise<AdCampaign[]> {
   if (!ADS_ENABLED) return [];
   try {
-    const { data, error } = await supabase
+    const query = () => supabase
       .from('ad_campaigns')
-      .select(CAMPAIGN_SELECT)
+      .select(campaignSelect())
       .eq('kind', 'ad')
       .eq('status', 'active')
       .gt('ends_at', new Date().toISOString())
       .limit(50);
+    let { data, error } = await query();
+    if (error && noteSelectError(error)) ({ data, error } = await query());
     if (error || !data) return [];
     // Minors never receive TARGETED advertising, regardless of their own
     // personalization setting — Maryland's MODPA bars targeted ads where the
@@ -611,6 +707,7 @@ export async function pickAudioAd(viewer: AdViewer): Promise<AudioAd | null> {
         skipMode: cr.skip_mode ?? null,
         objective: c.objective ?? null,
         targetProfileIds: c.target_profile_ids ?? null,
+        listingId: cr.listing_id ?? null,
       });
     }
   }
@@ -801,6 +898,9 @@ export type NewCreativeInput = {
   cta_label?: string | null;
   cta_url?: string | null;
   skip_mode?: string | null;
+  // Simple shop ads: preview clip + the listing the CTA opens.
+  song_url?: string | null;
+  listing_id?: string | null;
 };
 
 export type NewCampaignInput = {
@@ -890,11 +990,12 @@ export async function purchaseAdCampaign(input: NewCampaignInput): Promise<strin
     const rows = input.creatives.map((cr) => ({ ...cr, campaign_id: campaign.id }));
     if (rows.length) {
       let { error: crErr } = await supabase.from('ad_creatives').insert(rows);
-      // Resilience: an older ad_ecosystem.sql lacks the (nullable) skip_mode
-      // column — strip it and retry so a launch never hard-blocks on the pending
-      // migration (the ad just falls back to its placement-default skip timing).
-      if (crErr && /skip_mode/i.test(crErr.message ?? '')) {
-        const stripped = rows.map(({ skip_mode, ...rest }) => rest);
+      // Resilience: an older ad_ecosystem.sql lacks the (nullable) skip_mode /
+      // song_url / listing_id columns — strip them and retry so a launch never
+      // hard-blocks on the pending migration (the ad just falls back to its
+      // placement-default skip timing / customized-ad CTA behavior).
+      if (crErr && /skip_mode|song_url|listing_id/i.test(crErr.message ?? '')) {
+        const stripped = rows.map(({ skip_mode, song_url, listing_id, ...rest }) => rest);
         ({ error: crErr } = await supabase.from('ad_creatives').insert(stripped));
       }
       if (crErr) {
@@ -947,14 +1048,16 @@ export async function fetchMyAdCampaigns(): Promise<AdCampaign[]> {
     //
     // Nothing is lost by removing it: serving already filters on `ends_at`, and
     // `effectiveAdStatus` computes the expired label for display.
-    const { data, error } = await supabase
+    const query = () => supabase
       .from('ad_campaigns')
-      .select(CAMPAIGN_SELECT)
+      .select(campaignSelect())
       .eq('user_id', user.id)
       .eq('kind', 'ad')
       .order('created_at', { ascending: false });
+    let { data, error } = await query();
+    if (error && noteSelectError(error)) ({ data, error } = await query());
     if (error || !data) return [];
-    return data as AdCampaign[];
+    return data as unknown as AdCampaign[];
   } catch {
     return [];
   }
@@ -962,14 +1065,16 @@ export async function fetchMyAdCampaigns(): Promise<AdCampaign[]> {
 
 export async function fetchAdCampaign(id: string): Promise<AdCampaign | null> {
   try {
-    const { data, error } = await supabase
+    const query = () => supabase
       .from('ad_campaigns')
-      .select(CAMPAIGN_SELECT)
+      .select(campaignSelect())
       .eq('id', id)
       .eq('kind', 'ad')
       .single();
+    let { data, error } = await query();
+    if (error && noteSelectError(error)) ({ data, error } = await query());
     if (error || !data) return null;
-    return data as AdCampaign;
+    return data as unknown as AdCampaign;
   } catch {
     return null;
   }

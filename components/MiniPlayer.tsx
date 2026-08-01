@@ -8,11 +8,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAudio, useAudioPosition } from '../contexts/AudioContext';
-import { recordAdClick, AUDIO_AD_SKIP_MS } from '../lib/ads';
+import { adDestination, AUDIO_AD_SKIP_MS } from '../lib/ads';
+import { openAdCta } from '../contexts/AdCtaContext';
 import { fetchFeatures, type Feature } from '../lib/features';
 import SongCardTitle from './SongCardTitle';
 import { useListenMode } from '../contexts/ListenModeContext';
-import { useLinkGuard } from '../contexts/LinkGuardContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -46,7 +46,6 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   // shift down together, so the same offset holds).
   const castLift = useCast().connected ? 84 : 0;
   const { listenMode } = useListenMode();
-  const linkGuard = useLinkGuard();
   const router = useRouter();
 
   // Song collaborators ("features") for the currently-playing track — fetched
@@ -183,8 +182,13 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
     // Elapsed/duration come from the position channel (useAudioPosition above) —
     // during an ad it carries the ad player's ticks, so only THIS bar re-renders
     // per tick instead of every useAudio() consumer app-wide.
-    const secsLeft = Math.max(1, Math.ceil((AUDIO_AD_SKIP_MS - positionMs) / 1000));
+    // Countdown from the ad's ACTUAL skip gate (skip10/skip15/default), not the
+    // 10s constant — a skip15 ad's label used to hit 0 a second early.
+    const gateMs = Number.isFinite(adState.skipAfterMs) ? adState.skipAfterMs : AUDIO_AD_SKIP_MS;
+    const unskippable = adState.skipAfterMs === Infinity;
+    const secsLeft = Math.max(1, Math.ceil((gateMs - positionMs) / 1000));
     const adProgress = durationMs > 0 ? positionMs / durationMs : 0;
+    const adDest = adDestination(adState);
     return (
       <Animated.View style={[styles.container, { bottom: bottomOffset, transform: [{ translateY: Animated.add(Animated.add(listenSlide, dockSlide), chromeSlide) }] }]}>
         {/* Progress fill (non-interactive — ads aren't seekable). */}
@@ -213,29 +217,30 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
             <Text style={styles.adSponsored} numberOfLines={1}>{t('player.sponsoredWith', { name: adState.advertiserName })}</Text>
             <Text style={styles.caption} numberOfLines={1}>{adState.headline || t('player.advertisement')}</Text>
           </TouchableOpacity>
-          {!!adState.ctaUrl && (
+          {/* CTA goes through the shared objective router (openAdCta) — the
+              old direct linkGuard call only worked for website ads, so
+              profile/shop/product breaks had a dead button here. */}
+          {!!adDest && (
             <TouchableOpacity
               style={styles.adCta}
-              onPress={() => linkGuard.open(adState.ctaUrl!, {
-                context: 'ad',
-                sourceName: adState.advertiserName,
-                onProceed: () => recordAdClick(adState, 'audio', adState.viewerId),
-              })}
+              onPress={() => openAdCta(adState, 'audio', adState.viewerId)}
             >
               <Text style={styles.adCtaText} numberOfLines={1}>{adState.ctaLabel}</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            style={styles.adSkip}
-            disabled={!adState.canSkip}
-            onPress={skipAudioAd}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={t('a11y.skipAd')}
-            accessibilityState={{ disabled: !adState.canSkip }}
-          >
-            <Text style={styles.adSkipText}>{adState.canSkip ? t('player.skip') : secsLeft}</Text>
-          </TouchableOpacity>
+          {!unskippable && (
+            <TouchableOpacity
+              style={styles.adSkip}
+              disabled={!adState.canSkip}
+              onPress={skipAudioAd}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={t('a11y.skipAd')}
+              accessibilityState={{ disabled: !adState.canSkip }}
+            >
+              <Text style={styles.adSkipText}>{adState.canSkip ? t('player.skip') : secsLeft}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </Animated.View>
     );

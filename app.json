@@ -32,8 +32,14 @@
       "package": "com.laybell.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
         "backgroundColor": "#FF0A00",
         "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "splash": {
+        "image": "./assets/splash-icon-android.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#FF0A00"
       },
       "softwareKeyboardLayoutMode": "pan",
       "permissions": [

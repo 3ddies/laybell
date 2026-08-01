@@ -958,7 +958,18 @@ export default function HomeScreen() {
       // gate's visible dwell (phase B). Idempotent while the timer runs.
       if (v.item?.__gate) onGateBoundHit();
     }
+    // Simple shop ads: a tapped-on preview stops the moment its card scrolls
+    // out of view — sponsored audio must never trail behind the feed. (Host-
+    // scoped stop: a different host owning the ambient player is untouched.)
+    const adSongVisible = new Set<string>(
+      viewableItems.filter((v) => v.item?.__ad && v.item?.song_url).map((v) => v.item.id as string),
+    );
+    for (const prevId of adSongViewableRef.current) {
+      if (!adSongVisible.has(prevId)) { try { musicCtl.current.stopSong(prevId); } catch {} }
+    }
+    adSongViewableRef.current = adSongVisible;
   }).current;
+  const adSongViewableRef = useRef<Set<string>>(new Set());
   const viewabilityConfigCallbackPairs = useRef([
     { viewabilityConfig: { itemVisiblePercentThreshold: 40, minimumViewTime: 0 }, onViewableItemsChanged: onVideoViewableItemsChanged },
     { viewabilityConfig: { itemVisiblePercentThreshold: 60, minimumViewTime: 90 }, onViewableItemsChanged: onImpressionViewableItemsChanged },

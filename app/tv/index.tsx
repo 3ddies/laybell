@@ -166,8 +166,10 @@ export default function LaybellTVScreen() {
     // woven ads are a layout artifact (skips the 4 Recommended tiles, first ad
     // only at the 6th video, capped) — inheriting that meant the TV could get
     // zero sponsors while plenty were eligible. tvAdItems is the same pool every
-    // other surface uses.
-    const adPool = tvAdItems;
+    // other surface uses. CASTABLE sponsors only: simple shop ads have no
+    // media_url (cover + phone-played audio), and a null adToCastItem at the
+    // rotation position would otherwise wedge the weave on it forever.
+    const adPool = tvAdItems.filter((a) => !!a.media_url);
     // Order from the TAPPED video so the ad cadence counts from here, then BAKE a
     // sponsor into the queue after every TV_AD_EVERY_VIDEOS videos. Pre-weaving
     // (vs injecting on video-finish) is what makes ads show whether the user lets

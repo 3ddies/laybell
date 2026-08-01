@@ -47,7 +47,7 @@ import {
 } from '../../lib/feedScorer';
 import {
   fetchReelAds, reelItemFor, randInt, fetchTvAds, tvItemFor, recordAdImpression, recordAdSkip, recordAdComplete,
-  AD_SKIP_MS, TV_AD_EVERY_VIDEOS, TV_AD_FIRST_VIDEOS, TV_AD_FIRST_TIME_MS,
+  AD_SKIP_MS, adSkipAfterMs, TV_AD_EVERY_VIDEOS, TV_AD_FIRST_VIDEOS, TV_AD_FIRST_TIME_MS,
   REEL_AD_FIRST, REEL_AD_EVERY_MIN, REEL_AD_EVERY_MAX, type AdViewer, type AdSource,
 } from '../../lib/ads';
 import { adSpacingMultiplier } from '../../lib/entitlements';
@@ -782,7 +782,12 @@ export default function ReelScreen() {
   useEffect(() => {
     if (!settledIsLockedAd || !settledId) return;
     const trapped = settledId;
-    const timer = setTimeout(() => unlockAd(trapped), AD_SKIP_MS + 7000);
+    // Safety slack rides on the ad's OWN gate (5s regular, 10s simple-shop
+    // 'skip10') — a fixed 12s was only 2s of slack over a 10s gate, which a
+    // slow-loading preview could overrun and get force-unlocked mid-countdown.
+    const skipMode = postsRef.current.find((p) => p.id === trapped)?.__ad?.skipMode ?? null;
+    const gate = adSkipAfterMs('reels', skipMode);
+    const timer = setTimeout(() => unlockAd(trapped), (Number.isFinite(gate) ? gate : AD_SKIP_MS) + 7000);
     return () => clearTimeout(timer);
   }, [settledIsLockedAd, settledId]);
 
@@ -1692,9 +1697,18 @@ export default function ReelScreen() {
                   // make the viewer miss it entirely. Dismissing un-gates its
                   // AppVideo `active` and it starts playing. The slot is spent, so
                   // back-scrolling won't bring the ad back (countedReelsRef).
-                  onDone={() => dismissOverlayAd()}
-                  // skip15 Skip → same: reveal and play the video underneath.
-                  onSkip={() => dismissOverlayAd()}
+                  // Bill a COMPLETE — the cover used to record impressions only,
+                  // so TV analytics never saw a completed play.
+                  onDone={() => {
+                    recordAdComplete(overlayAd, 'tv', currentUserId);
+                    dismissOverlayAd();
+                  }}
+                  // Skip (skip15 / simple-shop skip10) → same: reveal and play
+                  // the video underneath, billing the skip.
+                  onSkip={() => {
+                    recordAdSkip(overlayAd, 'tv', currentUserId);
+                    dismissOverlayAd();
+                  }}
                   onReport={() => onOverlayAdReport(overlayAd)}
                   onCta={() => onOverlayAdCta(overlayAd)}
                 />

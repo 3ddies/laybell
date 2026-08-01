@@ -9,7 +9,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { usePostOptions } from '../contexts/PostOptionsContext';
 import { isSwipeTap } from '../contexts/PagerContext';
 import { openAdOptions } from '../contexts/AdOptionsContext';
-import { recordAdImpression, type AdMeta } from '../lib/ads';
+import { adDestination, recordAdImpression, type AdMeta } from '../lib/ads';
 import VideoThumb from './VideoThumb';
 import AppVideo from './AppVideo';
 import TVAdViewer from './TVAdViewer';
@@ -249,7 +249,9 @@ function TVAdCard({ ad, active, styles, colors, t, uid, onPress }: {
       <Text style={styles.caption} numberOfLines={2}>{meta.headline || meta.advertiserName}</Text>
       <View style={styles.adFootRow}>
         <Text style={styles.adAdvertiser} numberOfLines={1}>{meta.advertiserName}</Text>
-        {!!meta.ctaUrl && (
+        {/* Chip mirrors whether a CTA destination exists at all — ctaUrl alone
+            hid it for profile/shop/product ads. */}
+        {!!adDestination(ad) && (
           <View style={styles.adCtaChip}>
             <Text style={styles.adCtaText} numberOfLines={1}>{meta.ctaLabel}</Text>
             <Ionicons name="arrow-forward" size={10} color={colors.primary} />

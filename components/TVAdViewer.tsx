@@ -1,5 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Dimensions, Animated, PanResponder } from 'react-native';
 import { useEffect, useRef } from 'react';
+import { Image as ExpoImage } from 'expo-image';
+import { createAudioPlayer } from 'expo-audio';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +24,9 @@ import AppVideo from './AppVideo';
 // portrait lock.
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-export type TVAdViewerItem = { media_url: string; thumbnail_url?: string | null; __ad?: AdMeta };
+// media_url is null for SIMPLE SHOP ADS (listing cover + preview clip instead
+// of a video — song_url carries the audio, thumbnail/cover the art).
+export type TVAdViewerItem = { media_url: string | null; thumbnail_url?: string | null; cover_url?: string | null; song_url?: string | null; __ad?: AdMeta };
 
 export default function TVAdViewer({ item, uid, onClose }: {
   item: TVAdViewerItem | null;
@@ -86,6 +90,31 @@ export default function TVAdViewer({ item, uid, onClose }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item]);
 
+  // Simple shop ad soundtrack: the viewer is dismissable with no skip gate, so
+  // the preview simply loops (like the video path) until closed.
+  const isImageAd = !!item && !item.media_url && !!item.song_url;
+  useEffect(() => {
+    if (!isImageAd || !item?.song_url) return;
+    let sub: { remove: () => void } | null = null;
+    let player: ReturnType<typeof createAudioPlayer> | null = null;
+    try {
+      player = createAudioPlayer({ uri: item.song_url }, { updateInterval: 250, keepAudioSessionActive: true });
+      player.loop = true;
+      sub = player.addListener('playbackStatusUpdate', (st: any) => {
+        if (!st?.isLoaded) return;
+        const dur = (st.duration ?? 0) * 1000;
+        if (dur > 0) progress.setValue(Math.min(1, ((st.currentTime ?? 0) * 1000) / dur));
+      });
+      player.play();
+    } catch {}
+    return () => {
+      try { sub?.remove(); } catch {}
+      const p = player;
+      setTimeout(() => { try { p?.remove(); } catch {} }, 0);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isImageAd, item?.song_url]);
+
   const hasDestination = !!meta && !!adDestination({ __ad: meta });
   const onCta = () => { if (meta) openAdCta({ __ad: meta }, 'tv', uid); };
   const onReport = () => {
@@ -116,6 +145,20 @@ export default function TVAdViewer({ item, uid, onClose }: {
             posterContentFit="contain"
             onProgress={(pos, dur) => { if (dur > 0) progress.setValue(Math.min(1, pos / dur)); }}
           />
+        ) : isImageAd ? (
+          // Simple shop ad: blurred cover backdrop + centered album-style art
+          // while the preview clip plays.
+          <>
+            {!!(item?.thumbnail_url ?? item?.cover_url) && (
+              <>
+                <ExpoImage source={{ uri: (item!.thumbnail_url ?? item!.cover_url)! }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={40} cachePolicy="memory-disk" />
+                <View style={styles.simpleScrim} pointerEvents="none" />
+                <View style={styles.simpleArtWrap} pointerEvents="none">
+                  <ExpoImage source={{ uri: (item!.thumbnail_url ?? item!.cover_url)! }} style={styles.simpleArt} contentFit="cover" cachePolicy="memory-disk" />
+                </View>
+              </>
+            )}
+          </>
         ) : null}
 
         {/* Top bar: Sponsored tag + 3-dot report + close */}
@@ -190,4 +233,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Fixed white (not colors.text): orange fill over a dark video — light
   // mode's near-black text read wrong there (same treatment as the other ads).
   ctaText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+
+  // Simple shop ad staging (percent-sized: the modal rotates freely, so fixed
+  // Dimensions would be the portrait capture).
+  simpleScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' },
+  simpleArtWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  simpleArt: {
+    width: '72%', maxHeight: '62%', aspectRatio: 1, borderRadius: RADIUS.xl,
+    backgroundColor: '#111',
+    shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 24, shadowOffset: { width: 0, height: 12 },
+    elevation: 12,
+  },
 });

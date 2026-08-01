@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-nati
 import { Image as ExpoImage } from 'expo-image';
 import FeedVideo from './FeedVideo';
 import { Ionicons } from '@expo/vector-icons';
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -10,6 +10,7 @@ import { aspectToNumber } from '../lib/aspectRatio';
 import SlideshowCarousel from './SlideshowCarousel';
 import { parseSlides, isSlideshow } from '../lib/slideshow';
 import { useCardPlayback } from '../lib/feedVideo';
+import { usePostMusicActions, useSongHostActive } from '../contexts/PostMusicContext';
 import type { AdMeta } from '../lib/ads';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -42,6 +43,21 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions, vide
   const { t } = useTranslation();
   const ad: AdMeta = item.__ad;
   const brand = ad?.advertiserName || t('ad.sponsored');
+
+  // ── Simple shop ad: the listing preview rides the card as a playable song ──
+  // Played on the shared ambient post-music player (the exact primitive the
+  // shop listing's Preview button uses), keyed by this card's item id, so it
+  // defers to the main player and swaps away naturally when a song post takes
+  // the ambient slot. The feed's viewability handler stops it on scroll-out.
+  const isSimple = item.type === 'image' && !!item.song_url;
+  const { playSong, stop: stopSong } = usePostMusicActions();
+  const previewOn = useSongHostActive(item.id);
+  useEffect(() => () => { if (isSimple) stopSong(item.id); }, [isSimple, item.id, stopSong]);
+  const togglePreview = () => {
+    if (!isSimple) return;
+    if (previewOn) stopSong(item.id);
+    else playSong(item.id, item.id, item.song_url);
+  };
 
   return (
     <View style={styles.card}>
@@ -126,6 +142,21 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions, vide
         </View>
       )}
 
+      {/* Simple shop ad: playable song strip — the post carries its preview
+          song the way a song-attached post does. */}
+      {isSimple && (
+        <TouchableOpacity style={styles.songStrip} onPress={togglePreview} activeOpacity={0.85}>
+          <View style={[styles.songPlayBtn, previewOn && { backgroundColor: colors.primary }]}>
+            <Ionicons name={previewOn ? 'pause' : 'play'} size={15} color="#fff" style={previewOn ? undefined : { marginLeft: 2 }} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.songTitle} numberOfLines={1}>{ad?.headline || brand}</Text>
+            <Text style={styles.songSub} numberOfLines={1}>{t('shopAd.preview')} · {brand}</Text>
+          </View>
+          <Ionicons name="musical-notes" size={16} color={previewOn ? colors.primary : colors.textTertiary} />
+        </TouchableOpacity>
+      )}
+
       {/* Headline + body */}
       {!!ad?.headline && <Text style={styles.headline} numberOfLines={2}>{ad.headline}</Text>}
       {!!ad?.body && <Text style={styles.body} numberOfLines={3}>{ad.body}</Text>}
@@ -180,6 +211,20 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   headline: { color: colors.text, fontSize: 15, fontWeight: '700', paddingHorizontal: SPACING.md, paddingTop: SPACING.sm },
   body: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: SPACING.md, paddingTop: 3 },
+
+  // Simple shop ad song strip
+  songStrip: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    marginHorizontal: SPACING.md, marginTop: SPACING.sm,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    borderRadius: RADIUS.lg, paddingHorizontal: SPACING.sm + 2, paddingVertical: SPACING.sm,
+  },
+  songPlayBtn: {
+    width: 32, height: 32, borderRadius: RADIUS.full,
+    backgroundColor: colors.textTertiary, alignItems: 'center', justifyContent: 'center',
+  },
+  songTitle: { color: colors.text, fontSize: 13.5, fontWeight: '700' },
+  songSub: { color: colors.textSecondary, fontSize: 11.5, marginTop: 1 },
 
   cta: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,

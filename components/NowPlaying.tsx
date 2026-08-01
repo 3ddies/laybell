@@ -127,14 +127,19 @@ function AdProgress() {
   );
 }
 
-function AdSkipButton({ canSkip, onSkip }: { canSkip: boolean; onSkip: () => void }) {
+function AdSkipButton({ canSkip, skipAfterMs, onSkip }: { canSkip: boolean; skipAfterMs?: number; onSkip: () => void }) {
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const { positionMs } = useAudioPosition();
+  // Countdown from the ad's ACTUAL gate (skip10/skip15/default), not the 10s
+  // constant — the label used to hit 0 early on skip15 ads. An unskippable ad
+  // (Infinity) shows no button at all: a countdown to never is just a taunt.
+  const gateMs = Number.isFinite(skipAfterMs ?? NaN) ? (skipAfterMs as number) : AUDIO_AD_SKIP_MS;
+  if (skipAfterMs === Infinity) return null;
   return (
     <TouchableOpacity style={[styles.adSkipBtn, !canSkip && styles.adSkipDisabled]} disabled={!canSkip} onPress={onSkip}>
       <Text style={styles.adSkipText}>
-        {canSkip ? t('nowPlaying.skipAd') : t('nowPlaying.skipIn', { secs: Math.max(1, Math.ceil((AUDIO_AD_SKIP_MS - positionMs) / 1000)) })}
+        {canSkip ? t('nowPlaying.skipAd') : t('nowPlaying.skipIn', { secs: Math.max(1, Math.ceil((gateMs - positionMs) / 1000)) })}
       </Text>
     </TouchableOpacity>
   );
@@ -631,8 +636,20 @@ export default function NowPlaying() {
 
             <View style={styles.meta}>
               <Text style={styles.adSponsoredTag}>{t('nowPlaying.sponsored')}</Text>
-              <Text style={styles.title} numberOfLines={1}>{adState.advertiserName}</Text>
-              {!!adState.headline && <Text style={styles.artist} numberOfLines={2}>{adState.headline}</Text>}
+              {/* Simple shop ads read like a song: the PRODUCT title takes the
+                  title line and the seller sits on the artist line. Customized
+                  ads keep the brand-first order. */}
+              {adState.listingId ? (
+                <>
+                  <Text style={styles.title} numberOfLines={1}>{adState.headline || adState.advertiserName}</Text>
+                  <Text style={styles.artist} numberOfLines={1}>{adState.advertiserName}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.title} numberOfLines={1}>{adState.advertiserName}</Text>
+                  {!!adState.headline && <Text style={styles.artist} numberOfLines={2}>{adState.headline}</Text>}
+                </>
+              )}
             </View>
 
             {/* Ad progress (non-interactive — ads aren't seekable). */}
@@ -651,7 +668,7 @@ export default function NowPlaying() {
               </TouchableOpacity>
             )}
 
-            <AdSkipButton canSkip={adState.canSkip} onSkip={skipAudioAd} />
+            <AdSkipButton canSkip={adState.canSkip} skipAfterMs={adState.skipAfterMs} onSkip={skipAudioAd} />
           </View>
         ) : (
         <KeyboardAvoidingView
