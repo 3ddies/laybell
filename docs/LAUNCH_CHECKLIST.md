@@ -317,20 +317,44 @@ tested ONCE, with both rails live (owner's call — one sitting, not two).
 | Backend | All SQL applied + verified; 16 edge fns deployed; `send-push` redeployed |
 | App Store Connect | Credit IAP products created; RevenueCat iOS configured (`iosApiKey` set) |
 
-### 🔴 THE BLOCKER — one thing gates the most valuable work
+### ✅ ANDROID BUILDS — blocker cleared 2026-08-01
 
-**The Android build fails.** Build `bf390ebc-6c98-4618-8f3d-7b9f84b4ee67`, Gradle phase,
-**and the actual error has never been read** (expo.dev logs need the owner's login).
-Everything Android-side — and therefore the combined money test — waits behind it.
+**Was:** every Android build died in Gradle. **Now:** `711f701a` FINISHED and installs.
+Two library-level New Architecture incompatibilities, both fixed by patch-package:
 
-- **ACTION: open the build → "Run gradlew" → paste what follows `FAILURE:` /
-  `What went wrong:`.**
-- Already ruled out with evidence (don't re-chase): the two Android-touching
-  patch-package patches (a Kotlin error would fail late, not at 3min); the
-  dead-looking `com.facebook.react:react-native:+` coordinate in react-native-google-cast
-  (15 modules use it, incl. gesture-handler/screens/async-storage); `expo-doctor` (18/18).
-- ⚠️ **Build credits exhausted this month — every attempt is billed.** Batch fixes; read
-  the error before spending another.
+- `@api.video/react-native-livestream` — RN 0.81 made `Event.viewTag` a real Kotlin
+  member, so the lib's `private val viewTag` shadowed it (5 compile errors).
+- `react-native-track-player` — 36 `@ReactMethod`s used Kotlin expression bodies
+  (`= scope.launch {}`), inferring a `Job` return where TurboModule interop demands
+  `void`. Converted to block bodies. **Also** its Android service emitted every
+  native→JS event through the legacy bridge accessor, which is permanently null under
+  bridgeless — that's what left the media notification, the in-app scrubber, and
+  track auto-advance all dead. Routed through the architecture-aware context.
+
+**Read EAS failures for free, without the dashboard:** `eas-cli build:list --platform
+android --limit 3 --json` returns `logFiles` (signed URLs, 15-min expiry); fetch and grep
+`^e:` / `FAILURE:`. Timing is a WORTHLESS signal — a ~3min failure was wrongly used to
+rule OUT a Kotlin compile error, which is exactly what it was.
+
+⚠️ **Build credits exhausted — every build is billed.** Verify assets and patches
+locally before spending (a pre-flight caught a silently-unmasked app icon that would
+otherwise have shipped).
+
+### 🟠 ANDROID POLISH — real, deferred by owner 2026-08-01
+
+The app runs well on the Samsung, but with UI glitches the owner is **taking a break
+from**; he'll report specifics later. **Do not treat Android feel as launch-blocking
+until he re-raises it** — and do NOT let it delay the money test, which needs only
+purchases to work.
+
+Fixed and shipped so far: hooks crash at login (PhotoGrid's permission gate sat between
+hooks); tab-bar chips colliding with the system nav bar (edge-to-edge is mandatory in SDK
+54 — iOS's home-indicator math put them on the real buttons); tab swipes lost to
+PanResponder blocking native interception; the chips pinned stationary on Android by
+owner preference; sub-tab steppers disabled there (they also silently disabled the main
+pager); StoriesTray rehosted out of the FlashList header (its native view was orphaning
+into a ghost stuck over the tab bar). Still open: mid-swipe page flashes (Fabric-level,
+transient) and whatever the owner reports next.
 
 ### 💰 THE MONEY TEST — one sitting, both stores (owner's decision)
 
@@ -348,8 +372,9 @@ checklist that unlocks one event.
    rate lands (see §0.3).
 4. An iOS build carrying RevenueCat (native — nothing payment-related works in Expo Go).
 
-**Android side — waiting on the build fix, then ~an hour**
-5. Fix the Android build (above), produce a `preview` AAB.
+**Android side — UNBLOCKED, ~an hour, can start today**
+5. ~~Fix the Android build~~ — DONE. Produce a `preview`/`production` AAB when ready
+   (the dev client already proves the native stack compiles and runs).
 6. Play Console → create the app → **internal testing** track → upload.
 7. Create the credit products. **IDs must match exactly** (`lib/purchases.ts`):
    `laybell_credits_499` / `_999` / `_1999` / `_4999` / `_9999`.
