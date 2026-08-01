@@ -332,7 +332,10 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
    prerequisite, not the conversion). The flow: developer.apple.com/account →
    "Update your information" → **"Switch to organization membership"** → Provide
    updates. Enter: legal name exactly as SDAT spells it (`Laybell LLC`), the D-U-N-S,
-   the LLC's MARYLAND address (not the personal NC one on file), laybell.app, and
+   the address on the LLC's D&B record — Eddie's HOME address doubles as the business
+   address, so that is likely it (Apple matches against D&B, not against a theory of
+   where an LLC "should" be; the SDAT record separately keeps a Maryland resident
+   agent/principal office, which is fine and unrelated) — laybell.app, and
    confirm authority to bind the org. Review takes days-to-weeks and often ends with a
    verification phone call; Team ID/apps/certs all carry over. ⚠️ Never start a fresh
    org ENROLLMENT under a different Apple ID (second team, second $99, app transfers).
