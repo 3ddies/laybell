@@ -80,17 +80,22 @@ const GALAXY_STARS = [
 // not confetti. Five of them, each on its own duration/delay so the field
 // never beats in sync.
 //
-// Same placement discipline as GALAXY_STARS: the larger/brighter bubbles live
-// in the text-free columns around the icon bubble and the chevron; the one
-// mid-card straggler is faint enough (0.22 peak on a 0.12-alpha fill) to pass
-// under a wrapped label without reading as noise. `startY` assumes the card's
+// Placement (owner-directed): the star icon's circle must stay CLEAR — no
+// bubble may collide with it — so the field starts at ~26% and spreads across
+// the open orange, ending at the chevron column. The icon circle spans
+// roughly the left 18% of the card (18px padding + 48px bubble), and the
+// widest sway here is ±8px ≈ 2%, so 26% keeps a real margin. The four
+// mid-card bubbles stay faint (≤0.32 peak) so a label that wraps in a longer
+// language passes over them cleanly; the chevron column carries the two
+// brightest, where there is no text to fight. `startY` assumes the card's
 // ~100px height.
 const PREMIUM_BUBBLES = [
-  { left: '9%', size: 18, peak: 0.65, drift: 40, sway: 7, startY: 62, dur: 8600, delay: 0 },
-  { left: '16%', size: 10, peak: 0.5, drift: 30, sway: -5, startY: 48, dur: 7200, delay: 2600 },
-  { left: '84%', size: 22, peak: 0.55, drift: 44, sway: -8, startY: 66, dur: 9800, delay: 1200 },
-  { left: '92%', size: 12, peak: 0.5, drift: 34, sway: 6, startY: 50, dur: 7800, delay: 4200 },
-  { left: '52%', size: 14, peak: 0.22, drift: 38, sway: 9, startY: 64, dur: 10600, delay: 3000 },
+  { left: '26%', size: 12, peak: 0.3, drift: 36, sway: 6, startY: 60, dur: 8400, delay: 1800 },
+  { left: '38%', size: 16, peak: 0.24, drift: 42, sway: -7, startY: 66, dur: 10200, delay: 0 },
+  { left: '55%', size: 10, peak: 0.26, drift: 30, sway: 5, startY: 48, dur: 7600, delay: 3400 },
+  { left: '68%', size: 14, peak: 0.32, drift: 40, sway: -8, startY: 64, dur: 9200, delay: 5000 },
+  { left: '85%', size: 20, peak: 0.6, drift: 44, sway: 7, startY: 62, dur: 9800, delay: 900 },
+  { left: '93%', size: 11, peak: 0.5, drift: 32, sway: -5, startY: 46, dur: 7400, delay: 2600 },
 ] as const;
 
 // Module scope, per the house rule (components defined inside a render body get
