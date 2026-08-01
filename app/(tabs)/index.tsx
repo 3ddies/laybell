@@ -201,7 +201,10 @@ type PostCardProps = {
 const FeedHeader = memo(function FeedHeader() {
   return (
     <>
-      <StoriesTray />
+      {/* Android: the tray renders inside the floating header block instead
+          (see the header JSX) — FlashList v2's native header detach/re-attach
+          under Fabric orphaned it into a ghost view. iOS keeps it in-list. */}
+      {Platform.OS !== 'android' && <StoriesTray />}
       <PendingUploads />
     </>
   );
@@ -1719,13 +1722,16 @@ export default function HomeScreen() {
           The feed pads itself by the measured header height below. */}
       <Animated.View
         style={[
-          styles.header,
           styles.headerFloat,
           Platform.OS === 'ios' && styles.headerGlass,
+          // Android hosts the StoriesTray inside this block (see below), so the
+          // hairline moves to the block's true bottom edge, under the tray.
+          Platform.OS === 'android' && { borderBottomWidth: 0.5, borderBottomColor: colors.border },
           headerSlideStyle,
         ]}
         onLayout={(e) => { const h = e.nativeEvent.layout.height; setHeaderH(h); }}
       >
+      <View style={[styles.header, Platform.OS === 'ios' && styles.headerGlass, Platform.OS === 'android' && { borderBottomWidth: 0 }]}>
         {/* iOS: real frosted material behind the floating header (matches the tab
             bar), so the feed blurs through it instead of hiding under a flat slab. */}
         {Platform.OS === 'ios' && (
@@ -1792,6 +1798,17 @@ export default function HomeScreen() {
             )}
           </TouchableOpacity>
         </View>
+      </View>
+      {/* Android: the StoriesTray lives HERE — inside the floating header block,
+          riding its hide/show glide — NOT inside the FlashList header. FlashList
+          v2's recycling detaches the list header natively when it scrolls out,
+          and Fabric's re-attach on Android is what produced the squished ghost
+          tray stuck over the tab bar on every page (verified via labeled scene
+          probes: scenes were all healthy; the tray alone was orphaned). Hosting
+          it in a plain View removes the detach path entirely. onLayout above
+          measures the taller block, so the feed's paddingTop and the slide
+          distance adapt automatically. iOS keeps the tray in-list. */}
+      {Platform.OS === 'android' && <StoriesTray />}
       </Animated.View>
 
       {/* Feed-mode dropdown */}
