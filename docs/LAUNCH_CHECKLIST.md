@@ -323,10 +323,20 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
 1. ✅ ~~D-U-N-S number for the Maryland LLC~~ **IN HAND** — see above. The bottleneck
    is now the two verifications themselves (days-to-weeks of Apple/Google processing),
    so file BOTH now and let them run while everything else happens in parallel.
-2. **Finish the Google org conversion** — resume the paused flow, create the
-   organizational payments profile, submit LLC docs + the D-U-N-S. After it clears, the
-   app dashboard should stop showing the 20-tester closed-test requirement (it is a
-   personal-account rule); if it still shows, that is a support ticket, not a rebuild.
+2. ✅ **Google org conversion — SUBMITTED 2026-07-31.** New ORGANIZATION payments profile
+   created and linked (a personal profile can never convert; country + account type are
+   permanent on a profile), org details filed: Private company / 1–10 employees /
+   `+12408068282` / `https://laybell.app` (green "Website verified" from the Search
+   Console TXT). Contact = Edwin Devron Hall, **`support@laybell.app`** — Google requires
+   an address on the org's own domain, NOT the Google-account Gmail, so the ImprovMX
+   alias is load-bearing here. Left on "Google is checking whether your new payments
+   profile is verified"; account type still reads Personal until it clears. If the
+   profile fails automated verification, Google asks for a photo ID + Articles of
+   Organization (Maryland SDAT). **After it clears, check the app dashboard — the
+   20-tester closed-test requirement should be gone** (personal-account rule); if it
+   still shows, that is a support ticket, not a rebuild.
+   ⚠️ **WATCH `support@laybell.app`** — both stores now correspond about verification and
+   Google will use that address specifically.
 3. ✅ **Apple organization conversion — SUBMITTED 2026-07-31**, case ID emailed; Apple
    replies within ~1 business day, then days-to-weeks of verification (often closing
    with a phone call to the business number — answer unknown numbers for a while).
