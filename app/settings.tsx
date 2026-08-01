@@ -1,11 +1,12 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Switch, Alert, Image, Linking,
+  Animated, Easing, AccessibilityInfo,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../contexts/ProfileContext';
 import { useOffline } from '../contexts/OfflineContext';
@@ -60,6 +61,90 @@ const GALAXY_STARS = [
   { top: 10, left: '90%', size: 1.5, opacity: 0.8 },
   { top: 46, left: '88%', size: 2, opacity: 0.65 },
 ] as const;
+
+// Slow-drifting sparkle for the Laybell Premium card. Same placement discipline
+// as GALAXY_STARS above — the bright particles live in the text-free columns
+// (around the icon bubble and the chevron) so none can sit under the label in a
+// longer language; the two mid-card ones are faint enough (≤0.16) to pass
+// under text without reading as noise. Each particle rises `drift`px while
+// fading in and back out, on its own duration/delay so the field never beats
+// in sync. `startY` values assume the card's ~100px height.
+const PREMIUM_PARTICLES = [
+  { left: '13%', size: 3, peak: 0.7, drift: 26, startY: 58, dur: 5200, delay: 0 },
+  { left: '7%', size: 2, peak: 0.5, drift: 34, startY: 66, dur: 6800, delay: 1400 },
+  { left: '17%', size: 2, peak: 0.45, drift: 22, startY: 44, dur: 5900, delay: 2600 },
+  { left: '86%', size: 3, peak: 0.6, drift: 30, startY: 62, dur: 6200, delay: 800 },
+  { left: '92%', size: 2, peak: 0.5, drift: 24, startY: 48, dur: 5400, delay: 2000 },
+  { left: '80%', size: 2, peak: 0.4, drift: 32, startY: 70, dur: 7200, delay: 3200 },
+  { left: '45%', size: 2, peak: 0.16, drift: 30, startY: 64, dur: 7600, delay: 500 },
+  { left: '60%', size: 2, peak: 0.14, drift: 26, startY: 52, dur: 6400, delay: 2900 },
+] as const;
+
+// Module scope, per the house rule (components defined inside a render body get
+// remounted every render). Pure native-driver loops — nothing here touches the
+// JS thread after start — and Reduce Motion renders the same field as static
+// specks instead of animating it, matching how the bell handles that setting.
+function PremiumParticles() {
+  const styles = useThemedStyles(makeStyles);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const anims = useRef(PREMIUM_PARTICLES.map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((on) => { if (alive) setReduceMotion(on); })
+      .catch(() => {});
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => { alive = false; sub?.remove?.(); };
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    const loops = anims.map((v, i) => {
+      const p = PREMIUM_PARTICLES[i];
+      v.setValue(0);
+      // The delay sits INSIDE the loop, so each particle also rests between
+      // cycles — the field twinkles at varied moments instead of streaming.
+      const loop = Animated.loop(Animated.sequence([
+        Animated.delay(p.delay),
+        Animated.timing(v, { toValue: 1, duration: p.dur, easing: Easing.linear, useNativeDriver: true }),
+      ]));
+      loop.start();
+      return loop;
+    });
+    return () => loops.forEach((l) => l.stop());
+  }, [reduceMotion, anims]);
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {PREMIUM_PARTICLES.map((p, i) => reduceMotion ? (
+        <View
+          key={i}
+          style={[styles.premiumParticle, {
+            left: p.left, top: p.startY - p.drift / 2,
+            width: p.size, height: p.size, borderRadius: p.size / 2,
+            opacity: p.peak * 0.5,
+          }]}
+        />
+      ) : (
+        <Animated.View
+          key={i}
+          style={[styles.premiumParticle, {
+            left: p.left, top: p.startY,
+            width: p.size, height: p.size, borderRadius: p.size / 2,
+            opacity: anims[i].interpolate({
+              inputRange: [0, 0.15, 0.75, 1],
+              outputRange: [0, p.peak, p.peak * 0.85, 0],
+            }),
+            transform: [{
+              translateY: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0, -p.drift] }),
+            }],
+          }]}
+        />
+      ))}
+    </View>
+  );
+}
 
 function SettingsRow({ item }: { item: SectionItem }) {
   const { colors } = useTheme();
@@ -539,13 +624,14 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Promotion tools — one CONNECTED menu (no gaps), stacked by visual
-            weight: Laybell Premium (flagship brand-orange, thickest) →
-            Spotlight (galaxy-purple, mid) → Ad Manager (inverted mono block:
-            white-on-dark themes / black-on-light). */}
+        {/* Promotion tools — three STANDALONE cards (they were one connected
+            flush menu until the owner asked for Premium detached and bigger),
+            still ordered by weight: Laybell Premium (flagship brand-orange,
+            biggest, drifting sparkle) → Spotlight (galaxy-purple) → Ad Manager
+            (inverted mono block: white-on-dark themes / black-on-light). */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings.section.promo')}</Text>
-          <View style={styles.promoMenu}>
+          <View style={styles.promoStack}>
             <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/premium')}>
               <LinearGradient
                 colors={[colors.primary, colors.primaryDark]}
@@ -553,8 +639,10 @@ export default function SettingsScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.promoPremium}
               >
-                <View style={styles.promoIconBubble}>
-                  <Ionicons name={isPremium ? 'star' : 'star-outline'} size={22} color="#FFFFFF" />
+                {/* Behind the content; the card's overflow:hidden clips it. */}
+                <PremiumParticles />
+                <View style={[styles.promoIconBubble, styles.promoIconBubbleLg]}>
+                  <Ionicons name={isPremium ? 'star' : 'star-outline'} size={26} color="#FFFFFF" />
                 </View>
                 <View style={styles.rowContent}>
                   <Text style={styles.promoPremiumLabel}>{t('premium.settingsRow')}</Text>
@@ -562,7 +650,7 @@ export default function SettingsScreen() {
                     {isPremium ? t('premium.settingsActive') : t('premium.settingsUpgrade')}
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.9)" />
+                <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.9)" />
               </LinearGradient>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.85} onPress={() => requireAdult(() => router.push('/spotlight'))}>
@@ -761,24 +849,27 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   rowLabelDestructive: { color: c.error },
   rowSubtitle: { color: c.textSecondary, fontSize: 12, marginTop: 1 },
 
-  // Promotion tools — ONE connected menu (the container owns the rounding and
-  // clips the flush blocks), stacked by visual weight: Premium is the thickest
-  // (flagship, brand orange), Spotlight mid (galaxy purple), Ad Manager an
-  // inverted mono block — white with black text on the dark themes, black with
-  // white text on light (bg = c.text, content = c.background).
-  promoMenu: {
-    borderRadius: RADIUS.lg, overflow: 'hidden',
-    borderWidth: 1, borderColor: c.border,
-  },
+  // Promotion tools — three STANDALONE cards (each owns its rounding; the
+  // stack only spaces them), by visual weight: Premium is the flagship —
+  // biggest, brand orange, drifting sparkle — then Spotlight (galaxy purple),
+  // then Ad Manager as an inverted mono block — white with black text on the
+  // dark themes, black with white text on light (bg = c.text, content =
+  // c.background).
+  promoStack: { gap: SPACING.sm + 2 },
   promoPremium: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.md + 6,
+    paddingHorizontal: SPACING.md + 2, paddingVertical: SPACING.lg,
+    borderRadius: RADIUS.lg,
+    overflow: 'hidden', // clips the particle field to the card
   },
-  promoPremiumLabel: { color: '#FFFFFF', fontSize: 16.5, fontWeight: '800' },
-  promoPremiumSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12.5, marginTop: 2 },
+  promoPremiumLabel: { color: '#FFFFFF', fontSize: 19, fontWeight: '800', letterSpacing: -0.2 },
+  promoPremiumSub: { color: 'rgba(255,255,255,0.88)', fontSize: 13.5, marginTop: 3 },
+  promoIconBubbleLg: { width: 48, height: 48, borderRadius: 24 },
+  premiumParticle: { position: 'absolute', backgroundColor: '#FFFFFF' },
   promoSpotlight: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
     overflow: 'hidden', // keeps the star field inside the block
   },
   promoSpotlightLabel: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
@@ -787,6 +878,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 4,
     backgroundColor: c.text,
+    borderRadius: RADIUS.lg,
   },
   promoAdBubble: { backgroundColor: c.background + '26' },
   promoAdLabel: { color: c.background, fontSize: 15, fontWeight: '700' },
