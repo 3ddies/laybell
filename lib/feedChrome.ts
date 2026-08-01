@@ -1,4 +1,4 @@
-import { Animated, Easing } from 'react-native';
+import { Animated, Easing, Platform } from 'react-native';
 
 // Reactive chrome for the Home/Explore/Music feeds — the floating Laybell
 // header (top) and the tab bar + mini player (bottom).
@@ -24,10 +24,20 @@ import { Animated, Easing } from 'react-native';
 // `feedChrome` (bottom) and `feedChromeTop` (header) are native-driver values
 // (0 = shown, 1 = hidden).
 
-export const feedChrome = new Animated.Value(0);     // bottom tab bar (+ mini player)
-export const feedChromeTop = new Animated.Value(0);  // Home header
+// OWNER DECISION (Android): the bottom bar's scroll-reactive condense/expand
+// is iOS-only. On Android the chips are PINNED at the condensed position —
+// stationary circle buttons, no morphing — because the gesture-riding morph
+// read as glitchy there and the condensed chips are the state the owner wants
+// permanently. The value starts at 1 and every bottom mutator below no-ops,
+// so ALL consumers (tab bar, MiniPlayer, CastBar) are static on Android with
+// no per-scroll work at all. The TOP header keeps its native glide on both
+// platforms.
+const BOTTOM_PINNED = Platform.OS === 'android';
 
-let botValue = 0;
+export const feedChrome = new Animated.Value(BOTTOM_PINNED ? 1 : 0); // bottom tab bar (+ mini player)
+export const feedChromeTop = new Animated.Value(0);                  // Home header
+
+let botValue = BOTTOM_PINNED ? 1 : 0;
 feedChrome.addListener(({ value }) => { botValue = value; });
 
 let lastY = 0;
@@ -70,6 +80,7 @@ const EASE = Easing.out(Easing.cubic);
 let botGliding = false;
 
 function glideBottom(to: 0 | 1) {
+  if (BOTTOM_PINNED) return; // Android: chips are stationary — never glide
   if (botGliding || botValue === to) return;
   botGliding = true;
   Animated.timing(feedChrome, { toValue: to, duration: 380, easing: EASE, useNativeDriver: true }).start(() => { botGliding = false; });
@@ -154,6 +165,7 @@ export function trackFeedScroll(y: number, maxY?: number): void {
   // ── BOTTOM bar: speed-gated BOTH ways — a hard fast down-flick condenses it to
   // the circles, a hard fast up-flick brings the full bar back. A slow/short
   // read-scroll leaves it exactly where it is (owner: shouldn't collapse easily).
+  if (BOTTOM_PINNED) return; // Android: chips pinned — skip the gate math entirely
   if (y < 60) {
     // Near the top the bottom bar always comes back.
     bottomArmed = false;
@@ -191,6 +203,7 @@ export function settleFeedChrome(): void {
   if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
   bottomArmed = false;
   bottomHideArmed = false;
+  if (BOTTOM_PINNED) return; // Android: pinned at 1 — nothing to settle
   if (!botGliding && botValue !== 0 && botValue !== 1) {
     Animated.timing(feedChrome, { toValue: 0, duration: 320, easing: EASE, useNativeDriver: true }).start();
   }
@@ -203,7 +216,8 @@ export function setFeedChromeHidden(next: boolean): void {
   bottomHideArmed = false;
   suppressed = true; // ignore leftover momentum until the next real drag
   stopBottomGlide();
-  if (botValue !== to) {
+  // Android: the bottom value never moves off 1; only the header responds.
+  if (!BOTTOM_PINNED && botValue !== to) {
     Animated.timing(feedChrome, { toValue: to, duration: 300, easing: EASE, useNativeDriver: true }).start();
   }
   glideTop(to);

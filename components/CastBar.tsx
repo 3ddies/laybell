@@ -1,4 +1,4 @@
-import { ActivityIndicator, Animated, View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { ActivityIndicator, Animated, View, Text, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,9 +39,14 @@ export default function CastBar({ bottomDock = false, variant = 'bar' }: { botto
   // MiniPlayer): when the tab bar condenses into chips and drops toward the
   // edge, the cast bar slides down with it so it always hugs the bottom
   // elements. Zero off the home feed (feedChrome resets on tab change).
+  // Mirrors the tab bar's iconDrop (see (tabs)/_layout.tsx): iOS rides down
+  // into the button-less home-indicator band; Android stays above
+  // insets.bottom because under edge-to-edge that band holds the REAL system
+  // nav buttons. On Android feedChrome is PINNED at 1 (lib/feedChrome.ts), so
+  // this resolves to a static offset.
   const chromeSlide = feedChrome.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, (insets.bottom > 0 ? insets.bottom - 2 : 12) + (bottomDock ? -8 : 6)],
+    outputRange: [0, (Platform.OS === 'ios' && insets.bottom > 0 ? insets.bottom - 2 : 12) + (bottomDock ? -8 : 6)],
   });
   const {
     connected, current, deviceName, isPlaying, playerState, mediaError, ended,

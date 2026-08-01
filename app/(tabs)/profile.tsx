@@ -5,7 +5,7 @@ import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, RefreshControl, PanResponder,
-  Animated, Easing, Dimensions,
+  Animated, Easing, Dimensions, Platform,
 } from 'react-native';
 // Content thumbnails use expo-image: memory+disk cached, so re-renders and
 // remounts repaint instantly instead of flashing (RN's core Image flickers when
@@ -138,12 +138,17 @@ export default function ProfileScreen() {
   // NOT re-enable the pager mid-gesture (stepping INTO Posts would let it grab
   // the rest of the same touch); release/terminate restore it instead.
   const gestureActiveRef = useRef(false);
+  // OWNER DECISION (Android): like Music's pill stepper, the profile sub-tab
+  // fling stepper is iOS-only — on Android its PanResponder loses to the
+  // grids' native interception often enough to feel broken, and the armed
+  // state also turns the outer pager off. Android keeps the pager on for every
+  // sub-tab (main-tab swipes always work) and sub-tabs are navigated by taps.
   useFocusEffect(useCallback(() => {
-    setTabSwipe(activeTabRef.current === 'posts');
+    setTabSwipe(Platform.OS === 'android' || activeTabRef.current === 'posts');
     return () => setTabSwipe(true); // leaving Profile — other tabs manage their own
   }, [setTabSwipe]));
   useEffect(() => {
-    if (!gestureActiveRef.current) setTabSwipe(activeTab === 'posts');
+    if (!gestureActiveRef.current) setTabSwipe(Platform.OS === 'android' || activeTab === 'posts');
   }, [activeTab, setTabSwipe]);
 
   // Sub-tab ORDER follows what this profile actually has: Posts pinned first,
@@ -232,6 +237,7 @@ export default function ProfileScreen() {
     // On Posts, rightward moves are left to the OUTER pager (the live exit
     // drag) — claiming them here would kill its finger tracking.
     onMoveShouldSetPanResponder: (_e, g) =>
+      Platform.OS !== 'android' && // Android: stepper never claims — pager owns swipes, sub-tabs are taps
       !tabsRowTouchRef.current &&
       !(activeTabRef.current === 'posts' && g.dx > 0) &&
       Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.25,

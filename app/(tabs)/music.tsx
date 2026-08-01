@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
   Alert, TextInput, Dimensions, RefreshControl, Keyboard,
-  PanResponder, Animated, Easing,
+  PanResponder, Animated, Easing, Platform,
 } from 'react-native';
 // expo-image: memory-caches decoded covers (RN Image re-decodes on every mount).
 import { Image as ExpoImage } from 'expo-image';
@@ -177,6 +177,18 @@ export default function MusicScreen() {
   activeViewRef.current = activeView;
 
   useFocusEffect(useCallback(() => {
+    // OWNER DECISION (Android): the dwell-swipe pill stepper is iOS-only. On
+    // Android its PanResponder loses gestures to the vertical lists' native
+    // interception often enough to feel broken, while the armed state ALSO
+    // turns the outer pager off — degrading both kinds of swipe at once. So on
+    // Android the outer pager stays on permanently (main-tab swipes keep
+    // working on Music, like everywhere else) and the pills are navigated by
+    // taps, which always work.
+    if (Platform.OS === 'android') {
+      innerSwipeRef.current = false;
+      setTabSwipe(true);
+      return () => setTabSwipe(true);
+    }
     // The dwell lock must never land MID-GESTURE — yanking the pager's
     // scrollEnabled while a swipe is in flight kills the drag dead (a genuine
     // dropped-swipe path). If a swipe is active (or just ended) when the dwell

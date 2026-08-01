@@ -464,10 +464,14 @@ function TabBar({ state, navigation, position, jumpTo }: MaterialTopTabBarProps)
           top border — the gradient dissolving into the feed IS the edge. It
           still fades out as the bar condenses into chips and back on return;
           icons never move with scroll, only the glass breathes. */}
-      <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: panelFade, transform: [{ translateY: panelSink }] }]}>
-        {Platform.OS === 'ios' && <BlurView tint={blurTint} intensity={40} style={styles.blurFill} />}
-        <LinearGradient colors={scrimColors} locations={[0, 0.28, 0.55, 0.8, 1]} style={styles.blurFill} />
-      </Animated.View>
+      {/* Android pins the chrome at the condensed state (lib/feedChrome.ts), so
+          the panel would be permanently invisible there — skip compositing it. */}
+      {Platform.OS !== 'android' && (
+        <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: panelFade, transform: [{ translateY: panelSink }] }]}>
+          {Platform.OS === 'ios' && <BlurView tint={blurTint} intensity={40} style={styles.blurFill} />}
+          <LinearGradient colors={scrimColors} locations={[0, 0.28, 0.55, 0.8, 1]} style={styles.blurFill} />
+        </Animated.View>
+      )}
       <Animated.View
         style={[styles.row, { transform: [{ translateY: iconDrop }] }]}
         onLayout={(e) => { barWRef.current = e.nativeEvent.layout.width; }}
