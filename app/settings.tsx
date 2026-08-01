@@ -60,34 +60,47 @@ const GALAXY_STARS = [
   { top: 48, left: '13%', size: 2, opacity: 0.7 },
   { top: 10, left: '90%', size: 1.5, opacity: 0.8 },
   { top: 46, left: '88%', size: 2, opacity: 0.65 },
+  // Densified (owner) — still only in the text-free columns. A couple of
+  // 2.5px "near" stars among the 1-1.5px "far" ones is what gives the field
+  // its depth; opacities stagger so no two neighbours read as a pair.
+  { top: 20, left: '4%', size: 1, opacity: 0.45 },
+  { top: 56, left: '7%', size: 1.5, opacity: 0.5 },
+  { top: 4, left: '10%', size: 1.5, opacity: 0.6 },
+  { top: 38, left: '17%', size: 2.5, opacity: 0.85 },
+  { top: 26, left: '93%', size: 2.5, opacity: 0.75 },
+  { top: 58, left: '91%', size: 1, opacity: 0.5 },
+  { top: 6, left: '84%', size: 1, opacity: 0.45 },
+  { top: 36, left: '82%', size: 1.5, opacity: 0.6 },
 ] as const;
 
-// Slow-drifting sparkle for the Laybell Premium card. Same placement discipline
-// as GALAXY_STARS above — the bright particles live in the text-free columns
-// (around the icon bubble and the chevron) so none can sit under the label in a
-// longer language; the two mid-card ones are faint enough (≤0.16) to pass
-// under text without reading as noise. Each particle rises `drift`px while
-// fading in and back out, on its own duration/delay so the field never beats
-// in sync. `startY` values assume the card's ~100px height.
-const PREMIUM_PARTICLES = [
-  { left: '13%', size: 3, peak: 0.7, drift: 26, startY: 58, dur: 5200, delay: 0 },
-  { left: '7%', size: 2, peak: 0.5, drift: 34, startY: 66, dur: 6800, delay: 1400 },
-  { left: '17%', size: 2, peak: 0.45, drift: 22, startY: 44, dur: 5900, delay: 2600 },
-  { left: '86%', size: 3, peak: 0.6, drift: 30, startY: 62, dur: 6200, delay: 800 },
-  { left: '92%', size: 2, peak: 0.5, drift: 24, startY: 48, dur: 5400, delay: 2000 },
-  { left: '80%', size: 2, peak: 0.4, drift: 32, startY: 70, dur: 7200, delay: 3200 },
-  { left: '45%', size: 2, peak: 0.16, drift: 30, startY: 64, dur: 7600, delay: 500 },
-  { left: '60%', size: 2, peak: 0.14, drift: 26, startY: 52, dur: 6400, delay: 2900 },
+// Soft rising BUBBLES for the Laybell Premium card (owner iterated the first
+// take — tiny specks — into fewer, bigger, bubble-looking shapes). Each is a
+// translucent white disc with a brighter rim, rising `drift`px on a gentle
+// S-curve sway while it swells slightly and fades in and back out — champagne,
+// not confetti. Five of them, each on its own duration/delay so the field
+// never beats in sync.
+//
+// Same placement discipline as GALAXY_STARS: the larger/brighter bubbles live
+// in the text-free columns around the icon bubble and the chevron; the one
+// mid-card straggler is faint enough (0.22 peak on a 0.12-alpha fill) to pass
+// under a wrapped label without reading as noise. `startY` assumes the card's
+// ~100px height.
+const PREMIUM_BUBBLES = [
+  { left: '9%', size: 18, peak: 0.65, drift: 40, sway: 7, startY: 62, dur: 8600, delay: 0 },
+  { left: '16%', size: 10, peak: 0.5, drift: 30, sway: -5, startY: 48, dur: 7200, delay: 2600 },
+  { left: '84%', size: 22, peak: 0.55, drift: 44, sway: -8, startY: 66, dur: 9800, delay: 1200 },
+  { left: '92%', size: 12, peak: 0.5, drift: 34, sway: 6, startY: 50, dur: 7800, delay: 4200 },
+  { left: '52%', size: 14, peak: 0.22, drift: 38, sway: 9, startY: 64, dur: 10600, delay: 3000 },
 ] as const;
 
 // Module scope, per the house rule (components defined inside a render body get
 // remounted every render). Pure native-driver loops — nothing here touches the
 // JS thread after start — and Reduce Motion renders the same field as static
-// specks instead of animating it, matching how the bell handles that setting.
-function PremiumParticles() {
+// bubbles instead of animating it, matching how the bell handles that setting.
+function PremiumBubbles() {
   const styles = useThemedStyles(makeStyles);
   const [reduceMotion, setReduceMotion] = useState(false);
-  const anims = useRef(PREMIUM_PARTICLES.map(() => new Animated.Value(0))).current;
+  const anims = useRef(PREMIUM_BUBBLES.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     let alive = true;
@@ -101,13 +114,13 @@ function PremiumParticles() {
   useEffect(() => {
     if (reduceMotion) return;
     const loops = anims.map((v, i) => {
-      const p = PREMIUM_PARTICLES[i];
+      const b = PREMIUM_BUBBLES[i];
       v.setValue(0);
-      // The delay sits INSIDE the loop, so each particle also rests between
-      // cycles — the field twinkles at varied moments instead of streaming.
+      // The delay sits INSIDE the loop, so each bubble also rests between
+      // cycles — they surface at varied moments instead of streaming.
       const loop = Animated.loop(Animated.sequence([
-        Animated.delay(p.delay),
-        Animated.timing(v, { toValue: 1, duration: p.dur, easing: Easing.linear, useNativeDriver: true }),
+        Animated.delay(b.delay),
+        Animated.timing(v, { toValue: 1, duration: b.dur, easing: Easing.linear, useNativeDriver: true }),
       ]));
       loop.start();
       return loop;
@@ -117,28 +130,38 @@ function PremiumParticles() {
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {PREMIUM_PARTICLES.map((p, i) => reduceMotion ? (
+      {PREMIUM_BUBBLES.map((b, i) => reduceMotion ? (
         <View
           key={i}
-          style={[styles.premiumParticle, {
-            left: p.left, top: p.startY - p.drift / 2,
-            width: p.size, height: p.size, borderRadius: p.size / 2,
-            opacity: p.peak * 0.5,
+          style={[styles.premiumBubble, {
+            left: b.left, top: b.startY - b.drift / 2,
+            width: b.size, height: b.size, borderRadius: b.size / 2,
+            opacity: b.peak * 0.5,
           }]}
         />
       ) : (
         <Animated.View
           key={i}
-          style={[styles.premiumParticle, {
-            left: p.left, top: p.startY,
-            width: p.size, height: p.size, borderRadius: p.size / 2,
+          style={[styles.premiumBubble, {
+            left: b.left, top: b.startY,
+            width: b.size, height: b.size, borderRadius: b.size / 2,
             opacity: anims[i].interpolate({
-              inputRange: [0, 0.15, 0.75, 1],
-              outputRange: [0, p.peak, p.peak * 0.85, 0],
+              inputRange: [0, 0.18, 0.8, 1],
+              outputRange: [0, b.peak, b.peak * 0.8, 0],
             }),
-            transform: [{
-              translateY: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0, -p.drift] }),
-            }],
+            transform: [
+              { translateY: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0, -b.drift] }) },
+              // A soft S-path: out, back through centre, opposite, home — what
+              // makes it read as floating rather than launched.
+              {
+                translateX: anims[i].interpolate({
+                  inputRange: [0, 0.25, 0.5, 0.75, 1],
+                  outputRange: [0, b.sway, 0, -b.sway, 0],
+                }),
+              },
+              // Swells a touch as it rises, like a bubble nearing the surface.
+              { scale: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0.82, 1.08] }) },
+            ],
           }]}
         />
       ))}
@@ -640,7 +663,7 @@ export default function SettingsScreen() {
                 style={styles.promoPremium}
               >
                 {/* Behind the content; the card's overflow:hidden clips it. */}
-                <PremiumParticles />
+                <PremiumBubbles />
                 <View style={[styles.promoIconBubble, styles.promoIconBubbleLg]}>
                   <Ionicons name={isPremium ? 'star' : 'star-outline'} size={26} color="#FFFFFF" />
                 </View>
@@ -865,7 +888,15 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   promoPremiumLabel: { color: '#FFFFFF', fontSize: 19, fontWeight: '800', letterSpacing: -0.2 },
   promoPremiumSub: { color: 'rgba(255,255,255,0.88)', fontSize: 13.5, marginTop: 3 },
   promoIconBubbleLg: { width: 48, height: 48, borderRadius: 24 },
-  premiumParticle: { position: 'absolute', backgroundColor: '#FFFFFF' },
+  // A bubble, not a speck: barely-there white fill with a brighter rim — the
+  // rim is what sells the "bubble" read. Both scale together via the animated
+  // container opacity.
+  premiumBubble: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.55)',
+  },
   promoSpotlight: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
