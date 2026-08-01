@@ -268,7 +268,12 @@ function TabBar({ state, navigation, position, jumpTo }: MaterialTopTabBarProps)
   // Chip fill: a near-solid wash of the theme background — content peeks
   // through the GAPS between chips, not through the chips themselves, so the
   // icons pop instead of blending into the feed.
-  const chipBg = isLight ? 'rgba(242,241,237,0.94)' : mode === 'grey' ? 'rgba(22,21,20,0.92)' : 'rgba(9,9,9,0.9)';
+  // Android draws the chips on an OPAQUE bar base (see barBase below), so the
+  // near-black iOS chip washes would vanish into it — use clearly elevated
+  // tones there instead.
+  const chipBg = Platform.OS === 'android'
+    ? (isLight ? 'rgba(255,255,255,0.97)' : mode === 'grey' ? 'rgba(46,44,43,0.97)' : 'rgba(30,30,30,0.97)')
+    : (isLight ? 'rgba(242,241,237,0.94)' : mode === 'grey' ? 'rgba(22,21,20,0.92)' : 'rgba(9,9,9,0.9)');
 
   // The swipe-land haptic now fires NATIVELY from react-native-pager-view (see
   // patches/react-native-pager-view+*.patch) at the pager's own commit moment —
@@ -464,6 +469,16 @@ function TabBar({ state, navigation, position, jumpTo }: MaterialTopTabBarProps)
           top border — the gradient dissolving into the feed IS the edge. It
           still fades out as the bar condenses into chips and back on return;
           icons never move with scroll, only the glass breathes. */}
+      {/* Android: the chips sit on an OPAQUE bar base instead of the frosted
+          reactive panel. Two reasons: (1) the stationary-chips design the owner
+          picked wants a calm solid strip, not content sliding beneath; (2) the
+          band would otherwise be a window to whatever is behind the current
+          scene — and Eddie's Samsung showed OTHER pager scenes compositing
+          there as collapsed strips (StoriesTray/profile sub-tabs bleeding
+          through). Opaque base makes the bar deterministic regardless. */}
+      {Platform.OS === 'android' && (
+        <View pointerEvents="none" style={[styles.blurFill, { backgroundColor: colors.background }]} />
+      )}
       {/* Android pins the chrome at the condensed state (lib/feedChrome.ts), so
           the panel would be permanently invisible there — skip compositing it. */}
       {Platform.OS !== 'android' && (
