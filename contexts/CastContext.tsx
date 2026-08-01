@@ -1,8 +1,10 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NativeModules } from 'react-native';
-import { buildMediaInfo, buildSplashMediaInfo, postToCastItem, TV_SPLASH_MS, type CastItem } from '../lib/cast';
+import { adToCastItem, buildMediaInfo, buildSplashMediaInfo, postToCastItem, TV_SPLASH_MS, weaveAdsIntoCastQueue, type CastItem } from '../lib/cast';
 import { fetchHorizontalVideos } from '../lib/tv';
-import { recordAdImpression, adSkipAfterMs } from '../lib/ads';
+import { recordAdImpression, adSkipAfterMs, fetchTvAds, tvItemFor, type AdViewer } from '../lib/ads';
+import { EMPTY_PROFILE, buildAffinityProfile } from '../lib/feedScorer';
+import { useProfile } from './ProfileContext';
 import { useMediaSuspend } from './MediaSuspendContext';
 import type { SharePayload } from './ShareContext';
 
@@ -188,6 +190,76 @@ function RealCastProvider({ children }: { children: ReactNode }) {
   // refresh immediately instead of waiting for the next 0.5s position tick.
   const [, setQueueVersion] = useState(0);
   const bumpQueue = useCallback(() => setQueueVersion((v) => v + 1), []);
+
+  // ── TV sponsors for EVERY cast queue ────────────────────────────────────────
+  // The ad cadence used to live in exactly ONE caller (the /tv grid tap), so a
+  // queue built anywhere else — the connect wizard's "Browse videos", the post
+  // 3-dot's single-item cast (whose queue is backfilled by enrichQueue below) —
+  // reached the receiver with no sponsors at all. Confirmed on hardware: a
+  // wizard-started session logged five video loads and zero ads, because the
+  // weaving code simply never ran. This block makes the provider itself the
+  // choke point: whoever built the queue, it gets the sponsor cadence exactly
+  // once (weaveAdsIntoCastQueue refuses queues that already carry ads, so the
+  // /tv grid path keeps its own weave and is not double-served).
+  const { profile } = useProfile();
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  const adPoolRef = useRef<CastItem[]>([]);
+  // Rotates which sponsor opens each successive queue in a session.
+  const adRotRef = useRef(0);
+  const adPoolFetchedRef = useRef(false);
+
+  // Weave the pool into whatever queue is live, FORWARD of the playing item
+  // only — the current item and anything already watched stay where they are.
+  // Idempotent and cheap: bails unless the queue is ad-free VOD with something
+  // still ahead, so calling it from every path that touches the queue is safe.
+  const weaveCurrentQueue = useCallback(() => {
+    const q = queueRef.current;
+    const pool = adPoolRef.current;
+    if (!pool.length || q.length < 2) return;
+    if (q.some((x) => x.isAd || x.isLive)) return;
+    const i = indexRef.current;
+    const woven = weaveAdsIntoCastQueue(q.slice(i), pool, adRotRef.current);
+    const added = woven.length - (q.length - i);
+    if (added <= 0) return;
+    adRotRef.current += added;
+    queueRef.current = [...q.slice(0, i), ...woven];
+    bumpQueue();
+    if (__DEV__) {
+      console.log('[ADDEBUG] weaveCurrentQueue wove', added, 'sponsor(s); shape=',
+        queueRef.current.slice(i, i + 12).map((c) => (c.isAd ? 'AD' : 'v')).join(''));
+    }
+  }, [bumpQueue]);
+
+  // Fetch the sponsor pool once per session, with the SAME viewer every other
+  // ad surface builds (profile targeting fields + the real affinity profile —
+  // EMPTY_PROFILE silently drops genre-targeted campaigns, see /tv's loader).
+  // On success it weaves the live queue, which is what covers the race where
+  // the user casts before the pool has arrived.
+  const ensureAdPool = useCallback(async () => {
+    if (adPoolFetchedRef.current) return;
+    adPoolFetchedRef.current = true;
+    try {
+      const p: any = profileRef.current;
+      const uid = p?.id ?? null;
+      const affinity = uid ? await buildAffinityProfile(uid) : EMPTY_PROFILE;
+      const viewer: AdViewer = {
+        id: uid,
+        profile: p ? { age: p.age, gender: p.gender, latitude: p.latitude, longitude: p.longitude } : null,
+        affinity,
+      };
+      const ads = await fetchTvAds(viewer);
+      adPoolRef.current = ads
+        .map((s, i) => adToCastItem(tvItemFor(s, i)))
+        .filter(Boolean) as CastItem[];
+      if (__DEV__) console.log('[ADDEBUG] cast sponsor pool =', adPoolRef.current.length);
+      if (adPoolRef.current.length) weaveCurrentQueue();
+    } catch {
+      // Offline / pre-migration: allow a later cast to retry rather than
+      // pinning this session ad-free on one failed fetch.
+      adPoolFetchedRef.current = false;
+    }
+  }, [weaveCurrentQueue]);
   // Full-screen in-app remote visibility — see the CastValue doc for the rules.
   const [remoteOpen, setRemoteOpen] = useState(false);
   // Comments for the on-TV video (see the CastValue doc). While set, the remote
@@ -279,14 +351,24 @@ function RealCastProvider({ children }: { children: ReactNode }) {
       queueRef.current = [item, ...others];
       indexRef.current = 0;
       bumpQueue();
+      // The backfilled queue is built from raw TV videos — give it the sponsor
+      // cadence like any other queue (no-op until the pool has arrived; the
+      // pool fetch weaves on completion for the other side of that race).
+      weaveCurrentQueue();
     } catch { /* pre-migration / offline — remote just has no up-next */ }
-  }, [bumpQueue]);
+  }, [bumpQueue, weaveCurrentQueue]);
 
   const cast = useCallback((item: CastItem, queue?: CastItem[]) => {
     const q = queue && queue.length ? queue : [item];
     const idx = Math.max(0, q.findIndex((x) => x.id === item.id));
     queueRef.current = q;
     indexRef.current = idx;
+    // Sponsor cadence for ad-less queues (the wizard's "Browse videos", any
+    // future caller) — pre-woven queues from the /tv grid pass through
+    // untouched. The pool fetch is kicked here too for the first cast of a
+    // session; when it lands it weaves whatever queue is live by then.
+    weaveCurrentQueue();
+    ensureAdPool();
     // No real queue supplied (single-item cast, e.g. a post's 3-dot) → pull the
     // TV feed in behind it so there's always a next video to roll into.
     if (!queue || queue.length <= 1) enrichQueue(item);
@@ -307,7 +389,7 @@ function RealCastProvider({ children }: { children: ReactNode }) {
       // wait for the client (no dialog); the tab path already behaves this way.
       if (!connected) { try { GCast?.showCastDialog?.(); } catch {} }
     }
-  }, [client, loadIndex, connected, enrichQueue]);
+  }, [client, loadIndex, connected, enrichQueue, weaveCurrentQueue, ensureAdPool]);
 
   // When a client appears and something was queued pre-connection, load it —
   // and expand the remote, so "connect → your video is playing, here are the
@@ -334,12 +416,22 @@ function RealCastProvider({ children }: { children: ReactNode }) {
     try { client.loadMedia({ mediaInfo: buildSplashMediaInfo(), autoplay: true })?.catch?.(() => {}); } catch {}
   }, [client, current]);
 
+  // A session coming up fetches the sponsor pool right away — the connect
+  // handshake takes seconds, so the pool is normally ready before the wizard's
+  // "Browse videos" is even tappable, and the first queue weaves synchronously.
+  useEffect(() => {
+    if (connected) ensureAdPool();
+  }, [connected, ensureAdPool]);
+
   // Session ended (disconnected): clear what we thought was playing.
   useEffect(() => {
     if (!connected) {
       setCurrent(null); queueRef.current = []; indexRef.current = 0; pendingRef.current = null;
       if (transitionRef.current) { clearTimeout(transitionRef.current); transitionRef.current = null; }
       hasLoadedRef.current = false;
+      // Sponsor pool refetches per session — eligibility and budgets move.
+      adPoolFetchedRef.current = false;
+      adPoolRef.current = [];
       setRemoteOpen(false);
       setCommentsFor(null);
       setShareFor(null);

@@ -14,7 +14,7 @@
 
 import { aspectToNumber } from './aspectRatio';
 import { liveThumbnailUrl, type LiveStream } from './live';
-import { type AdMeta } from './ads';
+import { TV_AD_EVERY_VIDEOS, TV_AD_FIRST_VIDEOS, type AdMeta } from './ads';
 
 // HLS mime — tells the default media receiver to use its HLS player.
 export const HLS_CONTENT_TYPE = 'application/x-mpegURL';
@@ -144,6 +144,44 @@ export function liveToCastItem(l: LiveStream): CastItem | null {
     authorId: l.user_id ?? null,
     isLive: true,
   };
+}
+
+// ─── Sponsor cadence for cast queues ──────────────────────────────────────────
+/**
+ * Weave sponsor items into a cast queue at the Laybell TV cadence: first ad
+ * after TV_AD_FIRST_VIDEOS videos, then one every TV_AD_EVERY_VIDEOS — counted
+ * since the last sponsor, so the opening gap can differ (identical to the
+ * counting the /tv grid tap uses).
+ *
+ * Returns `items` UNCHANGED when there is nothing to do: empty pool, a queue
+ * that already carries ads (never double-weave a pre-woven queue), or a queue
+ * with lives in it (ads must not interrupt live-hopping — a live's queue is
+ * other lives, and a VOD ad in the middle of it would yank the viewer out of
+ * real-time).
+ *
+ * `startRotation` offsets which sponsor comes first, so consecutive queues in
+ * one session rotate through the pool instead of always opening with the same
+ * advertiser. Callers pass a running counter and advance it by the number of
+ * ads actually woven.
+ */
+export function weaveAdsIntoCastQueue(items: CastItem[], adPool: CastItem[], startRotation = 0): CastItem[] {
+  if (!adPool.length || !items.length) return items;
+  if (items.some((x) => x.isAd || x.isLive)) return items;
+  const out: CastItem[] = [];
+  let adRot = startRotation;
+  let sinceAd = 0;
+  let need = TV_AD_FIRST_VIDEOS;
+  for (const it of items) {
+    out.push(it);
+    sinceAd++;
+    if (sinceAd >= need) {
+      out.push(adPool[adRot % adPool.length]);
+      adRot++;
+      sinceAd = 0;
+      need = TV_AD_EVERY_VIDEOS;
+    }
+  }
+  return out;
 }
 
 // ─── Between-posts splash ─────────────────────────────────────────────────────
