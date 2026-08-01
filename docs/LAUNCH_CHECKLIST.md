@@ -327,18 +327,17 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
    organizational payments profile, submit LLC docs + the D-U-N-S. After it clears, the
    app dashboard should stop showing the 20-tester closed-test requirement (it is a
    personal-account rule); if it still shows, that is a support ticket, not a rebuild.
-3. **Apple organization conversion** — the D-U-N-S came FROM Apple's own flow, so this
-   may already be mid-flight. **Safe-resume path (Eddie couldn't remember if he started;
-   never re-enter details blind):** (a) developer.apple.com/account → Membership — a
-   "being reviewed" banner = in flight, entity type "Organization" = done, "Individual"
-   with no banner = stalled or never started; (b) search the inbox that got the D-U-N-S
-   email for Apple Developer case threads; (c) either way, developer.apple.com/contact
-   (Membership topic) with the Apple ID + Team ID and ask "is there an open
-   entity-conversion case for this team?" — it is case-driven on ONE team, so asking can
-   never duplicate it. ⚠️ Never start a fresh org ENROLLMENT under a different Apple ID
-   (second team, second $99, app transfers). Verification often ends with a phone call.
-   Then the **Paid Applications agreement**, which is THE gate on the four blocked money
-   tests (§0.2 list above).
+3. **Apple organization conversion — SELF-SERVE, confirmed 2026-07-31.** Membership page
+   verified "Enrolled as: Individual", no case in flight (the D-U-N-S step was the
+   prerequisite, not the conversion). The flow: developer.apple.com/account →
+   "Update your information" → **"Switch to organization membership"** → Provide
+   updates. Enter: legal name exactly as SDAT spells it (`Laybell LLC`), the D-U-N-S,
+   the LLC's MARYLAND address (not the personal NC one on file), laybell.app, and
+   confirm authority to bind the org. Review takes days-to-weeks and often ends with a
+   verification phone call; Team ID/apps/certs all carry over. ⚠️ Never start a fresh
+   org ENROLLMENT under a different Apple ID (second team, second $99, app transfers).
+   The moment it clears → App Store Connect → Agreements → **Paid Applications**, THE
+   gate on the four blocked money tests (§0.2 list above).
 4. **Android dev client build** — needs NO Play account, do any time, ~20 min queue:
    `npx eas build -p android --profile development` → install the APK on the Samsung →
    it connects to the same Metro server as the iPhone. First build auto-generates the
