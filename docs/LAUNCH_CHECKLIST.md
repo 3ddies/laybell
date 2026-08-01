@@ -300,129 +300,96 @@ and means the first real users' crashes are invisible.
 
 ---
 
-## 0.2b 📋 THE TWO-STORE WORKFLOW — Android (Samsung) + iOS together
+## 0.2b 📋 THE LIST — what's left, Android + iOS in one lane
 
-**This is "the list" (updated 2026-07-31).** Interleaved by efficiency: the shared errands
-sit first because each one unlocks BOTH stores; everything indented under a step depends
-on it. Items marked ⏳ have external lead time — start those regardless of order.
+**Updated 2026-08-01.** Ordered so the two stores advance together and the money code is
+tested ONCE, with both rails live (owner's call — one sitting, not two).
 
-### Where the Android track stands
-- ✅ Personal Play Console account created.
-- ✅ `laybell.app` verified for the organization — Google Search Console, **Domain**
-  property, TXT record at GoDaddy, same Google account as the Play Console owner.
-- ✅ **D-U-N-S NUMBER IN HAND** (found 2026-07-31): issued for **"Laybell LLC"** via
-  Apple Developer's enrollment flow — it's in Eddie's email, search "DUNS". No D&B
-  wait exists; both org conversions can proceed immediately.
-- ⏸️ **Org account-type conversion STARTED, paused at the payments-profile step.** It
-  wants a NEW *organizational* payments profile (a personal one can never convert).
-  Resume at: Play Console → Developer account → About you → Change account type.
-- Nothing built or published yet; no Android binary exists.
+### ✅ Done (stop re-checking these)
 
-### The efficient order
+| | |
+|---|---|
+| D-U-N-S | In hand, issued to **Laybell LLC** via Apple's flow — never apply again |
+| Apple Team ID | `7X9PRLSGZC`, wired into the live AASA |
+| Apple org conversion | **Submitted 2026-07-31**, case ID emailed — awaiting review |
+| Google org conversion | **Completed 2026-08-01** (CP 575 accepted path), org payments profile linked |
+| `laybell.app` | Live, verified for the org in Search Console (Domain property, GoDaddy TXT) |
+| Backend | All SQL applied + verified; 16 edge fns deployed; `send-push` redeployed |
+| App Store Connect | Credit IAP products created; RevenueCat iOS configured (`iosApiKey` set) |
 
-1. ✅ ~~D-U-N-S number for the Maryland LLC~~ **IN HAND** — see above. The bottleneck
-   is now the two verifications themselves (days-to-weeks of Apple/Google processing),
-   so file BOTH now and let them run while everything else happens in parallel.
-2. ✅ **Google org conversion — COMPLETED by the owner 2026-08-01** (CP 575 uploaded,
-   flow finished). **Two things to confirm on the dashboard:** Account type now reads
-   **Organization**, and — the whole point — the **20-tester / 14-day closed-testing
-   requirement is GONE** (personal-account rule). If it still shows after the org type
-   flips, that is a support ticket, not a rebuild. Original submission details: New ORGANIZATION payments profile
-   created and linked (a personal profile can never convert; country + account type are
-   permanent on a profile), org details filed: Private company / 1–10 employees /
-   `+12408068282` / `https://laybell.app` (green "Website verified" from the Search
-   Console TXT). Contact = Edwin Devron Hall, **`support@laybell.app`** — Google requires
-   an address on the org's own domain, NOT the Google-account Gmail, so the ImprovMX
-   alias is load-bearing here. Left on "Google is checking whether your new payments
-   profile is verified"; account type still reads Personal until it clears. If the
-   profile fails automated verification, Google asks for org documentation — which it
-   did, 2026-07-31. **Accepted for Laybell LLC: the IRS CP 575** (the EIN confirmation
-   letter — owner had it on file, uploaded 2026-08-01). Fallback if it is ever lost: a
-   Maryland SDAT **Certificate of Status** or the stamped **Articles of Organization**
-   (both from Business Express, issued online), or an IRS **147C** replacement letter
-   (call 800-829-4933 — slow, hold times). ⚠️ **NOT valid for this entity, despite being
-   on Google's accepted list:** Forms 8871/8872 (political organizations) and Form 990
-   (tax-exempt nonprofits) — a for-profit LLC files none of them and submitting one
-   reads as a mismatch. SEC filings are public-company only. Upload rules that cause
-   rejections: legal name must match the payments profile (case doesn't matter), address
-   must match, full page unedited — **do not redact the EIN**, it is the thing being
-   verified. **After it clears, check the app dashboard — the
-   20-tester closed-test requirement should be gone** (personal-account rule); if it
-   still shows, that is a support ticket, not a rebuild.
-   ⚠️ **WATCH `support@laybell.app`** — both stores now correspond about verification and
-   Google will use that address specifically.
-3. ✅ **Apple organization conversion — SUBMITTED 2026-07-31**, case ID emailed; Apple
-   replies within ~1 business day, then days-to-weeks of verification (often closing
-   with a phone call to the business number — answer unknown numbers for a while).
-   Nothing to do but wait. **The moment it clears → App Store Connect → Agreements →
-   Paid Applications.** Submitted as: Laybell LLC / laybell.app / D-U-N-S / founder
-   Yes / DBA No / org holds membership No / tax ID None. For reference, the flow was
-   developer.apple.com/account → "Update your information" →
-   **"Switch to organization membership"** → Provide updates. Enter: legal name exactly as SDAT spells it (`Laybell LLC`), the D-U-N-S,
-   the address on the LLC's D&B record — Eddie's HOME address doubles as the business
-   address, so that is likely it (Apple matches against D&B, not against a theory of
-   where an LLC "should" be; the SDAT record separately keeps a Maryland resident
-   agent/principal office, which is fine and unrelated) — laybell.app, and
-   confirm authority to bind the org. Review takes days-to-weeks and often ends with a
-   verification phone call; Team ID/apps/certs all carry over. ⚠️ Never start a fresh
-   org ENROLLMENT under a different Apple ID (second team, second $99, app transfers).
-   The moment it clears → App Store Connect → Agreements → **Paid Applications**, THE
-   gate on the four blocked money tests (§0.2 list above).
-4. **Android dev client build** — needs NO Play account, do any time, ~20 min queue:
-   `npx eas build -p android --profile development` → install the APK on the Samsung →
-   it connects to the same Metro server as the iPhone. First build auto-generates the
-   signing keystore (needed by 7/8).
-   🔴 **FIRST ATTEMPT FAILED 2026-07-31** (build `bf390ebc-6c98-4618-8f3d-7b9f84b4ee67`,
-   "Gradle build failed with unknown error" in the Run-gradlew phase). **The actual
-   Gradle error has NOT been read yet** — expo.dev build logs need the owner's login, so
-   get it from the build page before changing anything. Timing is a clue: 3m15s
-   end-to-end is far too fast for a full Android compile, so Gradle died EARLY
-   (dependency resolution / plugin application / manifest merge), not late in Kotlin
-   compilation.
-   RULED OUT so far, don't re-chase: (a) the two Android-touching patch-package patches
-   (pager-view, track-player) — a Kotlin compile error would fail late, not at 3min;
-   (b) `com.facebook.react:react-native:+` in react-native-google-cast's build.gradle
-   looked like a dead pre-0.71 coordinate, but **15 modules use it** including
-   gesture-handler/screens/async-storage, so RN's Gradle plugin resolves it fine;
-   (c) `expo-doctor` — 18/18 checks pass, no known package incompatibility.
-   ⚠️ **BUILD CREDITS ARE EXHAUSTED for the month — every further build is billed
-   pay-as-you-go.** Batch fixes; do not iterate blind.
+### 🔴 THE BLOCKER — one thing gates the most valuable work
 
-   **Build-readiness VERIFIED 2026-07-31** — `google-services.json` is absent and
-   `android.googleServicesFile` unset, which normally breaks an Android build, but it
-   does NOT here: `@react-native-google-signin/google-signin` is configured WITH options
-   (`iosUrlScheme`), and its plugin's `withGoogleSignInRoot` then takes the
-   `withGoogleSignInWithoutFirebase` path — iOS URL scheme only, never adding the
-   `com.google.gms` classpath/apply-plugin to Gradle. expo-notifications doesn't require
-   it at build time either. Consequence: the build succeeds, but **Google Sign-In and
-   FCM push are inert on Android until Firebase is added** (steps 7/8) — expected, not a
-   regression.
-5. **First Android pass on the Samsung** — the surfaces that genuinely differ there:
-   hardware back everywhere (chat threads, the freebie sheet, reels), tab bar (scrim,
-   no iOS blur), keyboard `pan` mode in DMs/comments, SwipeBackPager feel, Chromecast
-   (Android auto-discovers — the wizard's discovery kick is iOS-only), notifications.
-6. **💰 Play money-path test — the sleeper.** The personal account is ENOUGH (the
-   20-tester rule only gates production): create the app in Play Console → internal
-   testing track → upload `npx eas build -p android --profile preview` → create the
-   credit products (ids must match `lib/purchases.ts` `laybell_credits_*`) → RevenueCat:
-   add the Play project + service-account JSON → add yourself as a license tester →
-   buy credits in sandbox. **First-ever real execution of webhook → ledger → tips/shop/
-   offers, before Apple's paperwork clears.** The webhook already maps PLAY_STORE →
-   `google_play`.
-7. **FCM V1 credentials in EAS** (Firebase project → service-account key →
-   `eas credentials`) — Android push through the existing `send-push` fn.
-8. **Android OAuth client** for Google sign-in — needs the SHA-1 from the EAS keystore
-   (exists after step 4).
-9. **`assetlinks.json` on laybell.app** — Android's AASA equivalent, makes the
-   `laybell.app/post|profile|…` intent filters auto-verify. Needs the keystore's SHA-256
-   fingerprint (`eas credentials`); Claude writes + deploys the file given the print.
-10. **Play listing prep**, parallel to the iOS §4 assets: data safety form, content
-    rating questionnaire (UGC), store listing (reuse `docs/STORE_LISTING.md`), and
-    US-only availability to match the iOS decision.
+**The Android build fails.** Build `bf390ebc-6c98-4618-8f3d-7b9f84b4ee67`, Gradle phase,
+**and the actual error has never been read** (expo.dev logs need the owner's login).
+Everything Android-side — and therefore the combined money test — waits behind it.
 
-### iOS-only items unchanged by this track
-App Store numeric ID (Team ID ✅ 2026-07-31) · screenshots · Diagnostics privacy label · AASA content-type
-note (§0.4) · the production build itself.
+- **ACTION: open the build → "Run gradlew" → paste what follows `FAILURE:` /
+  `What went wrong:`.**
+- Already ruled out with evidence (don't re-chase): the two Android-touching
+  patch-package patches (a Kotlin error would fail late, not at 3min); the
+  dead-looking `com.facebook.react:react-native:+` coordinate in react-native-google-cast
+  (15 modules use it, incl. gesture-handler/screens/async-storage); `expo-doctor` (18/18).
+- ⚠️ **Build credits exhausted this month — every attempt is billed.** Batch fixes; read
+  the error before spending another.
+
+### 💰 THE MONEY TEST — one sitting, both stores (owner's decision)
+
+Every line of payment code has executed **zero times**. This session is the single
+biggest risk retirement left. It needs BOTH rails ready, so treat the items below as one
+checklist that unlocks one event.
+
+**Apple side — waiting on review, then ~an hour of setup**
+1. Org conversion clears (in review now).
+2. **Paid Applications agreement** — App Store Connect → Agreements. Banking + tax.
+   THIS is the gate: until it's active, App Store Connect serves NO IAP products to
+   StoreKit and RevenueCat fails at startup.
+3. **Enroll in the App Store Small Business Program the same day** — free, easily
+   forgotten, and every fee rate in the app is engineered at break-even until the 15%
+   rate lands (see §0.3).
+4. An iOS build carrying RevenueCat (native — nothing payment-related works in Expo Go).
+
+**Android side — waiting on the build fix, then ~an hour**
+5. Fix the Android build (above), produce a `preview` AAB.
+6. Play Console → create the app → **internal testing** track → upload.
+7. Create the credit products. **IDs must match exactly** (`lib/purchases.ts`):
+   `laybell_credits_499` / `_999` / `_1999` / `_4999` / `_9999`.
+8. RevenueCat → add the Play app + service-account JSON → **set
+   `extra.revenuecat.androidApiKey` in app.json** (currently `""`, so the whole
+   monetization stack is inert on Android) → rebuild.
+9. Add yourself as a **license tester** (sandbox purchases, no real charge).
+
+**The sitting itself — run the same script on both phones**
+10. Buy a credit pack → webhook → ledger (`funding` transaction, balance appears).
+11. Tip a creator → `earnings` with the hold, server-computed fee.
+12. Shop: buy, lease, free-claim → delivery + the `Sold`/counters.
+13. Make an offer → escrow held → accept → payout leg; and decline → refund leg.
+14. Spotlight + Ad Manager purchases (still simulated — confirm the copy is honest).
+15. `select public.ledger_verify();` — must return **zero rows**.
+
+### 🟡 Parallel, unblocked, any time
+
+- **Samsung first pass** (needs only the dev build): hardware back everywhere, tab bar
+  (scrim, no iOS blur), keyboard `pan` in DMs/comments, SwipeBackPager feel, Chromecast
+  (Android auto-discovers), notifications.
+- **FCM V1 credentials** in EAS (Firebase project → service-account key) — Android push.
+- **Android OAuth client** for Google sign-in — needs the keystore SHA-1.
+- **`assetlinks.json`** — needs the Play **app-signing** SHA-256 (NOT the upload key);
+  Claude writes + deploys it given the fingerprint.
+- **App Store numeric ID** → `node scripts/set-store-ids.mjs --app-store-id <n>`. Exists
+  the moment the App Store Connect record is created — no need to be live.
+- **Store assets both stores**: screenshots + seeded demo account (copy written,
+  `docs/STORE_LISTING.md`), Play data-safety form, content rating (UGC), US-only
+  availability to match iOS, iOS "Diagnostics" privacy label.
+
+### ⏳ Passive — no action, just don't forget
+
+- ASCAP application (filed 07-28).
+- **BMI**: all revenue is reported; **contact Violet Cieri at ~$18,500 gross** (§5.1).
+  Monthly check pairs with the §8 stream-hours auto-terminate clause.
+- Sentry trial lapsing to free.
+- Stripe funding + flipping `payoutsAvailable()` — deliberately post-launch.
+- Maryland Form 1, **due April 15 2027** ($300) — first one, nothing owed before then.
+
 
 ---
 
