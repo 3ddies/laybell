@@ -109,9 +109,13 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   // would drive its rounded corners into the screen's curved edge — there we stop
   // ~14px sooner (`- 8`) to keep the bottom boundary clear. Same feel either way.
   const barHidden = listenMode || bottomDock;
+  // Mirrors the tab bar's iconDrop exactly (see (tabs)/_layout.tsx): iOS rides
+  // down into the button-less home-indicator band; Android stays above
+  // insets.bottom because under edge-to-edge that band holds the REAL system
+  // nav buttons and the system consumes touches there.
   const chromeSlide = feedChrome.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, (insets.bottom > 0 ? insets.bottom - 2 : 12) + (barHidden ? -8 : 6)],
+    outputRange: [0, (Platform.OS === 'ios' && insets.bottom > 0 ? insets.bottom - 2 : 12) + (barHidden ? -8 : 6)],
   });
 
   // Overlay variants (Create tab card / camera side chip): the player waits

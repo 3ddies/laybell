@@ -254,9 +254,16 @@ function TabBar({ state, navigation, position, jumpTo }: MaterialTopTabBarProps)
   // As the bar condenses, the icon row DROPS toward the bottom edge of the
   // screen (riding the same gesture-following value), so the chips settle low
   // like they've been set down — and float back up as the bar reassembles.
+  // iOS sinks the chips into the home-indicator band — a button-less gesture
+  // zone, so nothing fights back. Android's inset band is DIFFERENT under
+  // edge-to-edge (SDK 54 enforces it): it holds the real system back/home/
+  // recents buttons (3-button nav, ~48dp) or the gesture pill, and the system
+  // consumes touches there — chips dropped into it collide and go dead. So on
+  // Android the condensed state keeps the small fixed drift only, staying
+  // fully above insets.bottom.
   const iconDrop = feedChrome.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, insets.bottom > 0 ? insets.bottom - 2 : 12],
+    outputRange: [0, Platform.OS === 'ios' && insets.bottom > 0 ? insets.bottom - 2 : 12],
   });
   // Chip fill: a near-solid wash of the theme background — content peeks
   // through the GAPS between chips, not through the chips themselves, so the

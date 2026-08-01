@@ -248,18 +248,6 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
     }
   }
 
-  if (permission && !permission.granted) {
-    return (
-      <View style={styles.center}>
-        <Ionicons name="images-outline" size={36} color={colors.textTertiary} />
-        <Text style={styles.permText}>{t('photoGrid.permText')}</Text>
-        <TouchableOpacity style={styles.permBtn} onPress={() => requestPermission()}>
-          <Text style={styles.permBtnText}>{t('photoGrid.grantAccess')}</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   // Rebuilt only when the asset list actually changes — NOT on every render (a
   // scroll-driven parent re-render, a loading/resolving toggle), so FlashList
   // isn't handed a fresh data array (and forced to re-diff the whole list) each
@@ -295,6 +283,24 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
       />
     );
   }, [selectedIds, numbered, resolvingId, handleSelect, handleRemove, styles, colors.text]);
+
+  // Permission gate — deliberately AFTER every hook above. usePermissions()
+  // resolves from null on the second render, so an early return placed between
+  // hooks flips the hook count mid-lifecycle ("Rendered fewer hooks than
+  // expected", caught on Android's first-ever run where the media permission
+  // starts denied). Keeping the gate here also makes the grant-access UI
+  // actually reachable on denial instead of tripping the ErrorBoundary.
+  if (permission && !permission.granted) {
+    return (
+      <View style={styles.center}>
+        <Ionicons name="images-outline" size={36} color={colors.textTertiary} />
+        <Text style={styles.permText}>{t('photoGrid.permText')}</Text>
+        <TouchableOpacity style={styles.permBtn} onPress={() => requestPermission()}>
+          <Text style={styles.permBtnText}>{t('photoGrid.grantAccess')}</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <FlashList

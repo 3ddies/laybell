@@ -49,6 +49,17 @@ export default function ElasticSwipeView({ children, style, disabled = false, re
       !disabledRef.current
       && Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 4,
     onMoveShouldSetPanResponderCapture: () => false,
+    // Android only (iOS ignores this): DON'T block native containers from
+    // intercepting after we claim. On iOS the tab pager's UIScrollView freely
+    // steals a horizontal gesture from JS mid-flight — that's why swiping
+    // between tabs from a feed card always works there. The RN default here
+    // (true) forbids Android's ViewPager2 from doing the same steal, so the
+    // card rubber-banded IN PLACE of the tab changing on slower swipes.
+    // Yielding restores the iOS contract: the pager takes over when the swipe
+    // is really a page change (we get onPanResponderTerminate and spring back),
+    // and on surfaces whose pager is vertical (reels) a horizontal drag is
+    // never contested, so the rubber-band works exactly as before.
+    onShouldBlockNativeResponder: () => false,
     onPanResponderMove: (_e, g) => {
       translateX.setValue(Math.sign(g.dx) * rubber(Math.abs(g.dx)));
     },
