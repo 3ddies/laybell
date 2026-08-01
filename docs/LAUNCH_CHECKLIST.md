@@ -331,8 +331,18 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
    an address on the org's own domain, NOT the Google-account Gmail, so the ImprovMX
    alias is load-bearing here. Left on "Google is checking whether your new payments
    profile is verified"; account type still reads Personal until it clears. If the
-   profile fails automated verification, Google asks for a photo ID + Articles of
-   Organization (Maryland SDAT). **After it clears, check the app dashboard — the
+   profile fails automated verification, Google asks for org documentation — which it
+   did, 2026-07-31. **Accepted for Laybell LLC: the IRS CP 575** (the EIN confirmation
+   letter — owner had it on file, uploaded 2026-08-01). Fallback if it is ever lost: a
+   Maryland SDAT **Certificate of Status** or the stamped **Articles of Organization**
+   (both from Business Express, issued online), or an IRS **147C** replacement letter
+   (call 800-829-4933 — slow, hold times). ⚠️ **NOT valid for this entity, despite being
+   on Google's accepted list:** Forms 8871/8872 (political organizations) and Form 990
+   (tax-exempt nonprofits) — a for-profit LLC files none of them and submitting one
+   reads as a mismatch. SEC filings are public-company only. Upload rules that cause
+   rejections: legal name must match the payments profile (case doesn't matter), address
+   must match, full page unedited — **do not redact the EIN**, it is the thing being
+   verified. **After it clears, check the app dashboard — the
    20-tester closed-test requirement should be gone** (personal-account rule); if it
    still shows, that is a support ticket, not a rebuild.
    ⚠️ **WATCH `support@laybell.app`** — both stores now correspond about verification and
