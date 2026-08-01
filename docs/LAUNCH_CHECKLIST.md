@@ -306,6 +306,9 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
 - ✅ Personal Play Console account created.
 - ✅ `laybell.app` verified for the organization — Google Search Console, **Domain**
   property, TXT record at GoDaddy, same Google account as the Play Console owner.
+- ✅ **D-U-N-S NUMBER IN HAND** (found 2026-07-31): issued for **"Laybell LLC"** via
+  Apple Developer's enrollment flow — it's in Eddie's email, search "DUNS". No D&B
+  wait exists; both org conversions can proceed immediately.
 - ⏸️ **Org account-type conversion STARTED, paused at the payments-profile step.** It
   wants a NEW *organizational* payments profile (a personal one can never convert).
   Resume at: Play Console → Developer account → About you → Change account type.
@@ -313,15 +316,18 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
 
 ### The efficient order
 
-1. ⏳ **D-U-N-S number for the Maryland LLC** — free, dnb.com, days-to-weeks. START
-   FIRST; both org conversions wait on it and nothing else does.
-   - → unlocks **2** (Google) and **3** (Apple). One errand, both stores.
+1. ✅ ~~D-U-N-S number for the Maryland LLC~~ **IN HAND** — see above. The bottleneck
+   is now the two verifications themselves (days-to-weeks of Apple/Google processing),
+   so file BOTH now and let them run while everything else happens in parallel.
 2. **Finish the Google org conversion** — resume the paused flow, create the
-   organizational payments profile, submit LLC docs + D-U-N-S. After it clears, the app
-   dashboard should stop showing the 20-tester closed-test requirement (it is a
+   organizational payments profile, submit LLC docs + the D-U-N-S. After it clears, the
+   app dashboard should stop showing the 20-tester closed-test requirement (it is a
    personal-account rule); if it still shows, that is a support ticket, not a rebuild.
-3. **Apple organization conversion** — same D-U-N-S. Then the **Paid Applications
-   agreement**, which is THE gate on the four blocked money tests (§0.2 list above).
+3. **Apple organization conversion** — the D-U-N-S came FROM Apple's own flow, so this
+   was evidently already begun: check its status at developer.apple.com (Membership) and
+   finish any pending step — Apple's org verification often ends with a verification
+   phone call. Then the **Paid Applications agreement**, which is THE gate on the four
+   blocked money tests (§0.2 list above).
 4. **Android dev client build** — needs NO Play account, do any time, ~20 min queue:
    `npx eas build -p android --profile development` → install the APK on the Samsung →
    it connects to the same Metro server as the iPhone. First build auto-generates the
