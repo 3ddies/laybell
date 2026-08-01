@@ -358,6 +358,22 @@ on it. Items marked ⏳ have external lead time — start those regardless of or
    `npx eas build -p android --profile development` → install the APK on the Samsung →
    it connects to the same Metro server as the iPhone. First build auto-generates the
    signing keystore (needed by 7/8).
+   🔴 **FIRST ATTEMPT FAILED 2026-07-31** (build `bf390ebc-6c98-4618-8f3d-7b9f84b4ee67`,
+   "Gradle build failed with unknown error" in the Run-gradlew phase). **The actual
+   Gradle error has NOT been read yet** — expo.dev build logs need the owner's login, so
+   get it from the build page before changing anything. Timing is a clue: 3m15s
+   end-to-end is far too fast for a full Android compile, so Gradle died EARLY
+   (dependency resolution / plugin application / manifest merge), not late in Kotlin
+   compilation.
+   RULED OUT so far, don't re-chase: (a) the two Android-touching patch-package patches
+   (pager-view, track-player) — a Kotlin compile error would fail late, not at 3min;
+   (b) `com.facebook.react:react-native:+` in react-native-google-cast's build.gradle
+   looked like a dead pre-0.71 coordinate, but **15 modules use it** including
+   gesture-handler/screens/async-storage, so RN's Gradle plugin resolves it fine;
+   (c) `expo-doctor` — 18/18 checks pass, no known package incompatibility.
+   ⚠️ **BUILD CREDITS ARE EXHAUSTED for the month — every further build is billed
+   pay-as-you-go.** Batch fixes; do not iterate blind.
+
    **Build-readiness VERIFIED 2026-07-31** — `google-services.json` is absent and
    `android.googleServicesFile` unset, which normally breaks an Android build, but it
    does NOT here: `@react-native-google-signin/google-signin` is configured WITH options
