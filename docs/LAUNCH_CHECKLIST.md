@@ -1073,9 +1073,18 @@ the BMI form walkthrough, and the order of operations.
 
 - ✅ **[OWNER]** **ASCAP emailed** 2026-07-28 (`weblicense@ascap.com`) — awaiting reply.
 - ✅ **[OWNER]** **BMI LICENSED** 2026-07-28 — Digital Multi-Use Performance License
-      Agreement, **$385/year, one-year term, NO reporting requirements**, grants streaming
-      performance rights for the BMI repertoire. ⚠️ **Annual renewal — diary it**; a lapse
-      means performing BMI repertoire unlicensed.
+      Agreement, **$385/year, one-year term**, grants streaming performance rights for the
+      BMI repertoire. ⚠️ **Annual renewal — diary it**; a lapse means performing BMI
+      repertoire unlicensed.
+- 📧 **BMI reporting clarified by Violet Cieri (vcieri@bmi.com), email 2026-07-31** —
+      supersedes the earlier "no reporting requirements" read: **under this structure ALL
+      revenue is reported.** Laybell tracks its revenue, and **at $18,500 gross revenue,
+      contact Violet** to move to "the next most appropriate option" (the percentage-based
+      structure). Practical monthly check (pair with the §8 stream-hours check —
+      auto-terminate risk at 20% over 59,000 hrs, metered by `stream_hours.sql`):
+      gross = App Store Connect + Play Console payment reports + anything direct. The
+      threshold is generous pre-launch; the point is to notice the approach, not to fear it.
+      **Save the email.**
 - [ ] **[OWNER]** Get written confirmation the licence covers **on-demand interactive audio
       AND livestream audio-visual**. A "website & mobile app" audio licence may not, and
       finding out post-launch is the expensive way. **Save the reply.**
