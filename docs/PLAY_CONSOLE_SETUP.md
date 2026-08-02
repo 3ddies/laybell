@@ -3,6 +3,30 @@
 **Written 2026-08-02.** Everything needed to make purchases work on Android, in the
 order that actually works. iOS is already done; this is the other rail.
 
+## Progress
+
+| Step | State |
+|---|---|
+| 1. Service account + 36h clock | ✅ **Done 2026-08-02 ~08:30.** Project `laybell`; all 3 APIs enabled; service account `revenuecat-play@laybell.iam.gserviceaccount.com` with Pub/Sub Editor + Monitoring Viewer; JSON key downloaded; invited to Play Console and showing **Active**. ⏳ **Credentials valid for RevenueCat by ~Mon 2026-08-03 evening** — "Active" in Play does NOT mean RevenueCat will accept them yet. |
+| 2. Create app in Play Console | ⬜ |
+| 3. App content declarations | ⬜ |
+| 4. Build the AAB | ⬜ billed — owner's call |
+| 5. Upload to internal testing | ⬜ |
+| 6. Create the 6 products | ⬜ |
+| 7. RevenueCat wiring | ⬜ blocked until step 1's 36h elapses AND step 6 |
+| 8. `androidApiKey` → OTA | ⬜ |
+| 9. License tester | ⬜ |
+| 10. Money test | ⬜ needs Apple's rail too |
+
+**Gotchas already hit (don't re-discover):**
+- The bare `console.cloud.google.com/apis/library/...` URLs dead-end without a project
+  in context — always use the `?project=laybell` form.
+- The inline role picker surfaces **Pub/Sub _Lite_** roles for the search "pub". Lite is
+  a different service; granting it would look done and fail. The word *reservations* in
+  a role description is the tell. Clear the search box to browse by service instead.
+- `.gitignore` now blocks service-account-shaped JSON (commit a5340a3) — the key can
+  read financial data, so don't defeat it.
+
 ## The two facts that set the order
 
 1. **Play won't create in-app products until an app bundle is uploaded**, and
