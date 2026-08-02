@@ -99,13 +99,15 @@ Invite the service account's email address with:
 <https://play.google.com/console> → **Create app**
 
 - App name: `Laybell`
+- **Package name: `com.laybell.app`** ⚠️ **typed here, at creation, and PERMANENT.**
+  Play offers no way to change it afterwards. If it doesn't match `android.package`
+  in `app.json` exactly, the AAB is rejected at upload and the only remedy is
+  deleting the app and starting again. Use **Check availability** before continuing.
 - Default language: English (US)
 - App or game: **App**
-- Free or paid: **Free** (purchases are in-app; the app itself is free)
+- Free or paid: **Free** (the app is free; in-app purchases are separate and unaffected)
+- Leave the "automatic protection" installer check on — default, harmless
 - Declarations: developer programme policies + US export laws
-
-Package name comes from the bundle you upload, not typed here — it must end up
-`com.laybell.app`.
 
 ---
 
