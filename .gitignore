@@ -43,3 +43,13 @@ yarn-error.*
 
 # Supabase CLI local cache/temp
 supabase/.temp/
+
+# Google Cloud service-account keys — the RevenueCat <-> Play Billing credential
+# and anything shaped like it. These can read financial data and order records,
+# Google issues them exactly once, and the default download lands in whatever
+# folder the browser is pointed at. Never commit one.
+*service-account*.json
+*serviceaccount*.json
+*credentials*.json
+laybell-*.json
+revenuecat-play*.json
