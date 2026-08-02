@@ -192,7 +192,7 @@ This account has posts, a shop listing, and a credit balance already loaded so e
 
 USER-GENERATED CONTENT (Guideline 1.2)
 All four required protections are implemented:
-- Automated filtering of objectionable terms on captions, comments and messages
+- Automated filtering of objectionable terms on post captions and comments
 - In-app reporting on every post, profile, comment and message
 - Blocking, which removes the blocked user's content and prevents contact
 - Contact information published in the app and on laybell.app
@@ -210,7 +210,7 @@ LIVESTREAMING
 The LIVE button sits next to the home logo. The demo account can start a broadcast. Streams are recorded only if the broadcaster opts in.
 
 MUSIC LICENSING
-Content is uploaded by users, who warrant they hold the rights. Laybell additionally holds a BMI public performance licence and has an ASCAP application pending. A registered DMCA agent and a repeat-infringer termination policy are in place.
+Content is uploaded by users, who warrant they hold the rights. Laybell additionally holds BMI and ASCAP public performance licences. A registered DMCA agent and a repeat-infringer termination policy are in place.
 
 CONTACT
 [your email]
