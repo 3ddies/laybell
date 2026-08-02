@@ -35,8 +35,8 @@ these; don't retype them.
 
 ## STEP 1 — Service account (DO THIS FIRST — 36h clock)
 
-**1a. Enable three APIs** — all in the SAME project,  (NOT
-, which is the separate translation-API project).
+**1a. Enable three APIs** — all in the SAME project, `laybell` (NOT
+`laybell-translations`, which is the separate translation-API project).
 
 ⚠️ **Use the ?project= form.** The bare API-library URLs need a project already in
 context and render an unusable page without one — verified 2026-08-02.
@@ -45,7 +45,7 @@ context and render an unusable page without one — verified 2026-08-02.
 - Google Play Developer Reporting API — <https://console.cloud.google.com/apis/library/playdeveloperreporting.googleapis.com?project=laybell>
 - Pub/Sub API — <https://console.cloud.google.com/apis/library/pubsub.googleapis.com?project=laybell>
 
-**Verify all three landed in :**
+**Verify all three landed in `laybell`:**
 <https://console.cloud.google.com/apis/dashboard?project=laybell>. Enabling an API
 while no project is selected can silently put it in whichever project was last used,
 and RevenueCat's credentials then fail with nothing obvious to point at.
