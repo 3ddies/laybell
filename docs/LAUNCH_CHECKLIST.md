@@ -372,7 +372,11 @@ checklist that unlocks one event.
    rate lands (see §0.3).
 4. An iOS build carrying RevenueCat (native — nothing payment-related works in Expo Go).
 
-**Android side — UNBLOCKED, ~an hour, can start today**
+**Android side — UNBLOCKED, can start today. FULL RUNBOOK: `docs/PLAY_CONSOLE_SETUP.md`**
+   ⏳ **Start the RevenueCat service-account credentials FIRST — they take up to 36 HOURS
+   to validate.** Everything else is same-day; that one is not. Also: the Android API key
+   ships via **EAS Update, not a rebuild** (it lives in the manifest `extra`), so this
+   whole track costs ONE build.
 5. ~~Fix the Android build~~ — DONE. Produce a `preview`/`production` AAB when ready
    (the dev client already proves the native stack compiles and runs).
 6. Play Console → create the app → **internal testing** track → upload.
