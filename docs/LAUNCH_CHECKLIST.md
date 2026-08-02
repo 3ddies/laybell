@@ -408,7 +408,7 @@ checklist that unlocks one event.
 
 ### ⏳ Passive — no action, just don't forget
 
-- 🟡 **ASCAP: paid 2026-08-02, awaiting confirmation.** Website & Mobile App licence, **$336/yr, 08/01/2026 → 07/31/2027**, bought self-serve after the 07-28 email turned out to be an enquiry rather than a filing. The payment page timed out, so: check the card for the $336 charge, expect the acceptance email + licence PDF **by ~Aug 11** (ASCAP quotes 5-7 business days), and **do not resubmit** — re-entry is duplicate-blocked and re-paying risks a double charge. Escalate by PHONE, (800) 505-4052. Details in `PRO_DEFERRAL_NOTE.md`.
+- 🟡 **ASCAP: paid 2026-08-02, awaiting confirmation.** Website & Mobile App licence, **$336/yr, 08/01/2026 → 07/31/2027**, bought self-serve after the 07-28 email turned out to be an enquiry rather than a filing. **Card charge confirmed 08-02** (the timeout was cosmetic — the transaction completed). Remaining: the acceptance email + licence PDF **by ~Aug 11** (ASCAP quotes 5-7 business days), and **do not resubmit** — re-entry is duplicate-blocked and re-paying risks a double charge. Escalate by PHONE, (800) 505-4052. Details in `PRO_DEFERRAL_NOTE.md`.
 - 📅 **Both PRO licences expire within days of each other and NEITHER auto-renews** — BMI (signed 07-28) and ASCAP (term ends 07/31/2027). Set ONE reminder for **early July 2027** and re-apply to both together. A lapsed licence while the app is live is the exact exposure these were bought to prevent.
 - **BMI**: all revenue is reported; **contact Violet Cieri at ~$18,500 gross** (§5.1).
   Monthly check pairs with the §8 stream-hours auto-terminate clause.
