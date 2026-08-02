@@ -67,7 +67,33 @@ the written reply.**
 
 ---
 
-## Step 1 — ASCAP (email)
+## Step 1 — ASCAP
+
+> **CORRECTION 2026-08-02.** This step originally sent an email and waited. That was
+> the weaker route and it stalled: an email enquiry produces **no confirmation and no
+> ticket**, so days of silence are indistinguishable from the message never arriving.
+>
+> **ASCAP has a self-serve purchase form — use it:** <https://licensing.ascap.com/?type=digital>
+> ("Build My License for Websites & Mobile Apps"). Same shape as the BMI form that
+> worked: it issues an actual licence and leaves a record. Verified live 2026-08-02.
+>
+> Two ASCAP answers that remove the usual reasons to stall (verified on their FAQ):
+> - **Pre-revenue is not a blocker.** *"If actual data is not available… please provide
+>   a good faith estimate. All fields… must be completed."*
+> - **Do it before launch.** *"Performing copyrighted music without the proper licensing
+>   in place may amount to copyright infringement… strongly recommended that you obtain
+>   all necessary licenses prior to the launch."*
+>
+> Scope, in ASCAP's words: the licence covers **public performance of the ASCAP
+> repertory only** — expressly NOT BMI/SESAC/GMR repertoire, NOT mechanical/
+> reproduction, NOT sync, NOT sound recordings. That matches what §0.4 already says.
+>
+> **Still worth asking in writing** (email, in parallel — do not block the purchase on
+> it): whether the standard Website & Mobile App licence covers **livestreamed
+> audio-visual** transmission, or whether the live feature needs the Experimental
+> License Agreement for Interactive Services. Keep the reply.
+
+**Email (parallel enquiry only — not the licensing path)**
 
 **To:** `weblicense@ascap.com`
 **Subject:** `Interactive service licence enquiry — Laybell (user-uploaded music, US)`

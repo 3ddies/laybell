@@ -13,7 +13,7 @@ Update it whenever the position changes.
 | PRO | Status | Detail |
 |---|---|---|
 | **BMI** | ✅ Licensed | Digital Multi-Use Performance License Agreement, signed and paid 2026-07-28. **$385, Tier 1, one-year term, no reporting requirements.** Customer number 61346887. ⚠️ **Tier 1 ceiling: $18,500 revenue / 59,000 stream hours — §8 auto-terminates 20% over.** Metered by `stream_hours.sql`. No auto-renewal: re-apply before the End Date. |
-| **ASCAP** | ⏳ Applied | Enquiry sent to weblicense@ascap.com 2026-07-28, requesting the Experimental License Agreement for Interactive Services. Awaiting reply. |
+| **ASCAP** | ❌ **NOT licensed — action required** | An **email** was sent to weblicense@ascap.com 2026-07-28 requesting the Experimental License Agreement for Interactive Services. It was never a filing: email produces no confirmation and no ticket, so the silence since is uninformative, and **nothing is in force**. Corrected route (verified 2026-08-02): buy the Website & Mobile App licence through the self-serve form at <https://licensing.ascap.com/?type=digital>, exactly as BMI was done. Pre-revenue is explicitly fine ("good faith estimate"). See `PRO_LICENSING_PACK.md` Step 1. |
 | **SESAC** | ⏸ Deferred | See below. |
 | **GMR** | ⏸ Deferred | See below. |
 | **MLC** (mechanical) | ⏸ Open | Separate from performance rights. Decision pending — see `docs/PRO_LICENSING_PACK.md`. |

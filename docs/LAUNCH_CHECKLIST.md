@@ -408,7 +408,12 @@ checklist that unlocks one event.
 
 ### ⏳ Passive — no action, just don't forget
 
-- ASCAP application (filed 07-28).
+- ⚠️ **ASCAP is NOT filed — moved out of "passive" 2026-08-02.** What happened on 07-28
+  was an *email* to weblicense@ascap.com, which creates no ticket and no confirmation;
+  the silence since proves nothing and **no licence is in force**. Buy it self-serve
+  (~10 min): <https://licensing.ascap.com/?type=digital>. Pre-revenue is explicitly
+  accommodated. ASCAP's own guidance is to license BEFORE launch, so this is
+  launch-blocking in a way the old line implied it wasn't.
 - **BMI**: all revenue is reported; **contact Violet Cieri at ~$18,500 gross** (§5.1).
   Monthly check pairs with the §8 stream-hours auto-terminate clause.
 - Sentry trial lapsing to free.
