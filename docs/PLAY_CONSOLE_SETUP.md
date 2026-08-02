@@ -35,12 +35,22 @@ these; don't retype them.
 
 ## STEP 1 — Service account (DO THIS FIRST — 36h clock)
 
-**1a. Enable three APIs** (Google Cloud Console, same Google account as Play):
-- Google Play Android Developer API — <https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com>
-- Google Play Developer Reporting API — <https://console.cloud.google.com/apis/library/playdeveloperreporting.googleapis.com>
-- Pub/Sub API — <https://console.cloud.google.com/flows/enableapi?apiid=pubsub>
+**1a. Enable three APIs** — all in the SAME project,  (NOT
+, which is the separate translation-API project).
 
-**1b. Create the service account** — <https://console.cloud.google.com/iam-admin/serviceaccounts>
+⚠️ **Use the ?project= form.** The bare API-library URLs need a project already in
+context and render an unusable page without one — verified 2026-08-02.
+
+- Google Play Android Developer API — <https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com?project=laybell>
+- Google Play Developer Reporting API — <https://console.cloud.google.com/apis/library/playdeveloperreporting.googleapis.com?project=laybell>
+- Pub/Sub API — <https://console.cloud.google.com/apis/library/pubsub.googleapis.com?project=laybell>
+
+**Verify all three landed in :**
+<https://console.cloud.google.com/apis/dashboard?project=laybell>. Enabling an API
+while no project is selected can silently put it in whichever project was last used,
+and RevenueCat's credentials then fail with nothing obvious to point at.
+
+**1b. Create the service account** (same project) — <https://console.cloud.google.com/iam-admin/serviceaccounts?project=laybell>
 Grant it these roles:
 - **Pub/Sub Editor** (or Pub/Sub Admin)
 - **Monitoring Viewer**
