@@ -15,7 +15,7 @@
 do $$
 declare
   -- ↓↓↓ SET THIS to the demo account's username (no @) ↓↓↓
-  v_username  text := 'REPLACE_ME';
+  v_username  text := 'laybellreview';
 
   v_user      uuid;
   v_credits   bigint := 50000;   -- $500.00 in credits (1 credit = 1 cent)
@@ -71,4 +71,4 @@ select
   (select count(*) from public.posts   where user_id = p.id and archived_at is null) as visible_posts,
   (select count(*) from public.shop_listings where user_id = p.id and status = 'active') as active_listings
 from public.profiles p
-where lower(p.username) = lower('REPLACE_ME');   -- ← same username here
+where lower(p.username) = lower('laybellreview');   -- ← same username here
