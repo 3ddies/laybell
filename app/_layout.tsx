@@ -5,8 +5,12 @@ import { StatusBar } from 'expo-status-bar';
 import { View, Platform, Alert } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
-import { initMonitoring, wrapRoot } from '../lib/monitoring';
+import { handleAuthLink } from '../lib/authLink';
+import Toast from '../components/Toast';
+import { initMonitoring, wrapRoot, reportError } from '../lib/monitoring';
+import { useTranslation } from '../contexts/LanguageContext';
 import { ensureProfileForSession } from '../lib/socialAuth';
 import { sweepAbandonedStreamUploads } from '../lib/streamUpload';
 import { clearAgeCache } from '../lib/minors';
@@ -296,6 +300,29 @@ function RootLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // ── Confirmation-email LINK → session + visible confirmation ──────────────
+  // Tapping the link in the signup email used to confirm the address in a
+  // browser and stop there: no session, and nothing telling the user it had
+  // worked. Signup now sends Supabase an emailRedirectTo that points back here,
+  // so the link returns to the app; this turns that URL into a session and
+  // raises a toast. Setting the session fires onAuthStateChange above, which
+  // routes into onboarding — so the toast is the only UI needed.
+  const [verifiedToast, setVerifiedToast] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const consume = async (url: string | null) => {
+      if (!url || cancelled) return;
+      const res = await handleAuthLink(url);
+      if (cancelled) return;
+      if (res.kind === 'verified') setVerifiedToast(true);
+      else if (res.kind === 'error') reportError(res.message, { where: 'authLink' });
+    };
+    // Cold start (app opened BY the link) and warm (already running).
+    Linking.getInitialURL().then(consume);
+    const sub = Linking.addEventListener('url', ({ url }) => consume(url));
+    return () => { cancelled = true; sub.remove(); };
+  }, []);
+
   // Activity heartbeat: stamps last_seen_at once per app open. This is what
   // keeps a hidden-but-active account from being eligible for the 3-month
   // deletion sweep (deletion requires 3 months of NO sign-ins). Fails silently
@@ -468,9 +495,29 @@ function RootLayout() {
     </AudioProvider>
     </MediaSuspendProvider>
     </View>
+    {/* Email-verified confirmation. Deliberately a SIBLING of the keyed View
+        above, not a child: establishing the session changes session.user.id,
+        which remounts that whole subtree — a toast inside it would be
+        destroyed at the exact moment it should appear. */}
+    <EmailVerifiedToast visible={verifiedToast} onHide={() => setVerifiedToast(false)} />
     </LanguageProvider>
     </ThemeProvider>
     </GestureHandlerRootView>
+  );
+}
+
+// Its own component because it needs useTranslation, and RootLayout is the thing
+// that RENDERS LanguageProvider — a hook call up there would sit outside it.
+function EmailVerifiedToast({ visible, onHide }: { visible: boolean; onHide: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <Toast
+      visible={visible}
+      title={t('auth.verifiedToastTitle')}
+      message={t('auth.verifiedToastBody')}
+      icon="checkmark-circle"
+      onHide={onHide}
+    />
   );
 }
 

@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { authRedirectUrl } from '../../lib/authLink';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
@@ -49,7 +50,13 @@ export default function SignupScreen() {
     try {
       ({ data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(), password,
-        options: { data: { username: uname.toLowerCase(), display_name: displayName.trim() } },
+        options: {
+          data: { username: uname.toLowerCase(), display_name: displayName.trim() },
+          // Send the confirmation LINK back into the app instead of dead-ending
+          // in a browser. app/_layout.tsx turns that inbound URL into a session
+          // and shows a confirmation toast. The code path is unaffected.
+          emailRedirectTo: authRedirectUrl(),
+        },
       }));
     } catch (e: any) {
       signUpError = e;

@@ -11,11 +11,16 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 
 // Signup lands here when Supabase says the email still needs confirming. The
-// user types the 6-digit code from the confirmation email and is verified
-// in-app (verifyOtp returns a session, so the root auth listener takes over
-// and routes into onboarding). Tapping the emailed link instead also works —
-// that path confirms in the browser, after which normal login succeeds.
+// user types the code from the confirmation email and is verified in-app
+// (verifyOtp returns a session, so the root auth listener takes over and routes
+// into onboarding). Tapping the emailed LINK works too — it deep-links back
+// into the app, which sets the session and shows a confirmation (see the
+// auth-link handler in app/_layout.tsx).
 const RESEND_COOLDOWN_S = 60;
+// Length of the emailed confirmation code. Supabase's OTP length is a project
+// setting (6–10); this project issues 8. It must match, or the input truncates
+// the code and submits a token that can never verify.
+const CODE_LEN = 8;
 
 export default function VerifyEmailScreen() {
   const { colors } = useTheme();
@@ -59,9 +64,13 @@ export default function VerifyEmailScreen() {
   }
 
   function onChangeCode(v: string) {
-    const digits = v.replace(/[^0-9]/g, '').slice(0, 6);
+    const digits = v.replace(/[^0-9]/g, '').slice(0, CODE_LEN);
     setCode(digits);
-    if (digits.length === 6) verify(digits);
+    // Auto-submit only at the FULL length. This used to fire at 6 while the
+    // project issues 8-digit codes, so it always submitted a truncated token —
+    // signup could not complete, and each attempt spent one against Supabase's
+    // rate limit. If the OTP length is ever reconfigured, change CODE_LEN.
+    if (digits.length === CODE_LEN) verify(digits);
   }
 
   async function resend() {
@@ -108,15 +117,15 @@ export default function VerifyEmailScreen() {
             keyboardType="number-pad"
             textContentType="oneTimeCode"
             autoComplete="one-time-code"
-            maxLength={6}
+            maxLength={CODE_LEN}
             autoFocus
             editable={!verifying}
           />
 
           <TouchableOpacity
-            style={[styles.button, (verifying || code.length < 6) && styles.buttonDisabled]}
+            style={[styles.button, (verifying || code.length < CODE_LEN) && styles.buttonDisabled]}
             onPress={() => verify(code)}
-            disabled={verifying || code.length < 6}
+            disabled={verifying || code.length < CODE_LEN}
           >
             {verifying ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>{t('auth.verifyAction')}</Text>}
           </TouchableOpacity>
