@@ -110,6 +110,9 @@ export default function TVAdViewer({ item, uid, onClose }: {
     return () => {
       try { sub?.remove(); } catch {}
       const p = player;
+      // Silence synchronously; release next tick (a lagging remove() must
+      // never leave ad audio running after the viewer closes).
+      try { p?.pause(); } catch {}
       setTimeout(() => { try { p?.remove(); } catch {} }, 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

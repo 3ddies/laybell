@@ -15,7 +15,7 @@ import {
   purchaseAdCampaign, estimatedImpressions, fmtPrice,
   AD_DEFAULT_CPM_CENTS, AD_CREATIVE_BUCKET, AD_UNSKIPPABLE_MAX_SEC, AD_SKIP_LONG_MIN_SEC, AD_PREMIUM_RATE, isPremiumPlacement,
   adVolumeBonus, AD_VOLUME_BONUS_MAX_PCT,
-  adMinBudgetCents, adBundleDiscount, adChargedCents, AD_SIMPLE_MIN_PREVIEW_SEC, AD_SKIP10_MS,
+  adMinBudgetCents, adBundleDiscount, adChargedCents, AD_SIMPLE_MIN_PREVIEW_SEC, AD_SKIP10_MS, AD_SKIP_MS,
   type AdPlacement, type AdObjective, type AdMediaType, type NewCreativeInput, type AdSkipMode,
 } from '../../lib/ads';
 import { analyzeUrl, scanText } from '../../lib/linkSafety';
@@ -154,7 +154,8 @@ export default function CreateAdScreen() {
   // True once the user TAPS a mode card this session — from then on their
   // choice is theirs and the auto-default below keeps its hands off.
   const modeTouchedRef = useRef(false);
-  const SIMPLE_SKIP_SECS = Math.round(AD_SKIP10_MS / 1000);
+  const SIMPLE_SKIP_SECS = Math.round(AD_SKIP10_MS / 1000);      // TV + music breaks
+  const SIMPLE_REEL_SKIP_SECS = Math.round(AD_SKIP_MS / 1000);   // vertical reels (native cadence)
   // Probed duration of the chosen listing's preview clip. durationSec null =
   // probe failed (treated as ineligible — "can't verify" is not "qualifies").
   const [previewProbe, setPreviewProbe] = useState<{ listingId: string; durationSec: number | null } | null>(null);
@@ -1164,7 +1165,7 @@ export default function CreateAdScreen() {
                 ? (<>
                     {/* Simple shop ad: nothing to fill in — show what the listing
                         provides so the advertiser sees exactly what will run. */}
-                    <Text style={styles.lead}>{t('shopAd.summaryLead', { secs: SIMPLE_SKIP_SECS })}</Text>
+                    <Text style={styles.lead}>{t('shopAd.summaryLead')}</Text>
                     <View style={styles.card}>
                       <View style={styles.creativeHead}>
                         <Ionicons name="flash" size={16} color={colors.primary} />
@@ -1191,7 +1192,7 @@ export default function CreateAdScreen() {
                       </View>
                       <View style={styles.destNoteRow}>
                         <Ionicons name="play-skip-forward-outline" size={15} color={colors.textSecondary} />
-                        <Text style={styles.destNoteText}>{t('shopAd.skipNote', { secs: SIMPLE_SKIP_SECS })}</Text>
+                        <Text style={styles.destNoteText}>{t('shopAd.skipNote', { secs: SIMPLE_SKIP_SECS, reelSecs: SIMPLE_REEL_SKIP_SECS })}</Text>
                       </View>
                     </View>
                   </>)

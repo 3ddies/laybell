@@ -660,7 +660,12 @@ export default function NowPlaying() {
             {!!adDestination(adState) && (
               <TouchableOpacity
                 style={styles.adCtaBtn}
-                onPress={() => openAdCta(adState, 'audio', adState.viewerId)}
+                // collapse() FIRST, like every other navigation out of this
+                // sheet (goProfile, edit-post, open-profile): the player is a
+                // full-screen overlay, so a pushed product/profile/shop page
+                // otherwise loads BEHIND it and reads as "nothing happened".
+                // The ad keeps playing in the mini bar, which is the design.
+                onPress={() => { collapse(); openAdCta(adState, 'audio', adState.viewerId); }}
                 activeOpacity={0.85}
               >
                 <Text style={styles.adCtaText}>{adState.ctaLabel}</Text>

@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Image } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { createAudioPlayer } from 'expo-audio';
+import { useIsFocused } from '@react-navigation/native';
 import ReelVideo, { type ReelVideoHandle } from './ReelVideo';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,6 +53,11 @@ type Props = {
 export default function ReelAd({ item, visible, paused, mountPlayer, insets, onSkip, onCta, onOptions, onSkippableChange, startSkippable = false, onComplete }: Props) {
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
+  // The reel screen is a transparentModal — pushing a screen on top (the ad's
+  // own CTA does it!) leaves this page mounted with `visible` still true, so
+  // without a focus gate the ad's sound played on UNDER the product page (and
+  // doubled the moment its Preview button was tapped). Same gate ReelPage uses.
+  const isFocused = useIsFocused();
   const ad: AdMeta = item.__ad;
   // Simple shop ad: no video (media_url is nulled by reelItemFor so the video
   // pool never touches it) — the poster is the show, song_url the soundtrack.
@@ -139,16 +145,21 @@ export default function ReelAd({ item, visible, paused, mountPlayer, insets, onS
       audioRef.current = player;
       sub = player.addListener('playbackStatusUpdate', (st: any) => {
         if (!st?.isLoaded) return;
-        // The preview plays ONCE: finishing is a completion (host rolls on),
-        // exactly like a video creative wrapping.
-        if (st.didJustFinish) {
+        // The preview plays ONCE: finishing is a completion (host rolls on —
+        // the reel auto-advances exactly like a video creative wrapping).
+        // didJustFinish PLUS a near-end check: at 4 ticks/s a single finish
+        // event is missable, and a parked viewer must never be left sitting
+        // on a silent, ended ad.
+        const pos = (st.currentTime ?? 0) * 1000;
+        const dur = (st.duration ?? 0) * 1000;
+        if (st.didJustFinish || (dur > 0 && pos >= dur - 300)) {
           if (!completedRef.current) {
             completedRef.current = true;
             onCompleteRef.current?.();
           }
           return;
         }
-        accrueRef.current((st.currentTime ?? 0) * 1000); // seconds → ms
+        accrueRef.current(pos); // seconds → ms
       });
       player.play();
     } catch {}
@@ -156,19 +167,25 @@ export default function ReelAd({ item, visible, paused, mountPlayer, insets, onS
       try { sub?.remove(); } catch {}
       const p = audioRef.current;
       audioRef.current = null;
-      // Released on the next tick, never from inside its own callback (the
-      // probeAudioDurationSec / AudioContext.releaseSound convention).
+      // SILENCE FIRST, synchronously — releasing is deferred a tick (the
+      // probeAudioDurationSec / AudioContext.releaseSound convention), and a
+      // remove() that fails or lags must never leave audio running behind a
+      // swipe (that was preview audio trailing into the next reels, and a
+      // second copy stacking on scroll-back).
+      try { p?.pause(); } catch {}
       setTimeout(() => { try { p?.remove(); } catch {} }, 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isImageAd, visible, item.id]);
 
-  // Pause/resume the soundtrack with the reel's global pause (tap-to-pause).
+  // Pause/resume the soundtrack with the reel's global pause (tap-to-pause)
+  // AND with screen focus — blur (CTA push, another reel stacked on top) must
+  // silence it; returning resumes where it left off, countdown intact.
   useEffect(() => {
     const p = audioRef.current;
     if (!p || !visible) return;
-    try { if (paused) p.pause(); else p.play(); } catch {}
-  }, [paused, visible]);
+    try { if (paused || !isFocused) p.pause(); else p.play(); } catch {}
+  }, [paused, visible, isFocused]);
   // Un-warmed arrival (fast swipe onto the ad): the pooled player mounts at the
   // SETTLE, after the reset above ran against a null ref — so a same-creative
   // entry could hand back a retained mid-clip playhead and "complete" early.
@@ -228,7 +245,9 @@ export default function ReelAd({ item, visible, paused, mountPlayer, insets, onS
           ref={videoRef}
           id={item.id}
           uri={item.media_url}
-          play={visible && !paused}
+          // isFocused: an ad's sound must not keep playing under a screen its
+          // own CTA pushed (ReelPage gates its playback the same way).
+          play={visible && !paused && isFocused}
           muted={false}
           loop
           contentFit={landscape ? 'contain' : 'cover'}

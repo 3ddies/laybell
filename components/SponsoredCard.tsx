@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
+import { useIsFocused } from '@react-navigation/native';
 import FeedVideo from './FeedVideo';
 import { Ionicons } from '@expo/vector-icons';
 import { memo, useEffect } from 'react';
@@ -46,17 +47,26 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions, vide
 
   // ── Simple shop ad: the listing preview rides the card as a playable song ──
   // Played on the shared ambient post-music player (the exact primitive the
-  // shop listing's Preview button uses), keyed by this card's item id, so it
-  // defers to the main player and swaps away naturally when a song post takes
-  // the ambient slot. The feed's viewability handler stops it on scroll-out.
+  // shop listing's Preview button uses). HOST = this card's item id (so the
+  // feed's viewability handler can stop exactly this card on scroll-out);
+  // SONG = the LISTING id — the same identity the product page plays under, so
+  // opening the product shows its Preview as already playing (useSongIdActive)
+  // and tapping it there hands off seamlessly instead of restarting.
   const isSimple = item.type === 'image' && !!item.song_url;
   const { playSong, stop: stopSong } = usePostMusicActions();
   const previewOn = useSongHostActive(item.id);
+  const isFocused = useIsFocused();
   useEffect(() => () => { if (isSimple) stopSong(item.id); }, [isSimple, item.id, stopSong]);
+  // Screen blur (reel push, tab switch) must silence the strip: the feed stays
+  // MOUNTED under pushed screens, so neither unmount nor viewability fires —
+  // this was sponsored audio playing on under the rest of the app.
+  useEffect(() => {
+    if (!isFocused && previewOn) stopSong(item.id);
+  }, [isFocused, previewOn, item.id, stopSong]);
   const togglePreview = () => {
     if (!isSimple) return;
     if (previewOn) stopSong(item.id);
-    else playSong(item.id, item.id, item.song_url);
+    else playSong(item.id, ad?.listingId ?? item.id, item.song_url);
   };
 
   return (

@@ -119,6 +119,9 @@ export default function TVAdOverlay({ item, active, insets, onDone, onSkip, onRe
       try { sub?.remove(); } catch {}
       const p = audioPlayerRef.current;
       audioPlayerRef.current = null;
+      // Silence synchronously; release next tick (a lagging remove() must
+      // never leave ad audio running after the cover is dismissed).
+      try { p?.pause(); } catch {}
       setTimeout(() => { try { p?.remove(); } catch {} }, 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

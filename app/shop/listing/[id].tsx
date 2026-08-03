@@ -20,7 +20,7 @@ import { useProfile } from '../../../contexts/ProfileContext';
 import { useFollow } from '../../../contexts/FollowContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { reactionPop, notifySuccess } from '../../../lib/haptics';
-import { usePostMusicActions, useSongHostActive } from '../../../contexts/PostMusicContext';
+import { usePostMusicActions, useSongHostActive, useSongIdActive } from '../../../contexts/PostMusicContext';
 import { WEB_ORIGIN } from '../../../lib/appLinks';
 import { reportListing } from '../../../lib/postActions';
 import {
@@ -57,7 +57,12 @@ export default function ListingScreen() {
   const { playSong, stop: stopSong } = usePostMusicActions();
   // Derived from the shared player, so the icon always matches what's audible —
   // per-host subscription re-renders this screen only when ITS preview flips.
-  const previewing = useSongHostActive(PREVIEW_HOST);
+  // ALSO song-keyed: a feed shop-ad strip plays this same preview under ITS OWN
+  // host with songId = the listing id, so arriving from that ad must show the
+  // Preview as already playing (and pause must actually pause it).
+  const previewingHere = useSongHostActive(PREVIEW_HOST);
+  const previewingViaAd = useSongIdActive(id ?? null);
+  const previewing = previewingHere || previewingViaAd;
   const { count: cartCount } = useShopCart();
   const inCart = useInCart(id);
 
@@ -179,7 +184,11 @@ export default function ListingScreen() {
 
   function togglePreview() {
     if (!listing?.preview_url) return;
-    if (previewing) stopSong(PREVIEW_HOST);
+    // No-arg stop when the preview arrived under a DIFFERENT host (a feed
+    // shop-ad strip) — the host-scoped stop would no-op and the pause button
+    // would do nothing. Safe: `previewing` means this listing's preview IS the
+    // active ambient track, so unconditional stop can't kill anything else.
+    if (previewing) stopSong(previewingHere ? PREVIEW_HOST : undefined);
     else playSong(PREVIEW_HOST, listing.id, listing.preview_url);
   }
 

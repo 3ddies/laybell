@@ -118,14 +118,15 @@ export const AD_SIMPLE_MIN_PREVIEW_SEC = 15;
 
 /**
  * Ms of genuine playback before an ad may be skipped — Infinity means it plays
- * fully (no skip). 'unskippable' → Infinity; 'skip15' → 15s; 'skip10' → 10s
- * (simple shop ads). With no mode set (regular reels, or legacy ads) fall back
- * to the placement default.
+ * fully (no skip). 'unskippable' → Infinity; 'skip15' → 15s; 'skip10' → 10s on
+ * TV + music breaks BUT the regular 5s in vertical reels (simple shop ads must
+ * skip exactly like every other reel ad — reels have their own cadence). With
+ * no mode set (regular reels, or legacy ads) fall back to the placement default.
  */
 export function adSkipAfterMs(placement: AdPlacement, skipMode?: string | null): number {
   if (skipMode === 'unskippable') return Infinity;
   if (skipMode === 'skip15') return AD_SKIP15_MS;
-  if (skipMode === 'skip10') return AD_SKIP10_MS;
+  if (skipMode === 'skip10') return placement === 'reels' ? AD_SKIP_MS : AD_SKIP10_MS;
   if (placement === 'reels') return AD_SKIP_MS;
   if (placement === 'audio') return AUDIO_AD_SKIP_MS;
   return Infinity; // Laybell TV default: play fully

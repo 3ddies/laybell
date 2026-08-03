@@ -85,6 +85,39 @@ export function useSongHostActive(hostId: string): boolean {
   return useSyncExternalStore(subscribe, () => activeIdNow === hostId);
 }
 
+// ── Per-SONG "is this song playing?" subscription (same pattern, song-keyed) ──
+// The shop listing page and a feed shop-ad strip play the SAME preview under
+// DIFFERENT hosts — host-keyed state can't tell the listing page "your preview
+// is already playing" when the feed ad started it. Keyed by the songId passed
+// to playSong (shop previews use the LISTING id), published alongside the host.
+let activeSongIdNow: string | null = null;
+const songSubs = new Map<string, Set<() => void>>();
+function publishActiveSongId(next: string | null) {
+  if (next === activeSongIdNow) return;
+  const prev = activeSongIdNow;
+  activeSongIdNow = next;
+  for (const id of [prev, next]) {
+    if (!id) continue;
+    const s = songSubs.get(id);
+    if (s) for (const cb of s) cb();
+  }
+}
+// Re-renders the caller ONLY when `activeSongId === songId` flips for ITS song.
+export function useSongIdActive(songId: string | null | undefined): boolean {
+  const key = songId ?? '';
+  const subscribe = useCallback((cb: () => void) => {
+    if (!key) return () => {};
+    let s = songSubs.get(key);
+    if (!s) { s = new Set(); songSubs.set(key, s); }
+    s.add(cb);
+    return () => {
+      const set = songSubs.get(key);
+      if (set) { set.delete(cb); if (!set.size) songSubs.delete(key); }
+    };
+  }, [key]);
+  return useSyncExternalStore(subscribe, () => !!key && activeSongIdNow === key);
+}
+
 export function PostMusicProvider({ children }: { children: React.ReactNode }) {
   const { isPlaying: mainPlaying, currentTrack: mainTrack } = useAudio();
   const { suspended } = useMediaSuspend();
@@ -242,6 +275,10 @@ export function PostMusicProvider({ children }: { children: React.ReactNode }) {
 
   function setActiveHost(v: string | null) {
     publishActiveId(v); // per-host subscribers (story-camera, shop) first
+    // activeSongRef is always written BEFORE setActiveHost on every path
+    // (playSong / same-song transfer / stop), so publishing it here keeps the
+    // song-keyed store in lockstep with the host-keyed one.
+    publishActiveSongId(v ? activeSongRef.current : null);
     setActiveId(v);
   }
 
