@@ -8,8 +8,8 @@ order that actually works. iOS is already done; this is the other rail.
 | Step | State |
 |---|---|
 | 1. Service account + 36h clock | ✅ **Done 2026-08-02 ~08:30.** Project `laybell`; all 3 APIs enabled; service account `revenuecat-play@laybell.iam.gserviceaccount.com` with Pub/Sub Editor + Monitoring Viewer; JSON key downloaded; invited to Play Console and showing **Active**. ⏳ **Credentials valid for RevenueCat by ~Mon 2026-08-03 evening** — "Active" in Play does NOT mean RevenueCat will accept them yet. |
-| 2. Create app in Play Console | ⬜ |
-| 3. App content declarations | ⬜ |
+| 2. Create app in Play Console | ✅ **Done 2026-08-02.** `Laybell`, package `com.laybell.app`, Free, en-US. Play app id `4973635319299378783`. |
+| 3. App content declarations | 🟡 **7 of 10 done 2026-08-02.** ✅ Privacy policy (`laybell.app/privacy.html`) · Ads (yes) · Content rating (Social; no dating/nudity/violence; **no** loot boxes; location NOT shared with other users — `lib/location.ts` rounds to ~11 km and never displays it) · Government apps (no) · Health (none) · Financial features (**none** — `payoutsAvailable()` is false, credits are spend-only and non-transferable) · **Advertising ID (no** — verified: no ad/attribution SDK, no `AD_ID` in any library manifest, and the only Play Services artifacts are auth/cast/code-scanner/location, none of which carry it. This one **blocks releases targeting Android 13+**, so it had to be right.) <br>⬜ **Remaining:** Target audience (13–15, 16–17, 18+; not child-directed — page was rendering blank, retry) · Data safety (~30 min, use `docs/STORE_PRIVACY_DISCLOSURES.md`) · Sign in details (**blocked on creating a demo account**). |
 | 4. Build the AAB | ⬜ billed — owner's call |
 | 5. Upload to internal testing | ⬜ |
 | 6. Create the 6 products | ⬜ |
