@@ -2239,7 +2239,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   rightCol: { flex: 1, gap: SPACING.sm },
   field: { gap: 6 },
-  fieldLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  fieldLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
   // Music-video switch. Same shape as the ad-manager switch rows so the two
   // composers read as one app.
   switchRow: {
@@ -2264,38 +2264,42 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // than hidden so the control explains itself instead of disappearing.
   dropdownLocked: { opacity: 0.55 },
   dropdown: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, minHeight: 46,
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.sm + 2, paddingVertical: SPACING.sm,
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, minHeight: 48,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    borderRadius: 12, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
   },
-  dropdownText: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' },
-  dropdownPlaceholder: { color: colors.textTertiary, fontWeight: '500' },
+  dropdownText: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '500', letterSpacing: -0.3 },
+  dropdownPlaceholder: { color: colors.textTertiary, fontWeight: '400' },
   genreLockHint: { color: colors.textTertiary, fontSize: 11, marginTop: 3 },
 
   // Full-width caption box.
   captionBox: {
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
-    borderRadius: RADIUS.md, padding: SPACING.sm + 2, minHeight: 88,
-    color: colors.text, fontSize: 15, textAlignVertical: 'top',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    borderRadius: 12, padding: SPACING.md, minHeight: 96,
+    color: colors.text, fontSize: 16, lineHeight: 22, letterSpacing: -0.3, textAlignVertical: 'top',
   },
   // Music "Title" box: slim, single-line — nudges toward a real title, not a caption.
   titleBox: {
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.sm + 2, paddingVertical: SPACING.sm, minHeight: 46,
-    color: colors.text, fontSize: 15, marginTop: 6,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    borderRadius: 12, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, minHeight: 48,
+    color: colors.text, fontSize: 16, letterSpacing: -0.3, marginTop: 6,
   },
 
   // Public/Private pill button.
   visBtn: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     borderRadius: RADIUS.full, paddingVertical: SPACING.md, paddingHorizontal: SPACING.lg,
   },
   // Visibility locked to Public because a community is attached.
   visBtnLocked: { opacity: 0.7 },
   visText: { flex: 1 },
-  visLabel: { color: colors.text, fontSize: 15, fontWeight: '700' },
-  visSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  visLabel: { color: colors.text, fontSize: 16, fontWeight: '600', letterSpacing: -0.3 },
+  visSub: { color: colors.textSecondary, fontSize: 13, letterSpacing: -0.1, marginTop: 2 },
   // Per-post creator controls (Allow downloads / Allow GIFs) — no outline: the
   // title, the switch left-aligned under it, then a small grey "Learn more" link.
   optRow: { marginTop: SPACING.lg, alignItems: 'flex-start', gap: SPACING.sm },
@@ -2333,7 +2337,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   sheetList: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, paddingBottom: SPACING.sm },
 
   section: { gap: 6 },
-  sectionLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  sectionLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
   row: { flexDirection: 'row', gap: SPACING.sm },
   choice: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
@@ -2379,11 +2383,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Save-as-draft button (details step)
   draftSaveBtn: {
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.surface, borderRadius: RADIUS.full,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong,
+    borderRadius: RADIUS.full,
     paddingVertical: SPACING.md, marginTop: SPACING.xs,
   },
   draftSaveBtnDisabled: { opacity: 0.5 },
-  draftSaveText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
+  draftSaveText: { color: colors.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
 
   // Drafts opener bar (pick step)
   draftsBar: {
