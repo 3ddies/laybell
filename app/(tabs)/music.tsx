@@ -24,6 +24,7 @@ import SlideUpSheet from '../../components/SlideUpSheet';
 import PlaylistEditor from '../../components/PlaylistEditor';
 import PlaylistOptionsSheet from '../../components/PlaylistOptionsSheet';
 import TrackRow from '../../components/TrackRow';
+import ListenButton from '../../components/ListenButton';
 import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useTabSwipeControl, isSwipeTap, useSearchSwipeLock } from '../../contexts/PagerContext';
@@ -1104,15 +1105,11 @@ export default function MusicScreen() {
               <Text style={styles.newBtnText}>{t('music.playlist')}</Text>
             </TouchableOpacity>
           )}
-          {/* Listen mode — logo-gradient pill. Fades the tab bar away, locks tab
-              swiping and silences notifications for distraction-free listening;
-              tap again to bring everything back. */}
-          <TouchableOpacity onPress={() => setListenMode(!listenMode)} activeOpacity={0.85}>
-            <View style={styles.listenBtn}>
-              <Ionicons name={listenMode ? 'close' : 'headset'} size={16} color="#1C0E06" />
-              <Text style={styles.listenBtnText}>{listenMode ? t('music.exit') : t('music.listen')}</Text>
-            </View>
-          </TouchableOpacity>
+          {/* Listen mode. Fades the tab bar away, locks tab swiping and silences
+              notifications for distraction-free listening; tap again to bring
+              everything back. The pill owns its own gradient + sheen — see
+              components/ListenButton. */}
+          <ListenButton active={listenMode} onPress={() => setListenMode(!listenMode)} />
         </View>
       </View>
 
@@ -2067,20 +2064,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   newBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  // Listen mode pill — solid Laybell logo yellow: the SAME colors.primaryLight
-  // hex the home-page wordmark uses, flat (no gradient/glow), with DARK glyphs
-  // — white icon/text inside the fill optically washed the yellow out and made
-  // it read brighter than the logo. No dim in the active/Exit state.
-  listenBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: colors.primaryLight,
-    borderRadius: RADIUS.full,
-    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md + 4,
-  },
-  listenBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
 
-  // A single rounded "segmented control" track holding the 4 segments; the active
-  // one becomes a glowing gradient pill (rendered inside the button).
+  // A single rounded "segmented control" track holding the 4 segments; the
+  // active one becomes a gradient thumb (rendered inside the button).
   // FIXED height + no shrink: as a bare ScrollView in the page column, the
   // rail was getting vertically COMPRESSED by flex negotiation against the
   // Discover scroll view below it — clipping the bottom half of the pill
