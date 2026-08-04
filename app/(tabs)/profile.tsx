@@ -39,6 +39,7 @@ import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import SpotlightThumbBadge from '../../components/SpotlightThumbBadge';
 import TrackRow from '../../components/TrackRow';
+import SpotlightButton from '../../components/SpotlightButton';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
@@ -770,14 +771,9 @@ export default function ProfileScreen() {
                 </View>
               )}
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.spotlightBtn}
-              activeOpacity={0.8}
-              onPress={() => router.push('/spotlight')}
-            >
-              <Ionicons name="sparkles" size={15} color="#fff" />
-              <Text style={styles.spotlightBtnText}>Spotlight</Text>
-            </TouchableOpacity>
+            {/* Galaxy-purple pill with a twinkling star field, matching the
+                Spotlight card in Settings — see components/SpotlightButton. */}
+            <SpotlightButton onPress={() => router.push('/spotlight')} />
           </View>
         </View>
       </View>
@@ -906,13 +902,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.background,
   },
   shopAlertText: { color: '#fff', fontSize: 9, fontWeight: '800' },
-  spotlightBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-    backgroundColor: colors.primary,
-    borderRadius: RADIUS.full,
-    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
-  },
-  spotlightBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   displayName: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
   badgeOutline: {
