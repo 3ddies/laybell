@@ -753,7 +753,10 @@ export default function SettingsScreen() {
                 <Ionicons name="megaphone-outline" size={24} color={colors.background} />
               </View>
               <View style={styles.rowContent}>
-                <Text style={styles.promoAdLabel}>{t('account.adManager')}</Text>
+                {/* Its own string, not account.adManager — that one also titles
+                    the Ad Manager screen, which lists, pauses and ends running
+                    campaigns. Calling that screen "Create Ads" would misname it. */}
+                <Text style={styles.promoAdLabel}>{t('account.createAds')}</Text>
                 <Text style={styles.promoAdSub}>{t('account.adManagerSub')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.background + 'B3'} />
