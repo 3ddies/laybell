@@ -17,10 +17,10 @@ import {
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
 import SwipeBackPager from '../components/SwipeBackPager';
-import SpotlightButton, { GALAXY_ACCENT } from '../components/SpotlightButton';
+import SpotlightButton, { GALAXY_ACCENT, GALAXY_LIGHT } from '../components/SpotlightButton';
 import ConfirmDialog from '../components/ConfirmDialog';
 import SpotlightLiveDialog from '../components/SpotlightLiveDialog';
-import { SPACING, RADIUS, SHADOWS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { Skeleton, SkeletonLine, GridSkeleton } from '../components/Skeleton';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -484,7 +484,7 @@ export default function SpotlightScreen() {
             <>
               <View style={styles.hero}>
                 <LinearGradient
-                  colors={['#1C1206', '#0C0805']}
+                  colors={['#1A0F33', '#0A0614']}
                   style={styles.heroStage}
                   start={{ x: 0.5, y: 0 }}
                   end={{ x: 0.5, y: 1 }}
@@ -497,7 +497,7 @@ export default function SpotlightScreen() {
                   <View style={styles.heroPool} />
                   {/* the lit artwork */}
                   <View style={styles.heroArtwork}>
-                    <Ionicons name="image" size={36} color={colors.primary} />
+                    <Ionicons name="image" size={36} color={GALAXY_LIGHT} />
                   </View>
                 </LinearGradient>
 
@@ -505,17 +505,16 @@ export default function SpotlightScreen() {
                 <Text style={styles.heroTitle}>{t('spotlight.heroTitle')}</Text>
                 <Text style={styles.heroTagline}>{t('spotlight.heroTagline')}</Text>
 
-                <TouchableOpacity style={styles.heroCreateBtn} onPress={startFlow} activeOpacity={0.85}>
-                  <LinearGradient
-                    colors={[colors.primary, colors.primaryDark ?? colors.primary]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.heroCreateInner}
-                  >
-                    <Ionicons name="sparkles" size={18} color="#fff" />
-                    <Text style={styles.heroCreateText}>{t('spotlight.heroCreate')}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
+                {/* Same galaxy pill as everywhere else in the feature. The
+                    sparkles glyph is gone — the drifting stars are the sparkle,
+                    and the old orange SHADOWS.glow went with it. */}
+                <SpotlightButton
+                  label={t('spotlight.heroCreate')}
+                  onPress={startFlow}
+                  starCount={12}
+                  style={styles.heroCreateInner}
+                  labelStyle={styles.heroCreateText}
+                />
               </View>
 
               {/* Pending / ended campaigns still surface below so nothing is lost. */}
@@ -806,9 +805,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   heroLamp: {
     width: 30, height: 9, borderRadius: 5, marginTop: SPACING.md,
-    backgroundColor: colors.primaryLight,
-    shadowColor: colors.primary, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9, shadowRadius: 12, elevation: 8,
+    backgroundColor: GALAXY_LIGHT,
+    shadowColor: GALAXY_ACCENT, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9, shadowRadius: 14, elevation: 8,
   },
   // The cone of light: an upward-apex triangle spreading down from the lamp.
   heroBeam: {
@@ -816,25 +815,25 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     width: 0, height: 0,
     borderLeftWidth: 80, borderRightWidth: 80, borderBottomWidth: 150,
     borderLeftColor: 'transparent', borderRightColor: 'transparent',
-    borderBottomColor: 'rgba(242,101,34,0.14)',
+    borderBottomColor: 'rgba(167,139,250,0.16)',
   },
   // Soft pool of light gathered on the artwork.
   heroPool: {
     position: 'absolute', bottom: 30,
     width: 150, height: 80, borderRadius: 75,
-    backgroundColor: 'rgba(250,181,37,0.10)',
+    backgroundColor: 'rgba(167,139,250,0.12)',
   },
   heroArtwork: {
     position: 'absolute', bottom: 36,
     width: 74, height: 74, borderRadius: RADIUS.md,
     backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1, borderColor: 'rgba(242,101,34,0.45)',
+    borderWidth: 1, borderColor: 'rgba(167,139,250,0.45)',
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: colors.primary, shadowOffset: { width: 0, height: 0 },
+    shadowColor: GALAXY_ACCENT, shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6, shadowRadius: 16, elevation: 8,
   },
   heroEyebrow: {
-    color: colors.primary, fontSize: 12, fontWeight: '800',
+    color: GALAXY_LIGHT, fontSize: 12, fontWeight: '800',
     letterSpacing: 2, marginTop: SPACING.xs,
   },
   heroTitle: { color: colors.text, fontSize: 24, fontWeight: '900', textAlign: 'center', marginTop: 2 },
@@ -842,12 +841,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     color: colors.textSecondary, fontSize: 14, lineHeight: 20,
     textAlign: 'center', paddingHorizontal: SPACING.md, marginTop: SPACING.xs,
   },
-  heroCreateBtn: {
-    borderRadius: RADIUS.full, overflow: 'hidden', marginTop: SPACING.lg, alignSelf: 'stretch',
-    ...SHADOWS.glow,
-  },
+  // Sizes the shared galaxy pill up to the hero CTA. No shadow: the pill
+  // clips its own overflow for the stars, which would clip a glow anyway —
+  // and the only glow on hand was the brand orange one.
   heroCreateInner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
+    alignSelf: 'stretch', marginTop: SPACING.lg,
     paddingVertical: SPACING.md + 2,
   },
   heroCreateText: { color: '#fff', fontSize: 16, fontWeight: '800' },

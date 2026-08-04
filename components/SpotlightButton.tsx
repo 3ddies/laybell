@@ -89,8 +89,11 @@ function Star({ pick }: { pick: () => Pos | null }) {
 // definition instead of each re-typing the hexes.
 export const GALAXY = ['#241147', '#3B1D8F', '#6D28D9'] as const;
 // The gradient's brightest stop, for places that need a single solid purple
-// (a filled button, an icon tint). White sits on it at ~6.5:1.
+// (a filled button, an icon tint). White sits on it at ~7.1:1.
 export const GALAXY_ACCENT = '#6D28D9';
+// A pale lavender for marks that have to READ on the dark galaxy rather than sit
+// in it — the hero's lamp, its beam, an eyebrow over a near-black stage.
+export const GALAXY_LIGHT = '#A78BFA';
 
 export default function SpotlightButton({
   label, onPress, style, labelStyle, starCount = DEFAULT_STARS, disabled = false, busy = false,
