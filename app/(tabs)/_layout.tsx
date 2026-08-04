@@ -703,6 +703,29 @@ export default function TabLayout() {
               }
             }
 
+            // ── ANDROID: TRUST THE PAGER ───────────────────────────────────────
+            // Everything below this point is a workaround for an iOS-only defect:
+            // a freshly remounted native pager reporting a garbage page for the
+            // first gesture after login (the "teleport"). On Android it does not
+            // just fail to help, it actively breaks fast swiping.
+            //
+            // The guard's premise is "a finger swipe moves EXACTLY one page", so
+            // any settle with |delta| > 1 gets redirected to prev ± 1. But Android
+            // COALESCES settles under rapid swiping: swipe Home->Explore->Music
+            // quickly and the listener sees prev=1, newIndex=4, concludes a swipe
+            // cannot move three pages, and forcibly navigates to page 2 — a page
+            // the user already swiped past. That navigate() emits another state
+            // event, which can correct again. Hence "lands on incorrect pages and
+            // other unpredictable behaviours" when swiping fast.
+            //
+            // ViewPager2 is authoritative about which page it is on. Android takes
+            // the settle at face value and keeps only the listen-mode lock above,
+            // which is a product rule rather than a workaround.
+            if (Platform.OS === 'android') {
+              settledIndexRef.current = newIndex;
+              return;
+            }
+
             const homeIndex = names.indexOf('index');
             const justMounted = Date.now() - mountedAt.current < MOUNT_GUARD_MS;
             const prev = settledIndexRef.current;
