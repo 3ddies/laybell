@@ -18,6 +18,7 @@
 // card never does.
 
 import { fetchSession } from './studio';
+import { supabase } from './supabase';
 
 const PREFIX = 'laybell://studio?';
 
@@ -63,20 +64,29 @@ export function studioInvitePreview(t: (k: string) => string): string {
   return t('studioInvite.preview');
 }
 
-/** Live status for the card. Returns null for UNKNOWN, and unknown is the normal
- *  case for the person being invited.
+/** Live status for the card. true = open, false = ended, null = UNKNOWN.
  *
- *  studio_sessions has deliberately NO public SELECT policy — join_code is the
- *  room credential, so only members can read the row (supabase/sql/studio_live.sql).
- *  The invitee is by definition not a member yet, so the fetch returns no row.
- *  Reading "no row" as "ended" is what made the card flash Join and then declare
- *  a running session over before anyone could tap it.
+ *  Read through the studio_session_status RPC, which crosses RLS on purpose.
+ *  That indirection is the whole point: studio_sessions has deliberately NO
+ *  public SELECT policy — join_code is the room credential, so only members can
+ *  read the row (supabase/sql/studio_live.sql). The invitee is by definition not
+ *  a member yet, so a direct fetch always returned "no row" and the card had to
+ *  assume open. An ended session was therefore invisible to exactly the person
+ *  holding the invite. The RPC exposes ONLY the status — never the join code —
+ *  so the room stays just as hard to enter.
  *
- *  Only an explicit status of 'ended' — which only a MEMBER can ever observe,
- *  i.e. the host or someone who already joined — closes the card. Everyone else
- *  gets Join, and joinByCode is the real arbiter: it fails cleanly on a dead
- *  session and the card surfaces that. */
+ *  With the RPC answering, a missing row genuinely means the session is gone, so
+ *  that counts as ended rather than unknown.
+ *
+ *  Before the migration lands the RPC errors, and we fall back to the member-only
+ *  read — where "no row" means "not visible to us", NOT "ended". Reading that as
+ *  ended is what once made the card flash Join and then declare a running session
+ *  over before anyone could tap it. joinByCode stays the real arbiter either way:
+ *  it fails cleanly on a dead session and the card surfaces that. */
 export async function studioSessionOpen(sessionId: string): Promise<boolean | null> {
+  const { data, error } = await supabase.rpc('studio_session_status', { p_session: sessionId });
+  if (!error) return data === 'open';  // null (row gone) → ended
+
   try {
     const s = await fetchSession(sessionId);
     if (!s) return null;               // not visible to us — NOT evidence it ended

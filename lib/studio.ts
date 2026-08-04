@@ -192,7 +192,25 @@ export async function hostExitSession(
   return (data as any) ?? null;
 }
 
+/**
+ * A NON-HOST leaving. Removes their membership and, if that empties the room,
+ * ends the session — an empty studio is dead, and must not keep advertising a
+ * Join on the invite card in DMs.
+ *
+ * Why an RPC and not a delete plus an update: `status` is not client-writable
+ * (same reason `host_id` isn't — see hostExitSession), so closing the room runs
+ * SECURITY DEFINER (supabase/sql/studio_end_when_empty.sql).
+ *
+ * Falls back to the old bare delete when the RPC isn't deployed yet, so this
+ * ships ahead of the migration without breaking leave.
+ */
 export async function leaveSession(sessionId: string): Promise<void> {
+  const { error } = await supabase.rpc('studio_leave', { p_session: sessionId });
+  if (!error) return;
+
+  // Pre-migration fallback: membership still goes, the room just won't close
+  // itself. ('is_host' never lands here — the caller routes hosts through
+  // hostExitSession, and the RPC bounces them anyway.)
   const { data: auth } = await supabase.auth.getUser();
   const userId = auth?.user?.id;
   if (!userId) return;

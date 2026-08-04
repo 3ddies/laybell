@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GRADIENTS, RADIUS, SPACING, type ThemePalette } from '../constants/theme';
@@ -46,17 +46,21 @@ export default function StudioInviteCard({
   // null = still checking; true/false = known; undefined never used.
   const [open, setOpen] = useState<boolean | null>(null);
 
-  useEffect(() => {
+  // Re-checked on every focus, not just on mount. The session can die while this
+  // thread is open — most often because the user themselves was the last one out
+  // and has just navigated back here from the studio. A mount-only check would
+  // leave a Join button on a room that no longer exists until the thread was
+  // reopened.
+  useFocusEffect(useCallback(() => {
     let alive = true;
     studioSessionOpen(invite.sessionId).then((v) => {
-      // null = UNKNOWN, and unknown is the NORMAL case here: studio_sessions has
-      // no public SELECT policy (join_code is the room credential), so the person
-      // being invited cannot read the row until they join. Treat it as open —
-      // only an explicit 'ended', which a member can see, closes the card.
+      // null = UNKNOWN, which now only happens before the status RPC is deployed
+      // (see studioSessionOpen). Unknown stays optimistic: show Join and let
+      // joinByCode be the arbiter, rather than declaring a live session over.
       if (alive) setOpen(v === null ? true : v);
     });
     return () => { alive = false; };
-  }, [invite.sessionId]);
+  }, [invite.sessionId]));
 
   async function join() {
     if (busy) return;
