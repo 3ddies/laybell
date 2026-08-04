@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { withLayoutContext } from 'expo-router';
-import { View, StyleSheet, Keyboard, Animated, Dimensions, Image, Text, PanResponder, Platform } from 'react-native';
+import { View, StyleSheet, Keyboard, Animated, Dimensions, Image, Text, PanResponder, Platform, Pressable } from 'react-native';
+import { tabTick } from '../../lib/haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -487,27 +488,54 @@ function TabBar({ state, navigation, position, jumpTo }: MaterialTopTabBarProps)
           <LinearGradient colors={scrimColors} locations={[0, 0.28, 0.55, 0.8, 1]} style={styles.blurFill} />
         </Animated.View>
       )}
+      {/* ANDROID: no whole-bar PanResponder. It claimed EVERY touch in the
+          bottom band unconditionally (onStart*ShouldSet → true) and immediately
+          ran beginHighlight, which sets `dragging` = 1 — and slots compute
+          `active = near*(1-dragging) + hover`, so the page-derived highlight was
+          zeroed on every tab and only the slot under the finger lit up. A page
+          swipe with a low thumb therefore lit the WRONG icon, mid-glide, until
+          the delayed endHighlight put it back: the flashing half-highlighted
+          tab. Android's band is ~116dp (48dp nav inset vs iOS's 34pt indicator)
+          and its touch routing lets the bar and the pager both see the gesture,
+          which is why it shows there and not on iOS.
+          Dropping the responder also stops the bar swallowing page swipes in
+          that band — the "swipe didn't register" complaint. Taps are handled
+          per-slot below, and with `dragging` never set, `near` alone drives the
+          highlight: the lit icon is always the page you are on. */}
       <Animated.View
         style={[styles.row, { transform: [{ translateY: iconDrop }] }]}
         onLayout={(e) => { barWRef.current = e.nativeEvent.layout.width; }}
-        {...panRef.current.panHandlers}
+        {...(Platform.OS === 'android' ? {} : panRef.current.panHandlers)}
       >
-        {visible.map(({ route, index }, slot) => (
-          <TabSlot
-            key={route.key}
-            route={route}
-            r={index}
-            hover={hovers[slot]}
-            dragging={dragging}
-            position={position}
-            profile={profile}
-            colors={colors}
-            styles={styles}
-            postCircleColor={postCircleColor}
-            chip={chip}
-            chipBg={chipBg}
-          />
-        ))}
+        {visible.map(({ route, index }, slot) => {
+          const slotEl = (
+            <TabSlot
+              key={route.key}
+              route={route}
+              r={index}
+              hover={hovers[slot]}
+              dragging={dragging}
+              position={position}
+              profile={profile}
+              colors={colors}
+              styles={styles}
+              postCircleColor={postCircleColor}
+              chip={chip}
+              chipBg={chipBg}
+            />
+          );
+          if (Platform.OS !== 'android') return slotEl;
+          return (
+            <Pressable
+              key={route.key}
+              style={styles.tabItem}
+              accessibilityRole="button"
+              onPress={() => { tabTick(); commitRef.current(slot); }}
+            >
+              {slotEl}
+            </Pressable>
+          );
+        })}
       </Animated.View>
     </Animated.View>
   );
