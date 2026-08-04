@@ -755,7 +755,11 @@ export default function ProfileScreen() {
               // (the thing the red dot is about); otherwise My Shop as usual.
               onPress={() => router.push(shopAlertCount > 0 ? '/shop?tab=orders' : '/shop?tab=mine')}
             >
-              <Ionicons name="storefront" size={15} color="#fff" />
+              {/* Word only. On your OWN profile this sits beside Spotlight in a
+                  row of word buttons, so a lone glyph made it the odd one out.
+                  Someone else's profile keeps its storefront icon — there the
+                  button has to announce that this person HAS a shop, rather than
+                  just label a place you already know is yours. */}
               <Text style={styles.shopBtnText}>{t('shop.title')}</Text>
               {/* Unaddressed/unseen shop activity (new sale request, delivered
                   file, declined offer) — same red alert treatment as the
@@ -882,8 +886,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   infoLeft: { flex: 1, gap: 4 },
   // Shop (green) stacked above Spotlight (orange) — both solid with white text.
   sideBtns: { gap: SPACING.sm, alignItems: 'stretch' },
+  // No gap: the label is the only child in flow now (the alert dot is
+  // absolutely positioned), so there is nothing left to space.
   shopBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.success,
     borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
