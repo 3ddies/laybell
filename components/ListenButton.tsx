@@ -27,14 +27,18 @@ const SWEEP_MS = 1400;
 const REST_MS = 7800;
 
 // Black outline for the white label — RN has no text stroke, so we stack offset
-// black copies behind the fill. Same trick (and same 8 offsets) as the Explore
-// grid's music header; a text shadow would blur into a halo instead of an edge.
-// 1.4 rather than the header's 1.6: this word is smaller, and a heavier ring
-// would start closing up the counters in "Listen".
-const STROKE = 1.4;
+// black copies behind the fill (the Explore grid's music header does the same).
+//
+// Two things keep it from turning into a blob. The DIAGONAL copies sit at
+// STROKE * 0.7 rather than STROKE, because offsetting both axes by the full
+// amount puts them ~1.41× further out than the cardinals — that corner bulge is
+// what rounds letters off. And STROKE itself is small: at 14pt the counters in
+// "e" and "s" are only a couple of px wide, so anything heavier fills them in.
+const STROKE = 0.9;
+const DIAG = STROKE * 0.7;
 const OUTLINE: ReadonlyArray<readonly [number, number]> = [
   [-STROKE, 0], [STROKE, 0], [0, -STROKE], [0, STROKE],
-  [-STROKE, -STROKE], [STROKE, -STROKE], [-STROKE, STROKE], [STROKE, STROKE],
+  [-DIAG, -DIAG], [DIAG, -DIAG], [-DIAG, DIAG], [DIAG, DIAG],
 ];
 
 export default function ListenButton({ active, onPress }: {
@@ -136,7 +140,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     top: -20, bottom: -20, width: 26,
     backgroundColor: 'rgba(255,255,255,0.30)',
   },
-  label: { color: LABEL, fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
+  // Weight 700, not 800, and letter-spacing 0.8, not 0.2. Outlined text needs
+  // more air than plain text: at 800 the strokes are already thick enough that
+  // an added ring closes the counters, and at 0.2 each letter's outline touched
+  // its neighbour's, welding the word into one shape.
+  label: { color: LABEL, fontSize: 14, fontWeight: '700', letterSpacing: 0.8 },
   // The stacked copies behind the fill (see OUTLINE).
   labelStroke: { color: '#000' },
 });
