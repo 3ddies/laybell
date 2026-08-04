@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import TrackPlayer, { Event as TPEvent, State as TPState } from 'react-native-track-player';
 import { ensurePlayerSetup, setRemoteHandlers, setNowPlayingLiked } from '../lib/trackPlayerService';
-import { fetchSongLiked, setSongLike } from '../lib/songLike';
+import { fetchSongLiked, setSongLike, publishSongLike, subscribeSongLike } from '../lib/songLike';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDeviceId } from '../lib/deviceId';
@@ -616,6 +616,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const next = !current;
     likedRef.current = next;
     setNowPlayingLiked(next);
+    // Paint the in-app player in the same breath as the lock screen — reopening
+    // the app to a heart that disagrees with the one just pressed is the whole
+    // bug this avoids. setSongLike republishes the confirmed state after.
+    publishSongLike(pid, next);
     // setSongLike returns the state actually reached, so a failed write lands
     // the heart back where it started instead of lying.
     const reached = await setSongLike(pid, uid, next);
@@ -625,6 +629,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const likeRef = useRef(likeCurrent);
   likeRef.current = likeCurrent;
+
+  // The other direction: an in-app like on the CURRENT song repaints the lock
+  // screen. Without this the card kept the state it was given at track change,
+  // so liking in the app left the two hearts disagreeing for the whole song.
+  useEffect(() => subscribeSongLike(({ postId, liked }) => {
+    if (postId !== currentTrack?.id || adState) return;
+    likedRef.current = liked;
+    setNowPlayingLiked(liked);
+  }), [currentTrack?.id, adState]);
 
   useEffect(() => {
     setRemoteHandlers({

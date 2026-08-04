@@ -16,7 +16,7 @@ import { usePostOptions } from '../contexts/PostOptionsContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
 import { bumpBadge } from '../lib/badges';
-import { setNowPlayingLiked } from '../lib/trackPlayerService';
+import { publishSongLike, subscribeSongLike } from '../lib/songLike';
 import BadgeEmblem from './BadgeEmblem';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -59,6 +59,17 @@ type TrackStats = {
   at: number;
 };
 const statsCache = new Map<string, TrackStats>();
+
+// Fold an out-of-band like into the cached stats, so reopening the player on a
+// song liked from the lock screen shows the truth instead of a stale hit.
+// Idempotent — re-applying the same state is a no-op, which is what lets the
+// echo of our own press pass through harmlessly.
+function applyLikeToStatsCache(uid: string | null, postId: string, liked: boolean) {
+  const s = statsCache.get(statsKey(uid, postId));
+  if (!s || s.isLiked === liked) return;
+  s.isLiked = liked;
+  s.likeCount = Math.max(0, s.likeCount + (liked ? 1 : -1));
+}
 const STATS_TTL_MS = 90_000;
 const statsKey = (uid: string | null, pid: string) => `${uid ?? 'anon'}:${pid}`;
 
@@ -282,6 +293,10 @@ export default function NowPlaying() {
   const [streams, setStreams] = useState(0);
   const [saves, setSaves] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
+  // Mirrored so the like subscriber can compare without re-subscribing on every
+  // flip, and without nesting a setState inside another's updater.
+  const isLikedRef = useRef(isLiked);
+  isLikedRef.current = isLiked;
   const [likeCount, setLikeCount] = useState(0);
   const [isSaved, setIsSaved] = useState(false);
   // Gate + fade for the stat bar. False from the moment a DIFFERENT track
@@ -329,6 +344,20 @@ export default function NowPlaying() {
   // Remember the playing track so an exit animation can keep rendering it after
   // the queue clears it.
   useEffect(() => { if (currentTrack) lastTrackRef.current = currentTrack; }, [currentTrack]);
+
+  // Follow likes made OUTSIDE this player — today that's the iOS lock-screen
+  // heart, which lives outside React entirely and so can't share state through
+  // a provider. Placed above the `!render` early return so it stays subscribed
+  // while the sheet is closed: the cache still has to be corrected for when it
+  // reopens. Events carry absolute state, so our own press echoes back as a
+  // no-op rather than flipping the heart a second time.
+  useEffect(() => subscribeSongLike(({ postId, liked }) => {
+    applyLikeToStatsCache(userId, postId, liked);
+    if (postId !== currentTrack?.id || isLikedRef.current === liked) return;
+    isLikedRef.current = liked;
+    setIsLiked(liked);
+    setLikeCount((c) => Math.max(0, c + (liked ? 1 : -1)));
+  }), [currentTrack?.id, userId]);
 
   // Fetch this track's features (never for ads) so the title can flip to credits.
   const featTrackId = !adState ? currentTrack?.id ?? null : null;
@@ -534,13 +563,19 @@ export default function NowPlaying() {
   async function handleLike() {
     if (!userId) return;
     const liked = isLiked;
+    // Claim the new state on the ref BEFORE publishing. publishSongLike fires
+    // synchronously, well before React commits setIsLiked, so a subscriber
+    // comparing against a stale ref would treat our own event as external and
+    // apply the count a SECOND time — a like that jumps by two.
+    isLikedRef.current = !liked;
     setIsLiked(!liked);
     setLikeCount(c => (liked ? c - 1 : c + 1));
     mutateCachedStats((s) => { s.isLiked = !liked; s.likeCount = Math.max(0, s.likeCount + (liked ? -1 : 1)); });
-    // Keep the iOS lock-screen heart in step. Without this it only refreshes on
-    // a track change, so liking here left the card showing the opposite state
-    // for the rest of the song.
-    setNowPlayingLiked(!liked);
+    // Announce it rather than poking the lock screen directly: AudioContext
+    // owns that card and subscribes to this, so every surface — here, the card,
+    // the stats cache — converges through one path instead of each pair of
+    // surfaces needing to know about each other.
+    publishSongLike(pid, !liked);
     if (liked) {
       await supabase.from('likes').delete().eq('user_id', userId).eq('post_id', pid);
     } else {
