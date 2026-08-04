@@ -36,6 +36,9 @@ export function isLang(v: any): v is Lang {
 }
 
 const en: Record<string, string> = {
+  'adManager.statViews': 'Views',
+  'adManager.statClicks': 'Clicks',
+  'adManager.statCtr': 'CTR',
   'spotlight.statViews': 'Views',
   'spotlight.statTaps': 'Taps',
   'spotlight.statLikes': 'Likes',
@@ -2410,6 +2413,9 @@ const en: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  'adManager.statViews': 'Vistas',
+  'adManager.statClicks': 'Clics',
+  'adManager.statCtr': 'CTR',
   'spotlight.statViews': 'Vistas',
   'spotlight.statTaps': 'Toques',
   'spotlight.statLikes': 'Me gusta',
@@ -4296,6 +4302,9 @@ const es: Record<string, string> = {
 };
 
 const fr: Record<string, string> = {
+  'adManager.statViews': 'Vues',
+  'adManager.statClicks': 'Clics',
+  'adManager.statCtr': 'CTR',
   'spotlight.statViews': 'Vues',
   'spotlight.statTaps': 'Clics',
   'spotlight.statLikes': 'J\'aime',
@@ -6182,6 +6191,9 @@ const fr: Record<string, string> = {
 };
 
 const de: Record<string, string> = {
+  'adManager.statViews': 'Aufrufe',
+  'adManager.statClicks': 'Klicks',
+  'adManager.statCtr': 'CTR',
   'spotlight.statViews': 'Aufrufe',
   'spotlight.statTaps': 'Tippen',
   'spotlight.statLikes': 'Likes',
@@ -8068,6 +8080,9 @@ const de: Record<string, string> = {
 };
 
 const pt: Record<string, string> = {
+  'adManager.statViews': 'Visualizações',
+  'adManager.statClicks': 'Cliques',
+  'adManager.statCtr': 'CTR',
   'spotlight.statViews': 'Visualizações',
   'spotlight.statTaps': 'Toques',
   'spotlight.statLikes': 'Curtidas',
@@ -9954,6 +9969,9 @@ const pt: Record<string, string> = {
 };
 
 const it: Record<string, string> = {
+  'adManager.statViews': 'Visualizzazioni',
+  'adManager.statClicks': 'Clic',
+  'adManager.statCtr': 'CTR',
   'spotlight.statViews': 'Visualizzazioni',
   'spotlight.statTaps': 'Tocchi',
   'spotlight.statLikes': 'Mi piace',
@@ -11840,6 +11858,9 @@ const it: Record<string, string> = {
 };
 
 const ru: Record<string, string> = {
+  'adManager.statViews': 'Просмотры',
+  'adManager.statClicks': 'Клики',
+  'adManager.statCtr': 'CTR',
   'spotlight.statViews': 'Просмотры',
   'spotlight.statTaps': 'Нажатия',
   'spotlight.statLikes': 'Лайки',
@@ -13691,6 +13712,9 @@ const ru: Record<string, string> = {
 };
 
 const zh: Record<string, string> = {
+  'adManager.statViews': '浏览',
+  'adManager.statClicks': '点击',
+  'adManager.statCtr': '点击率',
   'spotlight.statViews': '浏览',
   'spotlight.statTaps': '点击',
   'spotlight.statLikes': '喜欢',
@@ -15542,6 +15566,9 @@ const zh: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  'adManager.statViews': '表示',
+  'adManager.statClicks': 'クリック',
+  'adManager.statCtr': 'クリック率',
   'spotlight.statViews': '表示',
   'spotlight.statTaps': 'タップ',
   'spotlight.statLikes': 'いいね',
@@ -17393,6 +17420,9 @@ const ja: Record<string, string> = {
 };
 
 const hi: Record<string, string> = {
+  'adManager.statViews': 'व्यू',
+  'adManager.statClicks': 'क्लिक',
+  'adManager.statCtr': 'CTR',
   'spotlight.statViews': 'व्यू',
   'spotlight.statTaps': 'टैप',
   'spotlight.statLikes': 'लाइक',

@@ -9,8 +9,9 @@ import { useCallback, useState } from 'react';
 import {
   fetchMyAdCampaigns, effectiveAdStatus, fmtPrice,
   pauseAdCampaign, resumeAdCampaign, endAdCampaign,
-  type AdCampaign, type AdStatus, type AdPlacement,
+  type AdCampaign, type AdStatus,
 } from '../../lib/ads';
+import { formatCount } from '../../lib/format';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
@@ -32,15 +33,8 @@ const statusLabel = (t: TFn): Record<AdStatus, string> => ({
   canceled: t('adManager.statusCanceled'),
 });
 
-const PLACEMENT_ICON: Record<AdPlacement, any> = {
-  feed: 'home-outline',
-  reels: 'film-outline',
-  tv: 'tv-outline',
-  audio: 'musical-notes-outline',
-};
-
 export default function AdManagerScreen() {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { t } = useTranslation();
@@ -59,11 +53,31 @@ export default function AdManagerScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Matches the Spotlight screen. Live is GREEN, not the brand orange: orange is
+  // the app's action colour (it's on Create an Ad right above these cards), so an
+  // orange badge read as something to tap rather than a state. The brand green is
+  // tuned for dark surfaces and falls to ~2.3:1 on the light theme behind small
+  // bold text, so light mode takes a deeper leaf green that reads as the same
+  // colour but clears AA. Same for the amber paused badge.
+  const successInk = mode === 'light' ? '#15803D' : colors.success;
+  const warnInk = mode === 'light' ? '#B45309' : '#F59E0B';
+
   function statusColor(s: AdStatus): string {
     switch (s) {
-      case 'active': return colors.primary;
-      case 'paused': return '#F59E0B';
-      default: return colors.textTertiary;
+      case 'active': return successInk;
+      case 'paused': return warnInk;
+      default: return colors.textSecondary;
+    }
+  }
+
+  // Soft tinted capsule rather than a hairline outline — a 1px outline around
+  // 10px text is a Material chip; a low-alpha fill of the same hue is the iOS
+  // badge idiom and stays legible on every surface.
+  function statusTint(s: AdStatus): string {
+    switch (s) {
+      case 'active': return successInk + '24';
+      case 'paused': return warnInk + '24';
+      default: return colors.surfaceElevated;
     }
   }
 
@@ -117,15 +131,18 @@ export default function AdManagerScreen() {
       >
         <View style={styles.cardTitleRow}>
           <Text style={styles.cardTitle} numberOfLines={1}>{c.advertiser_name || t('adManager.untitled')}</Text>
-          <View style={[styles.statusChip, { borderColor: statusColor(status) }]}>
+          <View style={[styles.statusChip, { backgroundColor: statusTint(status) }]}>
             <Text style={[styles.statusChipText, { color: statusColor(status) }]}>{STATUS_LABEL[status]}</Text>
           </View>
         </View>
 
+        {/* Text-only placement capsules. Four chips each carrying its own tiny
+            glyph was the busiest thing on the card, and the labels already say
+            Feed / Reels / Tv / Audio — the icons were decoration competing with
+            the numbers below. */}
         <View style={styles.placeRow}>
           {placements.map((p) => (
             <View key={p} style={styles.placeChip}>
-              <Ionicons name={PLACEMENT_ICON[p]} size={12} color={colors.textSecondary} />
               <Text style={styles.placeChipText}>{p}</Text>
             </View>
           ))}
@@ -140,19 +157,20 @@ export default function AdManagerScreen() {
           <View style={[styles.budgetFill, { width: `${pct * 100}%` }]} />
         </View>
 
+        {/* Number over label, in equal columns — the way iOS presents insights.
+            The icon+text row read as a Material stat strip, and the eye / box-
+            arrow / trend-line glyphs added nothing the words didn't. */}
         <View style={styles.statsRow}>
-          <View style={styles.stat}>
-            <Ionicons name="eye-outline" size={15} color={colors.textSecondary} />
-            <Text style={styles.statText}>{t('adManager.views', { count: impressions })}</Text>
-          </View>
-          <View style={styles.stat}>
-            <Ionicons name="open-outline" size={15} color={colors.textSecondary} />
-            <Text style={styles.statText}>{t('adManager.clicks', { count: clicks })}</Text>
-          </View>
-          <View style={styles.stat}>
-            <Ionicons name="trending-up-outline" size={15} color={colors.textSecondary} />
-            <Text style={styles.statText}>{t('adManager.ctr', { pct: ctr.toFixed(1) })}</Text>
-          </View>
+          {([
+            [formatCount(impressions), t('adManager.statViews')],
+            [formatCount(clicks), t('adManager.statClicks')],
+            [`${ctr.toFixed(1)}%`, t('adManager.statCtr')],
+          ] as const).map(([value, label]) => (
+            <View key={label} style={styles.stat}>
+              <Text style={styles.statValue}>{value}</Text>
+              <Text style={styles.statLabel}>{label}</Text>
+            </View>
+          ))}
         </View>
 
         {(status === 'active' || status === 'paused') && (
@@ -320,35 +338,43 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   cards: { gap: SPACING.sm },
   card: {
-    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: colors.border,
-    padding: SPACING.md, gap: SPACING.sm,
+    backgroundColor: colors.surfaceLight, borderRadius: 18,
+    // Hairline, not 1px: on a 3x screen a 1px border is a visibly chunky rule.
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    padding: SPACING.md, gap: SPACING.sm + 2,
   },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SPACING.sm },
-  cardTitle: { color: colors.text, fontSize: 15, fontWeight: '800', flexShrink: 1 },
-  statusChip: { borderWidth: 1, borderRadius: RADIUS.full, paddingHorizontal: SPACING.sm, paddingVertical: 2 },
-  statusChipText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
+  cardTitle: { color: colors.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.4, flexShrink: 1 },
+  statusChip: {
+    borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.sm + 1, paddingVertical: 3,
+  },
+  statusChipText: { fontSize: 11, fontWeight: '600', letterSpacing: -0.1 },
 
   placeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   placeChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: colors.surfaceElevated, borderRadius: RADIUS.full,
-    paddingHorizontal: SPACING.sm, paddingVertical: 3,
+    paddingHorizontal: SPACING.sm + 2, paddingVertical: 4,
   },
-  placeChipText: { color: colors.textSecondary, fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
+  placeChipText: { color: colors.textSecondary, fontSize: 12, fontWeight: '500', letterSpacing: -0.1, textTransform: 'capitalize' },
 
   budgetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  budgetText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
-  budgetPct: { color: colors.textTertiary, fontSize: 12, fontWeight: '700' },
-  budgetTrack: { height: 6, borderRadius: RADIUS.full, backgroundColor: colors.surfaceElevated, overflow: 'hidden' },
+  budgetText: { color: colors.text, fontSize: 13, fontWeight: '500', letterSpacing: -0.2 },
+  budgetPct: { color: colors.textTertiary, fontSize: 13, fontWeight: '500', letterSpacing: -0.2 },
+  // 4pt rather than 6: a thinner rule reads as a measure, not a control.
+  budgetTrack: { height: 4, borderRadius: RADIUS.full, backgroundColor: colors.surfaceElevated, overflow: 'hidden' },
   budgetFill: { height: '100%', borderRadius: RADIUS.full, backgroundColor: colors.primary },
 
   statsRow: {
-    flexDirection: 'row', gap: SPACING.lg,
-    borderTopWidth: 0.5, borderTopColor: colors.border, paddingTop: SPACING.sm,
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+    paddingTop: SPACING.sm + 2,
   },
-  stat: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  statText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  // Equal columns rather than a gap-separated row, so the three figures line up
+  // on a grid instead of drifting with each number's width.
+  stat: { flex: 1, alignItems: 'center', gap: 1 },
+  statValue: { color: colors.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.4 },
+  statLabel: { color: colors.textTertiary, fontSize: 11, fontWeight: '500', letterSpacing: -0.05 },
 
   cardActions: { flexDirection: 'row', gap: SPACING.sm },
   cardActionPrimary: {
@@ -356,13 +382,18 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: colors.primary, borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md, flex: 1,
   },
-  cardActionPrimaryText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  // '#fff', not colors.text: on the light theme colors.text is near-black, which
+  // on the orange fill was dark-on-orange. The label sits on a brand-coloured
+  // button in both themes, so it's fixed white.
+  cardActionPrimaryText: { color: '#fff', fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
   cardActionGhost: {
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.full,
-    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md, flex: 1,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, borderRadius: RADIUS.full,
+    paddingVertical: SPACING.sm + 1, paddingHorizontal: SPACING.md, flex: 1,
   },
-  cardActionGhostText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
+  // Full-strength text: at textSecondary these read as disabled, and Pause / End
+  // are the card's only real controls.
+  cardActionGhostText: { color: colors.text, fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
 
   empty: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm, paddingHorizontal: SPACING.lg },
   emptyTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
