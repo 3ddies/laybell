@@ -88,7 +88,6 @@ export default function StoryCameraScreen() {
   const zoomHudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hasUltraWide, setHasUltraWide] = useState(false);       // iOS: 0.5x lens available
   const [ultraWide, setUltraWide] = useState(false);
-  const [grid, setGrid] = useState(false);
   const [timerMode, setTimerMode] = useState<0 | 3 | 10>(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const countdownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -940,16 +939,6 @@ export default function StoryCameraScreen() {
       {/* Gesture surface: pinch zoom, tap focus, double-tap flip, record-zoom */}
       <View style={StyleSheet.absoluteFill} {...viewfinderPan.panHandlers} />
 
-      {/* Rule-of-thirds grid */}
-      {grid && (
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          <View style={[styles.gridLine, { left: SCREEN_W / 3, width: 1, top: 0, bottom: 0 }]} />
-          <View style={[styles.gridLine, { left: (SCREEN_W / 3) * 2, width: 1, top: 0, bottom: 0 }]} />
-          <View style={[styles.gridLine, { top: SCREEN_H / 3, height: 1, left: 0, right: 0 }]} />
-          <View style={[styles.gridLine, { top: (SCREEN_H / 3) * 2, height: 1, left: 0, right: 0 }]} />
-        </View>
-      )}
-
       {/* Tap-to-focus reticle */}
       {focusPoint && (
         <Animated.View
@@ -1019,9 +1008,6 @@ export default function StoryCameraScreen() {
               ) : (
                 <Text style={styles.timerBadge}>{timerMode}s</Text>
               )}
-            </TouchableOpacity>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.grid')} style={styles.roundBtn} onPress={() => setGrid((g) => !g)}>
-              <Ionicons name="grid-outline" size={20} color={grid ? colors.primaryLight : '#fff'} />
             </TouchableOpacity>
           </View>
         ) : <View style={styles.roundBtn} />}
@@ -1321,7 +1307,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   flashAutoA: { color: '#fff', fontSize: 10, fontWeight: '800', marginLeft: -2 },
   timerBadge: { color: colors.primaryLight, fontSize: 14, fontWeight: '800' },
 
-  gridLine: { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.28)' },
 
   focusBox: {
     position: 'absolute', width: 72, height: 72, borderRadius: 14,
@@ -1376,7 +1361,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   modePill: { paddingHorizontal: SPACING.md, paddingVertical: 6, borderRadius: RADIUS.full },
   modePillActive: { backgroundColor: 'rgba(255,255,255,0.18)' },
   modeText: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '800', letterSpacing: 1.4 },
-  modeTextActive: { color: colors.primaryLight },
+  // Literal white, not a theme colour: the camera is a full-screen viewfinder
+  // with its own dark chrome, so every control here is white-on-video and reads
+  // the same in light and dark mode. The selected pill already carries a lighter
+  // background, so full-white vs the 60% inactive label is contrast enough.
+  modeTextActive: { color: '#fff' },
 
   shutterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingHorizontal: SPACING.xl },
   galleryBtn: {
