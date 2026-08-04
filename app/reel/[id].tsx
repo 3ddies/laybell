@@ -217,8 +217,7 @@ const ReelControls = memo(function ReelControls({
             songId={item.song_id}
             title={item.song_title}
             artist={item.song_artist}
-            artistId={item.song_artist_id}
-            linkOnly={item.song_link_only === true}
+            artistId={item.song_artist_id}
             onNavigate={api.dismiss}
           />
         )}

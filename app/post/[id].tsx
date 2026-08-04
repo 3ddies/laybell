@@ -397,7 +397,7 @@ export default function PostDetailScreen() {
                   </TouchableOpacity>
                 )}
                 {!!post.song_id && (
-                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} linkOnly={post.song_link_only === true} onNavigate={closeViewer} />
+                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
                 )}
                 <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
                 {heart}
@@ -417,7 +417,7 @@ export default function PostDetailScreen() {
                   onOpen={() => onMediaTap()}
                 />
                 {!!post.song_id && (
-                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} linkOnly={post.song_link_only === true} onNavigate={closeViewer} />
+                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
                 )}
                 <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
                 {heart}
@@ -445,7 +445,7 @@ export default function PostDetailScreen() {
                 </TouchableOpacity>
               )}
               {!!post.song_id && (
-                <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} linkOnly={post.song_link_only === true} onNavigate={closeViewer} />
+                <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
               )}
               <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
               </View>

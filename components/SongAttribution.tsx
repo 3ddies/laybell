@@ -12,15 +12,22 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
 // Bottom-right "this post uses <song>" credit on image/video posts and stories.
-// Artist (bold) → artist profile · song name → plays the track · ⋮ → the song's
-// 3-dot menu. The host (e.g. post/reel/story viewer) can pass onNavigate to
+// Song name (bold, on top) → plays the track · artist (smaller, beneath) → their
+// profile · ⋮ → the song's 3-dot menu. The size order follows the action order:
+// hearing the song is the point of the card, so it leads.
+//
+// Music-video posts (posts.song_link_only) render this identically and tap the
+// same way. That flag only stops the track auto-playing OVER the post — the
+// video already carries it — and is enforced by songPlaysFor() at the read
+// sites, never here.
+//
+// The host (e.g. post/reel/story viewer) can pass onNavigate to
 // dismiss itself when the SONG is played (so the full player, which renders
 // behind the host, surfaces in front). It is intentionally NOT used when opening
 // the artist profile — that just pushes on top. onPauseHost pauses while the menu
 // is open.
 export default function SongAttribution({
   songId, title, artist, artistId, style, inline = false, onNavigate, onPauseHost, onResumeHost,
-  linkOnly = false,
 }: {
   songId: string;
   title?: string | null;
@@ -34,10 +41,6 @@ export default function SongAttribution({
   // Fired when the song's 3-dot menu closes — a host paused via onPauseHost
   // resumes from where it left off.
   onResumeHost?: () => void;
-  // Music-video mode (posts.song_link_only): this post IS the song's video, so
-  // the track must never play — it's already the video's soundtrack. The card
-  // becomes a pointer to the song instead of a play button.
-  linkOnly?: boolean;
 }) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -59,15 +62,13 @@ export default function SongAttribution({
   }
 
   async function playSong() {
-    // Music video: never start audio. The song is already this video's own
-    // soundtrack, so playing it would run the track twice, out of sync with
-    // itself — the whole reason link-only mode exists. Send them to the song
-    // instead, where they can actually stream it.
-    if (linkOnly) {
-      onNavigate?.();
-      router.push(`/post/${songId}`);
-      return;
-    }
+    // Music videos take this SAME path. Link-only governs whether the track
+    // plays BY ITSELF over the post — it never should, the video already
+    // carries it — but a deliberate tap means "take me to this song", and the
+    // answer to that is the real player, exactly as on any other card. The host
+    // viewer closes on the way (onNavigate), so the video isn't left playing
+    // underneath the track it's a video of.
+    //
     // Already this track? Just resurface the player — never refetch/reload. The
     // reload churn from rapid taps (createAsync/unloadAsync) is what froze the app
     // on screens where the player opens behind the post.
@@ -113,15 +114,15 @@ export default function SongAttribution({
     <View style={[styles.base, inline ? styles.inline : styles.floating, style]}>
       <Ionicons name="musical-notes" size={13} color="#fff" style={styles.note} />
       <View style={[styles.textCol, inline && styles.textColInline]}>
-        <TouchableOpacity onPress={openArtist} hitSlop={{ top: 6, bottom: 2, left: 6, right: 6 }} disabled={!artistId}>
-          <Text style={styles.artist} numberOfLines={1}>{artist || t('songAttr.unknownArtist')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={playSong} hitSlop={{ top: 2, bottom: 6, left: 6, right: 6 }} style={styles.songRow}>
+        {/* Song FIRST and larger. Playing the track is what this card is for;
+            the artist's profile is the secondary path. With the artist on top in
+            heavier type, the eye landed on the smaller, lighter line for the
+            primary action. */}
+        <TouchableOpacity onPress={playSong} hitSlop={{ top: 6, bottom: 2, left: 6, right: 6 }}>
           <Text style={styles.song} numberOfLines={1}>{title || t('songAttr.audioTrack')}</Text>
-          {/* A chevron, not a play glyph: in link-only mode the tap navigates
-              to the song rather than starting it, and a play-looking control
-              that doesn't play is a small lie. */}
-          {linkOnly && <Ionicons name="chevron-forward" size={11} color="#fff" style={styles.songChevron} />}
+        </TouchableOpacity>
+        <TouchableOpacity onPress={openArtist} hitSlop={{ top: 2, bottom: 6, left: 6, right: 6 }} disabled={!artistId}>
+          <Text style={styles.artist} numberOfLines={1}>{artist || t('songAttr.unknownArtist')}</Text>
         </TouchableOpacity>
       </View>
       <TouchableOpacity onPress={openOptions} style={styles.dots} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
@@ -142,9 +143,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   note: { textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3 },
   textCol: { flexShrink: 1, alignItems: 'flex-end' },
   textColInline: { alignItems: 'flex-start' },
-  artist: { color: '#fff', fontSize: 12, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3 },
-  song: { color: '#fff', fontSize: 11, fontWeight: '500', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3, marginTop: 1 },
-  songRow: { flexDirection: 'row', alignItems: 'center' },
-  songChevron: { marginLeft: 1, opacity: 0.85, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3 },
+  // Weight and size now follow the actions: the song leads, the artist recedes.
+  song: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: -0.2, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3 },
+  artist: { color: 'rgba(255,255,255,0.82)', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3, marginTop: 1 },
   dots: { paddingLeft: 2 },
 });

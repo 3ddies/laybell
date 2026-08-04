@@ -302,7 +302,7 @@ const PostCard = memo(function PostCard({
             </TouchableOpacity>
           )}
           {!!item.song_id && (
-            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} linkOnly={item.song_link_only === true} />
+            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
           {heart}
@@ -326,7 +326,7 @@ const PostCard = memo(function PostCard({
             onOpen={(idx) => onMediaTap(() => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }, idx)))}
           />
           {!!item.song_id && (
-            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} linkOnly={item.song_link_only === true} />
+            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
           {heart}
@@ -410,7 +410,7 @@ const PostCard = memo(function PostCard({
             <Ionicons name={(songPlaysFor(item) ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
           </TouchableOpacity>
           {!!item.song_id && (
-            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} linkOnly={item.song_link_only === true} />
+            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
         </View>
