@@ -315,6 +315,10 @@ function RootLayout() {
       const res = await handleAuthLink(url);
       if (cancelled) return;
       if (res.kind === 'verified') setVerifiedToast(true);
+      // Recovery establishes a session but the user still has no password they
+      // chose. Route to the screen that sets one — otherwise they land in the
+      // app signed in, with the reset silently incomplete.
+      else if (res.kind === 'recovery') router.replace('/(auth)/reset-password');
       else if (res.kind === 'error') reportError(res.message, { where: 'authLink' });
     };
     // Cold start (app opened BY the link) and warm (already running).
@@ -354,10 +358,16 @@ function RootLayout() {
     // onboarding, so the sign-up consent links and the minor-consent step can
     // open them without the auth/onboarding guards bouncing the user away.
     const inLegal = segments[0] === 'privacy-policy' || segments[0] === 'terms-of-service';
+    // Password recovery is the one (auth) screen reached WITH a session — the
+    // recovery link signs you in precisely so you can set a password. Without
+    // this exemption the guard below reads that session and bounces straight to
+    // onboarding/tabs, so the reset screen never gets a chance to render and the
+    // reset silently never happens.
+    const inPasswordReset = segments.join('/').endsWith('reset-password');
 
     if (!session && !inAuthGroup && !inLegal) {
       router.replace('/(auth)/login');
-    } else if (session && inAuthGroup) {
+    } else if (session && inAuthGroup && !inPasswordReset) {
       checkOnboarding();
     } else if (session && !inAuthGroup && !inOnboarding && !inLegal) {
       checkOnboarding(true);

@@ -28,8 +28,15 @@ function paramsOf(url: string): URLSearchParams {
   return new URLSearchParams([...new URLSearchParams(qs), ...new URLSearchParams(frag)]);
 }
 
+/** Where Supabase should send a PASSWORD RESET link. Separate from the signup
+ *  redirect so the app can tell "you're verified" from "now choose a password". */
+export function passwordResetRedirectUrl(): string {
+  return Linking.createURL('auth-callback', { queryParams: { flow: 'recovery' } });
+}
+
 export type AuthLinkResult =
   | { kind: 'verified' }        // session established — the user is now signed in
+  | { kind: 'recovery' }        // session established, but they must set a new password
   | { kind: 'error'; message: string }
   | { kind: 'ignored' };        // not an auth link; leave it to other handlers
 
@@ -47,24 +54,31 @@ export async function handleAuthLink(url: string): Promise<AuthLinkResult> {
   const err = p.get('error_description') || p.get('error');
   if (err) return { kind: 'error', message: err.replace(/\+/g, ' ') };
 
+  // A recovery link establishes a session like any other, but the user has NOT
+  // chosen a password yet — landing them in the app signed-in and saying nothing
+  // is how the old flow dead-ended. Supabase marks it either as type=recovery or
+  // via our own flow=recovery on the redirect we asked for.
+  const type = p.get('type');
+  const isRecovery = type === 'recovery' || p.get('flow') === 'recovery';
+  const ok = (): AuthLinkResult => (isRecovery ? { kind: 'recovery' } : { kind: 'verified' });
+
   const access_token = p.get('access_token');
   const refresh_token = p.get('refresh_token');
   if (access_token && refresh_token) {
     const { error } = await supabase.auth.setSession({ access_token, refresh_token });
-    return error ? { kind: 'error', message: error.message } : { kind: 'verified' };
+    return error ? { kind: 'error', message: error.message } : ok();
   }
 
   const code = p.get('code');
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    return error ? { kind: 'error', message: error.message } : { kind: 'verified' };
+    return error ? { kind: 'error', message: error.message } : ok();
   }
 
   const token_hash = p.get('token_hash');
-  const type = p.get('type');
   if (token_hash && type) {
     const { error } = await supabase.auth.verifyOtp({ token_hash, type: type as any });
-    return error ? { kind: 'error', message: error.message } : { kind: 'verified' };
+    return error ? { kind: 'error', message: error.message } : ok();
   }
 
   return { kind: 'ignored' };

@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { passwordResetRedirectUrl } from '../lib/authLink';
 import { useProfile } from '../contexts/ProfileContext';
 import { useOffline } from '../contexts/OfflineContext';
 import { usePremium } from '../contexts/PremiumContext';
@@ -279,7 +280,23 @@ export default function SettingsScreen() {
   async function doSendPasswordReset() {
     setDialog(null);
     const { data: { user } } = await supabase.auth.getUser();
-    if (user?.email) await supabase.auth.resetPasswordForEmail(user.email);
+    if (!user?.email) { setToast({ title: t('cpw.failTitle'), message: t('cpw.failBody') }); return; }
+    // redirectTo is what makes the emailed link come BACK to the app, where
+    // (auth)/reset-password can actually set the password. Without it Supabase
+    // sends the user to the project's Site URL — a web page with no way to
+    // finish, which is why "change password" appeared to do nothing.
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+      redirectTo: passwordResetRedirectUrl(),
+    });
+    // Report the real outcome. This used to claim "Email Sent" unconditionally,
+    // so a rate-limited or failed send looked identical to a successful one.
+    if (error) {
+      setToast({
+        title: t('cpw.failTitle'),
+        message: /rate|security purposes/i.test(error.message) ? t('auth.rateLimited') : error.message,
+      });
+      return;
+    }
     setToast({ title: t('cpw.sentTitle'), message: t('cpw.sentBody') });
   }
 
