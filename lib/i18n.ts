@@ -36,6 +36,9 @@ export function isLang(v: any): v is Lang {
 }
 
 const en: Record<string, string> = {
+  'spotlight.statViews': 'Views',
+  'spotlight.statTaps': 'Taps',
+  'spotlight.statLikes': 'Likes',
   'net.offline': 'No internet connection',
   'net.backOnline': 'Back online',
   'spotlight.attachFailedTitle': 'Post published',
@@ -73,7 +76,6 @@ const en: Record<string, string> = {
   'a11y.colour': 'Colour',
   'a11y.confirm': 'Confirm',
   'a11y.forward': 'Forward',
-  'a11y.grid': 'Grid',
   'a11y.mic': 'Microphone',
   'a11y.moveDown': 'Move down',
   'a11y.moveUp': 'Move up',
@@ -2407,6 +2409,9 @@ const en: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  'spotlight.statViews': 'Vistas',
+  'spotlight.statTaps': 'Toques',
+  'spotlight.statLikes': 'Me gusta',
   'net.offline': 'Sin conexión a internet',
   'net.backOnline': 'De nuevo en línea',
   'spotlight.attachFailedTitle': 'Publicación creada',
@@ -2462,7 +2467,6 @@ const es: Record<string, string> = {
   'a11y.delete': 'Eliminar',
   'a11y.flipCamera': 'Cambiar cámara',
   'a11y.forward': 'Adelante',
-  'a11y.grid': 'Cuadrícula',
   'a11y.leave': 'Salir',
   'a11y.mic': 'Micrófono',
   'a11y.moreOptions': 'Más opciones',
@@ -4290,6 +4294,9 @@ const es: Record<string, string> = {
 };
 
 const fr: Record<string, string> = {
+  'spotlight.statViews': 'Vues',
+  'spotlight.statTaps': 'Clics',
+  'spotlight.statLikes': 'J\'aime',
   'net.offline': 'Pas de connexion internet',
   'net.backOnline': 'De retour en ligne',
   'spotlight.attachFailedTitle': 'Publication en ligne',
@@ -4345,7 +4352,6 @@ const fr: Record<string, string> = {
   'a11y.delete': 'Supprimer',
   'a11y.flipCamera': 'Changer de caméra',
   'a11y.forward': 'Suivant',
-  'a11y.grid': 'Grille',
   'a11y.leave': 'Quitter',
   'a11y.mic': 'Microphone',
   'a11y.moreOptions': 'Plus d\'options',
@@ -6173,6 +6179,9 @@ const fr: Record<string, string> = {
 };
 
 const de: Record<string, string> = {
+  'spotlight.statViews': 'Aufrufe',
+  'spotlight.statTaps': 'Tippen',
+  'spotlight.statLikes': 'Likes',
   'net.offline': 'Keine Internetverbindung',
   'net.backOnline': 'Wieder online',
   'spotlight.attachFailedTitle': 'Beitrag veröffentlicht',
@@ -6228,7 +6237,6 @@ const de: Record<string, string> = {
   'a11y.delete': 'Löschen',
   'a11y.flipCamera': 'Kamera wechseln',
   'a11y.forward': 'Weiter',
-  'a11y.grid': 'Raster',
   'a11y.leave': 'Verlassen',
   'a11y.mic': 'Mikrofon',
   'a11y.moreOptions': 'Weitere Optionen',
@@ -8056,6 +8064,9 @@ const de: Record<string, string> = {
 };
 
 const pt: Record<string, string> = {
+  'spotlight.statViews': 'Visualizações',
+  'spotlight.statTaps': 'Toques',
+  'spotlight.statLikes': 'Curtidas',
   'net.offline': 'Sem conexão com a internet',
   'net.backOnline': 'De volta online',
   'spotlight.attachFailedTitle': 'Publicação criada',
@@ -8111,7 +8122,6 @@ const pt: Record<string, string> = {
   'a11y.delete': 'Excluir',
   'a11y.flipCamera': 'Alternar câmera',
   'a11y.forward': 'Avançar',
-  'a11y.grid': 'Grade',
   'a11y.leave': 'Sair',
   'a11y.mic': 'Microfone',
   'a11y.moreOptions': 'Mais opções',
@@ -9939,6 +9949,9 @@ const pt: Record<string, string> = {
 };
 
 const it: Record<string, string> = {
+  'spotlight.statViews': 'Visualizzazioni',
+  'spotlight.statTaps': 'Tocchi',
+  'spotlight.statLikes': 'Mi piace',
   'net.offline': 'Nessuna connessione a internet',
   'net.backOnline': 'Di nuovo online',
   'spotlight.attachFailedTitle': 'Post pubblicato',
@@ -9994,7 +10007,6 @@ const it: Record<string, string> = {
   'a11y.delete': 'Elimina',
   'a11y.flipCamera': 'Cambia fotocamera',
   'a11y.forward': 'Avanti',
-  'a11y.grid': 'Griglia',
   'a11y.leave': 'Esci',
   'a11y.mic': 'Microfono',
   'a11y.moreOptions': 'Altre opzioni',
@@ -11822,6 +11834,9 @@ const it: Record<string, string> = {
 };
 
 const ru: Record<string, string> = {
+  'spotlight.statViews': 'Просмотры',
+  'spotlight.statTaps': 'Нажатия',
+  'spotlight.statLikes': 'Лайки',
   'net.offline': 'Нет подключения к интернету',
   'net.backOnline': 'Снова в сети',
   'spotlight.attachFailedTitle': 'Пост опубликован',
@@ -11877,7 +11892,6 @@ const ru: Record<string, string> = {
   'a11y.delete': 'Удалить',
   'a11y.flipCamera': 'Сменить камеру',
   'a11y.forward': 'Вперёд',
-  'a11y.grid': 'Сетка',
   'a11y.leave': 'Выйти',
   'a11y.mic': 'Микрофон',
   'a11y.moreOptions': 'Ещё',
@@ -13670,6 +13684,9 @@ const ru: Record<string, string> = {
 };
 
 const zh: Record<string, string> = {
+  'spotlight.statViews': '浏览',
+  'spotlight.statTaps': '点击',
+  'spotlight.statLikes': '喜欢',
   'net.offline': '无网络连接',
   'net.backOnline': '已恢复连接',
   'spotlight.attachFailedTitle': '帖子已发布',
@@ -13725,7 +13742,6 @@ const zh: Record<string, string> = {
   'a11y.delete': '删除',
   'a11y.flipCamera': '切换摄像头',
   'a11y.forward': '前进',
-  'a11y.grid': '网格',
   'a11y.leave': '离开',
   'a11y.mic': '麦克风',
   'a11y.moreOptions': '更多选项',
@@ -15518,6 +15534,9 @@ const zh: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  'spotlight.statViews': '表示',
+  'spotlight.statTaps': 'タップ',
+  'spotlight.statLikes': 'いいね',
   'net.offline': 'インターネット接続がありません',
   'net.backOnline': 'オンラインに戻りました',
   'spotlight.attachFailedTitle': '投稿しました',
@@ -15573,7 +15592,6 @@ const ja: Record<string, string> = {
   'a11y.delete': '削除',
   'a11y.flipCamera': 'カメラを切り替え',
   'a11y.forward': '進む',
-  'a11y.grid': 'グリッド',
   'a11y.leave': '退出',
   'a11y.mic': 'マイク',
   'a11y.moreOptions': 'その他の設定',
@@ -17366,6 +17384,9 @@ const ja: Record<string, string> = {
 };
 
 const hi: Record<string, string> = {
+  'spotlight.statViews': 'व्यू',
+  'spotlight.statTaps': 'टैप',
+  'spotlight.statLikes': 'लाइक',
   'net.offline': 'इंटरनेट कनेक्शन नहीं है',
   'net.backOnline': 'फिर से ऑनलाइन',
   'spotlight.attachFailedTitle': 'पोस्ट प्रकाशित',
@@ -17421,7 +17442,6 @@ const hi: Record<string, string> = {
   'a11y.delete': 'हटाएं',
   'a11y.flipCamera': 'कैमरा बदलें',
   'a11y.forward': 'आगे',
-  'a11y.grid': 'ग्रिड',
   'a11y.leave': 'छोड़ें',
   'a11y.mic': 'माइक्रोफ़ोन',
   'a11y.moreOptions': 'अधिक विकल्प',

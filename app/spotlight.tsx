@@ -23,7 +23,7 @@ import { SPACING, RADIUS, SHADOWS, type ThemePalette } from '../constants/theme'
 import { Skeleton, SkeletonLine, GridSkeleton } from '../components/Skeleton';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
-import { countLabel } from '../lib/i18n';
+import { formatCount } from '../lib/format';
 
 // Spotlight manager (reached from the profile's Spotlight button and Settings).
 // Pay (real — credits are debited server-side) → the campaign is born `pending` → attach a post (an
@@ -53,7 +53,7 @@ function thumbFor(post: any): { uri: string | null; video: boolean } {
 }
 
 export default function SpotlightScreen() {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const router = useRouter();
@@ -101,11 +101,29 @@ export default function SpotlightScreen() {
   // spotlight is active the screen switches to the practical management view.
   const hasActive = campaigns.some((c) => effectiveStatus(c) === 'active');
 
+  // Live is GREEN, not the brand orange. Orange is the app's action colour (it's
+  // on every button), so an orange badge read as something to tap rather than a
+  // state — and it collided with the amber "pending" badge one card away. Green
+  // is the universal "running now" signal and separates cleanly from amber.
   function statusColor(s: SpotlightStatus): string {
     switch (s) {
-      case 'active': return colors.primary;
-      case 'pending': return '#F59E0B';
-      default: return colors.textTertiary;
+      // The brand green is tuned for dark surfaces; on the light theme's
+      // near-white card it drops to ~2.3:1, which is too thin for 10px bold.
+      // A darker leaf green clears AA there and reads as the same colour.
+      case 'active': return mode === 'light' ? '#15803D' : colors.success;
+      case 'pending': return mode === 'light' ? '#B45309' : '#F59E0B';
+      default: return colors.textSecondary;
+    }
+  }
+
+  // Soft tinted capsule behind the status label instead of an outline. Hairline
+  // outlines around 10px text read as Material chips; a low-alpha fill of the
+  // same hue is the iOS badge idiom and stays legible on every surface.
+  function statusTint(s: SpotlightStatus): string {
+    switch (s) {
+      case 'active': return colors.success + '24';
+      case 'pending': return '#F59E0B24';
+      default: return colors.surfaceElevated;
     }
   }
 
@@ -325,8 +343,12 @@ export default function SpotlightScreen() {
           )}
           <View style={styles.cardInfo}>
             <View style={styles.cardTitleRow}>
-              <Text style={styles.cardTitle}>{pack?.label ?? c.package_key} · {fmtPrice(c.price_cents)}</Text>
-              <View style={[styles.statusChip, { borderColor: statusColor(status) }]}>
+              {/* Join only the parts we actually have. A campaign with no
+                  resolvable package used to render a dangling "· $0.00". */}
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {[pack?.label ?? c.package_key, fmtPrice(c.price_cents)].filter(Boolean).join(' · ')}
+              </Text>
+              <View style={[styles.statusChip, { backgroundColor: statusTint(status) }]}>
                 <Text style={[styles.statusChipText, { color: statusColor(status) }]}>{statusLabel(status, t)}</Text>
               </View>
             </View>
@@ -341,20 +363,23 @@ export default function SpotlightScreen() {
           </View>
         </View>
 
+        {/* Numbers over labels, in equal columns — the way iOS presents insights
+            (App Store Connect, Instagram). The old icon+text row leaned on an
+            open-hand glyph for "taps" that read as a Material stop icon and was
+            the least legible thing on the card. Dropping the icons entirely is
+            both cleaner and unambiguous: the label says what the number is. */}
         {status !== 'pending' && (
           <View style={styles.statsRow}>
-            <View style={styles.stat}>
-              <Ionicons name="eye-outline" size={15} color={colors.textSecondary} />
-              <Text style={styles.statText}>{countLabel('view', c.impression_count)}</Text>
-            </View>
-            <View style={styles.stat}>
-              <Ionicons name="hand-left-outline" size={15} color={colors.textSecondary} />
-              <Text style={styles.statText}>{countLabel('tap', c.tap_count)}</Text>
-            </View>
-            <View style={styles.stat}>
-              <Ionicons name="heart-outline" size={15} color={colors.textSecondary} />
-              <Text style={styles.statText}>{countLabel('like', likeCount)}</Text>
-            </View>
+            {([
+              [formatCount(c.impression_count), t('spotlight.statViews')],
+              [formatCount(c.tap_count), t('spotlight.statTaps')],
+              [formatCount(likeCount), t('spotlight.statLikes')],
+            ] as const).map(([value, label]) => (
+              <View key={label} style={styles.stat}>
+                <Text style={styles.statValue}>{value}</Text>
+                <Text style={styles.statLabel}>{label}</Text>
+              </View>
+            ))}
           </View>
         )}
 
@@ -797,46 +822,62 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     color: colors.textTertiary, fontSize: 11, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: SPACING.xs,
   },
-  cards: { gap: SPACING.sm },
+  cards: { gap: SPACING.sm + 2 },
   card: {
-    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: colors.border,
-    padding: SPACING.md, gap: SPACING.sm,
+    backgroundColor: colors.surfaceLight, borderRadius: 18,
+    // Hairline, not 1px: on a 3x screen a 1px border is a visibly chunky rule.
+    // StyleSheet.hairlineWidth is the crisp single-device-pixel line iOS uses.
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    padding: SPACING.md, gap: SPACING.sm + 2,
   },
-  cardTop: { flexDirection: 'row', gap: SPACING.sm, alignItems: 'center' },
-  cardThumb: { width: 54, height: 54, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceElevated },
-  cardThumbPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  cardInfo: { flex: 1, gap: 2 },
+  cardTop: { flexDirection: 'row', gap: SPACING.sm + 2, alignItems: 'center' },
+  cardThumb: {
+    width: 56, height: 56, borderRadius: 13,
+    backgroundColor: colors.surfaceElevated,
+  },
+  cardThumbPlaceholder: {
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+  },
+  cardInfo: { flex: 1, gap: 3 },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SPACING.sm },
-  cardTitle: { color: colors.text, fontSize: 14, fontWeight: '700', flexShrink: 1 },
+  // Tighter tracking + 600 rather than 700: SF Pro's semibold at a slight
+  // negative letter-spacing is what makes iOS titles read crisp instead of heavy.
+  cardTitle: { color: colors.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.25, flexShrink: 1 },
   statusChip: {
-    borderWidth: 1, borderRadius: RADIUS.full,
-    paddingHorizontal: SPACING.sm, paddingVertical: 2,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.sm + 1, paddingVertical: 3,
   },
-  statusChipText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
-  cardCaption: { color: colors.textSecondary, fontSize: 12 },
-  cardMeta: { color: colors.textTertiary, fontSize: 11 },
+  statusChipText: { fontSize: 11, fontWeight: '600', letterSpacing: -0.1 },
+  cardCaption: { color: colors.textSecondary, fontSize: 13, letterSpacing: -0.1 },
+  cardMeta: { color: colors.textTertiary, fontSize: 12, letterSpacing: -0.1 },
 
   statsRow: {
-    flexDirection: 'row', gap: SPACING.lg,
-    borderTopWidth: 0.5, borderTopColor: colors.border, paddingTop: SPACING.sm,
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+    paddingTop: SPACING.sm + 2,
   },
-  stat: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  statText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  // Equal columns rather than a gap-separated row, so the three figures line up
+  // on a grid instead of drifting with each number's width.
+  stat: { flex: 1, alignItems: 'center', gap: 1 },
+  statValue: { color: colors.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.4 },
+  statLabel: { color: colors.textTertiary, fontSize: 11, fontWeight: '500', letterSpacing: -0.05 },
 
   cardActions: { flexDirection: 'row', gap: SPACING.sm },
   cardActionPrimary: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: colors.primary, borderRadius: RADIUS.full,
-    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md, flex: 1,
+    paddingVertical: SPACING.sm + 1, paddingHorizontal: SPACING.md, flex: 1,
   },
-  cardActionPrimaryText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  // Literal white, not colors.text: on the orange fill the light theme's
+  // near-black body colour was dark-on-orange and barely readable.
+  cardActionPrimaryText: { color: '#fff', fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
   cardActionGhost: {
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.full,
-    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, borderRadius: RADIUS.full,
+    paddingVertical: SPACING.sm + 1, paddingHorizontal: SPACING.lg,
   },
-  cardActionGhostText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
+  cardActionGhostText: { color: colors.text, fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
 
   empty: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.sm, paddingHorizontal: SPACING.lg },
   emptyTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
