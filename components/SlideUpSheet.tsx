@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Modal, Pressable, StyleSheet, Animated, Easing, Dimensions,
-  KeyboardAvoidingView, Platform, type StyleProp, type ViewStyle,
+  Keyboard, Platform, type StyleProp, type ViewStyle,
 } from 'react-native';
 
 const SCREEN_H = Dimensions.get('window').height;
@@ -48,11 +48,29 @@ export default function SlideUpSheet({
   onSheetPress?: () => void;
 }) {
   const [mounted, setMounted] = useState(visible);
+  // Keyboard lift, done with explicit listeners instead of KeyboardAvoidingView.
+  //
+  // KAV wrapped the FULL-HEIGHT container, so ANY padding it computed pushed the
+  // sheet up off the bottom edge of the screen — leaving a strip of dimmed page
+  // between the sheet and the bottom of the display. That's the "sheet is cut off
+  // and floating" bug: it showed on the one sheet that opens with the keyboard
+  // CLOSED (Add to playlist), while sheets that immediately focus a text field
+  // hid it, because there the lift looked deliberate.
+  //
+  // Listening directly makes the offset exactly the keyboard height while the
+  // keyboard is up, and exactly ZERO while it isn't — so a sheet with no focused
+  // input is always flush with the bottom of the screen.
+  const keyboardLift = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
   // Derived, not animated separately — see the note above.
   const backdropOpacity = useRef(
     translateY.interpolate({ inputRange: [0, SCREEN_H], outputRange: [1, 0], extrapolate: 'clamp' }),
   ).current;
+  // The sheet's final offset: its slide position MINUS the keyboard lift. Both
+  // are native-driver values composed at the transform, so the lift rides the
+  // same UI-thread animation as the slide and the two can't desync (the same
+  // construction the backdrop uses).
+  const sheetOffset = useRef(Animated.subtract(translateY, keyboardLift)).current;
 
   useEffect(() => {
     if (visible) {
@@ -74,33 +92,68 @@ export default function SlideUpSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
+  // iOS ONLY, matching what KAV did before: Android runs adjustResize, so the
+  // window already shrinks for the keyboard and adding our own lift would
+  // double-count it. (The old code passed behavior=undefined on Android, which
+  // made KAV a no-op there — this keeps that behaviour byte-for-byte.)
+  useEffect(() => {
+    if (!avoidKeyboard || Platform.OS !== 'ios') return;
+    // `keyboardWillShow` fires BEFORE the keyboard slides in and carries its
+    // duration, so matching it here keeps the sheet glued to the keyboard's top
+    // edge for the whole travel rather than snapping ahead of it.
+    const to = (toValue: number, duration: number) =>
+      Animated.timing(keyboardLift, { toValue, duration: duration || 250, useNativeDriver: true }).start();
+    const show = Keyboard.addListener('keyboardWillShow', (e) => to(e.endCoordinates?.height ?? 0, e.duration));
+    const hide = Keyboard.addListener('keyboardWillHide', (e) => to(0, e.duration));
+    return () => { show.remove(); hide.remove(); };
+  }, [avoidKeyboard, keyboardLift]);
+
   if (!mounted) return null;
 
   const inner = (
-    <Pressable style={styles.fill} onPress={onClose}>
-      {/* Stop taps inside the sheet from closing it. */}
-      <Animated.View style={{ transform: [{ translateY }] }}>
+    <>
+      {/* Tap-to-close layer, BEHIND the sheet (so sheet taps never reach it). */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      {/* The wrapper spans the whole screen and bottom-aligns the sheet (see
+          sheetWrap for why a content-sized wrapper broke percentage heights).
+          The slide-in and the keyboard lift are folded into its one transform.
+          box-none so it doesn't swallow taps meant for the close layer behind
+          it — only the sheet itself takes touches. */}
+      <Animated.View
+        pointerEvents="box-none"
+        style={[styles.sheetWrap, { transform: [{ translateY: sheetOffset }] }]}
+      >
         <Pressable style={sheetStyle} onPress={onSheetPress ?? (() => {})}>
           {children}
         </Pressable>
       </Animated.View>
-    </Pressable>
+    </>
   );
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
       <Animated.View style={[styles.backdrop, backdropStyle, { backgroundColor: `rgba(0,0,0,${dim})`, opacity: backdropOpacity }]}>
-        {avoidKeyboard ? (
-          <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            {inner}
-          </KeyboardAvoidingView>
-        ) : inner}
+        {inner}
       </Animated.View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end' },
-  fill: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { flex: 1 },
+  // FULL-SCREEN on purpose, with the sheet bottom-aligned inside it — NOT a
+  // content-sized box pinned to the bottom.
+  //
+  // This is what caused the "sheet floats above the bottom edge" bug. A sheet
+  // style of `maxHeight: '70%'` (several of them have one) resolves that
+  // percentage against THIS wrapper. When the wrapper was content-sized, the
+  // percentage was self-referential: the wrapper grew to the sheet's natural
+  // height, the sheet was then clamped to 70% OF THAT, and the leftover 30% sat
+  // under the sheet as empty wrapper — which is exactly the gap, and why the gap
+  // scaled with the sheet's content instead of being a fixed inset.
+  //
+  // Spanning the screen gives the percentage a stable base (the display), so
+  // `maxHeight: '70%'` means what it reads as, and flex-end keeps the sheet on
+  // the bottom edge.
+  sheetWrap: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
 });

@@ -44,18 +44,25 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
 
   async function fetchPlaylists() {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    // try/finally: the `!user` bail and any network reject used to leave
+    // `loading` stuck TRUE, which stranded the sheet on its skeleton forever
+    // with no way back. Clearing it here always lands on the empty state, which
+    // is recoverable (the Create CTA still works).
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    // Fetch playlists + which ones already contain this post
-    const [playlistsRes, existingRes] = await Promise.all([
-      supabase.from('playlists').select('id, name, is_public').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('playlist_tracks').select('playlist_id').eq('post_id', postId),
-    ]);
+      // Fetch playlists + which ones already contain this post
+      const [playlistsRes, existingRes] = await Promise.all([
+        supabase.from('playlists').select('id, name, is_public').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('playlist_tracks').select('playlist_id').eq('post_id', postId),
+      ]);
 
-    if (playlistsRes.data) setPlaylists(playlistsRes.data);
-    if (existingRes.data) setAdded(new Set(existingRes.data.map(t => t.playlist_id)));
-    setLoading(false);
+      if (playlistsRes.data) setPlaylists(playlistsRes.data);
+      if (existingRes.data) setAdded(new Set(existingRes.data.map(t => t.playlist_id)));
+    } finally {
+      setLoading(false);
+    }
   }
 
   // Create a new playlist AND drop the current song into it (that's the whole
@@ -175,9 +182,14 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
             </TouchableOpacity>
           )}
 
+          {/* All three states share one min-height. The fetch usually resolves
+              WHILE the sheet is still sliding up, so without a common floor the
+              sheet visibly ballooned to fit 5 skeleton rows and then snapped
+              shorter mid-animation — reading as a glitch rather than a load. */}
+          <View style={styles.contentArea}>
           {loading ? (
             <View style={styles.list}>
-              <ListRowsSkeleton rows={5} trailing={false} />
+              <ListRowsSkeleton rows={3} trailing={false} />
             </View>
           ) : playlists.length === 0 ? (
             <View style={styles.emptyWrap}>
@@ -225,6 +237,7 @@ export default function AddToPlaylistModal({ visible, postId, onClose, inOverlay
               }}
             />
           )}
+          </View>
     </>
   );
 
@@ -299,7 +312,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   createCancel: { padding: SPACING.xs },
 
   loadingWrap: { alignItems: 'center', justifyContent: 'center', padding: SPACING.xxl },
-  emptyWrap: { alignItems: 'center', padding: SPACING.xxl, gap: SPACING.sm },
+  // Shared floor for skeleton / empty / list so the sheet keeps one height while
+  // the fetch resolves (see the note at the call site). The ceiling bounds the
+  // FlatList so a user with many playlists scrolls INSIDE the sheet instead of
+  // growing it past the screen (the sheet's own maxHeight:'70%' can't do that
+  // job — a percentage can't resolve against an auto-height parent).
+  contentArea: { minHeight: 210, maxHeight: 360 },
+  emptyWrap: { alignItems: 'center', justifyContent: 'center', flex: 1, padding: SPACING.lg, gap: SPACING.sm },
   emptyText: { color: colors.text, fontSize: 16, fontWeight: '700' },
   emptySubtext: { color: colors.textSecondary, fontSize: 13, textAlign: 'center' },
   list: { padding: SPACING.md, gap: SPACING.sm },
