@@ -17,6 +17,7 @@ import {
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
 import SwipeBackPager from '../components/SwipeBackPager';
+import HeroSky from '../components/HeroSky';
 import SpotlightButton, { GALAXY_ACCENT, GALAXY_LIGHT } from '../components/SpotlightButton';
 import ConfirmDialog from '../components/ConfirmDialog';
 import SpotlightLiveDialog from '../components/SpotlightLiveDialog';
@@ -489,28 +490,9 @@ export default function SpotlightScreen() {
                   start={{ x: 0.5, y: 0 }}
                   end={{ x: 0.5, y: 1 }}
                 >
-                  {/* the lamp */}
-                  <View style={styles.heroLamp} />
-                  {/* The cone: three nested triangles, widest and faintest
-                      first. Stacked falloffs fake the soft edge a
-                      border-drawn triangle cannot have by itself. */}
-                  <View style={[styles.heroBeam, styles.heroBeamWide]} />
-                  <View style={[styles.heroBeam, styles.heroBeamMid]} />
-                  <View style={[styles.heroBeam, styles.heroBeamCore]} />
-                  {/* The pool: three concentric ellipses instead of one, so
-                      it fades out rather than ending on a hard rim. */}
-                  <View style={[styles.heroPool, styles.heroPoolWide]} />
-                  <View style={[styles.heroPool, styles.heroPoolMid]} />
-                  <View style={[styles.heroPool, styles.heroPoolCore]} />
-                  {/* Floor scrim — swallows the bottom edges of the cone and
-                      the pool so nothing terminates on a visible line. */}
-                  <LinearGradient
-                    colors={['rgba(10,6,20,0)', 'rgba(10,6,20,0.85)']}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={styles.heroFloor}
-                    pointerEvents="none"
-                  />
+                  {/* Stars, not a lamp and a cone — points have no edges to
+                      blend, so the artwork stops fighting the medium. */}
+                  <HeroSky />
                   {/* the lit artwork */}
                   <View style={styles.heroArtwork}>
                     <Ionicons name="image" size={36} color={GALAXY_LIGHT} />
@@ -817,37 +799,17 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   hero: { alignItems: 'center', gap: SPACING.xs },
   heroStage: {
     width: '100%', height: 230, borderRadius: RADIUS.xl, overflow: 'hidden',
-    alignItems: 'center', marginBottom: SPACING.md,
-    borderWidth: 1, borderColor: colors.border,
+    // Centred both ways now: the sky is absoluteFill, so the artwork is the only
+    // thing being laid out — and HeroSky keeps its star dead-zone at the middle
+    // to match, so the two have to agree on where the subject sits.
+    alignItems: 'center', justifyContent: 'center', marginBottom: SPACING.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
-  heroLamp: {
-    width: 30, height: 9, borderRadius: 5, marginTop: SPACING.md,
-    backgroundColor: GALAXY_LIGHT,
-    shadowColor: GALAXY_ACCENT, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9, shadowRadius: 14, elevation: 8,
-  },
-  // The cone of light: an upward-apex triangle spreading down from the lamp.
-  // Shared cone geometry; each variant sets its own spread and alpha.
-  heroBeam: {
-    position: 'absolute', top: SPACING.md + 9,
-    width: 0, height: 0,
-    borderLeftColor: 'transparent', borderRightColor: 'transparent',
-  },
-  heroBeamWide: { borderLeftWidth: 104, borderRightWidth: 104, borderBottomWidth: 158, borderBottomColor: 'rgba(167,139,250,0.05)' },
-  heroBeamMid: { borderLeftWidth: 78, borderRightWidth: 78, borderBottomWidth: 152, borderBottomColor: 'rgba(167,139,250,0.06)' },
-  heroBeamCore: { borderLeftWidth: 46, borderRightWidth: 46, borderBottomWidth: 146, borderBottomColor: 'rgba(196,181,253,0.07)' },
   // Soft pool of light gathered on the artwork.
-  // Shared pool geometry; concentric sizes give the falloff.
-  heroPool: { position: 'absolute' },
-  heroPoolWide: { bottom: 18, width: 210, height: 104, borderRadius: 105, backgroundColor: 'rgba(167,139,250,0.045)' },
-  heroPoolMid: { bottom: 26, width: 156, height: 82, borderRadius: 78, backgroundColor: 'rgba(167,139,250,0.055)' },
-  heroPoolCore: { bottom: 34, width: 104, height: 58, borderRadius: 52, backgroundColor: 'rgba(196,181,253,0.07)' },
-  heroFloor: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 96 },
   heroArtwork: {
-    position: 'absolute', bottom: 36,
     width: 74, height: 74, borderRadius: RADIUS.md,
     backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(196,181,253,0.30)',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(196,181,253,0.38)',
     alignItems: 'center', justifyContent: 'center',
     shadowColor: GALAXY_ACCENT, shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6, shadowRadius: 16, elevation: 8,
