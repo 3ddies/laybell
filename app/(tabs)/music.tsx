@@ -1175,6 +1175,7 @@ export default function MusicScreen() {
           ListEmptyComponent={searching || searchProfiles.length > 0 ? null : <Text style={styles.searchEmpty}>{t('music.noResults')}</Text>}
           renderItem={({ item }) => (
             <TrackRow
+              hidePlayButton
               caption={item.caption}
               artist={item.profiles?.display_name}
               username={item.profiles?.username}
@@ -1315,6 +1316,7 @@ export default function MusicScreen() {
               <View style={styles.trendingList}>
                 {trendingTracks.slice(0, trendingExpanded ? 8 : 4).map((track, i) => (
                   <TrackRow
+                    hidePlayButton
                     key={track.id}
                     caption={track.caption}
                     artist={track.profiles?.display_name}
@@ -1388,6 +1390,7 @@ export default function MusicScreen() {
                 <View style={styles.trendingList}>
                   {top20Tracks.slice(0, top20Expanded ? 20 : 4).map((track, i) => (
                     <TrackRow
+                      hidePlayButton
                       key={track.id}
                       caption={track.caption}
                       artist={track.profiles?.display_name}
@@ -1709,6 +1712,7 @@ export default function MusicScreen() {
               )}
               renderItem={({ item, index }) => (
                 <TrackRow
+                  hidePlayButton
                   caption={item.posts.caption}
                   artist={item.posts.profiles?.display_name}
                   username={item.posts.profiles?.username}
@@ -1909,6 +1913,7 @@ export default function MusicScreen() {
               )}
               renderItem={({ item, index }) => (
                 <TrackRow
+                  hidePlayButton
                   caption={item.posts.caption}
                   artist={item.posts.profiles?.display_name}
                   username={item.posts.profiles?.username}
