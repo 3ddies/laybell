@@ -87,13 +87,16 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
 // animated rather than just stateful. `r` is the slot's index in the FULL route
 // list (so it lines up with `position`, which counts the hidden camera as 0).
 function TabSlot({
-  route, r, hover, dragging, position, profile, colors, styles, postCircleColor, chip, chipBg,
+  route, r, hover, dragging, position, focus, profile, colors, styles, postCircleColor, chip, chipBg,
 }: {
   route: MaterialTopTabBarProps['state']['routes'][number];
   r: number;
   hover: Animated.Value;
   dragging: Animated.Value;
   position: MaterialTopTabBarProps['position'];
+  /** Android only: per-slot 0/1 highlight driven by the settled route index.
+   *  When present it REPLACES the pager-position term entirely (see `active`). */
+  focus?: Animated.Value;
   profile: ReturnType<typeof useProfile>['profile'];
   colors: ThemePalette;
   styles: ReturnType<typeof makeStyles>;
@@ -113,7 +116,14 @@ function TabSlot({
   // the tab you're ON goes dark and ONLY the tab tracking your finger lights up
   // — and the page underneath is free to cut to its destination unnoticed.
   const near = position.interpolate({ inputRange: [r - 1, r, r + 1], outputRange: [0, 1, 0], extrapolate: 'clamp' });
-  const active = Animated.add(Animated.multiply(near, Animated.subtract(1, dragging)), hover);
+  // ANDROID: `focus` replaces the whole pager-driven term. `position` is a
+  // CONTINUOUS value, and with animationEnabled:false a tab press calls
+  // setPageWithoutAnimation — on which ViewPager2 emits onPageScroll for every
+  // intermediate page it passes through. Home→Profile therefore sweeps position
+  // across Explore and Music, lighting and scaling each in turn: the flashing,
+  // wrong-tab, growing icons. `focus` is a per-slot 0/1 value driven by the
+  // SETTLED route index, so it cannot pass through anything.
+  const active = focus ?? Animated.add(Animated.multiply(near, Animated.subtract(1, dragging)), hover);
   const scale = active.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16], extrapolate: 'clamp' });
   const lift = active.interpolate({ inputRange: [0, 1], outputRange: [0, -4], extrapolate: 'clamp' });
   const fillOpacity = active.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' });
@@ -309,6 +319,28 @@ function TabBar({ state, navigation, position, jumpTo }: MaterialTopTabBarProps)
   // highlight by (1 - dragging), so the current tab goes dark during a drag and
   // only the hovered tab (driven by `hovers`) shows.
   const dragging = useRef(new Animated.Value(0)).current;
+  // ANDROID highlight source. One 0/1 value per visible slot, animated straight
+  // to its target when the FOCUSED ROUTE settles — never interpolated across a
+  // range, so a jump from slot 0 to slot 4 cannot light slots 1-3 on the way.
+  // This is what the pager's continuous `position` could not give us: with
+  // animationEnabled:false, setPageWithoutAnimation makes ViewPager2 emit
+  // onPageScroll for every page it passes through.
+  const focusRef = useRef<Animated.Value[] | null>(null);
+  if (!focusRef.current) {
+    focusRef.current = visible.map((v) => new Animated.Value(v.index === state.index ? 1 : 0));
+  }
+  const focus = focusRef.current;
+  const androidHighlight = Platform.OS === 'android';
+  useEffect(() => {
+    if (!androidHighlight) return;
+    focus.forEach((v, i) => {
+      const target = visible[i]?.index === state.index ? 1 : 0;
+      Animated.timing(v, { toValue: target, duration: 150, useNativeDriver: true }).start();
+    });
+    // `visible` is derived from the same route list each render; the settled
+    // index is the only thing that should retrigger this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.index, androidHighlight]);
   // True between a press ending and the highlight being handed back to `near`.
   // A fresh grab clears it, which cancels the pending handoff.
   const releasingRef = useRef(false);
@@ -516,6 +548,7 @@ function TabBar({ state, navigation, position, jumpTo }: MaterialTopTabBarProps)
               hover={hovers[slot]}
               dragging={dragging}
               position={position}
+              focus={androidHighlight ? focus[slot] : undefined}
               profile={profile}
               colors={colors}
               styles={styles}
