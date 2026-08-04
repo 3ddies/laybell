@@ -26,20 +26,16 @@ import { useTranslation } from '../contexts/LanguageContext';
 const SWEEP_MS = 1400;
 const REST_MS = 7800;
 
-// Black outline for the white label — RN has no text stroke, so we stack offset
-// black copies behind the fill (the Explore grid's music header does the same).
+// NO text outline here, deliberately. The stacked-copy trick (see the Explore
+// grid's music header) works on large display type, but at 14pt nine text
+// layers land on subpixel boundaries and the edges go muddy — no amount of
+// tuning stroke width or letter-spacing fixes that, because it's the technique
+// failing at this size, not the values.
 //
-// Two things keep it from turning into a blob. The DIAGONAL copies sit at
-// STROKE * 0.7 rather than STROKE, because offsetting both axes by the full
-// amount puts them ~1.41× further out than the cardinals — that corner bulge is
-// what rounds letters off. And STROKE itself is small: at 14pt the counters in
-// "e" and "s" are only a couple of px wide, so anything heavier fills them in.
-const STROKE = 0.9;
-const DIAG = STROKE * 0.7;
-const OUTLINE: ReadonlyArray<readonly [number, number]> = [
-  [-STROKE, 0], [STROKE, 0], [0, -STROKE], [0, STROKE],
-  [-DIAG, -DIAG], [DIAG, -DIAG], [-DIAG, DIAG], [DIAG, DIAG],
-];
+// White text needs a darker ground, not a ring. The pill carries the brand
+// orange instead of the lighter wordmark gold, which puts white at ~3.4:1 — it
+// clears the 3:1 bar for 14pt bold, and does it with ONE text layer, so the
+// letterforms render exactly as the font draws them.
 
 export default function ListenButton({ active, onPress }: {
   /** Listen mode is currently ON — the button becomes "Exit". */
@@ -96,20 +92,7 @@ export default function ListenButton({ active, onPress }: {
             style={[styles.shine, { transform: [{ translateX }, { rotate: '18deg' }] }]}
           />
         )}
-        {/* The outline copies are absolute, so the wrapper takes its size from
-            the single in-flow fill copy below them. */}
-        <View>
-          {OUTLINE.map(([x, y], i) => (
-            <Text
-              key={i}
-              numberOfLines={1}
-              style={[styles.label, styles.labelStroke, { position: 'absolute', left: x, top: y }]}
-            >
-              {label}
-            </Text>
-          ))}
-          <Text style={styles.label} numberOfLines={1}>{label}</Text>
-        </View>
+        <Text style={styles.label} numberOfLines={1}>{label}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -122,13 +105,14 @@ export default function ListenButton({ active, onPress }: {
 const LABEL = '#FFFFFF';
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  // FLAT primaryLight, deliberately — this is the hex the home-page wordmark
-  // uses, and the previous style carried a note that a gradient/glow made the
-  // pill read brighter than the logo. The sheen adds life without touching the
-  // fill, so that decision still stands.
+  // Brand orange, not the lighter wordmark gold. The old style pinned this to
+  // primaryLight to match the home wordmark's hex — that held while the label
+  // was dark ink, but white needs a darker ground to sit on, and gold could
+  // only carry it with an outline that wrecked the letterforms at this size.
+  // Still flat: the note about a gradient reading brighter than the logo stands.
   btn: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.primary,
     borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md + 4,
     overflow: 'hidden',   // clips the sweep to the pill
@@ -140,11 +124,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     top: -20, bottom: -20, width: 26,
     backgroundColor: 'rgba(255,255,255,0.30)',
   },
-  // Weight 700, not 800, and letter-spacing 0.8, not 0.2. Outlined text needs
-  // more air than plain text: at 800 the strokes are already thick enough that
-  // an added ring closes the counters, and at 0.2 each letter's outline touched
-  // its neighbour's, welding the word into one shape.
-  label: { color: LABEL, fontSize: 14, fontWeight: '700', letterSpacing: 0.8 },
-  // The stacked copies behind the fill (see OUTLINE).
-  labelStroke: { color: '#000' },
+  // Back to normal typography now the outline is gone: 800 and 0.2. The loose
+  // 700/0.8 existed only to stop neighbouring outlines welding together, and
+  // without a ring to accommodate it just read as a gappy word.
+  label: { color: LABEL, fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
 });
