@@ -16,7 +16,6 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import LaybellBell from '../../components/LaybellBell';
-import Shine from '../../components/Shine';
 import { isSwipeTap } from '../../contexts/PagerContext';
 import {
   setVisibleVideoId, setWarmVideoIds, setFeedFastScrolling, setFeedFocused, resetFeedVideo, useCardPlayback, getVisibleVideoId,
@@ -515,8 +514,6 @@ export default function HomeScreen() {
   const { pending, completedTick, pinnedIds, clearPinned, homeScrollTick } = useUploadQueue();
   const [pinnedPosts, setPinnedPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  // Measured wordmark width — the shine needs it to know how far to travel.
-  const [logoW, setLogoW] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
@@ -1783,14 +1780,13 @@ export default function HomeScreen() {
             onPress={() => { revealChevron(); setMenuOpen(true); }}
             activeOpacity={0.7}
           >
-            {/* A highlight crosses the wordmark every ~9s, same treatment as the
-                Listen pill. Gated on the tab being FOCUSED and the feed being
-                past its initial load: decoration should never compete with
-                startup, and an off-screen tab has no business animating. */}
-            <View style={styles.logoWrap} onLayout={(e) => setLogoW(e.nativeEvent.layout.width)}>
+            {/* No shine here. Clipping a highlight to the LETTERFORMS needs a
+                text mask (masked-view / svg / skia) — all native deps, so a
+                rebuild — and an unmasked sweep is a rectangle crossing a
+                rectangle, which read as a glitch rather than a finish. */}
+            <View style={styles.logoWrap}>
               <Text style={styles.headerLogo}>Laybell</Text>
               <Text style={styles.tm}>™</Text>
-              <Shine width={logoW} active={isFocused && !loading} />
             </View>
             <Animated.View style={[styles.logoChevron, { opacity: chevronOpacity }]} pointerEvents="none">
               <Ionicons name="chevron-down" size={20} color={colors.primaryLight} />
@@ -2069,9 +2065,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   logoChevron: { marginLeft: 2, marginTop: 4 },
   // Wordmark + ™ tucked into the bottom-right corner of "Laybell".
-  // overflow:hidden clips the shine to the wordmark. Safe for the y-descender:
-  // the row sizes to the text's own line box, so nothing gets cropped.
-  logoWrap: { flexDirection: 'row', alignItems: 'flex-end', overflow: 'hidden' },
+  logoWrap: { flexDirection: 'row', alignItems: 'flex-end' },
   tm: { fontSize: 11, fontWeight: '700', color: colors.primaryLight, marginLeft: 1, marginBottom: 3 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   headerIconBtn: { position: 'relative', padding: 2 },
