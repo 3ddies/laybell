@@ -33,12 +33,49 @@ export function setRemoteHandlers(h: RemoteHandlers | null) { handlers = h; }
 export function pauseMainPlayer() { try { handlers?.pause(); } catch {} }
 
 // Registered once from the app entry (index.js); lives for the app's lifetime.
+//
+// EVERY remote command falls back to driving TrackPlayer DIRECTLY when no
+// handlers are registered. That is not defensive padding — on Android the
+// playback service can run in a headless JS context with the React tree
+// unmounted (screen off, app backgrounded, or the app swiped away while
+// appKilledPlaybackBehavior keeps audio alive), and `handlers` is set by
+// AudioProvider, so it is null exactly then.
+//
+// Why that was fatal rather than merely inert: react-native-track-player
+// configures KotlinAudio with interceptPlayerActionsTriggeredExternally = true,
+// so the native player deliberately does NOT act on a notification button — it
+// forwards the press to JS and waits. With nothing listening, the press was
+// neither handled natively nor in JS, and the media session collapsed: audio
+// cut out and the notification vanished (owner-reported on the Samsung, with
+// the screen off).
+//
+// The fallbacks keep the lock-screen transport working headlessly. When the app
+// IS mounted, handlers still win, so in-app state and the card stay in sync.
+const remote = {
+  play: () => { if (handlers) handlers.play(); else TrackPlayer.play().catch(() => {}); },
+  pause: () => { if (handlers) handlers.pause(); else TrackPlayer.pause().catch(() => {}); },
+  next: () => { if (handlers) handlers.next(); else TrackPlayer.skipToNext().catch(() => {}); },
+  previous: () => { if (handlers) handlers.previous(); else TrackPlayer.skipToPrevious().catch(() => {}); },
+  seekTo: (ms: number) => {
+    if (handlers) handlers.seekTo(ms);
+    else TrackPlayer.seekTo(ms / 1000).catch(() => {});
+  },
+};
+
 export async function playbackService() {
-  TrackPlayer.addEventListener(Event.RemotePlay, () => { try { handlers?.play(); } catch {} });
-  TrackPlayer.addEventListener(Event.RemotePause, () => { try { handlers?.pause(); } catch {} });
-  TrackPlayer.addEventListener(Event.RemoteNext, () => { try { handlers?.next(); } catch {} });
-  TrackPlayer.addEventListener(Event.RemotePrevious, () => { try { handlers?.previous(); } catch {} });
-  TrackPlayer.addEventListener(Event.RemoteSeek, (e: any) => { try { handlers?.seekTo(((e?.position ?? 0) as number) * 1000); } catch {} });
+  TrackPlayer.addEventListener(Event.RemotePlay, () => { try { remote.play(); } catch {} });
+  TrackPlayer.addEventListener(Event.RemotePause, () => { try { remote.pause(); } catch {} });
+  TrackPlayer.addEventListener(Event.RemoteNext, () => { try { remote.next(); } catch {} });
+  TrackPlayer.addEventListener(Event.RemotePrevious, () => { try { remote.previous(); } catch {} });
+  TrackPlayer.addEventListener(Event.RemoteSeek, (e: any) => { try { remote.seekTo(((e?.position ?? 0) as number) * 1000); } catch {} });
+  // Android's audio-focus loss (a call, another app taking output) arrives here
+  // too. Without a listener the service can be torn down instead of pausing.
+  TrackPlayer.addEventListener(Event.RemoteDuck, (e: any) => {
+    try {
+      if (e?.paused || e?.permanent) remote.pause();
+      else remote.play();
+    } catch {}
+  });
 }
 
 // Lazy one-time native setup — called on the FIRST main-player play, never at
