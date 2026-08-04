@@ -609,23 +609,31 @@ export default function SpotlightScreen() {
               <Text style={styles.flowLead}>
                 {t('spotlight.chooseLead')}
               </Text>
-              <TouchableOpacity style={styles.chooseCard} onPress={openPostGrid} activeOpacity={0.8}>
-                <View style={styles.chooseIcon}><Ionicons name="albums-outline" size={24} color={colors.primary} /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.chooseTitle}>{t('spotlight.chooseExistingTitle')}</Text>
-                  <Text style={styles.chooseSub}>{t('spotlight.chooseExistingSub')}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.chooseCard} onPress={handleNewPost} activeOpacity={0.8}>
-                <View style={styles.chooseIcon}><Ionicons name="add-circle-outline" size={24} color={colors.primary} /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.chooseTitle}>{t('spotlight.chooseNewTitle')}</Text>
-                  <Text style={styles.chooseSub}>{t('spotlight.chooseNewSub')}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </TouchableOpacity>
-              <Text style={styles.simNote}>
+              {/* One inset-grouped container with a hairline between the rows,
+                  rather than two separately-bordered cards. Two stacked outlined
+                  boxes is a Material list; iOS groups related choices into a
+                  single rounded block and separates them with a rule that starts
+                  under the text. */}
+              <View style={styles.chooseGroup}>
+                <TouchableOpacity style={styles.chooseRow} onPress={openPostGrid} activeOpacity={0.6}>
+                  <View style={styles.chooseIcon}><Ionicons name="albums" size={18} color="#fff" /></View>
+                  <View style={styles.chooseRowText}>
+                    <Text style={styles.chooseTitle}>{t('spotlight.chooseExistingTitle')}</Text>
+                    <Text style={styles.chooseSub}>{t('spotlight.chooseExistingSub')}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+                </TouchableOpacity>
+                <View style={styles.chooseSep} />
+                <TouchableOpacity style={styles.chooseRow} onPress={handleNewPost} activeOpacity={0.6}>
+                  <View style={styles.chooseIcon}><Ionicons name="add" size={22} color="#fff" /></View>
+                  <View style={styles.chooseRowText}>
+                    <Text style={styles.chooseTitle}>{t('spotlight.chooseNewTitle')}</Text>
+                    <Text style={styles.chooseSub}>{t('spotlight.chooseNewSub')}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.chooseNote}>
                 {t('spotlight.chooseNote')}
               </Text>
             </ScrollView>
@@ -893,7 +901,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderBottomWidth: 0.5, borderBottomColor: colors.borderSubtle,
   },
   flowScroll: { padding: SPACING.md, gap: SPACING.md, paddingBottom: SPACING.xxl },
-  flowLead: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  // 15/21 is the iOS subhead; 13/19 sat between a caption and body and read as
+  // small print rather than the screen's opening line.
+  flowLead: { color: colors.textSecondary, fontSize: 15, lineHeight: 21, letterSpacing: -0.2 },
 
   pkgCard: {
     backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
@@ -930,18 +940,33 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   summaryTotalVal: { color: colors.primary, fontSize: 16, fontWeight: '800' },
   simNote: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, textAlign: 'center' },
 
-  chooseCard: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: colors.border, padding: SPACING.md,
+  chooseGroup: {
+    backgroundColor: colors.surfaceLight, borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    overflow: 'hidden',
   },
+  chooseRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: SPACING.md, paddingVertical: 13,
+  },
+  chooseRowText: { flex: 1, gap: 2 },
+  // A solid rounded-square tile with a FILLED white glyph — the iOS Settings
+  // idiom. The old circle holding a thin outline glyph in the brand tint is the
+  // Material "icon button" shape, which is what made these rows read as Android.
   chooseIcon: {
-    width: 46, height: 46, borderRadius: RADIUS.full,
-    backgroundColor: colors.primary + '18',
+    width: 30, height: 30, borderRadius: 8,
+    backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center',
   },
-  chooseTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
-  chooseSub: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  // Inset past the icon so the rule starts under the text, like a native
+  // grouped table. 16 padding + 30 icon + 12 gap.
+  chooseSep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 58 },
+  // Left-aligned 13pt, like a native grouped-table section footer. (simNote stays
+  // centered — under the Pay button it's a disclaimer, not a list footer.)
+  chooseNote: { color: colors.textTertiary, fontSize: 13, lineHeight: 18, letterSpacing: -0.1 },
+  // 17pt is the iOS body size — the old 15/12 pair read as dense Material rows.
+  chooseTitle: { color: colors.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.4 },
+  chooseSub: { color: colors.textSecondary, fontSize: 13, letterSpacing: -0.1, lineHeight: 17 },
 
   // Post grid
   gridScroll: { paddingTop: SPACING.sm, paddingBottom: SPACING.xxl },
