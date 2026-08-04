@@ -36,6 +36,8 @@ export function isLang(v: any): v is Lang {
 }
 
 const en: Record<string, string> = {
+  'post.musicVideoLabel': 'This is a music video',
+  'post.musicVideoSub': 'Credit a song from your page. The card links to the track — its audio never plays over your video.',
   'adManager.statViews': 'Views',
   'adManager.statClicks': 'Clicks',
   'adManager.statCtr': 'CTR',
@@ -2413,6 +2415,8 @@ const en: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  'post.musicVideoLabel': 'Esto es un videoclip',
+  'post.musicVideoSub': 'Acredita una canción de tu página. La tarjeta enlaza al tema: su audio nunca suena sobre tu vídeo.',
   'adManager.statViews': 'Vistas',
   'adManager.statClicks': 'Clics',
   'adManager.statCtr': 'CTR',
@@ -4302,6 +4306,8 @@ const es: Record<string, string> = {
 };
 
 const fr: Record<string, string> = {
+  'post.musicVideoLabel': 'C’est un clip musical',
+  'post.musicVideoSub': 'Créditez un morceau de votre page. La carte renvoie au titre : son audio ne se superpose jamais à votre vidéo.',
   'adManager.statViews': 'Vues',
   'adManager.statClicks': 'Clics',
   'adManager.statCtr': 'CTR',
@@ -6191,6 +6197,8 @@ const fr: Record<string, string> = {
 };
 
 const de: Record<string, string> = {
+  'post.musicVideoLabel': 'Das ist ein Musikvideo',
+  'post.musicVideoSub': 'Verweise auf einen Song von deiner Seite. Die Karte verlinkt den Track – sein Ton läuft nie über deinem Video.',
   'adManager.statViews': 'Aufrufe',
   'adManager.statClicks': 'Klicks',
   'adManager.statCtr': 'CTR',
@@ -8080,6 +8088,8 @@ const de: Record<string, string> = {
 };
 
 const pt: Record<string, string> = {
+  'post.musicVideoLabel': 'Isto é um videoclipe',
+  'post.musicVideoSub': 'Credite uma música da sua página. O cartão leva à faixa — o áudio dela nunca toca sobre o seu vídeo.',
   'adManager.statViews': 'Visualizações',
   'adManager.statClicks': 'Cliques',
   'adManager.statCtr': 'CTR',
@@ -9969,6 +9979,8 @@ const pt: Record<string, string> = {
 };
 
 const it: Record<string, string> = {
+  'post.musicVideoLabel': 'Questo è un videoclip',
+  'post.musicVideoSub': 'Accredita un brano dalla tua pagina. La card rimanda al pezzo: il suo audio non va mai sopra il tuo video.',
   'adManager.statViews': 'Visualizzazioni',
   'adManager.statClicks': 'Clic',
   'adManager.statCtr': 'CTR',
@@ -11858,6 +11870,8 @@ const it: Record<string, string> = {
 };
 
 const ru: Record<string, string> = {
+  'post.musicVideoLabel': 'Это клип',
+  'post.musicVideoSub': 'Укажите трек со своей страницы. Карточка ведёт к треку — его звук никогда не играет поверх видео.',
   'adManager.statViews': 'Просмотры',
   'adManager.statClicks': 'Клики',
   'adManager.statCtr': 'CTR',
@@ -13712,6 +13726,8 @@ const ru: Record<string, string> = {
 };
 
 const zh: Record<string, string> = {
+  'post.musicVideoLabel': '这是一支音乐视频',
+  'post.musicVideoSub': '标注你主页上的歌曲。卡片会链接到该曲目，其音频不会覆盖你的视频。',
   'adManager.statViews': '浏览',
   'adManager.statClicks': '点击',
   'adManager.statCtr': '点击率',
@@ -15566,6 +15582,8 @@ const zh: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  'post.musicVideoLabel': 'これはミュージックビデオです',
+  'post.musicVideoSub': '自分のページの曲をクレジットします。カードは曲へのリンクで、音声が動画に重なることはありません。',
   'adManager.statViews': '表示',
   'adManager.statClicks': 'クリック',
   'adManager.statCtr': 'クリック率',
@@ -17420,6 +17438,8 @@ const ja: Record<string, string> = {
 };
 
 const hi: Record<string, string> = {
+  'post.musicVideoLabel': 'यह एक म्यूज़िक वीडियो है',
+  'post.musicVideoSub': 'अपने पेज से कोई गाना क्रेडिट करें। कार्ड ट्रैक से लिंक करता है — उसका ऑडियो आपके वीडियो पर कभी नहीं चलेगा।',
   'adManager.statViews': 'व्यू',
   'adManager.statClicks': 'क्लिक',
   'adManager.statCtr': 'CTR',

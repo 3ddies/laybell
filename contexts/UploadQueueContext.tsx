@@ -31,7 +31,7 @@ export type VideoJob = {
   genre?: string | null;
   durationSeconds?: number | null;
   trim?: { start: number; end: number } | null;
-  song?: { id: string; title: string; artist: string; artistId: string | null } | null;
+  song?: { id: string; title: string; artist: string; artistId: string | null; linkOnly?: boolean } | null;
   taggedIds: string[];
   communityIds: string[];
   allowGifs: boolean;
@@ -57,7 +57,7 @@ export type PendingUpload = {
   thumbnailUri: string | null;
   aspectRatio: string;
   caption: string;
-  song?: { id: string; title: string; artist: string; artistId: string | null } | null;
+  song?: { id: string; title: string; artist: string; artistId: string | null; linkOnly?: boolean } | null;
   taggedIds?: string[];
   progress: number;                              // 0..1 during the file upload
   // 'done' = finished; the card stays pinned at the top of the feed (playing the
@@ -257,7 +257,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         ...(job.trim && !trimmedFile ? { trim_start: job.trim.start, trim_end: job.trim.end } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         video_uid: uid, video_status: 'processing', video_hls_url: hls,
-        ...(job.song ? { song_id: job.song.id, song_title: job.song.title, song_artist: job.song.artist, song_artist_id: job.song.artistId } : {}),
+        ...(job.song ? { song_id: job.song.id, song_title: job.song.title, song_artist: job.song.artist, song_artist_id: job.song.artistId, song_link_only: !!job.song.linkOnly } : {}),
         ...(job.taggedIds.length ? { tagged_user_ids: job.taggedIds } : {}),
         ...(job.communityIds.length ? { community_ids: job.communityIds } : {}),
         allow_gifs: job.allowGifs,

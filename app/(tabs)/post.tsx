@@ -236,6 +236,9 @@ export default function PostScreen() {
   const [genre, setGenre] = useState('');
   const [showGenrePicker, setShowGenrePicker] = useState(false);
   const [song, setSong] = useState<PickedSong | null>(null); // another creator's track on this image/video
+  // Music-video mode: the attached song is a CREDIT + LINK, never played, because
+  // it is already this video's own soundtrack. Video posts only — see lib/postSong.
+  const [musicVideo, setMusicVideo] = useState(false);
   const [showSongPicker, setShowSongPicker] = useState(false);
   const [tagged, setTagged] = useState<TaggedPerson[]>([]); // accounts tagged on this post (≤10)
   const [features, setFeatures] = useState<Feature[]>([]); // song collaborators (audio, ≤6)
@@ -486,7 +489,7 @@ export default function PostScreen() {
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0); setTrimEnd(0); setTopCaption(null); setBottomCaption(null); setVideoCaptions([]);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
-    setCaption(''); setGenre(''); setSong(null); setTagged([]); setCommunities([]); setError(''); setStep('pick');
+    setCaption(''); setGenre(''); setSong(null); setMusicVideo(false); setTagged([]); setCommunities([]); setError(''); setStep('pick');
     setAllowDownloads(true); setAllowGifs(true);
     // Abandoning the compose drops any parked spotlight handoff so it can't
     // silently attach to an unrelated later post — the paid campaign itself
@@ -990,7 +993,7 @@ export default function PostScreen() {
           genre: genre && showGenre ? genre : null,
           durationSeconds: videoDurSecV > 0 ? videoDurSecV : null,
           trim: trimmedV ? { start: trimStart, end: winEndV } : null,
-          song: song ? { id: song.id, title: song.title, artist: song.artist, artistId: song.artistId ?? null } : null,
+          song: song ? { id: song.id, title: song.title, artist: song.artist, artistId: song.artistId ?? null, linkOnly: musicVideo } : null,
           taggedIds: tagged.map((tp) => tp.id),
           communityIds: communities.map((c) => c.id),
           allowGifs,
@@ -1330,6 +1333,32 @@ export default function PostScreen() {
                     {hasCommunity && <Text style={styles.genreLockHint}>{t('post.genreFromCommunity')}</Text>}
                   </View>
                 )}
+                {/* Music-video mode. VIDEO ONLY: on an image or slideshow the
+                    attached song IS the soundtrack, so there is nothing for it
+                    to duplicate and the switch would be meaningless.
+
+                    Flipping it clears any picked song on purpose — the two
+                    modes draw from different catalogues (anyone's public audio
+                    vs. only yours), so a song chosen under one rule must not
+                    survive into the other. Without that, a user could pick a
+                    stranger's track, flip the switch, and publish it as their
+                    own music video. */}
+                {postType === 'video' && (
+                  <View style={styles.field}>
+                    <View style={styles.switchRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.switchLabel}>{t('post.musicVideoLabel')}</Text>
+                        <Text style={styles.switchSub}>{t('post.musicVideoSub')}</Text>
+                      </View>
+                      <Switch
+                        value={musicVideo}
+                        onValueChange={(v) => { setMusicVideo(v); setSong(null); }}
+                        trackColor={{ false: colors.borderStrong, true: colors.primary }}
+                        thumbColor="#fff"
+                      />
+                    </View>
+                  </View>
+                )}
                 <View style={styles.field}>
                   <Text style={styles.fieldLabel}>{t('post.musicLabel')}</Text>
                   <TouchableOpacity style={styles.dropdown} onPress={() => setShowSongPicker(true)} activeOpacity={0.8}>
@@ -1606,7 +1635,7 @@ export default function PostScreen() {
             </Text>
           </TouchableOpacity>
         </ScrollView>
-        <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} />
+        <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} ownOnly={musicVideo && postType === 'video'} />
         <TagPeopleModal visible={showTagModal} initial={tagged} onClose={() => setShowTagModal(false)} onDone={setTagged} />
         <ThumbnailPickerModal
           visible={showThumbPicker}
@@ -2159,6 +2188,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   rightCol: { flex: 1, gap: SPACING.sm },
   field: { gap: 6 },
   fieldLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  // Music-video switch. Same shape as the ad-manager switch rows so the two
+  // composers read as one app.
+  switchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    backgroundColor: colors.surfaceLight, borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    padding: SPACING.md,
+  },
+  switchLabel: { color: colors.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
+  switchSub: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, letterSpacing: -0.1, marginTop: 2 },
   dropdown: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, minHeight: 46,
     backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,

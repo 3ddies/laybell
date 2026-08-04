@@ -48,10 +48,16 @@ const MINE_EMBED_LEGACY =
 // Pick another creator's track to use on your image/video/story. Searches public
 // audio (music/podcast/audiobook) by song name or artist; defaults to the most-streamed.
 // Tap a row's cover to PREVIEW the track; tap the row (or ＋) to select it.
-export default function SongPickerModal({ visible, onClose, onSelect }: {
+export default function SongPickerModal({ visible, onClose, onSelect, ownOnly = false }: {
   visible: boolean;
   onClose: () => void;
   onSelect: (song: PickedSong) => void;
+  /**
+   * Music-video mode: offer ONLY songs this user made or is credited on, and
+   * drop the Liked/Saved tabs (those are other people's tracks, which is the
+   * opposite of what "a song currently on my page" means).
+   */
+  ownOnly?: boolean;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -124,6 +130,21 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
 
     const cached = cache.current[tab];
 
+    // Music-video mode: one fixed list (mine + credited), filtered locally as
+    // you type. No server search — the set is small and already in hand, and a
+    // per-keystroke query over your own catalogue would be pure latency.
+    if (ownOnly) {
+      if (cached) { setLoading(false); setResults(filterLocal(cached, term)); return; }
+      setLoading(true);
+      loadOwnAndCredited().then((rows) => {
+        if (!fresh()) return;
+        cache.current.all = rows;
+        setResults(filterLocal(rows, term));
+        setLoading(false);
+      });
+      return;
+    }
+
     // Liked / Saved. Cached means the switch is a pure render — the list is on
     // screen in the same commit as the tab highlight, with no skeleton between.
     if (tab !== 'all') {
@@ -165,7 +186,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
     }, 350);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, tab, query]);
+  }, [visible, tab, query, ownOnly]);
 
   // Switching tab clears the search box: a term typed against the whole
   // catalogue rarely matches inside your own likes, and carrying it over makes
@@ -211,6 +232,49 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
       req = req.order('stream_count', { ascending: false });
     }
     return req;
+  }
+
+  /**
+   * Music-video mode listing: songs this user uploaded, plus songs they are
+   * credited on via posts.features (the collaborator credits from
+   * song_features.sql). A featured artist posting the video for a track they
+   * sang on is the normal case, so owning the upload cannot be the test.
+   *
+   * Two queries merged rather than one `.or()`: the credited half is a jsonb
+   * containment check, and embedding `[{"id":"…"}]` inside PostgREST's or-syntax
+   * means quoting braces and quotes into a comma-separated grammar. Two plain
+   * requests are slower by one round trip and impossible to get subtly wrong.
+   *
+   * NO consent filter here, unlike searchSounds. That gate exists because
+   * attaching someone's audio to a video is SYNCHRONISATION — actually
+   * reproducing their recording. Link-only mode never plays the track; it
+   * renders a credit and a link to the song's own post. There is no
+   * reproduction to license, and requiring reuse-consent to link to a song you
+   * performed on would block the exact case this feature is for.
+   */
+  async function loadOwnAndCredited(): Promise<any[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    const uid = user?.id;
+    if (!uid) return [];
+
+    const base = () => supabase
+      .from('posts')
+      .select(MINE_EMBED_LEGACY)
+      .in('type', ['audio', 'podcast', 'audiobook'])
+      .is('archived_at', null)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    const [mine, credited] = await Promise.all([
+      base().eq('user_id', uid),
+      base().contains('features', [{ id: uid }]),
+    ]);
+
+    const byId = new Map<string, any>();
+    for (const row of [...(mine.data ?? []), ...(credited.data ?? [])]) {
+      if (row?.id) byId.set(row.id, row);
+    }
+    return [...byId.values()];
   }
 
   // RETURNS rows rather than setting state. Every caller is the one effect
@@ -315,7 +379,9 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
           </View>
 
           {/* Source picker. All searches the whole public catalogue;
-              Liked and Saved read your own library. */}
+              Liked and Saved read your own library. Hidden in music-video
+              mode, where the only valid source is your own catalogue. */}
+          {!ownOnly && (
           <View style={styles.tabs}>
             {TABS.map((tb) => {
               const on = tab === tb;
@@ -335,6 +401,7 @@ export default function SongPickerModal({ visible, onClose, onSelect }: {
               );
             })}
           </View>
+          )}
 
           {/* Fixed-height capsule; the clear button is ALWAYS mounted (hidden
               via opacity) so the input never reflows/misaligns when it appears. */}
