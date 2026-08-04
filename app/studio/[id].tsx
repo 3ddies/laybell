@@ -331,7 +331,17 @@ export default function StudioRoomScreen() {
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        {/* iOS had no way to close the studio chat keyboard short of sending:
+            keyboardShouldPersistTaps="handled" only dismisses on taps that land
+            on the ScrollView ITSELF, and this content doesn't fill the screen,
+            so most taps hit nothing at all. flexGrow makes the scroll surface
+            cover the viewport so those taps register, and on-drag dismisses when
+            scrolling. Android already got this from the OS back gesture. */}
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { flexGrow: 1 }]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           {/* Join code + DAW connector hint */}
           <View style={styles.codeCard}>
             <View style={styles.codeRow}>

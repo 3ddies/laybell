@@ -304,10 +304,33 @@ export async function applyVocalPreset(room: Room, key: VocalPresetKey): Promise
 
 // The RN audio session must be running before any WebRTC audio flows. Guarded
 // require so a binary without the livekit natives doesn't crash at import.
-async function setAudioSession(on: boolean): Promise<void> {
+async function setAudioSession(on: boolean, playbackOnly = false): Promise<void> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { AudioSession, AndroidAudioTypePresets } = require('@livekit/react-native');
+    if (on && playbackOnly) {
+      // LISTENERS NEVER PUBLISH, so they must not ask for playAndRecord.
+      // That category requires an active microphone route: iOS will not
+      // activate it without mic permission, and a listener has no reason to
+      // have granted it — the session then fails to activate and NOTHING
+      // plays, which is exactly "I can hear no audio as a spectator" while
+      // hosts (who do hold mic permission) are unaffected.
+      //
+      // `playback` needs no input route at all, and is the correct category for
+      // receive-only media. Android likewise gets the media preset without the
+      // communication-mode capture path.
+      await AudioSession.configureAudio({
+        android: { audioTypeOptions: AndroidAudioTypePresets.media },
+        ios: {
+          audioCategory: 'playback',
+          audioCategoryOptions: ['allowBluetooth', 'allowBluetoothA2DP', 'allowAirPlay'],
+          audioMode: 'default',
+          defaultOutput: 'speaker',
+        },
+      });
+      await AudioSession.startAudioSession();
+      return;
+    }
     if (on) {
       // WITHOUT configureAudio, startAudioSession leaves the OS on its default
       // voice-call routing and a broadcast is inaudible: iOS puts playAndRecord
@@ -369,7 +392,9 @@ export async function connectStudioListener(sessionId: string): Promise<Room> {
   });
   if (error || !data?.token) throw new Error(data?.error ?? error?.message ?? 'token failed');
 
-  await setAudioSession(true);
+  // playbackOnly: a listener never publishes, so requesting playAndRecord would
+  // gate their audio behind a microphone permission they have no reason to hold.
+  await setAudioSession(true, true);
   const room = new (lk().Room)({ adaptiveStream: false });
   await room.connect(data.url, data.token);
   return room;
