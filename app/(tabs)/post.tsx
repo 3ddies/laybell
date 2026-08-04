@@ -239,6 +239,9 @@ export default function PostScreen() {
   // Music-video mode: the attached song is a CREDIT + LINK, never played, because
   // it is already this video's own soundtrack. Video posts only — see lib/postSong.
   const [musicVideo, setMusicVideo] = useState(false);
+  // The switch only means anything on a video, and both the lock and the
+  // in-section picker key off the same derived flag so they can never disagree.
+  const musicVideoOn = musicVideo && postType === 'video';
   const [showSongPicker, setShowSongPicker] = useState(false);
   const [tagged, setTagged] = useState<TaggedPerson[]>([]); // accounts tagged on this post (≤10)
   const [features, setFeatures] = useState<Feature[]>([]); // song collaborators (audio, ≤6)
@@ -993,7 +996,7 @@ export default function PostScreen() {
           genre: genre && showGenre ? genre : null,
           durationSeconds: videoDurSecV > 0 ? videoDurSecV : null,
           trim: trimmedV ? { start: trimStart, end: winEndV } : null,
-          song: song ? { id: song.id, title: song.title, artist: song.artist, artistId: song.artistId ?? null, linkOnly: musicVideo } : null,
+          song: song ? { id: song.id, title: song.title, artist: song.artist, artistId: song.artistId ?? null, linkOnly: musicVideoOn } : null,
           taggedIds: tagged.map((tp) => tp.id),
           communityIds: communities.map((c) => c.id),
           allowGifs,
@@ -1335,12 +1338,23 @@ export default function PostScreen() {
                 )}
                 <View style={styles.field}>
                   <Text style={styles.fieldLabel}>{t('post.musicLabel')}</Text>
-                  <TouchableOpacity style={styles.dropdown} onPress={() => setShowSongPicker(true)} activeOpacity={0.8}>
-                    <Ionicons name="musical-notes" size={15} color={song ? colors.primary : colors.textTertiary} />
-                    <Text style={[styles.dropdownText, !song && styles.dropdownPlaceholder]} numberOfLines={1}>
-                      {song ? song.title : t('post.addMusic')}
+                  {/* Locked while music-video mode owns the song, mirroring how
+                      GENRE locks under a community: the control stays visible
+                      and says why, rather than vanishing and leaving the user
+                      wondering where "Add music" went. */}
+                  <TouchableOpacity
+                    style={[styles.dropdown, musicVideoOn && styles.dropdownLocked]}
+                    onPress={() => setShowSongPicker(true)}
+                    disabled={musicVideoOn}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="musical-notes" size={15} color={song && !musicVideoOn ? colors.primary : colors.textTertiary} />
+                    <Text style={[styles.dropdownText, (!song || musicVideoOn) && styles.dropdownPlaceholder]} numberOfLines={1}>
+                      {!musicVideoOn && song ? song.title : t('post.addMusic')}
                     </Text>
-                    {song ? (
+                    {musicVideoOn ? (
+                      <Ionicons name="lock-closed" size={16} color={colors.textTertiary} />
+                    ) : song ? (
                       <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                         <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
                       </TouchableOpacity>
@@ -1348,6 +1362,7 @@ export default function PostScreen() {
                       <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
                     )}
                   </TouchableOpacity>
+                  {musicVideoOn && <Text style={styles.genreLockHint}>{t('post.musicLockedMv')}</Text>}
                 </View>
               </View>
             </View>
@@ -1369,7 +1384,7 @@ export default function PostScreen() {
               switch, and publish it as their own music video. */}
           {postType === 'video' && (
             <View style={styles.section}>
-              <View style={styles.switchRow}>
+              <View style={[styles.switchRow, musicVideo && styles.switchRowOpen]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.switchLabel}>{t('post.musicVideoLabel')}</Text>
                   <Text style={styles.switchSub}>{t('post.musicVideoSub')}</Text>
@@ -1381,6 +1396,27 @@ export default function PostScreen() {
                   thumbColor="#fff"
                 />
               </View>
+              {/* The song lives HERE while the switch is on, not in the MUSIC
+                  dropdown below — one control, in the section that explains what
+                  it does, instead of a setting whose effect is somewhere else on
+                  the screen. Attached to the switch card (no top corners, no top
+                  border) so the two read as one block rather than two unrelated
+                  rows that happen to be adjacent. */}
+              {musicVideo && (
+                <TouchableOpacity style={styles.mvPick} onPress={() => setShowSongPicker(true)} activeOpacity={0.8}>
+                  <Ionicons name="musical-notes" size={15} color={song ? colors.primary : colors.textTertiary} />
+                  <Text style={[styles.dropdownText, !song && styles.dropdownPlaceholder]} numberOfLines={1}>
+                    {song ? song.title : t('post.addMusic')}
+                  </Text>
+                  {song ? (
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setSong(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                  ) : (
+                    <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -1640,7 +1676,7 @@ export default function PostScreen() {
             </Text>
           </TouchableOpacity>
         </ScrollView>
-        <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} ownOnly={musicVideo && postType === 'video'} />
+        <SongPickerModal visible={showSongPicker} onClose={() => setShowSongPicker(false)} onSelect={setSong} ownOnly={musicVideoOn} />
         <TagPeopleModal visible={showTagModal} initial={tagged} onClose={() => setShowTagModal(false)} onDone={setTagged} />
         <ThumbnailPickerModal
           visible={showThumbPicker}
@@ -2203,6 +2239,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   switchLabel: { color: colors.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
   switchSub: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, letterSpacing: -0.1, marginTop: 2 },
+  // Switched on, the card grows a picker underneath: square off its bottom
+  // corners so the two halves read as one control rather than two stacked ones.
+  switchRowOpen: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0 },
+  mvPick: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderTopWidth: 0,
+    borderBottomLeftRadius: 14, borderBottomRightRadius: 14,
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 4,
+  },
+  // Locked MUSIC dropdown while music-video mode owns the song. Dimmed rather
+  // than hidden so the control explains itself instead of disappearing.
+  dropdownLocked: { opacity: 0.55 },
   dropdown: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, minHeight: 46,
     backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
