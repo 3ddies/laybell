@@ -36,6 +36,8 @@ export function isLang(v: any): v is Lang {
 }
 
 const en: Record<string, string> = {
+  'net.offline': 'No internet connection',
+  'net.backOnline': 'Back online',
   'spotlight.attachFailedTitle': 'Post published',
   'spotlight.attachFailedBody': 'Your Spotlight couldn’t be attached to it just now. It’s still paid for and waiting in your Spotlights — you can apply it there.',
   'adDetail.endedTitle': 'Campaign ended',
@@ -2405,6 +2407,8 @@ const en: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  'net.offline': 'Sin conexión a internet',
+  'net.backOnline': 'De nuevo en línea',
   'spotlight.attachFailedTitle': 'Publicación creada',
   'spotlight.attachFailedBody': 'No se pudo aplicar tu Spotlight ahora. Sigue pagado y te espera en tus Spotlights, donde puedes aplicarlo.',
   'adDetail.endedTitle': 'Campaña finalizada',
@@ -4286,6 +4290,8 @@ const es: Record<string, string> = {
 };
 
 const fr: Record<string, string> = {
+  'net.offline': 'Pas de connexion internet',
+  'net.backOnline': 'De retour en ligne',
   'spotlight.attachFailedTitle': 'Publication en ligne',
   'spotlight.attachFailedBody': 'Votre Spotlight n’a pas pu y être appliqué. Il reste payé et vous attend dans vos Spotlights, où vous pouvez l’appliquer.',
   'adDetail.endedTitle': 'Campagne terminée',
@@ -6167,6 +6173,8 @@ const fr: Record<string, string> = {
 };
 
 const de: Record<string, string> = {
+  'net.offline': 'Keine Internetverbindung',
+  'net.backOnline': 'Wieder online',
   'spotlight.attachFailedTitle': 'Beitrag veröffentlicht',
   'spotlight.attachFailedBody': 'Dein Spotlight konnte gerade nicht zugewiesen werden. Es ist weiterhin bezahlt und wartet in deinen Spotlights.',
   'adDetail.endedTitle': 'Kampagne beendet',
@@ -8048,6 +8056,8 @@ const de: Record<string, string> = {
 };
 
 const pt: Record<string, string> = {
+  'net.offline': 'Sem conexão com a internet',
+  'net.backOnline': 'De volta online',
   'spotlight.attachFailedTitle': 'Publicação criada',
   'spotlight.attachFailedBody': 'Não foi possível aplicar seu Spotlight agora. Ele continua pago e está nos seus Spotlights, onde você pode aplicá-lo.',
   'adDetail.endedTitle': 'Campanha encerrada',
@@ -9929,6 +9939,8 @@ const pt: Record<string, string> = {
 };
 
 const it: Record<string, string> = {
+  'net.offline': 'Nessuna connessione a internet',
+  'net.backOnline': 'Di nuovo online',
   'spotlight.attachFailedTitle': 'Post pubblicato',
   'spotlight.attachFailedBody': 'Non è stato possibile applicare il tuo Spotlight. Resta pagato e ti aspetta nei tuoi Spotlight, dove puoi usarlo.',
   'adDetail.endedTitle': 'Campagna terminata',
@@ -11810,6 +11822,8 @@ const it: Record<string, string> = {
 };
 
 const ru: Record<string, string> = {
+  'net.offline': 'Нет подключения к интернету',
+  'net.backOnline': 'Снова в сети',
   'spotlight.attachFailedTitle': 'Пост опубликован',
   'spotlight.attachFailedBody': 'Spotlight не удалось применить к посту. Он оплачен и ждёт в разделе Spotlight — примените его там.',
   'adDetail.endedTitle': 'Кампания завершена',
@@ -13656,6 +13670,8 @@ const ru: Record<string, string> = {
 };
 
 const zh: Record<string, string> = {
+  'net.offline': '无网络连接',
+  'net.backOnline': '已恢复连接',
   'spotlight.attachFailedTitle': '帖子已发布',
   'spotlight.attachFailedBody': '暂时无法为该帖子应用 Spotlight。它已付款并保留在你的 Spotlight 中，可在那里使用。',
   'adDetail.endedTitle': '广告已结束',
@@ -15502,6 +15518,8 @@ const zh: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  'net.offline': 'インターネット接続がありません',
+  'net.backOnline': 'オンラインに戻りました',
   'spotlight.attachFailedTitle': '投稿しました',
   'spotlight.attachFailedBody': 'この投稿にSpotlightを適用できませんでした。支払い済みのままSpotlight一覧に残っているので、そこから適用できます。',
   'adDetail.endedTitle': 'キャンペーンを終了しました',
@@ -17348,6 +17366,8 @@ const ja: Record<string, string> = {
 };
 
 const hi: Record<string, string> = {
+  'net.offline': 'इंटरनेट कनेक्शन नहीं है',
+  'net.backOnline': 'फिर से ऑनलाइन',
   'spotlight.attachFailedTitle': 'पोस्ट प्रकाशित',
   'spotlight.attachFailedBody': 'अभी इस पोस्ट पर Spotlight लागू नहीं हो सका। यह भुगतान किया हुआ है और आपके Spotlights में मौजूद है — वहाँ से लगा सकते हैं।',
   'adDetail.endedTitle': 'कैंपेन समाप्त',

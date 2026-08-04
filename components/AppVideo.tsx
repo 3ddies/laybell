@@ -3,6 +3,8 @@ import { Image as ExpoImage } from 'expo-image';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
+import { useVideoStall } from '../hooks/useVideoStall';
+import VideoStallIndicator from './VideoStallIndicator';
 
 // Shared <Video> replacement built on expo-video (expo-av is deprecated in SDK 54
 // and removed in 55). Keeps the familiar prop API the call sites already use so
@@ -58,6 +60,10 @@ export type AppVideoProps = {
   onReady?: () => void;
   /** Keep playing even when a full-screen UI has globally suspended media. */
   ignoreSuspend?: boolean;
+  /** Show a quiet spinner when playback stalls on a bad connection. Off for
+   *  decorative/editor surfaces (croppers, trimmers, thumbnails) where the user
+   *  isn't watching and a spinner would just be noise. */
+  showStallIndicator?: boolean;
 };
 
 /** Imperative handle for scrubbing/seeking from a parent (e.g. a progress bar). */
@@ -81,6 +87,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
   onEnd,
   onReady,
   ignoreSuspend = false,
+  showStallIndicator = false,
 }: AppVideoProps, ref) {
   const uri = typeof source === 'string' ? source : source.uri;
   // A full-screen takeover (e.g. the GIF maker) can globally pause background
@@ -237,6 +244,10 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
     return () => { statusSub.remove(); timeSub.remove(); endSub.remove(); };
   }, [player]);
 
+  // Only once the surface has painted: before that the poster is still up, which
+  // is already a better "not loaded yet" state than a spinner.
+  const stalled = useVideoStall(player, showStallIndicator && shouldPlay && surfaceReady);
+
   return (
     <View style={style}>
       <VideoView
@@ -261,6 +272,7 @@ const AppVideo = forwardRef<AppVideoHandle, AppVideoProps>(function AppVideo({
           pointerEvents="none"
         />
       ) : null}
+      {showStallIndicator ? <VideoStallIndicator visible={stalled} /> : null}
     </View>
   );
 });

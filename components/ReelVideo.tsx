@@ -3,6 +3,8 @@ import { StyleSheet } from 'react-native';
 import { VideoView, type VideoPlayer } from 'expo-video';
 import { reelPool } from '../lib/feedVideoPool';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
+import { useVideoStall } from '../hooks/useVideoStall';
+import VideoStallIndicator from './VideoStallIndicator';
 
 // Pooled video surface for reel pages (see lib/feedVideoPool). No player is
 // ever CREATED at swipe time — the pool assigns sources via replaceAsync
@@ -133,15 +135,25 @@ const ReelVideo = memo(forwardRef<ReelVideoHandle, Props>(function ReelVideo(
     else { try { player.pause(); } catch {} }
   }, [shouldPlay, player]);
 
+  // Only the reel that is actually meant to be playing can show a stall spinner,
+  // and only once it has painted (`ready`) — before that the page's poster is
+  // still covering, which is its own, better "not loaded yet" state.
+  const stalled = useVideoStall(player, shouldPlay && ready);
+
   if (!player) return null;
   return (
-    <VideoView
-      style={[StyleSheet.absoluteFill, !ready && styles.hidden]}
-      player={player}
-      contentFit={contentFit}
-      nativeControls={false}
-      allowsVideoFrameAnalysis={false}
-    />
+    <>
+      <VideoView
+        style={[StyleSheet.absoluteFill, !ready && styles.hidden]}
+        player={player}
+        contentFit={contentFit}
+        nativeControls={false}
+        allowsVideoFrameAnalysis={false}
+      />
+      {/* Absolute sibling, not a wrapper — wrapping the VideoView in a new View
+          would change this surface's layout inside ReelPage. */}
+      <VideoStallIndicator visible={stalled} />
+    </>
   );
 }));
 

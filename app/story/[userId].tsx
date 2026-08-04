@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { timeAgo } from '../../lib/timeAgo';
 import {
@@ -687,6 +687,7 @@ export default function StoryViewerScreen() {
                 style={StyleSheet.absoluteFill}
                 contentFit="cover"
                 active={!paused}
+                showStallIndicator
                 muted={!!story.song_id}
                 poster={story.thumbnail_url}
                 posterContentFit="cover"
@@ -734,7 +735,7 @@ export default function StoryViewerScreen() {
                   {group.user.avatar_url ? (
                     <Image source={{ uri: group.user.avatar_url }} style={styles.avatar} />
                   ) : (
-                    <LinearGradient colors={['#E8401C', '#F26522']} style={styles.avatar}>
+                    <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
                       <Text style={styles.avatarText}>{group.user.display_name?.charAt(0).toUpperCase()}</Text>
                     </LinearGradient>
                   )}
@@ -997,7 +998,7 @@ export default function StoryViewerScreen() {
                       {v.avatar_url ? (
                         <ExpoImage source={{ uri: v.avatar_url }} style={styles.viewerAvatar} contentFit="cover" />
                       ) : (
-                        <LinearGradient colors={['#F26522', '#E8401C']} style={styles.viewerAvatar}>
+                        <LinearGradient colors={GRADIENTS.avatar} style={styles.viewerAvatar}>
                           <Text style={styles.viewerAvatarText}>
                             {(v.display_name || v.username || '?').charAt(0).toUpperCase()}
                           </Text>

@@ -162,7 +162,7 @@ function LiveCard({
           {stream.profile?.avatar_url ? (
             <Image source={{ uri: stream.profile.avatar_url }} style={styles.endedAvatar} />
           ) : (
-            <LinearGradient colors={GRADIENTS.primary} style={styles.endedAvatar}>
+            <LinearGradient colors={GRADIENTS.avatar} style={styles.endedAvatar}>
               <Text style={styles.endedInitial}>{(name || '?').charAt(0).toUpperCase()}</Text>
             </LinearGradient>
           )}
@@ -192,6 +192,9 @@ function LiveCard({
             style={StyleSheet.absoluteFill}
             contentFit={letterbox ? 'contain' : 'cover'}
             active={active}
+            // A live edge is the most stall-prone surface in the app: there's no
+            // buffer ahead to ride out a dip, so a weak signal freezes the frame.
+            showStallIndicator
           />
         )
       )}
@@ -205,7 +208,7 @@ function LiveCard({
           {stream.profile?.avatar_url ? (
             <Image source={{ uri: stream.profile.avatar_url }} style={styles.hostAvatar} />
           ) : (
-            <LinearGradient colors={GRADIENTS.primary} style={styles.hostAvatar}>
+            <LinearGradient colors={GRADIENTS.avatar} style={styles.hostAvatar}>
               <Text style={styles.hostInitial}>{(name || '?').charAt(0).toUpperCase()}</Text>
             </LinearGradient>
           )}
@@ -532,7 +535,7 @@ export default function LiveScreen() {
                   {item.host_avatar_url ? (
                     <Image source={{ uri: item.host_avatar_url }} style={styles.studioPillAvatar} />
                   ) : (
-                    <LinearGradient colors={GRADIENTS.primary} style={styles.studioPillAvatar}>
+                    <LinearGradient colors={GRADIENTS.avatar} style={styles.studioPillAvatar}>
                       <Ionicons name="mic" size={12} color="#fff" />
                     </LinearGradient>
                   )}

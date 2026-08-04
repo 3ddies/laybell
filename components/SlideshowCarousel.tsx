@@ -53,6 +53,7 @@ function SlideVideo({
       style={{ width, height }}
       contentFit="contain"
       active={play}
+      showStallIndicator
       loop
       muted={muted}
       poster={poster}

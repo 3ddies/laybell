@@ -44,6 +44,7 @@ import { PhotoPickerProvider } from '../contexts/PhotoPickerContext';
 import { UploadQueueProvider } from '../contexts/UploadQueueContext';
 import { CastProvider } from '../contexts/CastContext';
 import { StoryUploadProvider, useStoryUpload } from '../contexts/StoryUploadContext';
+import OfflineBanner from '../components/OfflineBanner';
 import { useListenMode } from '../contexts/ListenModeContext';
 import CastBar from '../components/CastBar';
 import StoryFailedBanner from '../components/StoryFailedBanner';
@@ -488,6 +489,10 @@ function RootLayout() {
                                       <StoryUploadProvider>
                                         <CastProvider>
                                           <AppContent />
+                                          {/* Sibling of the app content (not a
+                                              wrapper) so it overlays every screen
+                                              without affecting any layout. */}
+                                          <OfflineBanner />
                                         </CastProvider>
                                       </StoryUploadProvider>
                                     </UploadQueueProvider>

@@ -1502,6 +1502,7 @@ export default function ReelScreen() {
             contentFit="contain"
             loop={item.trim_end == null}
             active={overlayId === item.id && !paused && !scrubbing && !overlayAd}
+            showStallIndicator
             muted={!!item.song_id}
             poster={poster}
             posterContentFit="contain"
