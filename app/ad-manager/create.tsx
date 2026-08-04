@@ -943,7 +943,7 @@ export default function CreateAdScreen() {
                         <Text style={[styles.selectTitle, on && { color: colors.primary }]}>{t(`adCreate.objective.${o.key}.label`)}</Text>
                         <Text style={styles.selectSub}>{t(`adCreate.objective.${o.key}.blurb`)}</Text>
                       </View>
-                      {on && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                      {on && <Ionicons name="checkmark-circle" size={20} color={colors.text} />}
                     </TouchableOpacity>
                   );
                 })}
@@ -961,16 +961,16 @@ export default function CreateAdScreen() {
                       >
                         {profile?.avatar_url
                           ? <Image source={{ uri: profile.avatar_url }} style={styles.chipAvatar} />
-                          : <View style={[styles.chipAvatar, styles.chipAvatarEmpty]}><Ionicons name="person" size={12} color={colors.primary} /></View>}
-                        <Text style={[styles.destChipText, awarenessSelf && { color: colors.primary }]}>{t('adCreate.dest.you')}</Text>
+                          : <View style={[styles.chipAvatar, styles.chipAvatarEmpty]}><Ionicons name="person" size={12} color={colors.text} /></View>}
+                        <Text style={[styles.destChipText, awarenessSelf && { color: colors.text }]}>{t('adCreate.dest.you')}</Text>
                         <Ionicons name={awarenessSelf ? 'checkmark-circle' : 'add-circle-outline'} size={15} color={awarenessSelf ? colors.primary : colors.textTertiary} />
                       </TouchableOpacity>
                       {awarenessOthers.map((p) => (
                         <View key={p.id} style={[styles.profileChip, styles.profileChipOn]}>
                           {p.avatar_url
                             ? <Image source={{ uri: p.avatar_url }} style={styles.chipAvatar} />
-                            : <View style={[styles.chipAvatar, styles.chipAvatarEmpty]}><Ionicons name="person" size={12} color={colors.primary} /></View>}
-                          <Text style={[styles.destChipText, { color: colors.primary }]} numberOfLines={1}>{p.display_name || p.username}</Text>
+                            : <View style={[styles.chipAvatar, styles.chipAvatarEmpty]}><Ionicons name="person" size={12} color={colors.text} /></View>}
+                          <Text style={[styles.destChipText, { color: colors.text }]} numberOfLines={1}>{p.display_name || p.username}</Text>
                           <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.clear')} onPress={() => setAwarenessOthers((o) => o.filter((x) => x.id !== p.id))} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
                             <Ionicons name="close-circle" size={15} color={colors.textTertiary} />
                           </TouchableOpacity>
@@ -1034,7 +1034,7 @@ export default function CreateAdScreen() {
                         <Text style={styles.destSub}>{t('adCreate.dest.shopSub')}</Text>
                         <TouchableOpacity style={styles.pickListingBtn} onPress={() => setShowListingPicker(true)} activeOpacity={0.85}>
                           <Ionicons name="pricetag-outline" size={16} color={colors.primary} />
-                          <Text style={[styles.destChipText, { color: colors.primary }]}>{t('adCreate.dest.chooseListing')}</Text>
+                          <Text style={[styles.destChipText, { color: colors.text }]}>{t('adCreate.dest.chooseListing')}</Text>
                         </TouchableOpacity>
                       </>
                     )}
@@ -1053,9 +1053,9 @@ export default function CreateAdScreen() {
                       disabled={probing || !simpleEligible}
                       activeOpacity={0.8}
                     >
-                      <Ionicons name="flash-outline" size={20} color={simpleActive ? colors.primary : colors.textSecondary} />
+                      <Ionicons name="flash-outline" size={20} color={simpleActive ? colors.text : colors.textSecondary} />
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.selectTitle, simpleActive && { color: colors.primary }]}>{t('shopAd.simpleLabel')}</Text>
+                        <Text style={[styles.selectTitle, simpleActive && { color: colors.text }]}>{t('shopAd.simpleLabel')}</Text>
                         <Text style={styles.selectSub}>{t('shopAd.simpleBlurb')}</Text>
                         {probing ? (
                           <Text style={styles.selectMeta}>{t('shopAd.probing')}</Text>
@@ -1065,19 +1065,19 @@ export default function CreateAdScreen() {
                           <Text style={styles.selectMeta}>{t('shopAd.simpleNeeds', { secs: AD_SIMPLE_MIN_PREVIEW_SEC })}</Text>
                         )}
                       </View>
-                      {simpleActive && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                      {simpleActive && <Ionicons name="checkmark-circle" size={20} color={colors.text} />}
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.selectCard, !simpleActive && styles.selectCardOn]}
                       onPress={() => { modeTouchedRef.current = true; setAdMode('custom'); }}
                       activeOpacity={0.8}
                     >
-                      <Ionicons name="color-palette-outline" size={20} color={!simpleActive ? colors.primary : colors.textSecondary} />
+                      <Ionicons name="color-palette-outline" size={20} color={!simpleActive ? colors.text : colors.textSecondary} />
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.selectTitle, !simpleActive && { color: colors.primary }]}>{t('shopAd.customLabel')}</Text>
+                        <Text style={[styles.selectTitle, !simpleActive && { color: colors.text }]}>{t('shopAd.customLabel')}</Text>
                         <Text style={styles.selectSub}>{t('shopAd.customBlurb')}</Text>
                       </View>
-                      {!simpleActive && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                      {!simpleActive && <Ionicons name="checkmark-circle" size={20} color={colors.text} />}
                     </TouchableOpacity>
                   </View>
                 )}
@@ -1545,7 +1545,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
     borderWidth: 1.5, borderColor: colors.border, padding: SPACING.md,
   },
-  selectCardOn: { borderColor: colors.primary, backgroundColor: colors.primary + '11' },
+  // Selected state highlights in the page's own ink rather than brand orange,
+  // which is this app's ACTION colour and read as a button on a card you only
+  // tap to choose. Flips per theme, so it stays legible in all three modes.
+  selectCardOn: { borderColor: colors.text, backgroundColor: colors.text + '0E' },
   modeCardDisabled: { opacity: 0.55 },
   simpleTitleText: { color: colors.text, fontSize: 15, fontWeight: '800' },
   simpleBodyText: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
@@ -1567,9 +1570,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: colors.border,
     paddingLeft: 4, paddingRight: 10, paddingVertical: 4, backgroundColor: colors.surfaceElevated, maxWidth: 200,
   },
-  profileChipOn: { borderColor: colors.primary, backgroundColor: colors.primary + '11' },
+  profileChipOn: { borderColor: colors.text, backgroundColor: colors.text + '0E' },
   chipAvatar: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  chipAvatarEmpty: { backgroundColor: colors.avatarBg + '22', alignItems: 'center', justifyContent: 'center' },
+  chipAvatarEmpty: { backgroundColor: colors.text + '1A', alignItems: 'center', justifyContent: 'center' },
   destChipText: { color: colors.text, fontSize: 12, fontWeight: '700', flexShrink: 1 },
   addProfileChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -1669,7 +1672,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.sm + 2,
   },
-  skipModeOptOn: { borderColor: colors.primary, backgroundColor: colors.surfaceLight },
+  skipModeOptOn: { borderColor: colors.text, backgroundColor: colors.surfaceLight },
   skipModeOptTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
   skipModeOptSub: { color: colors.textTertiary, fontSize: 12, marginTop: 1 },
   ctaRow: { flexDirection: 'row', gap: SPACING.sm },
@@ -1686,9 +1689,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Selected chips FILL rather than tint. A tinted outline is a hint; on a page
   // where the whole job is picking things, the selection should be unmistakable
   // at a glance across a wrap of fifteen genres.
-  chipOn: { borderColor: colors.primary, backgroundColor: colors.primary },
+  chipOn: { borderColor: colors.text, backgroundColor: colors.text },
   chipText: { color: colors.textSecondary, fontSize: 15, fontWeight: '500', letterSpacing: -0.2 },
-  chipTextOn: { color: '#fff', fontWeight: '600' },
+  // colors.background against the colors.text fill — the pair inverts together,
+  // so this is black-on-white in dark mode and white-on-black in light.
+  chipTextOn: { color: colors.background, fontWeight: '600' },
 
   // The payoff panel — what the money actually buys. Gets a hairline edge so it
   // reads as a deliberate callout rather than a tinted patch of background.

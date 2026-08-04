@@ -292,7 +292,6 @@ export default function AdManagerScreen() {
                 <Text style={styles.hint}>{t('adManager.hint')}</Text>
                 <TouchableOpacity style={styles.createBtn} onPress={() => router.push('/ad-manager/create')} activeOpacity={0.85}>
                   <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
-                    <Ionicons name="megaphone" size={18} color="#FFFFFF" />
                     <Text style={styles.createBtnText}>{t('adManager.create')}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
