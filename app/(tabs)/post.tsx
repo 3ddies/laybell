@@ -405,6 +405,17 @@ export default function PostScreen() {
     setIsPreviewPlaying(false);
   }, [isFocused, step]);
 
+  // Belt and braces: release the player outright if this screen ever unmounts
+  // with a clip loaded — the root layout remounts the whole per-user tree on an
+  // account switch, and a player that outlives its screen has nothing left
+  // holding a reference to stop it. No setState here; the component is gone.
+  useEffect(() => () => {
+    if (previewSubRef.current) { try { previewSubRef.current.remove(); } catch {} previewSubRef.current = null; }
+    const p = previewSoundRef.current;
+    if (p) { try { p.pause(); } catch {} try { p.remove(); } catch {} }
+    previewSoundRef.current = null;
+  }, []);
+
   function exitToExplore() {
     resetAll();
     router.navigate('/explore');
@@ -774,7 +785,17 @@ export default function PostScreen() {
 
   async function unloadPreview() {
     if (previewSubRef.current) { previewSubRef.current.remove(); previewSubRef.current = null; }
-    if (previewSoundRef.current) { try { previewSoundRef.current.remove(); } catch {} previewSoundRef.current = null; }
+    const p = previewSoundRef.current;
+    if (p) {
+      // PAUSE BEFORE RELEASING. `remove()` tears down the handle but does not
+      // reliably stop an expo-audio player that is mid-playback first — so a
+      // clip released while playing carried on with nothing left holding a
+      // reference to stop it. That's why closing the composer with ✕ (which
+      // resets through here) left audio running in the background.
+      try { p.pause(); } catch {}
+      try { p.remove(); } catch {}
+      previewSoundRef.current = null;
+    }
     setIsPreviewPlaying(false);
   }
 
