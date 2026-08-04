@@ -242,7 +242,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       catch { thumbnailUrl = streamPosterUrl(subdomain, uid); }
 
       // The file is up — insert the real, persisted post now.
-      const { data: newPost, error } = await supabase.from('posts').insert({
+      const row: Record<string, any> = {
         user_id: job.userId,
         type: 'video',
         media_url: hls,
@@ -262,7 +262,17 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         ...(job.taggedIds.length ? { tagged_user_ids: job.taggedIds } : {}),
         ...(job.communityIds.length ? { community_ids: job.communityIds } : {}),
         allow_gifs: job.allowGifs,
-      }).select('id').single();
+      };
+      let { data: newPost, error } = await supabase.from('posts').insert(row).select('id').single();
+      // A column the deployed schema — or PostgREST's CACHED view of it, which
+      // lags an ALTER TABLE until the schema is reloaded — does not recognise must
+      // never cost the user their post. Drop the optional field and insert again;
+      // the post lands, it just loses that one flag. Same degradation the song
+      // picker does for the consent columns.
+      if (error && /song_link_only/i.test(error.message ?? '')) {
+        delete row.song_link_only;
+        ({ data: newPost, error } = await supabase.from('posts').insert(row).select('id').single());
+      }
       if (error) throw error;
       const postId = newPost!.id as string;
       // The row now references the asset, so the crash-recovery tracker can let go
@@ -307,6 +317,11 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       // top of Home (rendered as a normal PostCard, fully interactive) and drop the
       // card. It falls into natural rank on the next manual refresh.
       setPinnedIds((ids) => [postId, ...ids.filter((id) => id !== postId)]);
+      // Bump AGAIN on completion, not just after the insert. The pin alone puts
+      // the id at the top, but the feed still has to hold the finished row —
+      // this makes it refetch at the moment encoding lands, so the post appears
+      // by itself instead of waiting for the user to pull to refresh.
+      setCompletedTick((n) => n + 1);
       remove(tempId);
       // THE moment the post actually exists — row inserted, file uploaded,
       // encoding finished. The composer deliberately stays quiet at enqueue
