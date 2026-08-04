@@ -151,11 +151,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(224,64,28,0.5)',
   },
   info: { flex: 1 },
-  caption: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  // The song name is the row's headline and its primary tap target (the whole
+  // info column plays the track), so it carries real weight; the handle and the
+  // stream/duration meta drop back to a supporting line. At 14 vs 12 the two
+  // read as near-equal and the eye had to pick.
+  caption: { color: colors.text, fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
   hl: { color: colors.primary, fontWeight: '800' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  artist: { color: colors.textSecondary, fontSize: 12 },
-  streams: { color: colors.textTertiary, fontSize: 12 },
+  artist: { color: colors.textSecondary, fontSize: 11.5 },
+  streams: { color: colors.textTertiary, fontSize: 11.5 },
   addBtn: { padding: SPACING.xs },
   avatar: { width: 34, height: 34, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceElevated },
   avatarText: { color: colors.text, fontSize: 14, fontWeight: '700' },

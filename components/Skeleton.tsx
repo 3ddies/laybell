@@ -161,7 +161,11 @@ export function TrackRowSkeleton() {
     <View style={s.listRow}>
       <Skeleton width={52} height={52} radius={RADIUS.sm} />
       <View style={s.listRowText}>
-        <SkeletonLine w={170} h={12} />
+        {/* Mirrors TrackRow's 16pt headline over an 11.5pt meta line — a
+            skeleton that previews the wrong proportions is a small lie the
+            moment the real row lands. Row height is set by the 52pt cover, so
+            neither line changes it. */}
+        <SkeletonLine w={170} h={14} />
         <SkeletonLine w={110} h={10} style={{ marginTop: 7 }} />
       </View>
       <SkeletonCircle size={22} />
