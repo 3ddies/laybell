@@ -5,10 +5,8 @@ order that actually works. iOS is already done; this is the other rail.
 
 ## RESUME HERE — next session (written 2026-08-03 EOD)
 
-**1. Run the pending SQL** (Supabase SQL editor):
-- `supabase/sql/studio_host_exit.sql` — host-exit handover. Until it runs, a host
-  leaving still ends the session for everyone (safe fallback, but not the wanted
-  behaviour).
+**1. ✅ DONE — `supabase/sql/studio_host_exit.sql` was run 2026-08-03.** Host exit
+now stops the broadcast and hands the room to the earliest remaining member.
 
 **2. Play — the AAB is BUILT and waiting.** Nothing blocks the upload:
 - Download: the artifact from build `e12fec4b` (Play Console -> Testing ->
@@ -18,10 +16,13 @@ order that actually works. iOS is already done; this is the other rail.
 - Then RevenueCat: add the Android app, upload the service-account JSON, attach
   products to the `premium` entitlement / credits offering. The 36h credential
   clock expired 2026-08-03 evening, so the JSON should be accepted now.
-- Then `androidApiKey` -> OTA (no rebuild — see the note below).
+- Then set `androidApiKey` and **REBUILD**. There is NO OTA on this project (see
+  the correction below), so the key only reaches a build by rebuilding — and that
+  same rebuild picks up every JS fix since 08-02. Do it AFTER RevenueCat so one
+  build carries both.
 
-**3. Apple — reply to Bella** (case 20000125265126) to start the org migration.
-Draft reply is in the session notes; all five prerequisites already verified.
+**3. ✅ Apple — replied to Bella 2026-08-03** (case 20000125265126). WAITING on her
+to start the migration. Nothing to do until she answers.
 ⚠️ iOS builds are FROZEN during migration (Certificates/Identifiers/Profiles goes
 offline), so start it while the remaining work is Android-only — which it is.
 
@@ -46,8 +47,8 @@ decisions now settled: `laybellreview` + its posts is the ONLY survivor).
 | 4. Build the AAB | ✅ **Done 2026-08-03.** Build `e12fec4b` FINISHED — the .aab is ready to upload. |
 | 5. Upload to internal testing | ⬜ |
 | 6. Create the 6 products | ⬜ |
-| 7. RevenueCat wiring | ⬜ blocked until step 1's 36h elapses AND step 6 |
-| 8. `androidApiKey` → OTA | ⬜ |
+| 7. RevenueCat wiring | ⬜ 36h clock has now ELAPSED — unblocked once step 6 is done |
+| 8. androidApiKey + REBUILD | ⬜ **no OTA on this project** — the key and every JS fix since 08-02 both need a rebuild; do it once, after RevenueCat |
 | 9. License tester | ⬜ |
 | 10. Money test | ⬜ needs Apple's rail too |
 
@@ -69,10 +70,19 @@ decisions now settled: `laybellreview` + its posts is the ONLY survivor).
    valid.** Start Step 1 *today*, before anything else — it runs in the background
    while you do the rest. Leaving it to the end stalls you for a day and a half.
 
-**No second build needed.** `lib/purchases.ts` reads the API key from
-`Constants.expoConfig.extra.revenuecat`, which lives in the manifest — EAS Update
-replaces it over the air, and `react-native-purchases` is already compiled in. So the
-key goes live with an OTA push, not a rebuild.
+**⚠️ CORRECTION (2026-08-03): a rebuild IS needed — there is no OTA path.**
+An earlier version of this doc said `androidApiKey` could ship over the air
+because `lib/purchases.ts` reads it from `Constants.expoConfig.extra`. That is
+true of the manifest, but **EAS Update is not configured on this project** — no
+`updates` block, no `runtimeVersion`, no channels in eas.json. Nothing can be
+pushed OTA today. Every JS change reaches a store build only by rebuilding.
+
+**So sequence it to spend ONE build, not two:**
+1. Upload the EXISTING aab (`e12fec4b`) — its only job is to unlock product creation.
+2. Create the 6 products, wire RevenueCat, copy the `goog_` key.
+3. Set `androidApiKey` in app.json.
+4. **Rebuild once** — that build carries the key AND every JS fix since 08-02.
+5. Upload that build; test money on it.
 
 **Reference values — these must match exactly everywhere:**
 
