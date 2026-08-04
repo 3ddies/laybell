@@ -19,6 +19,9 @@ import { createNotification } from '../../lib/createNotification';
 import { reportUser } from '../../lib/postActions';
 import { parseAttachment, attachmentBody, pickImageAttachment, type Attachment } from '../../lib/attachments';
 import { parseOffer } from '../../lib/offerMessage';
+import { parseStudioInvite, studioInviteBody } from '../../lib/studioInvite';
+import StudioInviteCard from '../../components/StudioInviteCard';
+import { createStudioSession } from '../../lib/studio';
 import { fetchOrdersByIds, type ShopOrder } from '../../lib/shop';
 import OfferMessageCard from '../../components/OfferMessageCard';
 import { openGifAttachment } from '../../lib/gifAttachmentActions';
@@ -366,6 +369,44 @@ export default function ChatScreen() {
     setAttaching(false);
   }
 
+  // Start a studio session and drop the invite into this thread. Deliberately
+  // NOT a ring: the card waits in the conversation and gets opened when the
+  // other person is actually free (see lib/studioInvite for the reasoning).
+  // The session is created FIRST — if that fails there's nothing to invite to,
+  // and a card pointing at a session that doesn't exist is worse than no card.
+  const [startingStudio, setStartingStudio] = useState(false);
+  async function startStudioInvite() {
+    if (startingStudio || !currentUserId) return;
+    if ((myProfile as any)?.hidden) {
+      Alert.alert(t('messages.hiddenTitle'), t('messages.hiddenBody'));
+      return;
+    }
+    setStartingStudio(true);
+    try {
+      const session = await createStudioSession('');
+      const body = studioInviteBody({
+        sessionId: session.id,
+        code: session.join_code,
+        title: session.title || '',
+      });
+      const { data, error } = await supabase.from('messages')
+        .insert({ sender_id: currentUserId, receiver_id: id, body })
+        .select().single();
+      if (error || !data) throw error ?? new Error('send failed');
+      impactLight();
+      setMessages(prev => [...prev, data]);
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      // A dedicated notification type so the push can say "invited you to a
+      // studio session" rather than showing the encoded body.
+      createNotification({ userId: String(id), actorId: currentUserId, type: 'studio_invite' });
+      router.push(`/studio/${session.id}`);
+    } catch {
+      Alert.alert(t('studioInvite.failedTitle'), t('studioInvite.failedBody'));
+    } finally {
+      setStartingStudio(false);
+    }
+  }
+
   async function sendMessage() {
     if ((!newMessage.trim() && !pendingAttachment) || !currentUserId || sending) return;
     // Hidden accounts browse/listen only — no DMs while invisible.
@@ -515,6 +556,13 @@ export default function ChatScreen() {
             {!!otherUser?.username && <Text style={styles.headerUsername} numberOfLines={1}>@{otherUser.username}</Text>}
           </View>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.headerMenuBtn} onPress={startStudioInvite} disabled={startingStudio}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button" accessibilityLabel={t('studioInvite.start')}>
+          {startingStudio
+            ? <ActivityIndicator size="small" color={colors.textSecondary} />
+            : <Ionicons name="mic-outline" size={21} color={colors.text} />}
+        </TouchableOpacity>
         <TouchableOpacity style={styles.headerMenuBtn} onPress={() => setMenuOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
           <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
@@ -638,6 +686,21 @@ export default function ChatScreen() {
                     isOwn={isOwn}
                     onSettled={() => setOfferNonce((n) => n + 1)}
                   />
+                </TouchableOpacity>
+                <Animated.Text style={[styles.cardTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>
+                {renderReactions(item.id, isOwn)}
+              </View>
+            );
+          }
+          const studioInvite = parseStudioInvite(item.body);
+          // A studio-session invite: a standalone card with Join, checked against
+          // the session's live status so an ended session says so instead of
+          // offering a button that fails.
+          if (studioInvite) {
+            return (
+              <View style={[styles.bubbleWrap, isOwn ? styles.bubbleWrapOwn : styles.bubbleWrapOther]}>
+                <TouchableOpacity activeOpacity={1} onLongPress={() => openPicker(item.id)} delayLongPress={280}>
+                  <StudioInviteCard invite={studioInvite} isOwn={isOwn} />
                 </TouchableOpacity>
                 <Animated.Text style={[styles.cardTime, { opacity: timeOpacity }]}>{formatTime(item.created_at)}</Animated.Text>
                 {renderReactions(item.id, isOwn)}

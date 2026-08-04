@@ -2390,6 +2390,18 @@ const en: Record<string, string> = {
   'communities.reportBody': 'Report this community for our team to review?',
   'communities.reportThanks': 'Our team will review this community.',
   'shop.error': 'Something went wrong. Try again.',
+  'studioInvite.start': 'Start a studio session',
+  'studioInvite.kicker': 'Studio session',
+  'studioInvite.untitled': 'Live studio session',
+  'studioInvite.join': 'Join',
+  'studioInvite.reopen': 'Reopen',
+  'studioInvite.ended': 'This session has ended',
+  'studioInvite.failed': 'Couldn\'t join. Try again.',
+  'studioInvite.failedTitle': 'Couldn\'t start the session',
+  'studioInvite.failedBody': 'Check your connection and try again.',
+  'studioInvite.preview': 'Studio session invite',
+  'messages.preview.studio': 'Invited you to a studio session',
+  'messages.preview.studioSent': 'You sent a studio invite',
 };
 
 const es: Record<string, string> = {
@@ -4259,6 +4271,18 @@ const es: Record<string, string> = {
   'postAction.reportThanksTitle': 'Gracias por la denuncia',
   'postAction.reportPostThanks': 'Nuestro equipo revisará esta publicación.',
   'postAction.reportUserThanks': 'Nuestro equipo revisará esta cuenta.',
+  'studioInvite.start': 'Iniciar sesión de estudio',
+  'studioInvite.kicker': 'Sesión de estudio',
+  'studioInvite.untitled': 'Sesión de estudio en vivo',
+  'studioInvite.join': 'Unirse',
+  'studioInvite.reopen': 'Reabrir',
+  'studioInvite.ended': 'Esta sesión ha terminado',
+  'studioInvite.failed': 'No se pudo unir. Inténtalo de nuevo.',
+  'studioInvite.failedTitle': 'No se pudo iniciar la sesión',
+  'studioInvite.failedBody': 'Comprueba tu conexión e inténtalo de nuevo.',
+  'studioInvite.preview': 'Invitación a sesión de estudio',
+  'messages.preview.studio': 'Te invitó a una sesión de estudio',
+  'messages.preview.studioSent': 'Enviaste una invitación de estudio',
 };
 
 const fr: Record<string, string> = {
@@ -6128,6 +6152,18 @@ const fr: Record<string, string> = {
   'postAction.reportThanksTitle': 'Merci pour le signalement',
   'postAction.reportPostThanks': 'Notre équipe examinera cette publication.',
   'postAction.reportUserThanks': 'Notre équipe examinera ce compte.',
+  'studioInvite.start': 'Démarrer une session studio',
+  'studioInvite.kicker': 'Session studio',
+  'studioInvite.untitled': 'Session studio en direct',
+  'studioInvite.join': 'Rejoindre',
+  'studioInvite.reopen': 'Rouvrir',
+  'studioInvite.ended': 'Cette session est terminée',
+  'studioInvite.failed': 'Impossible de rejoindre. Réessayez.',
+  'studioInvite.failedTitle': 'Impossible de démarrer la session',
+  'studioInvite.failedBody': 'Vérifiez votre connexion et réessayez.',
+  'studioInvite.preview': 'Invitation à une session studio',
+  'messages.preview.studio': 'Vous a invité à une session studio',
+  'messages.preview.studioSent': 'Vous avez envoyé une invitation studio',
 };
 
 const de: Record<string, string> = {
@@ -7997,6 +8033,18 @@ const de: Record<string, string> = {
   'postAction.reportThanksTitle': 'Danke für die Meldung',
   'postAction.reportPostThanks': 'Unser Team wird diesen Beitrag überprüfen.',
   'postAction.reportUserThanks': 'Unser Team wird dieses Konto überprüfen.',
+  'studioInvite.start': 'Studio-Session starten',
+  'studioInvite.kicker': 'Studio-Session',
+  'studioInvite.untitled': 'Live-Studio-Session',
+  'studioInvite.join': 'Beitreten',
+  'studioInvite.reopen': 'Erneut öffnen',
+  'studioInvite.ended': 'Diese Session ist beendet',
+  'studioInvite.failed': 'Beitritt fehlgeschlagen. Versuche es erneut.',
+  'studioInvite.failedTitle': 'Session konnte nicht gestartet werden',
+  'studioInvite.failedBody': 'Prüfe deine Verbindung und versuche es erneut.',
+  'studioInvite.preview': 'Einladung zur Studio-Session',
+  'messages.preview.studio': 'Hat dich zu einer Studio-Session eingeladen',
+  'messages.preview.studioSent': 'Du hast eine Studio-Einladung gesendet',
 };
 
 const pt: Record<string, string> = {
@@ -9866,6 +9914,18 @@ const pt: Record<string, string> = {
   'postAction.reportThanksTitle': 'Obrigado pela denúncia',
   'postAction.reportPostThanks': 'Nossa equipe vai analisar esta publicação.',
   'postAction.reportUserThanks': 'Nossa equipe vai analisar esta conta.',
+  'studioInvite.start': 'Iniciar sessão de estúdio',
+  'studioInvite.kicker': 'Sessão de estúdio',
+  'studioInvite.untitled': 'Sessão de estúdio ao vivo',
+  'studioInvite.join': 'Entrar',
+  'studioInvite.reopen': 'Reabrir',
+  'studioInvite.ended': 'Esta sessão terminou',
+  'studioInvite.failed': 'Não foi possível entrar. Tente novamente.',
+  'studioInvite.failedTitle': 'Não foi possível iniciar a sessão',
+  'studioInvite.failedBody': 'Verifique sua conexão e tente novamente.',
+  'studioInvite.preview': 'Convite para sessão de estúdio',
+  'messages.preview.studio': 'Convidou você para uma sessão de estúdio',
+  'messages.preview.studioSent': 'Você enviou um convite de estúdio',
 };
 
 const it: Record<string, string> = {
@@ -11735,6 +11795,18 @@ const it: Record<string, string> = {
   'postAction.reportThanksTitle': 'Grazie per la segnalazione',
   'postAction.reportPostThanks': 'Il nostro team esaminerà questo post.',
   'postAction.reportUserThanks': 'Il nostro team esaminerà questo account.',
+  'studioInvite.start': 'Avvia sessione studio',
+  'studioInvite.kicker': 'Sessione studio',
+  'studioInvite.untitled': 'Sessione studio dal vivo',
+  'studioInvite.join': 'Partecipa',
+  'studioInvite.reopen': 'Riapri',
+  'studioInvite.ended': 'Questa sessione è terminata',
+  'studioInvite.failed': 'Impossibile partecipare. Riprova.',
+  'studioInvite.failedTitle': 'Impossibile avviare la sessione',
+  'studioInvite.failedBody': 'Controlla la connessione e riprova.',
+  'studioInvite.preview': 'Invito a una sessione studio',
+  'messages.preview.studio': 'Ti ha invitato a una sessione studio',
+  'messages.preview.studioSent': 'Hai inviato un invito studio',
 };
 
 const ru: Record<string, string> = {
@@ -13569,6 +13641,18 @@ const ru: Record<string, string> = {
   'postAction.reportThanksTitle': 'Спасибо за жалобу',
   'postAction.reportPostThanks': 'Наша команда проверит этот пост.',
   'postAction.reportUserThanks': 'Наша команда проверит этот аккаунт.',
+  'studioInvite.start': 'Начать студийную сессию',
+  'studioInvite.kicker': 'Студийная сессия',
+  'studioInvite.untitled': 'Живая студийная сессия',
+  'studioInvite.join': 'Присоединиться',
+  'studioInvite.reopen': 'Открыть снова',
+  'studioInvite.ended': 'Эта сессия завершена',
+  'studioInvite.failed': 'Не удалось присоединиться. Повторите попытку.',
+  'studioInvite.failedTitle': 'Не удалось начать сессию',
+  'studioInvite.failedBody': 'Проверьте соединение и повторите попытку.',
+  'studioInvite.preview': 'Приглашение в студийную сессию',
+  'messages.preview.studio': 'Пригласил вас в студийную сессию',
+  'messages.preview.studioSent': 'Вы отправили приглашение в студию',
 };
 
 const zh: Record<string, string> = {
@@ -15403,6 +15487,18 @@ const zh: Record<string, string> = {
   'postAction.reportThanksTitle': '感谢举报',
   'postAction.reportPostThanks': '我们的团队会审核此帖子。',
   'postAction.reportUserThanks': '我们的团队会审核此账户。',
+  'studioInvite.start': '发起录音室会话',
+  'studioInvite.kicker': '录音室会话',
+  'studioInvite.untitled': '实时录音室会话',
+  'studioInvite.join': '加入',
+  'studioInvite.reopen': '重新打开',
+  'studioInvite.ended': '该会话已结束',
+  'studioInvite.failed': '无法加入，请重试。',
+  'studioInvite.failedTitle': '无法发起会话',
+  'studioInvite.failedBody': '请检查网络连接后重试。',
+  'studioInvite.preview': '录音室会话邀请',
+  'messages.preview.studio': '邀请你加入录音室会话',
+  'messages.preview.studioSent': '你发送了录音室邀请',
 };
 
 const ja: Record<string, string> = {
@@ -17237,6 +17333,18 @@ const ja: Record<string, string> = {
   'postAction.reportThanksTitle': '報告ありがとうございます',
   'postAction.reportPostThanks': 'チームがこの投稿を確認します。',
   'postAction.reportUserThanks': 'チームがこのアカウントを確認します。',
+  'studioInvite.start': 'スタジオセッションを開始',
+  'studioInvite.kicker': 'スタジオセッション',
+  'studioInvite.untitled': 'ライブスタジオセッション',
+  'studioInvite.join': '参加',
+  'studioInvite.reopen': '再度開く',
+  'studioInvite.ended': 'このセッションは終了しました',
+  'studioInvite.failed': '参加できませんでした。もう一度お試しください。',
+  'studioInvite.failedTitle': 'セッションを開始できませんでした',
+  'studioInvite.failedBody': '接続を確認してもう一度お試しください。',
+  'studioInvite.preview': 'スタジオセッションの招待',
+  'messages.preview.studio': 'スタジオセッションに招待しました',
+  'messages.preview.studioSent': 'スタジオの招待を送信しました',
 };
 
 const hi: Record<string, string> = {
@@ -19071,6 +19179,18 @@ const hi: Record<string, string> = {
   'postAction.reportThanksTitle': 'रिपोर्ट के लिए धन्यवाद',
   'postAction.reportPostThanks': 'हमारी टीम इस पोस्ट की समीक्षा करेगी।',
   'postAction.reportUserThanks': 'हमारी टीम इस अकाउंट की समीक्षा करेगी।',
+  'studioInvite.start': 'स्टूडियो सेशन शुरू करें',
+  'studioInvite.kicker': 'स्टूडियो सेशन',
+  'studioInvite.untitled': 'लाइव स्टूडियो सेशन',
+  'studioInvite.join': 'शामिल हों',
+  'studioInvite.reopen': 'फिर से खोलें',
+  'studioInvite.ended': 'यह सेशन समाप्त हो गया है',
+  'studioInvite.failed': 'शामिल नहीं हो सके। फिर से कोशिश करें।',
+  'studioInvite.failedTitle': 'सेशन शुरू नहीं हो सका',
+  'studioInvite.failedBody': 'अपना कनेक्शन जाँचें और फिर से कोशिश करें।',
+  'studioInvite.preview': 'स्टूडियो सेशन का निमंत्रण',
+  'messages.preview.studio': 'आपको स्टूडियो सेशन में आमंत्रित किया',
+  'messages.preview.studioSent': 'आपने स्टूडियो निमंत्रण भेजा',
 };
 
 const DICTS: Record<Lang, Record<string, string>> = { en, es, fr, de, pt, it, ru, zh, ja, hi };

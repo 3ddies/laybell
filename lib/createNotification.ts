@@ -10,7 +10,10 @@ export async function createNotification({
   actorId: string;
   // 'offer' is a shop buy-offer awaiting an answer. Its push deliberately names
   // the sender and NOTHING else — see supabase/functions/send-push.
-  type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer';
+  // 'studio_invite' is a studio-session invite dropped into a DM thread. Like
+  // 'offer' it needs BOTH supabase/sql/studio_invite.sql (the notifications
+  // CHECK constraint) and a send-push redeploy — either alone fails silently.
+  type: 'like' | 'comment' | 'follow' | 'friend' | 'message' | 'mention' | 'song_used' | 'song_story' | 'tag' | 'offer' | 'studio_invite';
   postId?: string | null;
 }) {
   if (userId === actorId) return; // Never notify yourself

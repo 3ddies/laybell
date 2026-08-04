@@ -16,6 +16,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import { sharedPostId, parseStoryReply } from '../../lib/postLinks';
 import { parseAttachment } from '../../lib/attachments';
 import { isOfferBody } from '../../lib/offerMessage';
+import { isStudioInviteBody } from '../../lib/studioInvite';
 import { fetchBlockedIds } from '../../lib/blocks';
 import { maskHiddenProfile } from '../../lib/hiddenProfile';
 import HighlightText from '../../components/HighlightText';
@@ -504,6 +505,9 @@ export default function MessagesScreen() {
           // is looking at something they did, not something that arrived.
           const offerFromMe = isOffer && !!currentUserId && item.last_sender_id === currentUserId;
           const offerPending = isOffer && unread;
+          // Same reason as the offer above: never print the encoded body.
+          const isStudio = !matchMsg && !matchCaption && !usernamePreview && isStudioInviteBody(item.last_message);
+          const studioFromMe = isStudio && !!currentUserId && item.last_sender_id === currentUserId;
           const preview = matchMsg ?? (dmAtt ? (dmAtt.type === 'gif' ? t('messages.preview.gif') : t('messages.preview.photo')) : item.last_message);
           return (
           <Pressable
@@ -564,6 +568,13 @@ export default function MessagesScreen() {
                     numberOfLines={1}
                   >
                     {t(offerFromMe ? 'messages.preview.offerSent' : 'messages.preview.offer')}
+                  </Text>
+                </View>
+              ) : isStudio ? (
+                <View style={styles.sharedPreview}>
+                  <Ionicons name="mic" size={12} color={unread ? colors.primary : colors.textSecondary} />
+                  <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>
+                    {t(studioFromMe ? 'messages.preview.studioSent' : 'messages.preview.studio')}
                   </Text>
                 </View>
               ) : storyReply ? (

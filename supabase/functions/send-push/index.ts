@@ -18,6 +18,10 @@ const ACTIONS: Record<string, (name: string) => string> = {
   // a lock screen is read by whoever is holding the phone. The figure lives on
   // the offer card inside the thread, which is also where it can be answered.
   offer:      name => `${name} sent you an offer.`,
+  // A studio-session invite. Deliberately no urgency and no "join now": the card
+  // sits in the thread and is meant to be opened when the person is actually
+  // free, which is the whole reason this is an invite rather than a ring.
+  studio_invite: name => `${name} invited you to a studio session.`,
 };
 
 serve(async (req) => {
