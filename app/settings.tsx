@@ -91,19 +91,30 @@ const GALAXY_STARS = [
 // Placement (owner-directed): the star icon's circle must stay CLEAR — no
 // bubble may collide with it — so the field starts at ~26% and spreads across
 // the open orange, ending at the chevron column. The icon circle spans
-// roughly the left 18% of the card (18px padding + 48px bubble), and the
-// widest sway here is ±8px ≈ 2%, so 26% keeps a real margin. The four
-// mid-card bubbles stay faint (≤0.32 peak) so a label that wraps in a longer
-// language passes over them cleanly; the chevron column carries the two
-// brightest, where there is no text to fight. `startY` assumes the card's
-// ~100px height.
+// roughly the left 17% of the card (20px padding + 48px bubble), and the
+// widest sway here is ±8px ≈ 2%, so 26% keeps a real margin. The mid-card
+// bubbles stay the faintest (≤0.40 peak) so a label that wraps in a longer
+// language passes over them cleanly; the chevron column carries the
+// brightest, where there is no text to fight.
+//
+// Made more prevalent (owner) by three levers at once, none of them pushed
+// far: eight bubbles instead of six, each a few px larger, and peaks lifted
+// roughly a third. The readability ceiling still holds — a peak of 0.40 over
+// a 0.20 fill is ~0.08 effective white on the orange, and the rim is a
+// 1.2px ring, neither of which a 21pt bold label has trouble sitting on.
+//
+// `startY` tracks the card's height, now 108px (padding 30×2 + 48pt bubble);
+// they start lower than before so the rise uses the full card rather than
+// finishing in the top third.
 const PREMIUM_BUBBLES = [
-  { left: '26%', size: 12, peak: 0.3, drift: 36, sway: 6, startY: 60, dur: 8400, delay: 1800 },
-  { left: '38%', size: 16, peak: 0.24, drift: 42, sway: -7, startY: 66, dur: 10200, delay: 0 },
-  { left: '55%', size: 10, peak: 0.26, drift: 30, sway: 5, startY: 48, dur: 7600, delay: 3400 },
-  { left: '68%', size: 14, peak: 0.32, drift: 40, sway: -8, startY: 64, dur: 9200, delay: 5000 },
-  { left: '85%', size: 20, peak: 0.6, drift: 44, sway: 7, startY: 62, dur: 9800, delay: 900 },
-  { left: '93%', size: 11, peak: 0.5, drift: 32, sway: -5, startY: 46, dur: 7400, delay: 2600 },
+  { left: '26%', size: 14, peak: 0.38, drift: 40, sway: 6, startY: 70, dur: 8400, delay: 1800 },
+  { left: '38%', size: 19, peak: 0.32, drift: 46, sway: -7, startY: 76, dur: 10200, delay: 0 },
+  { left: '48%', size: 11, peak: 0.30, drift: 34, sway: 6, startY: 60, dur: 8800, delay: 6200 },
+  { left: '55%', size: 13, peak: 0.34, drift: 34, sway: 5, startY: 56, dur: 7600, delay: 3400 },
+  { left: '68%', size: 17, peak: 0.40, drift: 44, sway: -8, startY: 74, dur: 9200, delay: 5000 },
+  { left: '80%', size: 12, peak: 0.48, drift: 38, sway: 6, startY: 66, dur: 8000, delay: 4200 },
+  { left: '85%', size: 23, peak: 0.72, drift: 48, sway: 7, startY: 72, dur: 9800, delay: 900 },
+  { left: '93%', size: 13, peak: 0.62, drift: 36, sway: -5, startY: 54, dur: 7400, delay: 2600 },
 ] as const;
 
 // Module scope, per the house rule (components defined inside a render body get
@@ -922,11 +933,14 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   // A bubble, not a speck: barely-there white fill with a brighter rim — the
   // rim is what sells the "bubble" read. Both scale together via the animated
   // container opacity.
+  // The rim is what sells the "bubble" read, so it carries most of the lift:
+  // fill 0.14 → 0.20, rim 0.55 → 0.75 on a slightly heavier stroke. Raising the
+  // fill alone would have made them read as milky blobs instead.
   premiumBubble: {
     position: 'absolute',
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.55)',
+    backgroundColor: 'rgba(255,255,255,0.20)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255,255,255,0.75)',
   },
   // Spotlight and Ad Manager now match what Premium used to be — same padding,
   // same 48pt bubble. The stack still reads in order because Premium grew past
