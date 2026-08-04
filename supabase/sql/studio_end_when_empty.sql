@@ -76,7 +76,13 @@ begin
   return 'ended';
 end $$;
 
+-- `revoke ... from public` is NOT enough on Supabase: ALTER DEFAULT PRIVILEGES
+-- grants EXECUTE on every new function in `public` to anon/authenticated/
+-- service_role, and the PUBLIC pseudo-role is not the `anon` role — so a
+-- signed-out caller keeps EXECUTE unless anon is revoked by name. Verified
+-- against the live ACL, which showed anon=X on both of these.
 revoke all on function public.studio_leave(uuid) from public;
+revoke execute on function public.studio_leave(uuid) from anon;
 grant execute on function public.studio_leave(uuid) to authenticated;
 
 
@@ -97,7 +103,12 @@ as $$
   select status from public.studio_sessions where id = p_session;
 $$;
 
+-- Anon by name (see the note above). It matters more here than on
+-- studio_leave: that one raises not_authenticated on its first line, whereas
+-- this is a bare SELECT with no auth check, so leaving anon with EXECUTE would
+-- let a signed-out caller probe any session id it already knew.
 revoke all on function public.studio_session_status(uuid) from public;
+revoke execute on function public.studio_session_status(uuid) from anon;
 grant execute on function public.studio_session_status(uuid) to authenticated;
 
 
