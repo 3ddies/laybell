@@ -604,7 +604,14 @@ export default function SpotlightScreen() {
                 <View style={styles.summaryDivider} />
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryTotalKey}>{t('spotlight.summaryTotal')}</Text>
-                  <Text style={styles.summaryTotalVal}>{fmtPrice(pkg.priceCents)}</Text>
+                  {/* Green, not the brand orange. Orange is this app's ACTION
+                      colour — it's on the Pay button right below — so an orange
+                      total read as another thing to tap. Green is the money
+                      colour, and it's the same successInk the Live badge and the
+                      payment-confirmed pill use, so every positive-money signal
+                      on this feature is one hue. Applied inline because
+                      makeStyles has no access to `mode`. */}
+                  <Text style={[styles.summaryTotalVal, { color: successInk }]}>{fmtPrice(pkg.priceCents)}</Text>
                 </View>
               </View>
               <Text style={styles.simNote}>
@@ -952,7 +959,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   summaryVal: { color: colors.text, fontSize: 13, fontWeight: '600' },
   summaryDivider: { height: 0.5, backgroundColor: colors.border },
   summaryTotalKey: { color: colors.text, fontSize: 14, fontWeight: '800' },
-  summaryTotalVal: { color: colors.primary, fontSize: 16, fontWeight: '800' },
+  // Colour comes from successInk at the call site (theme-aware green) — kept out
+  // of here so there's one source of truth rather than a stale default.
+  summaryTotalVal: { fontSize: 16, fontWeight: '800' },
   simNote: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, textAlign: 'center' },
 
   // alignSelf so the bubble wraps its label instead of stretching edge to edge —
