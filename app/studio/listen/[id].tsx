@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, TextInput, ActivityIndicator,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -168,8 +168,13 @@ export default function StudioListenScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [id, profile?.id, reqState, router]);
 
+  // Raising a hand is RE-SENDABLE. A host mid-take misses requests, and a
+  // decline is usually "not right now" rather than "never" — leaving the button
+  // dead after either one stranded the listener with no way back in. Only an
+  // in-flight call blocks a press; pending and declined can both be pressed
+  // again to ask afresh.
   async function onRequestJoin() {
-    if (!id || reqState === 'pending' || reqState === 'busy') return;
+    if (!id || reqState === 'busy') return;
     setReqState('busy');
     const res = await requestStudioJoin(id);
     if (res === 'member' || res === 'accepted') { router.replace(`/studio/${id}`); return; }
@@ -237,6 +242,14 @@ export default function StudioListenScreen() {
             style={{ flex: 1 }}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
+          {/* Tap anywhere outside the chat field to dismiss the keyboard. There
+              is no ScrollView on this screen, so nothing was doing it: Android
+              gets it from the OS back gesture, iOS had no way out at all short
+              of sending a message. accessible={false} keeps this off the a11y
+              tree, and it only responds to taps no child claimed, so every
+              button below still works. */}
+          <TouchableWithoutFeedback accessible={false} onPress={Keyboard.dismiss}>
+          <View style={{ flex: 1 }}>
             {/* Session identity */}
             <View style={styles.meta}>
               <Text style={styles.title} numberOfLines={2}>{title || t('studio.untitled')}</Text>
@@ -301,7 +314,7 @@ export default function StudioListenScreen() {
                 <TouchableOpacity
                   style={[styles.roundBtn, reqState === 'pending' && styles.roundBtnPending]}
                   onPress={onRequestJoin}
-                  disabled={reqState === 'pending' || reqState === 'busy' || reqState === 'declined'}
+                  disabled={reqState === 'busy'}
                   activeOpacity={0.85}
                 >
                   {reqState === 'busy'
@@ -320,6 +333,8 @@ export default function StudioListenScreen() {
               </Text>
               <View style={{ height: insets.bottom + 8 }} />
             </View>
+          </View>
+          </TouchableWithoutFeedback>
           </KeyboardAvoidingView>
         )}
 

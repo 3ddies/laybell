@@ -307,9 +307,32 @@ export async function applyVocalPreset(room: Room, key: VocalPresetKey): Promise
 async function setAudioSession(on: boolean): Promise<void> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { AudioSession } = require('@livekit/react-native');
-    if (on) await AudioSession.startAudioSession();
-    else await AudioSession.stopAudioSession();
+    const { AudioSession, AndroidAudioTypePresets } = require('@livekit/react-native');
+    if (on) {
+      // WITHOUT configureAudio, startAudioSession leaves the OS on its default
+      // voice-call routing and a broadcast is inaudible: iOS puts playAndRecord
+      // out of the EARPIECE, so the audio is arriving and playing but only
+      // audible with the phone against your ear, and Android sits in
+      // communication mode — echo-cancelled, ducked, and tuned for speech.
+      // Neither is right for music, and both present as "no audio".
+      //
+      // The `media` preset (NOT `communication`) tells the SDK this is media
+      // rather than a call: speaker output, media volume, and none of the voice
+      // processing that would gut a mix. iOS additionally needs defaultToSpeaker,
+      // since playAndRecord's default route is the receiver.
+      await AudioSession.configureAudio({
+        android: { audioTypeOptions: AndroidAudioTypePresets.media },
+        ios: {
+          audioCategory: 'playAndRecord',
+          audioCategoryOptions: ['allowBluetooth', 'allowBluetoothA2DP', 'allowAirPlay', 'defaultToSpeaker'],
+          audioMode: 'default',
+          defaultOutput: 'speaker',
+        },
+      });
+      await AudioSession.startAudioSession();
+    } else {
+      await AudioSession.stopAudioSession();
+    }
   } catch { /* native module not in this binary yet */ }
 }
 

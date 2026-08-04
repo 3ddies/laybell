@@ -9,18 +9,19 @@ account Apple and Google both sign in with).
 
 ---
 
-## Decisions needed from the owner BEFORE writing the script
+## Decisions — SETTLED by the owner 2026-08-03
 
-1. **Does `laybellreview` keep its posts?** "Kill every account, post and test
-   item except the laybellreview account" is ambiguous on this. Reviewers need
-   to see a working app, and an empty demo account is itself a rejection risk —
-   so the default assumption is **keep its content**, but confirm.
-2. **Keep the owner's own account(s)?** `@observer` / `@rachaelhall` are real
-   accounts with real posts. Deleting them is the literal reading; keeping one
-   as founder account may be what's actually wanted.
-3. **Timing vs. the store review.** If Apple or Google are mid-review when this
-   runs, reviewers hit an app that just changed under them. Run it *before*
-   submitting, or *after* approval — not during.
+1. **`laybellreview` KEEPS its posts.** The account and its content both survive;
+   it is the only survivor.
+2. **`@observer` and `@rachaelhall` do NOT survive.** No founder account is
+   retained — the owner will create Laybell's official first accounts fresh
+   after the reset. Treat them like any other test account.
+3. **Timing vs. the store review** — still a live constraint. If Apple or Google
+   are mid-review when this runs, reviewers hit an app that changed under them.
+   Run it *before* submitting, or *after* approval, never during.
+
+So the survivor set is exactly one account: `laybellreview`, with its posts,
+Premium, and credits intact (credits re-seeded — see hazard 1).
 
 ---
 
