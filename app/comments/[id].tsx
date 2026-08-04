@@ -147,7 +147,7 @@ export default function CommentsScreen() {
         }
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.commentRow} onLongPress={() => handleDeleteComment(item.id, item.user_id)}>
-            <LinearGradient colors={GRADIENTS.primary} style={styles.commentAvatar}>
+            <LinearGradient colors={GRADIENTS.avatar} style={styles.commentAvatar}>
               <Text style={styles.commentAvatarText}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
             </LinearGradient>
             <View style={styles.commentContent}>
@@ -162,7 +162,7 @@ export default function CommentsScreen() {
       />
 
       <View style={styles.inputContainer}>
-        <LinearGradient colors={GRADIENTS.primary} style={styles.inputAvatar}>
+        <LinearGradient colors={GRADIENTS.avatar} style={styles.inputAvatar}>
           <Text style={styles.inputAvatarText}>{currentUserProfile?.display_name?.charAt(0).toUpperCase()}</Text>
         </LinearGradient>
         <TextInput

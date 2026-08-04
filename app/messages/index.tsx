@@ -677,7 +677,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   unreadDotOffer: { backgroundColor: colors.success },
   // Hairline separator inset to the avatar's edge (iOS Messages style).
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: SPACING.sm + 12 + (SPACING.sm + 4) + 56 },
-  avatar: { width: 50, height: 50, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 50, height: 50, borderRadius: RADIUS.full, backgroundColor: colors.avatarBg, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.text, fontSize: 20, fontWeight: '700' },
   convInfo: { flex: 1, justifyContent: 'center', gap: 3 },
   convHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: SPACING.sm },

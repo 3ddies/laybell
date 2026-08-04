@@ -561,7 +561,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   headerTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
   listContent: { paddingBottom: SPACING.xxl },
   postHeader: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, gap: SPACING.sm },
-  avatar: { width: 40, height: 40, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 40, height: 40, borderRadius: RADIUS.full, backgroundColor: colors.avatarBg, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.text, fontSize: 16, fontWeight: '700' },
   // minWidth:0 lets a long name truncate instead of pushing the sparkle/follow button.
   postHeaderInfo: { flex: 1, minWidth: 0 },

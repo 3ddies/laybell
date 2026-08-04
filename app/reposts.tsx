@@ -133,7 +133,7 @@ export default function RepostsScreen() {
               {item.reposter?.avatar_url ? (
                 <Image source={{ uri: item.reposter.avatar_url }} style={styles.avatar} />
               ) : (
-                <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+                <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
                   {item.reposter?.display_name === HIDDEN_NAME ? (
                     <Ionicons name="person" size={22} color="#fff" />
                   ) : (

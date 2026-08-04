@@ -114,7 +114,7 @@ export default function TrackRow({
           {avatarUrl ? (
             <ExpoImage source={{ uri: avatarUrl }} style={styles.avatar} contentFit="cover" cachePolicy="memory-disk" />
           ) : (
-            <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+            <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
               <Text style={styles.avatarText}>{(artist || username || '?').charAt(0).toUpperCase()}</Text>
             </LinearGradient>
           )}

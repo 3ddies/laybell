@@ -161,7 +161,7 @@ function TabSlot({
             {profile?.avatar_url ? (
               <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
             ) : (
-              <LinearGradient colors={GRADIENTS.primary} style={styles.avatarImg}>
+              <LinearGradient colors={GRADIENTS.avatar} style={styles.avatarImg}>
                 <Text style={styles.avatarInitial}>
                   {(profile?.display_name || profile?.username || '?').charAt(0).toUpperCase()}
                 </Text>

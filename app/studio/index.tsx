@@ -107,7 +107,7 @@ export default function StudioHubScreen() {
                           {s.host_avatar_url ? (
                             <Image source={{ uri: s.host_avatar_url }} style={styles.liveAvatar} />
                           ) : (
-                            <LinearGradient colors={GRADIENTS.primary} style={styles.liveAvatar}>
+                            <LinearGradient colors={GRADIENTS.avatar} style={styles.liveAvatar}>
                               <Ionicons name="mic" size={16} color="#fff" />
                             </LinearGradient>
                           )}

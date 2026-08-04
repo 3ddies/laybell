@@ -283,7 +283,7 @@ export default function BadgesScreen() {
                       {avatarUrl ? (
                         <Image source={{ uri: avatarUrl }} style={styles.previewAvatar} />
                       ) : (
-                        <LinearGradient colors={GRADIENTS.primary} style={styles.previewAvatar}>
+                        <LinearGradient colors={GRADIENTS.avatar} style={styles.previewAvatar}>
                           <Text style={styles.previewAvatarText}>{avatarLetter}</Text>
                         </LinearGradient>
                       )}
@@ -395,7 +395,7 @@ export default function BadgesScreen() {
                     {avatarUrl ? (
                       <Image source={{ uri: avatarUrl }} style={styles.ppAvatar} />
                     ) : (
-                      <LinearGradient colors={GRADIENTS.primary} style={styles.ppAvatar}>
+                      <LinearGradient colors={GRADIENTS.avatar} style={styles.ppAvatar}>
                         <Text style={styles.ppAvatarText}>{avatarLetter}</Text>
                       </LinearGradient>
                     )}

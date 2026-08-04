@@ -811,7 +811,7 @@ export default function ExploreScreen() {
                 {item.profiles?.avatar_url ? (
                   <Image source={{ uri: item.profiles.avatar_url }} style={styles.postAuthorAvatar} />
                 ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.postAuthorAvatar}>
+                  <LinearGradient colors={GRADIENTS.avatar} style={styles.postAuthorAvatar}>
                     <Text style={styles.postAuthorInitial}>{item.profiles?.display_name?.charAt(0).toUpperCase()}</Text>
                   </LinearGradient>
                 )}
@@ -937,7 +937,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   accountAvatar: {
     width: 48, height: 48, borderRadius: RADIUS.full,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.avatarBg,
     alignItems: 'center', justifyContent: 'center', borderWidth: 2,
   },
   accountAvatarText: { color: colors.text, fontSize: 18, fontWeight: '700' },

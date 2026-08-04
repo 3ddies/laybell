@@ -651,7 +651,7 @@ export default function SettingsScreen() {
             {profile.avatar_url ? (
               <Image source={{ uri: profile.avatar_url }} style={styles.profileAvatar} />
             ) : (
-              <LinearGradient colors={GRADIENTS.primary} style={styles.profileAvatar}>
+              <LinearGradient colors={GRADIENTS.avatar} style={styles.profileAvatar}>
                 <Text style={styles.profileAvatarText}>
                   {profile.display_name?.charAt(0).toUpperCase()}
                 </Text>

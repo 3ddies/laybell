@@ -10,7 +10,7 @@ import { timeAgo } from '../lib/timeAgo';
 import { isSlideshow } from '../lib/slideshow';
 import { maskHiddenProfile, HIDDEN_NAME } from '../lib/hiddenProfile';
 import VideoThumb from '../components/VideoThumb';
-import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { GridSkeleton, ListRowsSkeleton } from '../components/Skeleton';
@@ -247,7 +247,7 @@ function Avatar({ profile }: { profile: any }) {
   const styles = useThemedStyles(makeStyles);
   if (profile?.avatar_url) return <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />;
   return (
-    <LinearGradient colors={['#3A1C0C', '#1C0E06']} style={styles.avatar}>
+    <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
       {profile?.display_name === HIDDEN_NAME ? (
         <Ionicons name="person" size={16} color="#fff" />
       ) : (
@@ -282,7 +282,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   listContent: { flexGrow: 1, padding: SPACING.md, gap: SPACING.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.sm, borderRadius: RADIUS.md },
   avatar: { width: 44, height: 44, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  avatarText: { color: colors.avatarFg, fontSize: 16, fontWeight: '700' },
   storyThumb: { width: 44, height: 56, borderRadius: RADIUS.sm, backgroundColor: colors.surfaceLight },
   rowText: { color: colors.textSecondary, fontSize: 14, lineHeight: 19 },
   rowName: { color: colors.text, fontWeight: '700' },

@@ -382,7 +382,7 @@ export default function StudioRoomScreen() {
                     {member?.avatar_url ? (
                       <Image source={{ uri: member.avatar_url }} style={styles.tileAvatar} />
                     ) : (
-                      <LinearGradient colors={GRADIENTS.primary} style={styles.tileAvatar}>
+                      <LinearGradient colors={GRADIENTS.avatar} style={styles.tileAvatar}>
                         {isGuest
                           ? <Ionicons name="laptop-outline" size={22} color="#fff" />
                           : <Text style={styles.tileInitial}>{name.charAt(0).toUpperCase()}</Text>}
@@ -408,7 +408,7 @@ export default function StudioRoomScreen() {
                     {m.avatar_url ? (
                       <Image source={{ uri: m.avatar_url }} style={styles.tileAvatar} />
                     ) : (
-                      <LinearGradient colors={GRADIENTS.primary} style={styles.tileAvatar}>
+                      <LinearGradient colors={GRADIENTS.avatar} style={styles.tileAvatar}>
                         <Text style={styles.tileInitial}>{(m.display_name || m.username || '?').charAt(0).toUpperCase()}</Text>
                       </LinearGradient>
                     )}
@@ -471,7 +471,7 @@ export default function StudioRoomScreen() {
                   {r.avatar_url ? (
                     <Image source={{ uri: r.avatar_url }} style={styles.reqAvatar} />
                   ) : (
-                    <LinearGradient colors={GRADIENTS.primary} style={styles.reqAvatar}>
+                    <LinearGradient colors={GRADIENTS.avatar} style={styles.reqAvatar}>
                       <Text style={styles.reqInitial}>{(r.display_name || r.username || '?').charAt(0).toUpperCase()}</Text>
                     </LinearGradient>
                   )}

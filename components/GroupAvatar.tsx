@@ -23,7 +23,7 @@ export default function GroupAvatar({ avatarUrl, members, size = 56 }: Props) {
   const shown = members.slice(0, 3);
   if (shown.length === 0) {
     return (
-      <LinearGradient colors={GRADIENTS.primary} style={[styles.full, { width: size, height: size, borderRadius: RADIUS.full }]}>
+      <LinearGradient colors={GRADIENTS.avatar} style={[styles.full, { width: size, height: size, borderRadius: RADIUS.full }]}>
         <Ionicons name="people" size={size * 0.5} color="#fff" />
       </LinearGradient>
     );
@@ -52,7 +52,7 @@ export default function GroupAvatar({ avatarUrl, members, size = 56 }: Props) {
             {m.avatar_url ? (
               <Image source={{ uri: m.avatar_url }} style={styles.chipImg} />
             ) : (
-              <LinearGradient colors={GRADIENTS.primary} style={styles.chipImg}>
+              <LinearGradient colors={GRADIENTS.avatar} style={styles.chipImg}>
                 <Text style={[styles.initial, { fontSize: chip * 0.42 }]}>
                   {(m.display_name || m.username || '?').charAt(0).toUpperCase()}
                 </Text>

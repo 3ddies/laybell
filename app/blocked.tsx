@@ -87,7 +87,7 @@ export default function BlockedScreen() {
                   {p?.avatar_url ? (
                     <Image source={{ uri: p.avatar_url }} style={styles.avatar} />
                   ) : (
-                    <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+                    <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
                       <Text style={styles.avatarText}>
                         {(p?.display_name || p?.username || '?').charAt(0).toUpperCase()}
                       </Text>

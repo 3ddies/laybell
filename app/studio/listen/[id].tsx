@@ -271,7 +271,7 @@ export default function StudioListenScreen() {
                       {m.avatar_url ? (
                         <Image source={{ uri: m.avatar_url }} style={styles.tileAvatar} />
                       ) : (
-                        <LinearGradient colors={GRADIENTS.primary} style={styles.tileAvatar}>
+                        <LinearGradient colors={GRADIENTS.avatar} style={styles.tileAvatar}>
                           <Text style={styles.tileInitial}>{(m.display_name || m.username || '?').charAt(0).toUpperCase()}</Text>
                         </LinearGradient>
                       )}

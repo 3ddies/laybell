@@ -86,7 +86,7 @@ export default function SellerShopScreen() {
                 {seller?.avatar_url ? (
                   <Image source={{ uri: seller.avatar_url }} style={styles.avatar} />
                 ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+                  <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
                     <Text style={styles.avatarInitial}>{(name || '?').charAt(0).toUpperCase()}</Text>
                   </LinearGradient>
                 )}

@@ -728,7 +728,7 @@ export default function ListingScreen() {
                 {listing.seller?.avatar_url ? (
                   <Image source={{ uri: listing.seller.avatar_url }} style={styles.sellerAvatar} />
                 ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.sellerAvatar}>
+                  <LinearGradient colors={GRADIENTS.avatar} style={styles.sellerAvatar}>
                     <Text style={styles.sellerInitial}>{(sellerName || '?').charAt(0).toUpperCase()}</Text>
                   </LinearGradient>
                 )}

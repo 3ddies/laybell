@@ -176,7 +176,7 @@ export default function NewGroupScreen() {
                 {item.avatar_url ? (
                   <Image source={{ uri: item.avatar_url }} style={styles.avatar} />
                 ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+                  <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
                     <Text style={styles.avatarText}>{(item.display_name || item.username || '?').charAt(0).toUpperCase()}</Text>
                   </LinearGradient>
                 )}

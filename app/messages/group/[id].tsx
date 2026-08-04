@@ -357,7 +357,7 @@ export default function GroupChatScreen() {
   function renderAvatar(p: GroupProfile | undefined, size: number) {
     if (p?.avatar_url) return <Image source={{ uri: p.avatar_url }} style={{ width: size, height: size, borderRadius: RADIUS.full }} />;
     return (
-      <LinearGradient colors={GRADIENTS.primary} style={{ width: size, height: size, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' }}>
+      <LinearGradient colors={GRADIENTS.avatar} style={{ width: size, height: size, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ color: '#fff', fontSize: size * 0.42, fontWeight: '800' }}>
           {(p?.display_name || p?.username || '?').charAt(0).toUpperCase()}
         </Text>

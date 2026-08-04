@@ -368,7 +368,7 @@ export default function LaybellTVScreen() {
                   {item.profile?.avatar_url ? (
                     <Image source={{ uri: item.profile.avatar_url }} style={StyleSheet.absoluteFill} blurRadius={8} />
                   ) : (
-                    <LinearGradient colors={GRADIENTS.primary} style={StyleSheet.absoluteFill} />
+                    <LinearGradient colors={GRADIENTS.avatar} style={StyleSheet.absoluteFill} />
                   )}
                   {!item.profile?.avatar_url && (
                     <Text style={styles.liveInitial}>

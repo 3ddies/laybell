@@ -226,7 +226,7 @@ export default function EditProfileScreen() {
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
           ) : (
-            <LinearGradient colors={GRADIENTS.primary} style={styles.avatarPlaceholder}>
+            <LinearGradient colors={GRADIENTS.avatar} style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>{displayName?.charAt(0).toUpperCase()}</Text>
             </LinearGradient>
           )}

@@ -319,7 +319,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   meta: { position: 'absolute', left: SPACING.md, right: SPACING.md, gap: SPACING.xs },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  brandAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  brandAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.avatarBg, alignItems: 'center', justifyContent: 'center' },
   brandInitial: { color: '#fff', fontSize: 14, fontWeight: '800' },
   brandName: { color: '#fff', fontSize: 15, fontWeight: '700', flexShrink: 1 },
   optionsBtn: { marginLeft: 'auto', padding: 4 },

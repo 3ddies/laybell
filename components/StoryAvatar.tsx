@@ -99,7 +99,7 @@ export default function StoryAvatar({
     />
   ) : (
     <LinearGradient
-      colors={GRADIENTS.primary}
+      colors={GRADIENTS.avatar}
       style={[
         { width: inner, height: inner, borderRadius: inner / 2, alignItems: 'center', justifyContent: 'center' },
         story && { borderWidth: 1.5, borderColor: colors.background },

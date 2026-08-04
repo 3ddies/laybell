@@ -195,7 +195,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   brandAvatar: {
     width: 38, height: 38, borderRadius: RADIUS.full,
-    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.avatarBg, alignItems: 'center', justifyContent: 'center',
   },
   brandInitial: { color: colors.text, fontSize: 16, fontWeight: '800' },
   headerInfo: { flex: 1 },

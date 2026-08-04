@@ -11,6 +11,14 @@ const BRAND = {
   error: '#F43F5E',
   like: '#F43F5E',
   success: '#22C55E',
+  // Default-avatar placeholder (the circle shown when a user has no photo).
+  // Deliberately NOT the brand orange: a screen full of orange initials reads as
+  // "everyone is highlighted", and the orange competes with real CTAs. A calm
+  // blue-grey recedes so real avatars and buttons are what draw the eye. Kept
+  // constant across all three display modes so an account looks the same
+  // everywhere; `avatarFg` is the initial on top of it.
+  avatarBg: '#5B6B7F',
+  avatarFg: '#FFFFFF',
 };
 
 // ─── Display modes ─────────────────────────────────────────────────────────────
@@ -87,6 +95,10 @@ export const GRADIENTS = {
   primarySoft: ['#F2652218', '#E8401C0A'] as const,
   logo: ['#E8401C', '#F26522', '#FAB525'] as const,
   card: ['#1A1A1A', '#111111'] as const,
+  // Default-avatar fill. Same blue-grey as COLORS.avatarBg, with the same subtle
+  // top-left→bottom-right depth the brand gradient gave it, so swapping this in
+  // changes only the hue — never the shape, size, or weight of any avatar.
+  avatar: ['#6B7C91', '#4E5D6E'] as const,
   gold: ['#F59E0B', '#D97706'] as const,
   diamond: ['#A5F3FC', '#67E8F9'] as const,
 };

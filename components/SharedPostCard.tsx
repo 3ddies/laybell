@@ -148,7 +148,7 @@ export default function SharedPostCard({ postId }: { postId: string }) {
               {post.profiles?.avatar_url ? (
                 <Image source={{ uri: post.profiles.avatar_url }} style={styles.authorAvatar} contentFit="cover" transition={0} cachePolicy="memory-disk" />
               ) : (
-                <LinearGradient colors={GRADIENTS.primary} style={styles.authorAvatar} />
+                <LinearGradient colors={GRADIENTS.avatar} style={styles.authorAvatar} />
               )}
               <Text style={styles.authorName} numberOfLines={1}>@{post.profiles?.username ?? 'laybell'}</Text>
               <BadgeEmblem profile={post.profiles} ownerId={post.user_id} size={12} />

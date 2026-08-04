@@ -682,7 +682,7 @@ export default function OnboardingScreen() {
               {item.avatar_url ? (
                 <Image source={{ uri: item.avatar_url }} style={styles.suggestionAvatar} />
               ) : (
-                <LinearGradient colors={GRADIENTS.primary} style={styles.suggestionAvatar}>
+                <LinearGradient colors={GRADIENTS.avatar} style={styles.suggestionAvatar}>
                   <Text style={styles.suggestionAvatarText}>
                     {item.display_name?.charAt(0).toUpperCase()}
                   </Text>
@@ -862,7 +862,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   suggestionAvatar: {
     width: 50, height: 50, borderRadius: RADIUS.full,
-    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.avatarBg, alignItems: 'center', justifyContent: 'center',
   },
   suggestionAvatarText: { color: colors.text, fontSize: 20, fontWeight: '700' },
   suggestionInfo: { flex: 1 },

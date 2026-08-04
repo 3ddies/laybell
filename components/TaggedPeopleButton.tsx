@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { ListRowsSkeleton } from './Skeleton';
@@ -73,7 +73,7 @@ export default function TaggedPeopleButton({ userIds, style }: { userIds?: strin
                     {item.avatar_url ? (
                       <Image source={{ uri: item.avatar_url }} style={styles.avatar} />
                     ) : (
-                      <LinearGradient colors={['#3A1C0C', '#1C0E06']} style={styles.avatar}>
+                      <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
                         <Text style={styles.avatarText}>{(item.display_name || item.username || '?').charAt(0).toUpperCase()}</Text>
                       </LinearGradient>
                     )}
@@ -104,7 +104,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   title: { color: colors.text, fontSize: 15, fontWeight: '800', marginBottom: SPACING.sm, paddingHorizontal: SPACING.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.xs },
   avatar: { width: 40, height: 40, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  avatarText: { color: colors.avatarFg, fontSize: 15, fontWeight: '700' },
   name: { color: colors.text, fontSize: 14, fontWeight: '600' },
   username: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
 });

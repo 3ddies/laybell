@@ -425,7 +425,7 @@ export default function EditCommunityScreen() {
                 {p.avatar_url ? (
                   <Image source={{ uri: p.avatar_url }} style={styles.avatar} />
                 ) : (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+                  <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
                     <Text style={styles.avatarInitial}>{p.display_name?.charAt(0)?.toUpperCase() ?? '?'}</Text>
                   </LinearGradient>
                 )}
@@ -447,7 +447,7 @@ export default function EditCommunityScreen() {
                     {i.avatar_url ? (
                       <Image source={{ uri: i.avatar_url }} style={styles.avatarSm} />
                     ) : (
-                      <LinearGradient colors={GRADIENTS.primary} style={styles.avatarSm}>
+                      <LinearGradient colors={GRADIENTS.avatar} style={styles.avatarSm}>
                         <Text style={styles.avatarInitialSm}>{i.display_name?.charAt(0)?.toUpperCase() ?? '?'}</Text>
                       </LinearGradient>
                     )}

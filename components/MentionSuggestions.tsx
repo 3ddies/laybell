@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../lib/supabase';
-import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 // Account suggestions shown while typing "@…" in a caption or comment, so users
@@ -44,7 +44,7 @@ export default function MentionSuggestions({
             {u.avatar_url ? (
               <Image source={{ uri: u.avatar_url }} style={styles.avatar} />
             ) : (
-              <LinearGradient colors={['#3A1C0C', '#1C0E06']} style={styles.avatar}>
+              <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
                 <Text style={styles.avatarText}>{(u.display_name || u.username || '?').charAt(0).toUpperCase()}</Text>
               </LinearGradient>
             )}
@@ -66,7 +66,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   avatar: { width: 32, height: 32, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  avatarText: { color: colors.avatarFg, fontSize: 13, fontWeight: '700' },
   username: { color: colors.text, fontSize: 14, fontWeight: '600' },
   name: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
 });

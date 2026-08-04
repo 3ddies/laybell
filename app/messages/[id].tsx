@@ -350,7 +350,7 @@ export default function ChatScreen() {
     const p = userId === currentUserId ? myProfile : otherUser;
     if ((p as any)?.avatar_url) return <Image source={{ uri: (p as any).avatar_url }} style={{ width: size, height: size, borderRadius: RADIUS.full }} />;
     return (
-      <LinearGradient colors={GRADIENTS.primary} style={{ width: size, height: size, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' }}>
+      <LinearGradient colors={GRADIENTS.avatar} style={{ width: size, height: size, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ color: '#fff', fontSize: size * 0.42, fontWeight: '800' }}>
           {((p as any)?.display_name || (p as any)?.username || '?').charAt(0).toUpperCase()}
         </Text>
@@ -544,7 +544,7 @@ export default function ChatScreen() {
           {otherUser?.avatar_url ? (
             <Image source={{ uri: otherUser.avatar_url }} style={styles.headerAvatar} />
           ) : (
-            <LinearGradient colors={GRADIENTS.primary} style={styles.headerAvatar}>
+            <LinearGradient colors={GRADIENTS.avatar} style={styles.headerAvatar}>
               <Text style={styles.headerAvatarText}>{(otherUser?.display_name || otherUser?.username || '?').charAt(0).toUpperCase()}</Text>
             </LinearGradient>
           )}

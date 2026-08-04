@@ -399,7 +399,7 @@ export const ShareSheet = memo(function ShareSheet({ visible, payload, onClose, 
                       {p.avatar_url ? (
                         <Image source={{ uri: p.avatar_url }} style={[styles.personAvatar, on && styles.personAvatarSel]} />
                       ) : (
-                        <LinearGradient colors={GRADIENTS.primary} style={[styles.personAvatar, on && styles.personAvatarSel]}>
+                        <LinearGradient colors={GRADIENTS.avatar} style={[styles.personAvatar, on && styles.personAvatarSel]}>
                           <Text style={styles.personInitial}>{(p.display_name || p.username || '?').charAt(0).toUpperCase()}</Text>
                         </LinearGradient>
                       )}

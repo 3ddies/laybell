@@ -1528,7 +1528,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   profileChipOn: { borderColor: colors.primary, backgroundColor: colors.primary + '11' },
   chipAvatar: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  chipAvatarEmpty: { backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center' },
+  chipAvatarEmpty: { backgroundColor: colors.avatarBg + '22', alignItems: 'center', justifyContent: 'center' },
   destChipText: { color: colors.text, fontSize: 12, fontWeight: '700', flexShrink: 1 },
   addProfileChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,

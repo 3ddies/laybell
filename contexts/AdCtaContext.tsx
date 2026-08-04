@@ -119,7 +119,7 @@ export function AdCtaProvider({ children }: { children: React.ReactNode }) {
                     {p.avatar_url ? (
                       <Image source={{ uri: p.avatar_url }} style={styles.avatar} />
                     ) : (
-                      <LinearGradient colors={GRADIENTS.primary} style={styles.avatar}>
+                      <LinearGradient colors={GRADIENTS.avatar} style={styles.avatar}>
                         <Text style={styles.avatarInitial}>{name.charAt(0).toUpperCase()}</Text>
                       </LinearGradient>
                     )}

@@ -124,7 +124,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     padding: SPACING.md, borderWidth: 1, borderColor: colors.border,
   },
   userLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, flex: 1 },
-  avatar: { width: 46, height: 46, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 46, height: 46, borderRadius: RADIUS.full, backgroundColor: colors.avatarBg, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.text, fontSize: 18, fontWeight: '700' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   displayName: { color: colors.text, fontSize: 15, fontWeight: '700' },
