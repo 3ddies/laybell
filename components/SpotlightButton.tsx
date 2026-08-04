@@ -84,8 +84,13 @@ function Star({ pick }: { pick: () => Pos | null }) {
   );
 }
 
-// Matches promoSpotlight in settings.tsx.
-const GALAXY = ['#241147', '#3B1D8F', '#6D28D9'] as const;
+// Matches promoSpotlight in settings.tsx. Exported so every Spotlight surface —
+// this button, the confirm dialog, the "you're live" dialog — draws from one
+// definition instead of each re-typing the hexes.
+export const GALAXY = ['#241147', '#3B1D8F', '#6D28D9'] as const;
+// The gradient's brightest stop, for places that need a single solid purple
+// (a filled button, an icon tint). White sits on it at ~6.5:1.
+export const GALAXY_ACCENT = '#6D28D9';
 
 export default function SpotlightButton({
   label, onPress, style, labelStyle, starCount = DEFAULT_STARS, disabled = false, busy = false,

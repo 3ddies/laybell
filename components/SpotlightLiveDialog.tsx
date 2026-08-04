@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { GALAXY } from './SpotlightButton';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -47,7 +48,7 @@ export default function SpotlightLiveDialog({
         {/* Lit spotlight disc */}
         <View style={styles.discGlow}>
           <LinearGradient
-            colors={[colors.primary, colors.primaryDark ?? colors.primary]}
+            colors={GALAXY}
             style={styles.disc}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -61,7 +62,7 @@ export default function SpotlightLiveDialog({
 
         <TouchableOpacity style={styles.cta} onPress={onClose} activeOpacity={0.85}>
           <LinearGradient
-            colors={[colors.primary, colors.primaryDark ?? colors.primary]}
+            colors={GALAXY}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.ctaInner}
@@ -101,7 +102,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     borderRadius: 46,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(242,101,34,0.16)',
+        // Purple halo to match the disc — this was the brand orange at 16%.
+    backgroundColor: 'rgba(109,40,217,0.18)',
     marginBottom: 2,
   },
   disc: {

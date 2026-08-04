@@ -17,7 +17,7 @@ import {
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
 import SwipeBackPager from '../components/SwipeBackPager';
-import SpotlightButton from '../components/SpotlightButton';
+import SpotlightButton, { GALAXY_ACCENT } from '../components/SpotlightButton';
 import ConfirmDialog from '../components/ConfirmDialog';
 import SpotlightLiveDialog from '../components/SpotlightLiveDialog';
 import { SPACING, RADIUS, SHADOWS, type ThemePalette } from '../constants/theme';
@@ -724,6 +724,11 @@ export default function SpotlightScreen() {
             confirmLabel={t('spotlight.confirmPickAction')}
             cancelLabel={t('common.cancel')}
             icon="sparkles"
+            // Galaxy purple, not the shared dialog's default orange — this is a
+            // Spotlight decision, and it should look like the feature it belongs
+            // to. accentColor is per-call, so the other twelve ConfirmDialogs in
+            // the app are untouched.
+            accentColor={GALAXY_ACCENT}
             onConfirm={confirmPick}
             onCancel={() => setPickTarget(null)}
           />
