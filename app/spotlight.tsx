@@ -491,10 +491,26 @@ export default function SpotlightScreen() {
                 >
                   {/* the lamp */}
                   <View style={styles.heroLamp} />
-                  {/* the cone of light spilling down from it */}
-                  <View style={styles.heroBeam} />
-                  {/* the glow pooling on the artwork */}
-                  <View style={styles.heroPool} />
+                  {/* The cone: three nested triangles, widest and faintest
+                      first. Stacked falloffs fake the soft edge a
+                      border-drawn triangle cannot have by itself. */}
+                  <View style={[styles.heroBeam, styles.heroBeamWide]} />
+                  <View style={[styles.heroBeam, styles.heroBeamMid]} />
+                  <View style={[styles.heroBeam, styles.heroBeamCore]} />
+                  {/* The pool: three concentric ellipses instead of one, so
+                      it fades out rather than ending on a hard rim. */}
+                  <View style={[styles.heroPool, styles.heroPoolWide]} />
+                  <View style={[styles.heroPool, styles.heroPoolMid]} />
+                  <View style={[styles.heroPool, styles.heroPoolCore]} />
+                  {/* Floor scrim — swallows the bottom edges of the cone and
+                      the pool so nothing terminates on a visible line. */}
+                  <LinearGradient
+                    colors={['rgba(10,6,20,0)', 'rgba(10,6,20,0.85)']}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={styles.heroFloor}
+                    pointerEvents="none"
+                  />
                   {/* the lit artwork */}
                   <View style={styles.heroArtwork}>
                     <Ionicons name="image" size={36} color={GALAXY_LIGHT} />
@@ -513,6 +529,7 @@ export default function SpotlightScreen() {
                   onPress={startFlow}
                   starCount={12}
                   style={styles.heroCreateInner}
+                  containerStyle={styles.heroCreateWrap}
                   labelStyle={styles.heroCreateText}
                 />
               </View>
@@ -810,24 +827,27 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     shadowOpacity: 0.9, shadowRadius: 14, elevation: 8,
   },
   // The cone of light: an upward-apex triangle spreading down from the lamp.
+  // Shared cone geometry; each variant sets its own spread and alpha.
   heroBeam: {
     position: 'absolute', top: SPACING.md + 9,
     width: 0, height: 0,
-    borderLeftWidth: 80, borderRightWidth: 80, borderBottomWidth: 150,
     borderLeftColor: 'transparent', borderRightColor: 'transparent',
-    borderBottomColor: 'rgba(167,139,250,0.16)',
   },
+  heroBeamWide: { borderLeftWidth: 104, borderRightWidth: 104, borderBottomWidth: 158, borderBottomColor: 'rgba(167,139,250,0.05)' },
+  heroBeamMid: { borderLeftWidth: 78, borderRightWidth: 78, borderBottomWidth: 152, borderBottomColor: 'rgba(167,139,250,0.06)' },
+  heroBeamCore: { borderLeftWidth: 46, borderRightWidth: 46, borderBottomWidth: 146, borderBottomColor: 'rgba(196,181,253,0.07)' },
   // Soft pool of light gathered on the artwork.
-  heroPool: {
-    position: 'absolute', bottom: 30,
-    width: 150, height: 80, borderRadius: 75,
-    backgroundColor: 'rgba(167,139,250,0.12)',
-  },
+  // Shared pool geometry; concentric sizes give the falloff.
+  heroPool: { position: 'absolute' },
+  heroPoolWide: { bottom: 18, width: 210, height: 104, borderRadius: 105, backgroundColor: 'rgba(167,139,250,0.045)' },
+  heroPoolMid: { bottom: 26, width: 156, height: 82, borderRadius: 78, backgroundColor: 'rgba(167,139,250,0.055)' },
+  heroPoolCore: { bottom: 34, width: 104, height: 58, borderRadius: 52, backgroundColor: 'rgba(196,181,253,0.07)' },
+  heroFloor: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 96 },
   heroArtwork: {
     position: 'absolute', bottom: 36,
     width: 74, height: 74, borderRadius: RADIUS.md,
     backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1, borderColor: 'rgba(167,139,250,0.45)',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(196,181,253,0.30)',
     alignItems: 'center', justifyContent: 'center',
     shadowColor: GALAXY_ACCENT, shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6, shadowRadius: 16, elevation: 8,
@@ -844,10 +864,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Sizes the shared galaxy pill up to the hero CTA. No shadow: the pill
   // clips its own overflow for the stars, which would clip a glow anyway —
   // and the only glow on hand was the brand orange one.
-  heroCreateInner: {
-    alignSelf: 'stretch', marginTop: SPACING.lg,
-    paddingVertical: SPACING.md + 2,
-  },
+  // Positional styles have to sit on the WRAPPER, not the gradient: the
+  // wrapper is what `hero` (alignItems: center) lays out, so without stretch
+  // the button collapses to the width of its label.
+  heroCreateWrap: { alignSelf: 'stretch', marginTop: SPACING.lg },
+  heroCreateInner: { paddingVertical: SPACING.md + 2 },
   heroCreateText: { color: '#fff', fontSize: 16, fontWeight: '800' },
 
   // Sizes the shared galaxy pill up to a full-width CTA.

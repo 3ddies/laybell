@@ -96,12 +96,16 @@ export const GALAXY_ACCENT = '#6D28D9';
 export const GALAXY_LIGHT = '#A78BFA';
 
 export default function SpotlightButton({
-  label, onPress, style, labelStyle, starCount = DEFAULT_STARS, disabled = false, busy = false,
+  label, onPress, style, containerStyle, labelStyle, starCount = DEFAULT_STARS, disabled = false, busy = false,
 }: {
   label: string;
   onPress: () => void;
-  /** Merged onto the gradient — lets a caller resize the button. */
+  /** Merged onto the gradient — padding, radius, the fill itself. */
   style?: StyleProp<ViewStyle>;
+  /** Merged onto the touchable WRAPPER. Anything positional lives here —
+   *  alignSelf/margin on the gradient does nothing, because the wrapper is what
+   *  the parent lays out, and it shrinks to its content without this. */
+  containerStyle?: StyleProp<ViewStyle>;
   labelStyle?: StyleProp<TextStyle>;
   starCount?: number;
   /** Locked: dimmed, unpressable, and the stars stop. The sparkle is the signal
@@ -152,6 +156,7 @@ export default function SpotlightButton({
       disabled={disabled || busy}
       accessibilityRole="button"
       accessibilityState={{ disabled: disabled || busy }}
+      style={containerStyle}
     >
       <LinearGradient
         colors={GALAXY}
