@@ -1274,7 +1274,7 @@ export default function MusicScreen() {
                 return (
                   <TouchableOpacity
                     key={genre}
-                    style={[styles.genrePill, active && styles.genrePillActive]}
+                    style={styles.genrePill}
                     onPress={() => onGenreChange(genre)}
                   >
                     {active ? (
@@ -2045,11 +2045,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   headerTitle: { color: colors.text, fontSize: 32, fontWeight: '900', letterSpacing: 0.3 },
 
   searchRow: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm },
+  // Filled, no hairline. A search field is a place to type, not a control to
+  // choose — dropping the outline stops it competing with the segmented control
+  // and the genre chips, which are the two things on this screen you actually
+  // pick between.
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surfaceLight,
-    borderRadius: RADIUS.full,
-    borderWidth: 1, borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: 14,
     paddingHorizontal: SPACING.md, gap: SPACING.sm,
   },
   searchIcon: { marginRight: -4 },
@@ -2085,29 +2088,44 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Non-scrolling row: each pill is flex:1 so the 4 share the full width evenly.
   // flexShrink:0 keeps the row out of the flex negotiation with the scroll view
   // below it.
+  // ONE enclosed track, the way this comment always claimed. Previously the four
+  // segments were separately-outlined pills with a gap between them, so it read
+  // as four more chips in a screen already full of chips. A single recessed
+  // track with a thumb sliding inside it is a different object entirely — and
+  // it's the iOS idiom for "pick one of these".
   toggleRow: {
     flexShrink: 0,
     flexDirection: 'row', alignItems: 'center',
-    gap: SPACING.sm, paddingHorizontal: SPACING.md,
+    // `surface`, not `surfaceElevated`: on the light theme that's DARKER than
+    // the page, so the track reads as a groove the thumb sits in. Elevated is
+    // lighter than the page and would have made it float instead.
+    backgroundColor: colors.surface,
+    borderRadius: RADIUS.full,
+    padding: 3,
+    marginHorizontal: SPACING.md,
     marginTop: SPACING.sm, marginBottom: SPACING.sm,
   },
+  // Segments are bare inside the track — no fill, no border of their own. Only
+  // the selected one gets a surface, which is what makes it read as a thumb
+  // sitting in a groove rather than four buttons in a row.
   toggleBtn: {
     flex: 1,
     alignItems: 'center', justifyContent: 'center',
-    paddingVertical: SPACING.sm + 1,   // compact rounded pill
-    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: 4,
     borderRadius: RADIUS.full,
     overflow: 'hidden',
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1, borderColor: colors.border,
   },
+  // Lift, not glow: a soft drop shadow reads as the thumb standing proud of the
+  // track. The old hard brand glow was doing the job of an outline.
   toggleBtnActive: {
-    borderColor: 'transparent',
-    shadowColor: colors.primary, shadowOpacity: 0.45, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 4, shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
-  toggleText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
-  toggleTextActive: { color: colors.text, fontWeight: '800' },
+  toggleText: { color: colors.textSecondary, fontSize: 12.5, fontWeight: '600', letterSpacing: -0.1 },
+  // '#fff', not colors.text: the thumb is the brand gradient in both themes, and
+  // on the light theme colors.text is near-black — dark label on orange.
+  toggleTextActive: { color: '#fff', fontWeight: '800' },
 
   list: { flex: 1 },
   // flexGrow so short/empty lists still fill the screen — lets pull-to-refresh
@@ -2195,18 +2213,23 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   discoverEmpty: { color: colors.textSecondary, fontSize: 14, paddingVertical: SPACING.md },
 
   genrePills: { paddingHorizontal: SPACING.md, paddingVertical: 4, gap: SPACING.sm, paddingBottom: SPACING.sm },
+  // Soft filled chips, no hairline. These are FILTERS — a secondary, optional
+  // narrowing of what's below — so they sit quietly under the segmented control
+  // instead of matching its weight. The outline was what made them read as
+  // another row of the same thing.
   genrePill: {
-    borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border,
+    borderRadius: RADIUS.full,
+    backgroundColor: colors.surfaceElevated,
     overflow: 'hidden',
   },
-  // Active pill: a high-contrast inverse of the page — white fill + dark text in
-  // dark/grey modes, and a dark fill + light text in light mode (colors.text and
-  // colors.background flip per theme), so the selected genre always reads clearly.
-  genrePillActive: { borderColor: colors.text },
+  // Active genre: a high-contrast inverse of the page — colors.text fills and
+  // colors.background letters, both of which flip per theme, so the selection
+  // always reads. Carried entirely by the INNER fill now; with the outline gone
+  // the outer pill has no state of its own left to express.
   // One shared inner container — same padding for both active and inactive pills
   // so their height is always identical regardless of the fill.
   genrePillInner: {
-    paddingVertical: 11, paddingHorizontal: 18,
+    paddingVertical: 9, paddingHorizontal: 15,
     alignItems: 'center', justifyContent: 'center',
   },
   genrePillInnerActive: { backgroundColor: colors.text },
