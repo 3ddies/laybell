@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { usePagerSwiping, useTabSwipeControl } from '../../contexts/PagerContext';
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync, createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import { probeAudioDurationSec } from '../../lib/audioProbe';
@@ -382,16 +382,28 @@ export default function PostScreen() {
     return () => setTabSwipe(true);
   }, [swipeOn, setTabSwipe]));
 
-  // Silence the audio preview when this tab loses focus. The tab navigator
-  // keeps every page MOUNTED, so swiping away neither unmounts this screen nor
-  // stops the expo-audio player — a recording carried on playing over whatever
-  // the user swiped to. Pause rather than unload: coming back should show the
-  // same clip ready to resume, just not still going.
-  useFocusEffect(useCallback(() => () => {
+  // Silence the audio preview whenever it shouldn't be audible — which is any
+  // time this tab isn't focused OR the composer has moved past the picker.
+  //
+  // Two separate ways it used to keep playing, which is why this is derived from
+  // BOTH conditions rather than a blur handler:
+  //   • The tab navigator keeps every page MOUNTED, so swiping away neither
+  //     unmounts this screen nor stops the expo-audio player — the recording
+  //     carried on over whatever the user swiped to.
+  //   • The details form is an internal STEP, not a route (see `step` above), so
+  //     going "forward" to it fires no navigation event at all. A blur-only
+  //     handler could never have caught that one, and it's the case you hit
+  //     first: the clip played on under the title/genre form.
+  //
+  // Pause rather than unload — coming back should show the same clip ready to
+  // resume, just not still going.
+  const isFocused = useIsFocused();
+  useEffect(() => {
+    if (isFocused && step === 'pick') return;
     const p = previewSoundRef.current;
     if (p) { try { p.pause(); } catch {} }
     setIsPreviewPlaying(false);
-  }, []));
+  }, [isFocused, step]);
 
   function exitToExplore() {
     resetAll();
