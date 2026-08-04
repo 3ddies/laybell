@@ -8,18 +8,28 @@ order that actually works. iOS is already done; this is the other rail.
 **1. ✅ DONE — `supabase/sql/studio_host_exit.sql` was run 2026-08-03.** Host exit
 now stops the broadcast and hands the room to the earliest remaining member.
 
-**2. Play — the AAB is BUILT and waiting.** Nothing blocks the upload:
-- Download: the artifact from build `e12fec4b` (Play Console -> Testing ->
-  Internal testing -> Create new release -> upload -> add yourself -> roll out)
-- Then create the 6 products (IDs + prices in the reference table below).
-  **Consumable** for the five credit packs; a draft product is invisible to the SDK.
-- Then RevenueCat: add the Android app, upload the service-account JSON, attach
-  products to the `premium` entitlement / credits offering. The 36h credential
-  clock expired 2026-08-03 evening, so the JSON should be accepted now.
-- Then set `androidApiKey` and **REBUILD**. There is NO OTA on this project (see
-  the correction below), so the key only reaches a build by rebuilding — and that
-  same rebuild picks up every JS fix since 08-02. Do it AFTER RevenueCat so one
-  build carries both.
+**2. THE WORKFLOW — owner's order, 2026-08-03. Follow this, don't re-plan it.**
+
+The existing build `e12fec4b` is **abandoned**. It will not be uploaded. There is
+exactly ONE upload, and it is the build made after optimizations are finished.
+
+> **① Finish optimizations** — Android UI issues + device-confirm the studio fixes.
+> **② Rebuild.**
+> **③ Upload that build** to Internal testing.
+> **④ Create the 6 products** in Play (reference table below).
+> **⑤ Wire RevenueCat** — attach products to the `premium` entitlement / credits offering.
+> **⑥ Money test.**
+
+**Do ⓪ BEFORE ② if you possibly can — it is what keeps this to one build.**
+`androidApiKey` has no OTA path, so it must be compiled in. Try adding the Android
+app in RevenueCat *now*: the Play app exists and the service-account credentials
+are past their 36h clock, so the SDK key may well be issuable already, before any
+product exists. If RevenueCat hands over a `goog_` key, put it in app.json before
+step ② and the whole chain costs one build.
+
+If RevenueCat refuses until products exist, then the key can only be compiled in
+after step ④ — which means a second rebuild between ⑤ and ⑥. Unavoidable in that
+case; not worth reordering the workflow to dodge.
 
 **3. ✅ Apple — replied to Bella 2026-08-03** (case 20000125265126). WAITING on her
 to start the migration. Nothing to do until she answers.
@@ -45,7 +55,7 @@ decisions now settled: `laybellreview` + its posts is the ONLY survivor).
 | 3. App content declarations | ✅ **ALL DONE 2026-08-03 — 9 of 11 tasks; the remaining two are store-listing, not required for internal testing.** Privacy policy · Ads · Content rating (Teen) · **Target audience 13-15/16-17/18+, not child-directed** (Families policy applies to the teen brackets; minor protections already enforced server-side) · **Data safety** (everything Collected, nothing Shared — service-provider + user-initiated exemptions cover Supabase/Cloudflare/Sentry/RevenueCat; delete-account URL = laybell.app/delete-account.html) · Government apps · Financial features (none) · Health (none) · **Advertising ID (no)** · **Sign in details** (demo account `laybellreview`, seeded Premium + 50000 credits). |
 | 3b. Category + tags + contact | ✅ **Done 2026-08-03.** Category **Music & Audio** (deliberately NOT Social — that category is dominated by the ten biggest apps on earth and a new app is invisible there; the differentiated demand lives in music search intent, and the category is changeable later). Tags: Social · Music & audio · Video streaming · Entertainment (+ optionally Meet new people). Contact `support@laybell.app` + laybell.app; phone left blank on purpose — Play publishes it and the LLC address is the owner's home. |
 | 4. Build the AAB | ✅ **Done 2026-08-03.** Build `e12fec4b` FINISHED — the .aab is ready to upload. |
-| 5. Upload to internal testing | ⬜ |
+| 5. Upload to internal testing | ⬜ the POST-OPTIMIZATION build only |
 | 6. Create the 6 products | ⬜ |
 | 7. RevenueCat wiring | ⬜ 36h clock has now ELAPSED — unblocked once step 6 is done |
 | 8. androidApiKey + REBUILD | ⬜ **no OTA on this project** — the key and every JS fix since 08-02 both need a rebuild; do it once, after RevenueCat |
