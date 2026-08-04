@@ -26,6 +26,17 @@ import { useTranslation } from '../contexts/LanguageContext';
 const SWEEP_MS = 1400;
 const REST_MS = 7800;
 
+// Black outline for the white label — RN has no text stroke, so we stack offset
+// black copies behind the fill. Same trick (and same 8 offsets) as the Explore
+// grid's music header; a text shadow would blur into a halo instead of an edge.
+// 1.4 rather than the header's 1.6: this word is smaller, and a heavier ring
+// would start closing up the counters in "Listen".
+const STROKE = 1.4;
+const OUTLINE: ReadonlyArray<readonly [number, number]> = [
+  [-STROKE, 0], [STROKE, 0], [0, -STROKE], [0, STROKE],
+  [-STROKE, -STROKE], [STROKE, -STROKE], [-STROKE, STROKE], [STROKE, STROKE],
+];
+
 export default function ListenButton({ active, onPress }: {
   /** Listen mode is currently ON — the button becomes "Exit". */
   active: boolean;
@@ -68,6 +79,10 @@ export default function ListenButton({ active, onPress }: {
     outputRange: [-width * 0.6, width * 1.3],
   });
 
+  // Resolved once — the outline renders it nine times over, and re-running t()
+  // per copy would be nine lookups for one word.
+  const label = active ? t('music.exit') : t('music.listen');
+
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} accessibilityRole="button">
       <View style={styles.btn} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
@@ -77,7 +92,20 @@ export default function ListenButton({ active, onPress }: {
             style={[styles.shine, { transform: [{ translateX }, { rotate: '18deg' }] }]}
           />
         )}
-        <Text style={styles.label}>{active ? t('music.exit') : t('music.listen')}</Text>
+        {/* The outline copies are absolute, so the wrapper takes its size from
+            the single in-flow fill copy below them. */}
+        <View>
+          {OUTLINE.map(([x, y], i) => (
+            <Text
+              key={i}
+              numberOfLines={1}
+              style={[styles.label, styles.labelStroke, { position: 'absolute', left: x, top: y }]}
+            >
+              {label}
+            </Text>
+          ))}
+          <Text style={styles.label} numberOfLines={1}>{label}</Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -109,4 +137,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.30)',
   },
   label: { color: LABEL, fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
+  // The stacked copies behind the fill (see OUTLINE).
+  labelStroke: { color: '#000' },
 });
