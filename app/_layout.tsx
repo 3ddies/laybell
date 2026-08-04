@@ -41,13 +41,13 @@ import { CommentActionSheetProvider } from '../contexts/CommentActionSheetContex
 import { ImageViewerProvider } from '../contexts/ImageViewerContext';
 import { GifPickerProvider } from '../contexts/GifPickerContext';
 import { PhotoPickerProvider } from '../contexts/PhotoPickerContext';
-import { UploadQueueProvider } from '../contexts/UploadQueueContext';
+import { UploadQueueProvider, useUploadQueue } from '../contexts/UploadQueueContext';
 import { CastProvider } from '../contexts/CastContext';
 import { StoryUploadProvider, useStoryUpload } from '../contexts/StoryUploadContext';
 import OfflineBanner from '../components/OfflineBanner';
 import { useListenMode } from '../contexts/ListenModeContext';
 import CastBar from '../components/CastBar';
-import StoryFailedBanner from '../components/StoryFailedBanner';
+import UploadFailedBanner from '../components/UploadFailedBanner';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import ListenLeaveConfirm from '../components/ListenLeaveConfirm';
@@ -77,6 +77,11 @@ function AppContent() {
   useNotifications();
   const { colors } = useTheme();
   const { failedJob, retryFailed, dismissFailed } = useStoryUpload();
+  const { t } = useTranslation();
+  // First video whose background upload gave up. The queue keeps its job
+  // snapshot, so retry re-runs the original post untouched.
+  const { pending, retry: retryVideo, dismiss: dismissVideo } = useUploadQueue();
+  const failedVideo = pending.find((p) => p.phase === 'error') ?? null;
   const segments = useSegments();
   // Full-screen media viewers with their OWN audio (stories, reels) stay
   // immersive — no floating mini player there. The post/slideshow viewer is
@@ -150,7 +155,18 @@ function AppContent() {
       <CastBar bottomDock={bottomDock} variant={castChip ? 'chip' : 'bar'} />
       {/* Tap-to-retry after a failed background story post — in the overlay so it
           stays above native pushed-screen modals. */}
-      {failedJob && <StoryFailedBanner onRetry={retryFailed} onDismiss={dismissFailed} />}
+      {failedJob && <UploadFailedBanner onRetry={retryFailed} onDismiss={dismissFailed} />}
+      {/* Same treatment for a video whose background upload didn't finish. The
+          in-feed error card only helps if you're looking at the feed; this
+          reaches you anywhere, and both routes lead to the same one-tap retry
+          that reuses the original job — nothing gets re-entered. */}
+      {failedVideo && (
+        <UploadFailedBanner
+          message={t('upload.videoFailedBanner')}
+          onRetry={() => retryVideo(failedVideo.tempId)}
+          onDismiss={() => dismissVideo(failedVideo.tempId)}
+        />
+      )}
       <NowPlaying />
       <BadgeUpgradeToast />
       {/* Themed confirm for leaving Listen mode to enter an immersive surface —

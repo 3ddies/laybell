@@ -5,13 +5,22 @@ import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
-// Shown by StoryUploadContext when a story's background upload fails all its
-// retries after the user has already left the composer. Tap Retry to re-run the
-// post (the local capture file is reused), or dismiss to give up.
+// Shown when a background upload fails after the user has already left the
+// composer — a story (StoryUploadContext) or a video (UploadQueueContext).
+//
+// It exists because the in-feed error card only helps if you are LOOKING at
+// the feed. A failure you never see reads as the post silently vanishing.
+//
+// Retry re-runs the original job from its snapshot, so the caption, tags, song
+// and any Spotlight survive — nothing has to be redone. The message says so,
+// because the discouraging part of a failed upload is not the failure, it is
+// not knowing whether your work is gone.
 
-export default function StoryFailedBanner({ onRetry, onDismiss }: {
+export default function UploadFailedBanner({ onRetry, onDismiss, message }: {
   onRetry: () => void;
   onDismiss: () => void;
+  /** Defaults to the story wording. */
+  message?: string;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -22,7 +31,7 @@ export default function StoryFailedBanner({ onRetry, onDismiss }: {
     <View style={[styles.wrap, { top: insets.top + 8 }]} pointerEvents="box-none">
       <View style={styles.card}>
         <Ionicons name="cloud-offline-outline" size={20} color={colors.text} />
-        <Text style={styles.text} numberOfLines={1}>{t('storyCamera.postFailBanner')}</Text>
+        <Text style={styles.text} numberOfLines={2}>{message ?? t('storyCamera.postFailBanner')}</Text>
         <TouchableOpacity onPress={onRetry} style={styles.retryBtn} hitSlop={6}>
           <Ionicons name="refresh" size={14} color="#fff" />
           <Text style={styles.retryText}>{t('common.retry')}</Text>
