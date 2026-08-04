@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing, AccessibilityInfo } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -30,12 +31,19 @@ const REST_MS = 7800;
 // grid's music header) works on large display type, but at 14pt nine text
 // layers land on subpixel boundaries and the edges go muddy — no amount of
 // tuning stroke width or letter-spacing fixes that, because it's the technique
-// failing at this size, not the values.
+// failing at this size, not the values. One text layer, so the letterforms
+// render exactly as the font draws them.
 //
-// White text needs a darker ground, not a ring. The pill carries the brand
-// orange instead of the lighter wordmark gold, which puts white at ~3.4:1 — it
-// clears the 3:1 bar for 14pt bold, and does it with ONE text layer, so the
-// letterforms render exactly as the font draws them.
+// Yellow-forward gradient (owner's choice): the wordmark gold leads at the top
+// left and warms into the brand orange at the bottom right, so the pill still
+// reads as the yellow button while the deeper end gives the white label
+// somewhere to sit. Gold alone puts white at 1.79:1; across this fill it runs
+// 1.79 → 3.15. Low by the numbers, and chosen on look.
+//
+// This knowingly sets aside an older note on the flat fill (that a gradient made
+// the pill read brighter than the logo) — that note was written when the label
+// was dark ink, and the owner has since asked for white letters and a gradient.
+const FILL = ['#FAB525', '#F26522'] as const;
 
 export default function ListenButton({ active, onPress }: {
   /** Listen mode is currently ON — the button becomes "Exit". */
@@ -86,6 +94,12 @@ export default function ListenButton({ active, onPress }: {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} accessibilityRole="button">
       <View style={styles.btn} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+        <LinearGradient
+          colors={FILL}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
         {animate && (
           <Animated.View
             pointerEvents="none"
@@ -105,14 +119,11 @@ export default function ListenButton({ active, onPress }: {
 const LABEL = '#FFFFFF';
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
-  // Brand orange, not the lighter wordmark gold. The old style pinned this to
-  // primaryLight to match the home wordmark's hex — that held while the label
-  // was dark ink, but white needs a darker ground to sit on, and gold could
-  // only carry it with an outline that wrecked the letterforms at this size.
-  // Still flat: the note about a gradient reading brighter than the logo stands.
+  // Fill comes from the FILL gradient above; the background colour is only a
+  // fallback for the frame before the gradient paints.
   btn: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryLight,
     borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md + 4,
     overflow: 'hidden',   // clips the sweep to the pill
