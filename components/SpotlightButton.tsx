@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Text, StyleSheet, TouchableOpacity, Animated, Easing, AccessibilityInfo,
+  Text, StyleSheet, TouchableOpacity, Animated, Easing, AccessibilityInfo, ActivityIndicator,
   type LayoutRectangle, type StyleProp, type ViewStyle, type TextStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -88,7 +88,7 @@ function Star({ pick }: { pick: () => Pos | null }) {
 const GALAXY = ['#241147', '#3B1D8F', '#6D28D9'] as const;
 
 export default function SpotlightButton({
-  label, onPress, style, labelStyle, starCount = DEFAULT_STARS,
+  label, onPress, style, labelStyle, starCount = DEFAULT_STARS, disabled = false, busy = false,
 }: {
   label: string;
   onPress: () => void;
@@ -96,6 +96,12 @@ export default function SpotlightButton({
   style?: StyleProp<ViewStyle>;
   labelStyle?: StyleProp<TextStyle>;
   starCount?: number;
+  /** Locked: dimmed, unpressable, and the stars stop. The sparkle is the signal
+   *  that the button is ready — a locked button that still twinkles is inviting
+   *  a tap it won't honour. */
+  disabled?: boolean;
+  /** Working: spinner in place of the label (the stars keep going). */
+  busy?: boolean;
 }) {
   const [reduceMotion, setReduceMotion] = useState(false);
   // Measured geometry lives in refs, not state: `pick` reads it at call time, so
@@ -132,26 +138,36 @@ export default function SpotlightButton({
   }, []);
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.85} accessibilityRole="button">
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      disabled={disabled || busy}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: disabled || busy }}
+    >
       <LinearGradient
         colors={GALAXY}
         start={{ x: 0, y: 1 }}
         end={{ x: 1, y: 0 }}
-        style={[styles.btn, style]}
+        style={[styles.btn, style, disabled && styles.locked]}
         onLayout={(e) => {
           pill.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
           if (!ready) setReady(true);
         }}
       >
-        {ready && !reduceMotion && Array.from({ length: starCount }).map((_, i) => (
+        {ready && !reduceMotion && !disabled && Array.from({ length: starCount }).map((_, i) => (
           <Star key={i} pick={pick} />
         ))}
-        <Text
-          style={[styles.label, labelStyle]}
-          onLayout={(e) => { labelRect.current = e.nativeEvent.layout; }}
-        >
-          {label}
-        </Text>
+        {busy ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text
+            style={[styles.label, labelStyle]}
+            onLayout={(e) => { labelRect.current = e.nativeEvent.layout; }}
+          >
+            {label}
+          </Text>
+        )}
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -164,6 +180,9 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
     overflow: 'hidden',   // keeps stars inside the pill
   },
+  // Locked: the galaxy stays so the button keeps its identity, but dimmed and
+  // starless so 'not yet' is unmistakable at a glance.
+  locked: { opacity: 0.4 },
   star: { position: 'absolute', backgroundColor: '#FFFFFF' },
   label: { color: '#fff', fontSize: 13, fontWeight: '700' },
 });

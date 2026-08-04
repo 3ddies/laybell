@@ -563,8 +563,12 @@ export default function SpotlightScreen() {
                     activeOpacity={0.8}
                   >
                     <View style={styles.pkgTop}>
-                      <Text style={[styles.pkgLabel, on && { color: colors.primary }]}>{p.label}</Text>
-                      <Text style={[styles.pkgPrice, on && { color: colors.primary }]}>{fmtPrice(p.priceCents)}</Text>
+                      {/* No selected-state colour override any more: these are
+                          already colors.text, which IS the highlight now, so
+                          picking a package brightens the card around them
+                          rather than recolouring the words. */}
+                      <Text style={styles.pkgLabel}>{p.label}</Text>
+                      <Text style={styles.pkgPrice}>{fmtPrice(p.priceCents)}</Text>
                     </View>
                     <Text style={styles.pkgBlurb}>{p.blurb}</Text>
                     <View style={styles.pkgMetaRow}>
@@ -574,13 +578,14 @@ export default function SpotlightScreen() {
                   </TouchableOpacity>
                 );
               })}
-              <TouchableOpacity
-                style={[styles.primaryBtn, !pkg && styles.primaryBtnDisabled]}
-                disabled={!pkg}
+              <SpotlightButton
+                label={t('spotlight.continue')}
                 onPress={() => setFlowStep('pay')}
-              >
-                <Text style={styles.primaryBtnText}>{t('spotlight.continue')}</Text>
-              </TouchableOpacity>
+                disabled={!pkg}
+                starCount={11}
+                style={styles.primaryBtnShape}
+                labelStyle={styles.primaryBtnText}
+              />
             </ScrollView>
           )}
 
@@ -605,11 +610,14 @@ export default function SpotlightScreen() {
               <Text style={styles.simNote}>
                 {t('spotlight.simCheckout')}
               </Text>
-              <TouchableOpacity style={styles.primaryBtn} onPress={handlePay} disabled={paying}>
-                {paying
-                  ? <ActivityIndicator color={colors.text} size="small" />
-                  : <Text style={styles.primaryBtnText}>{t('spotlight.payAmount', { price: fmtPrice(pkg.priceCents) })}</Text>}
-              </TouchableOpacity>
+              <SpotlightButton
+                label={t('spotlight.payAmount', { price: fmtPrice(pkg.priceCents) })}
+                onPress={handlePay}
+                busy={paying}
+                starCount={11}
+                style={styles.primaryBtnShape}
+                labelStyle={styles.primaryBtnText}
+              />
             </ScrollView>
           )}
 
@@ -921,7 +929,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.border,
     padding: SPACING.md, gap: 6,
   },
-  pkgCardActive: { borderColor: colors.primary, backgroundColor: colors.primary + '11' },
+  pkgCardActive: { borderColor: colors.text, backgroundColor: colors.text + '0E' },
   pkgTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   pkgLabel: { color: colors.text, fontSize: 16, fontWeight: '800' },
   pkgPrice: { color: colors.text, fontSize: 16, fontWeight: '800' },
@@ -929,13 +937,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   pkgMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   pkgMeta: { color: colors.textTertiary, fontSize: 11, fontWeight: '600' },
 
-  primaryBtn: {
-    backgroundColor: colors.primary, borderRadius: RADIUS.full,
-    alignItems: 'center', justifyContent: 'center',
-    paddingVertical: SPACING.md, marginTop: SPACING.sm,
-  },
-  primaryBtnDisabled: { opacity: 0.4 },
-  primaryBtnText: { color: colors.text, fontSize: 15, fontWeight: '800' },
+  // Shape only — SpotlightButton supplies the galaxy fill and the sparkle.
+  primaryBtnShape: { paddingVertical: SPACING.md, marginTop: SPACING.sm },
+  primaryBtnText: { fontSize: 15, fontWeight: '800' },
 
   summaryCard: {
     backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
