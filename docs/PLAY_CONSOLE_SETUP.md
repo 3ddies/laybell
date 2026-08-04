@@ -3,6 +3,38 @@
 **Written 2026-08-02.** Everything needed to make purchases work on Android, in the
 order that actually works. iOS is already done; this is the other rail.
 
+## RESUME HERE — next session (written 2026-08-03 EOD)
+
+**1. Run the pending SQL** (Supabase SQL editor):
+- `supabase/sql/studio_host_exit.sql` — host-exit handover. Until it runs, a host
+  leaving still ends the session for everyone (safe fallback, but not the wanted
+  behaviour).
+
+**2. Play — the AAB is BUILT and waiting.** Nothing blocks the upload:
+- Download: the artifact from build `e12fec4b` (Play Console -> Testing ->
+  Internal testing -> Create new release -> upload -> add yourself -> roll out)
+- Then create the 6 products (IDs + prices in the reference table below).
+  **Consumable** for the five credit packs; a draft product is invisible to the SDK.
+- Then RevenueCat: add the Android app, upload the service-account JSON, attach
+  products to the `premium` entitlement / credits offering. The 36h credential
+  clock expired 2026-08-03 evening, so the JSON should be accepted now.
+- Then `androidApiKey` -> OTA (no rebuild — see the note below).
+
+**3. Apple — reply to Bella** (case 20000125265126) to start the org migration.
+Draft reply is in the session notes; all five prerequisites already verified.
+⚠️ iOS builds are FROZEN during migration (Certificates/Identifiers/Profiles goes
+offline), so start it while the remaining work is Android-only — which it is.
+
+**4. Android bugs — current state.** Tab-highlight glitch FIXED (highlight now
+driven by the settled route, not the pager position stream). Fast-swipe
+corruption FIXED (teleport guard). Studio broadcast audio, hand-raise and the
+iOS studio keyboard all shipped 2026-08-03 — **none of the studio fixes are
+device-confirmed yet**; the audio one in particular is reasoned, not verified.
+
+**5. Deferred by owner:** the fresh-start data reset (docs/FRESH_START_RESET.md —
+decisions now settled: `laybellreview` + its posts is the ONLY survivor).
+
+---
 ## Progress
 
 | Step | State |
@@ -11,7 +43,7 @@ order that actually works. iOS is already done; this is the other rail.
 | 2. Create app in Play Console | ✅ **Done 2026-08-02.** `Laybell`, package `com.laybell.app`, Free, en-US. Play app id `4973635319299378783`. |
 | 3. App content declarations | ✅ **ALL DONE 2026-08-03 — 9 of 11 tasks; the remaining two are store-listing, not required for internal testing.** Privacy policy · Ads · Content rating (Teen) · **Target audience 13-15/16-17/18+, not child-directed** (Families policy applies to the teen brackets; minor protections already enforced server-side) · **Data safety** (everything Collected, nothing Shared — service-provider + user-initiated exemptions cover Supabase/Cloudflare/Sentry/RevenueCat; delete-account URL = laybell.app/delete-account.html) · Government apps · Financial features (none) · Health (none) · **Advertising ID (no)** · **Sign in details** (demo account `laybellreview`, seeded Premium + 50000 credits). |
 | 3b. Category + tags + contact | ✅ **Done 2026-08-03.** Category **Music & Audio** (deliberately NOT Social — that category is dominated by the ten biggest apps on earth and a new app is invisible there; the differentiated demand lives in music search intent, and the category is changeable later). Tags: Social · Music & audio · Video streaming · Entertainment (+ optionally Meet new people). Contact `support@laybell.app` + laybell.app; phone left blank on purpose — Play publishes it and the LLC address is the owner's home. |
-| 4. Build the AAB | ⬜ billed — owner's call |
+| 4. Build the AAB | ✅ **Done 2026-08-03.** Build `e12fec4b` FINISHED — the .aab is ready to upload. |
 | 5. Upload to internal testing | ⬜ |
 | 6. Create the 6 products | ⬜ |
 | 7. RevenueCat wiring | ⬜ blocked until step 1's 36h elapses AND step 6 |
