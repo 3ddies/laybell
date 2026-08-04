@@ -17,6 +17,7 @@ import {
 import { isAudioPost } from '../lib/genres';
 import VideoThumb from '../components/VideoThumb';
 import SwipeBackPager from '../components/SwipeBackPager';
+import SpotlightButton from '../components/SpotlightButton';
 import ConfirmDialog from '../components/ConfirmDialog';
 import SpotlightLiveDialog from '../components/SpotlightLiveDialog';
 import { SPACING, RADIUS, SHADOWS, type ThemePalette } from '../constants/theme';
@@ -336,12 +337,12 @@ export default function SpotlightScreen() {
               <Image source={{ uri }} style={styles.cardThumb} resizeMode="cover" />
             ) : (
               <View style={[styles.cardThumb, styles.cardThumbPlaceholder]}>
-                <Ionicons name={isAudioPost(c.posts.type) ? 'musical-notes' : 'image'} size={20} color={colors.primary} />
+                <Ionicons name={isAudioPost(c.posts.type) ? 'musical-notes' : 'image'} size={20} color={colors.text} />
               </View>
             )
           ) : (
             <View style={[styles.cardThumb, styles.cardThumbPlaceholder]}>
-              <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
+              <Ionicons name="sparkles-outline" size={20} color={colors.text} />
             </View>
           )}
           <View style={styles.cardInfo}>
@@ -461,12 +462,17 @@ export default function SpotlightScreen() {
             <>
               <Text style={styles.hint}>{t('spotlight.hint')}</Text>
 
-              <TouchableOpacity style={styles.createBtn} onPress={startFlow} activeOpacity={0.85}>
-                <LinearGradient colors={[colors.primary, colors.primaryDark ?? colors.primary]} style={styles.createBtnInner}>
-                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
-                  <Text style={styles.createBtnText}>{t('spotlight.createBtn')}</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+              {/* Same galaxy pill as the profile button — one look for the
+                  feature wherever you meet it. More stars than the profile's
+                  default: the same six across a full-width CTA read as empty
+                  sky. The glyph is gone; the drifting stars ARE the sparkle. */}
+              <SpotlightButton
+                label={t('spotlight.createBtn')}
+                onPress={startFlow}
+                starCount={11}
+                style={styles.createBtnInner}
+                labelStyle={styles.createBtnText}
+              />
 
               <View style={styles.cards}>
                 <Text style={styles.sectionTitle}>{t('spotlight.yourSpotlights')}</Text>
@@ -826,12 +832,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   heroCreateText: { color: '#fff', fontSize: 16, fontWeight: '800' },
 
-  createBtn: { borderRadius: RADIUS.lg, overflow: 'hidden' },
-  createBtnInner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
-    paddingVertical: SPACING.md,
-  },
-  createBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  // Sizes the shared galaxy pill up to a full-width CTA.
+  createBtnInner: { borderRadius: RADIUS.lg, paddingVertical: SPACING.md },
+  createBtnText: { fontSize: 15, fontWeight: '800' },
 
   sectionTitle: {
     color: colors.textTertiary, fontSize: 11, fontWeight: '700',
@@ -881,12 +884,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   cardActions: { flexDirection: 'row', gap: SPACING.sm },
   cardActionPrimary: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: colors.primary, borderRadius: RADIUS.full,
+    backgroundColor: colors.text, borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm + 1, paddingHorizontal: SPACING.md, flex: 1,
   },
-  // Literal white, not colors.text: on the orange fill the light theme's
-  // near-black body colour was dark-on-orange and barely readable.
-  cardActionPrimaryText: { color: '#fff', fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
+  // colors.background against the colors.text fill above — the pair inverts
+  // together, so this reads black-on-white in dark mode and white-on-black in
+  // light, without either being hardcoded.
+  cardActionPrimaryText: { color: colors.background, fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
   cardActionGhost: {
     alignItems: 'center', justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, borderRadius: RADIUS.full,

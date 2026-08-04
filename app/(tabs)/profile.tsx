@@ -773,7 +773,7 @@ export default function ProfileScreen() {
             </TouchableOpacity>
             {/* Galaxy-purple pill with a twinkling star field, matching the
                 Spotlight card in Settings — see components/SpotlightButton. */}
-            <SpotlightButton onPress={() => router.push('/spotlight')} />
+            <SpotlightButton label="Spotlight" onPress={() => router.push('/spotlight')} />
           </View>
         </View>
       </View>

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Text, StyleSheet, TouchableOpacity, Animated, Easing, AccessibilityInfo, type LayoutRectangle } from 'react-native';
+import {
+  Text, StyleSheet, TouchableOpacity, Animated, Easing, AccessibilityInfo,
+  type LayoutRectangle, type StyleProp, type ViewStyle, type TextStyle,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RADIUS, SPACING } from '../constants/theme';
 
@@ -22,7 +25,9 @@ import { RADIUS, SPACING } from '../constants/theme';
 //    between cycles. Per star that's one setState roughly every 3–5 seconds.
 //  • Reduce Motion renders no stars at all and leaves the gradient.
 
-const STAR_COUNT = 6;
+// Default for the profile pill. The Spotlight screen's full-width CTA passes
+// more, since the same six in a much larger area read as empty sky.
+const DEFAULT_STARS = 6;
 // Clearance around the label before a star is allowed to sit there.
 const TEXT_PAD = 5;
 // How many times to try for a free spot before giving up on a cycle. Bounded on
@@ -82,12 +87,21 @@ function Star({ pick }: { pick: () => Pos | null }) {
 // Matches promoSpotlight in settings.tsx.
 const GALAXY = ['#241147', '#3B1D8F', '#6D28D9'] as const;
 
-export default function SpotlightButton({ onPress }: { onPress: () => void }) {
+export default function SpotlightButton({
+  label, onPress, style, labelStyle, starCount = DEFAULT_STARS,
+}: {
+  label: string;
+  onPress: () => void;
+  /** Merged onto the gradient — lets a caller resize the button. */
+  style?: StyleProp<ViewStyle>;
+  labelStyle?: StyleProp<TextStyle>;
+  starCount?: number;
+}) {
   const [reduceMotion, setReduceMotion] = useState(false);
   // Measured geometry lives in refs, not state: `pick` reads it at call time, so
   // a layout pass never has to re-run the effects that drive the stars.
   const pill = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
-  const label = useRef<LayoutRectangle | null>(null);
+  const labelRect = useRef<LayoutRectangle | null>(null);
   // Flips once, purely to kick off the first render that has geometry.
   const [ready, setReady] = useState(false);
 
@@ -103,7 +117,7 @@ export default function SpotlightButton({ onPress }: { onPress: () => void }) {
   // Stable across renders (reads refs), so the stars' effects never re-run.
   const pick = useCallback((): Pos | null => {
     const { w, h } = pill.current;
-    const t = label.current;
+    const t = labelRect.current;
     if (!w || !h) return null;
     const size = [1, 1.5, 2][Math.floor(Math.random() * 3)];
     for (let i = 0; i < MAX_TRIES; i++) {
@@ -123,20 +137,20 @@ export default function SpotlightButton({ onPress }: { onPress: () => void }) {
         colors={GALAXY}
         start={{ x: 0, y: 1 }}
         end={{ x: 1, y: 0 }}
-        style={styles.btn}
+        style={[styles.btn, style]}
         onLayout={(e) => {
           pill.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
           if (!ready) setReady(true);
         }}
       >
-        {ready && !reduceMotion && Array.from({ length: STAR_COUNT }).map((_, i) => (
+        {ready && !reduceMotion && Array.from({ length: starCount }).map((_, i) => (
           <Star key={i} pick={pick} />
         ))}
         <Text
-          style={styles.label}
-          onLayout={(e) => { label.current = e.nativeEvent.layout; }}
+          style={[styles.label, labelStyle]}
+          onLayout={(e) => { labelRect.current = e.nativeEvent.layout; }}
         >
-          Spotlight
+          {label}
         </Text>
       </LinearGradient>
     </TouchableOpacity>
