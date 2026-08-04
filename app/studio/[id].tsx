@@ -26,7 +26,7 @@ import { displayedTier } from '../../lib/badges';
 import { joinStudioChannel, type LiveChannelHandle, type LiveDonationEvent } from '../../lib/live';
 import { fetchStudioEarnings } from '../../lib/donations';
 import {
-  applyVocalPreset, connectStudioRoom, disconnectStudioRoom, endSession, fetchJoinRequests,
+  applyVocalPreset, connectStudioRoom, disconnectStudioRoom, endSession, fetchJoinRequests, hostExitSession,
   fetchRoster, fetchSession, getRoomEvents, leaveSession, onCountIn, respondStudioJoin,
   sendCountIn, setListenerPeak, setSessionLive, VOCAL_PRESETS,
   type StudioJoinRequest, type StudioMember, type StudioSession, type VocalPresetKey,
@@ -280,8 +280,15 @@ export default function StudioRoomScreen() {
     setConfirmEnd(false);
     if (session) {
       if (isHost) {
+        // The broadcast always stops first — a host must never walk away from a
+        // session that is still on air (the RPC enforces this server-side too).
         if (isLive) await stopBroadcast(false).catch(() => {});
-        await endSession(session.id).catch(() => {});
+        // Then hand the room to the earliest remaining member instead of killing
+        // it under them; it only ends if the host is the last one out. A null
+        // result means the RPC isn't deployed yet — fall back to the old
+        // always-end behaviour rather than leaving an ownerless open room.
+        const outcome = await hostExitSession(session.id).catch(() => null);
+        if (outcome === null) await endSession(session.id).catch(() => {});
       } else {
         await leaveSession(session.id).catch(() => {});
       }

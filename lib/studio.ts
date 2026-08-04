@@ -173,6 +173,25 @@ export async function endSession(sessionId: string): Promise<void> {
   await supabase.from('studio_sessions').update({ live: false }).eq('id', sessionId).then(() => {}, () => {});
 }
 
+/**
+ * The HOST leaving. Always stops the broadcast, then either hands the room to
+ * the earliest remaining member or ends it if nobody is left.
+ *
+ * Why an RPC and not a few updates from here: `host_id` is deliberately not
+ * client-writable — a client that could set it could claim any room — so the
+ * handover runs SECURITY DEFINER (supabase/sql/studio_host_exit.sql).
+ *
+ * Returns what happened, or null pre-migration / offline, in which case the
+ * caller should fall back to its previous behaviour.
+ */
+export async function hostExitSession(
+  sessionId: string,
+): Promise<'handed_over' | 'ended' | 'not_host' | 'already_closed' | 'not_found' | null> {
+  const { data, error } = await supabase.rpc('studio_host_exit', { p_session: sessionId });
+  if (error) return null;
+  return (data as any) ?? null;
+}
+
 export async function leaveSession(sessionId: string): Promise<void> {
   const { data: auth } = await supabase.auth.getUser();
   const userId = auth?.user?.id;
