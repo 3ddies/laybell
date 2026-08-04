@@ -101,16 +101,19 @@ export default function SpotlightScreen() {
   // spotlight is active the screen switches to the practical management view.
   const hasActive = campaigns.some((c) => effectiveStatus(c) === 'active');
 
+  // One green for every "good news" surface on this screen (the Live badge, the
+  // payment-confirmed pill). The brand green is tuned for dark backgrounds; on
+  // the light theme it falls to ~2.3:1 behind small bold text, so light mode
+  // takes a deeper leaf green that reads as the same colour but clears AA.
+  const successInk = mode === 'light' ? '#15803D' : colors.success;
+
   // Live is GREEN, not the brand orange. Orange is the app's action colour (it's
   // on every button), so an orange badge read as something to tap rather than a
   // state — and it collided with the amber "pending" badge one card away. Green
   // is the universal "running now" signal and separates cleanly from amber.
   function statusColor(s: SpotlightStatus): string {
     switch (s) {
-      // The brand green is tuned for dark surfaces; on the light theme's
-      // near-white card it drops to ~2.3:1, which is too thin for 10px bold.
-      // A darker leaf green clears AA there and reads as the same colour.
-      case 'active': return mode === 'light' ? '#15803D' : colors.success;
+      case 'active': return successInk;
       case 'pending': return mode === 'light' ? '#B45309' : '#F59E0B';
       default: return colors.textSecondary;
     }
@@ -121,8 +124,8 @@ export default function SpotlightScreen() {
   // same hue is the iOS badge idiom and stays legible on every surface.
   function statusTint(s: SpotlightStatus): string {
     switch (s) {
-      case 'active': return colors.success + '24';
-      case 'pending': return '#F59E0B24';
+      case 'active': return successInk + '24';
+      case 'pending': return (mode === 'light' ? '#B45309' : '#F59E0B') + '24';
       default: return colors.surfaceElevated;
     }
   }
@@ -606,6 +609,18 @@ export default function SpotlightScreen() {
 
           {flowStep === 'choose' && (
             <ScrollView contentContainerStyle={styles.flowScroll}>
+              {/* The receipt, lifted out of the paragraph into its own green
+                  bubble. Money leaving an account deserves an unmissable
+                  acknowledgement — buried mid-sentence it read as preamble, and
+                  "did my payment go through?" is the one question this screen
+                  must answer before anything else. `alignSelf` keeps it hugging
+                  its text rather than stretching into a full-width banner. */}
+              <View style={[styles.paidPill, { backgroundColor: successInk + '1F' }]}>
+                <Ionicons name="checkmark-circle" size={17} color={successInk} />
+                <Text style={[styles.paidPillText, { color: successInk }]}>
+                  {t('spotlight.paymentConfirmed')}
+                </Text>
+              </View>
               <Text style={styles.flowLead}>
                 {t('spotlight.chooseLead')}
               </Text>
@@ -931,6 +946,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   summaryTotalKey: { color: colors.text, fontSize: 14, fontWeight: '800' },
   summaryTotalVal: { color: colors.primary, fontSize: 16, fontWeight: '800' },
   simNote: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, textAlign: 'center' },
+
+  // alignSelf so the bubble wraps its label instead of stretching edge to edge —
+  // a full-width green slab would read as an alert, not a receipt.
+  paidPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-start',
+    borderRadius: RADIUS.full,
+    paddingVertical: 7, paddingHorizontal: 12,
+  },
+  paidPillText: { fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
 
   chooseGroup: { gap: 12 },
   chooseCard: {
