@@ -35,6 +35,7 @@ import { useAudioControls } from '../../contexts/AudioContext';
 import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { showPermissionDenied } from '../../lib/permissions';
 import { IMAGE_FORMATS, aspectToNumber, clampVideoAspect, defaultFormatFor } from '../../lib/aspectRatio';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
@@ -749,7 +750,9 @@ export default function PostScreen() {
     try {
       const perm = await AudioModule.requestRecordingPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert(t('post.micNeededTitle'), t('post.micNeededBody'));
+        // Was a bare Alert with only OK — it named the problem and offered no
+        // way to fix it, which on a second denial is a dead end.
+        showPermissionDenied('microphone', t);
         return;
       }
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });

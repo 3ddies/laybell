@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { showPermissionDenied } from '../lib/permissions';
 import { resolveAssetUri, evictAssetUri } from '../lib/assetInfoCache';
 
 const NUM_COLS = 4;
@@ -236,7 +237,9 @@ const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(function PhotoGrid
 
   async function openCamera() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) return;
+    // iOS only ever shows its own prompt once, so after the first denial this
+    // dialog is the only route back to the setting.
+    if (!perm.granted) { showPermissionDenied('camera', t); return; }
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 1,

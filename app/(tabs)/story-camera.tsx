@@ -31,6 +31,7 @@ import { pauseMainPlayer } from '../../lib/trackPlayerService';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { showPermissionDenied } from '../../lib/permissions';
 
 const VIDEO_MAX_SEC = 60;
 const HOLD_MS = 240;            // hold the photo shutter longer than this → record video
@@ -672,7 +673,7 @@ export default function StoryCameraScreen() {
     try {
       const perm = await MediaLibrary.requestPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert(t('storyCamera.photosNeededTitle'), t('storyCamera.photosNeededBody'));
+        showPermissionDenied('photos', t);
         return;
       }
       await MediaLibrary.saveToLibraryAsync(captured.uri);

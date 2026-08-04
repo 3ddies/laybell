@@ -9,6 +9,7 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { showPermissionDenied } from '../lib/permissions';
 import { useMediaSuspend } from '../contexts/MediaSuspendContext';
 import { usePostMusicActions } from '../contexts/PostMusicContext';
 import { uploadToStorageWithProgress } from '../lib/upload';
@@ -277,7 +278,9 @@ export default function GifMakerModal({
     try {
       const MediaLibrary = await import('expo-media-library');
       const perm = await MediaLibrary.requestPermissionsAsync();
-      if (!perm.granted) { setBusy(null); return; }
+      // Never a silent return: tapping Save and having nothing happen reads as
+      // a broken button, not as a permission the user turned off months ago.
+      if (!perm.granted) { setBusy(null); showPermissionDenied('photos', t); return; }
       await MediaLibrary.saveToLibraryAsync(result.uri);
       showFlash({ tone: 'success', title: t('gif.make.savedTitle'), body: t('gif.make.savedBody') });
     } catch {

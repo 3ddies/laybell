@@ -796,6 +796,8 @@ const en: Record<string, string> = {
   'permissions.deviceHint': 'Tap a row to allow it, or to open your device Settings if it was previously denied.',
   'permissions.permNeededTitle': 'Permission needed',
   'permissions.permNeededBody': 'Enable this in your device Settings for Laybell to use it.',
+  'permissions.blockedTitle': '{name} access is off',
+  'permissions.blockedBody': 'Laybell needs it for this. You can turn it on in Settings.',
   'permissions.openSettings': 'Open Settings',
 
   // Music tab
@@ -3509,6 +3511,8 @@ const es: Record<string, string> = {
   'permissions.deviceHint': 'Toca una fila para permitirla, o para abrir los ajustes del dispositivo si se denegó antes.',
   'permissions.permNeededTitle': 'Se necesita permiso',
   'permissions.permNeededBody': 'Actívalo en los ajustes de tu dispositivo para que Laybell pueda usarlo.',
+  'permissions.blockedTitle': 'Acceso a {name} desactivado',
+  'permissions.blockedBody': 'Laybell lo necesita para esto. Puedes activarlo en Ajustes.',
   'permissions.openSettings': 'Abrir ajustes',
 
   // Music tab
@@ -5405,6 +5409,8 @@ const fr: Record<string, string> = {
   'permissions.deviceHint': "Appuyez sur une ligne pour l'autoriser, ou pour ouvrir les réglages de l'appareil si elle a été refusée auparavant.",
   'permissions.permNeededTitle': 'Autorisation requise',
   'permissions.permNeededBody': "Activez-le dans les réglages de votre appareil pour que Laybell puisse l'utiliser.",
+  'permissions.blockedTitle': 'Accès à {name} désactivé',
+  'permissions.blockedBody': 'Laybell en a besoin pour cette action. Vous pouvez l’activer dans les Réglages.',
   'permissions.openSettings': 'Ouvrir les réglages',
 
   // Music tab
@@ -7301,6 +7307,8 @@ const de: Record<string, string> = {
   'permissions.deviceHint': 'Tippe auf eine Zeile, um sie zu erlauben, oder um die Geräteeinstellungen zu öffnen, falls sie zuvor abgelehnt wurde.',
   'permissions.permNeededTitle': 'Berechtigung erforderlich',
   'permissions.permNeededBody': 'Aktiviere dies in deinen Geräteeinstellungen, damit Laybell es nutzen kann.',
+  'permissions.blockedTitle': 'Kein Zugriff auf {name}',
+  'permissions.blockedBody': 'Laybell benötigt ihn dafür. Du kannst ihn in den Einstellungen aktivieren.',
   'permissions.openSettings': 'Einstellungen öffnen',
 
   // Music tab
@@ -9197,6 +9205,8 @@ const pt: Record<string, string> = {
   'permissions.deviceHint': 'Toque em uma linha para permitir, ou para abrir as configurações do dispositivo se foi negada antes.',
   'permissions.permNeededTitle': 'Permissão necessária',
   'permissions.permNeededBody': 'Ative isso nas configurações do seu dispositivo para o Laybell poder usar.',
+  'permissions.blockedTitle': 'Acesso a {name} desativado',
+  'permissions.blockedBody': 'O Laybell precisa dele para isso. Você pode ativar nos Ajustes.',
   'permissions.openSettings': 'Abrir configurações',
 
   // Music tab
@@ -11093,6 +11103,8 @@ const it: Record<string, string> = {
   'permissions.deviceHint': 'Tocca una riga per consentirla, o per aprire le impostazioni del dispositivo se è stata negata in precedenza.',
   'permissions.permNeededTitle': 'Autorizzazione necessaria',
   'permissions.permNeededBody': 'Attivala nelle impostazioni del tuo dispositivo affinché Laybell possa usarla.',
+  'permissions.blockedTitle': 'Accesso a {name} disattivato',
+  'permissions.blockedBody': 'Laybell ne ha bisogno per questa azione. Puoi attivarlo nelle Impostazioni.',
   'permissions.openSettings': 'Apri impostazioni',
 
   // Music tab
@@ -12989,6 +13001,8 @@ const ru: Record<string, string> = {
   'permissions.deviceHint': 'Нажмите на строку, чтобы разрешить доступ, или чтобы открыть настройки устройства, если ранее доступ был запрещён.',
   'permissions.permNeededTitle': 'Требуется разрешение',
   'permissions.permNeededBody': 'Включите это в настройках устройства, чтобы Laybell могло использовать эту функцию.',
+  'permissions.blockedTitle': 'Нет доступа к {name}',
+  'permissions.blockedBody': 'Он нужен Laybell для этого действия. Включите его в Настройках.',
   'permissions.openSettings': 'Открыть настройки',
 
   // Music tab
@@ -14850,6 +14864,8 @@ const zh: Record<string, string> = {
   'permissions.deviceHint': '点击某一行以允许该权限；若之前已拒绝，则点击以打开设备设置。',
   'permissions.permNeededTitle': '需要权限',
   'permissions.permNeededBody': '请在设备设置中开启此项，以便 Laybell 使用。',
+  'permissions.blockedTitle': '未开启{name}权限',
+  'permissions.blockedBody': 'Laybell 需要此权限才能继续。你可以在“设置”中开启。',
   'permissions.openSettings': '打开设置',
 
   // Music tab
@@ -16711,6 +16727,8 @@ const ja: Record<string, string> = {
   'permissions.deviceHint': '行をタップして許可するか、以前に拒否した場合はタップしてデバイスの設定を開きます。',
   'permissions.permNeededTitle': '権限が必要です',
   'permissions.permNeededBody': 'Laybell で使用するには、デバイスの設定でこれを有効にしてください。',
+  'permissions.blockedTitle': '{name}へのアクセスがオフです',
+  'permissions.blockedBody': 'この操作に必要です。設定からオンにできます。',
   'permissions.openSettings': '設定を開く',
 
   // Music tab
@@ -18572,6 +18590,8 @@ const hi: Record<string, string> = {
   'permissions.deviceHint': 'किसी पंक्ति को अनुमति देने के लिए उस पर टैप करें, या यदि पहले अस्वीकार किया गया था तो अपनी डिवाइस सेटिंग खोलने के लिए टैप करें।',
   'permissions.permNeededTitle': 'अनुमति आवश्यक है',
   'permissions.permNeededBody': 'Laybell को इसका उपयोग करने देने के लिए इसे अपनी डिवाइस सेटिंग में चालू करें।',
+  'permissions.blockedTitle': '{name} की अनुमति बंद है',
+  'permissions.blockedBody': 'इसके लिए Laybell को यह अनुमति चाहिए। आप इसे सेटिंग्स में चालू कर सकते हैं।',
   'permissions.openSettings': 'सेटिंग खोलें',
 
   // Music tab

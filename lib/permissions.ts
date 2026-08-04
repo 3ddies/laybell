@@ -1,4 +1,4 @@
-import { Linking } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import { Camera } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
 import * as Notifications from 'expo-notifications';
@@ -35,4 +35,36 @@ export const requestNotificationsPermission = () => safe(Notifications.requestPe
 
 export async function openAppSettings(): Promise<void> {
   try { await Linking.openSettings(); } catch {}
+}
+
+// Kinds map to the permission NAME strings the Permissions screen already ships
+// in every language, so the dialog costs no new per-kind copy.
+export type PermKind = 'camera' | 'microphone' | 'photos' | 'notifications';
+
+/**
+ * The dead end, made recoverable.
+ *
+ * Several actions used to just `return` when a permission was denied — the user
+ * taps Save GIF or the camera tile, nothing happens, and there is no hint that
+ * a setting is the reason or where to change it. iOS only ever shows its own
+ * prompt ONCE, so after that first denial the in-app path is the only path.
+ *
+ * Two ways out, both explicit: dismiss, or jump straight to this app's page in
+ * Settings. Never silently.
+ *
+ * Takes `t` rather than reading context — this is a lib, and the call sites are
+ * a mix of components, contexts and plain async helpers.
+ */
+export function showPermissionDenied(
+  kind: PermKind,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): void {
+  Alert.alert(
+    t('permissions.blockedTitle', { name: t(`permissions.${kind}`) }),
+    t('permissions.blockedBody'),
+    [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('permissions.openSettings'), onPress: () => { openAppSettings(); } },
+    ],
+  );
 }
