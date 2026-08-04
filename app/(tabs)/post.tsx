@@ -1333,32 +1333,6 @@ export default function PostScreen() {
                     {hasCommunity && <Text style={styles.genreLockHint}>{t('post.genreFromCommunity')}</Text>}
                   </View>
                 )}
-                {/* Music-video mode. VIDEO ONLY: on an image or slideshow the
-                    attached song IS the soundtrack, so there is nothing for it
-                    to duplicate and the switch would be meaningless.
-
-                    Flipping it clears any picked song on purpose — the two
-                    modes draw from different catalogues (anyone's public audio
-                    vs. only yours), so a song chosen under one rule must not
-                    survive into the other. Without that, a user could pick a
-                    stranger's track, flip the switch, and publish it as their
-                    own music video. */}
-                {postType === 'video' && (
-                  <View style={styles.field}>
-                    <View style={styles.switchRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.switchLabel}>{t('post.musicVideoLabel')}</Text>
-                        <Text style={styles.switchSub}>{t('post.musicVideoSub')}</Text>
-                      </View>
-                      <Switch
-                        value={musicVideo}
-                        onValueChange={(v) => { setMusicVideo(v); setSong(null); }}
-                        trackColor={{ false: colors.borderStrong, true: colors.primary }}
-                        thumbColor="#fff"
-                      />
-                    </View>
-                  </View>
-                )}
                 <View style={styles.field}>
                   <Text style={styles.fieldLabel}>{t('post.musicLabel')}</Text>
                   <TouchableOpacity style={styles.dropdown} onPress={() => setShowSongPicker(true)} activeOpacity={0.8}>
@@ -1375,6 +1349,37 @@ export default function PostScreen() {
                     )}
                   </TouchableOpacity>
                 </View>
+              </View>
+            </View>
+          )}
+
+          {/* Music-video mode. Full width, OUTSIDE the two-column block: in the
+              right-hand column beside the preview it only had half the screen,
+              and a label plus a sentence of explanation wrapped into a tall
+              ribbon. It sits directly under that block so it still reads as
+              part of the music controls.
+
+              VIDEO ONLY: on an image or slideshow the attached song IS the
+              soundtrack, so there is nothing for it to duplicate.
+
+              Flipping it clears any picked song on purpose — the two modes draw
+              from different catalogues (anyone's public audio vs. only yours),
+              so a song chosen under one rule must not survive into the other.
+              Without that, a user could pick a stranger's track, flip the
+              switch, and publish it as their own music video. */}
+          {postType === 'video' && (
+            <View style={styles.section}>
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.switchLabel}>{t('post.musicVideoLabel')}</Text>
+                  <Text style={styles.switchSub}>{t('post.musicVideoSub')}</Text>
+                </View>
+                <Switch
+                  value={musicVideo}
+                  onValueChange={(v) => { setMusicVideo(v); setSong(null); }}
+                  trackColor={{ false: colors.borderStrong, true: colors.primary }}
+                  thumbColor="#fff"
+                />
               </View>
             </View>
           )}
