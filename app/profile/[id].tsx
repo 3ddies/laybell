@@ -397,6 +397,7 @@ export default function PublicProfileScreen() {
       <View style={styles.musicList}>
         {tracks.map((track, i) => (
           <TrackRow
+            hidePlayButton
             key={track.id}
             caption={track.caption}
             artist={track.profiles?.display_name ?? profile?.display_name ?? ''}

@@ -445,6 +445,7 @@ export default function ProfileScreen() {
         )}
         {tracks.map((track, i) => (
           <TrackRow
+            hidePlayButton
             key={track.id}
             caption={track.caption}
             artist={track.profiles?.display_name ?? profile?.display_name ?? ''}

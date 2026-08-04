@@ -1550,11 +1550,6 @@ export default function MusicScreen() {
                         {todaysPick.profiles?.display_name ?? todaysPick.profiles?.username}
                       </Text>
                     </View>
-                    <Ionicons
-                      name={playingId === todaysPick.id ? 'pause-circle' : 'play-circle'}
-                      size={44}
-                      color={colors.primary}
-                    />
                   </TouchableOpacity>
                 </View>
               </>
