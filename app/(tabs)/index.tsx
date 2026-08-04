@@ -201,10 +201,10 @@ type PostCardProps = {
 const FeedHeader = memo(function FeedHeader() {
   return (
     <>
-      {/* Android: the tray renders inside the floating header block instead
-          (see the header JSX) — FlashList v2's native header detach/re-attach
-          under Fabric orphaned it into a ghost view. iOS keeps it in-list. */}
-      {Platform.OS !== 'android' && <StoriesTray />}
+      {/* The tray renders inside the floating header block instead (see the
+          header JSX) — on BOTH platforms. FlashList v2's native header
+          detach/re-attach under Fabric orphans it into a ghost view: a squished
+          tray over the tab bar on Android, and simply nothing on iOS. */}
       <PendingUploads />
     </>
   );
@@ -1094,6 +1094,36 @@ export default function HomeScreen() {
   // posts under the floating header. onLayout still corrects the exact value.
   const [headerH, setHeaderH] = useState(140);
   headerHRef.current = headerH; // mirror for the geometry resolver's focus-line math
+  // Stories tray: visible ONLY at the very top of the feed. It lives in the
+  // floating header block (FlashList v2 detaches list headers — see the note at
+  // the tray itself), but it must NOT ride the header's hide/show glide, or
+  // scrolling UP from deep in the feed would slide a row of stories back into
+  // the frosted bar. So it collapses on its own, tied to scroll OFFSET rather
+  // than scroll DIRECTION.
+  //
+  // `headerH` is deliberately pinned to the EXPANDED height (see the block's
+  // onLayout): the feed's paddingTop must not change when the tray collapses,
+  // or FlashList's maintainVisibleContentPosition compensates the difference and
+  // the whole feed jumps mid-scroll.
+  const [trayH, setTrayH] = useState(0);
+  const trayAnim = useRef(new Animated.Value(1)).current;   // 1 = shown, 0 = collapsed
+  const trayShownRef = useRef(true);
+  const setTrayShown = useCallback((show: boolean) => {
+    if (trayShownRef.current === show) return;              // discrete, not per-frame
+    trayShownRef.current = show;
+    // Height can't run on the native driver, but this fires once per crossing
+    // (not every scroll tick), which is the same discrete model feedChromeTop uses.
+    Animated.timing(trayAnim, { toValue: show ? 1 : 0, duration: 200, useNativeDriver: false }).start();
+  }, [trayAnim]);
+  const trayStyle = useMemo(() => (
+    trayH
+      ? {
+          height: trayAnim.interpolate({ inputRange: [0, 1], outputRange: [0, trayH] }),
+          opacity: trayAnim,
+          overflow: 'hidden' as const,
+        }
+      : undefined   // first pass renders at natural height so onLayout can measure it
+  ), [trayH, trayAnim]);
   // Memoized so re-renders don't tear down + rebuild the native interpolation
   // node graph (inline it rebuilt on every commit — native-animated churn that
   // landed exactly at drag start). Created twice ever: mount + first onLayout.
@@ -1724,16 +1754,21 @@ export default function HomeScreen() {
         style={[
           styles.headerFloat,
           Platform.OS === 'ios' && styles.headerGlass,
-          // Android hosts the StoriesTray inside this block (see below), so the
-          // hairline moves to the block's true bottom edge, under the tray.
-          Platform.OS === 'android' && { borderBottomWidth: 0.5, borderBottomColor: colors.border },
+          // BOTH platforms host the StoriesTray inside this block (see below), so
+          // the hairline sits on the block's true bottom edge, under the tray.
+          { borderBottomWidth: 0.5, borderBottomColor: colors.border },
           headerSlideStyle,
         ]}
-        onLayout={(e) => { const h = e.nativeEvent.layout.height; setHeaderH(h); }}
+        // Only measure while the tray is EXPANDED, so headerH always describes the
+        // full block. Measuring the collapsed block would shrink the feed's
+        // paddingTop mid-scroll and jump the list (see the trayAnim note above).
+        onLayout={(e) => { const h = e.nativeEvent.layout.height; if (trayShownRef.current) setHeaderH(h); }}
       >
-      <View style={[styles.header, Platform.OS === 'ios' && styles.headerGlass, Platform.OS === 'android' && { borderBottomWidth: 0 }]}>
         {/* iOS: real frosted material behind the floating header (matches the tab
-            bar), so the feed blurs through it instead of hiding under a flat slab. */}
+            bar), so the feed blurs through it instead of hiding under a flat slab.
+            It backs the WHOLE block — header row + tray — because `headerGlass`
+            makes the block itself transparent, and the tray moving in here would
+            otherwise sit on nothing with the feed scrolling behind it. */}
         {Platform.OS === 'ios' && (
           <BlurView
             tint={mode === 'light' ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark'}
@@ -1742,6 +1777,7 @@ export default function HomeScreen() {
             pointerEvents="none"
           />
         )}
+      <View style={[styles.header, Platform.OS === 'ios' && styles.headerGlass, { borderBottomWidth: 0 }]}>
         <View style={styles.headerLeft}>
           <TouchableOpacity
             style={styles.logoBtn}
@@ -1799,16 +1835,26 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
-      {/* Android: the StoriesTray lives HERE — inside the floating header block,
-          riding its hide/show glide — NOT inside the FlashList header. FlashList
-          v2's recycling detaches the list header natively when it scrolls out,
-          and Fabric's re-attach on Android is what produced the squished ghost
-          tray stuck over the tab bar on every page (verified via labeled scene
-          probes: scenes were all healthy; the tray alone was orphaned). Hosting
-          it in a plain View removes the detach path entirely. onLayout above
-          measures the taller block, so the feed's paddingTop and the slide
-          distance adapt automatically. iOS keeps the tray in-list. */}
-      {Platform.OS === 'android' && <StoriesTray />}
+      {/* The StoriesTray lives HERE — inside the floating header block, riding
+          its hide/show glide — NOT inside the FlashList header. FlashList v2's
+          recycling detaches the list header natively when it scrolls out, and
+          Fabric's re-attach is what produced the squished ghost tray stuck over
+          the tab bar on Android (verified via labeled scene probes: scenes were
+          all healthy; the tray alone was orphaned). Hosting it in a plain View
+          removes the detach path entirely. onLayout above measures the taller
+          block, so the feed's paddingTop and the slide distance adapt
+          automatically.
+
+          iOS used to keep the tray in-list, and lost it the same way — the
+          detach is FlashList v2 + Fabric, not an Android quirk, and SDK 54
+          defaults to the New Architecture on both platforms. Same host, both
+          platforms now. */}
+      <Animated.View
+        style={trayStyle}
+        onLayout={(e) => { if (!trayH) setTrayH(e.nativeEvent.layout.height); }}
+      >
+        <StoriesTray />
+      </Animated.View>
       </Animated.View>
 
       {/* Feed-mode dropdown */}
@@ -1876,6 +1922,9 @@ export default function HomeScreen() {
         // and the gate engages only on real velocity (≥GATE_IN).
         onScroll={(e) => {
           const y = e.nativeEvent.contentOffset.y;
+          // Stories show only at the top. Small threshold so a rubber-band
+          // overscroll or a stray pixel doesn't flap the collapse.
+          setTrayShown(y <= 6);
           if (Math.abs(y - lastTapGuardY.current) > 2) { lastTapGuardY.current = y; lastScrollMoveAt.current = Date.now(); }
           trackFeedScroll(y, e.nativeEvent.contentSize.height - e.nativeEvent.layoutMeasurement.height);
           trackScrollVelocity(y);
@@ -2075,7 +2124,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: RADIUS.full,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.avatarBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
