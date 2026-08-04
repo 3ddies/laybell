@@ -13,12 +13,17 @@ import { studioSessionOpen, type ParsedStudioInvite } from '../lib/studioInvite'
 // A studio-session invite, rendered in the DM thread as a card rather than a
 // chat bubble — the recipient joins where they read it.
 //
-// The SESSION's status is the truth, not the message. A message can't be edited
+// The SESSION's status is the truth, not the message: a message can't be edited
 // after sending, so an invite to a session the host has since ended would
-// otherwise offer a Join that fails. We check on mount and show "ended" instead.
-// When the check can't complete (offline / pre-migration) we still show Join and
-// let the server rule — a working button that might fail beats a dead one that
-// definitely does nothing.
+// otherwise offer a Join that fails.
+//
+// But "can't read the session" is NOT "the session ended". studio_sessions has
+// deliberately no public SELECT policy — join_code is the room credential — so
+// the invitee cannot see the row until they are a member. The first version
+// treated that missing row as ended, which made the card flash Join and then
+// declare a live session over before the recipient could tap it. Only an
+// explicit 'ended' status closes the card now; everything else shows Join and
+// lets joinByCode be the arbiter.
 //
 // Joining goes through joinByCode, NOT a direct navigate: the code is the
 // capability that adds you to studio_session_members. Navigating straight to
@@ -44,7 +49,10 @@ export default function StudioInviteCard({
   useEffect(() => {
     let alive = true;
     studioSessionOpen(invite.sessionId).then((v) => {
-      // A null result means "couldn't tell" — treat as open so Join still shows.
+      // null = UNKNOWN, and unknown is the NORMAL case here: studio_sessions has
+      // no public SELECT policy (join_code is the room credential), so the person
+      // being invited cannot read the row until they join. Treat it as open —
+      // only an explicit 'ended', which a member can see, closes the card.
       if (alive) setOpen(v === null ? true : v);
     });
     return () => { alive = false; };

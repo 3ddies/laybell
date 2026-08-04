@@ -63,13 +63,23 @@ export function studioInvitePreview(t: (k: string) => string): string {
   return t('studioInvite.preview');
 }
 
-/** Live status for the card: an invite to a session that has ended should say so
- *  rather than offering a Join that will fail. Null when it can't be determined
- *  (offline, pre-migration) — the card then shows Join and lets the server rule. */
+/** Live status for the card. Returns null for UNKNOWN, and unknown is the normal
+ *  case for the person being invited.
+ *
+ *  studio_sessions has deliberately NO public SELECT policy — join_code is the
+ *  room credential, so only members can read the row (supabase/sql/studio_live.sql).
+ *  The invitee is by definition not a member yet, so the fetch returns no row.
+ *  Reading "no row" as "ended" is what made the card flash Join and then declare
+ *  a running session over before anyone could tap it.
+ *
+ *  Only an explicit status of 'ended' — which only a MEMBER can ever observe,
+ *  i.e. the host or someone who already joined — closes the card. Everyone else
+ *  gets Join, and joinByCode is the real arbiter: it fails cleanly on a dead
+ *  session and the card surfaces that. */
 export async function studioSessionOpen(sessionId: string): Promise<boolean | null> {
   try {
     const s = await fetchSession(sessionId);
-    if (!s) return false;
+    if (!s) return null;               // not visible to us — NOT evidence it ended
     return s.status === 'open';
   } catch {
     return null;
