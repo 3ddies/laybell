@@ -1,10 +1,11 @@
-import { memo, useEffect, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, Easing } from 'react-native';
+import { memo } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import AppVideo from './AppVideo';
 import SongAttribution from './SongAttribution';
 import TaggedPeopleButton from './TaggedPeopleButton';
+import Spinner from './Spinner';
 import { useUploadQueue, useUploadActions, type PendingUpload } from '../contexts/UploadQueueContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -19,78 +20,6 @@ const MAX_VIDEO_H = Dimensions.get('window').height * 0.62;
 // (which update the pill) never reach it — otherwise each render would hand it a
 // fresh source and restart playback, so it'd never actually play. Only a change to
 // the source uri / height / active state re-renders it.
-// RN has no text stroke, so we fake a bold black outline by stacking offset black
-// copies behind the white fill (same trick as the explore header).
-const STROKE = 1.4;
-const OUTLINE: ReadonlyArray<readonly [number, number]> = [
-  [-STROKE, 0], [STROKE, 0], [0, -STROKE], [0, STROKE],
-  [-STROKE, -STROKE], [STROKE, -STROKE], [-STROKE, STROKE], [STROKE, STROKE],
-];
-
-const stripTrailingDots = (s: string) => s.replace(/[.…]+$/, '');
-
-// A single outlined (white-with-black-stroke) character.
-function OutlinedChar({ ch }: { ch: string }) {
-  return (
-    <View>
-      {OUTLINE.map(([x, y], i) => (
-        <Text key={i} style={[stStyles.txt, stStyles.stroke, { position: 'absolute', left: x, top: y }]}>{ch}</Text>
-      ))}
-      <Text style={stStyles.txt}>{ch}</Text>
-    </View>
-  );
-}
-
-// A whole outlined string (no animation) — used for the % readout.
-function Outlined({ children }: { children: string }) {
-  return (
-    <View style={stStyles.row}>
-      {[...children].map((ch, i) => <OutlinedChar key={i} ch={ch} />)}
-    </View>
-  );
-}
-
-// Status word that keeps fading in letter-by-letter from left to right, then holds
-// and repeats — a soft "typewriter fade" reveal (native-driven opacity).
-function AnimatedReveal({ text }: { text: string }) {
-  const chars = useMemo(() => [...text], [text]);
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    anim.setValue(0);
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(anim, { toValue: 1, duration: 850, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.delay(650),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [text, anim]);
-  return (
-    <View style={stStyles.row}>
-      {chars.map((ch, i) => {
-        const start = chars.length > 1 ? (i / chars.length) * 0.65 : 0;
-        const opacity = anim.interpolate({ inputRange: [start, Math.min(1, start + 0.35)], outputRange: [0, 1], extrapolate: 'clamp' });
-        return (
-          <Animated.View key={i} style={{ opacity }}>
-            <OutlinedChar ch={ch} />
-          </Animated.View>
-        );
-      })}
-    </View>
-  );
-}
-
-function StatusText({ text, animate }: { text: string; animate: boolean }) {
-  return animate ? <AnimatedReveal text={text} /> : <Outlined>{text}</Outlined>;
-}
-
-const stStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'flex-start' },
-  txt: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.2 },
-  stroke: { color: '#000' },
-});
-
 const PendingVideo = memo(function PendingVideo({ uri, poster, height, active, muted }: {
   uri: string; poster: string | null; height: number; active: boolean; muted: boolean;
 }) {
@@ -155,13 +84,15 @@ function PendingCard({ p }: { p: PendingUpload }) {
             </TouchableOpacity>
           </View>
         ) : p.phase === 'done' ? null : (
-          <View style={styles.status} pointerEvents="none">
-            <StatusText
-              text={p.phase === 'processing'
-                ? stripTrailingDots(t('post.uploadProcessing'))
-                : pct >= 100 ? stripTrailingDots(t('post.uploadFinishing')) : `${pct}%`}
-              animate={p.phase === 'processing' || pct >= 100}
-            />
+          // Working state: a light scrim over the frame and one small ring,
+          // centred. No percentage, no "Processing…" — a number that jumps and a
+          // word that changes are two things to read on a card whose only job is
+          // to say "not yet". The scrim alone reads as not-ready; the ring says
+          // it's moving.
+          <View style={styles.workingOverlay} pointerEvents="none">
+            <View style={styles.workingDisc}>
+              <Spinner size={22} thickness={2} color="#fff" />
+            </View>
           </View>
         )}
 
@@ -171,12 +102,16 @@ function PendingCard({ p }: { p: PendingUpload }) {
         )}
         {/* Tagged people. */}
         {!!p.taggedIds?.length && <TaggedPeopleButton userIds={p.taggedIds} style={styles.tagBtnOverlay} />}
-      </View>
 
-      {/* Thin progress bar during upload. */}
-      {p.phase === 'uploading' && (
-        <View style={styles.track}><View style={[styles.fill, { width: `${pct}%` }]} /></View>
-      )}
+        {/* Real progress, as a hairline on the frame's bottom EDGE rather than a
+            bar in its own strip under the card — that strip is what made the
+            thing read bulky. It carries what the percentage did without asking
+            anyone to read anything. (A determinate RING would need
+            react-native-svg, a native dep, so a rebuild.) */}
+        {p.phase === 'uploading' && (
+          <View style={styles.track}><View style={[styles.fill, { width: `${pct}%` }]} /></View>
+        )}
+      </View>
 
       {!!p.caption && <Text style={styles.caption} numberOfLines={2}>{p.caption}</Text>}
     </View>
@@ -200,7 +135,15 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   dismissBtn: { padding: 4 },
   media: { width: '100%', backgroundColor: '#000', overflow: 'hidden' },
   // Outlined status text pinned to the top-right so the video stays fully visible.
-  status: { position: 'absolute', top: 10, right: 12 },
+  // Light, not heavy: enough to read as "not ready yet" without hiding the frame
+  // the user just shot. The error state keeps its darker scrim — that one needs
+  // the retry button to dominate.
+  workingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.22)' },
+  workingDisc: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
   videoAudioBtn: {
     position: 'absolute', top: SPACING.sm, right: SPACING.sm,
     width: 34, height: 34, borderRadius: RADIUS.full,
@@ -210,7 +153,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   errorOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.72)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22 },
   retryText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  track: { height: 3, backgroundColor: c.border, marginTop: 2 },
-  fill: { height: 3, backgroundColor: c.primary },
+  // 2px hairline riding the bottom edge of the frame, not a 3px bar in its own
+  // strip below the card — that strip is what made the whole thing read bulky.
+  track: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 2, backgroundColor: 'rgba(255,255,255,0.22)' },
+  fill: { height: 2, backgroundColor: c.primary },
   caption: { color: c.text, fontSize: 14, paddingHorizontal: 12, paddingTop: 8 },
 });

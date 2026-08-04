@@ -354,7 +354,7 @@ export default function PostScreen() {
   const [savedToast, setSavedToast] = useState(false); // "Saved to Drafts" confirmation
   // Polished "Posted!" confirmation shown after a successful share (replaces the
   // default OS alert). Holds the title/body so the spotlight variant can differ.
-  const [postedToast, setPostedToast] = useState<{ title: string; message: string; spotlight: boolean } | null>(null);
+  const [postedToast, setPostedToast] = useState<{ title: string; message: string; spotlight: boolean; uploading?: boolean } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Draft | null>(null); // draft pending delete-confirm
   const editingDraftId = useRef<string | null>(null);
   useFocusEffect(useCallback(() => { loadDrafts().then(setDrafts); }, []));
@@ -1027,6 +1027,7 @@ export default function PostScreen() {
             ? t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) })
             : t('post.uploadingBody'),
           spotlight: !!spotLabel,
+          uploading: true,
         });
         resetAll();
         setLoading(false);
@@ -2081,7 +2082,10 @@ export default function PostScreen() {
         icon={postedToast?.spotlight ? 'sparkles' : 'checkmark-circle'}
         title={postedToast?.title ?? ''}
         message={postedToast?.message}
-        duration={postedToast?.spotlight ? 3800 : 2800}
+        // Uploading lingers longer than a completion notice: it's the handoff to
+        // the card now sitting at the top of the feed, so it has to survive the
+        // swipe over to Home to be worth anything.
+        duration={postedToast?.uploading ? 5200 : postedToast?.spotlight ? 3800 : 2800}
         bottomOffset={SPACING.xxl + SPACING.md}
         // Tap the confirmation to jump to the Home feed (scrolled to the top) and
         // watch the just-posted video, which is pinned there.
