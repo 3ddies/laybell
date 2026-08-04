@@ -609,28 +609,20 @@ export default function SpotlightScreen() {
               <Text style={styles.flowLead}>
                 {t('spotlight.chooseLead')}
               </Text>
-              {/* One inset-grouped container with a hairline between the rows,
-                  rather than two separately-bordered cards. Two stacked outlined
-                  boxes is a Material list; iOS groups related choices into a
-                  single rounded block and separates them with a rule that starts
-                  under the text. */}
+              {/* Two big choice cards. No icon tiles and no chevrons: this step
+                  has exactly two outcomes, so it should read as a decision —
+                  large type carrying the weight — rather than a menu you scan.
+                  The row-with-icon-and-chevron pattern is for navigating a list
+                  of many things; here it just made two equal choices look like
+                  settings entries. */}
               <View style={styles.chooseGroup}>
-                <TouchableOpacity style={styles.chooseRow} onPress={openPostGrid} activeOpacity={0.6}>
-                  <View style={styles.chooseIcon}><Ionicons name="albums" size={18} color="#fff" /></View>
-                  <View style={styles.chooseRowText}>
-                    <Text style={styles.chooseTitle}>{t('spotlight.chooseExistingTitle')}</Text>
-                    <Text style={styles.chooseSub}>{t('spotlight.chooseExistingSub')}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+                <TouchableOpacity style={styles.chooseCard} onPress={openPostGrid} activeOpacity={0.75}>
+                  <Text style={styles.chooseTitle}>{t('spotlight.chooseExistingTitle')}</Text>
+                  <Text style={styles.chooseSub}>{t('spotlight.chooseExistingSub')}</Text>
                 </TouchableOpacity>
-                <View style={styles.chooseSep} />
-                <TouchableOpacity style={styles.chooseRow} onPress={handleNewPost} activeOpacity={0.6}>
-                  <View style={styles.chooseIcon}><Ionicons name="add" size={22} color="#fff" /></View>
-                  <View style={styles.chooseRowText}>
-                    <Text style={styles.chooseTitle}>{t('spotlight.chooseNewTitle')}</Text>
-                    <Text style={styles.chooseSub}>{t('spotlight.chooseNewSub')}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+                <TouchableOpacity style={styles.chooseCard} onPress={handleNewPost} activeOpacity={0.75}>
+                  <Text style={styles.chooseTitle}>{t('spotlight.chooseNewTitle')}</Text>
+                  <Text style={styles.chooseSub}>{t('spotlight.chooseNewSub')}</Text>
                 </TouchableOpacity>
               </View>
               <Text style={styles.chooseNote}>
@@ -940,33 +932,21 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   summaryTotalVal: { color: colors.primary, fontSize: 16, fontWeight: '800' },
   simNote: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, textAlign: 'center' },
 
-  chooseGroup: {
-    backgroundColor: colors.surfaceLight, borderRadius: 14,
+  chooseGroup: { gap: 12 },
+  chooseCard: {
+    backgroundColor: colors.surfaceLight, borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-    overflow: 'hidden',
+    paddingVertical: SPACING.lg, paddingHorizontal: SPACING.md + 2,
+    gap: 6,
   },
-  chooseRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: SPACING.md, paddingVertical: 13,
-  },
-  chooseRowText: { flex: 1, gap: 2 },
-  // A solid rounded-square tile with a FILLED white glyph — the iOS Settings
-  // idiom. The old circle holding a thin outline glyph in the brand tint is the
-  // Material "icon button" shape, which is what made these rows read as Android.
-  chooseIcon: {
-    width: 30, height: 30, borderRadius: 8,
-    backgroundColor: colors.primary,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  // Inset past the icon so the rule starts under the text, like a native
-  // grouped table. 16 padding + 30 icon + 12 gap.
-  chooseSep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 58 },
   // Left-aligned 13pt, like a native grouped-table section footer. (simNote stays
   // centered — under the Pay button it's a disclaimer, not a list footer.)
   chooseNote: { color: colors.textTertiary, fontSize: 13, lineHeight: 18, letterSpacing: -0.1 },
-  // 17pt is the iOS body size — the old 15/12 pair read as dense Material rows.
-  chooseTitle: { color: colors.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.4 },
-  chooseSub: { color: colors.textSecondary, fontSize: 13, letterSpacing: -0.1, lineHeight: 17 },
+  // The title carries the card. At 22 it's a headline you decide against, not a
+  // label you scan past — which is the whole reason the icons and chevrons could
+  // come out without the rows losing presence.
+  chooseTitle: { color: colors.text, fontSize: 22, fontWeight: '700', letterSpacing: -0.6, lineHeight: 27 },
+  chooseSub: { color: colors.textSecondary, fontSize: 15, letterSpacing: -0.2, lineHeight: 21 },
 
   // Post grid
   gridScroll: { paddingTop: SPACING.sm, paddingBottom: SPACING.xxl },
