@@ -1090,8 +1090,8 @@ export default function CreateAdScreen() {
                   <Switch
                     value={isBusiness}
                     onValueChange={setIsBusiness}
-                    trackColor={{ false: colors.border, true: colors.primary + '88' }}
-                    thumbColor={isBusiness ? colors.primary : colors.textTertiary}
+                    trackColor={{ false: colors.borderStrong, true: colors.primary }}
+                    thumbColor="#fff"
                   />
                 </View>
 
@@ -1249,8 +1249,8 @@ export default function CreateAdScreen() {
                       <Switch
                         value={useLocation}
                         onValueChange={setUseLocation}
-                        trackColor={{ false: colors.border, true: colors.primary + '88' }}
-                        thumbColor={useLocation ? colors.primary : colors.textTertiary}
+                        trackColor={{ false: colors.borderStrong, true: colors.primary }}
+                        thumbColor="#fff"
                       />
                     </View>
                     {useLocation && (
@@ -1285,11 +1285,15 @@ export default function CreateAdScreen() {
                 {/* Helper line, live per keystroke: neutral minimum note while
                     valid, red shortfall ("add $X more") the moment it dips
                     under — the floor is never discovered as an error on
-                    Continue. */}
+                    Continue.
+
+                    The neutral note carries the figure ALONE. It used to append
+                    the arithmetic behind it, "(N × $20)", which read as a second
+                    competing price rather than an explanation of the first. */}
                 {budgetTooLow ? (
                   <Text style={styles.noteError}>{t('adCreate.budgetTooLow', { min: fmtPrice(minBudgetCents), diff: fmtPrice(minBudgetCents - budgetCents) })}</Text>
                 ) : (
-                  <Text style={styles.note}>{t('adCreate.bundleMinNote', { count: placements.length, min: fmtPrice(minBudgetCents) })}</Text>
+                  <Text style={styles.note}>{t('adCreate.bundleMinNote', { min: fmtPrice(minBudgetCents) })}</Text>
                 )}
 
                 <Text style={styles.label}>{t('adCreate.runLengthLabel')}</Text>
@@ -1526,9 +1530,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   progressDotOn: { backgroundColor: colors.text },
 
   scroll: { padding: SPACING.md, gap: SPACING.sm, paddingBottom: SPACING.xxl },
-  lead: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: SPACING.xs },
-  label: { color: colors.textTertiary, fontSize: 12, fontWeight: '700', marginTop: SPACING.sm, marginBottom: 4 },
-  note: { color: colors.textTertiary, fontSize: 12, lineHeight: 17 },
+  lead: { color: colors.textSecondary, fontSize: 15, lineHeight: 21, letterSpacing: -0.2, marginBottom: SPACING.xs },
+  // Section headers were textTertiary, which is ~1.9:1 on the light theme's
+  // off-white page — the field labels were effectively unreadable there. These
+  // name the controls under them, so they have to be legible, not decorative.
+  label: {
+    color: colors.textSecondary, fontSize: 13, fontWeight: '600', letterSpacing: -0.1,
+    marginTop: SPACING.md, marginBottom: 6,
+  },
+  note: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, letterSpacing: -0.1 },
 
   selectCard: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
@@ -1594,10 +1604,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   listingCellCheck: { position: 'absolute', top: 6, right: 6, backgroundColor: colors.background, borderRadius: 11 },
   listingCellTitle: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
 
+  // 17pt is the iOS body size, and the size fields are typed into — 14 read as
+  // a caption you weren't meant to edit.
   input: {
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 2,
-    color: colors.text, fontSize: 14,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong,
+    borderRadius: 12, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 4,
+    color: colors.text, fontSize: 17, letterSpacing: -0.3,
   },
   inputMulti: { minHeight: 64, textAlignVertical: 'top' },
   inputError: { borderColor: colors.error, borderWidth: 1.5, backgroundColor: colors.error + '0D' },
@@ -1605,11 +1618,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   switchRow: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: colors.surfaceLight, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: colors.border, padding: SPACING.md, marginTop: SPACING.sm,
+    backgroundColor: colors.surfaceLight, borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    padding: SPACING.md, marginTop: SPACING.sm,
   },
-  switchLabel: { color: colors.text, fontSize: 14, fontWeight: '600' },
-  switchSub: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  switchLabel: { color: colors.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.4 },
+  switchSub: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, letterSpacing: -0.1, marginTop: 2 },
 
   // Advertiser avatar picker (business) / profile-reuse note (regular user)
   avatarPickRow: {
@@ -1662,27 +1676,36 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // Targeting chips
   ageRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  ageInput: { width: 90, textAlign: 'center' },
-  ageDash: { color: colors.textSecondary, fontSize: 14 },
+  ageInput: { width: 96, textAlign: 'center' },
+  ageDash: { color: colors.textSecondary, fontSize: 15 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
-    borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.full,
-    paddingHorizontal: SPACING.md, paddingVertical: 6, backgroundColor: colors.surfaceLight,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.md, paddingVertical: 8, backgroundColor: colors.surfaceLight,
   },
-  chipOn: { borderColor: colors.primary, backgroundColor: colors.primary + '18' },
-  chipText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
-  chipTextOn: { color: colors.primary },
+  // Selected chips FILL rather than tint. A tinted outline is a hint; on a page
+  // where the whole job is picking things, the selection should be unmistakable
+  // at a glance across a wrap of fifteen genres.
+  chipOn: { borderColor: colors.primary, backgroundColor: colors.primary },
+  chipText: { color: colors.textSecondary, fontSize: 15, fontWeight: '500', letterSpacing: -0.2 },
+  chipTextOn: { color: '#fff', fontWeight: '600' },
 
+  // The payoff panel — what the money actually buys. Gets a hairline edge so it
+  // reads as a deliberate callout rather than a tinted patch of background.
   estimateCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm, marginTop: SPACING.md,
-    backgroundColor: colors.primary + '14', borderRadius: RADIUS.lg, padding: SPACING.md,
+    flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm + 2, marginTop: SPACING.lg,
+    backgroundColor: colors.primary + '14', borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.primary + '33',
+    padding: SPACING.md,
   },
-  estimateText: { color: colors.text, fontSize: 13, fontWeight: '600' },
-  estimateBig: { color: colors.text, fontSize: 18, fontWeight: '800' },
-  estimateSub: { color: colors.textSecondary, fontSize: 13, fontWeight: '500', marginTop: 2, lineHeight: 18 },
-  estimateBonus: { color: colors.success, fontSize: 13, fontWeight: '800', marginTop: 6 },
-  estimateHint: { color: colors.textTertiary, fontSize: 12, fontWeight: '600', marginTop: 3 },
-  estimatePremium: { color: colors.primary, fontSize: 12.5, fontWeight: '700', marginTop: 6 },
+  estimateText: { color: colors.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
+  estimateBig: { color: colors.text, fontSize: 22, fontWeight: '700', letterSpacing: -0.6 },
+  estimateSub: { color: colors.textSecondary, fontSize: 14, fontWeight: '400', letterSpacing: -0.2, marginTop: 4, lineHeight: 19 },
+  estimateBonus: { color: colors.success, fontSize: 14, fontWeight: '600', letterSpacing: -0.2, marginTop: 8 },
+  // Was textTertiary — the "bigger budgets go further" line is an upsell, and it
+  // was the faintest text on the screen.
+  estimateHint: { color: colors.textSecondary, fontSize: 13, fontWeight: '500', letterSpacing: -0.1, marginTop: 6, lineHeight: 18 },
+  estimatePremium: { color: colors.primary, fontSize: 13, fontWeight: '600', letterSpacing: -0.1, marginTop: 8 },
 
   // Review
   // Its own card style (not the shared `card`, which other steps rely on for its
