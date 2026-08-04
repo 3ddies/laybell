@@ -26,7 +26,8 @@ import { useProfile } from '../../contexts/ProfileContext';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import TagPeopleModal from '../../components/TagPeopleModal';
 import PhotoGrid, { type PickedMedia } from '../../components/PhotoGrid';
-import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 
@@ -1320,18 +1321,21 @@ export default function CreateAdScreen() {
 
             {step === 'review' && (
               <>
-                <View style={styles.card}>
+                <View style={styles.reviewCard}>
                   <Text style={styles.reviewTitle}>{previewAdvertiserName || t('adCreate.untitled')}</Text>
                   <ReviewRow k={t('adCreate.reviewObjective')} v={t(`adCreate.objective.${objective}.label`)} styles={styles} />
                   {objective === 'engagement' && (
                     <ReviewRow k={t('adCreate.reviewStyle')} v={simpleActive ? t('shopAd.styleSimple') : t('shopAd.styleCustom')} styles={styles} />
                   )}
                   <ReviewRow k={t('adCreate.reviewPlacements')} v={placements.map(labelFor).join(', ') || '—'} styles={styles} />
-                  <ReviewRow k={t('adCreate.reviewBudget')} v={fmtPrice(budgetCents)} styles={styles} />
+                  {/* The row carrying the number actually charged gets the
+                      emphasis — which is Budget on its own, or Pay once a bundle
+                      discount splits the two. */}
+                  <ReviewRow k={t('adCreate.reviewBudget')} v={fmtPrice(budgetCents)} styles={styles} emphasis={bundleDiscountPct === 0} />
                   {bundleDiscountPct > 0 && (
                     <>
                       <ReviewRow k={t('adCreate.reviewDiscount')} v={t('adCreate.discountValue', { pct: bundleDiscountPct, amount: fmtPrice(Math.max(0, budgetCents - chargedCents)) })} styles={styles} />
-                      <ReviewRow k={t('adCreate.reviewPay')} v={fmtPrice(chargedCents)} styles={styles} />
+                      <ReviewRow k={t('adCreate.reviewPay')} v={fmtPrice(chargedCents)} styles={styles} emphasis />
                     </>
                   )}
                   <ReviewRow k={t('adCreate.reviewRunLength')} v={`${parseInt(days, 10) || 0} ${t('adCreate.daysUnit')}`} styles={styles} />
@@ -1354,16 +1358,19 @@ export default function CreateAdScreen() {
                   )}
                 </View>
 
+                {/* A round check, not a square box: iOS uses squares for
+                    multi-select lists and a filled check for a single consent. */}
                 <TouchableOpacity style={styles.termsRow} onPress={() => setTerms((prev) => !prev)} activeOpacity={0.8}>
-                  <Ionicons name={terms ? 'checkbox' : 'square-outline'} size={22} color={terms ? colors.primary : colors.textTertiary} />
+                  <Ionicons
+                    name={terms ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={24}
+                    color={terms ? colors.primary : colors.textTertiary}
+                  />
                   <Text style={styles.termsText}>
                     {t('adCreate.termsText')}
                   </Text>
                 </TouchableOpacity>
-                <Text
-                  onPress={() => router.push('/advertiser-terms')}
-                  style={{ color: colors.primary, fontWeight: '700', fontSize: 12, marginTop: 6, marginLeft: 34 }}
-                >
+                <Text onPress={() => router.push('/advertiser-terms')} style={styles.termsLink}>
                   {t('adCreate.readTerms')}
                 </Text>
 
@@ -1377,9 +1384,29 @@ export default function CreateAdScreen() {
           {/* Footer */}
           <View style={styles.footer}>
             {step === 'review' ? (
-              <TouchableOpacity style={[styles.primaryBtn, (!terms || publishing) && styles.primaryBtnDisabled]} onPress={publish} disabled={!terms || publishing}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, terms && !publishing ? styles.launchBtnReady : styles.primaryBtnDisabled]}
+                onPress={publish}
+                disabled={!terms || publishing}
+                activeOpacity={0.85}
+              >
+                {/* Warm gradient + glow only once the box is ticked, so the
+                    button visibly lights up at the moment it becomes tappable —
+                    the payoff at the end of a six-step flow. Disabled goes to a
+                    flat neutral rather than a faded orange, which just looked
+                    like a broken button. */}
+                {terms && !publishing && (
+                  <LinearGradient
+                    colors={GRADIENTS.primaryWarm}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[StyleSheet.absoluteFill, { borderRadius: RADIUS.full }]}
+                  />
+                )}
                 {/* The button shows what's actually CHARGED (bundle discount off). */}
-                {publishing ? <ActivityIndicator color={colors.text} size="small" /> : <Text style={styles.primaryBtnText}>{t('adCreate.launchBtn', { price: fmtPrice(chargedCents) })}</Text>}
+                {publishing
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={[styles.primaryBtnText, !terms && styles.primaryBtnTextDisabled]}>{t('adCreate.launchBtn', { price: fmtPrice(chargedCents) })}</Text>}
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={styles.primaryBtn} onPress={next}>
@@ -1465,11 +1492,11 @@ export default function CreateAdScreen() {
   );
 }
 
-function ReviewRow({ k, v, styles }: { k: string; v: string; styles: any }) {
+function ReviewRow({ k, v, styles, emphasis }: { k: string; v: string; styles: any; emphasis?: boolean }) {
   return (
     <View style={styles.reviewRow}>
       <Text style={styles.reviewKey}>{k}</Text>
-      <Text style={styles.reviewVal} numberOfLines={1}>{v}</Text>
+      <Text style={[styles.reviewVal, emphasis && styles.reviewValTotal]} numberOfLines={1}>{v}</Text>
     </View>
   );
 }
@@ -1492,7 +1519,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   progress: { flexDirection: 'row', gap: 6, justifyContent: 'center', paddingVertical: SPACING.sm },
   progressDot: { width: 22, height: 4, borderRadius: 2, backgroundColor: colors.surfaceElevated },
-  progressDotOn: { backgroundColor: colors.primary },
+  // `colors.text`, not a literal white: it IS white on the dark themes, and
+  // flips to near-black on the light one, where white bars would vanish against
+  // the page. Off the brand orange, so the only orange left on this screen is
+  // the thing you're meant to tap.
+  progressDotOn: { backgroundColor: colors.text },
 
   scroll: { padding: SPACING.md, gap: SPACING.sm, paddingBottom: SPACING.xxl },
   lead: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: SPACING.xs },
@@ -1654,17 +1685,35 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   estimatePremium: { color: colors.primary, fontSize: 12.5, fontWeight: '700', marginTop: 6 },
 
   // Review
-  reviewTitle: { color: colors.text, fontSize: 16, fontWeight: '800', marginBottom: SPACING.xs },
-  reviewRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: SPACING.md, paddingVertical: 3 },
-  reviewKey: { color: colors.textSecondary, fontSize: 13 },
-  reviewVal: { color: colors.text, fontSize: 13, fontWeight: '600', flexShrink: 1, textTransform: 'capitalize' },
+  // Its own card style (not the shared `card`, which other steps rely on for its
+  // gap): rows carry their own hairline rules, so the container must not add
+  // spacing between them.
+  reviewCard: {
+    backgroundColor: colors.surfaceLight, borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.sm,
+  },
+  reviewTitle: { color: colors.text, fontSize: 20, fontWeight: '700', letterSpacing: -0.5, marginBottom: 2 },
+  // Rule on TOP of each row, so it also separates the title from the first row
+  // and the last row ends clean on the card's padding — a receipt, not a grid.
+  reviewRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    gap: SPACING.md, paddingVertical: 11,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+  },
+  reviewKey: { color: colors.textSecondary, fontSize: 15, letterSpacing: -0.2 },
+  reviewVal: { color: colors.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1, textTransform: 'capitalize' },
+  // The figure that's actually charged, sized up so the eye lands on it.
+  reviewValTotal: { fontSize: 19, fontWeight: '700', letterSpacing: -0.5 },
 
   termsRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm, marginTop: SPACING.md,
+    flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm, marginTop: SPACING.lg,
     paddingHorizontal: SPACING.xs,
   },
-  termsText: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, flex: 1 },
-  simNote: { color: colors.textTertiary, fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: SPACING.md },
+  termsText: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, letterSpacing: -0.2, flex: 1 },
+  // Aligned to the consent text above it (24 icon + 8 gap + 4 row padding).
+  termsLink: { color: colors.primary, fontSize: 14, fontWeight: '600', letterSpacing: -0.2, marginTop: 8, marginLeft: 36 },
+  simNote: { color: colors.textTertiary, fontSize: 13, lineHeight: 18, letterSpacing: -0.1, textAlign: 'center', marginTop: SPACING.lg },
 
   footer: {
     padding: SPACING.md, paddingBottom: SPACING.lg,
@@ -1672,10 +1721,17 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   primaryBtn: {
     backgroundColor: colors.primary, borderRadius: RADIUS.full,
-    alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.md,
+    alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.md + 1,
   },
-  primaryBtnDisabled: { opacity: 0.4 },
-  primaryBtnText: { color: colors.text, fontSize: 15, fontWeight: '800' },
+  // Enabled launch button: brand glow under the gradient fill.
+  launchBtnReady: { ...SHADOWS.glow },
+  // Flat neutral, not a faded orange — 40% opacity on the brand colour read as a
+  // broken button rather than a locked one.
+  primaryBtnDisabled: { backgroundColor: colors.surfaceElevated },
+  // '#fff', not colors.text: on the light theme colors.text is near-black, which
+  // on the orange fill was dark-on-orange.
+  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: -0.3 },
+  primaryBtnTextDisabled: { color: colors.textTertiary },
 
   uploadOverlay: {
     ...StyleSheet.absoluteFillObject,
