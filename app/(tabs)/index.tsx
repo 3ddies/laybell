@@ -198,21 +198,6 @@ type PostCardProps = {
   onSlideAudioActive: (item: Post, active: boolean) => void;
 };
 
-// Stable feed header (stories tray + any in-flight upload cards). Defined at module
-// scope so feed re-renders / refetches never remount it — which would restart the
-// optimistic upload card's local video mid-playback.
-const FeedHeader = memo(function FeedHeader() {
-  return (
-    <>
-      {/* The tray renders inside the floating header block instead (see the
-          header JSX) — on BOTH platforms. FlashList v2's native header
-          detach/re-attach under Fabric orphans it into a ghost view: a squished
-          tray over the tab bar on Android, and simply nothing on iOS. */}
-      <PendingUploads />
-    </>
-  );
-});
-
 // Memoized so that toggling a like/save on one post (which changes the feed's
 // liked/saved sets) only re-renders that card — not all ~50 rows. All callbacks
 // from HomeScreen are referentially stable, and `item` keeps its reference for
@@ -563,8 +548,15 @@ export default function HomeScreen() {
       .map((id) => posts.find((p) => p.id === id) || pinnedPosts.find((p) => p.id === id))
       .filter(Boolean) as Post[];
     const rest = posts.filter((p) => !pinnedSet.has(p.id) && !pendingPostIds.has(p.id));
-    return [...pins, ...rest];
-  }, [posts, pinnedPosts, pinnedIds, pinnedSet, pendingPostIds]);
+    // In-flight uploads ride at the very top as a real LIST ITEM. They used to
+    // live in ListHeaderComponent, which FlashList v2 detaches natively when
+    // it scrolls out — the same Fabric bug that made the stories tray vanish
+    // on iOS. A header that starts at ZERO height and grows the moment an
+    // upload begins is the worst case for it, and the symptom was brutal:
+    // the composer said "Posted" and the feed showed nothing at all.
+    const head = pending.length ? [{ id: '__pending', __pending: true } as unknown as Post] : [];
+    return [...head, ...pins, ...rest];
+  }, [posts, pinnedPosts, pinnedIds, pinnedSet, pendingPostIds, pending.length]);
   // Live copy for the (stable) viewability callback below — it scans around the
   // viewport for upcoming videos to pre-warm without re-subscribing.
   const feedDataRef = useRef<Post[]>([]);
@@ -1698,6 +1690,7 @@ export default function HomeScreen() {
   }, []);
 
   const renderPost = useCallback(({ item }: { item: Post }) => (
+    (item as any).__pending ? <PendingUploads /> :
     (item as any).__gate ? <FeedGateCard onArm={onGateArm} /> :
     <ElasticSwipeView resetKey={(item as any).__spotlight ? `spot:${(item as any).__spotlight.campaignId}` : item.id}>
       {(item as any).__ad ? (
@@ -1907,13 +1900,12 @@ export default function HomeScreen() {
         // Spotlight instances key off their campaign so a promoted post can
         // never key-collide with itself (organic copies are filtered at merge).
         // In v2 this is also the recycler's stable id — load-bearing.
-        keyExtractor={(item) => (item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
+        keyExtractor={(item) => ((item as any).__pending ? 'pending' : item.__spotlight ? `spot:${item.__spotlight.campaignId}` : item.id)}
         // Recycle pools are per-type: an ad cell must never be recycled into a
         // post cell (renderPost's root ternary would swap component trees —
         // a full remount AND a polluted pool).
-        getItemType={(item) => ((item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
+        getItemType={(item) => ((item as any).__pending ? 'pending' : (item as any).__gate ? 'gate' : (item as any).__ad ? 'ad' : 'post')}
         renderItem={renderPost}
-        ListHeaderComponent={FeedHeader}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={feedContentStyle}
         // Drives the reactive chrome (discrete state picks + native glides) and

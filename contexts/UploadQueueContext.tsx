@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
+import { notifySuccess } from '../lib/haptics';
 import { compressVideoIfPossible, ensureLocalFile } from '../lib/upload';
 import { trimVideoIfPossible } from '../lib/videoTrim';
 import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, pollStreamReady, deleteStreamVideo, untrackStreamUpload } from '../lib/streamUpload';
@@ -307,6 +308,11 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       // card. It falls into natural rank on the next manual refresh.
       setPinnedIds((ids) => [postId, ...ids.filter((id) => id !== postId)]);
       remove(tempId);
+      // THE moment the post actually exists — row inserted, file uploaded,
+      // encoding finished. The composer deliberately stays quiet at enqueue
+      // time (it can't know any of that yet), so this is the only celebration,
+      // and it fires wherever the user happens to be.
+      notifySuccess();
     } catch (err: any) {
       update(tempId, { phase: 'error', errorMsg: err?.message || 'Upload failed' });
     }

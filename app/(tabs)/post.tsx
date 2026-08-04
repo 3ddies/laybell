@@ -1013,12 +1013,19 @@ export default function PostScreen() {
         if (ps) { clearPendingSpotlight(); setPendingSpotBanner(null); }
         if (isPublic) setPublicCount((c) => (c == null ? c : c + 1));
         if (editingDraftId.current) deleteDraft(editingDraftId.current).then(setDrafts);
-        notifySuccess(); // celebratory buzz — post accepted (video uploads in the background)
+        // NO celebration here. At this point the file has not uploaded,
+        // Cloudflare has not encoded it, and either can still fail and roll the
+        // whole post back — the queue deletes the row and shows a retry card.
+        // "Posted! 🎉 / Your post is now live" was therefore a claim the app
+        // could not back up, and paired with an invisible progress card it left
+        // the user holding a success message and an empty feed. The celebratory
+        // buzz now fires from UploadQueueContext at real completion, where the
+        // post genuinely exists.
         setPostedToast({
-          title: spotLabel ? t('post.postedSpotlightTitle') : t('post.postedTitle'),
+          title: spotLabel ? t('post.postedSpotlightTitle') : t('post.uploadingTitle'),
           message: spotLabel
             ? t('post.postedSpotlightBody', { duration: spotlightDurationPhrase(spotLabel) })
-            : t('post.postedBody'),
+            : t('post.uploadingBody'),
           spotlight: !!spotLabel,
         });
         resetAll();
