@@ -382,6 +382,17 @@ export default function PostScreen() {
     return () => setTabSwipe(true);
   }, [swipeOn, setTabSwipe]));
 
+  // Silence the audio preview when this tab loses focus. The tab navigator
+  // keeps every page MOUNTED, so swiping away neither unmounts this screen nor
+  // stops the expo-audio player — a recording carried on playing over whatever
+  // the user swiped to. Pause rather than unload: coming back should show the
+  // same clip ready to resume, just not still going.
+  useFocusEffect(useCallback(() => () => {
+    const p = previewSoundRef.current;
+    if (p) { try { p.pause(); } catch {} }
+    setIsPreviewPlaying(false);
+  }, []));
+
   function exitToExplore() {
     resetAll();
     router.navigate('/explore');
