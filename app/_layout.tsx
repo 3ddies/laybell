@@ -179,6 +179,9 @@ function AppContent() {
             complete it before entering the app, so the global back-swipe is disabled
             here — the user can't swipe the welcome/setup screens away. */}
         <Stack.Screen name="onboarding" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
+        {/* Landing route for Supabase auth links. Gestures off: it is a transient
+            hop that redirects itself, so there is nothing to swipe back to. */}
+        <Stack.Screen name="auth-callback" options={{ gestureEnabled: false, fullScreenGestureEnabled: false }} />
         {/* The story viewer expands out of the tapped ring (Instagram shared-element
             style): transparent modal so the feed stays visible behind the growing
             post, no native animation/gesture — the in-screen rect animation drives it. */}
@@ -364,8 +367,13 @@ function RootLayout() {
     // onboarding/tabs, so the reset screen never gets a chance to render and the
     // reset silently never happens.
     const inPasswordReset = segments.join('/').endsWith('reset-password');
+    // The auth-link landing route. Reached with NO session yet — establishing it
+    // is what the handler is busy doing — so without this exemption the guard
+    // below races the handler and replaces the screen with /login before the
+    // link is consumed. Sitting here briefly with no session is the normal case.
+    const inAuthCallback = segments[0] === 'auth-callback';
 
-    if (!session && !inAuthGroup && !inLegal) {
+    if (!session && !inAuthGroup && !inLegal && !inAuthCallback) {
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup && !inPasswordReset) {
       checkOnboarding();
