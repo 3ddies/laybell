@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useState, useRef, useEffect, useSyncExternalStore } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import TrackPlayer, { Event as TPEvent, State as TPState } from 'react-native-track-player';
-import { ensurePlayerSetup, setRemoteHandlers } from '../lib/trackPlayerService';
+import { ensurePlayerSetup, setRemoteHandlers, setNowPlayingLiked } from '../lib/trackPlayerService';
+import { fetchSongLiked, setSongLike } from '../lib/songLike';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDeviceId } from '../lib/deviceId';
@@ -576,6 +577,55 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // handlers stable while always calling the latest closures.
   const remoteRef = useRef({ resume, pause, next, previous, seekTo });
   remoteRef.current = { resume, pause, next, previous, seekTo };
+  // Lock-screen heart state for the CURRENT track. Held in a ref, not state:
+  // nothing in the app renders from it (the in-app heart lives in NowPlaying
+  // with its own stats cache), so putting it in state would re-render every
+  // useAudio() consumer for a value only the iOS card reads.
+  const likedRef = useRef(false);
+
+  // Repaint the heart whenever the track changes. An audio AD repaints this
+  // card with the ad's metadata, and an ad is not likeable — so the heart is
+  // forced off for the duration rather than showing the underlying song's
+  // state against the ad's title.
+  useEffect(() => {
+    const pid = currentTrack?.id;
+    const uid = uidRef.current;
+    if (!pid || !uid || adState) {
+      likedRef.current = false;
+      setNowPlayingLiked(false);
+      return;
+    }
+    let alive = true;
+    fetchSongLiked(pid, uid).then((liked) => {
+      if (!alive) return;
+      likedRef.current = liked;
+      setNowPlayingLiked(liked);
+    });
+    return () => { alive = false; };
+  }, [currentTrack?.id, adState]);
+
+  const likeCurrent = useCallback(async () => {
+    const pid = currentTrack?.id;
+    const uid = uidRef.current;
+    if (!pid || !uid || adState) return;
+    // Read the truth before flipping rather than trusting the cached value.
+    // The in-app heart in NowPlaying writes the same rows, so the cache can be
+    // one press behind — and a lock-screen heart that toggles the WRONG way is
+    // far worse than one that takes an extra round trip to answer.
+    const current = await fetchSongLiked(pid, uid);
+    const next = !current;
+    likedRef.current = next;
+    setNowPlayingLiked(next);
+    // setSongLike returns the state actually reached, so a failed write lands
+    // the heart back where it started instead of lying.
+    const reached = await setSongLike(pid, uid, next);
+    likedRef.current = reached;
+    setNowPlayingLiked(reached);
+  }, [currentTrack?.id, adState]);
+
+  const likeRef = useRef(likeCurrent);
+  likeRef.current = likeCurrent;
+
   useEffect(() => {
     setRemoteHandlers({
       play: () => remoteRef.current.resume(),
@@ -583,6 +633,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       next: () => remoteRef.current.next(),
       previous: () => remoteRef.current.previous(),
       seekTo: (ms: number) => remoteRef.current.seekTo(ms),
+      like: () => { likeRef.current(); },
     });
     return () => setRemoteHandlers(null);
   }, []);

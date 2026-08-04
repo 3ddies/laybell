@@ -16,6 +16,7 @@ import { usePostOptions } from '../contexts/PostOptionsContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
 import { bumpBadge } from '../lib/badges';
+import { setNowPlayingLiked } from '../lib/trackPlayerService';
 import BadgeEmblem from './BadgeEmblem';
 import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
@@ -536,6 +537,10 @@ export default function NowPlaying() {
     setIsLiked(!liked);
     setLikeCount(c => (liked ? c - 1 : c + 1));
     mutateCachedStats((s) => { s.isLiked = !liked; s.likeCount = Math.max(0, s.likeCount + (liked ? -1 : 1)); });
+    // Keep the iOS lock-screen heart in step. Without this it only refreshes on
+    // a track change, so liking here left the card showing the opposite state
+    // for the rest of the song.
+    setNowPlayingLiked(!liked);
     if (liked) {
       await supabase.from('likes').delete().eq('user_id', userId).eq('post_id', pid);
     } else {
