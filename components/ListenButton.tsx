@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing, AccessibilityInfo } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -20,9 +19,12 @@ import { useTranslation } from '../contexts/LanguageContext';
 //
 // Native driver throughout, so nothing here touches the JS thread after start.
 
-// How long one pass takes, and how long the button rests between passes.
+// How long one pass takes, and how long the button rests between passes. The
+// rest carries the whole cycle length: at 7800 the pill glints roughly every
+// 9.2s, half as often as it did, so it reads as an occasional catch of light
+// rather than something actively signalling.
 const SWEEP_MS = 1400;
-const REST_MS = 3200;
+const REST_MS = 7800;
 
 export default function ListenButton({ active, onPress }: {
   /** Listen mode is currently ON — the button becomes "Exit". */
@@ -75,18 +77,17 @@ export default function ListenButton({ active, onPress }: {
             style={[styles.shine, { transform: [{ translateX }, { rotate: '18deg' }] }]}
           />
         )}
-        <Ionicons name={active ? 'close' : 'headset'} size={16} color={INK} />
         <Text style={styles.label}>{active ? t('music.exit') : t('music.listen')}</Text>
       </View>
     </TouchableOpacity>
   );
 }
 
-// Dark ink, matching the icon beside it. The old style set the label to #fff —
-// roughly 1.9:1 on this yellow, which is why "Listen" read washed out next to
-// its own dark glyph. The style's own comment already specified DARK glyphs;
-// only the icon ever got them.
-const INK = '#1C0E06';
+// White in every display mode — owner's call, and fixed rather than themed so
+// the label can't flip to dark ink on the light theme. It sits on the wordmark
+// yellow, so this is a low-contrast pairing by design; the word is short, bold
+// and 14pt, which is what carries it.
+const LABEL = '#FFFFFF';
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // FLAT primaryLight, deliberately — this is the hex the home-page wordmark
@@ -94,7 +95,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // pill read brighter than the logo. The sheen adds life without touching the
   // fill, so that decision still stands.
   btn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
+    flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.primaryLight,
     borderRadius: RADIUS.full,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md + 4,
@@ -107,5 +108,5 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     top: -20, bottom: -20, width: 26,
     backgroundColor: 'rgba(255,255,255,0.30)',
   },
-  label: { color: INK, fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
+  label: { color: LABEL, fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
 });
