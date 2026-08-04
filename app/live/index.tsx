@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import { GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { LISTEN_FILL } from '../../components/ListenButton';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
@@ -442,8 +443,10 @@ export default function LiveScreen() {
             <Text style={styles.emptyTitle}>{t('live.empty')}</Text>
             <Text style={styles.emptySub}>{t('live.emptySub')}</Text>
             <TouchableOpacity style={styles.goLiveCta} onPress={() => router.push('/live/go-live')} activeOpacity={0.85}>
-              <LinearGradient colors={GRADIENTS.primary} style={styles.goLiveCtaBg}>
-                <Ionicons name="radio-outline" size={18} color="#fff" />
+              {/* Same fill as the Music tab's Listen pill (LISTEN_FILL), and
+                  text only — both are "start a session" buttons, so they read
+                  as the same kind of action. */}
+              <LinearGradient colors={LISTEN_FILL} style={styles.goLiveCtaBg}>
                 <Text style={styles.goLiveCtaText}>{t('live.goLive')}</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -641,6 +644,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   emptyTitle: { color: '#fff', fontSize: 17, fontWeight: '700', marginTop: 6 },
   emptySub: { color: c.textTertiary, fontSize: 13, textAlign: 'center', lineHeight: 19 },
   goLiveCta: { marginTop: 14, borderRadius: 22, overflow: 'hidden' },
-  goLiveCtaBg: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 22, paddingVertical: 11 },
+  // No gap: the label is the only child now that the radio glyph is gone.
+  goLiveCtaBg: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 22, paddingVertical: 11 },
   goLiveCtaText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });

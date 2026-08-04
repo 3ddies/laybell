@@ -43,7 +43,10 @@ const REST_MS = 7800;
 // This knowingly sets aside an older note on the flat fill (that a gradient made
 // the pill read brighter than the logo) — that note was written when the label
 // was dark ink, and the owner has since asked for white letters and a gradient.
-const FILL = ['#FAB525', '#F26522'] as const;
+// Exported so any other surface asked to match this button draws from the same
+// two hexes rather than re-typing them and drifting later.
+export const LISTEN_FILL = ['#FAB525', '#F26522'] as const;
+const FILL = LISTEN_FILL;
 
 export default function ListenButton({ active, onPress }: {
   /** Listen mode is currently ON — the button becomes "Exit". */
