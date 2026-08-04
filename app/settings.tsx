@@ -72,6 +72,13 @@ const GALAXY_STARS = [
   { top: 58, left: '91%', size: 1, opacity: 0.5 },
   { top: 6, left: '84%', size: 1, opacity: 0.45 },
   { top: 36, left: '82%', size: 1.5, opacity: 0.6 },
+  // Lower band, added when the card grew to match Premium's height. Without
+  // these the field stopped ~58px down and the bottom third read as empty sky.
+  { top: 68, left: '11%', size: 1.5, opacity: 0.55 },
+  { top: 80, left: '5%', size: 2, opacity: 0.7 },
+  { top: 72, left: '16%', size: 1, opacity: 0.45 },
+  { top: 70, left: '86%', size: 2, opacity: 0.7 },
+  { top: 82, left: '92%', size: 1.5, opacity: 0.5 },
 ] as const;
 
 // Soft rising BUBBLES for the Laybell Premium card (owner iterated the first
@@ -716,14 +723,14 @@ export default function SettingsScreen() {
                     }]}
                   />
                 ))}
-                <View style={[styles.promoIconBubble, styles.promoIconBubbleSm]}>
-                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                <View style={[styles.promoIconBubble, styles.promoIconBubbleLg]}>
+                  <Ionicons name="sparkles" size={24} color="#FFFFFF" />
                 </View>
                 <View style={styles.rowContent}>
                   <Text style={styles.promoSpotlightLabel}>Spotlight</Text>
                   <Text style={styles.promoSpotlightSub}>{t('account.spotlightSub')}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.85)" />
+                <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.85)" />
               </LinearGradient>
             </TouchableOpacity>
             <TouchableOpacity
@@ -731,14 +738,14 @@ export default function SettingsScreen() {
               style={styles.promoAd}
               onPress={() => requireAdult(() => router.push('/ad-manager'))}
             >
-              <View style={[styles.promoIconBubble, styles.promoIconBubbleSm, styles.promoAdBubble]}>
-                <Ionicons name="megaphone-outline" size={18} color={colors.background} />
+              <View style={[styles.promoIconBubble, styles.promoIconBubbleLg, styles.promoAdBubble]}>
+                <Ionicons name="megaphone-outline" size={24} color={colors.background} />
               </View>
               <View style={styles.rowContent}>
                 <Text style={styles.promoAdLabel}>{t('account.adManager')}</Text>
                 <Text style={styles.promoAdSub}>{t('account.adManagerSub')}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.background + 'B3'} />
+              <Ionicons name="chevron-forward" size={20} color={colors.background + 'B3'} />
             </TouchableOpacity>
           </View>
         </View>
@@ -903,12 +910,14 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   promoStack: { gap: SPACING.sm + 2 },
   promoPremium: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    paddingHorizontal: SPACING.md + 2, paddingVertical: SPACING.lg,
+    paddingHorizontal: SPACING.md + 4, paddingVertical: SPACING.lg + 6,
     borderRadius: RADIUS.lg,
     overflow: 'hidden', // clips the particle field to the card
   },
-  promoPremiumLabel: { color: '#FFFFFF', fontSize: 19, fontWeight: '800', letterSpacing: -0.2 },
-  promoPremiumSub: { color: 'rgba(255,255,255,0.88)', fontSize: 13.5, marginTop: 3 },
+  promoPremiumLabel: { color: '#FFFFFF', fontSize: 21, fontWeight: '800', letterSpacing: -0.3 },
+  promoPremiumSub: { color: 'rgba(255,255,255,0.88)', fontSize: 14.5, marginTop: 3 },
+  // Shared by all three cards now — Premium keeps its lead through padding and
+  // type instead of a bigger bubble, so the icons line up down the stack.
   promoIconBubbleLg: { width: 48, height: 48, borderRadius: 24 },
   // A bubble, not a speck: barely-there white fill with a brighter rim — the
   // rim is what sells the "bubble" read. Both scale together via the animated
@@ -919,29 +928,31 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.55)',
   },
+  // Spotlight and Ad Manager now match what Premium used to be — same padding,
+  // same 48pt bubble. The stack still reads in order because Premium grew past
+  // them rather than because they stayed small.
   promoSpotlight: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md + 2, paddingVertical: SPACING.lg,
     borderRadius: RADIUS.lg,
     overflow: 'hidden', // keeps the star field inside the block
   },
-  promoSpotlightLabel: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  promoSpotlightSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 1 },
+  promoSpotlightLabel: { color: '#FFFFFF', fontSize: 18, fontWeight: '700', letterSpacing: -0.2 },
+  promoSpotlightSub: { color: 'rgba(255,255,255,0.75)', fontSize: 13.5, marginTop: 2 },
   promoAd: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 4,
+    paddingHorizontal: SPACING.md + 2, paddingVertical: SPACING.lg,
     backgroundColor: c.text,
     borderRadius: RADIUS.lg,
   },
   promoAdBubble: { backgroundColor: c.background + '26' },
-  promoAdLabel: { color: c.background, fontSize: 15, fontWeight: '700' },
-  promoAdSub: { color: c.background + 'B3', fontSize: 12, marginTop: 1 },
+  promoAdLabel: { color: c.background, fontSize: 18, fontWeight: '700', letterSpacing: -0.2 },
+  promoAdSub: { color: c.background + 'B3', fontSize: 13.5, marginTop: 2 },
   promoIconBubble: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.22)',
     alignItems: 'center', justifyContent: 'center',
   },
-  promoIconBubbleSm: { width: 34, height: 34, borderRadius: 17 },
   galaxyStar: { position: 'absolute', backgroundColor: '#FFFFFF' },
 
   // Display-mode color chip + unselected radio.
