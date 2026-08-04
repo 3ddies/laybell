@@ -3,6 +3,7 @@ import {
   EMPTY_PROFILE, type UserAffinityProfile, type ScoreOpts,
 } from '../../lib/feedScorer';
 import { fetchGirlSpaceCommunityIds } from '../../lib/communities';
+import { songPlaysFor } from '../../lib/postSong';
 import FeedVideo from '../../components/FeedVideo';
 import { PlacedStickers } from '../../components/StickerLayer';
 // FlashList v2: RECYCLES card views instead of mounting/destroying them while
@@ -158,6 +159,8 @@ type Post = {
   duration_seconds?: number | null;
   genre?: string | null;
   song_id?: string | null;
+  // True when the song is a CREDIT only (music video) — see lib/postSong.
+  song_link_only?: boolean | null;
   song_title?: string | null;
   song_artist?: string | null;
   song_artist_id?: string | null;
@@ -314,7 +317,7 @@ const PostCard = memo(function PostCard({
             </TouchableOpacity>
           )}
           {!!item.song_id && (
-            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
+            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} linkOnly={item.song_link_only === true} />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
           {heart}
@@ -338,7 +341,7 @@ const PostCard = memo(function PostCard({
             onOpen={(idx) => onMediaTap(() => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }, idx)))}
           />
           {!!item.song_id && (
-            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
+            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} linkOnly={item.song_link_only === true} />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
           {heart}
@@ -396,7 +399,7 @@ const PostCard = memo(function PostCard({
                   id={item.id}
                   uri={item.media_url}
                   play={shouldPlayVideo}
-                  muted={item.song_id ? true : videoMuted}
+                  muted={songPlaysFor(item) ? true : videoMuted}
                   // Feed watching counts toward views (muted autoplay included) —
                   // the tracker accumulates genuine watch time across surfaces and
                   // the server enforces the per-user/device caps.
@@ -418,11 +421,11 @@ const PostCard = memo(function PostCard({
               {heart}
             </View>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.videoAudioBtn} onPress={item.song_id ? onToggleSongMute : onToggleMuted}>
-            <Ionicons name={(item.song_id ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+          <TouchableOpacity style={styles.videoAudioBtn} onPress={songPlaysFor(item) ? onToggleSongMute : onToggleMuted}>
+            <Ionicons name={(songPlaysFor(item) ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
           </TouchableOpacity>
           {!!item.song_id && (
-            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
+            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} linkOnly={item.song_link_only === true} />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
         </View>
@@ -598,7 +601,7 @@ export default function HomeScreen() {
         if (avatar) stills.push(avatar);
         // Song URL resolution is the slow half of a song post's first play —
         // resolve the upcoming ones now (prefetchSong dedupes inflight).
-        if (p.song_id && songWarms < (deep ? 8 : 4)) { songWarms++; try { musicCtl.current.prefetchSong(p.song_id); } catch {} }
+        if (songPlaysFor(p) && songWarms < (deep ? 8 : 4)) { songWarms++; try { musicCtl.current.prefetchSong(p.song_id); } catch {} }
       }
       // Warm the disk/memory image cache for every upcoming still + avatar so
       // post-gate scrolling decodes from cache instead of the network.
@@ -929,7 +932,7 @@ export default function HomeScreen() {
   }
   // The most-visible post that carries an attached song — its track plays ambiently.
   const applyMusicViewables = useRef((viewableItems: any[]) => {
-    const firstMusic = viewableItems.find(v => v.item?.song_id);
+    const firstMusic = viewableItems.find(v => songPlaysFor(v.item));
     visibleMusicRef.current = firstMusic ? { id: firstMusic.item.id, songId: firstMusic.item.song_id } : null;
     syncAmbientSongRef.current();
   }).current;
@@ -942,7 +945,7 @@ export default function HomeScreen() {
     // away though, so the player starts instantly at rest.
     // The impression loop below stays live: it's cheap (in-memory dedupe +
     // fire-and-forget RPC) and impression semantics must not change.
-    const firstMusic = viewableItems.find(v => v.item?.song_id);
+    const firstMusic = viewableItems.find(v => songPlaysFor(v.item));
     if (firstMusic) musicCtl.current.prefetchSong(firstMusic.item.song_id);
     // ALWAYS park + (at rest) arm the deferred flush — a direct apply here
     // could fire a second player create moments after the rest-flush one

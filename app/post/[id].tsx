@@ -1,4 +1,5 @@
 import AppVideo from '../../components/AppVideo';
+import { songPlaysFor } from '../../lib/postSong';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, TextInput, KeyboardAvoidingView,
@@ -55,6 +56,8 @@ type Post = {
   trim_start?: number | null;
   trim_end?: number | null;
   song_id?: string | null;
+  // True when the song is a CREDIT only (music video) — see lib/postSong.
+  song_link_only?: boolean | null;
   song_title?: string | null;
   song_artist?: string | null;
   song_artist_id?: string | null;
@@ -136,7 +139,7 @@ export default function PostDetailScreen() {
   // owns the iOS now-playing console + the mini-player card and keeps playing
   // like any other song once the user leaves the post. VIDEO posts keep the
   // ambient, feed-style song (same as reels — which the owner calls "perfect").
-  const isSongTakeover = !!post?.song_id && (post?.type === 'image' || isSlideshow(post?.type));
+  const isSongTakeover = songPlaysFor(post) && (post?.type === 'image' || isSlideshow(post?.type));
 
   // Promote the attached song into the MAIN player (react-native-track-player).
   // The post row only denormalizes the song's title/artist, so fetch its audio +
@@ -175,7 +178,9 @@ export default function PostDetailScreen() {
   // Play the post's attached song. The media's own audio (video) is muted while
   // a song is set. Image/slideshow → promote to the main player; video → ambient.
   useEffect(() => {
-    const songId = post?.song_id;
+    // songPlaysFor, not song_id: a music video credits its OWN song, so
+    // starting the ambient track would play it over itself.
+    const songId = songPlaysFor(post) ? post?.song_id : null;
     if (isFocused && post?.id && songId) {
       if (isSongTakeover) {
         // A slideshow's video slide has its own audio on → pause the song so
@@ -392,7 +397,7 @@ export default function PostDetailScreen() {
                   </TouchableOpacity>
                 )}
                 {!!post.song_id && (
-                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
+                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} linkOnly={post.song_link_only === true} onNavigate={closeViewer} />
                 )}
                 <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
                 {heart}
@@ -412,7 +417,7 @@ export default function PostDetailScreen() {
                   onOpen={() => onMediaTap()}
                 />
                 {!!post.song_id && (
-                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
+                  <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} linkOnly={post.song_link_only === true} onNavigate={closeViewer} />
                 )}
                 <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
                 {heart}
@@ -423,7 +428,7 @@ export default function PostDetailScreen() {
               <AppVideo
                 source={{ uri: post.media_url }}
                 style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(post.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}
-                muted={!!post.song_id}
+                muted={songPlaysFor(post)}
                 nativeControls
                 poster={post.thumbnail_url ?? post.cover_url}
                 posterContentFit="cover"
@@ -440,7 +445,7 @@ export default function PostDetailScreen() {
                 </TouchableOpacity>
               )}
               {!!post.song_id && (
-                <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} onNavigate={closeViewer} />
+                <SongAttribution songId={post.song_id} title={post.song_title} artist={post.song_artist} artistId={post.song_artist_id} linkOnly={post.song_link_only === true} onNavigate={closeViewer} />
               )}
               <TaggedPeopleButton userIds={post.tagged_user_ids} style={styles.tagBtnOverlay} />
               </View>

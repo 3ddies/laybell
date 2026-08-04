@@ -20,6 +20,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 // is open.
 export default function SongAttribution({
   songId, title, artist, artistId, style, inline = false, onNavigate, onPauseHost, onResumeHost,
+  linkOnly = false,
 }: {
   songId: string;
   title?: string | null;
@@ -33,6 +34,10 @@ export default function SongAttribution({
   // Fired when the song's 3-dot menu closes — a host paused via onPauseHost
   // resumes from where it left off.
   onResumeHost?: () => void;
+  // Music-video mode (posts.song_link_only): this post IS the song's video, so
+  // the track must never play — it's already the video's soundtrack. The card
+  // becomes a pointer to the song instead of a play button.
+  linkOnly?: boolean;
 }) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -54,6 +59,15 @@ export default function SongAttribution({
   }
 
   async function playSong() {
+    // Music video: never start audio. The song is already this video's own
+    // soundtrack, so playing it would run the track twice, out of sync with
+    // itself — the whole reason link-only mode exists. Send them to the song
+    // instead, where they can actually stream it.
+    if (linkOnly) {
+      onNavigate?.();
+      router.push(`/post/${songId}`);
+      return;
+    }
     // Already this track? Just resurface the player — never refetch/reload. The
     // reload churn from rapid taps (createAsync/unloadAsync) is what froze the app
     // on screens where the player opens behind the post.
@@ -102,8 +116,12 @@ export default function SongAttribution({
         <TouchableOpacity onPress={openArtist} hitSlop={{ top: 6, bottom: 2, left: 6, right: 6 }} disabled={!artistId}>
           <Text style={styles.artist} numberOfLines={1}>{artist || t('songAttr.unknownArtist')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={playSong} hitSlop={{ top: 2, bottom: 6, left: 6, right: 6 }}>
+        <TouchableOpacity onPress={playSong} hitSlop={{ top: 2, bottom: 6, left: 6, right: 6 }} style={styles.songRow}>
           <Text style={styles.song} numberOfLines={1}>{title || t('songAttr.audioTrack')}</Text>
+          {/* A chevron, not a play glyph: in link-only mode the tap navigates
+              to the song rather than starting it, and a play-looking control
+              that doesn't play is a small lie. */}
+          {linkOnly && <Ionicons name="chevron-forward" size={11} color="#fff" style={styles.songChevron} />}
         </TouchableOpacity>
       </View>
       <TouchableOpacity onPress={openOptions} style={styles.dots} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
@@ -126,5 +144,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   textColInline: { alignItems: 'flex-start' },
   artist: { color: '#fff', fontSize: 12, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3 },
   song: { color: '#fff', fontSize: 11, fontWeight: '500', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3, marginTop: 1 },
+  songRow: { flexDirection: 'row', alignItems: 'center' },
+  songChevron: { marginLeft: 1, opacity: 0.85, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3 },
   dots: { paddingLeft: 2 },
 });

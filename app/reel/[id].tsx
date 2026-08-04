@@ -1,4 +1,5 @@
 import AppVideo, { type AppVideoHandle } from '../../components/AppVideo';
+import { songPlaysFor } from '../../lib/postSong';
 import VideoScrubBar, { type VideoScrubBarHandle } from '../../components/VideoScrubBar';
 import ZoomableView from '../../components/ZoomableView';
 import {
@@ -217,6 +218,7 @@ const ReelControls = memo(function ReelControls({
             title={item.song_title}
             artist={item.song_artist}
             artistId={item.song_artist_id}
+            linkOnly={item.song_link_only === true}
             onNavigate={api.dismiss}
           />
         )}
@@ -320,7 +322,7 @@ const ReelPage = memo(function ReelPage({
             contentFit={landscape ? 'contain' : 'cover'}
             loop={item.trim_end == null}
             play={playing}
-            muted={!!item.song_id}
+            muted={songPlaysFor(item)}
             trimStartSec={item.trim_start}
             trimEndSec={item.trim_end}
             onProgress={onVideoProgress}
@@ -849,7 +851,9 @@ export default function ReelScreen() {
     // mid-sponsor through that handoff either. On dismiss/swipe-away this
     // effect re-runs and the landed reel's song starts normally.
     if (visibleIsSponsor || overlayAd) { stopSong(); return; }
-    const songId = visibleItem?.song_id;
+    // songPlaysFor, not song_id: a music video credits its OWN song, so
+    // starting the ambient track would play it over itself.
+    const songId = songPlaysFor(visibleItem) ? visibleItem?.song_id : null;
     if (songId) prefetchSong(songId); // URL resolves in the background NOW
     // ALL player mutation lives in this ONE deferred timer (past the snap
     // settle): start when the landed reel has a song, stop when it doesn't.
@@ -1503,7 +1507,7 @@ export default function ReelScreen() {
             loop={item.trim_end == null}
             active={overlayId === item.id && !paused && !scrubbing && !overlayAd}
             showStallIndicator
-            muted={!!item.song_id}
+            muted={songPlaysFor(item)}
             poster={poster}
             posterContentFit="contain"
             trimStartSec={item.trim_start}
@@ -1580,7 +1584,7 @@ export default function ReelScreen() {
           </TouchableOpacity>
 
           {/* Sound toggle for the attached song (when the focused reel has one) */}
-          {!!visibleItem?.song_id && (
+          {songPlaysFor(visibleItem) && (
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={songMuted ? t('a11y.unmute') : t('a11y.mute')} style={[styles.muteBtn, { top: insets.top + 8 }]} onPress={toggleSongMuted}>
               <Ionicons name={songMuted ? 'volume-mute' : 'volume-high'} size={22} color="#fff" />
             </TouchableOpacity>
