@@ -160,6 +160,21 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   // Last track kept for the fade-out frames (currentTrack is already null).
   const lastTrackRef = useRef(currentTrack);
   if (currentTrack) lastTrackRef.current = currentTrack;
+  // …and the same for the NUMBERS, which is what made the close read as a hitch.
+  // stop() fires emitPosition(0, 0) in the SAME synchronous batch as
+  // setCurrentTrack(null) (AudioContext.tsx:729-730), and Scrubber doesn't snap
+  // to the new value — it GLIDES over 240ms (Scrubber.tsx:58). So against a
+  // 260ms fade the bar spent almost its entire exit visibly rewinding its own
+  // fill back to empty while the clock blanked to 0:00. Freezing the last real
+  // values lets it fade at rest instead.
+  //
+  // Render-body assignment, exactly like lastTrackRef above: the frozen values
+  // must be in place on the very frame currentTrack goes null, and an effect
+  // would land a commit too late. Skipped while an audio ad is running so the
+  // ad branch keeps its own live ticks.
+  const lastPosRef = useRef(0);
+  const lastDurRef = useRef(0);
+  if (currentTrack && !adState) { lastPosRef.current = positionMs; lastDurRef.current = durationMs; }
   useEffect(() => {
     const has = !!currentTrack;
     if (has && !hadTrackRef.current) {
@@ -360,7 +375,10 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
   // castLift raises it over the Laybell TV cast bar while a session is live.
   const bottomOffset = 68 + insets.bottom + 6 + castLift;
 
-  const progress = durationMs > 0 ? positionMs / durationMs : 0;
+  // Live values while a track is loaded; the frozen ones for the fade-out frames.
+  const showPos = currentTrack ? positionMs : lastPosRef.current;
+  const showDur = currentTrack ? durationMs : lastDurRef.current;
+  const progress = showDur > 0 ? showPos / showDur : 0;
 
   // Rendered in bar mode AND during an overlay dwell (fading out via barFade)
   // — never hard-removed on a tab flip, so fast swipes look smooth.
@@ -416,15 +434,15 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
             <SongCardTitle
               title={track.caption || t('player.audioTrack')}
               features={features}
-              positionMs={positionMs}
-              durationMs={durationMs}
+              positionMs={showPos}
+              durationMs={showDur}
               titleStyle={styles.caption}
               onOpenProfile={(id) => router.push(`/profile/${id}`)}
             />
             <Text style={styles.artist} numberOfLines={1}>{track.artist}</Text>
           </View>
           <Text style={styles.timeText}>
-            {formatMs(positionMs)}{durationMs > 0 ? ` / ${formatMs(durationMs)}` : ''}
+            {formatMs(showPos)}{showDur > 0 ? ` / ${formatMs(showDur)}` : ''}
           </Text>
         </TouchableOpacity>
 
