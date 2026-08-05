@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { notifySuccess } from '../lib/haptics';
-import { compressVideoIfPossible, ensureLocalFile } from '../lib/upload';
+import { compressVideoIfPossible, ensureLocalFile, fileSizeBytes, STREAM_POST_MAX_BYTES } from '../lib/upload';
 import { trimVideoIfPossible } from '../lib/videoTrim';
 import { uploadVideoToStream, resolveStreamSubdomain, streamHlsUrl, streamPosterUrl, pollStreamReady, deleteStreamVideo, untrackStreamUpload } from '../lib/streamUpload';
 import { bumpBadge } from '../lib/badges';
@@ -45,6 +45,10 @@ export type VideoJob = {
   // an array of sticker objects). Shown in the reel viewer AND the home feed.
   captions?: unknown[] | null;
   maxDurationSeconds: number;
+  // Duration of the SOURCE file (seconds; 0 = picker didn't report one). Feeds
+  // the adaptive bitrate that keeps long uploads under Cloudflare's POST cap —
+  // distinct from durationSeconds above, which is the POST's play length.
+  sourceSeconds?: number;
   spotlight?: { campaignId: string; days: number } | null;
 };
 
@@ -65,6 +69,11 @@ export type PendingUpload = {
   // local file) until the next manual refresh, so a fresh post is always on top.
   phase: 'uploading' | 'processing' | 'done' | 'error';
   errorMsg?: string;
+  // Machine-readable cause for failures the card can explain in the user's own
+  // language (errorMsg is a developer string). 'video_too_large' = the prepared
+  // file exceeds Cloudflare's POST cap, so retrying can never succeed — the
+  // card tells the user to trim instead.
+  errorCode?: string;
   postId?: string;                               // set once the DB row is inserted
 };
 
@@ -73,7 +82,7 @@ type Ctx = {
   completedTick: number;                         // bumps when a row lands / finishes → feed refetch
   // Speculatively start uploading a video (e.g. when the user reaches the details
   // step) so it's already up by the time they hit Share. Idempotent per uri.
-  prewarmVideo: (localUri: string, maxDurationSeconds: number) => void;
+  prewarmVideo: (localUri: string, maxDurationSeconds: number, sourceSeconds?: number) => void;
   // Delete an unpublished prewarm's Cloudflare asset (abandoned clip) so it doesn't
   // linger as paid storage. No-op if it was already claimed by an enqueue.
   discardPrewarm: (localUri: string) => void;
@@ -99,6 +108,11 @@ type PrewarmEntry = {
   progress: number;
   attachedTempId: string | null; // the pending card now mirroring this upload, once enqueued
   claimed: boolean;              // an enqueue is using it — never discard a claimed prewarm
+  // WHY the prewarm died, if it did. The prewarm must swallow its errors (nobody
+  // is publishing yet), but claiming a dead prewarm used to surface only a
+  // generic "could not prepare" — the real reason (e.g. the file is past the
+  // upload cap) was thrown away here, which is exactly where it was known.
+  failure?: unknown;
 };
 
 // The action half of Ctx: everything that DRIVES the queue, with none of the
@@ -153,6 +167,7 @@ async function startStreamUpload(
   maxDurationSeconds: number,
   onProgress: (f: number) => void,
   trim?: { start: number; end: number } | null,
+  sourceSeconds?: number,
 ): Promise<{ uid: string; subdomain: string; trimmedFile: boolean } | null> {
   const localFile = await ensureLocalFile(localUri);
   // Cut the chosen window FIRST, before compressing or uploading, so the
@@ -161,7 +176,20 @@ async function startStreamUpload(
   // whole file (trimmedFile:false) when the native trimmer isn't in the build,
   // in which case the caller keeps writing trim_start/trim_end as before.
   const cut = trim ? await trimVideoIfPossible(localFile, trim.start, trim.end) : { uri: localFile, trimmed: false };
-  const upUri = await compressVideoIfPossible(cut.uri);
+  // Bitrate targeting needs the duration of the file we ACTUALLY upload: the
+  // window when the cut really happened, the whole source when it fell back.
+  const uploadSeconds = cut.trimmed && trim ? Math.max(0, trim.end - trim.start) : (sourceSeconds ?? 0);
+  const upUri = await compressVideoIfPossible(cut.uri, undefined, uploadSeconds);
+  // Hard stop while every byte is still on the phone: past Cloudflare's basic-
+  // upload cap the POST is guaranteed to be rejected server-side — after the
+  // user has watched the entire progress bar climb. Fail here instead, into the
+  // card's normal error/retry state. Reachable only when compression couldn't
+  // run (module not in this build) on a very long, high-bitrate source.
+  if ((await fileSizeBytes(upUri)) > STREAM_POST_MAX_BYTES) {
+    const err: any = new Error('This video is too large to upload — trim it shorter and try again');
+    err.code = 'video_too_large'; // deterministic — the card explains instead of just offering Retry
+    throw err;
+  }
   const uid = await uploadVideoToStream(upUri, { maxDurationSeconds, onProgress });
   const subdomain = await resolveStreamSubdomain(uid);
   if (!subdomain) return null;
@@ -200,7 +228,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
 
   const run = useCallback(async (tempId: string, job: VideoJob) => {
     try {
-      update(tempId, { phase: 'uploading', progress: 0, errorMsg: undefined });
+      update(tempId, { phase: 'uploading', progress: 0, errorMsg: undefined, errorCode: undefined });
 
       // Reuse the speculative prewarm if the details step already started it —
       // otherwise start the upload now. Either way we get {uid, subdomain}.
@@ -211,12 +239,17 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         update(tempId, { progress: pre.progress });
         result = await pre.promise;
         prewarmRef.current.delete(job.localUri);
+        // The prewarm died — fail with ITS reason, not the generic fallback
+        // below. (A retry after this runs the whole upload fresh: the entry was
+        // just deleted, so the next run takes the else-branch.)
+        if (!result && pre.failure) throw pre.failure;
       } else {
         result = await startStreamUpload(
           job.localUri,
           job.maxDurationSeconds,
           (f) => update(tempId, { progress: f }),
           job.trim,
+          job.sourceSeconds,
         );
       }
       if (!result) throw new Error('Could not prepare the video for playback');
@@ -329,11 +362,11 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       // and it fires wherever the user happens to be.
       notifySuccess();
     } catch (err: any) {
-      update(tempId, { phase: 'error', errorMsg: err?.message || 'Upload failed' });
+      update(tempId, { phase: 'error', errorMsg: err?.message || 'Upload failed', errorCode: err?.code });
     }
   }, [update, remove]);
 
-  const prewarmVideo = useCallback((localUri: string, maxDurationSeconds: number) => {
+  const prewarmVideo = useCallback((localUri: string, maxDurationSeconds: number, sourceSeconds?: number) => {
     if (!localUri || prewarmRef.current.has(localUri)) return;
     const entry: PrewarmEntry = { progress: 0, attachedTempId: null, claimed: false, promise: Promise.resolve(null) };
     entry.promise = (async () => {
@@ -342,8 +375,10 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
           localUri,
           maxDurationSeconds,
           (f) => { entry.progress = f; if (entry.attachedTempId) update(entry.attachedTempId, { progress: f }); },
+          null, // a prewarm never trims — it runs before the window is final
+          sourceSeconds,
         );
-      } catch { return null; }
+      } catch (e) { entry.failure = e; return null; }
     })();
     prewarmRef.current.set(localUri, entry);
   }, [update]);

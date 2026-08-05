@@ -14,6 +14,24 @@ const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
 // clips) gets shrunk to feed-friendly H.264 first.
 const COMPRESS_FLOOR_BYTES = 12 * 1024 * 1024;
 
+// Cloudflare Stream's cap for basic (non-tus) direct uploads — and our uploader
+// speaks exactly that: one multipart POST (see lib/streamUpload.ts). A file past
+// this is not "risky", it is guaranteed to be rejected server-side, after the
+// user has watched the whole progress bar. Callers gate on this BEFORE a byte
+// moves. Raising the published video windows past ~9 minutes of 1080p means
+// replacing the POST uploader with tus, not editing this number.
+export const STREAM_POST_MAX_BYTES = 200 * 1024 * 1024;
+// What a LONG video aims for after compression: comfortably under the POST cap.
+// The margin covers what the bitrate target doesn't: the audio track (~10 MB at
+// the 10-minute source max), VBR overshoot, and the multipart envelope.
+const TARGET_LONG_UPLOAD_BYTES = 180 * 1024 * 1024;
+// Above this duration 'auto' can no longer be trusted to land under the cap, so
+// the bitrate is computed from the duration instead. At exactly 5 minutes the
+// computed target (~4.9 Mbps) is right in 'auto' range, so the handoff between
+// the two modes is seamless quality-wise; by the 9-minute landscape window it
+// has eased to ~2.7 Mbps, which Stream's own ABR ladder re-encodes anyway.
+const ADAPTIVE_BITRATE_ABOVE_SEC = 300;
+
 // The upload task (and Cloudflare) only speak file:// — but a picked video can be
 // a ph:// / assets-library:// Photos asset when MediaLibrary has no local copy
 // (iCloud / storage-optimized clips). Copy such assets into the cache first so the
@@ -55,6 +73,10 @@ export async function fileSizeBytes(uri: string): Promise<number> {
 export async function compressVideoIfPossible(
   uri: string,
   onProgress?: (fraction: number) => void,
+  // Duration (seconds) of THIS file — the one being uploaded, so the physically
+  // cut window when a trim really happened, the whole source when it didn't.
+  // 0/omitted = unknown → 'auto', never a guessed squeeze on a short clip.
+  durationSec?: number,
 ): Promise<string> {
   try {
     // Expo Go can't load the Nitro-based compressor at all — importing it there
@@ -65,11 +87,18 @@ export async function compressVideoIfPossible(
     const bytes = await fileSizeBytes(uri);
     if (bytes && bytes < COMPRESS_FLOOR_BYTES) return uri;
 
+    // LONG uploads (the 9-minute landscape window, or a long source kept whole
+    // because the native trimmer isn't in this build) get a bitrate computed so
+    // the OUTPUT lands under Cloudflare's 200 MB POST cap by construction —
+    // 'auto' picks by source characteristics and knows nothing about that wall.
+    const adaptive = !!durationSec && durationSec > ADAPTIVE_BITRATE_ABOVE_SEC;
     const { Video } = await import('react-native-compressor');
     const out = await Video.compress(
       uri,
       {
-        compressionMethod: 'auto',  // adapts bitrate to the source, like the big apps
+        ...(adaptive
+          ? { compressionMethod: 'manual' as const, bitrate: Math.round((TARGET_LONG_UPLOAD_BYTES * 8) / durationSec!) }
+          : { compressionMethod: 'auto' as const }), // adapts bitrate to the source, like the big apps
         maxSize: 1920,              // cap the long edge at ~1080p
         // We already gate on size above, so don't let the library skip anything
         // we decided is worth shrinking.

@@ -124,8 +124,18 @@ const DETAILS_PREVIEW = Math.min(Math.round(SCREEN_W * 0.44), 190);
 // deliberately NO file-size caps (an iPhone HD clip can be hundreds of MB and
 // must never be rejected for it; the storage bucket's limit is raised to
 // match). Videos longer than the cap aren't rejected either: the trim editor
-// lets the user pick a 3-minute window.
-const VIDEO_MAX_SEC  = 180;      // 3 min — the published WINDOW
+// lets the user pick a window.
+//
+// The window is PER-ORIENTATION: vertical stays short-form, landscape gets
+// long-form room for Laybell TV (performances, sets, video podcasts). The same
+// `videoAspect > 1` rule that already routes captions and the reel pager
+// decides which window applies — a square clip counts as vertical. 9 minutes
+// is the ceiling the upload pipeline can actually deliver: the uploader is a
+// single multipart POST capped by Cloudflare at 200 MB, and 9 min of 1080p at
+// the adaptive bitrate (lib/upload.ts) lands under that with headroom. Going
+// longer means migrating the uploader to tus first.
+const VIDEO_MAX_SEC   = 180;     // 3 min — vertical (and square) WINDOW
+const VIDEO_MAX_SEC_H = 540;     // 9 min — landscape WINDOW (Laybell TV)
 // Trimming a long clip is VIRTUAL: we store trim_start/trim_end and upload the
 // FULL source file (no re-encode). Cloudflare, meanwhile, rejects any direct
 // upload longer than the maxDurationSeconds its upload URL was minted with — so
@@ -143,9 +153,12 @@ const streamCeilingFor = (sourceSec: number) =>
   sourceSec > 0
     ? Math.min(VIDEO_SOURCE_MAX_SEC, Math.max(VIDEO_MAX_SEC, Math.ceil(sourceSec)) + 30)
     : VIDEO_SOURCE_MAX_SEC;
-// Uploads above this get an "are you sure" first: there is no size cap anywhere
-// in the pipeline, so without this a multi-hundred-MB clip starts uploading (the
-// details step PREWARMS it) with no warning, on cellular as readily as wifi.
+// Uploads above this get an "are you sure" first: this is the SOURCE size, and
+// compression usually shrinks it well below the pipeline's real (post-compress)
+// cap — so it warns rather than blocks. Without it a multi-hundred-MB clip
+// starts uploading (the details step PREWARMS it) with no warning, on cellular
+// as readily as wifi. The hard stop lives in UploadQueueContext, after
+// compression, against Cloudflare's 200 MB POST limit.
 const LARGE_UPLOAD_BYTES = 200 * 1024 * 1024; // 200 MB
 const MUSIC_MAX_SEC  = 12 * 60;  // music tracks — live cuts, mixes and extended
                                  // versions routinely run past the old 6-minute
@@ -153,7 +166,7 @@ const MUSIC_MAX_SEC  = 12 * 60;  // music tracks — live cuts, mixes and extend
 const SPOKEN_MAX_SEC = 35 * 60;  // podcasts / audiobooks
 const AUDIO_MIN_SEC  = 5;        // global minimum length for any audio
 
-// Audio file-size cap (video is bounded by the 3-minute duration limit instead).
+// Audio file-size cap (video is bounded by its duration windows instead).
 const AUDIO_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 
 function fmtMins(sec: number) {
@@ -199,6 +212,11 @@ export default function PostScreen() {
   // longer a fixed VIDEO_MAX_SEC slab — it can be pinched shorter to cut the
   // start, the end, or both. 0 means "not chosen yet"; the trimmer seeds it.
   const [trimEnd, setTrimEnd] = useState(0);
+  // The published window for THIS clip — landscape gets the long-form (Laybell
+  // TV) window, vertical/square the short one. videoAspect is set at pick time
+  // (from the asset's own width/height), so this is settled before any gate,
+  // prewarm or trim seed ever reads it.
+  const videoWindowSec = videoAspect > 1 ? VIDEO_MAX_SEC_H : VIDEO_MAX_SEC;
   const cropperRef = useRef<MediaCropperHandle>(null);
   const cropRef = useRef<CropRect | null>(null);
   // Preview height is animated with a single spring on collapse/expand (see the
@@ -305,9 +323,9 @@ export default function PostScreen() {
       // window (or the whole untrimmed source). Those posts upload at Share
       // instead, and now upload only the chosen window, which more than pays
       // back the lost head start. Untrimmed clips keep the prewarm unchanged.
-      if (videoDuration <= VIDEO_MAX_SEC) {
+      if (videoDuration <= videoWindowSec) {
         prewarmedUriRef.current = media.uri;
-        prewarmVideo(media.uri, streamCeilingFor(videoDuration));
+        prewarmVideo(media.uri, streamCeilingFor(videoDuration), videoDuration);
       } else {
         prewarmedUriRef.current = null;
       }
@@ -315,9 +333,10 @@ export default function PostScreen() {
       discardPrewarm(prewarmedUriRef.current);
       prewarmedUriRef.current = null;
     }
-    // videoDuration is a dep because the ceiling is derived from it; prewarmVideo
-    // is idempotent per uri, so a re-run after the duration lands is a no-op.
-  }, [step, postType, media?.uri, videoDuration, prewarmVideo, discardPrewarm]);
+    // videoDuration is a dep because the ceiling is derived from it (and
+    // videoWindowSec because the prewarm gate is); prewarmVideo is idempotent
+    // per uri, so a re-run after either lands is a no-op.
+  }, [step, postType, media?.uri, videoDuration, videoWindowSec, prewarmVideo, discardPrewarm]);
   const [publicCount, setPublicCount] = useState<number | null>(null);
 
   // Live count of public (non-archived) posts for the slot hint + gate.
@@ -886,7 +905,7 @@ export default function PostScreen() {
       );
       return;
     }
-    if (postType === 'video' && videoDuration > VIDEO_MAX_SEC) { setStep('edit'); return; }
+    if (postType === 'video' && videoDuration > videoWindowSec) { setStep('edit'); return; }
     setStep('details');
   }
 
@@ -978,12 +997,12 @@ export default function PostScreen() {
       // plays the local file with a progress badge until the CDN copy is ready.
       // Posting feels instant and never blocks on the upload.
       if (postType === 'video') {
-        const trimmedV = videoDuration > VIDEO_MAX_SEC;
+        const trimmedV = videoDuration > videoWindowSec;
         // Both trimmer edges are draggable, so the window is whatever the user
-        // pinched it to — not always a full VIDEO_MAX_SEC. trimEnd is only set
+        // pinched it to — not always a full window. trimEnd is only set
         // once they actually drag, so someone who walks straight through the
         // trim step still gets a sane full-length window from trimStart.
-        const winEndV = trimEnd > trimStart ? trimEnd : Math.min(trimStart + VIDEO_MAX_SEC, videoDuration);
+        const winEndV = trimEnd > trimStart ? trimEnd : Math.min(trimStart + videoWindowSec, videoDuration);
         const videoDurSecV = trimmedV ? Math.max(1, Math.round(winEndV - trimStart)) : Math.round(videoDuration);
         const ps = peekPendingSpotlight();
         const spotLabel = ps?.label ?? null;
@@ -1008,9 +1027,12 @@ export default function PostScreen() {
           topCaption: videoAspect > 1 ? topCaption : null,
           bottomCaption: videoAspect > 1 ? bottomCaption : null,
           captions: videoAspect <= 1 && videoCaptions.length ? videoCaptions : null,
-          // Covers the SOURCE, not the 3-min window: the file that actually goes
-          // up is untrimmed, and Cloudflare rejects anything past this ceiling.
+          // Covers the SOURCE, not the chosen window: if the physical cut falls
+          // back, the file that goes up is untrimmed, and Cloudflare rejects
+          // anything past this ceiling.
           maxDurationSeconds: streamCeilingFor(videoDuration),
+          // For the adaptive bitrate that keeps long uploads under the POST cap.
+          sourceSeconds: videoDuration,
           spotlight: ps ? { campaignId: ps.campaignId, days: ps.days } : null,
         });
         if (ps) { clearPendingSpotlight(); setPendingSpotBanner(null); }
@@ -1112,7 +1134,7 @@ export default function PostScreen() {
         ...(postType === 'image' ? { aspect_ratio: format } : {}),
         ...(postType === 'slideshow' ? { aspect_ratio: format, slides: slidesPayload } : {}),
         ...(trimmed
-          ? { trim_start: trimStart, trim_end: trimEnd > trimStart ? trimEnd : Math.min(trimStart + VIDEO_MAX_SEC, videoDuration) }
+          ? { trim_start: trimStart, trim_end: trimEnd > trimStart ? trimEnd : Math.min(trimStart + videoWindowSec, videoDuration) }
           : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(coverUrl ? { cover_url: coverUrl } : {}),
@@ -1219,7 +1241,7 @@ export default function PostScreen() {
             uri={media.uri}
             posterUri={media.posterUri}
             duration={videoDuration}
-            windowSec={VIDEO_MAX_SEC}
+            windowSec={videoWindowSec}
             frameW={frameW}
             frameH={frameH}
             onChange={(s, e) => { setTrimStart(s); setTrimEnd(e); }}

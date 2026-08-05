@@ -82,6 +82,13 @@ function PendingCard({ p }: { p: PendingUpload }) {
               <Ionicons name="refresh" size={18} color="#fff" />
               <Text style={styles.retryText}>{t('common.retry')}</Text>
             </TouchableOpacity>
+            {/* Failures with a KNOWN, user-actionable cause get a reason line —
+                a too-large file fails identically on every retry, so a bare
+                Retry pill here is a trap. Unknown causes stay Retry-only rather
+                than dumping a developer string on a non-English speaker. */}
+            {p.errorCode === 'video_too_large' && (
+              <Text style={styles.errorReason}>{t('upload.errTooLarge')}</Text>
+            )}
           </View>
         ) : p.phase === 'done' ? null : (
           // Working state: a light scrim over the frame and one small ring,
@@ -153,6 +160,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   errorOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.72)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22 },
   retryText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  errorReason: { color: '#fff', fontSize: 12.5, textAlign: 'center', marginTop: 10, paddingHorizontal: 28, opacity: 0.92 },
   // 2px hairline riding the bottom edge of the frame, not a 3px bar in its own
   // strip below the card — that strip is what made the whole thing read bulky.
   track: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 2, backgroundColor: 'rgba(255,255,255,0.22)' },

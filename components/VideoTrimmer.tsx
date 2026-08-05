@@ -24,7 +24,8 @@ function fmt(t: number) {
 // Choose which segment of a longer video to post. The window can be DRAGGED as a
 // whole, and either edge can be dragged independently to shorten the selection —
 // so a clip can be cut at the start, the end, or both, down to well under the
-// 3-minute cap. The track shows a filmstrip so you can see what you're selecting
+// cap (`windowSec` — per-orientation, set by the composer). The track shows a
+// filmstrip so you can see what you're selecting
 // rather than guessing from timestamps.
 //
 // The poster (ph:// via expo-image) backs every frame cell so the strip is never
@@ -215,8 +216,10 @@ export default function VideoTrimmer({ uri, posterUri, duration, windowSec, fram
         </View>
       </View>
 
-      <Text style={styles.label}>{fmt(startSec)} – {fmt(endSec)} · {Math.round(winSec)}s</Text>
-      <Text style={styles.hint}>{t('videoTrimmer.edgeHint', { sec: Math.round(windowSec) })}</Text>
+      {/* Clock format throughout: the landscape window is 9 minutes, and "540s"
+          is a unit conversion nobody should have to do mid-drag. */}
+      <Text style={styles.label}>{fmt(startSec)} – {fmt(endSec)} · {fmt(winSec)}</Text>
+      <Text style={styles.hint}>{t('videoTrimmer.edgeHint', { sec: fmt(windowSec) })}</Text>
     </View>
   );
 }
