@@ -58,10 +58,29 @@ export default function ConfirmDialog({
       setRender(true);
       anim.setValue(0);
       Animated.timing(anim, { toValue: 1, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    } else if (render) {
-      Animated.timing(anim, { toValue: 0, duration: 140, easing: Easing.in(Easing.cubic), useNativeDriver: true })
-        .start(({ finished }) => { if (finished) setRender(false); });
+      return;
     }
+    if (!render) return;
+
+    Animated.timing(anim, { toValue: 0, duration: 140, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+      .start(({ finished }) => { if (finished) setRender(false); });
+
+    // SAFETY NET — this dialog must always come down.
+    //
+    // `finished` is false whenever the exit animation is interrupted (the
+    // confirm handler navigating, refetching, or remounting the tree the moment
+    // it starts). The unmount then never ran, and the card sat there at whatever
+    // opacity the fade had reached — a partly-dimmed screen.
+    //
+    // Two of the callers (the delete confirm and the block confirm) host this
+    // inside a FullWindowOverlay, which is its own iOS window ABOVE everything.
+    // A stranded dialog there swallows every touch in the app: it reads as a
+    // total freeze with no way out but force-quitting.
+    //
+    // So unmount on a timer as well, comfortably past the 140ms fade. Whichever
+    // lands first wins; re-opening clears it via the cleanup below.
+    const bail = setTimeout(() => setRender(false), 400);
+    return () => clearTimeout(bail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
