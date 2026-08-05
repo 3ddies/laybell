@@ -482,6 +482,22 @@ export async function setListenerPeak(sessionId: string, peak: number): Promise<
   await supabase.from('studio_sessions').update({ listener_peak: peak }).eq('id', sessionId).then(() => {}, () => {});
 }
 
+/**
+ * Check in, so the server-side reaper knows this session is still real.
+ *
+ * Pairs with supabase/sql/live_ghost_sweeper.sql, which ends anything that stops
+ * checking in — that sweep is what survives a force-quit, a crash or a dead
+ * battery, none of which ever reach a leave handler. Without this ping a live
+ * session would be reaped ~90s in.
+ *
+ * Stamps the caller's membership always, and the session itself only when the
+ * caller is the host (the RPC enforces that, not us). Fire-and-forget: a missed
+ * beat is harmless, the grace window is several beats wide.
+ */
+export async function beatStudioSession(sessionId: string): Promise<void> {
+  await supabase.rpc('studio_heartbeat', { p_session: sessionId }).then(() => {}, () => {});
+}
+
 /** Live broadcasts, for the audience rails (RPC — join codes never leave). */
 export async function fetchLiveStudioSessions(): Promise<LiveStudioSession[]> {
   try {

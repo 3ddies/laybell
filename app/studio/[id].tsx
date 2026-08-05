@@ -28,7 +28,7 @@ import { fetchStudioEarnings } from '../../lib/donations';
 import {
   applyVocalPreset, connectStudioRoom, disconnectStudioRoom, endSession, fetchJoinRequests, hostExitSession,
   fetchRoster, fetchSession, getRoomEvents, leaveSession, onCountIn, respondStudioJoin,
-  sendCountIn, setListenerPeak, setSessionLive, VOCAL_PRESETS,
+  sendCountIn, setListenerPeak, setSessionLive, beatStudioSession, VOCAL_PRESETS,
   type StudioJoinRequest, type StudioMember, type StudioSession, type VocalPresetKey,
 } from '../../lib/studio';
 
@@ -101,6 +101,18 @@ export default function StudioRoomScreen() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [id, loadMeta]);
+
+  // Check in every 15s so the server-side reaper knows this room is real.
+  // supabase/sql/live_ghost_sweeper.sql ends anything that stops pinging — that
+  // sweep is the only cleanup that survives a force-quit, a crash or a dead
+  // battery, none of which ever reach a leave handler. Beat immediately as well
+  // as on the interval, so the room is covered from its first second.
+  useEffect(() => {
+    if (!id) return;
+    beatStudioSession(id);
+    const iv = setInterval(() => beatStudioSession(id), 15_000);
+    return () => clearInterval(iv);
+  }, [id]);
 
   // Voice connection.
   useEffect(() => {

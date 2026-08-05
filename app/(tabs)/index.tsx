@@ -31,6 +31,19 @@ import {
 import { FeedSkeleton } from '../../components/Skeleton';
 
 const SCREEN_W = Dimensions.get('window').width;
+
+// The bell and the messages button are ~28-31pt glyphs with 2pt of padding, so
+// their real target was ~32pt — under the 44pt minimum, and you had to land the
+// tap almost dead centre.
+//
+// hitSlop rather than padding on purpose: padding would widen the views and
+// shift the header, and the two glyphs are deliberately NOT height-matched (see
+// the note at the messages button). This grows only the touch area.
+//
+// left/right is 8, not 12: headerRight puts a 16pt gap between the two buttons,
+// so 8 a side meets exactly in the middle. Any more and their hit areas would
+// overlap, which turns a tap in the gap into a coin toss.
+const HEADER_HIT_SLOP = { top: 12, bottom: 12, left: 8, right: 8 } as const;
 const SCREEN_H = Dimensions.get('window').height;
 const MAX_VIDEO_H = SCREEN_W * 1.25; // cap feed video at 4:5 so tall (9:16) clips aren't too long
 // A feed item that should drive the video gate: a video post, or a slideshow
@@ -1803,6 +1816,7 @@ export default function HomeScreen() {
         <View style={styles.headerRight}>
           <TouchableOpacity
             style={styles.headerIconBtn}
+            hitSlop={HEADER_HIT_SLOP}
             onPress={() => { setUnreadCount(0); router.push('/notifications'); }}
           >
             {/* No count badge here by design — the MARK is the indicator. It
@@ -1821,7 +1835,7 @@ export default function HomeScreen() {
             />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/messages')}>
+          <TouchableOpacity style={styles.headerIconBtn} hitSlop={HEADER_HIT_SLOP} onPress={() => router.push('/messages')}>
             {/* 31, deliberately larger than the bell's matchIconSize of 28 —
                 the two are NOT height-matched any more, by choice. Raising this
                 without raising matchIconSize is what creates that difference,
