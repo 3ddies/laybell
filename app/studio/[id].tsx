@@ -365,6 +365,27 @@ export default function StudioRoomScreen() {
             </View>
           </View>
 
+          {/* The card above is for whoever is running the session — the code, the
+              DAW, the interface. This one is for whoever is holding the mic, who
+              had no guidance at all. Headphones lead because that mistake is the
+              loudest: without them the beat re-enters the mic and everyone in the
+              room hears the echo, and the artist is the last to notice. */}
+          <View style={styles.codeCard}>
+            <Text style={styles.artistTitle}>{t('studio.artistTitle')}</Text>
+            <View style={styles.dawRow}>
+              <Ionicons name="headset-outline" size={17} color={colors.textSecondary} />
+              <Text style={styles.dawText}>{t('studio.artistHeadphones')}</Text>
+            </View>
+            <View style={styles.dawRow}>
+              <Ionicons name="timer-outline" size={17} color={colors.textSecondary} />
+              <Text style={styles.dawText}>{t('studio.artistCountIn')}</Text>
+            </View>
+            <View style={styles.dawRow}>
+              <Ionicons name="mic-off-outline" size={17} color={colors.textSecondary} />
+              <Text style={styles.dawText}>{t('studio.artistMute')}</Text>
+            </View>
+          </View>
+
           {/* Participants */}
           <View style={styles.grid}>
             {conn === 'connecting' && <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />}
@@ -599,6 +620,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   codeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   codeLabel: { color: c.textSecondary, fontSize: 13, fontWeight: '600' },
   codeValue: { color: c.text, fontSize: 20, fontWeight: '800', letterSpacing: 4 },
+  // Titles this card, since it sits directly under the code card and would
+  // otherwise read as more of the same producer setup.
+  artistTitle: { color: c.text, fontSize: 13, fontWeight: '700', letterSpacing: -0.1 },
   dawRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
   dawText: { flex: 1, color: c.textTertiary, fontSize: 12, lineHeight: 17 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, justifyContent: 'center', paddingVertical: 8 },
