@@ -60,7 +60,13 @@ p { color:var(--muted); margin:0 0 24px; }
   var params = new URLSearchParams(location.search);
   var rawPath = params.get('p') || '';
   var path = rawPath.replace(/^\/+/, '').replace(/[^A-Za-z0-9/_\-.?=&%]/g, '');
-  var deepLink = 'laybell://' + path;
+  // THREE slashes, not two. In `laybell://profile/<id>` the first segment is
+  // parsed as the URL's AUTHORITY (host), so the app receives a path of just
+  // `/<id>` — no route matches that, and the scanner lands on the unmatched-route
+  // error screen instead of the profile. The empty authority in `laybell:///…`
+  // makes the whole thing a path. This is the same form Expo's own
+  // Linking.createURL() emits, and for the same reason.
+  var deepLink = 'laybell:///' + path;
 
   var ua = navigator.userAgent || '';
   var isIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
