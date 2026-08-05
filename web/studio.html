@@ -81,9 +81,11 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
     <p class="hint" style="margin-top:10px">
       <b>Pro mic / interface:</b> plug it in and pick it under <i>Microphone</i> — with <i>Raw input</i> the signal
       goes to the room untouched at studio quality.
-      <b>Connect your DAW:</b> click <i>Share app audio</i>, pick the FL&nbsp;Studio / BandLab window or your screen, and tick
-      <i>"share audio"</i> in the browser dialog. (Using ASIO? Route your DAW to the system output or share the entire
-      screen with system audio.) When the host fires a <b>sync count-in</b>, this page counts 4 beats then flashes
+      <b>Connect your DAW:</b> click <i>Share app audio</i>, choose the <b>Window</b> tab, pick FL&nbsp;Studio / BandLab, and tick
+      <i>"Share audio"</i> — it is off by default and easy to miss. Pick the <i>window</i>, not <i>Entire screen</i>: Chrome
+      only offers the audio checkbox for a window or a browser tab. And if FL&nbsp;Studio is running on ASIO its output
+      bypasses the Windows mixer, so the share captures silence — switch to a Windows/WASAPI driver under
+      <i>Options → Audio Settings</i> first. (Desktop audio capture is Windows-only.) When the host fires a <b>sync count-in</b>, this page counts 4 beats then flashes
       <b style="color:var(--err)">REC</b> — punch record in your DAW on the flash and every take lines up.
     </p>
     <button class="btn btn-ghost" id="leaveBtn" style="margin-top:12px">Leave</button>
