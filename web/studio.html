@@ -38,6 +38,19 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
 .meter > div { height:100%; width:0%; background:linear-gradient(90deg,var(--ok),#EAB308 70%,var(--err)); transition:width .06s linear; }
 .countin { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); font-size:140px; font-weight:900; color:#fff; z-index:50; }
 .countin.rec { color:var(--err); }
+/* Staged setup. Numbered because order matters: the driver check has to happen
+   before the share, or the share silently captures nothing. */
+.steps { counter-reset:step; margin:14px 0 0; padding:0; list-style:none; }
+.steps li { counter-increment:step; position:relative; padding:0 0 14px 30px; font-size:13px; line-height:1.5; color:var(--muted); }
+.steps li:before { content:counter(step); position:absolute; left:0; top:0; width:20px; height:20px; border-radius:50%;
+  background:#2a2a33; color:#fff; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+.steps li.done:before { content:"\2713"; background:var(--ok); }
+.steps b { color:#fff; }
+.steps details { margin-top:6px; }
+.steps summary { cursor:pointer; color:var(--brand); font-weight:700; font-size:12px; }
+.steps details p { margin:6px 0 0; }
+.warn { border-left:3px solid var(--err); padding:8px 10px; margin:10px 0 0; background:rgba(255,80,80,.07); font-size:12.5px; line-height:1.5; color:var(--muted); }
+.warn b { color:#fff; }
 </style>
 </head><body><main>
   <div class="logo">L</div>
@@ -52,6 +65,12 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
     <input id="name" maxlength="40" placeholder="Producer">
     <button class="btn btn-primary" id="joinBtn">Join session</button>
     <p class="status" id="joinStatus"></p>
+    <div class="warn">
+      <b>Before you join.</b> Use <b>Chrome or Edge on Windows</b> — sending your DAW's audio needs desktop
+      capture, which Safari and Firefox don't do. And if your DAW is on <b>ASIO</b>, switch it to a
+      <b>Windows/WASAPI</b> driver first (FL&nbsp;Studio: <i>Options → Audio Settings → Device</i>). ASIO bypasses the
+      Windows mixer, so the share goes through but carries <b>silence</b>.
+    </div>
   </div>
 
   <!-- In-room -->
@@ -78,16 +97,46 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
       <button class="btn btn-primary" id="dawBtn">Share app audio</button>
     </div>
     <p class="status" id="roomStatus"></p>
-    <p class="hint" style="margin-top:10px">
-      <b>Pro mic / interface:</b> plug it in and pick it under <i>Microphone</i> — with <i>Raw input</i> the signal
-      goes to the room untouched at studio quality.
-      <b>Connect your DAW:</b> click <i>Share app audio</i>, choose the <b>Window</b> tab, pick FL&nbsp;Studio / BandLab, and tick
-      <i>"Share audio"</i> — it is off by default and easy to miss. Pick the <i>window</i>, not <i>Entire screen</i>: Chrome
-      only offers the audio checkbox for a window or a browser tab. And if FL&nbsp;Studio is running on ASIO its output
-      bypasses the Windows mixer, so the share captures silence — switch to a Windows/WASAPI driver under
-      <i>Options → Audio Settings</i> first. (Desktop audio capture is Windows-only.) When the host fires a <b>sync count-in</b>, this page counts 4 beats then flashes
-      <b style="color:var(--err)">REC</b> — punch record in your DAW on the flash and every take lines up.
-    </p>
+    <ol class="steps" id="steps">
+
+      <li id="stepMic"><b>Pick your mic.</b> Choose your interface above. On <i>Raw input</i> the signal reaches
+        the room untouched — right for interfaces, instruments and anything already mixed.</li>
+
+      <li id="stepDaw"><b>Send your beat.</b> Hit <i>Share app audio</i>, choose the <b>Window</b> tab, pick your DAW,
+        and tick <b>“Share audio.”</b>
+        <details><summary>It shared but nobody can hear it</summary>
+          <p>Three causes, in order of likelihood. The <b>“Share audio” checkbox is off by default</b> and easy to miss.
+          You picked <b>Entire screen</b> — Chrome only offers that checkbox for a window or a browser tab.
+          Or your DAW is still on <b>ASIO</b>, which never reaches the Windows mixer.</p>
+        </details>
+      </li>
+
+      <li id="stepBack"><b>Record their take into your DAW.</b> This direction needs one free tool — Windows won't
+        hand a browser's audio to a DAW on its own.
+        <details><summary>Set up the return path</summary>
+          <p><b>1.</b> Install <b>VB-CABLE</b> (free) and reboot — it adds a virtual audio device.<br>
+          <b>2.</b> Windows <i>Settings → System → Sound → Volume mixer</i> → set <b>this browser's output</b> to
+          <b>CABLE Input</b>. The room now feeds the cable.<br>
+          <b>3.</b> You just made the browser silent on your speakers. <i>Sound Control Panel → Recording →
+          CABLE Output → Properties → Listen</i> → tick <b>“Listen to this device”</b> and pick your headphones.<br>
+          <b>4.</b> In your DAW, set a track's input to <b>CABLE Output</b>, arm it, record.</p>
+          <p class="warn" style="margin-top:8px"><b>Leave that track's monitoring OFF.</b> Your DAW output is going
+          back into the room — if it also plays the incoming vocal, the artist hears themselves echoed and it can
+          build into a loop.</p>
+        </details>
+      </li>
+
+      <li id="stepSync"><b>Sync the take.</b> When the host fires a <b>count-in</b>, this page counts 4 beats then
+        flashes <b style="color:var(--err)">REC</b>. Punch record on the flash.
+        <details><summary>Why the take lands slightly late</summary>
+          <p>The count-in aligns <i>when you both start</i>, but the audio still travels phone → room → your
+          machine. Expect the recording to sit a little behind the grid. Track a clap on the first take to measure
+          your offset, then nudge every take back by that amount. This is network latency, not a setting — for a
+          sample-tight vocal, have the artist record locally and send you the file.</p>
+        </details>
+      </li>
+
+    </ol>
     <button class="btn btn-ghost" id="leaveBtn" style="margin-top:12px">Leave</button>
   </div>
 
@@ -356,8 +405,13 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
         dtx: false, red: false, audioPreset: { maxBitrate: 320000 },
         source: LK.Track.Source.ScreenShareAudio, name: 'daw-audio'
       });
+      // Tick the step so the producer can see at a glance that the beat is
+      // actually going out — 'I clicked it' and 'it is publishing' are not the
+      // same thing, and the silent-capture failure looks identical to success.
+      $('stepDaw').classList.add('done');
       audio.addEventListener('ended', function () {
         setStatus($('roomStatus'), 'App audio share stopped.');
+        $('stepDaw').classList.remove('done');
         dawTrack = null;
       });
       setStatus($('roomStatus'), 'Your app audio is live in the session.', 'ok');
