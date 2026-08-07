@@ -171,8 +171,27 @@ export default function TVVideoList({ posts, featured, films, currentUserId, ref
       {/* FILMS — the Premium+ long-form shelf. Wide poster tiles: title over a
           heavier scrim (a film leads with its NAME, not its author) + runtime. */}
       {filmRows.length > 0 && (
-        <>
-          <Text style={[styles.featTitle, feat.length > 0 && { marginTop: SPACING.md }]}>{t('tv.films')}</Text>
+        <View style={[styles.filmSection, feat.length > 0 && { marginTop: SPACING.md }]}>
+          {/* The shelf header doubles as the way in: Films is the flagship
+              Premium+ surface, so it gets a bigger title, its own raised
+              plate, and a chevron that says "there is more of this". */}
+          <TouchableOpacity
+            style={styles.filmHeader}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            onPress={() => router.push('/films' as any)}
+          >
+            <View style={styles.filmHeaderLeft}>
+              <View style={styles.filmHeaderIcon}>
+                <Ionicons name="film" size={16} color={colors.primary} />
+              </View>
+              <Text style={styles.filmSectionTitle}>{t('tv.films')}</Text>
+            </View>
+            <View style={styles.filmSeeAll}>
+              <Text style={styles.filmSeeAllText}>{t('tv.seeAll')}</Text>
+              <Ionicons name="chevron-forward" size={15} color={colors.textSecondary} />
+            </View>
+          </TouchableOpacity>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -200,7 +219,7 @@ export default function TVVideoList({ posts, featured, films, currentUserId, ref
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </>
+        </View>
       )}
       {posts.length > 0 && <Text style={styles.gridTitle}>{t('tv.moreVideos')}</Text>}
     </View>
@@ -325,6 +344,37 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   // Recommended (portrait) carousel
   featSection: { marginBottom: SPACING.sm },
   featTitle: { color: c.text, fontSize: 15, fontWeight: '800', marginBottom: SPACING.sm },
+
+  // ── Films shelf ────────────────────────────────────────────────────────────
+  // Deliberately louder than the rows around it. Films is the Premium+ flagship
+  // and the reason someone pays $19.99, so it sits on a raised plate with a
+  // hairline edge, a larger title, and a tappable header — the surrounding
+  // shelves are plain text labels, which is exactly the contrast that makes
+  // this one read as a destination rather than another row.
+  filmSection: {
+    backgroundColor: c.surfaceElevated,
+    borderRadius: RADIUS.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.md,
+    marginBottom: SPACING.md,
+    marginRight: H_PADDING,
+  },
+  filmHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  filmHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  filmHeaderIcon: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.primary + '1F',
+  },
+  filmSectionTitle: { color: c.text, fontSize: 21, fontWeight: '900', letterSpacing: 0.2 },
+  filmSeeAll: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  filmSeeAllText: { color: c.textSecondary, fontSize: 13, fontWeight: '700' },
   featRow: { gap: GRID_GAP, paddingRight: H_PADDING },
   featTile: {
     width: FEAT_W, height: FEAT_H, borderRadius: RADIUS.md, overflow: 'hidden',
