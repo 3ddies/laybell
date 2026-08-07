@@ -363,6 +363,11 @@ function AppContent() {
           // exact double-animation this list exists to prevent. Found by
           // cross-checking every <SwipeBackPager> route against this array.
           'credits', 'music-order', 'studio/listen/[id]',
+          // The Films catalogue. Opened FROM Laybell TV, which is itself a
+          // transparentModal — so unlisted it inherited that presentation and
+          // slid up as a sheet instead of pushing in as a page. Exactly the
+          // trap described above for the chat transcripts.
+          'films',
           // The chat transcripts. They were plain pushes, which meant they
           // INHERITED modal presentation from whichever transparentModal opened
           // them (messages/index, or notifications) and so carried iOS's sheet

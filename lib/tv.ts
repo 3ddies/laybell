@@ -38,6 +38,59 @@ export async function fetchFilms(userId: string | null, limit = 12): Promise<any
   return (await rankVideosForUser(films, userId)).slice(0, limit);
 }
 
+/** A film at or under this runs in the "Short films" row; longer ones are features. */
+export const SHORT_FILM_MAX_SEC = 20 * 60;
+
+/**
+ * The Films page's four rows, from ONE query.
+ *
+ * They are different ORDERINGS and SLICES of the same catalogue rather than
+ * four round-trips: films are the rarest content on the platform, so paying for
+ * four queries to shuffle the same few dozen rows would be waste — and a row
+ * that disappeared because its own request failed would look like missing
+ * content rather than a network blip.
+ */
+export async function fetchFilmCatalog(userId: string | null, limit = 60): Promise<{
+  recommended: any[];
+  trending: any[];
+  short: any[];
+  long: any[];
+}> {
+  const { data, error } = await supabase
+    .from('posts')
+    .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show, profile_theme), likes(count), comments(count)')
+    .eq('type', 'video')
+    .eq('is_public', true)
+    .gt('duration_seconds', 540)
+    .order('created_at', { ascending: false })
+    .limit(limit * 2);
+  if (error) throw error;
+  const films = (data ?? []).filter((p: any) => !p.archived_at && isHorizontalVideo(p)).slice(0, limit);
+
+  // Recommended = the same affinity engine the rest of the app ranks by.
+  const recommended = await rankVideosForUser(films, userId);
+
+  // Trending = engagement weighted against age, so a strong film from this week
+  // outranks an older one that has simply had longer to accumulate taps.
+  const now = Date.now();
+  const heat = (p: any) => {
+    const likes = p.likes?.[0]?.count ?? 0;
+    const comments = p.comments?.[0]?.count ?? 0;
+    const streams = p.stream_count ?? 0;
+    const ageHours = Math.max(1, (now - new Date(p.created_at).getTime()) / 3_600_000);
+    return (likes * 3 + comments * 5 + streams) / Math.pow(ageHours + 2, 0.6);
+  };
+  const trending = [...films].sort((a, b) => heat(b) - heat(a));
+
+  const dur = (p: any) => p.duration_seconds ?? 0;
+  return {
+    recommended,
+    trending,
+    short: recommended.filter((p) => dur(p) <= SHORT_FILM_MAX_SEC),
+    long: recommended.filter((p) => dur(p) > SHORT_FILM_MAX_SEC),
+  };
+}
+
 /**
  * Public horizontal videos, newest first — the TV Videos grid. Fetches a wide
  * window of recent videos and keeps the landscape ones (aspect_ratio isn't

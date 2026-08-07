@@ -182,14 +182,11 @@ export default function TVVideoList({ posts, featured, films, currentUserId, ref
             onPress={() => router.push('/films' as any)}
           >
             <View style={styles.filmHeaderLeft}>
-              <View style={styles.filmHeaderIcon}>
-                <Ionicons name="film" size={16} color={colors.primary} />
-              </View>
               <Text style={styles.filmSectionTitle}>{t('tv.films')}</Text>
             </View>
             <View style={styles.filmSeeAll}>
               <Text style={styles.filmSeeAllText}>{t('tv.seeAll')}</Text>
-              <Ionicons name="chevron-forward" size={15} color={colors.textSecondary} />
+              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
             </View>
           </TouchableOpacity>
           <ScrollView
@@ -346,35 +343,29 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   featTitle: { color: c.text, fontSize: 15, fontWeight: '800', marginBottom: SPACING.sm },
 
   // ── Films shelf ────────────────────────────────────────────────────────────
-  // Deliberately louder than the rows around it. Films is the Premium+ flagship
-  // and the reason someone pays $19.99, so it sits on a raised plate with a
-  // hairline edge, a larger title, and a tappable header — the surrounding
-  // shelves are plain text labels, which is exactly the contrast that makes
-  // this one read as a destination rather than another row.
+  // No card, no border, no plate — the boxed version fought the tiles beneath
+  // it and made the shelf look like a widget dropped into the page. The weight
+  // comes from TYPE instead: a 30pt near-black wordmark that simply dwarfs the
+  // 15pt labels on every other row. Big type reads as a section; a box reads as
+  // a component.
   filmSection: {
-    backgroundColor: c.surfaceElevated,
-    borderRadius: RADIUS.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.border,
-    paddingTop: SPACING.sm,
-    paddingBottom: SPACING.md,
     marginBottom: SPACING.md,
-    marginRight: H_PADDING,
   },
   filmHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
+    paddingRight: H_PADDING,
+    paddingBottom: SPACING.sm,
   },
   filmHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  filmHeaderIcon: {
-    width: 28, height: 28, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: c.primary + '1F',
+  filmSectionTitle: {
+    color: c.text,
+    fontSize: 30,
+    fontWeight: '900',
+    // Tight tracking keeps a big word feeling designed rather than merely large.
+    letterSpacing: -0.6,
   },
-  filmSectionTitle: { color: c.text, fontSize: 21, fontWeight: '900', letterSpacing: 0.2 },
-  filmSeeAll: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  filmSeeAllText: { color: c.textSecondary, fontSize: 13, fontWeight: '700' },
+  filmSeeAll: { flexDirection: 'row', alignItems: 'center', gap: 1, paddingBottom: 4 },
+  filmSeeAllText: { color: c.primary, fontSize: 14, fontWeight: '800' },
   featRow: { gap: GRID_GAP, paddingRight: H_PADDING },
   featTile: {
     width: FEAT_W, height: FEAT_H, borderRadius: RADIUS.md, overflow: 'hidden',

@@ -1,23 +1,44 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import {
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Dimensions,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import TVVideoList from '../components/TVVideoList';
-import { fetchFilms } from '../lib/tv';
+import SwipeBackPager from '../components/SwipeBackPager';
+import VideoThumb from '../components/VideoThumb';
+import { fetchFilmCatalog } from '../lib/tv';
 import { useProfile } from '../contexts/ProfileContext';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
-import { useCast } from '../contexts/CastContext';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 
-// The Films destination — everything the Laybell TV shelf only teases.
+// The Films catalogue.
 //
-// It deliberately reuses TVVideoList rather than reimplementing a grid: tile
-// geometry, the runtime chip, tap-to-play, long-press options, cast and delete
-// all already live there and must behave identically in both places. Passing
-// the films through `featured`/`posts` would render them as ordinary TV videos,
-// so they go through `films` — the wide poster treatment IS the point.
+// It does NOT reuse TVVideoList: that component is a shelf-plus-grid built for
+// Laybell TV, so on this page it drew its own "Films / See all" header and then
+// an empty-grid message underneath — a duplicate title and a "No films yet"
+// sitting directly below actual films. What belongs here is a different shape
+// entirely: several horizontal rows over one catalogue.
+//
+// Rows render only when they have something in them, so a small catalogue looks
+// deliberate instead of broken.
+
+const SCREEN_W = Dimensions.get('window').width;
+const H_PADDING = SPACING.md;
+const TILE_W = Math.round((SCREEN_W - H_PADDING * 2) * 0.62);
+const TILE_H = Math.round(TILE_W * (9 / 16));
+
+function fmtRuntime(sec?: number | null): string {
+  const s = Math.max(0, Math.round(sec ?? 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
+    : `${m}:${String(r).padStart(2, '0')}`;
+}
 
 export default function FilmsScreen() {
   const router = useRouter();
@@ -26,65 +47,109 @@ export default function FilmsScreen() {
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
   const { profile } = useProfile();
-  const cast = useCast();
 
-  const [films, setFilms] = useState<any[]>([]);
+  const [rows, setRows] = useState<{ recommended: any[]; trending: any[]; short: any[]; long: any[] }>({
+    recommended: [], trending: [], short: [], long: [],
+  });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try {
-      // A generous limit: this is the full catalogue view, not a shelf.
-      setFilms(await fetchFilms(profile?.id ?? null, 60));
-    } catch { /* offline — keep whatever is on screen */ }
+    try { setRows(await fetchFilmCatalog(profile?.id ?? null)); }
+    catch { /* offline — keep whatever is on screen */ }
   }, [profile?.id]);
 
   useEffect(() => { load().finally(() => setLoading(false)); }, [load]);
 
-  return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel={t('a11y.back')}
-        >
-          <Ionicons name="chevron-back" size={26} color={colors.text} />
-        </TouchableOpacity>
-        <View style={styles.titleWrap}>
-          <View style={styles.titleIcon}>
-            <Ionicons name="film" size={15} color={colors.primary} />
-          </View>
-          <Text style={styles.title}>{t('tv.films')}</Text>
-        </View>
-        {/* Balances the back chevron so the title stays optically centred. */}
-        <View style={styles.headerSpacer} />
-      </View>
+  const openFilm = (p: any, e?: any) => {
+    const ne = e?.nativeEvent;
+    const src = ne
+      ? JSON.stringify({ x: ne.pageX - ne.locationX, y: ne.pageY - ne.locationY, width: TILE_W, height: TILE_H })
+      : undefined;
+    router.push({ pathname: '/reel/[id]', params: { id: p.id, post: JSON.stringify(p), ...(src ? { src } : {}) } });
+  };
 
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
-      ) : films.length === 0 ? (
-        <View style={styles.center}>
-          <Ionicons name="film-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyText}>{t('films.empty')}</Text>
+  const Row = ({ title, data }: { title: string; data: any[] }) => {
+    if (!data.length) return null; // an empty row is worse than no row
+    return (
+      <View style={styles.row}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowScroll}>
+          {data.map((p) => (
+            <TouchableOpacity
+              key={p.id}
+              style={styles.tile}
+              activeOpacity={0.9}
+              onPress={(e) => openFilm(p, e)}
+            >
+              <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.thumb} />
+              <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
+              {/* A film leads with its NAME, its author second — the opposite of
+                  an ordinary post card. */}
+              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.overlay}>
+                <Text style={styles.filmName} numberOfLines={1}>
+                  {p.film_title || p.caption || p.profiles?.display_name || p.profiles?.username || ''}
+                </Text>
+                {!!p.profiles?.username && (
+                  <Text style={styles.filmUser} numberOfLines={1}>@{p.profiles.username}</Text>
+                )}
+              </LinearGradient>
+              <View style={styles.runtime}>
+                <Text style={styles.runtimeText}>{fmtRuntime(p.duration_seconds)}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  const isEmpty = !rows.recommended.length;
+
+  return (
+    <SwipeBackPager>
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={t('a11y.back')}
+          >
+            <Ionicons name="chevron-back" size={26} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.title}>{t('tv.films')}</Text>
+          {/* Balances the back chevron so the title stays optically centred. */}
+          <View style={styles.headerSpacer} />
         </View>
-      ) : (
-        <TVVideoList
-          posts={[]}
-          featured={[]}
-          films={films}
-          currentUserId={profile?.id ?? null}
-          refreshing={refreshing}
-          onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }}
-          bottomPad={insets.bottom + SPACING.lg}
-          emptyText={t('films.empty')}
-          castActive={cast.connected}
-          castingId={cast.current?.id ?? null}
-          onPostDeleted={(id) => setFilms((prev) => prev.filter((p) => p.id !== id))}
-        />
-      )}
-    </View>
+
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+        ) : isEmpty ? (
+          <View style={styles.center}>
+            <Ionicons name="film-outline" size={40} color={colors.textTertiary} />
+            <Text style={styles.emptyText}>{t('films.empty')}</Text>
+          </View>
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: insets.bottom + SPACING.xxl }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }}
+                tintColor={colors.primary}
+              />
+            }
+          >
+            <Row title={t('films.recommended')} data={rows.recommended} />
+            <Row title={t('films.trending')} data={rows.trending} />
+            <Row title={t('films.short')} data={rows.short} />
+            <Row title={t('films.long')} data={rows.long} />
+          </ScrollView>
+        )}
+      </View>
+    </SwipeBackPager>
   );
 }
 
@@ -94,14 +159,42 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
   },
-  titleWrap: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  titleIcon: {
+  title: { color: c.text, fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
+  headerSpacer: { width: 26 },
+
+  row: { marginTop: SPACING.lg },
+  // Smaller than the page title on purpose: these are shelves WITHIN Films, and
+  // competing with the wordmark above would flatten the hierarchy.
+  rowTitle: {
+    color: c.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.2,
+    paddingHorizontal: H_PADDING, marginBottom: SPACING.sm,
+  },
+  rowScroll: { gap: SPACING.sm, paddingHorizontal: H_PADDING },
+
+  tile: {
+    width: TILE_W, height: TILE_H, borderRadius: RADIUS.md,
+    overflow: 'hidden', backgroundColor: c.surfaceLight,
+  },
+  thumb: { width: '100%', height: '100%' },
+  playBadge: {
+    position: 'absolute', top: SPACING.sm, left: SPACING.sm,
     width: 26, height: 26, borderRadius: 13,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: c.primary + '1F',
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
-  title: { color: c.text, fontSize: 20, fontWeight: '900', letterSpacing: 0.2 },
-  headerSpacer: { width: 26 },
+  overlay: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    paddingHorizontal: SPACING.sm, paddingTop: SPACING.lg, paddingBottom: SPACING.sm,
+  },
+  filmName: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  filmUser: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' },
+  runtime: {
+    position: 'absolute', top: SPACING.sm, right: SPACING.sm,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.sm,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  runtimeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, padding: SPACING.xl },
   emptyText: { color: c.textSecondary, fontSize: 14, textAlign: 'center' },
 });
