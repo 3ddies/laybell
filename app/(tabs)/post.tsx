@@ -19,6 +19,7 @@ import { bumpBadge, publicPostLimit, rawTier, tierLabel } from '../../lib/badges
 import { useProfile } from '../../contexts/ProfileContext';
 import { usePremium } from '../../contexts/PremiumContext';
 import { FILM_MIN_SEC, FILM_MAX_SEC } from '../../lib/entitlements';
+import { probeVideo } from '../../lib/videoProbe';
 import { getNetworkState } from '../../lib/network';
 import { processMentions, getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { checkFields } from '../../lib/contentFilter';
@@ -398,6 +399,7 @@ export default function PostScreen() {
   // default OS alert). Holds the title/body so the spotlight variant can differ.
   const [postedToast, setPostedToast] = useState<{ title: string; message: string; spotlight: boolean; uploading?: boolean } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Draft | null>(null); // draft pending delete-confirm
+  const [importingFile, setImportingFile] = useState(false); // Files-app probe in flight
   // Film upload heads-up: holds the estimate plus the promise resolver for the
   // Share flow, which awaits the user's answer before any work begins.
   const [filmNotice, setFilmNotice] = useState<{ minutes: number; resolve: (go: boolean) => void } | null>(null);
@@ -723,6 +725,42 @@ export default function PostScreen() {
     }
   }
 
+
+  // ── Import from the Files app ───────────────────────────────────────────────
+  // The other road into the composer, built for films: a 12-minute master lives
+  // in Files/iCloud Drive or an AirDrop folder, not the camera roll. It also
+  // dodges the camera-roll sandbox fight outright — the picker's
+  // copyToCacheDirectory IS the ensureLocalFile copy, so the compressor can
+  // always read what it hands us. Files picks carry no metadata, so probeVideo
+  // supplies duration + oriented dims; after that the import is an ordinary
+  // onPickMedia and every gate (film upsell, source ceilings) applies as-is.
+  async function importFromFiles() {
+    if (importingFile) return;
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: 'video/*', copyToCacheDirectory: true, multiple: false,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const f = res.assets[0];
+      setImportingFile(true);
+      // A film master can't ride in a slideshow slot — imports are single-mode.
+      enterSingle();
+      const meta = await probeVideo(f.uri);
+      await onPickMedia({
+        id: `files:${f.uri}`,
+        uri: f.uri,
+        posterUri: meta.posterUri,
+        width: meta.width,
+        height: meta.height,
+        duration: meta.durationSec,
+        type: 'video',
+      });
+    } catch {
+      Alert.alert(t('post.filesImportFailedTitle'), t('post.filesImportFailedBody'));
+    } finally {
+      setImportingFile(false);
+    }
+  }
 
   // ── Unified Posts picker: single vs slideshow, both off one in-app grid ───────
   function clearMedia() {
@@ -2119,7 +2157,7 @@ export default function PostScreen() {
             )}
           </Animated.View>
 
-          {/* Single / Slideshow toggle + hint */}
+          {/* Single / Slideshow toggle + hint + Files import */}
           <View style={styles.recentsRow}>
             <View style={styles.modeToggle}>
               <TouchableOpacity onPress={enterSingle} style={[styles.modePill, !slideshowMode && styles.modePillActive]}>
@@ -2129,9 +2167,21 @@ export default function PostScreen() {
                 <Text style={[styles.modePillText, slideshowMode && styles.modePillTextActive]}>{t('post.slideshow')}</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.recentsHint}>
+            <Text style={[styles.recentsHint, styles.recentsHintFlex]} numberOfLines={1}>
               {slideshowMode ? t('post.slideshowCountHint', { count: slides.length, max: MAX_SLIDES }) : t('post.tapPhotoVideo')}
             </Text>
+            <TouchableOpacity
+              onPress={importFromFiles}
+              disabled={importingFile}
+              style={styles.filesBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t('post.filesImport')}
+            >
+              {importingFile
+                ? <ActivityIndicator size="small" color={colors.text} />
+                : <Ionicons name="folder-open-outline" size={14} color={colors.text} />}
+              <Text style={styles.filesBtnText}>{t('post.filesImport')}</Text>
+            </TouchableOpacity>
           </View>
 
           {/* One grid for all camera media (photos + videos) */}
@@ -2310,6 +2360,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   recentsText: { color: colors.text, fontSize: 15, fontWeight: '700' },
   recentsHint: { color: colors.textTertiary, fontSize: 12 },
+  // The hint yields space to the Files button and hugs it from the left, so on
+  // narrow phones it truncates rather than pushing the button off-screen.
+  recentsHintFlex: { flex: 1, textAlign: 'right', marginHorizontal: SPACING.sm },
+  filesBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: SPACING.md, paddingVertical: 6,
+    borderRadius: RADIUS.full, backgroundColor: colors.surfaceLight,
+  },
+  filesBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
 
   // Remove-media "x" on the preview square, and the Single/Slideshow mode toggle.
   removeBtn: {
