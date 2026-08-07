@@ -45,6 +45,10 @@ function fmtRuntime(sec?: number | null): string {
     : `${m}:${String(r).padStart(2, '0')}`;
 }
 
+function filmName(p: any): string {
+  return p.film_title || p.caption || p.profiles?.display_name || p.profiles?.username || '';
+}
+
 export default function FilmsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -58,23 +62,34 @@ export default function FilmsScreen() {
   }>({ recommended: [], trending: [], short: [], long: [], more: [] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
-    try { setRows(await fetchFilmCatalog(profile?.id ?? null)); }
-    catch { /* offline — keep whatever is on screen */ }
+    try {
+      setRows(await fetchFilmCatalog(profile?.id ?? null));
+      setFailed(false);
+    } catch {
+      // With films on screen, keep them and fail silently; the flag only
+      // matters when there is nothing to show.
+      setFailed(true);
+    }
   }, [profile?.id]);
 
   useEffect(() => { load().finally(() => setLoading(false)); }, [load]);
 
-  const openFilm = (p: any, e?: any) => {
+  const openFilm = (p: any, e: any | undefined, w: number, h: number) => {
     const ne = e?.nativeEvent;
     const src = ne
-      ? JSON.stringify({ x: ne.pageX - ne.locationX, y: ne.pageY - ne.locationY, width: TILE_W, height: TILE_H })
+      ? JSON.stringify({ x: ne.pageX - ne.locationX, y: ne.pageY - ne.locationY, width: w, height: h })
       : undefined;
     router.push({ pathname: '/reel/[id]', params: { id: p.id, post: JSON.stringify(p), ...(src ? { src } : {}) } });
   };
 
-  const Row = ({ title, data }: { title: string; data: any[] }) => {
+  // Plain render functions, NOT components declared inside the screen — a
+  // component created per render gets a fresh identity each time, and React
+  // remounts its whole subtree (thumbnails flash, shelf scroll positions reset
+  // on every refresh). Same trap as the Big Bell layout bug.
+  const renderRow = (title: string, data: any[]) => {
     if (!data.length) return null; // an empty row is worse than no row
     return (
       <View style={styles.row}>
@@ -85,16 +100,16 @@ export default function FilmsScreen() {
               key={p.id}
               style={styles.tile}
               activeOpacity={0.9}
-              onPress={(e) => openFilm(p, e)}
+              accessibilityRole="button"
+              accessibilityLabel={filmName(p)}
+              onPress={(e) => openFilm(p, e, TILE_W, TILE_H)}
             >
               <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.thumb} />
               <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
               {/* A film leads with its NAME, its author second — the opposite of
                   an ordinary post card. */}
               <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.overlay}>
-                <Text style={styles.filmName} numberOfLines={1}>
-                  {p.film_title || p.caption || p.profiles?.display_name || p.profiles?.username || ''}
-                </Text>
+                <Text style={styles.filmName} numberOfLines={1}>{filmName(p)}</Text>
                 {!!p.profiles?.username && (
                   <Text style={styles.filmUser} numberOfLines={1}>@{p.profiles.username}</Text>
                 )}
@@ -131,6 +146,21 @@ export default function FilmsScreen() {
 
         {loading ? (
           <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+        ) : isEmpty && failed ? (
+          // A network failure is NOT an empty catalogue. "No films yet" here
+          // would be the same lie the page was rebuilt to remove.
+          <View style={styles.center}>
+            <Ionicons name="cloud-offline-outline" size={40} color={colors.textTertiary} />
+            <Text style={styles.emptyText}>{t('films.loadError')}</Text>
+            <TouchableOpacity
+              style={styles.retryBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.retry')}
+              onPress={() => { setLoading(true); load().finally(() => setLoading(false)); }}
+            >
+              <Text style={styles.retryText}>{t('common.retry')}</Text>
+            </TouchableOpacity>
+          </View>
         ) : isEmpty ? (
           <View style={styles.center}>
             <Ionicons name="film-outline" size={40} color={colors.textTertiary} />
@@ -148,10 +178,10 @@ export default function FilmsScreen() {
               />
             }
           >
-            <Row title={t('films.recommended')} data={rows.recommended} />
-            <Row title={t('films.trending')} data={rows.trending} />
-            <Row title={t('films.short')} data={rows.short} />
-            <Row title={t('films.long')} data={rows.long} />
+            {renderRow(t('films.recommended'), rows.recommended)}
+            {renderRow(t('films.trending'), rows.trending)}
+            {renderRow(t('films.short'), rows.short)}
+            {renderRow(t('films.long'), rows.long)}
 
             {/* Everything no category earned. Only labelled "All films" when
                 rows exist above it — on a small catalogue this IS the page, and
@@ -165,14 +195,14 @@ export default function FilmsScreen() {
                       key={p.id}
                       style={styles.gridTile}
                       activeOpacity={0.9}
-                      onPress={(e) => openFilm(p, e)}
+                      accessibilityRole="button"
+                      accessibilityLabel={filmName(p)}
+                      onPress={(e) => openFilm(p, e, COL_W, COL_H)}
                     >
                       <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.thumb} />
                       <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
                       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.overlay}>
-                        <Text style={styles.gridName} numberOfLines={1}>
-                          {p.film_title || p.caption || p.profiles?.display_name || p.profiles?.username || ''}
-                        </Text>
+                        <Text style={styles.gridName} numberOfLines={1}>{filmName(p)}</Text>
                       </LinearGradient>
                       <View style={styles.runtime}>
                         <Text style={styles.runtimeText}>{fmtRuntime(p.duration_seconds)}</Text>
@@ -242,4 +272,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, padding: SPACING.xl },
   emptyText: { color: c.textSecondary, fontSize: 14, textAlign: 'center' },
+  retryBtn: {
+    marginTop: SPACING.xs, paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full, backgroundColor: c.surfaceLight,
+  },
+  retryText: { color: c.text, fontSize: 14, fontWeight: '700' },
 });

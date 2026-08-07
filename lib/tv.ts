@@ -48,8 +48,10 @@ const MIN_ROW = 3;
 // anything — "Recommended" and "Trending" over four films is just the same four
 // films twice, which teaches users the labels are decorative.
 const MIN_CATALOGUE_FOR_CURATION = 8;
-// Trending must reflect actual attention, not merely existing.
-const TRENDING_MIN_ENGAGEMENT = 3;
+// Trending must reflect actual attention, not merely existing. One like scores
+// 3, so this bar means "several people reacted" — e.g. two likes and a stream,
+// or a like and a comment — never a single tap.
+const TRENDING_MIN_ENGAGEMENT = 10;
 
 /**
  * The Films page, from ONE query.
@@ -111,15 +113,29 @@ export async function fetchFilmCatalog(userId: string | null, limit = 60): Promi
     ? rowOrNothing([...films].filter((p) => engagement(p) >= TRENDING_MIN_ENGAGEMENT).sort((a, b) => heat(b) - heat(a)))
     : [];
 
-  // RECOMMENDED — needs someone to recommend TO. rankVideosForUser returns the
-  // input order unchanged for a signed-out or history-less viewer, and calling
-  // that "Recommended" would be a lie, so the row is dropped when the ranking
-  // didn't actually reorder anything.
+  // RECOMMENDED — needs someone to recommend TO. Order-comparison alone can't
+  // tell personalisation apart from global quality ranking (scorePost reorders
+  // a cold user's list by raw engagement too), so the gate is the user's actual
+  // signal: a likes/saves-derived affinity profile, or at least one follow.
+  // No signal → no "Recommended" row, because there is no "you" in it yet.
   let recommended: any[] = [];
   if (curate && userId) {
-    const ranked = await rankVideosForUser(films, userId);
-    const personalised = ranked.some((p, i) => p.id !== films[i]?.id);
-    if (personalised) recommended = rowOrNothing(unclaimed(ranked));
+    const [aff, fol] = await Promise.all([
+      buildAffinityProfile(userId).catch(() => null),
+      supabase.from('follows').select('following_id').eq('follower_id', userId).limit(1),
+    ]);
+    const hasSignal =
+      (!!aff && (Object.keys(aff.creatorScores).length > 0
+        || Object.keys(aff.typeScores).length > 0
+        || Object.keys(aff.genreScores).length > 0))
+      || (fol.data?.length ?? 0) > 0;
+    if (hasSignal) {
+      // The profile is AsyncStorage-cached, so rankVideosForUser re-reading it
+      // a moment later costs nothing.
+      const ranked = await rankVideosForUser(films, userId);
+      const personalised = ranked.some((p, i) => p.id !== films[i]?.id);
+      if (personalised) recommended = rowOrNothing(unclaimed(ranked));
+    }
   }
 
   // LENGTH — objective, so these need no curation gate; they just need enough

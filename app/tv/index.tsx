@@ -434,9 +434,10 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 6 },
   titleWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  // Deliberately a step BELOW the Films wordmark (26/900). Laybell TV is the
-  // container and Films is the flagship inside it, so TV reading slightly
-  // quieter is the hierarchy working — matching weights would flatten it.
+  // Deliberately a step BELOW the Films shelf title (30/900) on this same
+  // screen. Laybell TV is the container and Films is the flagship inside it, so
+  // TV reading slightly quieter is the hierarchy working — matching weights
+  // would flatten it. Owner-tuned 2026-08-07; don't "unify" these sizes.
   headerTitle: { color: c.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
   tvBannerWrap: { marginHorizontal: SPACING.md, marginTop: 6 },
   tvBanner: {
