@@ -1,7 +1,7 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, ActivityIndicator, Alert, Image, Dimensions, Animated, Modal, Switch, Pressable, Easing,
-  Keyboard,
+  Keyboard, Platform,
 } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -400,6 +400,17 @@ export default function PostScreen() {
   const [postedToast, setPostedToast] = useState<{ title: string; message: string; spotlight: boolean; uploading?: boolean } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Draft | null>(null); // draft pending delete-confirm
   const [importingFile, setImportingFile] = useState(false); // Files-app probe in flight
+  // The mode dropdown (Single / Slideshow / Post from Files). Rendered in a
+  // Modal so its items stay tappable — an absolutely-positioned menu hanging
+  // below its parent row would draw fine but lose Android touches outside the
+  // parent's bounds. Anchored by measuring the button at open time.
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
+  const [modeMenuAnchor, setModeMenuAnchor] = useState<{ x: number; y: number; h: number } | null>(null);
+  const modeBtnRef = useRef<View>(null);
+  const modeMenuAnim = useRef(new Animated.Value(0)).current;
+  // iOS can't present the document picker while the menu Modal is still
+  // dismissing — the pending action fires from the Modal's onDismiss instead.
+  const pendingMenuAction = useRef<(() => void) | null>(null);
   // Film upload heads-up: holds the estimate plus the promise resolver for the
   // Share flow, which awaits the user's answer before any work begins.
   const [filmNotice, setFilmNotice] = useState<{ minutes: number; resolve: (go: boolean) => void } | null>(null);
@@ -760,6 +771,25 @@ export default function PostScreen() {
     } finally {
       setImportingFile(false);
     }
+  }
+
+  function openModeMenu() {
+    modeBtnRef.current?.measureInWindow((x, y, _w, h) => {
+      setModeMenuAnchor({ x, y, h });
+      setModeMenuOpen(true);
+      modeMenuAnim.setValue(0);
+      Animated.timing(modeMenuAnim, {
+        toValue: 1, duration: 140, easing: Easing.out(Easing.quad), useNativeDriver: true,
+      }).start();
+    });
+  }
+
+  function chooseMode(action: () => void, presentsNative = false) {
+    setModeMenuOpen(false);
+    // Mode switches run immediately; only natively-presented pickers must wait
+    // for the Modal to finish dismissing (and only iOS has that conflict).
+    if (presentsNative && Platform.OS === 'ios') pendingMenuAction.current = action;
+    else action();
   }
 
   // ── Unified Posts picker: single vs slideshow, both off one in-app grid ───────
@@ -2157,32 +2187,89 @@ export default function PostScreen() {
             )}
           </Animated.View>
 
-          {/* Single / Slideshow toggle + hint + Files import */}
+          {/* Mode button (Single ▾ / Slideshow ▾) + hint. The dropdown holds the
+              other mode and Post from Files. */}
           <View style={styles.recentsRow}>
-            <View style={styles.modeToggle}>
-              <TouchableOpacity onPress={enterSingle} style={[styles.modePill, !slideshowMode && styles.modePillActive]}>
-                <Text style={[styles.modePillText, !slideshowMode && styles.modePillTextActive]}>{t('post.single')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={enterSlideshow} style={[styles.modePill, slideshowMode && styles.modePillActive]}>
-                <Text style={[styles.modePillText, slideshowMode && styles.modePillTextActive]}>{t('post.slideshow')}</Text>
+            {/* collapsable=false so Android can measureInWindow this anchor. */}
+            <View ref={modeBtnRef} collapsable={false}>
+              <TouchableOpacity
+                onPress={openModeMenu}
+                disabled={importingFile}
+                style={styles.modeBtn}
+                accessibilityRole="button"
+                accessibilityLabel={slideshowMode ? t('post.slideshow') : t('post.single')}
+              >
+                <Text style={styles.modeBtnText}>{slideshowMode ? t('post.slideshow') : t('post.single')}</Text>
+                {importingFile
+                  ? <ActivityIndicator size="small" color={colors.text} />
+                  : <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />}
               </TouchableOpacity>
             </View>
             <Text style={[styles.recentsHint, styles.recentsHintFlex]} numberOfLines={1}>
               {slideshowMode ? t('post.slideshowCountHint', { count: slides.length, max: MAX_SLIDES }) : t('post.tapPhotoVideo')}
             </Text>
-            <TouchableOpacity
-              onPress={importFromFiles}
-              disabled={importingFile}
-              style={styles.filesBtn}
-              accessibilityRole="button"
-              accessibilityLabel={t('post.filesImport')}
-            >
-              {importingFile
-                ? <ActivityIndicator size="small" color={colors.text} />
-                : <Ionicons name="folder-open-outline" size={14} color={colors.text} />}
-              <Text style={styles.filesBtnText}>{t('post.filesImport')}</Text>
-            </TouchableOpacity>
           </View>
+
+          {/* The mode dropdown. */}
+          <Modal
+            visible={modeMenuOpen}
+            transparent
+            animationType="none"
+            statusBarTranslucent
+            onRequestClose={() => setModeMenuOpen(false)}
+            onDismiss={() => {
+              const a = pendingMenuAction.current;
+              pendingMenuAction.current = null;
+              a?.();
+            }}
+          >
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setModeMenuOpen(false)}>
+              {modeMenuAnchor && (
+                <Animated.View
+                  style={[
+                    styles.modeMenu,
+                    { top: modeMenuAnchor.y + modeMenuAnchor.h + 6, left: modeMenuAnchor.x },
+                    {
+                      opacity: modeMenuAnim,
+                      transform: [
+                        { translateY: modeMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) },
+                        { scale: modeMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) },
+                      ],
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={styles.modeMenuItem}
+                    onPress={() => chooseMode(enterSingle)}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="image-outline" size={17} color={colors.text} />
+                    <Text style={styles.modeMenuLabel}>{t('post.single')}</Text>
+                    {!slideshowMode && <Ionicons name="checkmark" size={16} color={colors.primary} />}
+                  </TouchableOpacity>
+                  <View style={styles.modeMenuDivider} />
+                  <TouchableOpacity
+                    style={styles.modeMenuItem}
+                    onPress={() => chooseMode(enterSlideshow)}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="albums-outline" size={17} color={colors.text} />
+                    <Text style={styles.modeMenuLabel}>{t('post.slideshow')}</Text>
+                    {slideshowMode && <Ionicons name="checkmark" size={16} color={colors.primary} />}
+                  </TouchableOpacity>
+                  <View style={styles.modeMenuDivider} />
+                  <TouchableOpacity
+                    style={styles.modeMenuItem}
+                    onPress={() => chooseMode(importFromFiles, true)}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="folder-open-outline" size={17} color={colors.text} />
+                    <Text style={styles.modeMenuLabel}>{t('post.fromFiles')}</Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+            </Pressable>
+          </Modal>
 
           {/* One grid for all camera media (photos + videos) */}
           <View style={{ flex: 1 }}>
@@ -2362,13 +2449,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   recentsHint: { color: colors.textTertiary, fontSize: 12 },
   // The hint yields space to the Files button and hugs it from the left, so on
   // narrow phones it truncates rather than pushing the button off-screen.
-  recentsHintFlex: { flex: 1, textAlign: 'right', marginHorizontal: SPACING.sm },
-  filesBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: SPACING.md, paddingVertical: 6,
-    borderRadius: RADIUS.full, backgroundColor: colors.surfaceLight,
-  },
-  filesBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  recentsHintFlex: { flex: 1, textAlign: 'right', marginLeft: SPACING.sm },
 
   // Remove-media "x" on the preview square, and the Single/Slideshow mode toggle.
   removeBtn: {
@@ -2376,11 +2457,25 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.6)',
     alignItems: 'center', justifyContent: 'center',
   },
-  modeToggle: { flexDirection: 'row', backgroundColor: colors.surfaceLight, borderRadius: RADIUS.full, padding: 2 },
-  modePill: { paddingHorizontal: SPACING.md, paddingVertical: 5, borderRadius: RADIUS.full },
-  modePillActive: { backgroundColor: '#fff', ...SHADOWS.sm },
-  modePillText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
-  modePillTextActive: { color: '#000' },
+  // The mode dropdown button — replaces the old Single/Slideshow pill pair.
+  modeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: SPACING.md, paddingVertical: 6,
+    borderRadius: RADIUS.full, backgroundColor: colors.surfaceLight,
+  },
+  modeBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  modeMenu: {
+    position: 'absolute', minWidth: 190,
+    backgroundColor: colors.surface, borderRadius: RADIUS.lg,
+    paddingVertical: 4, ...SHADOWS.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+  },
+  modeMenuItem: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    paddingHorizontal: SPACING.md, paddingVertical: 11,
+  },
+  modeMenuLabel: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' },
+  modeMenuDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginHorizontal: SPACING.sm },
 
   // Bottom Posts | Music strip — two equal halves, centered labels, same (dark)
   // background; the active label is orange and bolder.
