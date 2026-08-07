@@ -137,9 +137,11 @@ re-verified against the live project, not just marked off:
    deliberate decision in `supabase/functions/send-push` **and**
    `messages.preview.offer` — not an accident.
 
-**Owner, OPEN — added 2026-07-30.**
+**Owner — added 2026-07-30. Done.**
 
-7. **Run `supabase/sql/shop_offers_open.sql`** (after `shop_stats.sql`; idempotent).
+7. ~~**Run `supabase/sql/shop_offers_open.sql`**~~ **Verified applied 2026-08-07** — the
+   deployed `shop_order_precheck` no longer contains the `offers_not_available` gate
+   (checked against live `pg_proc`, not assumed). This entry had simply never been ticked.
 
    "Make an offer" now appears on every active listing, not just lease-without-sell:
    grey above "Message seller" when there is a green Buy button, blue under the Free
