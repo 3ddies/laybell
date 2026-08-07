@@ -10,7 +10,15 @@ import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../const
 import type { Pkg } from '../lib/purchases';
 import { DONATION_FEE_RATE_PREMIUM, DONATION_FEE_RATE_STANDARD } from '../lib/donations';
 import { Skeleton, SkeletonLine } from '../components/Skeleton';
-import { GALAXY, GALAXY_LIGHT } from '../components/SpotlightButton';
+import PremiumBubbles from '../components/PremiumBubbles';
+
+// Premium+ brand: cinematic red — Films is the flagship perk, and red keeps the
+// tier in the same warm family as Premium's orange instead of a cold departure
+// (the galaxy purple it replaced belonged to Spotlight anyway). Owner call,
+// 2026-08-07. Same three-stop shape as the gradients in constants/theme.
+const PLUS_RED = ['#4A0812', '#8E1023', '#D91E36'] as const;
+const PLUS_RED_ACCENT = '#D91E36'; // solid brand red, for icons on light ground
+const PLUS_RED_LIGHT = '#FF8B98';  // legible red on the dark card body
 
 // Laybell Premium paywall. Reads offerings/status from RevenueCat via PremiumContext;
 // perks are wired through lib/entitlements (unlimited offline + ad-free are live; the
@@ -46,7 +54,8 @@ export default function PremiumScreen() {
     { icon: 'flash-outline' as const, label: t('premium.perkSpotlight'), desc: t('premium.perkSpotlightDesc') },
     { icon: 'ribbon-outline' as const, label: t('premium.perkBadgeGrace'), desc: t('premium.perkBadgeGraceDesc') },
     { icon: 'list-outline' as const, label: t('premium.perkMusicOrder'), desc: t('premium.perkMusicOrderDesc') },
-    { icon: 'cloud-download-outline' as const, label: t('premium.perkOffline'), desc: t('premium.perkOfflineDesc') },
+    // Unlimited downloads moved UP to Premium+ (owner, 2026-08-07) — the row
+    // lives on the plus card now, and effectivePinLimit gates on plus to match.
   ];
 
   async function buy(pkg: Pkg) {
@@ -97,11 +106,14 @@ export default function PremiumScreen() {
             ))}
           </View>
 
-          {/* ── Premium+ — the tier above: Films + badge freeze, on the galaxy
-                 theme so it reads as its own thing rather than a bigger orange
-                 button. Includes everything Premium has. ── */}
+          {/* ── Premium+ — the tier above: Films, no ads, badge freeze, unlimited
+                 downloads. Cinematic red with the same rising bubbles as the
+                 Premium settings card, so the two tiers read as one family with
+                 plus as the deeper cut. Includes everything Premium has. ── */}
           <View style={styles.plusCard}>
-            <LinearGradient colors={GALAXY as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.plusHero}>
+            <LinearGradient colors={PLUS_RED as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.plusHero}>
+              {/* Behind the content; the card's overflow:hidden clips it. */}
+              <PremiumBubbles />
               <View style={styles.plusBadge}>
                 <Ionicons name="film-outline" size={22} color="#fff" />
               </View>
@@ -110,24 +122,31 @@ export default function PremiumScreen() {
             </LinearGradient>
             <View style={styles.plusPerks}>
               <View style={styles.plusPerkRow}>
-                <Ionicons name="film-outline" size={20} color={GALAXY_LIGHT} />
+                <Ionicons name="film-outline" size={20} color={PLUS_RED_LIGHT} />
                 <View style={styles.perkBody}>
                   <Text style={styles.perkText}>{t('premium.plusPerkFilms')}</Text>
                   <Text style={styles.perkDesc}>{t('premium.plusPerkFilmsDesc')}</Text>
                 </View>
               </View>
               <View style={styles.plusPerkRow}>
-                <Ionicons name="snow-outline" size={20} color={GALAXY_LIGHT} />
+                <Ionicons name="snow-outline" size={20} color={PLUS_RED_LIGHT} />
                 <View style={styles.perkBody}>
                   <Text style={styles.perkText}>{t('premium.plusPerkFreeze')}</Text>
                   <Text style={styles.perkDesc}>{t('premium.plusPerkFreezeDesc')}</Text>
                 </View>
               </View>
               <View style={styles.plusPerkRow}>
-                <Ionicons name="ban-outline" size={20} color={GALAXY_LIGHT} />
+                <Ionicons name="ban-outline" size={20} color={PLUS_RED_LIGHT} />
                 <View style={styles.perkBody}>
                   <Text style={styles.perkText}>{t('premium.plusPerkNoAds')}</Text>
                   <Text style={styles.perkDesc}>{t('premium.plusPerkNoAdsDesc')}</Text>
+                </View>
+              </View>
+              <View style={styles.plusPerkRow}>
+                <Ionicons name="cloud-download-outline" size={20} color={PLUS_RED_LIGHT} />
+                <View style={styles.perkBody}>
+                  <Text style={styles.perkText}>{t('premium.perkOffline')}</Text>
+                  <Text style={styles.perkDesc}>{t('premium.perkOfflineDesc')}</Text>
                 </View>
               </View>
             </View>
@@ -137,7 +156,7 @@ export default function PremiumScreen() {
             <Text style={styles.plusNote}>{t('premium.plusFilmNote')}</Text>
             {isPremiumPlus && (
               <View style={styles.plusActiveRow}>
-                <Ionicons name="checkmark-circle" size={18} color={GALAXY_LIGHT} />
+                <Ionicons name="checkmark-circle" size={18} color={PLUS_RED_LIGHT} />
                 <Text style={styles.plusActiveText}>{t('premium.plusActive')}</Text>
               </View>
             )}
@@ -145,16 +164,19 @@ export default function PremiumScreen() {
 
           {isPremium ? (
             <View style={styles.buy}>
+              {/* The member card names the tier the member actually holds — a
+                  Premium+ subscriber reading "Premium member" looks like a
+                  billing error, not a thank-you. */}
               <View style={styles.activeCard}>
-                <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
-                <Text style={styles.activeTitle}>{t('premium.active')}</Text>
+                <Ionicons name="checkmark-circle" size={22} color={isPremiumPlus ? PLUS_RED_ACCENT : colors.primary} />
+                <Text style={styles.activeTitle}>{t(isPremiumPlus ? 'premium.activePlus' : 'premium.active')}</Text>
                 <Text style={styles.activeBody}>{t('premium.activeBody')}</Text>
               </View>
               {/* A $9.99 subscriber can still move up — RevenueCat treats the
                   plus purchase as an upgrade of the same subscription group. */}
               {!isPremiumPlus && configured && packages.filter(isPlusPkg).map((pkg) => (
                 <TouchableOpacity key={pkg.identifier} activeOpacity={0.85} onPress={() => buy(pkg)} style={styles.subscribeBtn}>
-                  <LinearGradient colors={GALAXY as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
+                  <LinearGradient colors={PLUS_RED as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
                     <Text style={styles.subscribeText}>{t('premium.subscribePlus')}</Text>
                     <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
                   </LinearGradient>
@@ -183,8 +205,8 @@ export default function PremiumScreen() {
             <View style={styles.buy}>
               {packages.map((pkg) => (
                 <TouchableOpacity key={pkg.identifier} activeOpacity={0.85} onPress={() => buy(pkg)} style={styles.subscribeBtn}>
-                  {/* Plus packages sell on the galaxy theme, matching their card. */}
-                  <LinearGradient colors={(isPlusPkg(pkg) ? GALAXY : GRADIENTS.primary) as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
+                  {/* Plus packages sell on the red theme, matching their card. */}
+                  <LinearGradient colors={(isPlusPkg(pkg) ? PLUS_RED : GRADIENTS.primary) as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
                     <Text style={styles.subscribeText}>{t(isPlusPkg(pkg) ? 'premium.subscribePlus' : 'premium.subscribe')}</Text>
                     <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
                   </LinearGradient>
@@ -269,7 +291,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   perkIconHighlight: { backgroundColor: colors.primary },
   perkTextHighlight: { fontSize: 18, fontWeight: '900', color: colors.text },
 
-  // Premium+ card — galaxy-themed so the tier reads as its own product.
+  // Premium+ card — cinematic red (see PLUS_RED above) so the tier reads as
+  // its own product while staying in Premium's warm family.
   plusCard: {
     borderRadius: RADIUS.xl, borderWidth: 1, borderColor: colors.border,
     backgroundColor: colors.surfaceLight, overflow: 'hidden', marginBottom: SPACING.lg,

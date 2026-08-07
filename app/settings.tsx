@@ -17,6 +17,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { formatBytes } from '../lib/format';
 import { LANGUAGES } from '../lib/i18n';
 import BadgeEmblem from '../components/BadgeEmblem';
+import PremiumBubbles from '../components/PremiumBubbles';
 import SwipeBackPager from '../components/SwipeBackPager';
 import LanguagePicker from '../components/LanguagePicker';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -81,117 +82,10 @@ const GALAXY_STARS = [
   { top: 82, left: '92%', size: 1.5, opacity: 0.5 },
 ] as const;
 
-// Soft rising BUBBLES for the Laybell Premium card (owner iterated the first
-// take — tiny specks — into fewer, bigger, bubble-looking shapes). Each is a
-// translucent white disc with a brighter rim, rising `drift`px on a gentle
-// S-curve sway while it swells slightly and fades in and back out — champagne,
-// not confetti. Five of them, each on its own duration/delay so the field
-// never beats in sync.
-//
-// Placement (owner-directed): the star icon's circle must stay CLEAR — no
-// bubble may collide with it — so the field starts at ~26% and spreads across
-// the open orange, ending at the chevron column. The icon circle spans
-// roughly the left 17% of the card (20px padding + 48px bubble), and the
-// widest sway here is ±8px ≈ 2%, so 26% keeps a real margin. The mid-card
-// bubbles stay the faintest (≤0.40 peak) so a label that wraps in a longer
-// language passes over them cleanly; the chevron column carries the
-// brightest, where there is no text to fight.
-//
-// Made more prevalent (owner) by three levers at once, none of them pushed
-// far: eight bubbles instead of six, each a few px larger, and peaks lifted
-// roughly a third. The readability ceiling still holds — a peak of 0.40 over
-// a 0.20 fill is ~0.08 effective white on the orange, and the rim is a
-// 1.2px ring, neither of which a 21pt bold label has trouble sitting on.
-//
-// `startY` tracks the card's height, now 108px (padding 30×2 + 48pt bubble);
-// they start lower than before so the rise uses the full card rather than
-// finishing in the top third.
-const PREMIUM_BUBBLES = [
-  { left: '26%', size: 14, peak: 0.38, drift: 40, sway: 6, startY: 70, dur: 8400, delay: 1800 },
-  { left: '38%', size: 19, peak: 0.32, drift: 46, sway: -7, startY: 76, dur: 10200, delay: 0 },
-  { left: '48%', size: 11, peak: 0.30, drift: 34, sway: 6, startY: 60, dur: 8800, delay: 6200 },
-  { left: '55%', size: 13, peak: 0.34, drift: 34, sway: 5, startY: 56, dur: 7600, delay: 3400 },
-  { left: '68%', size: 17, peak: 0.40, drift: 44, sway: -8, startY: 74, dur: 9200, delay: 5000 },
-  { left: '80%', size: 12, peak: 0.48, drift: 38, sway: 6, startY: 66, dur: 8000, delay: 4200 },
-  { left: '85%', size: 23, peak: 0.72, drift: 48, sway: 7, startY: 72, dur: 9800, delay: 900 },
-  { left: '93%', size: 13, peak: 0.62, drift: 36, sway: -5, startY: 54, dur: 7400, delay: 2600 },
-] as const;
-
-// Module scope, per the house rule (components defined inside a render body get
-// remounted every render). Pure native-driver loops — nothing here touches the
-// JS thread after start — and Reduce Motion renders the same field as static
-// bubbles instead of animating it, matching how the bell handles that setting.
-function PremiumBubbles() {
-  const styles = useThemedStyles(makeStyles);
-  const [reduceMotion, setReduceMotion] = useState(false);
-  const anims = useRef(PREMIUM_BUBBLES.map(() => new Animated.Value(0))).current;
-
-  useEffect(() => {
-    let alive = true;
-    AccessibilityInfo.isReduceMotionEnabled()
-      .then((on) => { if (alive) setReduceMotion(on); })
-      .catch(() => {});
-    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => { alive = false; sub?.remove?.(); };
-  }, []);
-
-  useEffect(() => {
-    if (reduceMotion) return;
-    const loops = anims.map((v, i) => {
-      const b = PREMIUM_BUBBLES[i];
-      v.setValue(0);
-      // The delay sits INSIDE the loop, so each bubble also rests between
-      // cycles — they surface at varied moments instead of streaming.
-      const loop = Animated.loop(Animated.sequence([
-        Animated.delay(b.delay),
-        Animated.timing(v, { toValue: 1, duration: b.dur, easing: Easing.linear, useNativeDriver: true }),
-      ]));
-      loop.start();
-      return loop;
-    });
-    return () => loops.forEach((l) => l.stop());
-  }, [reduceMotion, anims]);
-
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {PREMIUM_BUBBLES.map((b, i) => reduceMotion ? (
-        <View
-          key={i}
-          style={[styles.premiumBubble, {
-            left: b.left, top: b.startY - b.drift / 2,
-            width: b.size, height: b.size, borderRadius: b.size / 2,
-            opacity: b.peak * 0.5,
-          }]}
-        />
-      ) : (
-        <Animated.View
-          key={i}
-          style={[styles.premiumBubble, {
-            left: b.left, top: b.startY,
-            width: b.size, height: b.size, borderRadius: b.size / 2,
-            opacity: anims[i].interpolate({
-              inputRange: [0, 0.18, 0.8, 1],
-              outputRange: [0, b.peak, b.peak * 0.8, 0],
-            }),
-            transform: [
-              { translateY: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0, -b.drift] }) },
-              // A soft S-path: out, back through centre, opposite, home — what
-              // makes it read as floating rather than launched.
-              {
-                translateX: anims[i].interpolate({
-                  inputRange: [0, 0.25, 0.5, 0.75, 1],
-                  outputRange: [0, b.sway, 0, -b.sway, 0],
-                }),
-              },
-              // Swells a touch as it rises, like a bubble nearing the surface.
-              { scale: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0.82, 1.08] }) },
-            ],
-          }]}
-        />
-      ))}
-    </View>
-  );
-}
+// The Premium card's floating bubbles now live in components/PremiumBubbles —
+// extracted verbatim (owner-tuned field: champagne-not-confetti, icon circle
+// kept clear, ≤0.40 peaks under the label column) so the Premium+ paywall card
+// carries the same signature.
 
 function SettingsRow({ item }: { item: SectionItem }) {
   const { colors } = useTheme();
@@ -255,7 +149,7 @@ export default function SettingsScreen() {
   useEffect(() => { setHiddenOn(!!(profile as any)?.hidden); }, [profile]);
   const { colors, mode, setMode } = useTheme();
   const { usageBytes, prefs: offlinePrefs, setPref: setOfflinePref } = useOffline();
-  const { isPremium } = usePremium();
+  const { isPremium, isPremiumPlus } = usePremium();
   const { t, lang } = useTranslation();
   const [langPickerVisible, setLangPickerVisible] = useState(false);
   // Polished confirmations (replace the OS Alerts for logout / change password /
@@ -709,8 +603,13 @@ export default function SettingsScreen() {
                 </View>
                 <View style={styles.rowContent}>
                   <Text style={styles.promoPremiumLabel}>{t('premium.settingsRow')}</Text>
+                  {/* The caption names the member's ACTUAL tier and what it buys —
+                      "thanks for your support" described nothing, and a Premium+
+                      member reading "Premium" looked like a billing error. */}
                   <Text style={styles.promoPremiumSub}>
-                    {isPremium ? t('premium.settingsActive') : t('premium.settingsUpgrade')}
+                    {isPremiumPlus ? t('premium.settingsActivePlus')
+                      : isPremium ? t('premium.settingsActive')
+                      : t('premium.settingsUpgrade')}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.9)" />
@@ -933,18 +832,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   // Shared by all three cards now — Premium keeps its lead through padding and
   // type instead of a bigger bubble, so the icons line up down the stack.
   promoIconBubbleLg: { width: 48, height: 48, borderRadius: 24 },
-  // A bubble, not a speck: barely-there white fill with a brighter rim — the
-  // rim is what sells the "bubble" read. Both scale together via the animated
-  // container opacity.
-  // The rim is what sells the "bubble" read, so it carries most of the lift:
-  // fill 0.14 → 0.20, rim 0.55 → 0.75 on a slightly heavier stroke. Raising the
-  // fill alone would have made them read as milky blobs instead.
-  premiumBubble: {
-    position: 'absolute',
-    backgroundColor: 'rgba(255,255,255,0.20)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.75)',
-  },
   // Spotlight and Ad Manager now match what Premium used to be — same padding,
   // same 48pt bubble. The stack still reads in order because Premium grew past
   // them rather than because they stayed small.

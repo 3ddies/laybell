@@ -145,7 +145,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   }, [reconcileOnline]);
 
   const tier = rawTier(profile);
-  const pinLimit = effectivePinLimit(tier);   // premium → unlimited (byte-capped)
+  const pinLimit = effectivePinLimit(tier);   // premium+ → unlimited (byte-capped)
 
   const pin = useCallback(async (input: PinInput): Promise<PinOutcome> => {
     if (Platform.OS === 'web') return 'web';

@@ -98,12 +98,15 @@ export const FILM_MIN_SEC = 540;
 // down to 720p, so "a film" always means the best picture Laybell produces.
 export const FILM_MAX_SEC = 1 * 3600;
 
-// Premium removes the per-tier offline COUNT limit. The 3 GB device byte cap in
-// lib/offline.ts still applies, so this is "unlimited, byte-capped" — never
-// unbounded device storage. Non-premium gets the earned-tier allowance.
+// PREMIUM+ removes the per-tier offline COUNT limit (owner moved this perk up
+// from Premium, 2026-08-07 — the paywall rows moved with it). The 3 GB device
+// byte cap in lib/offline.ts still applies, so this is "unlimited, byte-capped"
+// — never unbounded device storage. Everyone else — standard Premium included —
+// gets the earned-tier allowance. Existing over-limit pins from the Premium era
+// are not purged; the limit gates NEW pins only (lib/offline checks at pin time).
 export const PREMIUM_PIN_LIMIT = 100_000;
-export function effectivePinLimit(tier: Tier | null, premium = isPremium()): number {
-  return premium ? PREMIUM_PIN_LIMIT : offlinePinLimit(tier);
+export function effectivePinLimit(tier: Tier | null, plus = isPremiumPlus()): number {
+  return plus ? PREMIUM_PIN_LIMIT : offlinePinLimit(tier);
 }
 
 // Ad-free is a premium perk for the HOME FEED only. Read at fetchFeedAds in
