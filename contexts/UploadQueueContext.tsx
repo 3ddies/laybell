@@ -248,7 +248,11 @@ async function startStreamUpload(
   // perfect record. Staging exists only for what genuinely won't fit.
   let uid: string;
   let stagedPath: string | null = null;
-  const upUri = await compressVideoIfPossible(cut.uri, onPreparing, uploadSeconds);
+  // Films encode to a QUALITY budget (~5 Mbps 1080p) rather than a size one,
+  // because staging carries them and Cloudflare's 200 MB direct-upload cap
+  // doesn't apply. Everything else still targets ~180 MB so it keeps riding
+  // the simple POST path.
+  const upUri = await compressVideoIfPossible(cut.uri, onPreparing, uploadSeconds, film);
   const bytes = await fileSizeBytes(upUri);
 
   // DID COMPRESSION ACTUALLY RUN? compressVideoIfPossible returns its INPUT

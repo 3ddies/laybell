@@ -92,7 +92,10 @@ export function subscribePremium(fn: () => void): () => void {
 export const FILM_MIN_SEC = 540;
 // The Premium+ landscape ceiling: 3 hours. The stream-tus-upload Edge Function
 // clamps to this too, so a modified client cannot mint a longer upload.
-export const FILM_MAX_SEC = 3 * 3600;
+// 1 hour (owner's call 2026-08-07, down from 3). Keeps every film inside the
+// 5 Mbps 1080p budget — at this length the quality ladder never has to step
+// down to 720p, so "a film" always means the best picture Laybell produces.
+export const FILM_MAX_SEC = 1 * 3600;
 
 // Premium removes the per-tier offline COUNT limit. The 3 GB device byte cap in
 // lib/offline.ts still applies, so this is "unlimited, byte-capped" — never

@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions } from 'react-native';
-import { useUploadEta, useEncodeEta, formatEta } from './uploadEta';
+import { useUploadEta, useEncodeEta, formatEta, overallProgress, useSmoothProgress } from './uploadEta';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import AppVideo from './AppVideo';
@@ -50,7 +50,15 @@ function PendingCard({ p }: { p: PendingUpload }) {
   const { t } = useTranslation();
 
   const h = Math.min(SCREEN_W / aspectToNumber(p.aspectRatio, 16 / 9), MAX_VIDEO_H);
-  const pct = Math.round(p.progress * 100);
+  // ONE bar across the whole publish. A film's three stages used to drive it
+  // 0→100% each, so the bar appeared to restart twice — see overallProgress.
+  // Short videos have no prepare stage and encode in seconds, so their bar is
+  // still effectively just the upload.
+  // Smoothed so the bar always creeps forward and never teleports between
+  // stage boundaries — see useSmoothProgress.
+  const rawOverall = p.isFilm ? overallProgress(p.phase, p.progress, p.processingPct) : p.progress;
+  const smooth = useSmoothProgress(rawOverall, p.phase);
+  const pct = Math.round((p.isFilm ? smooth : rawOverall) * 100);
 
   // Films only: live "time left" under the spinner (accuracy-gated — see
   // components/uploadEta.ts). Upload and encode are separate clocks: the first
@@ -61,16 +69,26 @@ function PendingCard({ p }: { p: PendingUpload }) {
   const uploadEta = useUploadEta(p.progress, p.phase === 'uploading' && !!p.isFilm);
   const procPct = (p.processingPct ?? 0) / 100;
   const procEta = useEncodeEta(procPct, p.phase === 'processing' && !!p.isFilm, p.durationSec ?? 0);
-  const etaText = p.phase === 'preparing'
-    ? `${t('upload.preparingFilm')} · ${Math.round(p.progress * 100)}%`
+  // Every stage says the SAME two things: what is happening, and how much of
+  // the whole job is left. The percentage is the unified one, so it never
+  // rewinds when a stage hands off to the next.
+  const stageLabel = p.phase === 'preparing'
+    ? t('upload.stagePreparing')
     : p.phase === 'uploading'
-      ? [formatEta(t, uploadEta), p.slowLink ? t('upload.slowLink') : null].filter(Boolean).join('\n')
-      : p.phase === 'processing' && p.isFilm && p.processingPct
-        ? [
-            `${Math.round(p.processingPct)}%`,
-            (p.processingPct >= 95 || (procEta != null && procEta < 60)) ? t('upload.almostDone') : formatEta(t, procEta),
-          ].filter(Boolean).join(' · ')
+      ? t('upload.stageUploading')
+      : p.phase === 'processing'
+        ? t('upload.stageProcessing')
         : null;
+  const timeLeft = p.phase === 'uploading'
+    ? formatEta(t, uploadEta)
+    : p.phase === 'processing' && p.isFilm
+      ? ((p.processingPct ?? 0) >= 95 || (procEta != null && procEta < 60) ? t('upload.almostDone') : formatEta(t, procEta))
+      : null;
+  const etaText = !stageLabel ? null : [
+    `${stageLabel} · ${pct}%`,
+    timeLeft,
+    p.slowLink && p.phase === 'uploading' ? t('upload.slowLink') : null,
+  ].filter(Boolean).join('\n');
 
   return (
     <View style={styles.card}>
@@ -152,7 +170,10 @@ function PendingCard({ p }: { p: PendingUpload }) {
             thing read bulky. It carries what the percentage did without asking
             anyone to read anything. (A determinate RING would need
             react-native-svg, a native dep, so a rebuild.) */}
-        {(p.phase === 'uploading' || p.phase === 'preparing') && (
+        {/* The hairline rides through PROCESSING too now — a film's encode is
+            minutes of real work, and hiding the bar there was what made the
+            last stretch feel like nothing was happening. */}
+        {(p.phase === 'uploading' || p.phase === 'preparing' || p.phase === 'processing') && (
           <View style={styles.track}><View style={[styles.fill, { width: `${pct}%` }]} /></View>
         )}
       </View>

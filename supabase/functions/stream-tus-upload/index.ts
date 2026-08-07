@@ -35,7 +35,7 @@ const CF_TOKEN = Deno.env.get('CF_STREAM_TOKEN');
 // post.tsx — pickers under-report VFR durations and Cloudflare kills encodes
 // past the minted ceiling). Must stay in lockstep with FILM_MAX_SEC in
 // lib/entitlements.ts.
-const FILM_CEILING_SEC = 3 * 3600 + 150;
+const FILM_CEILING_SEC = 1 * 3600 + 150;
 // Cloudflare's own input cap for a single video.
 const MAX_UPLOAD_BYTES = 30 * 1024 * 1024 * 1024;
 

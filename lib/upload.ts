@@ -42,12 +42,53 @@ export const STREAM_POST_MAX_BYTES = 200 * 1024 * 1024;
 // The margin covers what the bitrate target doesn't: the audio track (~10 MB at
 // the 10-minute source max), VBR overshoot, and the multipart envelope.
 const TARGET_LONG_UPLOAD_BYTES = 180 * 1024 * 1024;
+
+// ── Film quality budget ───────────────────────────────────────────────────────
+// A FILM does not have to fit Cloudflare's 200 MB direct-upload cap, because it
+// travels by staging (upload to our storage → Cloudflare fetches it), so its
+// budget is set by what looks good rather than by a transport limit. Squeezing
+// a 13-minute film into 180 MB meant ~1.9 Mbps, which is why the first
+// successful film looked poor no matter how the pixels were arranged.
+//
+// 8 Mbps — Cloudflare's OWN recommended input bitrate for 1080p.
+//
+// This number is not about what viewers receive (Stream's ladder tops out at
+// 1080p regardless); it is about DOUBLE COMPRESSION. A film is encoded twice:
+// once here, 4K source → 1080p, and again by Cloudflare into its delivery
+// renditions. Every artifact the first pass introduces is baked in before the
+// second pass ever sees the frame. Handing Stream a near-transparent master is
+// the only lever left on final quality — at 5 Mbps the first pass was already
+// throwing away detail the second pass could never recover.
+const FILM_TARGET_BITRATE = 8_000_000;
+// Absolute size ceiling, so the longest film can't produce something
+// unuploadable. A 1-hour film at the target lands at 3.6 GB; this leaves room
+// for that plus VBR overshoot and audio, and still sits under the 5 GB
+// video-staging bucket limit.
+const FILM_MAX_BYTES = 4 * 1024 * 1024 * 1024;
+
+/** Bitrate a film of this length should encode at, in bits/sec. */
+export function filmBitrateFor(durationSec: number): number {
+  if (!durationSec || durationSec <= 0) return FILM_TARGET_BITRATE;
+  return Math.min(FILM_TARGET_BITRATE, Math.floor((FILM_MAX_BYTES * 8) / durationSec));
+}
 // Above this duration 'auto' can no longer be trusted to land under the cap, so
 // the bitrate is computed from the duration instead. At exactly 5 minutes the
 // computed target (~4.9 Mbps) is right in 'auto' range, so the handoff between
 // the two modes is seamless quality-wise; by the 9-minute landscape window it
 // has eased to ~2.7 Mbps, which Stream's own ABR ladder re-encodes anyway.
 const ADAPTIVE_BITRATE_ABOVE_SEC = 300;
+
+// Long-edge cap for a given bitrate, in the units the compressor's `maxSize`
+// takes. Each threshold is roughly the floor at which that resolution still
+// looks clean in H.264: below it, the same bits buy a visibly better picture
+// at the next size down. bitrate = 0 means 'auto' mode (short clips), which
+// picks its own bitrate from the source and can keep full 1080p.
+function resolutionCapFor(bitrate: number): number {
+  if (!bitrate) return 1920;        // 'auto' — source-driven, leave it alone
+  if (bitrate >= 4_000_000) return 1920; // 1080p
+  if (bitrate >= 2_000_000) return 1280; // 720p
+  return 960;                            // 540p — still sharp, never mush
+}
 
 // The upload task (and Cloudflare) only speak file:// — but a picked video can be
 // a ph:// / assets-library:// Photos asset when MediaLibrary has no local copy
@@ -136,6 +177,9 @@ export async function compressVideoIfPossible(
   // cut window when a trim really happened, the whole source when it didn't.
   // 0/omitted = unknown → 'auto', never a guessed squeeze on a short clip.
   durationSec?: number,
+  // FILM = travels by staging, so it isn't bound by Cloudflare's 200 MB direct
+  // upload cap and gets a quality-led budget instead of a size-led one.
+  film?: boolean,
 ): Promise<string> {
   try {
     if (!NATIVE_COMPRESS_ENABLED) return uri; // see the switches at the top of this file
@@ -151,15 +195,29 @@ export async function compressVideoIfPossible(
     // because the native trimmer isn't in this build) get a bitrate computed so
     // the OUTPUT lands under Cloudflare's 200 MB POST cap by construction —
     // 'auto' picks by source characteristics and knows nothing about that wall.
-    const adaptive = !!durationSec && durationSec > ADAPTIVE_BITRATE_ABOVE_SEC;
+    // A film is always bitrate-targeted (quality budget); a non-film only once
+    // it is long enough that 'auto' can no longer be trusted under the cap.
+    const adaptive = !!durationSec && (film || durationSec > ADAPTIVE_BITRATE_ABOVE_SEC);
+    const bitrate = !adaptive
+      ? 0
+      : film
+        ? filmBitrateFor(durationSec!)
+        : Math.round((TARGET_LONG_UPLOAD_BYTES * 8) / durationSec!);
     const { Video } = await import('react-native-compressor');
     const out = await Video.compress(
       uri,
       {
         ...(adaptive
-          ? { compressionMethod: 'manual' as const, bitrate: Math.round((TARGET_LONG_UPLOAD_BYTES * 8) / durationSec!) }
+          ? { compressionMethod: 'manual' as const, bitrate }
           : { compressionMethod: 'auto' as const }), // adapts bitrate to the source, like the big apps
-        maxSize: 1920,              // cap the long edge at ~1080p
+        // RESOLUTION FOLLOWS THE BITRATE. Forcing 1080p at a bitrate 1080p
+        // can't sustain is why a 13-minute film looked bad: the size budget
+        // works out to ~1.9 Mbps, roughly a quarter of what 1920x1080 needs,
+        // so the encoder spread too few bits over too many pixels and
+        // everything went soft and blocky. Fewer pixels at the same bitrate is
+        // sharper — and Cloudflare rebuilds its own ABR ladder afterwards
+        // anyway, so handing it a clean 720p master beats a mushy 1080p one.
+        maxSize: resolutionCapFor(bitrate),
         // We already gate on size above, so don't let the library skip anything
         // we decided is worth shrinking.
         minimumFileSizeForCompress: 0,
@@ -355,6 +413,22 @@ export async function uploadToStaging(
   // instead of stacking multi-GB copies (the timestamped-name mistake that
   // silently broke resume in the old uploader).
   const path = `${userId}/${stableKey(uri)}.mp4`;
+
+  // Already fully staged by an earlier attempt → skip the transfer entirely.
+  // This is what makes Retry cheap after a throttled hand-off: the bytes are
+  // on the server, and re-sending them would punish the user for Cloudflare's
+  // rate limiter.
+  try {
+    const local = await fileSizeBytes(uri);
+    const { data: existing } = await supabase.storage
+      .from(VIDEO_STAGING_BUCKET)
+      .list(userId, { search: `${stableKey(uri)}.mp4`, limit: 1 });
+    const staged = existing?.[0]?.metadata?.size ?? 0;
+    if (local > 0 && staged === local) {
+      onProgress?.(1);
+      return path;
+    }
+  } catch { /* couldn't check — just upload */ }
 
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;

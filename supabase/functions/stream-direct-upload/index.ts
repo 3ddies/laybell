@@ -65,7 +65,7 @@ serve(async (req) => {
     // ride this path precisely BECAUSE it is the one that has never failed;
     // forcing it onto a heavier transport just to be long would be backwards.
     const FREE_CEILING_SEC = 700;
-    const FILM_CEILING_SEC = 3 * 3600 + 150;
+    const FILM_CEILING_SEC = 1 * 3600 + 150;
     let requested = Math.max(1, Number(body?.maxDurationSeconds) || DEFAULT_MAX);
     if (requested > FREE_CEILING_SEC) {
       const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);

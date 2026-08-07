@@ -32,7 +32,7 @@ const CF_TOKEN = Deno.env.get('CF_STREAM_TOKEN');
 // Must stay in lockstep with FILM_MAX_SEC in lib/entitlements.ts (+ the client's
 // true-length cushion: pickers under-report VFR durations and Cloudflare kills
 // an encode that runs past the ceiling it was given).
-const FILM_CEILING_SEC = 3 * 3600 + 150;
+const FILM_CEILING_SEC = 1 * 3600 + 150;
 const FREE_CEILING_SEC = 700;
 
 function json(body: unknown, status = 200): Response {

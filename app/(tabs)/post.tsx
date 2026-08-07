@@ -1,6 +1,7 @@
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, ActivityIndicator, Alert, Image, Dimensions, Animated, Modal, Switch, Pressable, Easing,
+  Keyboard,
 } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -167,13 +168,6 @@ const streamCeilingFor = (sourceSec: number, sourceMaxSec: number = VIDEO_SOURCE
 // A Premium+ film source may run past the 3-hour window by the same cushion the
 // free tier gets over ITS window (trim picks the window out of it).
 const FILM_SOURCE_MAX_SEC = FILM_MAX_SEC + 60;
-// Uploads above this get an "are you sure" first: this is the SOURCE size, and
-// compression usually shrinks it well below the pipeline's real (post-compress)
-// cap — so it warns rather than blocks. Without it a multi-hundred-MB clip
-// starts uploading (the details step PREWARMS it) with no warning, on cellular
-// as readily as wifi. The hard stop lives in UploadQueueContext, after
-// compression, against Cloudflare's 200 MB POST limit.
-const LARGE_UPLOAD_BYTES = 200 * 1024 * 1024; // 200 MB
 const MUSIC_MAX_SEC  = 12 * 60;  // music tracks — live cuts, mixes and extended
                                  // versions routinely run past the old 6-minute
                                  // cap on a music-first app
@@ -404,6 +398,9 @@ export default function PostScreen() {
   // default OS alert). Holds the title/body so the spotlight variant can differ.
   const [postedToast, setPostedToast] = useState<{ title: string; message: string; spotlight: boolean; uploading?: boolean } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Draft | null>(null); // draft pending delete-confirm
+  // Film upload heads-up: holds the estimate plus the promise resolver for the
+  // Share flow, which awaits the user's answer before any work begins.
+  const [filmNotice, setFilmNotice] = useState<{ minutes: number; resolve: (go: boolean) => void } | null>(null);
   const editingDraftId = useRef<string | null>(null);
   useFocusEffect(useCallback(() => { loadDrafts().then(setDrafts); }, []));
 
@@ -663,29 +660,12 @@ export default function PostScreen() {
     setFormat(IMAGE_FORMATS[(i + 1) % IMAGE_FORMATS.length]);
   }
 
-  // Best-effort byte check before a pick is accepted. Returns true to proceed.
-  // A size of 0 means "couldn't read it" (e.g. a ph:// asset not yet localized),
-  // which must never block the user — the warning is a courtesy, not a gate.
-  // Deliberately says "a lot of data" rather than naming cellular: NetInfo is a
-  // native module that reports a pessimistic fallback until the binary is
-  // rebuilt with it, so a connection-specific claim could simply be wrong.
-  async function confirmLargeUpload(uri: string): Promise<boolean> {
-    let bytes = 0;
-    try { bytes = await fileSizeBytes(uri); } catch { bytes = 0; }
-    if (!bytes || bytes < LARGE_UPLOAD_BYTES) return true;
-    const size = `${Math.round(bytes / (1024 * 1024))} MB`;
-    return new Promise<boolean>((resolve) => {
-      Alert.alert(
-        t('post.largeUploadTitle'),
-        t('post.largeUploadBody', { size }),
-        [
-          { text: t('common.cancel'), style: 'cancel', onPress: () => resolve(false) },
-          { text: t('post.largeUploadContinue'), onPress: () => resolve(true) },
-        ],
-        { cancelable: true, onDismiss: () => resolve(false) },
-      );
-    });
-  }
+  // (The old "Large video" system alert lived here. It measured the RAW pick,
+  // which stopped meaning anything once every long video is compressed before
+  // upload — a 4K source would warn about 1024 MB for an upload that lands at
+  // ~180 MB. Worse, on a film it fired on top of the Laybell film notice, so
+  // the user answered two popups about the same upload. The themed
+  // ConfirmDialog at Share is the single, accurate warning now.)
 
   async function onPickMedia(m: PickedMedia) {
     // Tapping a thumbnail (even far down the grid) snaps back to the top so the
@@ -717,9 +697,6 @@ export default function PostScreen() {
         );
         return;
       }
-      // Same idea for bytes: the details step prewarms the upload, so by the
-      // time a "this is huge" surprise would surface, it's already uploading.
-      if (!(await confirmLargeUpload(m.uri))) return;
     }
     if (m.type !== postType) setFormat(defaultFormatFor(m.type as any)); // image↔video
     setPostType(m.type);
@@ -1092,6 +1069,22 @@ export default function PostScreen() {
             });
             if (!goAhead) return;
           }
+        }
+        // EXPECTATION BEFORE COMMITMENT. A film is prepared, uploaded and
+        // encoded — tens of minutes of real work. Users don't mind a long wait
+        // they were told about; they mind a long wait that ambushes them. So
+        // say it plainly BEFORE the work starts, with the one instruction that
+        // actually matters (stay in the app), and let them back out.
+        if (isFilm) {
+          const mins = Math.max(5, Math.ceil((videoDurSecV || videoDuration || 0) / 60));
+          // Put the keyboard away first. Share is usually pressed straight from
+          // the caption field, and a dialog sharing the screen with a keyboard
+          // is both cramped and easy to mis-tap.
+          Keyboard.dismiss();
+          const proceed = await new Promise<boolean>((resolve) => {
+            setFilmNotice({ minutes: mins, resolve });
+          });
+          if (!proceed) { setLoading(false); return; }
         }
         const spotLabel = ps?.label ?? null;
         // CRASH INSURANCE: snapshot the whole post as a draft BEFORE the upload
@@ -1926,6 +1919,21 @@ export default function PostScreen() {
             </View>
           </TouchableOpacity>
         </Modal>
+
+        {/* The film heads-up MUST live here as well as in the pick step: this
+            screen owns the Share button, and each step returns its own tree, so
+            a dialog mounted only in the pick step simply does not exist while
+            the user is standing on the one screen that opens it. */}
+        <ConfirmDialog
+          visible={!!filmNotice}
+          icon="film"
+          title={t('film.longUploadTitle')}
+          message={t('film.longUploadBody', { minutes: String(filmNotice?.minutes ?? 10) })}
+          confirmLabel={t('film.startUpload')}
+          cancelLabel={t('film.notNow')}
+          onConfirm={() => { filmNotice?.resolve(true); setFilmNotice(null); }}
+          onCancel={() => { filmNotice?.resolve(false); setFilmNotice(null); }}
+        />
       </View>
     );
   }
@@ -2224,6 +2232,20 @@ export default function PostScreen() {
           />
         </View>
       </Modal>
+
+      {/* Films take real time — say so in Laybell's own voice BEFORE any work
+          starts, rather than through a bare system alert. Setting expectations
+          is the difference between a patient wait and a broken-feeling app. */}
+      <ConfirmDialog
+        visible={!!filmNotice}
+        icon="film"
+        title={t('film.longUploadTitle')}
+        message={t('film.longUploadBody', { minutes: String(filmNotice?.minutes ?? 10) })}
+        confirmLabel={t('film.startUpload')}
+        cancelLabel={t('film.notNow')}
+        onConfirm={() => { filmNotice?.resolve(true); setFilmNotice(null); }}
+        onCancel={() => { filmNotice?.resolve(false); setFilmNotice(null); }}
+      />
 
       {/* Draft-saved confirmation — lands here after handleSaveDraft resets to pick. */}
       <Toast

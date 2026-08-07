@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useSegments, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -50,6 +50,7 @@ import { useListenMode } from '../contexts/ListenModeContext';
 import CastBar from '../components/CastBar';
 import UploadFailedBanner from '../components/UploadFailedBanner';
 import UploadProgressBanner from '../components/UploadProgressBanner';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { setResumeDraftPending } from '../lib/drafts';
 import { reconcileInterruptedUpload, dismissRecovery } from '../lib/uploadRecovery';
 import MiniPlayer from '../components/MiniPlayer';
@@ -89,6 +90,8 @@ function AppContent() {
   // (the black-video bug), or offer a one-tap resume from the crash-insurance
   // draft. Runs once per boot, after sign-in.
   const recoveredOnce = useRef(false);
+  // Draft id awaiting the themed resume prompt (null = no prompt showing).
+  const [resumePrompt, setResumePrompt] = useState<string | null>(null);
   useEffect(() => {
     if (!profile?.id || recoveredOnce.current) return;
     recoveredOnce.current = true;
@@ -99,20 +102,23 @@ function AppContent() {
         Alert.alert(t('upload.healedTitle'), t('upload.healedBody'));
         return;
       }
-      Alert.alert(t('upload.resumeTitle'), t('upload.resumeBody'), [
-        {
-          text: t('upload.resumeAction'),
-          onPress: () => { setResumeDraftPending(r.draft.id); router.push('/post' as any); },
-        },
-        {
-          text: t('film.notNow'),
-          style: 'cancel',
-          onPress: () => { dismissRecovery(r.draft.id).catch(() => {}); },
-        },
-      ]);
+      setResumePrompt(r.draft.id);
     }).catch(() => {});
     return () => { active = false; };
-  }, [profile?.id, t, router]);
+  }, [profile?.id, t]);
+
+  // Resume the interrupted post. The href MUST be group-qualified: a bare
+  // '/post' does not resolve to the live (tabs) pager, so the root Stack
+  // re-resolves it into a SECOND (tabs) group that starts on Home — which is
+  // why the composer appeared for an instant and then bounced back. Same bug,
+  // same fix, as the Spotlight hand-off (see app/spotlight.tsx).
+  const goResume = useCallback((draftId: string) => {
+    setResumePrompt(null);
+    setResumeDraftPending(draftId);
+    const r = router as any;
+    if (typeof r.dismissTo === 'function') r.dismissTo('/(tabs)/post');
+    else r.navigate('/(tabs)/post');
+  }, [router]);
 
   // Lapsed Premium+ with films still up: warn (at most once a day) that the
   // films are hidden and on the 7-day deletion clock, with a one-tap path back.
@@ -258,8 +264,28 @@ function AppContent() {
           stage={uploadingVideo ? (uploadingVideo.phase as 'preparing' | 'uploading') : 'processing'}
           slowLink={uploadingVideo?.slowLink}
           durationSec={(uploadingVideo ?? processingFilm)!.durationSec}
+          // Tab screens own the top row (Home's logo/LIVE/bell/messages, the
+          // search bars elsewhere) — drop below it rather than across it.
+          belowHeader={onTabs}
         />
       )}
+      {/* "Finish your post?" — the interrupted-upload offer, in Laybell's own
+          card rather than a system alert. It is the first thing a user sees
+          after an upload was cut short, so it should look like the app that
+          saved their work, not like an iOS error. */}
+      <ConfirmDialog
+        visible={!!resumePrompt}
+        icon="cloud-upload"
+        title={t('upload.resumeTitle')}
+        message={t('upload.resumeBody')}
+        confirmLabel={t('upload.resumeAction')}
+        cancelLabel={t('film.notNow')}
+        onConfirm={() => { if (resumePrompt) goResume(resumePrompt); }}
+        onCancel={() => {
+          if (resumePrompt) dismissRecovery(resumePrompt).catch(() => {});
+          setResumePrompt(null);
+        }}
+      />
       <NowPlaying />
       <BadgeUpgradeToast />
       {/* Themed confirm for leaving Listen mode to enter an immersive surface —
