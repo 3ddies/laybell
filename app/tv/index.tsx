@@ -434,9 +434,10 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 6 },
   titleWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  // Big enough to be the screen's anchor now that the icon is gone. Tight
-  // tracking keeps a large wordmark looking designed rather than merely scaled.
-  headerTitle: { color: c.text, fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
+  // Deliberately a step BELOW the Films wordmark (26/900). Laybell TV is the
+  // container and Films is the flagship inside it, so TV reading slightly
+  // quieter is the hierarchy working — matching weights would flatten it.
+  headerTitle: { color: c.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
   tvBannerWrap: { marginHorizontal: SPACING.md, marginTop: 6 },
   tvBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

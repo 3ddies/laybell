@@ -340,7 +340,10 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
 
   // Recommended (portrait) carousel
   featSection: { marginBottom: SPACING.sm },
-  featTitle: { color: c.text, fontSize: 15, fontWeight: '800', marginBottom: SPACING.sm },
+  // A middle rung: bigger than "More videos" (15), clearly under the Films
+  // wordmark (30/900). Recommended is the first thing on the screen and should
+  // carry some weight, but Films has to stay the loudest thing on the page.
+  featTitle: { color: c.text, fontSize: 20, fontWeight: '800', letterSpacing: -0.3, marginBottom: SPACING.sm },
 
   // ── Films shelf ────────────────────────────────────────────────────────────
   // No card, no border, no plate — the boxed version fought the tiles beneath
@@ -396,7 +399,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   },
   filmRuntimeText: { color: '#fff', fontSize: 10.5, fontWeight: '700', fontVariant: ['tabular-nums'] },
 
-  gridTitle: { color: c.text, fontSize: 15, fontWeight: '800', marginTop: SPACING.md },
+  // The bottom rung of the page's type scale: Films 30 → Recommended 20 →
+  // More videos 18. Each step is visible without any two reading as peers.
+  gridTitle: { color: c.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.2, marginTop: SPACING.md },
 
   // Landscape 2-up grid
   card: { width: COL_W },
