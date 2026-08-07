@@ -16,8 +16,10 @@ import PremiumBubbles from '../components/PremiumBubbles';
 // tier in the same warm family as Premium's orange instead of a cold departure
 // (the galaxy purple it replaced belonged to Spotlight anyway). Owner call,
 // 2026-08-07. Same three-stop shape as the gradients in constants/theme.
-const PLUS_RED = ['#4A0812', '#8E1023', '#D91E36'] as const;
-const PLUS_RED_ACCENT = '#D91E36'; // solid brand red, for icons on light ground
+// Brightened one notch per owner (2026-08-07): the dark entry stop was reading
+// nearly black on the card's top-left.
+const PLUS_RED = ['#5C0A17', '#A8122A', '#EF2743'] as const;
+const PLUS_RED_ACCENT = '#EF2743'; // solid brand red, for icons on light ground
 const PLUS_RED_LIGHT = '#FF8B98';  // legible red on the dark card body
 
 // Laybell Premium paywall. Reads offerings/status from RevenueCat via PremiumContext;
@@ -112,8 +114,10 @@ export default function PremiumScreen() {
                  plus as the deeper cut. Includes everything Premium has. ── */}
           <View style={styles.plusCard}>
             <LinearGradient colors={PLUS_RED as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.plusHero}>
-              {/* Behind the content; the card's overflow:hidden clips it. */}
-              <PremiumBubbles />
+              {/* Behind the content; the card's overflow:hidden clips it. The
+                  hero variant floats bigger bubbles up the EDGE lanes only, so
+                  the centered title and tagline stay clear. */}
+              <PremiumBubbles variant="hero" />
               <View style={styles.plusBadge}>
                 <Ionicons name="film-outline" size={22} color="#fff" />
               </View>

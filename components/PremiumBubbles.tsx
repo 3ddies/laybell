@@ -13,7 +13,7 @@ import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-nat
 // which a bold label sits on comfortably). The paywall hero is taller, so the
 // bubbles surface across its lower two-thirds — right where a rise should
 // start.
-const BUBBLES = [
+const CARD_FIELD = [
   { left: '26%', size: 14, peak: 0.38, drift: 40, sway: 6, startY: 70, dur: 8400, delay: 1800 },
   { left: '38%', size: 19, peak: 0.32, drift: 46, sway: -7, startY: 76, dur: 10200, delay: 0 },
   { left: '48%', size: 11, peak: 0.30, drift: 34, sway: 6, startY: 60, dur: 8800, delay: 6200 },
@@ -24,7 +24,26 @@ const BUBBLES = [
   { left: '93%', size: 13, peak: 0.62, drift: 36, sway: -5, startY: 54, dur: 7400, delay: 2600 },
 ] as const;
 
-export default function PremiumBubbles() {
+// The Premium+ paywall hero. Its text is CENTERED — badge, title, tagline all
+// live in the middle 60% — so the settings field (built around a left icon and
+// a right chevron) floated bubbles straight through the words. This field keeps
+// two edge lanes (≤16% and ≥78%) and leaves the centre empty; the owner also
+// wanted them bigger and more staggered, so sizes run 16–30 (vs 11–23) and the
+// delays spread across 9.2s (vs 6.2s) with longer, wider-spread durations —
+// mostly one bubble surfacing at a time, never a synchronized field.
+const HERO_FIELD = [
+  { left: '4%', size: 26, peak: 0.34, drift: 54, sway: 7, startY: 96, dur: 10400, delay: 0 },
+  { left: '10%', size: 16, peak: 0.30, drift: 44, sway: -6, startY: 70, dur: 8600, delay: 4600 },
+  { left: '16%', size: 20, peak: 0.26, drift: 50, sway: 5, startY: 116, dur: 11800, delay: 7800 },
+  { left: '78%', size: 18, peak: 0.30, drift: 46, sway: -7, startY: 108, dur: 9200, delay: 2400 },
+  { left: '85%', size: 30, peak: 0.38, drift: 56, sway: 8, startY: 88, dur: 12600, delay: 6000 },
+  { left: '92%', size: 20, peak: 0.34, drift: 48, sway: -5, startY: 64, dur: 9800, delay: 9200 },
+] as const;
+
+type Variant = 'card' | 'hero';
+
+export default function PremiumBubbles({ variant = 'card' }: { variant?: Variant }) {
+  const BUBBLES = variant === 'hero' ? HERO_FIELD : CARD_FIELD;
   const [reduceMotion, setReduceMotion] = useState(false);
   const anims = useRef(BUBBLES.map(() => new Animated.Value(0))).current;
 
