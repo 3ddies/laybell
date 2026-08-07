@@ -41,13 +41,28 @@ export async function fetchFilms(userId: string | null, limit = 12): Promise<any
 /** A film at or under this runs in the "Short films" row; longer ones are features. */
 export const SHORT_FILM_MAX_SEC = 20 * 60;
 
+// A row has to look like a row. Fewer than this and it reads as a stub, so the
+// films go to the general grid instead.
+const MIN_ROW = 3;
+// Below this the catalogue is too small for any SUBJECTIVE cut to mean
+// anything — "Recommended" and "Trending" over four films is just the same four
+// films twice, which teaches users the labels are decorative.
+const MIN_CATALOGUE_FOR_CURATION = 8;
+// Trending must reflect actual attention, not merely existing.
+const TRENDING_MIN_ENGAGEMENT = 3;
+
 /**
- * The Films page's four rows, from ONE query.
+ * The Films page, from ONE query.
  *
- * They are different ORDERINGS and SLICES of the same catalogue rather than
- * four round-trips: films are the rarest content on the platform, so paying for
- * four queries to shuffle the same few dozen rows would be waste — and a row
- * that disappeared because its own request failed would look like missing
+ * Rows are a PARTITION, not four views of the same list: every film appears in
+ * at most one row, and each row must earn its place — a category that can't be
+ * filled honestly is omitted rather than padded. Whatever isn't claimed falls
+ * to a general grid, which is the honest home for "films we have" as opposed to
+ * "films chosen for you".
+ *
+ * One request rather than four: films are the rarest content on the platform,
+ * so paying for four queries to reshuffle the same few dozen rows is waste —
+ * and a row that vanished because its own request failed would read as missing
  * content rather than a network blip.
  */
 export async function fetchFilmCatalog(userId: string | null, limit = 60): Promise<{
@@ -55,6 +70,8 @@ export async function fetchFilmCatalog(userId: string | null, limit = 60): Promi
   trending: any[];
   short: any[];
   long: any[];
+  /** Everything no row claimed — rendered as a scrollable grid. */
+  more: any[];
 }> {
   const { data, error } = await supabase
     .from('posts')
@@ -67,28 +84,52 @@ export async function fetchFilmCatalog(userId: string | null, limit = 60): Promi
   if (error) throw error;
   const films = (data ?? []).filter((p: any) => !p.archived_at && isHorizontalVideo(p)).slice(0, limit);
 
-  // Recommended = the same affinity engine the rest of the app ranks by.
-  const recommended = await rankVideosForUser(films, userId);
-
-  // Trending = engagement weighted against age, so a strong film from this week
-  // outranks an older one that has simply had longer to accumulate taps.
   const now = Date.now();
+  const engagement = (p: any) =>
+    (p.likes?.[0]?.count ?? 0) * 3 + (p.comments?.[0]?.count ?? 0) * 5 + (p.stream_count ?? 0);
+  // Weighted against age, so a strong film from this week outranks an older one
+  // that has merely had longer to accumulate taps.
   const heat = (p: any) => {
-    const likes = p.likes?.[0]?.count ?? 0;
-    const comments = p.comments?.[0]?.count ?? 0;
-    const streams = p.stream_count ?? 0;
     const ageHours = Math.max(1, (now - new Date(p.created_at).getTime()) / 3_600_000);
-    return (likes * 3 + comments * 5 + streams) / Math.pow(ageHours + 2, 0.6);
+    return engagement(p) / Math.pow(ageHours + 2, 0.6);
   };
-  const trending = [...films].sort((a, b) => heat(b) - heat(a));
 
+  // Each film is claimed at most once. Without this every row was the same
+  // handful of films reordered, which is what made the labels meaningless.
+  const claimed = new Set<string>();
+  const claim = (rows: any[]) => { rows.forEach((p) => claimed.add(p.id)); return rows; };
+  const unclaimed = (arr: any[]) => arr.filter((p) => !claimed.has(p.id));
+  // A row ships only if it can be filled honestly; otherwise its films stay in
+  // the pool for the grid.
+  const rowOrNothing = (arr: any[]) => (arr.length >= MIN_ROW ? claim(arr.slice(0, 12)) : []);
+
+  const curate = films.length >= MIN_CATALOGUE_FOR_CURATION;
+
+  // TRENDING — real attention only. Films nobody has watched are not trending,
+  // they are simply the films that exist.
+  const trending = curate
+    ? rowOrNothing([...films].filter((p) => engagement(p) >= TRENDING_MIN_ENGAGEMENT).sort((a, b) => heat(b) - heat(a)))
+    : [];
+
+  // RECOMMENDED — needs someone to recommend TO. rankVideosForUser returns the
+  // input order unchanged for a signed-out or history-less viewer, and calling
+  // that "Recommended" would be a lie, so the row is dropped when the ranking
+  // didn't actually reorder anything.
+  let recommended: any[] = [];
+  if (curate && userId) {
+    const ranked = await rankVideosForUser(films, userId);
+    const personalised = ranked.some((p, i) => p.id !== films[i]?.id);
+    if (personalised) recommended = rowOrNothing(unclaimed(ranked));
+  }
+
+  // LENGTH — objective, so these need no curation gate; they just need enough
+  // unclaimed films to look like rows.
   const dur = (p: any) => p.duration_seconds ?? 0;
-  return {
-    recommended,
-    trending,
-    short: recommended.filter((p) => dur(p) <= SHORT_FILM_MAX_SEC),
-    long: recommended.filter((p) => dur(p) > SHORT_FILM_MAX_SEC),
-  };
+  const short = rowOrNothing(unclaimed(films).filter((p) => dur(p) <= SHORT_FILM_MAX_SEC));
+  const long = rowOrNothing(unclaimed(films).filter((p) => dur(p) > SHORT_FILM_MAX_SEC));
+
+  // Whatever no row earned. Newest first — the honest default.
+  return { recommended, trending, short, long, more: unclaimed(films) };
 }
 
 /**

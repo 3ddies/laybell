@@ -226,8 +226,11 @@ export default function LaybellTVScreen() {
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => router.back()} style={styles.headerBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
+          {/* Wordmark only. The orange TV glyph competed with a title that is
+              now large enough to carry the screen by itself — and the icon was
+              also doing duty in the cast button and the empty state, so it read
+              as decoration here rather than meaning. */}
           <View style={styles.titleWrap}>
-            <Ionicons name="tv" size={18} color={colors.primary} />
             <Text style={styles.headerTitle}>{t('tv.title')}</Text>
           </View>
           <View style={styles.headerRight}>
@@ -431,7 +434,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 6 },
   titleWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  headerTitle: { color: c.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  // Big enough to be the screen's anchor now that the icon is gone. Tight
+  // tracking keeps a large wordmark looking designed rather than merely scaled.
+  headerTitle: { color: c.text, fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
   tvBannerWrap: { marginHorizontal: SPACING.md, marginTop: 6 },
   tvBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

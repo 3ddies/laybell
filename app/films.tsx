@@ -29,6 +29,11 @@ const SCREEN_W = Dimensions.get('window').width;
 const H_PADDING = SPACING.md;
 const TILE_W = Math.round((SCREEN_W - H_PADDING * 2) * 0.62);
 const TILE_H = Math.round(TILE_W * (9 / 16));
+// The catch-all grid mirrors Laybell TV's two-column geometry exactly, so
+// "everything else" looks like the browsing surface people already know.
+const GRID_GAP = SPACING.sm;
+const COL_W = (SCREEN_W - H_PADDING * 2 - GRID_GAP) / 2;
+const COL_H = Math.round(COL_W * (9 / 16));
 
 function fmtRuntime(sec?: number | null): string {
   const s = Math.max(0, Math.round(sec ?? 0));
@@ -48,9 +53,9 @@ export default function FilmsScreen() {
   const { t } = useTranslation();
   const { profile } = useProfile();
 
-  const [rows, setRows] = useState<{ recommended: any[]; trending: any[]; short: any[]; long: any[] }>({
-    recommended: [], trending: [], short: [], long: [],
-  });
+  const [rows, setRows] = useState<{
+    recommended: any[]; trending: any[]; short: any[]; long: any[]; more: any[];
+  }>({ recommended: [], trending: [], short: [], long: [], more: [] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -104,7 +109,8 @@ export default function FilmsScreen() {
     );
   };
 
-  const isEmpty = !rows.recommended.length;
+  const hasRows = !!(rows.recommended.length || rows.trending.length || rows.short.length || rows.long.length);
+  const isEmpty = !hasRows && !rows.more.length;
 
   return (
     <SwipeBackPager>
@@ -146,6 +152,36 @@ export default function FilmsScreen() {
             <Row title={t('films.trending')} data={rows.trending} />
             <Row title={t('films.short')} data={rows.short} />
             <Row title={t('films.long')} data={rows.long} />
+
+            {/* Everything no category earned. Only labelled "All films" when
+                rows exist above it — on a small catalogue this IS the page, and
+                a heading over the only content is noise. */}
+            {rows.more.length > 0 && (
+              <View style={styles.row}>
+                {hasRows && <Text style={styles.rowTitle}>{t('films.all')}</Text>}
+                <View style={styles.grid}>
+                  {rows.more.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={styles.gridTile}
+                      activeOpacity={0.9}
+                      onPress={(e) => openFilm(p, e)}
+                    >
+                      <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.thumb} />
+                      <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>
+                      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.overlay}>
+                        <Text style={styles.gridName} numberOfLines={1}>
+                          {p.film_title || p.caption || p.profiles?.display_name || p.profiles?.username || ''}
+                        </Text>
+                      </LinearGradient>
+                      <View style={styles.runtime}>
+                        <Text style={styles.runtimeText}>{fmtRuntime(p.duration_seconds)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
           </ScrollView>
         )}
       </View>
@@ -186,6 +222,15 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     position: 'absolute', left: 0, right: 0, bottom: 0,
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.lg, paddingBottom: SPACING.sm,
   },
+  grid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    gap: GRID_GAP, paddingHorizontal: H_PADDING,
+  },
+  gridTile: {
+    width: COL_W, height: COL_H, borderRadius: RADIUS.md,
+    overflow: 'hidden', backgroundColor: c.surfaceLight,
+  },
+  gridName: { color: '#fff', fontSize: 13, fontWeight: '800' },
   filmName: { color: '#fff', fontSize: 15, fontWeight: '800' },
   filmUser: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' },
   runtime: {
