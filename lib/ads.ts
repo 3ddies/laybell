@@ -4,7 +4,7 @@ import { bumpBadge } from './badges';
 import { fetchBlockedIds } from './blocks';
 import { isAdPersonalizationEnabled } from './adPrefs';
 import { viewerIsAdult } from './minors';
-import { adFree, adSpacingMultiplier } from './entitlements';
+import { adExemptAll, adFree, adSpacingMultiplier } from './entitlements';
 import type { UserAffinityProfile } from './feedScorer';
 
 // Ad ecosystem — dedicated-creative ads across Feed, Reels and Audio + the
@@ -629,6 +629,14 @@ function noteSelectError(error: { message?: string } | null): boolean {
 // callers project to the placement they need.
 async function fetchEligibleCampaigns(viewer: AdViewer): Promise<AdCampaign[]> {
   if (!ADS_ENABLED) return [];
+  // Premium+ sees no ads anywhere. THE choke point: all four serving surfaces
+  // (feed / reels / TV covers + film mid-rolls / music breaks) fetch through
+  // here, and an empty pool makes each scheduler a silent no-op — reels weave
+  // nothing, the TV cover never drops, film break slots spend invisibly, music
+  // gates pass with no creative. Advertisers are never billed for these
+  // non-impressions, and the Ad Manager (an advertiser's own campaigns) does
+  // not read this path, so managing ads while subscribed still works.
+  if (adExemptAll()) return [];
   try {
     const query = () => supabase
       .from('ad_campaigns')
@@ -687,7 +695,8 @@ export async function fetchFeedAds(viewer: AdViewer): Promise<any[]> {
 // A pool of reel ad sources the weaver rotates through across slots.
 export async function fetchReelAds(viewer: AdViewer): Promise<AdSource[]> {
   // Premium is NOT ad-free in reels — it gets ~50% fewer via wider weave spacing
-  // (weaveReelAds reads adSpacingMultiplier). So the pool is fetched for everyone.
+  // (weaveReelAds reads adSpacingMultiplier). Premium+ IS ad-free: the campaign
+  // fetch below returns [] for it (adExemptAll at the choke point).
   const campaigns = await fetchEligibleCampaigns(viewer);
   const out: AdSource[] = [];
   for (const c of campaigns) {

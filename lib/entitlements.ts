@@ -90,7 +90,8 @@ export function subscribePremium(fn: () => void): () => void {
 // must match post.tsx's VIDEO_MAX_SEC_H and the server's enforce_film_rights
 // trigger (premium_plus.sql) — all three say 540.
 export const FILM_MIN_SEC = 540;
-// The Premium+ landscape ceiling: 3 hours. The stream-tus-upload Edge Function
+// The Premium+ landscape ceiling: 1 hour (owner lowered it from 3h,
+// 2026-08-05). The stream-tus-upload Edge Function
 // clamps to this too, so a modified client cannot mint a longer upload.
 // 1 hour (owner's call 2026-08-07, down from 3). Keeps every film inside the
 // 5 Mbps 1080p budget — at this length the quality ladder never has to step
@@ -109,6 +110,14 @@ export function effectivePinLimit(tier: Tier | null, premium = isPremium()): num
 // lib/ads.ts so feed ads are suppressed for subscribers. Reels and Music are NOT
 // ad-free for premium — they get HALF the ads instead (see adSpacingMultiplier).
 export function adFree(premium = isPremium()): boolean { return premium; }
+
+// Premium+ is ad-free EVERYWHERE — feed, reels, music breaks, TV covers, film
+// mid-rolls (owner's perk decision, 2026-08-07). Read at the single serving
+// choke point (fetchEligibleCampaigns in lib/ads.ts), so every surface that
+// draws creatives — present or future — inherits the exemption automatically.
+// Spotlight is NOT covered: spotlighted posts are members' own content with
+// boosted ranking, not ad creatives.
+export function adExemptAll(): boolean { return isPremiumPlus(); }
 
 // Reels + Music (audio) get ~50% FEWER ads for premium — not zero. Ad cadence is
 // spacing-based (reels: gap between ads; audio: ms between breaks), so doubling

@@ -166,7 +166,7 @@ const streamCeilingFor = (sourceSec: number, sourceMaxSec: number = VIDEO_SOURCE
   sourceSec > 0
     ? Math.min(sourceMaxSec, Math.max(VIDEO_MAX_SEC, Math.ceil(sourceSec)) + 90)
     : sourceMaxSec;
-// A Premium+ film source may run past the 3-hour window by the same cushion the
+// A Premium+ film source may run past the 1-hour film window by the same cushion the
 // free tier gets over ITS window (trim picks the window out of it).
 const FILM_SOURCE_MAX_SEC = FILM_MAX_SEC + 60;
 const MUSIC_MAX_SEC  = 12 * 60;  // music tracks — live cuts, mixes and extended

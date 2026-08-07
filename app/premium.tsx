@@ -123,6 +123,13 @@ export default function PremiumScreen() {
                   <Text style={styles.perkDesc}>{t('premium.plusPerkFreezeDesc')}</Text>
                 </View>
               </View>
+              <View style={styles.plusPerkRow}>
+                <Ionicons name="ban-outline" size={20} color={GALAXY_LIGHT} />
+                <View style={styles.perkBody}>
+                  <Text style={styles.perkText}>{t('premium.plusPerkNoAds')}</Text>
+                  <Text style={styles.perkDesc}>{t('premium.plusPerkNoAdsDesc')}</Text>
+                </View>
+              </View>
             </View>
             {/* The film-removal terms, stated BEFORE anyone pays — the same
                 warning fires again at lapse time, but nobody should learn the
