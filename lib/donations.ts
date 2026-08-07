@@ -61,13 +61,16 @@ export const DONATION_PRESETS_CENTS = [600, 1000, 2500, 5000, 10000];
 export const DONATION_MIN_CENTS = 600;
 export const DONATION_MAX_CENTS = 50000;
 
-/** True while `premium_until` is in the future. */
-export function hostIsPremium(premiumUntil?: string | null): boolean {
-  return !!premiumUntil && new Date(premiumUntil).getTime() > Date.now();
+/** True while either subscription is in the future — Premium+ is a superset,
+    so a plus-only host must read as premium everywhere fees are derived
+    (matches is_premium() server-side, which tip_fee_rate() charges by). */
+export function hostIsPremium(premiumUntil?: string | null, premiumPlusUntil?: string | null): boolean {
+  const active = (v?: string | null) => !!v && new Date(v).getTime() > Date.now();
+  return active(premiumUntil) || active(premiumPlusUntil);
 }
 /** Laybell's fee RATE for a host by plan — 8% Premium, 35% standard. */
-export function hostFeeRate(premiumUntil?: string | null): number {
-  return hostIsPremium(premiumUntil) ? DONATION_FEE_RATE_PREMIUM : DONATION_FEE_RATE_STANDARD;
+export function hostFeeRate(premiumUntil?: string | null, premiumPlusUntil?: string | null): number {
+  return hostIsPremium(premiumUntil, premiumPlusUntil) ? DONATION_FEE_RATE_PREMIUM : DONATION_FEE_RATE_STANDARD;
 }
 
 export function donationFeeCents(amountCents: number, feeRate: number): number {

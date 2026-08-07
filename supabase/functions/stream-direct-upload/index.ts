@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // Mints a one-time Cloudflare Stream "direct creator upload" URL so the app can
 // upload a video straight to Stream — the API token NEVER reaches the client.
@@ -55,21 +56,50 @@ serve(async (req) => {
     if (!uid) return json({ error: 'unauthorized' }, 401);
 
     const body = await req.json().catch(() => ({}));
-    const maxDurationSeconds = Math.min(600, Math.max(1, Number(body?.maxDurationSeconds) || DEFAULT_MAX));
+    // 700 = the 10-minute source max + the client's 90s true-length cushion
+    // (see streamCeilingFor in post.tsx): pickers under-report VFR durations,
+    // and Cloudflare kills encodes past the minted ceiling AFTER the upload.
+    //
+    // FILMS may go higher — but LENGTH is the only thing gated here, never the
+    // transport. A film compressed under Cloudflare's 200 MB POST cap should
+    // ride this path precisely BECAUSE it is the one that has never failed;
+    // forcing it onto a heavier transport just to be long would be backwards.
+    const FREE_CEILING_SEC = 700;
+    const FILM_CEILING_SEC = 3 * 3600 + 150;
+    let requested = Math.max(1, Number(body?.maxDurationSeconds) || DEFAULT_MAX);
+    if (requested > FREE_CEILING_SEC) {
+      const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const { data: prof } = await admin
+        .from('profiles').select('premium_plus_until').eq('id', uid).maybeSingle();
+      const until = prof?.premium_plus_until ? Date.parse(prof.premium_plus_until) : 0;
+      if (!(until > Date.now())) return json({ error: 'premium_plus_required' }, 403);
+      requested = Math.min(FILM_CEILING_SEC, requested);
+    }
+    const maxDurationSeconds = Math.min(FILM_CEILING_SEC, requested);
 
-    const cf = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream/direct_upload`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${CF_TOKEN}`, 'Content-Type': 'application/json' },
-        // requireSignedURLs:false → public playback, matching today's public media.
-        // creator tags the asset with the uploader for management/analytics.
-        body: JSON.stringify({ maxDurationSeconds, requireSignedURLs: false, creator: uid }),
-      },
-    );
-    const data = await cf.json();
-    if (!cf.ok || !data?.success || !data?.result?.uploadURL) {
-      console.error('cf direct_upload failed:', JSON.stringify(data?.errors ?? data));
+    // Cloudflare intermittently 429s Stream API calls (error 971) even at low
+    // volume — one unlucky throttle must not fail a user's post. Retry with
+    // backoff, total wait ≤ ~10.5s (the app's invoke deadline is 20s).
+    let cf: Response | null = null;
+    let data: any = null;
+    for (let attempt = 0, delay = 3000; attempt < 4; attempt++, delay *= 2) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, delay / 2));
+      cf = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream/direct_upload`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${CF_TOKEN}`, 'Content-Type': 'application/json' },
+          // requireSignedURLs:false → public playback, matching today's public media.
+          // creator tags the asset with the uploader for management/analytics.
+          body: JSON.stringify({ maxDurationSeconds, requireSignedURLs: false, creator: uid }),
+        },
+      );
+      data = await cf.json().catch(() => null);
+      if (cf.status !== 429 && cf.status < 500) break; // success or a real error
+    }
+    if (!cf!.ok || !data?.success || !data?.result?.uploadURL) {
+      console.error('cf direct_upload failed:', cf!.status, JSON.stringify(data?.errors ?? data));
+      if (cf!.status === 429) return json({ error: 'stream_busy' }, 503);
       return json({ error: 'stream_upload_failed' }, 502);
     }
     return json({ uploadURL: data.result.uploadURL, uid: data.result.uid });

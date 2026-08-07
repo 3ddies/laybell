@@ -2,6 +2,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { logAccess } from './accessLog';
+import { uploadFileViaXhr } from './xhrUpload';
+
+// Above this, the 60-second-timeout risk outweighs the memory cost of XHR's
+// buffered body (see the note at the upload site). 24 MB keeps every ordinary
+// clip on the streaming uploader that has never failed.
+const XHR_UPLOAD_ABOVE_BYTES = 24 * 1024 * 1024;
 
 // Cloudflare Stream upload + playback URLs.
 //
@@ -43,9 +49,22 @@ export function streamUidFromUrl(url: string | null | undefined): string | null 
 }
 
 // One stream-status round-trip.
-async function streamStatus(uid: string): Promise<{ ready: boolean; state: string | null; hls: string | null; poster: string | null }> {
+async function streamStatus(uid: string): Promise<{ ready: boolean; state: string | null; pct: number | null; errorText: string | null; throttled: boolean; hls: string | null; poster: string | null }> {
   const { data } = await supabase.functions.invoke('stream-status', { body: { uid } });
-  return { ready: !!data?.ready, state: (data?.state as string) ?? null, hls: (data?.hls as string) ?? null, poster: (data?.poster as string) ?? null };
+  const pct = Number(data?.pct);
+  return {
+    ready: !!data?.ready,
+    state: (data?.state as string) ?? null,
+    pct: Number.isFinite(pct) && pct > 0 ? pct : null,
+    errorText: (data?.errorText as string) ?? (data?.errorCode as string) ?? null,
+    // Server flags a 404 asset as state:'missing' — surfaced through `state`
+    // below, so no extra field is needed here.
+    // Cloudflare rate-limited the lookup — the video's real state is UNKNOWN,
+    // not bad. Callers must back off rather than treat it as a failure.
+    throttled: data?.throttled === true,
+    hls: (data?.hls as string) ?? null,
+    poster: (data?.poster as string) ?? null,
+  };
 }
 
 // ── Orphan protection ─────────────────────────────────────────────────────────
@@ -73,7 +92,8 @@ async function writePending(list: PendingUpload[]): Promise<void> {
 
 // Record a uid the instant Cloudflare hands it to us. Owner is stamped so a shared
 // device never lets one account try (and fail) to delete another's asset.
-async function trackStreamUpload(uid: string): Promise<void> {
+// Exported for lib/streamCopy.ts — long-video uploads need identical orphan protection.
+export async function trackStreamUpload(uid: string): Promise<void> {
   if (!uid) return;
   let owner = '';
   try { owner = (await supabase.auth.getUser()).data.user?.id ?? ''; } catch {}
@@ -117,7 +137,17 @@ async function isStreamUidReferenced(uid: string): Promise<boolean> {
 // untrack could run (drop the entry, keep the asset). A grace period guards the
 // second case against replication lag; entries that stay unresolved for two weeks
 // are dropped so the list can't grow forever.
-const SWEEP_GRACE_MS = 10 * 60 * 1000;
+// GRACE MUST EXCEED THE LONGEST POSSIBLE UPLOAD. A tracked uid is unreferenced
+// for the ENTIRE duration of its upload — the post row is only written once the
+// bytes are in — so this window is the line between "abandoned prewarm" and
+// "someone's film, still uploading". At 10 minutes it was shorter than a film
+// transfer, which meant any app relaunch mid-upload had the boot sweep DELETE
+// the very asset being uploaded: the post then referenced a 404, showed no
+// thumbnail, and polled "Almost done…" forever against a video that no longer
+// existed. Short videos never tripped it (seconds, not minutes) — it was a
+// landmine laid exclusively for long ones. A day is safely past any upload,
+// matches Cloudflare's own 24h uploadExpiry, and costs pennies of storage.
+const SWEEP_GRACE_MS = 24 * 60 * 60 * 1000;
 const SWEEP_GIVE_UP_MS = 14 * 24 * 60 * 60 * 1000;
 
 export async function sweepAbandonedStreamUploads(): Promise<void> {
@@ -165,6 +195,40 @@ export async function uploadVideoToStream(
   // This is the origin record for a piece of media — the single most useful field
   // in a law-enforcement request after the file itself.
   logAccess('upload', 'stream_video', uid);
+
+  // WHICH UPLOADER, and why it matters more than anything else in this file:
+  //
+  // expo-file-system streams from disk (memory-safe) but hardcodes iOS's
+  // 60-second idle timeout — see lib/xhrUpload.ts for the exact line. That wall
+  // is what killed every long upload with NSURLErrorDomain -1001, and no JS
+  // option can move it. React Native's XHR CAN set the timeout, at the cost of
+  // buffering the body in memory.
+  //
+  // So: small files keep the streaming uploader that has never failed them;
+  // anything large enough to risk the wall goes through XHR with a generous
+  // timeout. Compression runs before this, so "large" here means a ~180 MB
+  // compressed master, not a raw multi-GB source.
+  // (Background sessions were tried and fail instantly on this setup — the
+  // long-standing expo-file-system NSURLError -1 / #bplist bug.)
+  let bytes = 0;
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    bytes = info.exists ? ((info as any).size ?? 0) : 0;
+  } catch { /* unknown → treat as small and keep the proven path */ }
+
+  if (bytes > XHR_UPLOAD_ABOVE_BYTES) {
+    const res = await uploadFileViaXhr(uploadURL, uri, {
+      method: 'POST',
+      fieldName: 'file',
+      mimeType: 'video/mp4',
+      onProgress: (f) => opts?.onProgress?.(f),
+      timeoutMs: 2 * 60 * 60 * 1000,
+    });
+    if (res.status < 200 || res.status >= 300) {
+      throw new Error(`Video upload failed (${res.status})`);
+    }
+    return uid;
+  }
 
   const task = FileSystem.createUploadTask(
     uploadURL,
@@ -220,16 +284,82 @@ export async function deleteStreamVideo(uid: string): Promise<void> {
   untrackStreamUpload(uid);
 }
 
-// Background: poll until Cloudflare finishes encoding. Returns true when ready.
-export async function pollStreamReady(uid: string, timeoutMs = 300_000): Promise<boolean> {
+// Background: poll until Cloudflare finishes encoding.
+// onPct receives Cloudflare's own encode progress (0-100) as it climbs — films
+// show it as a live "time left" so the processing spinner never reads as stuck.
+//
+// TIMEOUT and FAILURE are different worlds and the result says which:
+//   ready   → play it.
+//   errored → the asset is dead server-side, with Cloudflare's reason attached.
+//   neither → the encode is (probably) STILL RUNNING — the caller must treat
+//             the post as alive, never roll it back. Deleting 15 minutes of
+//             uploaded film because a poll got bored is how users learn to
+//             hate an app.
+// `incomplete` is deliberately NOT the same as `errored`. Cloudflare parks an
+// under-delivered upload in `pendingupload`: the asset is FINE, it is simply
+// missing its tail. The remedy is to RESUME the transfer — so the asset and the
+// resume checkpoint must survive. Treating it as a hard error (and deleting the
+// asset) is what forced full restarts of nearly-finished multi-GB uploads.
+export type StreamReadyResult = {
+  ready: boolean;
+  errored: boolean;      // Cloudflare rejected the encode — the asset is dead
+  incomplete?: boolean;  // bytes missing — resumable, destroy nothing
+  reason: string | null;
+};
+
+export async function pollStreamReady(
+  uid: string,
+  timeoutMs = 300_000,
+  onPct?: (pct: number) => void,
+  // 4s suits an attended wait; detached long-tail babysitters pass something
+  // gentler so a half-hour watch doesn't burn hundreds of function calls.
+  intervalMs = 4000,
+): Promise<StreamReadyResult> {
   const start = Date.now();
+  // 'pendingupload' means Cloudflare is STILL WAITING FOR BYTES — it will never
+  // encode and never error, so polling it is infinite. It is a dead upload, not
+  // a slow one, and the only honest thing is to say so. (The uploader now
+  // verifies completion before we ever get here; this catches anything that
+  // slips through, including posts created by older builds.)
+  // Cloudflare can sit in `pendingupload` for minutes after the final byte of a
+  // multi-GB file before it flips to queued/inprogress. A tight window here
+  // condemned uploads that were merely settling, so this is deliberately long —
+  // and the verdict it produces is now RESUMABLE, never destructive.
+  const PENDING_GRACE_MS = 420_000; // 7 minutes
+  // BACKOFF, not a metronome. A fixed 4s tick across a 13-minute encode is ~200
+  // API calls for ONE post — and Cloudflare answers a hammered account with
+  // error 971 ("throttle your request speed"). Once throttled, status becomes
+  // unreadable, so the card stalls at "finishing up" forever: the polling
+  // CAUSED the symptom it was trying to observe. Start responsive, then ease
+  // off; a throttled answer backs off hardest, because continuing to hammer a
+  // rate-limited endpoint is what keeps it rate-limited.
+  let wait = Math.max(2000, intervalMs);
+  const MAX_WAIT = 60_000;
+  let throttled = 0;
   while (Date.now() - start < timeoutMs) {
     try {
       const s = await streamStatus(uid);
-      if (s.state === 'error') return false;
-      if (s.ready) return true;
-    } catch { /* transient — keep polling */ }
-    await new Promise((r) => setTimeout(r, 4000));
+      if (s.state === 'error') return { ready: false, errored: true, reason: s.errorText };
+      // The asset no longer exists — nothing to wait for, ever.
+      if (s.state === 'missing') {
+        return { ready: false, errored: true, reason: 'the video was removed before it finished' };
+      }
+      if (s.ready) return { ready: true, errored: false, reason: null };
+      if (s.state === 'pendingupload' && Date.now() - start > PENDING_GRACE_MS) {
+        return { ready: false, errored: false, incomplete: true, reason: 'the upload is missing its last part' };
+      }
+      if (s.throttled) {
+        throttled++;
+        wait = Math.min(MAX_WAIT, Math.max(wait, 15_000) * 2);
+      } else {
+        throttled = 0;
+        if (s.pct != null) onPct?.(s.pct);
+        wait = Math.min(MAX_WAIT, Math.round(wait * 1.5));
+      }
+    } catch {
+      wait = Math.min(MAX_WAIT, Math.round(wait * 1.6)); // transient — ease off too
+    }
+    await new Promise((r) => setTimeout(r, wait));
   }
-  return false;
+  return { ready: false, errored: false, reason: null };
 }

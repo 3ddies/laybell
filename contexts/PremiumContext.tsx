@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { isPremium as readPremium, subscribePremium } from '../lib/entitlements';
+import { isPremium as readPremium, isPremiumPlus as readPremiumPlus, subscribePremium } from '../lib/entitlements';
 import {
   initPurchases, getPackages, purchase as doPurchase, restore as doRestore,
   purchasesConfigured, type Pkg,
@@ -12,6 +12,7 @@ import {
 
 type PremiumContextValue = {
   isPremium: boolean;
+  isPremiumPlus: boolean;         // the $19.99 tier — Films + badge freeze
   packages: Pkg[];
   configured: boolean;            // real billing wired up (keys present)?
   loading: boolean;
@@ -21,7 +22,7 @@ type PremiumContextValue = {
 };
 
 const PremiumContext = createContext<PremiumContextValue>({
-  isPremium: false, packages: [], configured: false, loading: false,
+  isPremium: false, isPremiumPlus: false, packages: [], configured: false, loading: false,
   purchase: async () => 'error', restore: async () => false, refresh: async () => {},
 });
 
@@ -29,11 +30,16 @@ export function usePremium() { return useContext(PremiumContext); }
 
 export function PremiumProvider({ children }: { children: React.ReactNode }) {
   const [isPremiumState, setIsPremiumState] = useState(readPremium());
+  const [isPlusState, setIsPlusState] = useState(readPremiumPlus());
   const [packages, setPackages] = useState<Pkg[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Mirror the module-level premium flag (set by purchases.ts via RevenueCat).
-  useEffect(() => subscribePremium(() => setIsPremiumState(readPremium())), []);
+  // Mirror the module-level flags (set by purchases.ts via RevenueCat). One
+  // subscription covers both tiers — the listener re-reads both.
+  useEffect(() => subscribePremium(() => {
+    setIsPremiumState(readPremium());
+    setIsPlusState(readPremiumPlus());
+  }), []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -52,7 +58,7 @@ export function PremiumProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <PremiumContext.Provider
-      value={{ isPremium: isPremiumState, packages, configured: purchasesConfigured(), loading, purchase, restore, refresh }}
+      value={{ isPremium: isPremiumState, isPremiumPlus: isPlusState, packages, configured: purchasesConfigured(), loading, purchase, restore, refresh }}
     >
       {children}
     </PremiumContext.Provider>

@@ -16,6 +16,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { bumpBadge, publicPostLimit, rawTier, tierLabel } from '../../lib/badges';
 import { useProfile } from '../../contexts/ProfileContext';
+import { usePremium } from '../../contexts/PremiumContext';
+import { FILM_MIN_SEC, FILM_MAX_SEC } from '../../lib/entitlements';
+import { getNetworkState } from '../../lib/network';
 import { processMentions, getActiveMentionQuery, applyMention } from '../../lib/mentions';
 import { checkFields } from '../../lib/contentFilter';
 import { DEFAULT_SOUND_OPT_IN } from '../../lib/sounds';
@@ -46,7 +49,7 @@ import { uploadToStorageWithProgress, compressVideoIfPossible, fileSizeBytes } f
 import { useUploadActions } from '../../contexts/UploadQueueContext';
 import { peekPendingSpotlight, clearPendingSpotlight, activateCampaign, spotlightDurationPhrase } from '../../lib/spotlight';
 import {
-  loadDrafts, saveDraft, deleteDraft, draftThumb, draftSummary, makeDraftId, type Draft,
+  loadDrafts, saveDraft, deleteDraft, draftThumb, draftSummary, makeDraftId, consumeResumeDraftId, type Draft,
 } from '../../lib/drafts';
 import SongPickerModal, { type PickedSong } from '../../components/SongPickerModal';
 import CommunityPickerModal from '../../components/CommunityPickerModal';
@@ -149,10 +152,21 @@ const VIDEO_SOURCE_MAX_SEC = 600; // 10 min — matches the edge function's clam
 // the maximum rather than the minimum: under-asking is what makes Cloudflare
 // reject the upload later, and asking high costs nothing (Stream bills actual
 // stored minutes, not the ceiling the upload URL was minted with).
-const streamCeilingFor = (sourceSec: number) =>
+// sourceMaxSec is per-tier: 10 minutes normally, the film ceiling for a
+// Premium+ landscape pick (films mint through stream-tus-upload, which clamps
+// to the same number server-side).
+// +90s cushion, not +30: pickers report container duration, which can run
+// SHORT of the true stream length (VFR clips, rounding) — and Cloudflare
+// KILLS the encode of anything past the minted ceiling, after the entire
+// upload has already succeeded. The ceiling is billing-reserved, not billed,
+// so generosity here costs nothing and a tight fit costs the whole post.
+const streamCeilingFor = (sourceSec: number, sourceMaxSec: number = VIDEO_SOURCE_MAX_SEC) =>
   sourceSec > 0
-    ? Math.min(VIDEO_SOURCE_MAX_SEC, Math.max(VIDEO_MAX_SEC, Math.ceil(sourceSec)) + 30)
-    : VIDEO_SOURCE_MAX_SEC;
+    ? Math.min(sourceMaxSec, Math.max(VIDEO_MAX_SEC, Math.ceil(sourceSec)) + 90)
+    : sourceMaxSec;
+// A Premium+ film source may run past the 3-hour window by the same cushion the
+// free tier gets over ITS window (trim picks the window out of it).
+const FILM_SOURCE_MAX_SEC = FILM_MAX_SEC + 60;
 // Uploads above this get an "are you sure" first: this is the SOURCE size, and
 // compression usually shrinks it well below the pipeline's real (post-compress)
 // cap — so it warns rather than blocks. Without it a multi-hundred-MB clip
@@ -212,11 +226,24 @@ export default function PostScreen() {
   // longer a fixed VIDEO_MAX_SEC slab — it can be pinched shorter to cut the
   // start, the end, or both. 0 means "not chosen yet"; the trimmer seeds it.
   const [trimEnd, setTrimEnd] = useState(0);
+  // Premium+ unlocks FILMS: the landscape window stretches from 9 minutes to 3
+  // hours. Server-enforced too — the tus mint refuses non-plus callers.
+  const { isPremiumPlus } = usePremium();
   // The published window for THIS clip — landscape gets the long-form (Laybell
-  // TV) window, vertical/square the short one. videoAspect is set at pick time
-  // (from the asset's own width/height), so this is settled before any gate,
-  // prewarm or trim seed ever reads it.
-  const videoWindowSec = videoAspect > 1 ? VIDEO_MAX_SEC_H : VIDEO_MAX_SEC;
+  // TV) window (or the film window for Premium+), vertical/square the short
+  // one. videoAspect is set at pick time (from the asset's own width/height),
+  // so this is settled before any gate, prewarm or trim seed ever reads it.
+  const videoWindowSec = videoAspect > 1 ? (isPremiumPlus ? FILM_MAX_SEC : VIDEO_MAX_SEC_H) : VIDEO_MAX_SEC;
+  const videoSourceMaxSec = videoAspect > 1 && isPremiumPlus ? FILM_SOURCE_MAX_SEC : VIDEO_SOURCE_MAX_SEC;
+  // A FILM = what will actually PUBLISH runs past the free window — judged on
+  // the chosen trim window, not the source (a Premium+ user who pinches a
+  // 20-minute source down to 8 minutes is posting a video, not a film), and
+  // never true without Premium+ (a free user's virtually-trimmed long source
+  // publishes a ≤9-minute window, whatever the file length). Drives the title
+  // field, the insert, and which upload pipeline the queue uses.
+  const publishedVideoSec = trimEnd > trimStart ? trimEnd - trimStart : Math.min(videoDuration, videoWindowSec);
+  const isFilm = postType === 'video' && videoAspect > 1 && isPremiumPlus && publishedVideoSec > FILM_MIN_SEC;
+  const [filmTitle, setFilmTitle] = useState('');
   const cropperRef = useRef<MediaCropperHandle>(null);
   const cropRef = useRef<CropRect | null>(null);
   // Preview height is animated with a single spring on collapse/expand (see the
@@ -325,7 +352,7 @@ export default function PostScreen() {
       // back the lost head start. Untrimmed clips keep the prewarm unchanged.
       if (videoDuration <= videoWindowSec) {
         prewarmedUriRef.current = media.uri;
-        prewarmVideo(media.uri, streamCeilingFor(videoDuration), videoDuration);
+        prewarmVideo(media.uri, streamCeilingFor(videoDuration, videoSourceMaxSec), videoDuration, isFilm);
       } else {
         prewarmedUriRef.current = null;
       }
@@ -334,9 +361,10 @@ export default function PostScreen() {
       prewarmedUriRef.current = null;
     }
     // videoDuration is a dep because the ceiling is derived from it (and
-    // videoWindowSec because the prewarm gate is); prewarmVideo is idempotent
-    // per uri, so a re-run after either lands is a no-op.
-  }, [step, postType, media?.uri, videoDuration, videoWindowSec, prewarmVideo, discardPrewarm]);
+    // videoWindowSec/videoSourceMaxSec/isFilm because the gate + ceiling +
+    // pipeline choice are); prewarmVideo is idempotent per uri, so a re-run
+    // after any lands is a no-op.
+  }, [step, postType, media?.uri, videoDuration, videoWindowSec, videoSourceMaxSec, isFilm, prewarmVideo, discardPrewarm]);
   const [publicCount, setPublicCount] = useState<number | null>(null);
 
   // Live count of public (non-archived) posts for the slot hint + gate.
@@ -378,6 +406,19 @@ export default function PostScreen() {
   const [deleteTarget, setDeleteTarget] = useState<Draft | null>(null); // draft pending delete-confirm
   const editingDraftId = useRef<string | null>(null);
   useFocusEffect(useCallback(() => { loadDrafts().then(setDrafts); }, []));
+
+  // Boot-time upload recovery handoff: the _layout prompt parked a draft id for
+  // us — load it straight into the composer so "Resume" is one tap from Share.
+  useFocusEffect(useCallback(() => {
+    const rid = consumeResumeDraftId();
+    if (!rid) return;
+    loadDrafts().then((list) => {
+      const d = list.find((x) => x.id === rid);
+      if (d) { setDrafts(list); resumeDraft(d); }
+    }).catch(() => {});
+    // resumeDraft is a stable in-component function; deliberately not a dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []));
   // Drop the "I'm editing draft X" link. Called whenever the resumed media is
   // abandoned (cleared / type-switched) so a later UNRELATED post can't, on
   // publish or re-save, delete or overwrite the original draft.
@@ -512,7 +553,7 @@ export default function PostScreen() {
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null; setSlides([]);
     setVideoDuration(0); setTrimStart(0); setTrimEnd(0); setTopCaption(null); setBottomCaption(null); setVideoCaptions([]);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
-    setCaption(''); setGenre(''); setSong(null); setMusicVideo(false); setTagged([]); setCommunities([]); setError(''); setStep('pick');
+    setCaption(''); setFilmTitle(''); setGenre(''); setSong(null); setMusicVideo(false); setTagged([]); setCommunities([]); setError(''); setStep('pick');
     setAllowDownloads(true); setAllowGifs(true);
     // Abandoning the compose drops any parked spotlight handoff so it can't
     // silently attach to an unrelated later post — the paid campaign itself
@@ -548,6 +589,7 @@ export default function PostScreen() {
       postType, format, caption, genre, isPublic,
       media, crop: cropRef.current as any, thumbnailUri,
       videoAspect, videoDuration, trimStart, trimEnd, topCaption, bottomCaption, videoCaptions,
+      filmTitle,
       slides,
       audioFile, audioDuration, coverUri, audioKind,
       song, tagged, features,
@@ -577,6 +619,7 @@ export default function PostScreen() {
     setTopCaption(d.topCaption ?? null);
     setBottomCaption(d.bottomCaption ?? null);
     setVideoCaptions(d.videoCaptions ?? []);
+    setFilmTitle(d.filmTitle ?? '');
     setSlides(d.slides ?? []);
     setPickedId(null);
     setAudioFile(d.audioFile);
@@ -655,10 +698,22 @@ export default function PostScreen() {
     // rather than failing invisibly after they hit Share.
     if (m.type === 'video') {
       const srcSec = m.duration ?? 0;
-      if (srcSec > VIDEO_SOURCE_MAX_SEC) {
+      // videoAspect isn't set yet — the pick gate reads the asset's own dims.
+      const landscape = (m.width || 1) > (m.height || 1);
+      // A film-length landscape pick without the film right → upsell, not the
+      // generic refusal: the length is fine, the TIER is what's missing.
+      if (landscape && !isPremiumPlus && srcSec > VIDEO_SOURCE_MAX_SEC) {
+        Alert.alert(t('film.upsellTitle'), t('film.upsellBody'), [
+          { text: t('film.getPlus'), onPress: () => router.push('/premium' as any) },
+          { text: t('film.notNow'), style: 'cancel' },
+        ]);
+        return;
+      }
+      const srcMax = landscape && isPremiumPlus ? FILM_SOURCE_MAX_SEC : VIDEO_SOURCE_MAX_SEC;
+      if (srcSec > srcMax) {
         Alert.alert(
           t('post.videoSourceTooLongTitle'),
-          t('post.videoSourceTooLongBody', { max: fmtMins(VIDEO_SOURCE_MAX_SEC) }),
+          t('post.videoSourceTooLongBody', { max: fmtMins(srcMax) }),
         );
         return;
       }
@@ -898,10 +953,10 @@ export default function PostScreen() {
     // DRAFT saved before that gate existed can still carry an over-length clip
     // back in (drafts restore videoDuration verbatim) — and letting one through
     // here is exactly the silent post-Share failure this is all guarding against.
-    if (postType === 'video' && videoDuration > VIDEO_SOURCE_MAX_SEC) {
+    if (postType === 'video' && videoDuration > videoSourceMaxSec) {
       Alert.alert(
         t('post.videoSourceTooLongTitle'),
-        t('post.videoSourceTooLongBody', { max: fmtMins(VIDEO_SOURCE_MAX_SEC) }),
+        t('post.videoSourceTooLongBody', { max: fmtMins(videoSourceMaxSec) }),
       );
       return;
     }
@@ -918,7 +973,25 @@ export default function PostScreen() {
     return supabase.storage.from('posts').getPublicUrl(path).data.publicUrl;
   }
 
+  // Share re-entry latch. handleShare awaits several things (the crash-
+  // insurance draft write, size confirms) before the enqueue, so a double-tap
+  // used to run the WHOLE pipeline twice — observed on device as two identical
+  // posts created 18ms apart sharing one Cloudflare asset (the second job's
+  // tus resume found the first's finished bytes). The DB now also enforces
+  // one-asset-one-post; this latch stops the double spend before it starts.
+  const sharingRef = useRef(false);
+
   async function handleShare() {
+    if (sharingRef.current) return;
+    sharingRef.current = true;
+    try {
+      await handleShareInner();
+    } finally {
+      sharingRef.current = false;
+    }
+  }
+
+  async function handleShareInner() {
     if (!caption.trim()) { setError(t('post.errCaption')); return; }
     // Spotlights only serve public posts — a friends-only spotlight would buy
     // invisible reach.
@@ -1005,7 +1078,44 @@ export default function PostScreen() {
         const winEndV = trimEnd > trimStart ? trimEnd : Math.min(trimStart + videoWindowSec, videoDuration);
         const videoDurSecV = trimmedV ? Math.max(1, Math.round(winEndV - trimStart)) : Math.round(videoDuration);
         const ps = peekPendingSpotlight();
+        // Films on cellular: a multi-hundred-MB transfer on mobile data is a
+        // bill and a failure risk the user should choose knowingly. One clear
+        // ask, then respect the answer.
+        if (isFilm) {
+          const net = await getNetworkState().catch(() => null);
+          if (net && net.isConnected && !net.isWifi) {
+            const goAhead = await new Promise<boolean>((resolve) => {
+              Alert.alert(t('film.cellularTitle'), t('film.cellularBody'), [
+                { text: t('film.cellularAnyway'), onPress: () => resolve(true) },
+                { text: t('film.notNow'), style: 'cancel', onPress: () => resolve(false) },
+              ]);
+            });
+            if (!goAhead) return;
+          }
+        }
         const spotLabel = ps?.label ?? null;
+        // CRASH INSURANCE: snapshot the whole post as a draft BEFORE the upload
+        // starts. If the app is closed/killed mid-upload (a film uploads for
+        // tens of minutes), the post isn't lost — it's sitting in Drafts, and
+        // re-sharing it resumes the transfer from the bytes Cloudflare already
+        // holds (tus resume is keyed to the same source file). The queue
+        // deletes this draft only when the post ACTUALLY exists.
+        const resumeDraftId = editingDraftId.current ?? makeDraftId();
+        const draftNow = Date.now();
+        await saveDraft({
+          id: resumeDraftId, createdAt: draftNow, updatedAt: draftNow,
+          postType, format, caption, genre, isPublic,
+          media, crop: cropRef.current as any, thumbnailUri,
+          videoAspect, videoDuration, trimStart, trimEnd, topCaption, bottomCaption, videoCaptions,
+          filmTitle,
+          slides: [],
+          audioFile: null, audioDuration: null, coverUri: null, audioKind,
+          song, tagged, features,
+          allowDownloads, allowGifs,
+          // Marks this as an in-flight upload for boot-time recovery — cleared
+          // only when the post truly exists (see lib/uploadRecovery).
+          pendingUpload: true,
+        }).then(setDrafts).catch(() => {});
         enqueueVideo({
           userId: user.id,
           localUri: media!.uri,
@@ -1030,14 +1140,20 @@ export default function PostScreen() {
           // Covers the SOURCE, not the chosen window: if the physical cut falls
           // back, the file that goes up is untrimmed, and Cloudflare rejects
           // anything past this ceiling.
-          maxDurationSeconds: streamCeilingFor(videoDuration),
+          maxDurationSeconds: streamCeilingFor(videoDuration, videoSourceMaxSec),
           // For the adaptive bitrate that keeps long uploads under the POST cap.
           sourceSeconds: videoDuration,
+          // Films: route through the tus pipeline; the movie-shelf title shows
+          // on the Laybell TV rail.
+          film: isFilm,
+          filmTitle: isFilm ? filmTitle.trim() || null : null,
+          // The crash-insurance draft above — deleted by the queue at REAL
+          // completion (upload + encode + row), never before.
+          resumeDraftId,
           spotlight: ps ? { campaignId: ps.campaignId, days: ps.days } : null,
         });
         if (ps) { clearPendingSpotlight(); setPendingSpotBanner(null); }
         if (isPublic) setPublicCount((c) => (c == null ? c : c + 1));
-        if (editingDraftId.current) deleteDraft(editingDraftId.current).then(setDrafts);
         // NO celebration here. At this point the file has not uploaded,
         // Cloudflare has not encoded it, and either can still fail and roll the
         // whole post back — the queue deletes the row and shows a retry card.
@@ -1558,6 +1674,24 @@ export default function PostScreen() {
                 <Ionicons name={hasCommunity ? 'lock-closed' : 'chevron-down'} size={16} color={colors.textTertiary} />
               </TouchableOpacity>
               {hasCommunity && <Text style={styles.genreLockHint}>{t('post.genreFromCommunity')}</Text>}
+            </View>
+          )}
+
+          {/* FILM title — the movie-shelf name shown on the Laybell TV rail.
+              Only a film (Premium+ landscape past the free window) sees it;
+              captions make bad movie titles, so it gets its own slim box. */}
+          {isFilm && (
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>{t('film.titleLabel')}</Text>
+              <TextInput
+                style={styles.titleBox}
+                placeholder={t('film.titlePlaceholder')}
+                placeholderTextColor={colors.textTertiary}
+                value={filmTitle}
+                onChangeText={setFilmTitle}
+                maxLength={120}
+                editable={!swiping}
+              />
             </View>
           )}
 

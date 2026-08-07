@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { touchLogin, evaluateBadges, onBadgeTierChange, type Tier } from '../lib/badges';
 import { upsertOwnIdentifiers, loadOwnPhone } from '../lib/identifiers';
 import { endMyStaleLiveStreams } from '../lib/live';
+import { syncEntitlementsFromProfile } from '../lib/purchases';
 
 // Run-once-per-process guard for the ghost-live reap. It must fire only at the
 // FIRST profile load (cold start) — when the user provably isn't broadcasting yet
@@ -57,7 +58,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setProfile(null); setLoading(false); return; }
+    if (!user) { setProfile(null); setLoading(false); syncEntitlementsFromProfile(null); return; }
     // Cold start only (guarded): reap any of my own leftover "live" rows from a
     // session that was killed mid-broadcast, so I never reopen the app as a ghost
     // livestream. Fire-and-forget — never blocks profile load.
@@ -68,6 +69,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     setProfile((data as CurrentProfile) ?? null);
     setLoading(false);
+    // Reflect the server-written entitlement mirrors into the module flags —
+    // no-op once RevenueCat is configured (it owns the flags from then on).
+    syncEntitlementsFromProfile(data as any);
     // Badges: mark today's login and recompute the emblem. Fire-and-forget so it
     // never blocks profile load; no-ops if the badges SQL isn't applied yet.
     touchLogin().then(() => evaluateBadges({ silent: true })).catch(() => {});
@@ -82,7 +86,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     // Reload when the signed-in user changes (login / logout / token refresh).
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) refresh();
-      else { setProfile(null); setLoading(false); }
+      else { setProfile(null); setLoading(false); syncEntitlementsFromProfile(null); }
     });
     // Keep the in-memory emblem in sync the instant the evaluator changes our tier
     // (e.g. right after earning a badge). Patch the tier immediately for snappy

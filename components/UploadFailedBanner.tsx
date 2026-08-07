@@ -31,7 +31,10 @@ export default function UploadFailedBanner({ onRetry, onDismiss, message }: {
     <View style={[styles.wrap, { top: insets.top + 8 }]} pointerEvents="box-none">
       <View style={styles.card}>
         <Ionicons name="cloud-offline-outline" size={20} color={colors.text} />
-        <Text style={styles.text} numberOfLines={2}>{message ?? t('storyCamera.postFailBanner')}</Text>
+        {/* 4 lines, not 2: a truncated failure reason is worse than none —
+            it turns "the upload didn't finish" into a mystery about whatever
+            word happened to land before the ellipsis. */}
+        <Text style={styles.text} numberOfLines={4}>{message ?? t('storyCamera.postFailBanner')}</Text>
         <TouchableOpacity onPress={onRetry} style={styles.retryBtn} hitSlop={6}>
           <Ionicons name="refresh" size={14} color="#fff" />
           <Text style={styles.retryText}>{t('common.retry')}</Text>

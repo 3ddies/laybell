@@ -11,6 +11,33 @@ export function isHorizontalVideo(p: any): boolean {
   return p?.type === 'video' && aspectToNumber(p?.aspect_ratio, 9 / 16) > 1;
 }
 
+// A FILM = landscape video past the free 9-minute window (Premium+ posts them;
+// everyone watches free). The 540 boundary matches FILM_MIN_SEC in
+// lib/entitlements.ts and the enforce_film_rights trigger in premium_plus.sql.
+export function isFilm(p: any): boolean {
+  return isHorizontalVideo(p) && (p?.duration_seconds ?? 0) > 540;
+}
+
+/**
+ * The Films shelf: public films ranked by the SAME relevance engine as
+ * everything else (affinity + follows + engagement decay − seen), so the shelf
+ * is "recommended to you", not just newest. Returns [] until any films exist —
+ * the shelf hides itself.
+ */
+export async function fetchFilms(userId: string | null, limit = 12): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('posts')
+    .select('*, profiles!posts_user_id_fkey (username, display_name, badge_tier, badge_show, profile_theme), likes(count), comments(count)')
+    .eq('type', 'video')
+    .eq('is_public', true)
+    .gt('duration_seconds', 540)
+    .order('created_at', { ascending: false })
+    .limit(limit * 2);
+  if (error) throw error;
+  const films = (data ?? []).filter((p: any) => !p.archived_at && isHorizontalVideo(p));
+  return (await rankVideosForUser(films, userId)).slice(0, limit);
+}
+
 /**
  * Public horizontal videos, newest first — the TV Videos grid. Fetches a wide
  * window of recent videos and keeps the landscape ones (aspect_ratio isn't
@@ -55,10 +82,10 @@ export async function rankVideosForUser(videos: any[], userId: string | null): P
   }
 }
 
-/** Matches a horizontal video against a text query (title/caption). */
+/** Matches a horizontal video against a text query (film title/caption/author). */
 export function matchesQuery(p: any, q: string): boolean {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
-  const hay = `${p?.caption ?? ''} ${p?.profiles?.display_name ?? ''} ${p?.profiles?.username ?? ''}`.toLowerCase();
+  const hay = `${p?.film_title ?? ''} ${p?.caption ?? ''} ${p?.profiles?.display_name ?? ''} ${p?.profiles?.username ?? ''}`.toLowerCase();
   return hay.includes(needle);
 }

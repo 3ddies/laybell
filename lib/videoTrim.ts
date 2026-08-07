@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { NativeModules, TurboModuleRegistry } from 'react-native';
+import { NATIVE_TRIM_ENABLED } from './upload';
 
 const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
 
@@ -80,6 +81,10 @@ export async function trimVideoIfPossible(
 ): Promise<TrimOutcome> {
   const fallback: TrimOutcome = { uri, trimmed: false };
   if (!uri || !(endSec > startSec)) return fallback;
+  // Same kill switch as the compressor (lib/upload.ts): the native transcoder
+  // is crash-suspect on device — virtual trim (trim_start/trim_end) is the
+  // proven fallback and produces a correct post.
+  if (!NATIVE_TRIM_ENABLED) return fallback;
 
   // The load is INSIDE the try too: nothing about resolving this module may be
   // able to reach the caller, because the caller is mid-publish.

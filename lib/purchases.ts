@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { reportError } from './monitoring';
 import Constants from 'expo-constants';
-import { setPremium } from './entitlements';
+import { setPremium, setPremiumPlus, setPremiumPlusUntil, setEntitlementMirror } from './entitlements';
 
 // RevenueCat wrapper. react-native-purchases is a NATIVE module, loaded DYNAMICALLY
 // with a graceful fallback (like lib/network.ts) so this ships ahead of the native
@@ -9,9 +9,12 @@ import { setPremium } from './entitlements';
 // id come from app.json `extra.revenuecat`; until those are filled in (see
 // docs/PHASE_C_SETUP.md) we never configure, so the app behaves exactly as before.
 
-type RCConfig = { iosApiKey?: string; androidApiKey?: string; entitlement?: string };
+type RCConfig = { iosApiKey?: string; androidApiKey?: string; entitlement?: string; entitlementPlus?: string };
 const cfg: RCConfig = ((Constants.expoConfig?.extra as any)?.revenuecat) ?? {};
 const ENTITLEMENT = cfg.entitlement || 'premium';
+// Premium+ ($19.99) is a SECOND RevenueCat entitlement on the same customer —
+// its id must match the RevenueCat dashboard AND the revenuecat-webhook.
+const ENTITLEMENT_PLUS = cfg.entitlementPlus || 'premium_plus';
 
 export type Pkg = { identifier: string; priceString: string; title: string; description: string; raw: any };
 
@@ -34,6 +37,24 @@ function apiKey(): string | null {
 // True when the configured premium entitlement is active in the customer info.
 function activeFromInfo(info: any): boolean {
   return !!info?.entitlements?.active?.[ENTITLEMENT];
+}
+function plusFromInfo(info: any): boolean {
+  return !!info?.entitlements?.active?.[ENTITLEMENT_PLUS];
+}
+
+// Reflect BOTH tiers into lib/entitlements in one place, so no call site can
+// update one flag and forget the other.
+function applyInfo(info: any): void {
+  setPremium(activeFromInfo(info));
+  setPremiumPlus(plusFromInfo(info));
+  // The plus EXPIRY (from `all`, not `active`, so a just-lapsed sub still
+  // reports when it ended) drives the badge freeze's 24h post-cancel grace.
+  // Only written when RC actually KNOWS the entitlement — while premium_plus
+  // exists solely in the DB mirror (pre-dashboard-setup), RC's ignorance must
+  // not null out the timestamp the profile sync provided.
+  const exp = info?.entitlements?.all?.[ENTITLEMENT_PLUS]?.expirationDate;
+  const ms = exp ? Date.parse(exp) : NaN;
+  if (Number.isFinite(ms)) setPremiumPlusUntil(ms);
 }
 
 let configured = false;
@@ -58,11 +79,11 @@ export async function initPurchases(userId: string | null): Promise<void> {
       try { await Purchases.logIn(userId); } catch (e) { reportError(e, { stage: 'purchases.logIn', userId }); }
     }
     if (!listenerAttached) {
-      Purchases.addCustomerInfoUpdateListener((info: any) => setPremium(activeFromInfo(info)));
+      Purchases.addCustomerInfoUpdateListener((info: any) => applyInfo(info));
       listenerAttached = true;
     }
     const info = await Purchases.getCustomerInfo();
-    setPremium(activeFromInfo(info));
+    applyInfo(info);
   } catch (e) {
     // Purchases are now impossible for this session and the user's Premium
     // state may be wrong, with nothing on screen to say so. Still non-fatal —
@@ -93,7 +114,7 @@ export async function purchase(pkg: Pkg): Promise<'ok' | 'cancelled' | 'error'> 
   if (!Purchases) return 'error';
   try {
     const { customerInfo } = await Purchases.purchasePackage(pkg.raw);
-    setPremium(activeFromInfo(customerInfo));
+    applyInfo(customerInfo);
     return 'ok';
   } catch (e: any) {
     if (e?.userCancelled) return 'cancelled';
@@ -192,15 +213,35 @@ export async function restore(): Promise<boolean> {
   if (!Purchases) return false;
   try {
     const info = await Purchases.restorePurchases();
-    const active = activeFromInfo(info);
-    setPremium(active);
-    return active;
+    applyInfo(info);
+    return activeFromInfo(info) || plusFromInfo(info);
   } catch { return false; }
 }
 
 // Whether real billing is wired up (keys present). The paywall uses this to show a
 // "coming soon" state instead of a broken purchase button during preview.
 export function purchasesConfigured(): boolean { return !!apiKey(); }
+
+// DB-mirror sync — the SECOND entitlement source, always applied. The profiles
+// row's premium_until / premium_plus_until are written ONLY by the webhook /
+// service role (protect triggers in premium.sql + premium_plus.sql block
+// self-grant), so this trusts server truth, not the client. It feeds the
+// MIRROR flags, which OR into isPremium()/isPremiumPlus() alongside the RC SDK
+// flags — deliberately not gated on purchasesConfigured(): API keys can be
+// present while an entitlement doesn't exist in the RC dashboard yet (exactly
+// how Premium+ ships), and the mirror must still count. Pass null on sign-out
+// so the next account on this device inherits nothing.
+export function syncEntitlementsFromProfile(
+  row: { premium_until?: string | null; premium_plus_until?: string | null } | null,
+): void {
+  const now = Date.now();
+  const active = (v?: string | null) => !!v && Date.parse(v) > now;
+  setEntitlementMirror(active(row?.premium_until), active(row?.premium_plus_until));
+  // The freeze's 24h lapse grace wants the expiry itself. RC's applyInfo also
+  // writes this; at launch both carry the same webhook-synced timestamp.
+  const plusMs = row?.premium_plus_until ? Date.parse(row.premium_plus_until) : NaN;
+  setPremiumPlusUntil(Number.isFinite(plusMs) ? plusMs : null);
+}
 
 export async function logOutPurchases(): Promise<void> {
   const Purchases = await load();
@@ -209,4 +250,7 @@ export async function logOutPurchases(): Promise<void> {
   // NEXT person to sign in on this device can inherit their Premium.
   try { await Purchases.logOut(); } catch (e) { reportError(e, { stage: 'purchases.logOut' }); }
   setPremium(false);
+  setPremiumPlus(false);
+  setEntitlementMirror(false, false);
+  setPremiumPlusUntil(null);
 }

@@ -1,0 +1,24 @@
+diff --git a/node_modules/expo-file-system/ios/Legacy/NetworkingHelpers.swift b/node_modules/expo-file-system/ios/Legacy/NetworkingHelpers.swift
+index a2198c3..f6b7f95 100644
+--- a/node_modules/expo-file-system/ios/Legacy/NetworkingHelpers.swift
++++ b/node_modules/expo-file-system/ios/Legacy/NetworkingHelpers.swift
+@@ -16,6 +16,19 @@ func createUrlSession(type: SessionType, delegate: URLSessionDelegate) -> URLSes
+   let configuration = type == .foreground ? URLSessionConfiguration.default : URLSessionConfiguration.background(withIdentifier: UUID().uuidString)
+   configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+   configuration.urlCache = nil
++  // PATCHED (Laybell): URLSessionConfiguration.default carries
++  // timeoutIntervalForRequest = 60. That is an IDLE timeout, and it also
++  // governs the wait for the server's response after the final byte is sent —
++  // so any large upload whose connection stalls for a minute, or whose server
++  // takes a minute to finalise the file, dies with
++  // NSURLErrorDomain -1001 "The request timed out". Nothing in the JS API can
++  // change it, which made long video uploads impossible: short clips finish
++  // inside the window, multi-hundred-MB masters do not.
++  //
++  // 30 minutes of idle tolerance, 24 hours for the whole resource. These bound
++  // a genuinely stuck transfer while never punishing a slow-but-live one.
++  configuration.timeoutIntervalForRequest = 1800
++  configuration.timeoutIntervalForResource = 86_400
+   return URLSession(configuration: configuration, delegate: delegate, delegateQueue: .main)
+ }
+ 

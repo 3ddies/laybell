@@ -15,7 +15,7 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useSearchSwipeLock } from '../../contexts/PagerContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { useProfile } from '../../contexts/ProfileContext';
-import { fetchHorizontalVideos, matchesQuery, rankVideosForUser } from '../../lib/tv';
+import { fetchFilms, fetchHorizontalVideos, matchesQuery, rankVideosForUser } from '../../lib/tv';
 import { fetchLiveStreams, liveThumbnailUrl, type LiveStream } from '../../lib/live';
 import { selection } from '../../lib/haptics';
 import { useCast } from '../../contexts/CastContext';
@@ -94,6 +94,8 @@ export default function LaybellTVScreen() {
   // eligible. Every other surface holds its own pool straight from fetchTvAds —
   // this makes casting consistent with them.
   const [tvAdItems, setTvAdItems] = useState<any[]>([]);
+  // The Films shelf (Premium+ long-form). Hidden until any films exist.
+  const [films, setFilms] = useState<any[]>([]);
   const [lives, setLives] = useState<LiveStream[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(true);
   const [loadingLives, setLoadingLives] = useState(true);
@@ -101,8 +103,13 @@ export default function LaybellTVScreen() {
 
   const loadVideos = useCallback(async () => {
     try {
-      const vids = await fetchHorizontalVideos();
+      // The Films shelf loads alongside the grid — best-effort, never blocking.
+      const [vids, filmRows] = await Promise.all([
+        fetchHorizontalVideos(),
+        fetchFilms(profile?.id ?? null).catch(() => []),
+      ]);
       setVideos(vids);
+      setFilms(filmRows);
       const rankedVids = await rankVideosForUser(vids, profile?.id ?? null);
       // Fetch the eligible TV sponsors ONCE, then use them two independent ways:
       //   • tvAdItems  — the raw pool the CAST queue weaves from (see castVideo)
@@ -147,11 +154,14 @@ export default function LaybellTVScreen() {
   // Searching flattens to a single 2-up grid of matches. Otherwise the top 4
   // personalized picks become the Recommended row and the rest fill the grid.
   const searching = query.trim().length > 0;
-  const featured = searching ? [] : ranked.slice(0, 4);
+  // Films on the shelf stay off the Recommended row and out of the grid — one
+  // home each. While searching, films join the flat results like any video.
+  const filmIds = new Set(films.map((f) => f.id));
+  const featured = searching ? [] : ranked.filter((v) => !filmIds.has(v.id)).slice(0, 4);
   const featuredIds = new Set(featured.map((v) => v.id));
   const gridVideos = searching
     ? videos.filter((v) => matchesQuery(v, query))
-    : ranked.filter((v) => !featuredIds.has(v.id));
+    : ranked.filter((v) => !featuredIds.has(v.id) && !filmIds.has(v.id));
 
   // ── Cast handoff (only when a session is live) ─────────────────────────────
   // Tapping a TV item while connected throws it to the TV with the visible list
@@ -320,6 +330,7 @@ export default function LaybellTVScreen() {
             <TVVideoList
               posts={gridVideos}
               featured={featured}
+              films={searching ? [] : films}
               currentUserId={profile?.id ?? null}
               refreshing={refreshing}
               onRefresh={async () => { setRefreshing(true); await loadVideos(); setRefreshing(false); }}
@@ -331,6 +342,7 @@ export default function LaybellTVScreen() {
               onPostDeleted={(id) => {
                 setVideos((prev) => prev.filter((p) => p.id !== id));
                 setRanked((prev) => prev.filter((p) => p.id !== id));
+                setFilms((prev) => prev.filter((p) => p.id !== id));
               }}
             />
           )

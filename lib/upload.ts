@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, supabaseUrl, supabaseAnonKey } from './supabase';
 
 // react-native-compressor 2.x is built on react-native-nitro-modules, which hard
@@ -7,6 +8,22 @@ import { supabase, supabaseUrl, supabaseAnonKey } from './supabase';
 // Expo Go client so we can skip the native re-encode there entirely (Cloudflare
 // Stream transcodes server-side anyway, so quality is unaffected).
 const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
+
+// ── Native module switches ────────────────────────────────────────────────────
+// These were ONE flag, killed together on 2026-08-05 after the first binary
+// containing them showed instant failures and crashes. Six subsequent root
+// causes were found in the upload pipeline itself, so the evidence against the
+// COMPRESSOR specifically is now weak — and compressing is the only thing that
+// makes a long video fit the one transport that has never failed (a single
+// POST under 200 MB). Every large app transcodes on device for exactly this
+// reason; pushing a raw multi-GB master from a phone is the thing that doesn't
+// work, not the thing to keep retrying.
+//
+// So: compressor ON (it is the fix), trimmer still OFF (a separate native
+// module, and virtual trim already produces a correct post — no reason to
+// reintroduce that risk for zero gain).
+export const NATIVE_COMPRESS_ENABLED = true;
+export const NATIVE_TRIM_ENABLED = false;
 
 // Threshold (bytes) above which we transcode before upload. Below it a clip is
 // already small/fast enough that re-encoding only adds latency. 12 MB comfortably
@@ -37,10 +54,52 @@ const ADAPTIVE_BITRATE_ABOVE_SEC = 300;
 // (iCloud / storage-optimized clips). Copy such assets into the cache first so the
 // uploader has a readable file. (In dev/store builds the compressor already emits
 // a file://; this covers Expo Go, where compression is skipped.)
+// Stable per-source name. `Date.now()` here was catastrophic for long uploads:
+// the localized path IS the identity that tus resume state is keyed by, so a
+// fresh timestamp on every attempt meant every retry looked like a different
+// video. Resume could never match, so each retry minted a NEW Cloudflare
+// upload and re-sent the whole file from zero — three assets for one video,
+// none ever finishing. All the resume machinery was correct and unreachable.
+// Deriving the name from the SOURCE uri makes a retry land on the same file,
+// which both restores resume AND skips re-copying gigabytes.
+function stableKey(s: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 + c, 0x85ebca6b) >>> 0;
+  }
+  return `${h1.toString(36)}${h2.toString(36)}`;
+}
+
+// Is this file inside OUR sandbox (cache/documents), as opposed to somewhere we
+// only have read-through access, like the camera roll?
+function insideAppSandbox(uri: string): boolean {
+  const cache = FileSystem.cacheDirectory ?? '';
+  const docs = FileSystem.documentDirectory ?? '';
+  return (!!cache && uri.startsWith(cache)) || (!!docs && uri.startsWith(docs));
+}
+
 export async function ensureLocalFile(uri: string): Promise<string> {
-  if (!uri || uri.startsWith('file://')) return uri;
+  if (!uri) return uri;
+  // A `file://` path is NOT automatically usable. A camera-roll pick is a
+  // file:// URL into the Photos store (…/DCIM/126APPLE/IMG_1234.MOV), and iOS
+  // grants the app only limited access to it: AVFoundation opens the container
+  // but finds no readable track, which surfaces as the transcoder's
+  //   CompressionError("Invalid video URL, no track found")
+  // — i.e. compression silently never ran, the master stayed multi-GB, and
+  // every transport downstream inherited a file too big to send. Skipping the
+  // copy for file:// URIs (the old rule) is what made that inevitable.
+  //
+  // So the test is not "does it have a scheme", it is "is it OURS".
+  if (uri.startsWith('file://') && insideAppSandbox(uri)) return uri;
   try {
-    const dest = `${FileSystem.cacheDirectory}upload_${Date.now()}.mp4`;
+    const dest = `${FileSystem.cacheDirectory}upload_${stableKey(uri)}.mp4`;
+    // Already localized by an earlier attempt → reuse it verbatim, so a retry
+    // never re-copies gigabytes.
+    const info = await FileSystem.getInfoAsync(dest);
+    if (info.exists && ((info as any).size ?? 0) > 0) return dest;
     await FileSystem.copyAsync({ from: uri, to: dest });
     return dest;
   } catch {
@@ -79,6 +138,7 @@ export async function compressVideoIfPossible(
   durationSec?: number,
 ): Promise<string> {
   try {
+    if (!NATIVE_COMPRESS_ENABLED) return uri; // see the switches at the top of this file
     // Expo Go can't load the Nitro-based compressor at all — importing it there
     // throws a fatal error, so bail to the original bytes before touching it.
     if (IS_EXPO_GO) return uri;
@@ -108,9 +168,115 @@ export async function compressVideoIfPossible(
       (p: number) => onProgress?.(Math.min(1, p)),
     );
     return out || uri;
-  } catch {
+  } catch (e: any) {
+    // NEVER swallow this silently again. A failed transcode is the difference
+    // between a video that posts and one that cannot, and for days this catch
+    // hid the reason behind a generic "too large" — sending us to redesign
+    // transports when the real problem was one module refusing to load.
+    lastCompressError = e?.message ? String(e.message) : String(e);
     return uri; // module not in this build / compression failed → original bytes
   }
+}
+
+// The reason the most recent compression attempt failed, for the error the user
+// actually sees. Module-scoped because the failure has to travel from here to
+// the upload queue without changing a shared signature.
+let lastCompressError: string | null = null;
+export function getLastCompressError(): string | null { return lastCompressError; }
+
+// ── Film mezzanine ────────────────────────────────────────────────────────────
+// Films used to upload the RAW source ("full quality is the perk") — but
+// Cloudflare's playback ladder tops out at 1080p, so a 4K/50-Mbps camera file
+// is 3-6× the bytes for zero visible difference after the re-encode. This is
+// the actual reason YouTube uploads feel fast: the phone transcodes FIRST.
+// Films therefore compress to a HIGH-bitrate 1080p mezzanine — far above the
+// squeezed free-tier target, visually transparent at 1080p delivery — and the
+// perk stays honest: films remain the highest-bitrate video on the platform.
+export const FILM_MEZZANINE_BPS = 7_000_000;
+
+// Sources already at/below mezzanine bitrate (downloads, prior exports) skip
+// the re-encode entirely — re-encoding those wastes minutes AND quality.
+const MEZZ_SKIP_FACTOR = 1.15;
+
+// Retries must NOT recompress (minutes of work), and tus RESUME is keyed to
+// the file it was uploading — so the compressed output must be the SAME file
+// across attempts. Cache maps source → output; entries die with their files.
+const MEZZ_CACHE_KEY = 'film_mezz_cache';
+const MEZZ_CACHE_MAX = 3;
+
+type MezzEntry = { key: string; out: string; at: number };
+
+async function readMezzCache(): Promise<MezzEntry[]> {
+  try {
+    const raw = await AsyncStorage.getItem(MEZZ_CACHE_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((e) => e?.key && e?.out) : [];
+  } catch { return []; }
+}
+async function writeMezzCache(list: MezzEntry[]): Promise<void> {
+  try { await AsyncStorage.setItem(MEZZ_CACHE_KEY, JSON.stringify(list.slice(-MEZZ_CACHE_MAX))); } catch {}
+}
+
+/** Compress a film to the mezzanine (cache-aware). Returns the file to upload —
+ *  the original when compression is unavailable, already-lean, or fails. */
+export async function prepareFilmMezzanine(
+  uri: string,
+  durationSec: number,
+  onProgress?: (fraction: number) => void,
+): Promise<string> {
+  try {
+    if (!NATIVE_COMPRESS_ENABLED) return uri; // see the switches at the top of this file
+    if (IS_EXPO_GO) return uri;
+    const srcBytes = await fileSizeBytes(uri);
+    if (!srcBytes) return uri;
+    // Already lean → upload as-is (no quality lost re-encoding a re-encode).
+    if (durationSec > 0 && (srcBytes * 8) / durationSec <= FILM_MEZZANINE_BPS * MEZZ_SKIP_FACTOR) return uri;
+
+    const key = `${uri}::${srcBytes}`;
+    const cache = await readMezzCache();
+    const hit = cache.find((e) => e.key === key);
+    if (hit && (await fileSizeBytes(hit.out)) > 0) {
+      onProgress?.(1);
+      return hit.out;
+    }
+
+    const { Video } = await import('react-native-compressor');
+    const out = await Video.compress(
+      uri,
+      {
+        compressionMethod: 'manual' as const,
+        bitrate: FILM_MEZZANINE_BPS,
+        maxSize: 1920,
+        minimumFileSizeForCompress: 0,
+        progressDivider: 4,
+      },
+      (p: number) => onProgress?.(Math.min(1, p)),
+    );
+    if (!out || out === uri) return uri;
+    const next = cache.filter((e) => e.key !== key);
+    next.push({ key, out, at: Date.now() });
+    // Evict the oldest beyond the cap — delete their (large) files too.
+    while (next.length > MEZZ_CACHE_MAX) {
+      const dead = next.shift()!;
+      FileSystem.deleteAsync(dead.out, { idempotent: true }).catch(() => {});
+    }
+    await writeMezzCache(next);
+    return out;
+  } catch {
+    return uri; // any failure → original bytes (slower, never lost)
+  }
+}
+
+/** The film posted (or was abandoned for good) — drop its mezzanine from disk. */
+export async function releaseFilmMezzanine(sourceUri: string): Promise<void> {
+  const cache = await readMezzCache();
+  const keep: MezzEntry[] = [];
+  for (const e of cache) {
+    if (e.key.startsWith(`${sourceUri}::`)) {
+      FileSystem.deleteAsync(e.out, { idempotent: true }).catch(() => {});
+    } else keep.push(e);
+  }
+  await writeMezzCache(keep);
 }
 
 // Storage upload with REAL progress, for big files (3-minute videos can be
@@ -168,4 +334,81 @@ export async function uploadToStorageWithProgress(
     throw new Error(detail || `Upload failed (${res?.status ?? 'network error'})`);
   }
   return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+// ── Long-video staging ────────────────────────────────────────────────────────
+// ONE native upload of the master into the private video-staging bucket, then
+// Cloudflare fetches it server-side (see lib/streamCopy.ts). This replaces the
+// hand-rolled chunked uploader entirely: the OS owns the transfer, so there
+// are no byte offsets, no resume bookkeeping, and nothing to reconcile — the
+// three things that produced every long-video failure.
+export const VIDEO_STAGING_BUCKET = 'video-staging';
+
+/** Uploads to video-staging and returns the storage PATH (not a URL — the
+ *  bucket is private; callers mint a short-lived signed URL for Cloudflare). */
+export async function uploadToStaging(
+  userId: string,
+  uri: string,
+  onProgress?: (fraction: number) => void,
+): Promise<string> {
+  // Deterministic per-source name so a retry overwrites its own partial object
+  // instead of stacking multi-GB copies (the timestamped-name mistake that
+  // silently broke resume in the old uploader).
+  const path = `${userId}/${stableKey(uri)}.mp4`;
+
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('Not authenticated');
+
+  const task = FileSystem.createUploadTask(
+    `${supabaseUrl}/storage/v1/object/${VIDEO_STAGING_BUCKET}/${path}`,
+    uri,
+    {
+      httpMethod: 'POST',
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      // REVERTED to FOREGROUND (2026-08-07). BACKGROUND is theoretically the
+      // right session for a large transfer — days-long resource timeout instead
+      // of a 60s idle window — but expo-file-system's background session fails
+      // INSTANTLY on this setup (the long-known NSURLError -1 / #bplist bug).
+      // A foreground session that sometimes times out beats one that never
+      // starts, so this stays until the underlying module is fixed.
+      sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: supabaseAnonKey,
+        'Content-Type': 'video/mp4',
+        // Overwrite a previous attempt's object rather than 409-ing on it.
+        'x-upsert': 'true',
+      },
+    },
+    ({ totalBytesSent, totalBytesExpectedToSend }) => {
+      if (totalBytesExpectedToSend > 0) onProgress?.(Math.min(1, totalBytesSent / totalBytesExpectedToSend));
+    },
+  );
+
+  const res = await task.uploadAsync();
+  if (!res || res.status < 200 || res.status >= 300) {
+    let detail = '';
+    try { detail = JSON.parse(res?.body ?? '')?.message ?? ''; } catch {}
+    if (res?.status === 413) {
+      const err: any = new Error('This video is larger than the upload limit');
+      err.code = 'video_too_large';
+      throw err;
+    }
+    throw new Error(detail || `Upload failed (${res?.status ?? 'network error'})`);
+  }
+  return path;
+}
+
+/** Short-lived URL Cloudflare can fetch the staged master from. */
+export async function signStagingUrl(path: string, seconds = 3600): Promise<string> {
+  const { data, error } = await supabase.storage.from(VIDEO_STAGING_BUCKET).createSignedUrl(path, seconds);
+  if (error || !data?.signedUrl) throw new Error('Could not prepare the video for transfer');
+  return data.signedUrl;
+}
+
+/** Drop the staged master once Cloudflare has ingested it. Best-effort: the
+ *  hourly sweep_video_staging() cron is the backstop. */
+export async function removeStaged(path: string): Promise<void> {
+  try { await supabase.storage.from(VIDEO_STAGING_BUCKET).remove([path]); } catch { /* cron will get it */ }
 }

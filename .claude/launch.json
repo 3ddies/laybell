@@ -2,22 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "Expo",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["start", "--", "--offline", "-p", "8082"],
-      "port": 8082
-    },
-    {
-      "name": "AdminConsole",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["admin-console/serve.mjs"],
-      "port": 5599
-    },
-    {
-      "name": "Laybell Phone",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["start", "--", "--dev-client", "-p", "8082"],
-      "port": 8082
+      "name": "laybell-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--dev-client", "--clear"],
+      "port": 8081
     }
   ]
 }

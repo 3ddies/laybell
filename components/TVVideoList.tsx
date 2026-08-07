@@ -42,12 +42,29 @@ const COL_THUMB_H = COL_W * (9 / 16);
 // Portrait "recommended" tile (mirrors the old reel-grid tile proportions).
 const FEAT_W = Math.round((SCREEN_W - H_PADDING * 2) * 0.42);
 const FEAT_H = Math.round(FEAT_W * 1.3);
+// Films shelf tile — wide 16:9, movie-poster proportions with title + runtime.
+const FILM_W = Math.round((SCREEN_W - H_PADDING * 2) * 0.62);
+const FILM_H = Math.round(FILM_W * (9 / 16));
 
-export default function TVVideoList({ posts, featured, currentUserId, refreshing, onRefresh, bottomPad, emptyText, onPostDeleted, castActive, onCast, castingId }: {
+// A film's runtime chip: h:mm:ss past the hour, m:ss under it.
+function fmtRuntime(sec?: number | null): string {
+  const s = Math.max(0, Math.round(sec ?? 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  return h > 0
+    ? `${h}:${m.toString().padStart(2, '0')}:${r.toString().padStart(2, '0')}`
+    : `${m}:${r.toString().padStart(2, '0')}`;
+}
+
+export default function TVVideoList({ posts, featured, films, currentUserId, refreshing, onRefresh, bottomPad, emptyText, onPostDeleted, castActive, onCast, castingId }: {
   posts: TVPost[];
   // Personalized top picks shown as portrait tiles above the grid (omit/empty to
   // hide the row — e.g. while searching).
   featured?: TVPost[];
+  // The Films shelf (Premium+ long-form, >9 min) — wide poster tiles between
+  // Recommended and the grid. Omit/empty to hide the shelf entirely.
+  films?: TVPost[];
   currentUserId?: string | null;
   refreshing?: boolean;
   onRefresh?: () => void;
@@ -121,31 +138,70 @@ export default function TVVideoList({ posts, featured, currentUserId, refreshing
       : undefined;
 
   const feat = featured ?? [];
-  const header = feat.length > 0 ? (
+  const filmRows = films ?? [];
+  const header = feat.length > 0 || filmRows.length > 0 ? (
     <View style={styles.featSection}>
-      <Text style={styles.featTitle}>{t('tv.recommended')}</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.featRow}
-      >
-        {feat.map((p) => (
-          <TouchableOpacity
-            key={p.id}
-            style={styles.featTile}
-            activeOpacity={0.9}
-            onPress={(e: any) => openVideo(p, e, FEAT_W, FEAT_H)}
-            onLongPress={longPressFor(p)}
+      {feat.length > 0 && (
+        <>
+          <Text style={styles.featTitle}>{t('tv.recommended')}</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.featRow}
           >
-            <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.featThumb} />
-            {badgeFor(p)}
-            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.78)']} style={styles.featOverlay}>
-              {!!p.profiles?.username && <Text style={styles.featUser} numberOfLines={1}>@{p.profiles.username}</Text>}
-            </LinearGradient>
-            <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+            {feat.map((p) => (
+              <TouchableOpacity
+                key={p.id}
+                style={styles.featTile}
+                activeOpacity={0.9}
+                onPress={(e: any) => openVideo(p, e, FEAT_W, FEAT_H)}
+                onLongPress={longPressFor(p)}
+              >
+                <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.featThumb} />
+                {badgeFor(p)}
+                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.78)']} style={styles.featOverlay}>
+                  {!!p.profiles?.username && <Text style={styles.featUser} numberOfLines={1}>@{p.profiles.username}</Text>}
+                </LinearGradient>
+                <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </>
+      )}
+      {/* FILMS — the Premium+ long-form shelf. Wide poster tiles: title over a
+          heavier scrim (a film leads with its NAME, not its author) + runtime. */}
+      {filmRows.length > 0 && (
+        <>
+          <Text style={[styles.featTitle, feat.length > 0 && { marginTop: SPACING.md }]}>{t('tv.films')}</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.featRow}
+          >
+            {filmRows.map((p) => (
+              <TouchableOpacity
+                key={p.id}
+                style={styles.filmTile}
+                activeOpacity={0.9}
+                onPress={(e: any) => openVideo(p, e, FILM_W, FILM_H)}
+                onLongPress={longPressFor(p)}
+              >
+                <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.filmThumb} />
+                {badgeFor(p)}
+                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.filmOverlay}>
+                  <Text style={styles.filmName} numberOfLines={1}>
+                    {(p as any).film_title || p.caption || p.profiles?.display_name || p.profiles?.username || ''}
+                  </Text>
+                  {!!p.profiles?.username && <Text style={styles.featUser} numberOfLines={1}>@{p.profiles.username}</Text>}
+                </LinearGradient>
+                <View style={styles.filmRuntime}>
+                  <Text style={styles.filmRuntimeText}>{fmtRuntime((p as any).duration_seconds)}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </>
+      )}
       {posts.length > 0 && <Text style={styles.gridTitle}>{t('tv.moreVideos')}</Text>}
     </View>
   ) : null;
@@ -280,6 +336,25 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.lg, paddingBottom: 6,
   },
   featUser: { color: '#fff', fontSize: 11, fontWeight: '600' },
+
+  // Films shelf (wide poster tiles)
+  filmTile: {
+    width: FILM_W, height: FILM_H, borderRadius: RADIUS.md, overflow: 'hidden',
+    backgroundColor: c.surfaceLight,
+  },
+  filmThumb: { width: '100%', height: '100%' },
+  filmOverlay: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    paddingHorizontal: SPACING.sm, paddingTop: SPACING.xl, paddingBottom: 6, gap: 1,
+  },
+  filmName: { color: '#fff', fontSize: 13.5, fontWeight: '800', letterSpacing: -0.2 },
+  filmRuntime: {
+    position: 'absolute', top: SPACING.sm, right: SPACING.sm,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.sm,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  filmRuntimeText: { color: '#fff', fontSize: 10.5, fontWeight: '700', fontVariant: ['tabular-nums'] },
+
   gridTitle: { color: c.text, fontSize: 15, fontWeight: '800', marginTop: SPACING.md },
 
   // Landscape 2-up grid

@@ -202,6 +202,21 @@ export const BADGE_SCORE_BOOST: Record<string, number> = {
 // Tune here — it is the single knob for how hard the policy bites.
 export const ORIGINALITY_LIMIT_MUL = 0.3;
 
+// ── Films: rare-but-earnable Home presence ───────────────────────────────────
+// Owner decision (2026-08-05): films (landscape video past the free 9-minute
+// window, Premium+ posts them) should feel RARE on Home without being silently
+// buried. They enter ranking dampened and EARN full weight through engagement:
+// a film with real interactions ranks like anything else; an unproven one
+// leans on its guaranteed home, the Films shelf in Laybell TV. Spotlight may
+// still promote a film (paid reach is allowed) — it composes with this
+// multiplier, so money alone can't fake an engaging film.
+export const FILM_MIN_SEC_SCORE = 540; // matches FILM_MIN_SEC (lib/entitlements) + the SQL trigger
+export const FILM_BASE_MUL = 0.5;      // where an unproven film starts
+// Weighted engagement (same weights as the score's own engagement sum, sans
+// BASE) at which the dampener is fully lifted — ≈20 likes, or 12 comments, or
+// any mix. One knob: raise it to make Home stingier with films.
+export const FILM_PROVEN_ENGAGEMENT = 60;
+
 export interface ScoredPost {
   id:           string;
   user_id:      string;
@@ -274,7 +289,15 @@ export function scorePost(
     }
   }
 
-  return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul * girlSpaceMul * origMul;
+  // Films: dampened entry that engagement lifts back to full weight (see the
+  // FILM_* block above). Linear ramp 0.5 → 1.0.
+  let filmMul = 1.0;
+  if (post.type === 'video' && (post.duration_seconds ?? 0) > FILM_MIN_SEC_SCORE) {
+    const weighted = likes * 3 + comments * 5 + saves * 4 + reposts * 6 + streams;
+    filmMul = Math.min(1, FILM_BASE_MUL + (1 - FILM_BASE_MUL) * (weighted / FILM_PROVEN_ENGAGEMENT));
+  }
+
+  return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul * girlSpaceMul * origMul * filmMul;
 }
 
 // ── Instagram-style feed arrangement ─────────────────────────────────────────

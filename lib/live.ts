@@ -11,9 +11,10 @@ export type LiveProfile = {
   username: string | null;
   display_name: string | null;
   avatar_url: string | null;
-  // Drives the live donation lock — only a Premium host (premium_until in the
-  // future) can receive tips (lib/donations hostCanReceive).
+  // Drives the tip FEE disclosure (lib/donations hostFeeRate) — either
+  // subscription active = the premium rate, matching what the server charges.
   premium_until: string | null;
+  premium_plus_until?: string | null;
   // Badge display fields (badges.sql) — color the host's name on the live feed
   // by their displayed tier. Optional: absent on a pre-badges database.
   badge_tier?: string | null;
@@ -80,12 +81,14 @@ export type LiveDonationEvent = {
 async function attachProfiles<T extends { user_id: string }>(rows: T[]): Promise<(T & { profile?: LiveProfile })[]> {
   const ids = [...new Set(rows.map((r) => r.user_id))];
   if (!ids.length) return rows;
-  // The badge columns arrive with badges.sql — on a pre-badges database this
-  // select errors, so retry with the base column set rather than losing the
-  // host profiles entirely.
+  // The badge columns arrive with badges.sql and premium_plus_until with
+  // premium_plus.sql — on a database missing either, this select errors, so
+  // retry with the base column set rather than losing the host profiles
+  // entirely. (The fallback deliberately omits the newer columns: pre-migration
+  // nobody can BE Premium+, so the standard-fee display it implies is correct.)
   let data: LiveProfile[] | null = (await supabase
     .from('profiles')
-    .select('id, username, display_name, avatar_url, premium_until, badge_tier, badge_show, profile_theme')
+    .select('id, username, display_name, avatar_url, premium_until, premium_plus_until, badge_tier, badge_show, profile_theme')
     .in('id', ids)).data;
   if (!data) {
     data = (await supabase

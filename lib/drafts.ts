@@ -49,6 +49,8 @@ export type Draft = {
   bottomCaption?: { text: string; bg: string; color: string; y: number; scale: number } | null;
   // Vertical-video story-style captions (array of sticker objects).
   videoCaptions?: any[];
+  // Films (Premium+ landscape >9 min): the movie-shelf title.
+  filmTitle?: string;
 
   // slideshow — PickedSlide[] (kept loosely typed to avoid a UI import cycle)
   slides: any[];
@@ -67,6 +69,15 @@ export type Draft = {
   // per-post creator controls (both default true). Optional so older drafts load.
   allowDownloads?: boolean;     // audio: whether listeners may download for offline
   allowGifs?: boolean;          // video: whether others may Make GIF from it
+
+  // ── Crash insurance (video uploads) ─────────────────────────────────────────
+  // Set by Share when the upload starts; cleared only when the post TRULY
+  // exists (uploaded + encoded + row). A draft still flagged at boot means the
+  // app died mid-upload — lib/uploadRecovery reconciles it: heal the stranded
+  // row if one was inserted, otherwise offer a one-tap resume.
+  pendingUpload?: boolean;
+  postedId?: string;            // DB row id once the insert landed
+  postedUid?: string;           // Cloudflare asset id, for status checks
 };
 
 // Sortable, collision-resistant id (device-local only — no server coordination).
@@ -101,6 +112,27 @@ export async function saveDraft(draft: Draft): Promise<Draft[]> {
   } catch {
     return loadDrafts();
   }
+}
+
+// Merge a partial update into one draft without touching its position.
+export async function patchDraft(id: string, patch: Partial<Draft>): Promise<void> {
+  try {
+    const existing = await loadDrafts();
+    const next = existing.map((d) => (d.id === id ? { ...d, ...patch } : d));
+    await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(next));
+  } catch { /* a missed patch degrades to a spurious resume offer — harmless */ }
+}
+
+// ── Resume handoff ────────────────────────────────────────────────────────────
+// The boot-time recovery prompt lives in _layout; the composer that can load a
+// draft lives in the create tab. This module-level slot carries the chosen
+// draft id across that navigation (same pattern as the spotlight handoff).
+let _resumeDraftId: string | null = null;
+export function setResumeDraftPending(id: string | null): void { _resumeDraftId = id; }
+export function consumeResumeDraftId(): string | null {
+  const v = _resumeDraftId;
+  _resumeDraftId = null;
+  return v;
 }
 
 export async function deleteDraft(id: string): Promise<Draft[]> {

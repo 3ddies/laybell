@@ -369,6 +369,17 @@ let _isPremiumGetter: () => boolean = () => false;
 export function setBadgePremiumGetter(fn: () => boolean): void { _isPremiumGetter = fn; }
 const PREMIUM_GRACE_DAYS = 3;
 
+// PREMIUM+ perk — the badge FREEZE. While the getter reports true (active plus
+// subscription, or within the 24h post-cancel grace — lib/entitlements decides),
+// the reconcile in evaluateBadges never drops a held badge for failing to
+// re-qualify, so tier and points hold with zero maintenance. Real actions still
+// EARN normally — a frozen account can climb, it just can't fall. Catalog
+// retirements still purge (that's a rules change, not a lapse), and once the
+// freeze ends the next evaluation applies the ordinary rules to the raw
+// activity data — streaks continue from whatever the user actually did.
+let _isFreezeGetter: () => boolean = () => false;
+export function setBadgeFreezeGetter(fn: () => boolean): void { _isFreezeGetter = fn; }
+
 // How many PRIOR days still count toward today's badges/streaks. Premium users
 // get a 3-day cushion (a busy day never breaks a streak); free users keep the
 // existing behavior — 1 day (yesterday) during the 6h midnight window, else 0.
@@ -671,8 +682,11 @@ export async function evaluateBadges(opts: { silent?: boolean } = {}): Promise<E
     // keep permanents and still-qualifying ones untouched (no churn). Rows whose
     // key was retired from the catalog (e.g. the old curator/app-sharing diamonds)
     // are purged even if permanent — they no longer exist to be held.
+    // PREMIUM+ FREEZE: while frozen, lapse-driven drops are skipped entirely —
+    // held badges (and the tier/points they carry) survive with no maintenance.
+    const frozen = _isFreezeGetter();
     const toDelete = existing
-      .filter(r => !BADGES_BY_KEY[r.badge_key] || (!isPerm(r) && !qKeys.has(r.badge_key)))
+      .filter(r => !BADGES_BY_KEY[r.badge_key] || (!frozen && !isPerm(r) && !qKeys.has(r.badge_key)))
       .map(r => r.badge_key);
     const toInsert = Array.from(qKeys).filter(k => !existingByKey.has(k));
 

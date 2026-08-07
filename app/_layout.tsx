@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useSegments, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -21,7 +21,8 @@ import { AudioProvider } from '../contexts/AudioContext';
 import { PostMusicProvider } from '../contexts/PostMusicContext';
 import { MediaSuspendProvider } from '../contexts/MediaSuspendContext';
 import { PostOptionsProvider } from '../contexts/PostOptionsContext';
-import { ProfileProvider } from '../contexts/ProfileContext';
+import { ProfileProvider, useProfile } from '../contexts/ProfileContext';
+import { premiumPlusLapsed } from '../lib/entitlements';
 import { OfflineProvider } from '../contexts/OfflineContext';
 import { PremiumProvider } from '../contexts/PremiumContext';
 import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
@@ -48,6 +49,9 @@ import OfflineBanner from '../components/OfflineBanner';
 import { useListenMode } from '../contexts/ListenModeContext';
 import CastBar from '../components/CastBar';
 import UploadFailedBanner from '../components/UploadFailedBanner';
+import UploadProgressBanner from '../components/UploadProgressBanner';
+import { setResumeDraftPending } from '../lib/drafts';
+import { reconcileInterruptedUpload, dismissRecovery } from '../lib/uploadRecovery';
 import MiniPlayer from '../components/MiniPlayer';
 import NowPlaying from '../components/NowPlaying';
 import ListenLeaveConfirm from '../components/ListenLeaveConfirm';
@@ -78,10 +82,74 @@ function AppContent() {
   const { colors } = useTheme();
   const { failedJob, retryFailed, dismissFailed } = useStoryUpload();
   const { t } = useTranslation();
+  const { profile } = useProfile();
+  const router = useRouter();
+
+  // Uploads a previous session never finished: heal a stranded mid-encode post
+  // (the black-video bug), or offer a one-tap resume from the crash-insurance
+  // draft. Runs once per boot, after sign-in.
+  const recoveredOnce = useRef(false);
+  useEffect(() => {
+    if (!profile?.id || recoveredOnce.current) return;
+    recoveredOnce.current = true;
+    let active = true;
+    reconcileInterruptedUpload().then((r) => {
+      if (!active || !r) return;
+      if (r.kind === 'healed') {
+        Alert.alert(t('upload.healedTitle'), t('upload.healedBody'));
+        return;
+      }
+      Alert.alert(t('upload.resumeTitle'), t('upload.resumeBody'), [
+        {
+          text: t('upload.resumeAction'),
+          onPress: () => { setResumeDraftPending(r.draft.id); router.push('/post' as any); },
+        },
+        {
+          text: t('film.notNow'),
+          style: 'cancel',
+          onPress: () => { dismissRecovery(r.draft.id).catch(() => {}); },
+        },
+      ]);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [profile?.id, t, router]);
+
+  // Lapsed Premium+ with films still up: warn (at most once a day) that the
+  // films are hidden and on the 7-day deletion clock, with a one-tap path back.
+  // The reaper (premium_plus.sql) is the enforcement; this is the courtesy.
+  useEffect(() => {
+    if (!profile?.id || !premiumPlusLapsed()) return;
+    let active = true;
+    (async () => {
+      try {
+        const FILM_WARN_KEY = 'film_lapse_warned_at';
+        const last = Number(await AsyncStorage.getItem(FILM_WARN_KEY)) || 0;
+        if (Date.now() - last < 24 * 3600_000) return;
+        const { data } = await supabase
+          .from('posts').select('id')
+          .eq('user_id', profile.id).eq('type', 'video')
+          .gt('duration_seconds', 540).limit(1);
+        if (!active || !data?.length) return;
+        await AsyncStorage.setItem(FILM_WARN_KEY, String(Date.now()));
+        Alert.alert(t('film.lapseWarnTitle'), t('film.lapseWarnBody'), [
+          { text: t('film.getPlus'), onPress: () => router.push('/premium' as any) },
+          { text: t('film.notNow'), style: 'cancel' },
+        ]);
+      } catch { /* connectivity — the reaper still governs; try again next launch */ }
+    })();
+    return () => { active = false; };
+  }, [profile?.id, t, router]);
   // First video whose background upload gave up. The queue keeps its job
   // snapshot, so retry re-runs the original post untouched.
   const { pending, retry: retryVideo, dismiss: dismissVideo } = useUploadQueue();
   const failedVideo = pending.find((p) => p.phase === 'error') ?? null;
+  // A video still being PREPARED or LEAVING the phone — the app-wide progress
+  // banner (with the keep-Laybell-open warning). Failure outranks progress.
+  const uploadingVideo = pending.find((p) => p.phase === 'uploading' || p.phase === 'preparing') ?? null;
+  // A FILM mid-encode keeps the banner too (with Cloudflare's own percent) —
+  // that spinner runs for many minutes on a long film. Short videos encode in
+  // seconds, so only films get the processing banner.
+  const processingFilm = pending.find((p) => p.phase === 'processing' && p.isFilm) ?? null;
   const segments = useSegments();
   // Full-screen media viewers with their OWN audio (stories, reels) stay
   // immersive — no floating mini player there. The post/slideshow viewer is
@@ -162,9 +230,34 @@ function AppContent() {
           that reuses the original job — nothing gets re-entered. */}
       {failedVideo && (
         <UploadFailedBanner
-          message={t('upload.videoFailedBanner')}
+          // The REAL reason, every time. This used to be one hardcoded
+          // sentence ("…your caption, tags and song are saved…") that ignored
+          // errorMsg entirely — so every distinct failure looked identical,
+          // the actual cause was invisible, and the truncated reassurance text
+          // read like a complaint about the caption field. Known causes get a
+          // translated line; anything else shows its raw reason rather than
+          // hiding it.
+          message={
+            failedVideo.errorCode === 'upload_incomplete' || failedVideo.errorCode === 'resume_check_failed'
+              ? t('upload.errResumable')
+              : failedVideo.errorCode === 'video_too_large'
+                ? t('upload.errTooLarge')
+                : failedVideo.errorMsg || t('upload.videoFailedBanner')
+          }
           onRetry={() => retryVideo(failedVideo.tempId)}
           onDismiss={() => dismissVideo(failedVideo.tempId)}
+        />
+      )}
+      {/* Live progress anywhere in the app while a video is still uploading —
+          plus the "keep Laybell open" warning for films. Hidden while a failure
+          banner needs the slot. */}
+      {(uploadingVideo || processingFilm) && !failedVideo && (
+        <UploadProgressBanner
+          progress={uploadingVideo ? uploadingVideo.progress : ((processingFilm!.processingPct ?? 0) / 100)}
+          isFilm={!!(uploadingVideo ?? processingFilm)!.isFilm}
+          stage={uploadingVideo ? (uploadingVideo.phase as 'preparing' | 'uploading') : 'processing'}
+          slowLink={uploadingVideo?.slowLink}
+          durationSec={(uploadingVideo ?? processingFilm)!.durationSec}
         />
       )}
       <NowPlaying />
@@ -367,6 +460,11 @@ function RootLayout() {
   useEffect(() => {
     if (!session?.user?.id) return;
     sweepAbandonedStreamUploads().catch(() => {});
+    // Drain the server-side reap queue too: Cloudflare assets whose posts rows
+    // were deleted server-side (lapsed-subscriber films, account deletions)
+    // with nobody's client around to clean up. Server-authoritative — this is
+    // just the tick that wakes it (pg_net isn't installed, so SQL can't).
+    supabase.functions.invoke('stream-reap').then(undefined, () => {});
   }, [session?.user?.id]);
 
   useEffect(() => {

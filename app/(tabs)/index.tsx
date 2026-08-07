@@ -135,6 +135,7 @@ import { trackVideoProgress } from '../../lib/viewTracker';
 import TrackRow from '../../components/TrackRow';
 import StoriesTray from '../../components/StoriesTray';
 import PendingUploads from '../../components/PendingUploads';
+import Spinner from '../../components/Spinner';
 import { useUploadQueue } from '../../contexts/UploadQueueContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import SongAttribution from '../../components/SongAttribution';
@@ -170,6 +171,9 @@ type Post = {
   cover_url?: string | null;
   thumbnail_url?: string | null;
   duration_seconds?: number | null;
+  // 'processing' until Cloudflare finishes encoding — the card shows an
+  // honest pill instead of mounting a player whose manifest would 404.
+  video_status?: string | null;
   genre?: string | null;
   song_id?: string | null;
   // True when the song is a CREDIT only (music video) — see lib/postSong.
@@ -221,6 +225,7 @@ const PostCard = memo(function PostCard({
 }: PostCardProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   // Per-card playback subscription (lib/feedVideo): this card re-renders on a
   // viewability/gate change ONLY when its own booleans flip — the rest of the
   // list isn't touched (not even a memo compare).
@@ -387,7 +392,7 @@ const PostCard = memo(function PostCard({
                   <ExpoImage source={{ uri: thumb }} recyclingKey={item.id} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
                 ) : null;
               })()}
-              {isVisibleVideo && (
+              {isVisibleVideo && item.video_status !== 'processing' && (
                 // POOLED player (lib/feedVideoPool): assignment is a cheap
                 // source swap on a persistent player — no creation, no freeze —
                 // so it can happen while scrolling and starts feel instant.
@@ -403,6 +408,16 @@ const PostCard = memo(function PostCard({
                   // the server enforces the per-user/device caps.
                   onProgress={(pos, dur) => trackVideoProgress(item.id, pos, dur)}
                 />
+              )}
+              {/* A row whose video is still ENCODING (its session died mid-wait
+                  — boot recovery flips it ready shortly): mounting the player
+                  would just 404 into a black rectangle, so say what's true
+                  instead. */}
+              {item.video_status === 'processing' && (
+                <View style={styles.encodingPill} pointerEvents="none">
+                  <Spinner size={12} thickness={2} color="#fff" />
+                  <Text style={styles.encodingPillText}>{t('upload.almostDone')}</Text>
+                </View>
               )}
               {/* A vertical clip's story-style captions, so the feed shows them
                   too (not just the reel). Positioned over the card frame; the
@@ -2028,6 +2043,15 @@ export default function HomeScreen() {
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  // Centered pill over a video card whose Cloudflare encode hasn't finished
+  // (video_status='processing') — the honest alternative to a black player.
+  encodingPill: {
+    position: 'absolute', alignSelf: 'center', top: '46%',
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 18,
+    paddingVertical: 8, paddingHorizontal: 14,
+  },
+  encodingPillText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   // Absolute-fill (same trick as the story camera): escapes the pager's
   // bar-height scene padding so the feed truly extends under the tab bar —
   // when the reactive chrome hides the bar, CONTENT shows there, not a

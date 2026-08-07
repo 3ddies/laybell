@@ -141,23 +141,32 @@ serve(async (req) => {
       return json({ status: 'ok', type, reversed_cents: cents, transaction: txId });
     }
 
-    // ── Subscription state → premium_until ──────────────────────────────────
+    // ── Subscription state → premium_until / premium_plus_until ─────────────
     if (SUBSCRIPTION_EVENTS.has(type)) {
       // expiration_at_ms is the new period end for active events, and the (past)
       // end for EXPIRATION. Writing it as-is lets `premium_until > now()` decide
       // active vs expired uniformly.
       const expMs: number | null = event.expiration_at_ms ?? null;
-      const premiumUntil = expMs ? new Date(expMs).toISOString() : null;
+      const until = expMs ? new Date(expMs).toISOString() : null;
+
+      // Each product writes ONLY its own column. Premium+ ($19.99) events must
+      // never clobber a separately-active $9.99 subscription's mirror (and vice
+      // versa) — the superset lives in is_premium(), which checks both columns.
+      // Plus is identified by its entitlement id when RevenueCat sends one, with
+      // the product-id prefix as the fallback.
+      const entitlements: string[] = Array.isArray(event.entitlement_ids) ? event.entitlement_ids : [];
+      const isPlus = entitlements.includes('premium_plus') || productId.startsWith('laybell_premium_plus');
+      const patch = isPlus ? { premium_plus_until: until } : { premium_until: until };
 
       const { error } = await admin
         .from('profiles')
-        .update({ premium_until: premiumUntil })
+        .update(patch)
         .eq('id', appUserId);
       if (error) {
-        logFailure('premium_update', { user: appUserId, type, premium_until: premiumUntil, error: error.message });
+        logFailure('premium_update', { user: appUserId, type, ...patch, error: error.message });
         return json({ status: 'error', message: error.message }, 500);
       }
-      return json({ status: 'ok', type, premium_until: premiumUntil });
+      return json({ status: 'ok', type, ...patch });
     }
 
     // Anything else (SUBSCRIBER_ALIAS, TEST, …) is acknowledged and ignored.

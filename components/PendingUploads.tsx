@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions } from 'react-native';
+import { useUploadEta, useEncodeEta, formatEta } from './uploadEta';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import AppVideo from './AppVideo';
@@ -51,6 +52,26 @@ function PendingCard({ p }: { p: PendingUpload }) {
   const h = Math.min(SCREEN_W / aspectToNumber(p.aspectRatio, 16 / 9), MAX_VIDEO_H);
   const pct = Math.round(p.progress * 100);
 
+  // Films only: live "time left" under the spinner (accuracy-gated — see
+  // components/uploadEta.ts). Upload and encode are separate clocks: the first
+  // runs on our byte progress, the second on a length-based prior refined by
+  // Cloudflare's encode percent — pessimistic on purpose, because a countdown
+  // that overruns is worse than no countdown. The last stretch drops the
+  // number for "Almost done…" (the tail is where pct lies the most).
+  const uploadEta = useUploadEta(p.progress, p.phase === 'uploading' && !!p.isFilm);
+  const procPct = (p.processingPct ?? 0) / 100;
+  const procEta = useEncodeEta(procPct, p.phase === 'processing' && !!p.isFilm, p.durationSec ?? 0);
+  const etaText = p.phase === 'preparing'
+    ? `${t('upload.preparingFilm')} · ${Math.round(p.progress * 100)}%`
+    : p.phase === 'uploading'
+      ? [formatEta(t, uploadEta), p.slowLink ? t('upload.slowLink') : null].filter(Boolean).join('\n')
+      : p.phase === 'processing' && p.isFilm && p.processingPct
+        ? [
+            `${Math.round(p.processingPct)}%`,
+            (p.processingPct >= 95 || (procEta != null && procEta < 60)) ? t('upload.almostDone') : formatEta(t, procEta),
+          ].filter(Boolean).join(' · ')
+        : null;
+
   return (
     <View style={styles.card}>
       {/* Header — matches the feed card's author row. */}
@@ -82,13 +103,28 @@ function PendingCard({ p }: { p: PendingUpload }) {
               <Ionicons name="refresh" size={18} color="#fff" />
               <Text style={styles.retryText}>{t('common.retry')}</Text>
             </TouchableOpacity>
-            {/* Failures with a KNOWN, user-actionable cause get a reason line —
-                a too-large file fails identically on every retry, so a bare
-                Retry pill here is a trap. Unknown causes stay Retry-only rather
-                than dumping a developer string on a non-English speaker. */}
-            {p.errorCode === 'video_too_large' && (
+            {/* Failures with a KNOWN, user-actionable cause get a translated
+                reason line — a too-large file fails identically on every retry,
+                so a bare Retry pill here is a trap. Everything else shows the
+                raw message: untranslated is a real cost, but "Retry" with no
+                reason proved worse — it hides deterministic failures (this
+                exact card spent a day saying nothing while three different
+                root causes came and went). */}
+            {p.errorCode === 'compress_failed_detail' ? (
+              // The native transcoder's OWN words — the one thing that can tell
+              // us why preparation is failing on this device.
+              <Text style={styles.errorReason}>{p.errorMsg}</Text>
+            ) : p.errorCode === 'compress_unavailable' ? (
+              <Text style={styles.errorReason}>{t('upload.errCompressUnavailable')}</Text>
+            ) : p.errorCode === 'upload_incomplete' || p.errorCode === 'resume_check_failed' ? (
+              // Both mean "your bytes are safe on the server, tap Retry" — the
+              // one message users most need to trust after a long upload.
+              <Text style={styles.errorReason}>{t('upload.errResumable')}</Text>
+            ) : p.errorCode === 'video_too_large' ? (
               <Text style={styles.errorReason}>{t('upload.errTooLarge')}</Text>
-            )}
+            ) : p.errorMsg ? (
+              <Text style={styles.errorReason}>{p.errorMsg}</Text>
+            ) : null}
           </View>
         ) : p.phase === 'done' ? null : (
           // Working state: a light scrim over the frame and one small ring,
@@ -100,6 +136,7 @@ function PendingCard({ p }: { p: PendingUpload }) {
             <View style={styles.workingDisc}>
               <Spinner size={22} thickness={2} color="#fff" />
             </View>
+            {etaText && <Text style={styles.etaText}>{etaText}</Text>}
           </View>
         )}
 
@@ -115,7 +152,7 @@ function PendingCard({ p }: { p: PendingUpload }) {
             thing read bulky. It carries what the percentage did without asking
             anyone to read anything. (A determinate RING would need
             react-native-svg, a native dep, so a rebuild.) */}
-        {p.phase === 'uploading' && (
+        {(p.phase === 'uploading' || p.phase === 'preparing') && (
           <View style={styles.track}><View style={[styles.fill, { width: `${pct}%` }]} /></View>
         )}
       </View>
@@ -161,9 +198,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.72)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22 },
   retryText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   errorReason: { color: '#fff', fontSize: 12.5, textAlign: 'center', marginTop: 10, paddingHorizontal: 28, opacity: 0.92 },
+  etaText: { color: '#fff', fontSize: 12.5, fontWeight: '600', textAlign: 'center', marginTop: 10, opacity: 0.95 },
   // 2px hairline riding the bottom edge of the frame, not a 3px bar in its own
   // strip below the card — that strip is what made the whole thing read bulky.
   track: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 2, backgroundColor: 'rgba(255,255,255,0.22)' },
-  fill: { height: 2, backgroundColor: c.primary },
+  // White, not brand orange (owner call 2026-08-05): the bar rides the video
+  // frame, where white reads as chrome instead of competing with the content.
+  fill: { height: 2, backgroundColor: '#fff' },
   caption: { color: c.text, fontSize: 14, paddingHorizontal: 12, paddingTop: 8 },
 });

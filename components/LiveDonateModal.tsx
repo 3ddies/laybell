@@ -54,7 +54,7 @@ export default function LiveDonateModal({ visible, stream, studio, onClose, onDo
   // The fee RATE depends on the host's plan (30% Premium / 35% standard), so the
   // disclosed percentage has to be derived, never hardcoded — a donor must see the
   // rate that is actually applied to their tip.
-  const feeRate = hostFeeRate(hostProfile?.premium_until);
+  const feeRate = hostFeeRate(hostProfile?.premium_until, (hostProfile as any)?.premium_plus_until);
   const feePct = Math.round(feeRate * 100);
   const b = donationBreakdown(amount, feeRate);
   const validAmount = amount >= DONATION_MIN_CENTS && amount <= DONATION_MAX_CENTS;

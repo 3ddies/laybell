@@ -10,6 +10,7 @@ import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../const
 import type { Pkg } from '../lib/purchases';
 import { DONATION_FEE_RATE_PREMIUM, DONATION_FEE_RATE_STANDARD } from '../lib/donations';
 import { Skeleton, SkeletonLine } from '../components/Skeleton';
+import { GALAXY, GALAXY_LIGHT } from '../components/SpotlightButton';
 
 // Laybell Premium paywall. Reads offerings/status from RevenueCat via PremiumContext;
 // perks are wired through lib/entitlements (unlimited offline + ad-free are live; the
@@ -21,7 +22,11 @@ export default function PremiumScreen() {
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const { t } = useTranslation();
-  const { isPremium, packages, configured, loading, purchase, restore } = usePremium();
+  const { isPremium, isPremiumPlus, packages, configured, loading, purchase, restore } = usePremium();
+
+  // Premium+ packages are told apart by their product id ('laybell_premium_plus…'
+  // — must match RevenueCat + the webhook). Everything else sells the $9.99 tier.
+  const isPlusPkg = (pkg: Pkg) => /plus/i.test(pkg.identifier);
 
   // Earn Money leads and is highlighted so the eye lands on it first.
   const perks = [
@@ -92,11 +97,62 @@ export default function PremiumScreen() {
             ))}
           </View>
 
+          {/* ── Premium+ — the tier above: Films + badge freeze, on the galaxy
+                 theme so it reads as its own thing rather than a bigger orange
+                 button. Includes everything Premium has. ── */}
+          <View style={styles.plusCard}>
+            <LinearGradient colors={GALAXY as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.plusHero}>
+              <View style={styles.plusBadge}>
+                <Ionicons name="film-outline" size={22} color="#fff" />
+              </View>
+              <Text style={styles.plusTitle}>{t('premium.plusTitle')}</Text>
+              <Text style={styles.plusTagline}>{t('premium.plusTagline')}</Text>
+            </LinearGradient>
+            <View style={styles.plusPerks}>
+              <View style={styles.plusPerkRow}>
+                <Ionicons name="film-outline" size={20} color={GALAXY_LIGHT} />
+                <View style={styles.perkBody}>
+                  <Text style={styles.perkText}>{t('premium.plusPerkFilms')}</Text>
+                  <Text style={styles.perkDesc}>{t('premium.plusPerkFilmsDesc')}</Text>
+                </View>
+              </View>
+              <View style={styles.plusPerkRow}>
+                <Ionicons name="snow-outline" size={20} color={GALAXY_LIGHT} />
+                <View style={styles.perkBody}>
+                  <Text style={styles.perkText}>{t('premium.plusPerkFreeze')}</Text>
+                  <Text style={styles.perkDesc}>{t('premium.plusPerkFreezeDesc')}</Text>
+                </View>
+              </View>
+            </View>
+            {/* The film-removal terms, stated BEFORE anyone pays — the same
+                warning fires again at lapse time, but nobody should learn the
+                rule only on the way out. */}
+            <Text style={styles.plusNote}>{t('premium.plusFilmNote')}</Text>
+            {isPremiumPlus && (
+              <View style={styles.plusActiveRow}>
+                <Ionicons name="checkmark-circle" size={18} color={GALAXY_LIGHT} />
+                <Text style={styles.plusActiveText}>{t('premium.plusActive')}</Text>
+              </View>
+            )}
+          </View>
+
           {isPremium ? (
-            <View style={styles.activeCard}>
-              <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
-              <Text style={styles.activeTitle}>{t('premium.active')}</Text>
-              <Text style={styles.activeBody}>{t('premium.activeBody')}</Text>
+            <View style={styles.buy}>
+              <View style={styles.activeCard}>
+                <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                <Text style={styles.activeTitle}>{t('premium.active')}</Text>
+                <Text style={styles.activeBody}>{t('premium.activeBody')}</Text>
+              </View>
+              {/* A $9.99 subscriber can still move up — RevenueCat treats the
+                  plus purchase as an upgrade of the same subscription group. */}
+              {!isPremiumPlus && configured && packages.filter(isPlusPkg).map((pkg) => (
+                <TouchableOpacity key={pkg.identifier} activeOpacity={0.85} onPress={() => buy(pkg)} style={styles.subscribeBtn}>
+                  <LinearGradient colors={GALAXY as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
+                    <Text style={styles.subscribeText}>{t('premium.subscribePlus')}</Text>
+                    <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ))}
             </View>
           ) : !configured ? (
             <View style={styles.activeCard}>
@@ -120,8 +176,9 @@ export default function PremiumScreen() {
             <View style={styles.buy}>
               {packages.map((pkg) => (
                 <TouchableOpacity key={pkg.identifier} activeOpacity={0.85} onPress={() => buy(pkg)} style={styles.subscribeBtn}>
-                  <LinearGradient colors={GRADIENTS.primary as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
-                    <Text style={styles.subscribeText}>{t('premium.subscribe')}</Text>
+                  {/* Plus packages sell on the galaxy theme, matching their card. */}
+                  <LinearGradient colors={(isPlusPkg(pkg) ? GALAXY : GRADIENTS.primary) as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.subscribeInner}>
+                    <Text style={styles.subscribeText}>{t(isPlusPkg(pkg) ? 'premium.subscribePlus' : 'premium.subscribe')}</Text>
                     <Text style={styles.subscribePrice}>{pkg.priceString}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -204,6 +261,32 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   perkIconHighlight: { backgroundColor: colors.primary },
   perkTextHighlight: { fontSize: 18, fontWeight: '900', color: colors.text },
+
+  // Premium+ card — galaxy-themed so the tier reads as its own product.
+  plusCard: {
+    borderRadius: RADIUS.xl, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceLight, overflow: 'hidden', marginBottom: SPACING.lg,
+  },
+  plusHero: { alignItems: 'center', gap: 4, paddingVertical: SPACING.lg, paddingHorizontal: SPACING.lg },
+  plusBadge: {
+    width: 44, height: 44, borderRadius: RADIUS.full,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', marginBottom: 2,
+  },
+  plusTitle: { color: '#fff', fontSize: 22, fontWeight: '900', letterSpacing: -0.3 },
+  plusTagline: { color: 'rgba(255,255,255,0.9)', fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  plusPerks: { gap: SPACING.md, padding: SPACING.md },
+  plusPerkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.md },
+  plusNote: {
+    color: colors.textTertiary, fontSize: 11, lineHeight: 16,
+    paddingHorizontal: SPACING.md, paddingBottom: SPACING.md,
+  },
+  plusActiveRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingBottom: SPACING.md,
+  },
+  plusActiveText: { color: colors.text, fontSize: 13.5, fontWeight: '800' },
 
   activeCard: {
     alignItems: 'center', gap: SPACING.xs, padding: SPACING.lg,

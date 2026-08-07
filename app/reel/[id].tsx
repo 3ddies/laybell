@@ -49,13 +49,14 @@ import {
 import {
   fetchReelAds, reelItemFor, randInt, fetchTvAds, tvItemFor, recordAdImpression, recordAdSkip, recordAdComplete,
   AD_SKIP_MS, adSkipAfterMs, TV_AD_EVERY_VIDEOS, TV_AD_FIRST_VIDEOS, TV_AD_FIRST_TIME_MS,
-  REEL_AD_FIRST, REEL_AD_EVERY_MIN, REEL_AD_EVERY_MAX, type AdViewer, type AdSource,
+  REEL_AD_FIRST, REEL_AD_EVERY_MIN, REEL_AD_EVERY_MAX, filmAdThresholds, type AdViewer, type AdSource,
 } from '../../lib/ads';
-import { adSpacingMultiplier } from '../../lib/entitlements';
+import { adSpacingMultiplier, FILM_MIN_SEC } from '../../lib/entitlements';
 import { openAdOptions } from '../../contexts/AdOptionsContext';
 import ReelAd from '../../components/ReelAd';
 import TVAdOverlay from '../../components/TVAdOverlay';
 import RotateHint from '../../components/RotateHint';
+import Spinner from '../../components/Spinner';
 import { PositionedTopCaption, asTopCaption } from '../../components/TopCaption';
 import { PlacedStickers } from '../../components/StickerLayer';
 import { openAdCta } from '../../contexts/AdCtaContext';
@@ -217,7 +218,7 @@ const ReelControls = memo(function ReelControls({
             songId={item.song_id}
             title={item.song_title}
             artist={item.song_artist}
-            artistId={item.song_artist_id}
+            artistId={item.song_artist_id}
             onNavigate={api.dismiss}
           />
         )}
@@ -231,6 +232,12 @@ const ReelControls = memo(function ReelControls({
 // only the affected page — the burst of re-running every mounted page's
 // gradient/caption-parse/translate work used to land exactly as the pager
 // snapped, which was the per-swipe hitch.
+// FILM MID-ROLLS: accumulated WATCH time per film + breaks already fired.
+// Module scope on purpose — leaving the viewer and coming back must not
+// restart the ad clock (re-earning ads a viewer already sat through is the
+// exact frustration the watch-time spec exists to prevent). Session-scoped.
+const filmAdState = new Map<string, { watchMs: number; lastPosMs: number; fired: number; thresholds: number[] }>();
+
 const ReelPage = memo(function ReelPage({
   item, active, playing, showPaused, zoomed, isLiked, isSaved, spotlight, insetsBottom, mountPlayer, api,
 }: {
@@ -238,6 +245,7 @@ const ReelPage = memo(function ReelPage({
   isLiked: boolean; isSaved: boolean; spotlight: boolean; insetsBottom: number; mountPlayer: boolean; api: ReelPageApi;
 }) {
   const styles = useThemedStyles(makeStyles);
+  const { t } = useTranslation();
   // Stable per page. Both used to be inline arrows, which handed ReelVideo a new
   // prop identity on every render of this page — defeating its memo() entirely,
   // so it re-rendered and pushed a fresh style down to the native VideoView each
@@ -309,7 +317,7 @@ const ReelPage = memo(function ReelPage({
           // during the expand animation).
           <ExpoImage source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={landscape ? 'contain' : 'cover'} cachePolicy="memory-disk" recyclingKey={item.id} />
         ) : null}
-        {mountPlayer ? (
+        {mountPlayer && item.video_status !== 'processing' ? (
           // POOLED player (lib/feedVideoPool reelPool): assignment is an async
           // source swap — no creation, no freeze — which is what lets the NEXT
           // reel pre-buffer while this one plays (warmNextId in ReelScreen).
@@ -327,6 +335,23 @@ const ReelPage = memo(function ReelPage({
             onProgress={onVideoProgress}
           />
         ) : null}
+        {/* Still encoding (its upload session died mid-wait; boot recovery is
+            flipping it ready) — mounting the player would 404 into black, so
+            show the poster + the truth instead. */}
+        {item.video_status === 'processing' && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute', alignSelf: 'center', top: '48%',
+              flexDirection: 'row', alignItems: 'center', gap: 6,
+              backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 14,
+              paddingHorizontal: 12, paddingVertical: 6,
+            }}
+          >
+            <Spinner size={12} thickness={2} color="#fff" />
+            <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '600' }}>{t('upload.almostDone')}</Text>
+          </View>
+        )}
         </ZoomableView>
       </TouchableOpacity>
 
@@ -829,6 +854,41 @@ export default function ReelScreen() {
   // it starts playing. Deliberately no auto-advance — that would skip it.
   const dismissOverlayAd = () => { overlayAdRef.current = null; setOverlayAd(null); };
 
+  // FILM mid-roll: a watch-time clock that drives the SAME interstitial cover
+  // the TV cadence uses (TVAdOverlay pauses the film via the `active` gate,
+  // blocks touches, bills skip/complete, offers report + CTA). Fires only in
+  // the landscape overlay — where films are actually watched.
+  const maybeFilmAdBreak = (item: any, posMs: number, durMs: number) => {
+    if (!item || item.__ad) return;
+    const durSec = Number(item.duration_seconds) || Math.round(durMs / 1000);
+    if (durSec <= FILM_MIN_SEC) return;                                    // films only
+    if (overlayAdRef.current) return;                                      // never stack sponsors
+    if (item.user_id && item.user_id === currentUserIdRef.current) return; // creators previewing their own film
+    let st = filmAdState.get(item.id);
+    if (!st) {
+      st = { watchMs: 0, lastPosMs: posMs, fired: 0, thresholds: filmAdThresholds(durSec, adSpacingMultiplier()) };
+      filmAdState.set(item.id, st);
+    }
+    // Only real playback accrues: forward, tick-sized deltas. A seek in either
+    // direction just moves the baseline — skipping around never earns ads.
+    const delta = posMs - st.lastPosMs;
+    st.lastPosMs = posMs;
+    if (delta > 0 && delta < 2000) st.watchMs += delta;
+    const next = st.thresholds[st.fired];
+    if (next == null || st.watchMs < next * 1000) return;
+    st.fired += 1; // the slot is spent even when no creative is available
+    const ads = tvAdsRef.current;
+    if (!ads.length) return;
+    const ad = ads[overlayAdRotationRef.current % ads.length];
+    overlayAdRotationRef.current += 1;
+    overlayAdRef.current = ad;
+    setOverlayAd(ad);
+    lastAdAtRef.current = Date.now(); // feeds the cross-surface ad spacing
+    hadAnySponsorRef.current = true;
+    tvHadAdRef.current = true;
+    recordAdImpression(ad, 'tv', currentUserIdRef.current);
+  };
+
   // Auto-play the focused reel's attached song (the video itself is muted when a
   // song is set); stop on swipe-away / blur / unmount. The start is DEFERRED
   // past the viewability commit: playSong can do native audio work (plus a
@@ -1220,6 +1280,12 @@ export default function ReelScreen() {
       supabase
         .from('posts').select(SELECT)
         .eq('is_public', true).eq('type', 'video')
+        // No FILMS in the swipe-through feed (owner decision): reels stay
+        // snackable; films live on the Laybell TV shelf, Home (earned) and the
+        // profile grid. A film the user TAPPED still plays — it arrives via the
+        // tapped-id fetch below, with regular reels flowing after it. NULL
+        // durations (old posts) must stay in, hence the or() over lte().
+        .or('duration_seconds.is.null,duration_seconds.lte.540')
         .order('created_at', { ascending: false }).limit(40),
       uid ? supabase.from('likes').select('post_id').eq('user_id', uid) : Promise.resolve({ data: [] as any }),
       uid ? supabase.from('saves').select('post_id').eq('user_id', uid) : Promise.resolve({ data: [] as any }),
@@ -1523,6 +1589,8 @@ export default function ReelScreen() {
                 overlayLastPosRef.current = pos;
                 positionRef.current = pos;
                 overlayScrubRef.current?.setProgress(pos, dur);
+                // Films: the watch-time ad clock (fires the TV cover at its marks).
+                maybeFilmAdBreak(item, pos, dur);
               }
               trackVideoProgress(item.id, pos, dur);
             }}

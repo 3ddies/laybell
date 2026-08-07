@@ -95,6 +95,32 @@ export const TV_AD_EVERY_VIDEOS = 4;
 export const TV_AD_FIRST_VIDEOS = 2;
 export const TV_AD_FIRST_TIME_MS = 20_000;
 
+// ── Film mid-roll breaks ──────────────────────────────────────────────────────
+// Scheduled on accumulated WATCH TIME, never the playhead — skipping around a
+// film must never earn extra ads (owner's spec, 2026-08-05). The first break
+// waits for 2 minutes of real watching; the count scales with film length:
+//   ≤12 min → 3 · ≤22 → 4 · ≤30 → 5 · then +1 per started 10 min.
+// Premium halves the count via adSpacingMultiplier, same perk as reels/music.
+export const FILM_FIRST_AD_WATCH_SEC = 120;
+
+export function filmAdPlacements(durationSec: number): number {
+  const min = durationSec / 60;
+  if (min <= 12) return 3;
+  if (min <= 22) return 4;
+  if (min <= 30) return 5;
+  return 5 + Math.ceil((min - 30) / 10);
+}
+
+/** Watch-time marks (seconds) at which a film's ad breaks fire. The remaining
+ *  breaks spread evenly across the rest of the runtime, which also leaves the
+ *  final stretch break-free — nobody wants an ad at the credits. */
+export function filmAdThresholds(durationSec: number, spacingMult = 1): number[] {
+  const n = Math.max(1, Math.round(filmAdPlacements(durationSec) / Math.max(1, spacingMult)));
+  const span = Math.max(0, durationSec - FILM_FIRST_AD_WATCH_SEC);
+  const step = span / n;
+  return Array.from({ length: n }, (_, i) => Math.round(FILM_FIRST_AD_WATCH_SEC + i * step));
+}
+
 // Advertiser-chosen skip mode (Laybell TV + music ads only): a short spot that
 // plays FULLY through with no skip ('unskippable', creative must be ≤15s), or a
 // longer spot that becomes skippable after 15s ('skip15', creative must be >15s).
