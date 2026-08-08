@@ -55,12 +55,12 @@ decisions now settled: `laybellreview` + its posts is the ONLY survivor).
 | 3. App content declarations | ✅ **ALL DONE 2026-08-03 — 9 of 11 tasks; the remaining two are store-listing, not required for internal testing.** Privacy policy · Ads · Content rating (Teen) · **Target audience 13-15/16-17/18+, not child-directed** (Families policy applies to the teen brackets; minor protections already enforced server-side) · **Data safety** (everything Collected, nothing Shared — service-provider + user-initiated exemptions cover Supabase/Cloudflare/Sentry/RevenueCat; delete-account URL = laybell.app/delete-account.html) · Government apps · Financial features (none) · Health (none) · **Advertising ID (no)** · **Sign in details** (demo account `laybellreview`, seeded Premium + 50000 credits). |
 | 3b. Category + tags + contact | ✅ **Done 2026-08-03.** Category **Music & Audio** (deliberately NOT Social — that category is dominated by the ten biggest apps on earth and a new app is invisible there; the differentiated demand lives in music search intent, and the category is changeable later). Tags: Social · Music & audio · Video streaming · Entertainment (+ optionally Meet new people). Contact `support@laybell.app` + laybell.app; phone left blank on purpose — Play publishes it and the LLC address is the owner's home. |
 | 4. Build the AAB | ⚠️ **`e12fec4b` built but ABANDONED** (owner's call 2026-08-03) — it predates the Android fixes. Superseded by the post-optimization rebuild. One build, one upload. |
-| 5. Upload to internal testing | ⬜ the POST-OPTIMIZATION build only |
-| 6. Create the 6 products | ⬜ |
-| 7. RevenueCat wiring | ⬜ 36h clock has now ELAPSED — unblocked once step 6 is done |
-| 8. androidApiKey + REBUILD | ⬜ **no OTA on this project** — the key and every JS fix since 08-02 both need a rebuild; do it once, after RevenueCat |
+| 5. Upload to internal testing | ⬜ upload the **key-carrying build from step 8** (one upload total — it also satisfies the billing-permission gate for product creation) |
+| 6. Create the products | ⬜ 5 credit consumables + `laybell_premium_monthly` + **`laybell_premium_plus_1999` ($19.99/mo — postdates this runbook)** |
+| 7. RevenueCat wiring | 🟡 **App + JSON + key DONE 2026-08-07 evening** (Play Store app `com.laybell.app`, credentials accepted, `goog_` key issued). Remaining: attach products to offerings + entitlements (`premium`, NEW `premium_plus`) after step 6 |
+| 8. androidApiKey + REBUILD | 🟡 **Key wired (`a1241aa`) + production build QUEUED 2026-08-07** — build ed3a2623 on expo.dev. When it finishes, THAT is the AAB to upload in step 5 |
 | 9. License tester | ⬜ |
-| 10. Money test | ⬜ needs Apple's rail too |
+| 10. Money test | ⬜ Apple rail now UNBLOCKED too (Paid Apps Active 08-05, SBP submitted 08-07) — needs only the iOS sandbox tester + this Android build |
 
 **Gotchas already hit (don't re-discover):**
 - The bare `console.cloud.google.com/apis/library/...` URLs dead-end without a project
