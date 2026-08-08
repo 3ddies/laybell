@@ -17,9 +17,9 @@ export const WEB_ORIGIN = 'https://laybell.app';
 // the copies hard-coded in web/open.html (that file is static and can't import
 // this module).
 export const STORE_URLS = {
-  // TODO: replace id000000000 with Laybell's real Apple App Store numeric ID
+  // TODO: replace id6795675871 with Laybell's real Apple App Store numeric ID
   // once the app is live on the App Store.
-  ios: 'https://apps.apple.com/app/laybell/id000000000',
+  ios: 'https://apps.apple.com/app/laybell/id6795675871',
   android: 'https://play.google.com/store/apps/details?id=com.laybell.app',
 } as const;
 
