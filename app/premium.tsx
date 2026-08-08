@@ -6,21 +6,13 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { usePremium } from '../contexts/PremiumContext';
 import SwipeBackPager from '../components/SwipeBackPager';
-import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../constants/theme';
+// PLUS_RED lives in the theme — the Settings promo row wears the same brand
+// when the member holds plus.
+import { SPACING, RADIUS, GRADIENTS, SHADOWS, PLUS_RED, PLUS_RED_ACCENT, PLUS_RED_LIGHT, type ThemePalette } from '../constants/theme';
 import type { Pkg } from '../lib/purchases';
 import { DONATION_FEE_RATE_PREMIUM, DONATION_FEE_RATE_STANDARD } from '../lib/donations';
 import { Skeleton, SkeletonLine } from '../components/Skeleton';
 import PremiumBubbles from '../components/PremiumBubbles';
-
-// Premium+ brand: cinematic red — Films is the flagship perk, and red keeps the
-// tier in the same warm family as Premium's orange instead of a cold departure
-// (the galaxy purple it replaced belonged to Spotlight anyway). Owner call,
-// 2026-08-07. Same three-stop shape as the gradients in constants/theme.
-// Brightened one notch per owner (2026-08-07): the dark entry stop was reading
-// nearly black on the card's top-left.
-const PLUS_RED = ['#5C0A17', '#A8122A', '#EF2743'] as const;
-const PLUS_RED_ACCENT = '#EF2743'; // solid brand red, for icons on light ground
-const PLUS_RED_LIGHT = '#FF8B98';  // legible red on the dark card body
 
 // Laybell Premium paywall. Reads offerings/status from RevenueCat via PremiumContext;
 // perks are wired through lib/entitlements (unlimited offline + ad-free are live; the

@@ -27,7 +27,7 @@ import {
   loadNotifPrefs, saveNotifPrefs, type NotifPrefs,
 } from '../lib/notificationPrefs';
 import { isAdPersonalizationEnabled, setAdPersonalization } from '../lib/adPrefs';
-import { SPACING, RADIUS, GRADIENTS, type ThemeMode, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, PLUS_RED, type ThemeMode, type ThemePalette } from '../constants/theme';
 
 // The three display modes shown in the Settings → Display section.
 const DISPLAY_MODES: { key: ThemeMode; label: string; sub: string; swatch: string; ring: string }[] = [
@@ -590,8 +590,11 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>{t('settings.section.promo')}</Text>
           <View style={styles.promoStack}>
             <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/premium')}>
+              {/* A Premium+ member's row wears the plus brand — the same red as
+                  the paywall card — so the upgrade they paid for is visible
+                  right here, not only inside the paywall. */}
               <LinearGradient
-                colors={[colors.primary, colors.primaryDark]}
+                colors={(isPremiumPlus ? PLUS_RED : [colors.primary, colors.primaryDark]) as any}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.promoPremium}

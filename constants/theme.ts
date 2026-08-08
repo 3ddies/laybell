@@ -89,6 +89,15 @@ export const THEMES: Record<ThemeMode, ThemePalette> = { dark: DARK, grey: GREY,
 // directly and stay on Dark; converted screens read the active palette via useTheme.
 export const COLORS = DARK;
 
+// Premium+ brand: bright cinematic red — Films is the flagship perk, and it
+// stays in the same warm family as Premium's orange. Lives here (not in a
+// screen) because the paywall card AND the Settings promo row both wear it.
+// Brightened twice on owner direction (2026-08-07): "bright and attractive",
+// so the entry stop is a true red rather than near-black.
+export const PLUS_RED = ['#7A0D1D', '#C81730', '#FF3B52'] as const;
+export const PLUS_RED_ACCENT = '#E8354B'; // solid brand red for icons on light ground
+export const PLUS_RED_LIGHT = '#FF8B98';  // legible red on dark card bodies
+
 export const GRADIENTS = {
   primary: ['#E8401C', '#F26522'] as const,
   primaryWarm: ['#F26522', '#FAB525'] as const,
