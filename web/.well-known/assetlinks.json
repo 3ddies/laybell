@@ -4,7 +4,7 @@
     "target": {
       "namespace": "android_app",
       "package_name": "com.laybell.app",
-      "sha256_cert_fingerprints": ["ANDROID_SHA256_FINGERPRINT"]
+      "sha256_cert_fingerprints": ["08:8D:FD:22:A6:70:2F:84:96:BC:9E:B3:8C:E5:F8:34:60:CF:7A:17:78:34:B7:68:01:A8:95:A9:8E:EF:37:59"]
     }
   }
 ]
