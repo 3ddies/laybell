@@ -4,6 +4,7 @@ import {
   RefreshControl, Alert, Linking, AppState,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -86,11 +87,20 @@ export default function WalletScreen() {
     // The second line carries the server's actual reason (Stripe's own words) —
     // a setup failure the user can't name is a support ticket, not a retry.
     if ('error' in res) { Alert.alert(t('wallet.payoutSetupFailed'), res.error); return; }
-    // The system browser, never a WebView: the flow includes identity
-    // verification and bank entry, which people are right to want in a browser
-    // they recognise — and Stripe's own guidance is that embedded WebViews break
-    // parts of it.
-    Linking.openURL(res.url).catch(() => Alert.alert(t('wallet.payoutSetupFailed')));
+    // A REAL browser, never a WebView: the flow collects identity and bank
+    // details, which people are right to want in a browser they recognise — and
+    // Stripe's own guidance is that embedded WebViews break parts of it. But it
+    // presents as the IN-APP Safari sheet (slides over Laybell, Done returns),
+    // not a bounce out to the Safari app — same security, native feel; owner
+    // asked for this after the first bounce-out felt clunky. When the sheet
+    // closes we refresh immediately instead of waiting for the AppState listener
+    // (the sheet doesn't background the app, so that listener never fires).
+    try {
+      await WebBrowser.openBrowserAsync(res.url);
+      fetchPayoutStatus().then(setPayout);
+    } catch {
+      Linking.openURL(res.url).catch(() => Alert.alert(t('wallet.payoutSetupFailed')));
+    }
   }
 
   const total = balance?.totalCents ?? 0;

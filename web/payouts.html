@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laybell — Payout setup complete</title>
+<!-- Where Stripe Connect sends creators after (or mid-way through) hosted
+     onboarding — the stripe-connect edge fn's RETURN_URL. Before this page
+     existed, finishing onboarding landed on the site's 404, which read as
+     "something broke" at the exact moment someone finished handing over bank
+     details. It only reassures and points back at the app; the app itself
+     re-checks payout status the moment it regains focus. -->
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0d0f">
+<style>
+:root { --bg:#0d0d0f; --ink:#f5f4f2; --muted:#a4a3ab; --brand:#F26522; --brand2:#E8401C; --green:#22c55e; }
+* { box-sizing:border-box; }
+html,body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; display:flex; align-items:center; justify-content:center; padding:24px; }
+main { width:100%; max-width:380px; text-align:center; }
+.logo { width:72px; height:72px; border-radius:18px; margin:0 auto 18px; display:block; object-fit:cover; }
+.check { font-size:44px; line-height:1; margin:0 0 10px; color:var(--green); }
+h1 { font-size:23px; margin:0 0 6px; }
+p { color:var(--muted); margin:0 0 24px; }
+.btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:15px 18px; border-radius:14px; text-decoration:none; font-weight:700; font-size:16px; margin:0 0 12px; background:linear-gradient(90deg,var(--brand),var(--brand2)); color:#fff; }
+</style></head>
+<body><main>
+<img class="logo" src="/logo.png" alt="Laybell">
+<div class="check">✓</div>
+<h1>Payout setup saved</h1>
+<p>You can head back to Laybell — your Wallet updates automatically. If Stripe still needs anything, the Wallet will say so.</p>
+<a class="btn" href="laybell://wallet">Open Laybell</a>
+</main>
+<script>
+  // Best-effort hop back into the app; harmless no-op in browsers without it.
+  setTimeout(function () { window.location.href = 'laybell://wallet'; }, 400);
+</script>
+</body></html>
