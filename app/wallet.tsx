@@ -83,7 +83,9 @@ export default function WalletScreen() {
     setOnboarding(true);
     const res = await startPayoutOnboarding();
     setOnboarding(false);
-    if ('error' in res) { Alert.alert(t('wallet.payoutSetupFailed')); return; }
+    // The second line carries the server's actual reason (Stripe's own words) —
+    // a setup failure the user can't name is a support ticket, not a retry.
+    if ('error' in res) { Alert.alert(t('wallet.payoutSetupFailed'), res.error); return; }
     // The system browser, never a WebView: the flow includes identity
     // verification and bank entry, which people are right to want in a browser
     // they recognise — and Stripe's own guidance is that embedded WebViews break

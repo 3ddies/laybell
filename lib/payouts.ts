@@ -62,7 +62,17 @@ export async function startPayoutOnboarding(): Promise<{ url: string } | { error
     const { data, error } = await supabase.functions.invoke('stripe-connect', {
       body: { action: 'onboard' },
     });
-    if (error || !data?.url) return { error: data?.error ?? error?.message ?? 'unavailable' };
+    if (error || !data?.url) {
+      // On a non-2xx the fn's real message ({error: "..."} body) hides inside
+      // the FunctionsHttpError's Response — without unwrapping it, every
+      // failure reads as the useless "non-2xx status code".
+      let detail: string = typeof data?.error === 'string' ? data.error : '';
+      const ctx = (error as any)?.context;
+      if (!detail && ctx && typeof ctx.json === 'function') {
+        try { detail = String((await ctx.json())?.error ?? ''); } catch {}
+      }
+      return { error: detail || error?.message || 'unavailable' };
+    }
     return { url: data.url as string };
   } catch (e: any) {
     return { error: e?.message ?? 'unavailable' };
