@@ -496,6 +496,12 @@ function RootLayout() {
     // with nobody's client around to clean up. Server-authoritative — this is
     // just the tick that wakes it (pg_net isn't installed, so SQL can't).
     supabase.functions.invoke('stream-reap').then(undefined, () => {});
+    // Same tick for the upload-staging bucket. This used to be an hourly
+    // pg_cron job deleting straight out of storage.objects, until Supabase
+    // added a trigger forbidding that — it then failed silently on every run
+    // while multi-GB film masters piled up. Deletion has to go through the
+    // Storage API, which SQL can't reach from here.
+    supabase.functions.invoke('staging-sweep').then(undefined, () => {});
   }, [session?.user?.id]);
 
   useEffect(() => {
