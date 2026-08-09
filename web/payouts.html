@@ -27,11 +27,10 @@ p { color:var(--muted); margin:0 0 24px; }
 <img class="logo" src="/logo.png" alt="Laybell">
 <div class="check">✓</div>
 <h1>Payout setup saved</h1>
-<p>You can head back to Laybell — your Wallet updates automatically. If Stripe still needs anything, the Wallet will say so.</p>
+<p>Tap <b>Done</b> in the corner to head back to your Wallet — it updates automatically. If Stripe still needs anything, the Wallet will say so.</p>
+<!-- No dismiss API exists for the in-app sheet, so the primary instruction is
+     the sheet's own Done button. The deep link stays for anyone who lands here
+     in a real browser (Android, desktop) where Done doesn't exist. -->
 <a class="btn" href="laybell://wallet">Open Laybell</a>
 </main>
-<script>
-  // Best-effort hop back into the app; harmless no-op in browsers without it.
-  setTimeout(function () { window.location.href = 'laybell://wallet'; }, 400);
-</script>
 </body></html>
