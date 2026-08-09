@@ -30,6 +30,27 @@ RLS/security-definer check ran exactly as they do for a signed-in user).
 | 11 | **Spotlight cancel refund** | `spotlight_cancel_pending` | 599¢ returned, campaign → `canceled` |
 | 12 | **Payout onboarding** | Wallet → Set up payouts | Laybell's half proven: link mints, in-app Safari sheet opens, `laybell.app/payouts` return page live. Stripe's own hosted form deliberately not completed (owner's call). |
 
+### Second pass — the paths that needed hardware, minus the hardware
+
+| # | Path | Result |
+|---|---|---|
+| 13 | **Studio tip** (`tip_studio_with_credits`) | $7.00 → fee **245¢ (35%)**, host **455¢**. This is the *standard* fee branch — the livestream tip hit 30% because that host is Premium+. **Both branches of `tip_fee_rate()` are now proven.** |
+| 14 | **The Premium+ tip-fee fix, verified live** | `3ddiehall` has ONLY `premium_plus_until` set (no `premium_until`) and still gets 0.30. That is exactly the bug `premium_plus.sql` closed — a Premium+ subscriber paying the standard 35%. Confirmed fixed in production. |
+| 15 | **Stripe Express account creation** | A real connected account, **`acct_1U2cMeDkLCwypdLC`**, exists on the owner's profile. The tap that opened the sheet genuinely called Stripe's API, created the Express account, persisted the id, and minted an onboarding link. The Laybell↔Stripe integration is proven end to end; only Stripe's own hosted form is unexercised. |
+
+### More guards, attacked in the second pass
+
+| Attempted | Refused with |
+|---|---|
+| Payout of $25 with $5.58 earned (all held) | `insufficient_available` |
+| Payout below the $25 minimum | `below_minimum` |
+| **Minting a live Spotlight for $0** by inserting the campaign row directly (July review exploit #1) | `spotlight_must_use_rpc` |
+| **Erasing an advertiser's own spend meter** (July review exploit #2) | `protected_column` |
+| **Funding a campaign at a $0.01 CPM bid** (July review exploit #3) | silently clamped to the 1000¢ floor |
+
+Three of the six money-minting exploits from the July adversarial review were
+re-attacked here as a live client would, and all three are dead.
+
 ## Guards that FIRED CORRECTLY under attack
 
 A money system is proven by what it refuses. Each of these was attempted and
@@ -79,16 +100,26 @@ on `auth.users`, not in `public`, and was confirmed present.
 
 ---
 
-## Still untested (and why that's acceptable)
+## Still untested — three things, and each needs a human or hardware
 
-- **Android purchase on a device** — owner has no Android hardware for a while.
-  The *server* money code is store-agnostic and is now fully exercised; what
-  remains untested is the thin client layer (RevenueCat Play SDK + Play
-  Billing). **Gate: run the 15-minute purchase test before Android is promoted
-  past internal testing.**
-- **Stripe's hosted Express form** — the first real creator exercises Stripe's
-  own infrastructure. Laybell's side is proven end to end.
-- **The live-tip modal UI** — needs two devices; the RPC beneath it is tested.
+These are not deferrable-by-choice; they are the residue that no amount of
+server-side work can reach.
+
+1. **An Android purchase on a real device.** No Android hardware available. The
+   server money code is store-agnostic and fully exercised, so what remains
+   untested is the thin client layer (RevenueCat Play SDK + Play Billing).
+   **Gate: run the 15-minute purchase test before Android is promoted past
+   internal testing.**
+2. **Stripe's hosted Express form.** Laybell's entire half is proven (account
+   created, link minted, sheet opens, return page live). What is untested is a
+   human typing an SSN and bank details into Stripe's own page — which is
+   Stripe's infrastructure, and not something to automate on the owner's real
+   account. The first real creator exercises it.
+3. **The live/studio tip modal UI.** Needs two devices in one room. The RPC
+   underneath it is now tested on both fee branches (#13), so what is unproven
+   is the button, the amount pills, and the broadcast overlay — UI, not money.
+
+Everything else that could be tested, was.
 
 ## Test artifacts left behind
 
