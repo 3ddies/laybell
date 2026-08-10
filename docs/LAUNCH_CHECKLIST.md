@@ -78,8 +78,10 @@ inbox waits, and one test that needs Android hardware.**
 - **Do not automate Stripe's hosted Express form.** It asks for SSN and bank details on
   the owner's real account. Laybell's half is proven; the first real creator exercises
   Stripe's.
-- **Watch one encoder / horizontal live end-to-end before launch** (~10 min, needs a
-  second device or a browser as the viewer). Fixed 2026-08-10 in `0325f3e`: since
+- ~~**Watch one encoder / horizontal live end-to-end**~~ ✅ **CLEARED 2026-08-10** — the
+  owner confirmed an encoder live plays correctly after the fix. Kept below for the
+  reasoning, because the failure mode is worth remembering: it was invisible to daily
+  testing. Fixed 2026-08-10 in `0325f3e`: since
   2026-07-28 every RTMP-ingest broadcast — Studio encoder **and** phone-horizontal, i.e.
   everything bound for Laybell TV — was created with Cloudflare recording `off`, and
   Cloudflare serves live HLS *out of* the recording pipeline, so no manifest existed and
