@@ -145,7 +145,9 @@ export default function GoLiveScreen() {
   const rtmpRef = useRef<RtmpPublisherHandle | null>(null);
   const channelRef = useRef<ReturnType<typeof joinLiveChannel> | null>(null);
   const viewerPeak = useRef(0);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // setTimeout, not setInterval: the encoder poll reschedules itself with a
+  // growing delay instead of running at a fixed rate.
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const RTCView = getRTCView();
   const RtmpView = getRtmpView();
 
@@ -163,7 +165,7 @@ export default function GoLiveScreen() {
   }, [profile?.id]);
 
   async function cleanup(ended: boolean) {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; }
     channelRef.current?.leave();
     channelRef.current = null;
     try { rtmpRef.current?.stopStreaming(); } catch { /* not streaming */ }
@@ -216,18 +218,38 @@ export default function GoLiveScreen() {
         setPhase('preview');
       } else {
         setPhase('waiting');
-        // Poll until the encoder connects, then flip live automatically.
-        pollRef.current = setInterval(async () => {
+        // Poll until the encoder connects, then flip live automatically —
+        // backing off 4s → 20s rather than hammering a fixed 4s.
+        //
+        // Getting OBS pointed at a fresh key takes minutes, and every check is
+        // a Cloudflare API call. A flat 4s poll spends that whole wait burning
+        // request budget against a limit that is per ACCOUNT, not per user:
+        // testing tripped it (error 971, "consider throttling your request
+        // speed") and that lockout would have hit every host at once. The first
+        // checks stay quick, so an encoder that is already running still starts
+        // promptly.
+        let delay = 4000;
+        const tick = async () => {
           const s = streamRef.current;
-          if (!s) return;
+          if (!s) { pollRef.current = null; return; }
           if (await isInputConnected(s.cf_input_uid).catch(() => false)) {
-            if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+            pollRef.current = null;
             await goLiveNow();
+            return;
           }
-        }, 4000);
+          delay = Math.min(delay * 1.5, 20000);
+          pollRef.current = setTimeout(tick, delay);
+        };
+        pollRef.current = setTimeout(tick, delay);
       }
     } catch (e) {
-      setError((e as Error)?.message ?? 'failed');
+      const msg = (e as Error)?.message ?? 'failed';
+      // Cloudflare 971 is "please wait and consider throttling your request
+      // speed" — its Stream API is rate limited per ACCOUNT, so a burst of
+      // go-lives can lock out every host at once. The host did nothing wrong
+      // and retrying immediately cannot help, so tell them that in their own
+      // language rather than handing them Cloudflare's wording.
+      setError(/\b971\b|throttling your request/i.test(msg) ? t('live.tooBusy') : msg);
     }
     setBusy(false);
   }
