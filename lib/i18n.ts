@@ -1898,6 +1898,8 @@ const en: Record<string, string> = {
   'count.post.other': '{n} posts',
   'count.item.one': '{n} item',
   'count.item.other': '{n} items',
+  'count.member.one': '{n} member',
+  'count.member.other': '{n} members',
   'count.person.one': '{n} person',
   'count.person.other': '{n} people',
   // Straggler localization (share sheet, drafts, block/report/archive/delete confirms, layout builder, error boundary)
@@ -4416,6 +4418,8 @@ const es: Record<string, string> = {
   'count.post.other': '{n} publicaciones',
   'count.item.one': '{n} elemento',
   'count.item.other': '{n} elementos',
+  'count.member.one': '{n} miembro',
+  'count.member.other': '{n} miembros',
   'count.person.one': '{n} persona',
   'count.person.other': '{n} personas',
   // Straggler localization
@@ -6400,6 +6404,8 @@ const fr: Record<string, string> = {
   'count.post.other': '{n} publications',
   'count.item.one': '{n} élément',
   'count.item.other': '{n} éléments',
+  'count.member.one': '{n} membre',
+  'count.member.other': '{n} membres',
   'count.person.one': '{n} personne',
   'count.person.other': '{n} personnes',
   // Straggler localization
@@ -8384,6 +8390,8 @@ const de: Record<string, string> = {
   'count.post.other': '{n} Beiträge',
   'count.item.one': '{n} Element',
   'count.item.other': '{n} Elemente',
+  'count.member.one': '{n} Mitglied',
+  'count.member.other': '{n} Mitglieder',
   'count.person.one': '{n} Person',
   'count.person.other': '{n} Personen',
   // Straggler localization
@@ -10368,6 +10376,8 @@ const pt: Record<string, string> = {
   'count.post.other': '{n} publicações',
   'count.item.one': '{n} item',
   'count.item.other': '{n} itens',
+  'count.member.one': '{n} membro',
+  'count.member.other': '{n} membros',
   'count.person.one': '{n} pessoa',
   'count.person.other': '{n} pessoas',
   // Straggler localization
@@ -12352,6 +12362,8 @@ const it: Record<string, string> = {
   'count.post.other': '{n} post',
   'count.item.one': '{n} elemento',
   'count.item.other': '{n} elementi',
+  'count.member.one': '{n} membro',
+  'count.member.other': '{n} membri',
   'count.person.one': '{n} persona',
   'count.person.other': '{n} persone',
   // Straggler localization
@@ -14301,6 +14313,8 @@ const ru: Record<string, string> = {
   'count.post.other': '{n} постов',
   'count.item.one': '{n} элемент',
   'count.item.other': '{n} элементов',
+  'count.member.one': '{n} участник',
+  'count.member.other': '{n} участников',
   'count.person.one': '{n} человек',
   'count.person.other': '{n} человек',
   // Straggler localization
@@ -16250,6 +16264,8 @@ const zh: Record<string, string> = {
   'count.post.other': '{n} 个帖子',
   'count.item.one': '{n} 项',
   'count.item.other': '{n} 项',
+  'count.member.one': '{n} 名成员',
+  'count.member.other': '{n} 名成员',
   'count.person.one': '{n} 人',
   'count.person.other': '{n} 人',
   // Straggler localization
@@ -18199,6 +18215,8 @@ const ja: Record<string, string> = {
   'count.post.other': '{n} 件の投稿',
   'count.item.one': '{n} 項目',
   'count.item.other': '{n} 項目',
+  'count.member.one': 'メンバー{n}人',
+  'count.member.other': 'メンバー{n}人',
   'count.person.one': '{n} 人',
   'count.person.other': '{n} 人',
   // Straggler localization
@@ -20148,6 +20166,8 @@ const hi: Record<string, string> = {
   'count.post.other': '{n} पोस्ट',
   'count.item.one': '{n} आइटम',
   'count.item.other': '{n} आइटम',
+  'count.member.one': '{n} सदस्य',
+  'count.member.other': '{n} सदस्य',
   'count.person.one': '{n} व्यक्ति',
   'count.person.other': '{n} लोग',
   // Straggler localization

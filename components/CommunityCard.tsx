@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
+import { countLabel } from '../lib/i18n';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
 import { genreLabel } from '../lib/genres';
 import { formatCount } from '../lib/format';
@@ -85,7 +86,7 @@ export default function CommunityCard({ community, onPress, variant = 'rail' }: 
           {community.myRole && <RoleBadge role={community.myRole} size={10} showLabel={false} />}
         </View>
         <Text style={styles.cardMeta} numberOfLines={1}>
-          {t('communities.members', { count: formatCount(community.member_count) })}
+          {countLabel('member', community.member_count)}
         </Text>
       </View>
     </TouchableOpacity>

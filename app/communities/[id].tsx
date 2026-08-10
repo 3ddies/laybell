@@ -15,6 +15,7 @@ import CommunityMembersModal from '../../components/CommunityMembersModal';
 import RoleBadge from '../../components/RoleBadge';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { countLabel } from '../../lib/i18n';
 import { useProfile } from '../../contexts/ProfileContext';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { genreLabel } from '../../lib/genres';
@@ -243,9 +244,9 @@ export default function CommunityDetailScreen() {
         </View>
 
         <View style={styles.statsRow}>
-          <Text style={styles.statText}>{t('communities.members', { count: formatCount(community.member_count) })}</Text>
+          <Text style={styles.statText}>{countLabel('member', community.member_count)}</Text>
           <Text style={styles.statDot}>·</Text>
-          <Text style={styles.statText}>{t('communities.posts', { count: formatCount(community.post_count) })}</Text>
+          <Text style={styles.statText}>{countLabel('post', community.post_count)}</Text>
           {isMember && role && <View style={{ marginLeft: SPACING.sm }}><RoleBadge role={role} size={11} /></View>}
         </View>
 

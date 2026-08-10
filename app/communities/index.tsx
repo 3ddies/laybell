@@ -10,6 +10,7 @@ import CommunityCard from '../../components/CommunityCard';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useSearchSwipeLock } from '../../contexts/PagerContext';
 import { useTranslation } from '../../contexts/LanguageContext';
+import { countLabel } from '../../lib/i18n';
 import { useProfile } from '../../contexts/ProfileContext';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { CommunitiesSkeleton } from '../../components/Skeleton';
@@ -171,7 +172,7 @@ export default function CommunitiesScreen() {
                     <TouchableOpacity style={styles.inviteInfo} onPress={() => open(c)} activeOpacity={0.8}>
                       <Text style={styles.inviteName} numberOfLines={1}>{c.name}</Text>
                       <Text style={styles.inviteMeta} numberOfLines={1}>
-                        #{c.hashtag} · {genreLabel(c.genre)} · {t('communities.members', { count: formatCount(c.member_count) })}
+                        #{c.hashtag} · {genreLabel(c.genre)} · {countLabel('member', c.member_count)}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.inviteBtn, styles.declineBtn]} onPress={() => onInviteResponse(c, false)}>
