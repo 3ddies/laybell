@@ -35,28 +35,34 @@ export default function InviteScreen() {
   const { t } = useTranslation();
 
   const [contacts, setContacts] = useState<InviteContact[] | null>(null);
-  const [denied, setDenied] = useState(false);
+  // Four outcomes, four things to say. Collapsing them (an empty address book
+  // shown as "permission denied", pointing someone at Settings to fix nothing)
+  // is the kind of dead end that makes a feature feel broken.
+  const [state, setState] = useState<'loading' | 'ok' | 'denied' | 'empty' | 'error'>('loading');
+  const [invitedCount, setInvitedCount] = useState(0);
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
 
   const load = useCallback(async () => {
+    setState('loading');
     try {
-      const list = await loadInviteContacts();
-      setContacts(list);
-      setDenied(list.length === 0);
+      const res = await loadInviteContacts();
+      setContacts(res.contacts);
+      // The SERVER's lifetime count, not a tally of ticked rows — the badge
+      // reads the server, so anything else would let this screen contradict it
+      // (invite someone, delete them from your phone, watch the number drop).
+      setInvitedCount(res.invitedTotal);
+      setState(res.status === 'denied' ? 'denied' : res.contacts.length ? 'ok' : 'empty');
     } catch {
-      // A failed read of "who did I already invite" must not show everyone as
-      // un-invited — that would push duplicate sends. Show the retry state.
-      setContacts([]);
-      setDenied(false);
+      // A failed read of "who have I already invited" must NOT render everyone
+      // as un-invited — that pushes duplicate sends at real people. Fail loudly.
+      setContacts(null);
+      setState('error');
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  const invitedCount = useMemo(
-    () => (contacts ?? []).filter((c) => c.invited).length, [contacts]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -84,15 +90,23 @@ export default function InviteScreen() {
       // inside the system composer — and the alternative (never counting) would
       // make the badge unreachable. Duplicate protection lives in the hash key,
       // so the worst case is a contact ticked off slightly early, not inflation.
+      const before = invitedCount;
       const total = await recordInvites(chosen);
+      const sent = new Set(chosen.map((c) => c.hash));
       setPicked(new Set());
       setContacts((prev) => (prev ?? []).map((c) =>
-        picked.has(c.hash) ? { ...c, invited: true } : c));
+        sent.has(c.hash) ? { ...c, invited: true } : c));
       if (total != null) {
-        const hit = total >= GOLD_AT ? t('invite.badgeGold')
-          : total >= SILVER_AT ? t('invite.badgeSilver')
-          : total >= BRONZE_AT ? t('invite.badgeBronze') : '';
-        if (hit) Alert.alert(t('invite.sentTitle'), hit);
+        setInvitedCount(total);
+        // Announce a tier only when it is CROSSED. Comparing against the
+        // threshold alone re-congratulated "Gold Advocate unlocked" on every
+        // invite after the fifteenth, which turns a milestone into noise.
+        const crossed = [
+          { at: GOLD_AT, msg: t('invite.badgeGold') },
+          { at: SILVER_AT, msg: t('invite.badgeSilver') },
+          { at: BRONZE_AT, msg: t('invite.badgeBronze') },
+        ].find((x) => before < x.at && total >= x.at);
+        if (crossed) Alert.alert(t('invite.sentTitle'), crossed.msg);
       }
     } finally {
       setSending(false);
@@ -122,18 +136,33 @@ export default function InviteScreen() {
           </Text>
         </LinearGradient>
 
-        {contacts === null ? (
+        {state === 'loading' ? (
           <View style={styles.list}>
             {[0, 1, 2, 3, 4, 5].map((i) => (
               <Skeleton key={i} width="100%" height={56} radius={RADIUS.md} />
             ))}
           </View>
-        ) : denied ? (
+        ) : state === 'denied' ? (
           <View style={styles.center}>
             <Ionicons name="people-outline" size={40} color={colors.textTertiary} />
             <Text style={styles.emptyText}>{t('invite.permissionBody')}</Text>
             <TouchableOpacity style={styles.retryBtn} onPress={() => Linking.openSettings()}>
               <Text style={styles.retryText}>{t('invite.openSettings')}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : state === 'empty' ? (
+          // Permission GRANTED, nothing usable in the book. Sending them to
+          // Settings would be a dead end — there is nothing there to fix.
+          <View style={styles.center}>
+            <Ionicons name="person-outline" size={40} color={colors.textTertiary} />
+            <Text style={styles.emptyText}>{t('invite.noContacts')}</Text>
+          </View>
+        ) : state === 'error' ? (
+          <View style={styles.center}>
+            <Ionicons name="cloud-offline-outline" size={40} color={colors.textTertiary} />
+            <Text style={styles.emptyText}>{t('invite.loadError')}</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={load}>
+              <Text style={styles.retryText}>{t('common.retry')}</Text>
             </TouchableOpacity>
           </View>
         ) : (

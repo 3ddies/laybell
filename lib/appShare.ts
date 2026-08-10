@@ -33,25 +33,40 @@ export type InviteContact = {
 /** Contacts read per pass. Big address books are common; the list is virtualized. */
 const MAX_CONTACTS = 2000;
 
+export type InviteLoad = {
+  /** 'denied' → the OS refused; 'ok' → we read the book, however small. */
+  status: 'ok' | 'denied';
+  contacts: InviteContact[];
+  /**
+   * Lifetime invites from the SERVER, not a count of ticked rows. The two can
+   * differ — invite someone, then delete them from your phone — and the badge
+   * follows the server, so the screen has to as well or it contradicts itself.
+   */
+  invitedTotal: number;
+};
+
 /**
  * The device address book, each entry paired with its hash and whether this user
- * has already invited them. Returns [] when permission is refused — callers show
- * the permission prompt rather than an error.
+ * has already invited them.
+ *
+ * Distinguishes "the OS said no" from "granted, but nothing usable in there" —
+ * they need opposite things said to them, and an empty book is not an error.
  */
-export async function loadInviteContacts(): Promise<InviteContact[]> {
+export async function loadInviteContacts(): Promise<InviteLoad> {
   const perm = await Contacts.requestPermissionsAsync().catch(() => null);
-  if (!perm?.granted) return [];
+  if (!perm?.granted) return { status: 'denied', contacts: [], invitedTotal: 0 };
 
   const { data } = await Contacts.getContactsAsync({
     fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails, Contacts.Fields.Name],
   });
 
   // Who this user has already invited. A failure here must not silently un-tick
-  // everyone (that would invite duplicate sends), so it aborts the whole load.
+  // everyone (that would push duplicate sends), so it aborts the whole load.
   const { data: rows, error } = await supabase
     .from('app_share_invites').select('contact_hash');
   if (error) throw error;
   const already = new Set((rows ?? []).map((r: any) => r.contact_hash));
+  const invitedTotal = already.size;
 
   const out: InviteContact[] = [];
   const seen = new Set<string>();
@@ -82,8 +97,9 @@ export async function loadInviteContacts(): Promise<InviteContact[]> {
   }
 
   // Not-yet-invited first (that's what the user is here to do), then A–Z.
-  return out.sort((a, b) =>
+  out.sort((a, b) =>
     a.invited === b.invited ? a.name.localeCompare(b.name) : (a.invited ? 1 : -1));
+  return { status: 'ok', contacts: out, invitedTotal };
 }
 
 /**

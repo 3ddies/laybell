@@ -57,33 +57,19 @@ create policy "video_staging_delete_own" on storage.objects
 -- Cloudflare has ingested it, but a crash mid-flight would otherwise leave a
 -- multi-GB object billing forever. Anything older than a day has either been
 -- ingested or abandoned.
-create or replace function public.sweep_video_staging()
-returns integer
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_deleted integer;
-begin
-  with gone as (
-    delete from storage.objects
-     where bucket_id = 'video-staging'
-       and created_at < now() - interval '24 hours'
-    returning 1
-  ) select count(*)::int into v_deleted from gone;
-  return v_deleted;
-end $$;
-
-revoke all on function public.sweep_video_staging() from public;
-revoke execute on function public.sweep_video_staging() from anon, authenticated;
-
-do $$
-begin
-  perform cron.unschedule('sweep-video-staging');
-exception when others then null;
-end $$;
-select cron.schedule('sweep-video-staging', '23 * * * *', 'select public.sweep_video_staging()');
+--
+-- ⚠️ THE SQL SWEEPER THAT USED TO LIVE HERE IS GONE (2026-08-09). It deleted
+-- straight out of storage.objects, and Supabase added storage.protect_delete()
+-- which raises on exactly that — so from 2026-08-07 the hourly job failed on
+-- EVERY run, ~60 times, silently, while multi-GB film masters piled up. It was
+-- found by auditing cron.job_run_details, not by anything user-visible.
+--
+-- Deleting now has to go through the Storage API, and SQL cannot make HTTP
+-- calls here (pg_net is not installed), so the sweep is an Edge Function:
+--     supabase/functions/staging-sweep   (invoked at app boot, beside stream-reap)
+--     supabase/sql/video_staging_sweep_fix.sql   (the stale-path lister it asks)
+--
+-- Do NOT re-add a SQL sweeper here. It cannot work, and the failure is silent.
 
 -- Verify.
 select id, public, pg_size_pretty(file_size_limit::bigint) as max_file
