@@ -51,9 +51,18 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderWidth: 1,
   },
   inner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
-  follow: { backgroundColor: colors.primary, borderColor: colors.primary },
+  // The call-to-action pill is INVERTED rather than orange (owner, 2026-08-10):
+  // near-white on the dark themes, which is what was asked for, and it stops the
+  // feed competing with itself — orange is also the brand's own accent, so a row
+  // of orange Follow pills pulled the eye away from the posts.
+  //
+  // Written as text/background rather than a literal '#fff' so it stays legible
+  // on the LIGHT theme, where a white pill on the off-white paper background
+  // (#F2F1ED) would all but disappear. There it flips to near-black — same
+  // inverted look, same contrast, no invisible button.
+  follow: { backgroundColor: colors.text, borderColor: colors.text },
   following: { backgroundColor: 'transparent', borderColor: colors.border },
   text: { fontSize: 12, fontWeight: '700' },
-  followText: { color: '#fff' },
+  followText: { color: colors.background },
   followingText: { color: colors.textSecondary },
 });
