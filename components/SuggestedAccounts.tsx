@@ -111,14 +111,26 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight,
   },
   row: { gap: SPACING.sm, paddingHorizontal: SPACING.xs },
+  // 148, not 132: the pill below is content-sized now, and "Follow back" needs
+  // room to sit on one line without the card squeezing it.
   card: {
-    width: 132, padding: SPACING.md, alignItems: 'center', gap: 6,
+    width: 148, padding: SPACING.md, alignItems: 'center', gap: 6,
     backgroundColor: colors.surfaceLight, borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border,
   },
   cardText: { alignItems: 'center', gap: 6 },
   name: { color: colors.text, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   reason: { color: colors.textSecondary, fontSize: 11, textAlign: 'center', minHeight: 28 },
-  // Full-width within the card with tighter side padding so "Follow back" fits on
-  // one line (the inline default is content-sized and wraps in the narrow card).
-  followBtn: { marginTop: 2, alignSelf: 'stretch', paddingHorizontal: SPACING.sm },
+  // LAYOUT ONLY — no padding, no stretch.
+  //
+  // This used to be `alignSelf: 'stretch'` plus a padding override, which made
+  // the pill a full-width slab: at 132px with a pill radius it read as a square
+  // white box, and the brand-gradient "Follow back" state looked sliced where
+  // the carousel clipped the last card. It also stopped working correctly once
+  // FollowButton moved its padding onto an inner gradient layer — an outer
+  // padding override then padded the SHELL, around the fill, instead of the
+  // button itself.
+  //
+  // Content-sized and centred is both the fix and the better look: it matches
+  // every other Follow pill in the app.
+  followBtn: { marginTop: 2 },
 });

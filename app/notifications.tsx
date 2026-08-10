@@ -418,7 +418,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   unreadDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.primary, marginRight: SPACING.xs },
   // Taller pill with a consistent min width so Follow / Follow back / Following all
   // line up cleanly, and a little right inset so it isn't flush to the edge.
-  followBtn: { paddingVertical: 8, minWidth: 100, marginRight: SPACING.xs },
+  // minWidth is fine on the shell (the gradient inside stretches to it), but
+  // paddingVertical is NOT: FollowButton keeps its padding on an inner fill
+  // layer, so an outer value pads AROUND the pill instead of making it taller —
+  // the button ends up shorter than intended with dead space either side.
+  // Dropped, which also makes this pill match every other one in the app.
+  followBtn: { minWidth: 100, marginRight: SPACING.xs },
   chevronWrap: { width: 46, alignItems: 'center', justifyContent: 'center' },
 
   // Expanded grouped row: each liked/commented post as a tappable thumbnail,

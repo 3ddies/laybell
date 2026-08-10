@@ -39,12 +39,17 @@ const SCREEN_W = Dimensions.get('window').width;
 // 2-up landscape grid cell.
 const COL_W = (SCREEN_W - H_PADDING * 2 - GRID_GAP) / 2;
 const COL_THUMB_H = COL_W * (9 / 16);
-// Portrait "recommended" tile (mirrors the old reel-grid tile proportions).
-const FEAT_W = Math.round((SCREEN_W - H_PADDING * 2) * 0.42);
-const FEAT_H = Math.round(FEAT_W * 1.3);
-// Films shelf tile — wide 16:9, movie-poster proportions with title + runtime.
+// ONE tile geometry for both shelves — wide 16:9.
+//
+// Recommended used to be a PORTRAIT tile (0.42 wide, ×1.3 tall), inherited from
+// the reel grid. On Laybell TV that was backwards: this is the landscape
+// surface, so every video in the row is 16:9 being shown in a 3:4 box — cropped
+// or pillarboxed — and it sat directly above a Films row of wide posters, so the
+// two shelves looked unrelated to each other on the same screen.
 const FILM_W = Math.round((SCREEN_W - H_PADDING * 2) * 0.62);
 const FILM_H = Math.round(FILM_W * (9 / 16));
+const FEAT_W = FILM_W;
+const FEAT_H = FILM_H;
 
 // A film's runtime chip: h:mm:ss past the hour, m:ss under it.
 function fmtRuntime(sec?: number | null): string {
@@ -159,9 +164,22 @@ export default function TVVideoList({ posts, featured, films, currentUserId, ref
               >
                 <VideoThumb thumbnailUrl={p.thumbnail_url} mediaUrl={p.media_url} style={styles.featThumb} />
                 {badgeFor(p)}
-                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.78)']} style={styles.featOverlay}>
+                {/* Same treatment as a Films tile: the name leads, the author
+                    sits under it. A caption stands in for the title here, since
+                    an ordinary video has no film_title. */}
+                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.featOverlay}>
+                  {!!(p.caption || p.profiles?.display_name) && (
+                    <Text style={styles.filmName} numberOfLines={1}>
+                      {p.caption || p.profiles?.display_name}
+                    </Text>
+                  )}
                   {!!p.profiles?.username && <Text style={styles.featUser} numberOfLines={1}>@{p.profiles.username}</Text>}
                 </LinearGradient>
+                {!!(p as any).duration_seconds && (
+                  <View style={styles.filmRuntime}>
+                    <Text style={styles.filmRuntimeText}>{fmtRuntime((p as any).duration_seconds)}</Text>
+                  </View>
+                )}
                 <ThumbStat type={p.type} viewCount={p.view_count} streamCount={p.stream_count} />
               </TouchableOpacity>
             ))}
@@ -375,9 +393,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     backgroundColor: c.surfaceLight,
   },
   featThumb: { width: '100%', height: '100%' },
+  // Matches filmOverlay exactly — same scrim height and padding, so the two
+  // shelves read as one system rather than two components that happen to share
+  // a screen.
   featOverlay: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
-    paddingHorizontal: SPACING.sm, paddingTop: SPACING.lg, paddingBottom: 6,
+    paddingHorizontal: SPACING.sm, paddingTop: SPACING.xl, paddingBottom: 6, gap: 1,
   },
   featUser: { color: '#fff', fontSize: 11, fontWeight: '600' },
 

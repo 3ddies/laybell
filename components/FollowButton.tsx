@@ -29,6 +29,12 @@ import { selection } from '../lib/haptics';
 // The white of Follow is written from the palette, not hardcoded: on the LIGHT
 // theme a white pill on off-white paper (#F2F1ED) would vanish, so it inverts to
 // near-black there — same idea, same contrast, still legible.
+// NOTE FOR CALLERS: `style` lands on the SHELL, which owns only the shape and
+// the shadow — the padding lives on an inner fill so the gradient reaches the
+// rounded edge with no seam. So pass LAYOUT only (margin, alignSelf, minWidth,
+// which the fill stretches to). Passing padding here pads around the pill
+// rather than inside it, and passing alignSelf:'stretch' turns it into a slab.
+// Both of those shipped as bugs once; that is why this comment exists.
 export default function FollowButton({ userId, style }: { userId?: string | null; style?: any }) {
   const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
