@@ -437,6 +437,7 @@ export default function BadgesScreen() {
 function CategoryCard({ category, metrics, held, t }: { category: BadgeCategory; metrics: BadgeMetrics | null; held: Set<string>; t: (key: string, vars?: Record<string, string | number>) => string }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const router = useRouter();
   const meta = CATEGORY_META[category];
   const defs = BADGES.filter((b) => b.category === category);
   // The user's current standing in this category = the highest tier they hold
@@ -482,11 +483,42 @@ function CategoryCard({ category, metrics, held, t }: { category: BadgeCategory;
           </View>
         );
       })}
+      {/* App Sharing is the one category a user can't advance by using the app —
+          it needs a deliberate trip to the invite screen. Without a way through
+          from here, the badge reads as a wall: you learn it exists and are told
+          nothing about how to move it. */}
+      {category === 'app_sharing' && (
+        <TouchableOpacity
+          style={styles.catAction}
+          activeOpacity={0.85}
+          onPress={() => router.push('/invite')}
+          accessibilityRole="button"
+          accessibilityLabel={t('account.invite')}
+        >
+          <LinearGradient
+            colors={GRADIENTS.primary as any}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={styles.catActionInner}
+          >
+            <Ionicons name="person-add" size={15} color="#fff" />
+            <Text style={styles.catActionText}>{t('account.invite')}</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  // Sits below the three Advocate rows, inset to the same gutter, so it reads as
+  // this category's own call to action rather than a page-level button.
+  catAction: { borderRadius: RADIUS.full, overflow: 'hidden', marginTop: SPACING.sm },
+  catActionInner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: SPACING.sm + 1,
+  },
+  catActionText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
