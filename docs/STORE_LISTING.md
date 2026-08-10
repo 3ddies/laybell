@@ -253,6 +253,27 @@ landscape feature undersells it.
 Text overlays on screenshots consistently outperform bare captures. Keep them
 short enough to read at thumbnail size.
 
+**Caption overlays — one per shot, in the order above.** Each is a plain
+statement of what the screen does; none of them oversell, because the screenshot
+is right there and a caption the picture contradicts costs more trust than it
+buys.
+
+| # | Overlay text | Reads as |
+|---|---|---|
+| 1 | `Music first. Not an afterthought.` | the whole positioning, in four words |
+| 2 | `Turn it sideways for Films.` | tells them the shot is landscape ON PURPOSE |
+| 3 | `Go live. Get tipped in real time.` | |
+| 4 | `Your profile is your storefront.` | |
+| 5 | `Sell beats. Buyers get the files instantly.` | |
+| 6 | `Run a session. Bring an audience.` | |
+| 7 | `Communities that stay about the music.` | |
+| 8 | `Your earnings, in one wallet.` | |
+
+Keep every overlay in the SAME position, weight and size across all eight — a
+caption that moves between frames reads as amateur even when each frame is
+good. Top third is safest: the phone's own status bar sits above it and the
+app's content usually starts below.
+
 **Shoot these on the demo account** (`laybellreview`): it carries both
 subscription tiers, so the ad-free feed and the Films shelf are both real there,
 and nothing in frame will be an upsell wall.
