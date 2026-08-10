@@ -1,6 +1,13 @@
 # Store Privacy Labels — App Store "Nutrition Label" + Google Play Data Safety
 
 **Generated:** 2026-07-28 · **Basis:** static source audit of this repo at branch `polish/scale-hardening-2026-07-23`.
+**Revised 2026-08-10:** the Diagnostics rows were WRONG. This file was written two days before
+`@sentry/react-native` was added (2026-07-30) and still said "no crash SDK" everywhere — which would have
+produced a nutrition label declaring no diagnostics on an app that ships crash reporting, contradicting the
+app's own Privacy Policy §3.16. Crash Data and Other Diagnostic Data are now **Yes / not linked / not
+tracking / App Functionality**; Performance stays **No** (`tracesSampleRate: 0`).
+⚠️ **This is the failure mode to watch for in this file: it is a snapshot.** Re-verify against
+`package.json` and `lib/monitoring.ts` before transcribing anything into either console.
 
 This document is evidence-first. Every "Yes" below is backed by a `file:line` citation. Anything the code
 could not answer is in the **⚠️ UNCERTAIN** section rather than guessed at. Do not transcribe an answer into
@@ -21,7 +28,7 @@ App Store Connect or Play Console that this file marks uncertain without checkin
 | **Apple "Used for Tracking"?** | **No — for every category** | Ad targeting is 100 % first-party (`lib/ads.ts:315-352`). No ad network SDK, no data broker, no cross-app identifier. |
 | **Precise or Coarse Location?** | **Coarse only** | Coordinates rounded to 1 decimal degree ≈ **11 km** before anything is stored or transmitted (`lib/location.ts:21`, `:53-54`). Apple's precise threshold is 1,750 ft. |
 | **Payment Info collected by developer?** | **No** | No card/bank field exists in the app. IAP via RevenueCat→Apple/Google; payouts via Stripe-hosted onboarding in the system browser. |
-| **Third-party analytics / crash SDK?** | **None** | No Sentry, Firebase, Amplitude, PostHog, Segment, Bugsnag, Mixpanel, Datadog, `expo-insights`, or `expo-updates` in `package.json:5-67`. |
+| **Third-party analytics / crash SDK?** | **Crash reporting only — Sentry** ⚠️ *corrected 2026-08-10* | `@sentry/react-native` was added on 2026-07-30, AFTER this document was first written, and ships with a live DSN on the preview and production build profiles (`eas.json`). Everything below was rewritten to match. There is still no analytics SDK: no Firebase, Amplitude, PostHog, Segment, Bugsnag, Mixpanel or Datadog. |
 | **Health data?** | **None** | No HealthKit, `expo-sensors`, pedometer, or heart-rate code or dependency. |
 | **Encrypted in transit?** | **Yes** | All backend traffic is HTTPS (`lib/supabase.ts:6`); ad CTA URLs are force-upgraded to `https` (`lib/ads.ts:481-484`). |
 | **Can users request deletion in-app?** | **Yes** | `lib/accountDeletion.ts` (48-h deferred hard delete) + `supabase/functions/delete-account/index.ts`. |
@@ -63,9 +70,9 @@ Personalization · `DA` Developer's Advertising · `TPA` Third-Party Advertising
 | **Usage Data — Product Interaction** | Yes | Yes | No | AF, AN, PP | Views `lib/viewTracker.ts:59-89`; listen seconds `lib/listenMeter.ts:26-34`; likes/comments/saves aggregated in `lib/analytics.ts:98-184` |
 | **Usage Data — Advertising Data** | Yes | Yes | **No** | DA | Ad impressions/clicks/skips/completes with `viewer_id`: `lib/ads.ts:696-747`, read back at `lib/ads.ts:1038-1062` |
 | **Usage Data — Other** | **No** | — | — | — | — |
-| **Diagnostics — Crash Data** | **No** | — | — | — | No crash SDK |
-| **Diagnostics — Performance Data** | **No** | — | — | — | No perf SDK |
-| **Diagnostics — Other** | **No** | — | — | — | — |
+| **Diagnostics — Crash Data** | **Yes** | **No** | No | AF | Sentry. `lib/monitoring.ts` — `sendDefaultPii: false` (no IP, no request bodies), no `setUser`, and a scrubber strips JWTs, emails, auth headers and Supabase query strings from every event and breadcrumb. Nothing ties a report to an account, hence NOT linked. |
+| **Diagnostics — Performance Data** | **No** | — | — | — | `tracesSampleRate: 0` (`lib/monitoring.ts`) — performance monitoring is off. |
+| **Diagnostics — Other** | **Yes** | **No** | No | AF | Handled (non-fatal) errors and breadcrumbs reported through the same Sentry pipeline and the same scrubber. Session Replay is deliberately NOT enabled — it records the screen, unacceptable on an app with DMs and minors. |
 | **Other Data — IP address** | Yes (5 events only) | Yes | No | AF (security/legal evidence) | `supabase/functions/log-access/index.ts:41,63-76,89-103`; `lib/accessLog.ts:14-21` |
 | **Other Data — Date of birth / age** | Yes | Yes | No | AF (age gate) | `app/onboarding.tsx:109-124`; `lib/minors.ts:26-46` |
 | **Other Data — Gender** | Yes | Yes | No | AF, PP | `app/onboarding.tsx:123`; `lib/profileOptions.ts:10` |
@@ -291,7 +298,9 @@ Play uses a different taxonomy and asks two extra questions. Both are answered b
 | App activity | Other user-generated content | Yes | No | No | No | App functionality | Captions, comments, playlists, listings |
 | App activity | Other actions (ad impressions/clicks) | Yes | No | No | No | Developer's advertising | `lib/ads.ts:696-747` |
 | Web browsing | — | **No** | — | — | — | — | §7 |
-| App info & performance | Crash logs / Diagnostics / Other | **No** | — | — | — | — | No crash or perf SDK |
+| App info & performance | **Crash logs** | **Yes** | No | **No** | **Yes** | App functionality | Sentry. Not linked to an identity; users can switch it off in Privacy Center, which is what makes it optional |
+| App info & performance | Diagnostics (performance) | **No** | — | — | — | — | `tracesSampleRate: 0` |
+| App info & performance | Other app performance data | **Yes** | No | **No** | **Yes** | App functionality | Handled errors + breadcrumbs, same pipeline, same scrubber |
 | Device or other IDs | Device or other IDs | Yes | No | No | No | App functionality, Fraud prevention | `lib/deviceId.ts:10-31`; push token `hooks/useNotifications.ts:62-71` |
 
 ### Recipients (processors — **not** Play "sharing")
@@ -324,7 +333,7 @@ Apple wants certainty. Each of these was actively searched for and is absent fro
 - **Physical Address** — no address field.
 - **Browsing History** — §7.
 - **Search History** — §7.
-- **Diagnostics (crash / performance / other)** — no Sentry, Firebase, Crashlytics, Bugsnag, Amplitude, PostHog, Segment, Mixpanel, Datadog, `expo-insights`, or `expo-updates`. Only `console.log`/`console.error`.
+- **Diagnostics — PERFORMANCE data only** — `tracesSampleRate: 0`, so no transactions or spans are sent. ⚠️ Crash data and other diagnostic data ARE collected via Sentry; see the Diagnostics rows above. No Firebase, Crashlytics, Bugsnag, Amplitude, PostHog, Segment, Mixpanel, Datadog, `expo-insights` or `expo-updates`.
 - **Advertising identifiers (IDFA / GAID / IDFV)** — zero references repo-wide. §2.
 - **Gameplay Content** — not a game.
 - **Calendar data** — no calendar dependency.

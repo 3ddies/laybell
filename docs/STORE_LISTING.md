@@ -41,7 +41,7 @@ Updatable **without** a review, so this is your announcement slot. Change it
 freely for launches and features.
 
 ```
-New: sell beats straight from your profile, go live to your fans, and get tipped for the work. Built for independent artists, not algorithms.
+New: Films — post landscape video up to an hour and get your own shelf on Laybell TV. Plus sell beats from your profile, go live, and get tipped for the work.
 ```
 
 ### Keywords — max 100 characters total
@@ -51,7 +51,7 @@ Don't repeat words already in the name or subtitle — Apple indexes those
 separately, so repeating wastes the field.
 
 ```
-beats,producer,rapper,singer,songwriter,indie,studio,livestream,fans,tips,collab,podcast,audio
+beats,producer,rapper,singer,songwriter,indie,studio,livestream,fans,tips,collab,podcast,films
 ```
 
 ### Description — max 4000
@@ -70,6 +70,9 @@ Songs, videos, photo slideshows, and 24-hour stories. Attach another artist's tr
 GO LIVE
 Broadcast to your followers from your phone, or run a listening session from the studio with real vocal presets. Fans can tip you live, and everyone in the room sees it. Cast the whole thing to your TV.
 
+LAYBELL TV AND FILMS
+Turn your phone sideways for a full landscape feed built for watching, not scrolling. Films sit on their own shelf — full-length work up to an hour, from creators who make more than clips. Cast any of it to your TV.
+
 SELL YOUR WORK
 List beats and songs on your own storefront. Sell them outright, lease them, or give them away to fans who follow you. Buyers get the files instantly.
 
@@ -83,9 +86,11 @@ IN YOUR LANGUAGE
 The whole app runs in 10 languages, and you can translate any comment, caption or message with one tap.
 
 PREMIUM
-Laybell Premium is optional. It gets you custom ordering on your music, deeper follower insights, half the ads, a monthly spotlight boost, and access to Laybell-run communities.
+Laybell Premium is optional. It gets you an ad-free feed, a bigger share of every tip, custom ordering on your music, deeper follower insights, half the ads in Reels and Music, and a monthly spotlight boost.
 
-Auto-renewing subscription. $9.99/month, charged to your Apple ID at confirmation of purchase. Renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel in your Apple ID account settings.
+Laybell Premium+ adds Films — landscape videos up to an hour, with their own shelf on Laybell TV — plus no ads anywhere in the app, unlimited offline downloads, and badges that hold while you're subscribed.
+
+Auto-renewing subscriptions. Laybell Premium is $9.99/month and Laybell Premium+ is $19.99/month, charged to your Apple ID at confirmation of purchase. Either renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel in your Apple ID account settings.
 
 Terms of Use: https://laybell.app/terms.html
 Privacy Policy: https://laybell.app/privacy.html
@@ -186,9 +191,9 @@ shop listing, and some credits, and hand over working credentials.
 Laybell is a music-focused social platform for independent artists.
 
 DEMO ACCOUNT
-Username: [fill in]
+Username: laybellreview
 Password: [fill in]
-This account has posts, a shop listing, and a credit balance already loaded so every feature is reachable without making a purchase.
+This account has posts, a shop listing, and a credit balance already loaded, and both subscription tiers are active on it, so every feature — including Films and the ad-free experience — is reachable without making a purchase.
 
 USER-GENERATED CONTENT (Guideline 1.2)
 All four required protections are implemented:
@@ -204,7 +209,10 @@ PURCHASES (Guideline 3.1.1)
 All digital purchases use In-App Purchase. Users buy credits, and credits are spent on tips, shop purchases and promotion. Credits cannot be converted back to money and cannot be transferred between users. Creator earnings are a separate balance, paid out by bank transfer via Stripe, and are never redeemable as credits.
 
 SUBSCRIPTION
-Laybell Premium, $9.99/month auto-renewing. Terms and Privacy Policy links are in the app description and inside the app before purchase.
+Two auto-renewing tiers in one subscription group: Laybell Premium at $9.99/month and Laybell Premium+ at $19.99/month. Premium+ is the higher service level and adds Films (landscape video up to one hour), no advertising anywhere in the app, and unlimited offline downloads. Terms and Privacy Policy links are in the app description and inside the app before purchase.
+
+FILMS
+Films are landscape videos longer than nine minutes, available to Premium+ subscribers and shown on their own shelf inside Laybell TV (turn the device sideways, or use the TV entry beside the home logo). The demo account has Premium+ active, so this is reachable without a purchase.
 
 LIVESTREAMING
 The LIVE button sits next to the home logo. The demo account can start a broadcast. Streams are recorded only if the broadcaster opts in.
@@ -227,17 +235,27 @@ only if you're shipping iPad support.
 Up to 10 per size. The first two are the only ones most people see — they show
 in search results without anyone tapping through.
 
-Suggested order:
+Suggested order — the first two carry the whole listing, so they lead with what
+Laybell has that a generic social app does not:
 1. The feed, with real music posts — this is the product
-2. Going live, with tips visible
-3. A profile with the shop button
-4. The shop listing screen
-5. Studio / listening session
-6. Communities
-7. Wallet and earnings
+2. **Laybell TV in landscape, Films shelf visible** — the clearest "this is not
+   another short-video app" shot in the whole product
+3. Going live, with tips visible
+4. A profile with the shop button
+5. The shop listing screen
+6. Studio / listening session
+7. Communities
+8. Wallet and earnings
+
+Shoot #2 in landscape and let it fill the frame; a portrait screenshot of a
+landscape feature undersells it.
 
 Text overlays on screenshots consistently outperform bare captures. Keep them
 short enough to read at thumbnail size.
+
+**Shoot these on the demo account** (`laybellreview`): it carries both
+subscription tiers, so the ad-free feed and the Films shelf are both real there,
+and nothing in frame will be an upsell wall.
 
 ---
 
@@ -261,7 +279,7 @@ The App Store description above works, with two changes:
 
 1. Replace the Apple subscription block with:
    ```
-   Auto-renewing subscription. $9.99/month, charged to your Google Play account. Renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Google Play subscription settings.
+   Auto-renewing subscriptions. Laybell Premium is $9.99/month and Laybell Premium+ is $19.99/month, charged to your Google Play account. Either renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Google Play subscription settings.
    ```
 2. Play indexes the full description for search, so keywords belong in the prose
    here rather than in a separate field — Play has no keywords field.
