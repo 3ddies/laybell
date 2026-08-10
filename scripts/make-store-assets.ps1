@@ -2,8 +2,15 @@
 #   powershell -ExecutionPolicy Bypass -File scripts/make-store-assets.ps1
 #
 # Produces the two assets Play REQUIRES and will not publish without:
-#   store/play-icon-512.png         512x512, no alpha (Play rejects transparency)
-#   store/play-feature-graphic.png  1024x500
+#   store/play-icon-512.png         512x512, 32-bit PNG WITH alpha
+#   store/play-feature-graphic.png  1024x500, 24-bit PNG with NO alpha
+#
+# Those two rules are OPPOSITE, and this script had them swapped - it stripped
+# alpha off the icon believing Play rejects transparency, when it is the FEATURE
+# GRAPHIC that forbids it. Both files would have been refused at upload. System
+# .Drawing cannot choose a PNG colour type, so normalize-store-assets.mjs is run
+# at the end to force both into the shapes Google states:
+#   https://support.google.com/googleplay/android-developer/answer/9866151
 #
 # DESIGN RULE, same as the invite card: the mark on the gradient, no type.
 # Play prints the app name directly under the feature graphic, so a wordmark
@@ -59,8 +66,9 @@ function Build($W, $H, $bellHeight, $outFile) {
 Build 1024 500 260 (Join-Path $outDir 'play-feature-graphic.png')
 
 # Play icon: 512x512. Rebuilt from icon.png rather than the bare mark, because
-# the store icon must be the full app icon (background included) and must be
-# fully opaque -- Play rejects any alpha channel.
+# the store icon must be the full app icon, background included. It is drawn on
+# an opaque 24bpp surface so no transparent corners can appear; the normaliser
+# then re-adds a fully opaque alpha channel, since Play asks for 32-bit here.
 $src = [System.Drawing.Image]::FromFile((Join-Path $repo 'assets\icon.png'))
 $icon = New-Object System.Drawing.Bitmap(512, 512, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
 $ig = [System.Drawing.Graphics]::FromImage($icon)
@@ -70,4 +78,8 @@ $ig.DrawImage($src, 0, 0, 512, 512)
 $iconOut = Join-Path $outDir 'play-icon-512.png'
 $icon.Save($iconOut, [System.Drawing.Imaging.ImageFormat]::Png)
 $ig.Dispose(); $icon.Dispose(); $src.Dispose()
-Write-Output "wrote $iconOut (512 x 512, 24bpp - no alpha)"
+Write-Output "wrote $iconOut (512 x 512)"
+
+# System.Drawing always writes 32bpp ARGB and offers no way to pick a PNG colour
+# type, so neither file leaves this script in the format Play asks for. Fix both.
+node (Join-Path $repo 'scripts\normalize-store-assets.mjs')
