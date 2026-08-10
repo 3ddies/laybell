@@ -628,7 +628,7 @@ export default function PublicProfileScreen() {
         }
         {profile?.link ? (
           <TouchableOpacity style={styles.linkRow} onPress={() => linkGuard.open(profile.link!, { context: 'bio' })}>
-            <Ionicons name="link-outline" size={14} color={colors.primary} />
+            <Ionicons name="link-outline" size={14} color={colors.text} />
             <Text style={styles.linkText} numberOfLines={1}>{displayUrl(profile.link)}</Text>
           </TouchableOpacity>
         ) : null}
@@ -747,7 +747,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   bio: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
   bioEmpty: { color: colors.textTertiary, fontSize: 14, fontStyle: 'italic' },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  linkText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
+  // Written from the palette rather than as literal #fff: on the light theme a
+  // white link on off-white paper would vanish, so this reads white on dark and
+  // near-black on light — the same contrast either way. (Same reasoning as the
+  // Follow pill.)
+  linkText: { color: colors.text, fontSize: 13, fontWeight: '600' },
 
   // Green marketplace entry, full-width above Follow/Message.
   shopButtonRow: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },

@@ -743,7 +743,7 @@ export default function ProfileScreen() {
             }
             {badgeProfile?.link ? (
               <TouchableOpacity style={styles.linkRow} onPress={() => linkGuard.open(badgeProfile.link!, { context: 'bio' })}>
-                <Ionicons name="link-outline" size={14} color={colors.primary} />
+                <Ionicons name="link-outline" size={14} color={colors.text} />
                 <Text style={styles.linkText} numberOfLines={1}>{displayUrl(badgeProfile.link)}</Text>
               </TouchableOpacity>
             ) : null}
@@ -912,7 +912,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   bio: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
   bioEmpty: { color: colors.textTertiary, fontSize: 14, fontStyle: 'italic' },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  linkText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
+  // Palette, not literal #fff — white would disappear on the light theme's
+  // off-white paper. Mirrors app/profile/[id].tsx.
+  linkText: { color: colors.text, fontSize: 13, fontWeight: '600' },
 
   actionButtons: { flexDirection: 'row', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: SPACING.sm },
   editButton: {
