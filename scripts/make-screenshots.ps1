@@ -3,16 +3,23 @@
 #
 # IN   store/screenshots/raw/       01*.png, 02*.png ... (any size; sorted by name)
 # OUT  store/screenshots/appstore/  1320 x 2868   (Apple 6.9", covers every iPhone)
-#      store/screenshots/play/      1080 x 2160   (Play; see the 2x rule below)
+#      store/screenshots/play/      1080 x 1920   (Play, exactly 9:16)
 #
 # A LANDSCAPE source is written at landscape size instead - 2868 x 1320 for
 # Apple, 1920 x 1080 for Play - keeping the numbering, so each folder can just
 # be uploaded in filename order.
 #
-# WHY TWO SIZES. Apple's 6.9" frame is 1320x2868, a ratio of 2.17:1. Google Play
-# refuses anything whose "maximum dimension is more than twice as long as the
-# minimum dimension", so the Apple file is INVALID on Play by 8%. 1080x2160 is
-# exactly 2.00:1, which clears it with nothing to spare and needs no cropping.
+# WHY TWO SIZES. Apple's 6.9" frame is 1320x2868, a ratio of 2.17:1, and Play
+# will not take it. Play's own upload panel asks for "16:9 or 9:16 aspect ratio"
+# - so 1080x1920 exactly, NOT the 1080x2160 this script produced at first. That
+# was 2.00:1, which satisfies Play's documented "max dimension no more than
+# twice the min" rule but is not 9:16, and the console states the stricter one.
+# 1080x1920 passes both readings, so it is the safe target.
+#
+# The phone capture sits smaller inside a 9:16 frame than a 2:1 one - a modern
+# handset is about 9:19.5, so fitting it whole leaves gradient down each side.
+# That is deliberate: cropping to fill would cut the very UI the screenshot
+# exists to show.
 #
 # NO ALPHA, EITHER STORE. Apple: "No alpha channels or transparencies permitted."
 # Play: "JPEG or 24-bit PNG (no alpha)". System.Drawing always writes 32bpp ARGB,
@@ -183,7 +190,7 @@ foreach ($f in $raws) {
     Build-Frame $f.FullName $caption 1920 1080 (Join-Path $outPlay "$n.png")
   } else {
     Build-Frame $f.FullName $caption 1320 2868 (Join-Path $outApple "$n.png")
-    Build-Frame $f.FullName $caption 1080 2160 (Join-Path $outPlay "$n.png")
+    Build-Frame $f.FullName $caption 1080 1920 (Join-Path $outPlay "$n.png")
   }
 
   $tag = if ($isLandscape) { '   [landscape frame]' } else { '' }

@@ -1,0 +1,86 @@
+GOOGLE PLAY — DEFAULT STORE LISTING (en-US)
+Copy each block below into the matching field. Source: docs/STORE_LISTING.md §5.
+
+
+═══════════════════════════════════════════════════════════════════════
+APP NAME  (max 30)
+═══════════════════════════════════════════════════════════════════════
+Laybell: Music & Creators
+
+
+═══════════════════════════════════════════════════════════════════════
+SHORT DESCRIPTION  (max 80)
+═══════════════════════════════════════════════════════════════════════
+Post your music, go live, sell beats, and get paid by the fans who listen.
+
+
+═══════════════════════════════════════════════════════════════════════
+FULL DESCRIPTION  (max 4000)
+═══════════════════════════════════════════════════════════════════════
+Laybell is where independent artists build a real audience.
+
+Post your music. Go live. Sell your beats. Get paid by the people who actually listen.
+
+MADE FOR MUSIC, NOT REPURPOSED FOR IT
+Upload songs, podcasts and audiobooks with real cover art and credits. Tag the producers, writers and features who worked on it — they get credited on the track, with a link back to their profile.
+
+SHARE HOWEVER YOU WANT
+Songs, videos, photo slideshows, and 24-hour stories. Attach another artist's track to your video and they get credited automatically. Shoot vertical or go full cinematic landscape — rotate your phone and the whole feed follows.
+
+GO LIVE
+Broadcast to your followers from your phone, or run a listening session from the studio with real vocal presets. Fans can tip you live, and everyone in the room sees it. Cast the whole thing to your TV.
+
+LAYBELL TV AND FILMS
+Turn your phone sideways for a full landscape feed built for watching, not scrolling. Films sit on their own shelf — full-length work up to an hour, from creators who make more than clips. Cast any of it to your TV.
+
+SELL YOUR WORK
+List beats and songs on your own storefront. Sell them outright, lease them, or give them away to fans who follow you. Buyers get the files instantly.
+
+GET PAID
+Fans can tip you directly. Your earnings, your shop sales and your payout details all live in one wallet.
+
+BUILD SOMETHING TOGETHER
+Genre communities with their own tags and moderators. Public playlists that credit the curator. Group chats. Friends are mutual follows, so your private posts stay with the people you actually know.
+
+IN YOUR LANGUAGE
+The whole app runs in 10 languages, and you can translate any comment, caption or message with one tap.
+
+PREMIUM
+Laybell Premium is optional. It gets you an ad-free feed, a bigger share of every tip, custom ordering on your music, deeper follower insights, half the ads in Reels and Music, and a monthly spotlight boost.
+
+Laybell Premium+ adds Films — landscape videos up to an hour, with their own shelf on Laybell TV — plus no ads anywhere in the app, unlimited offline downloads, and badges that hold while you're subscribed.
+
+Auto-renewing subscriptions. Laybell Premium is $9.99/month and Laybell Premium+ is $19.99/month, charged to your Google Play account. Either renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Google Play subscription settings.
+
+Terms of Use: https://laybell.app/terms.html
+Privacy Policy: https://laybell.app/privacy.html
+
+Laybell is built by one person who thinks independent artists deserve better tools than a repost button.
+
+
+═══════════════════════════════════════════════════════════════════════
+GRAPHICS — the files to upload
+═══════════════════════════════════════════════════════════════════════
+App icon (512x512)        store\play-icon-512.png
+Feature graphic (1024x500) store\play-feature-graphic.png
+Phone screenshots (8)      store\screenshots\play\01.png … 08.png
+
+Upload the screenshots in filename order — that is already the intended
+order, and Play shows them in the order you add them.
+
+Video: leave blank. It must be a public YouTube URL with ads turned off.
+
+
+═══════════════════════════════════════════════════════════════════════
+NOTES
+═══════════════════════════════════════════════════════════════════════
+· The subscription block above is not optional and its wording differs from
+  the App Store's — it must name GOOGLE PLAY as the billing account and point
+  at Play's subscription settings, not Apple's. Keep the prices accurate.
+
+· Play has NO keywords field. It indexes the full description for search, so
+  the search terms have to live in this prose. Do not strip it down.
+
+· The app name here is "Laybell: Music & Creators", not bare "Laybell". The
+  name is indexed, and the two extra words are the only place the listing can
+  say what the app IS to someone who has never heard of it.
