@@ -47,9 +47,25 @@ inbox waits, and one test that needs Android hardware.**
 
 ### 📋 WHAT THE OWNER STILL HAS TO DO — in this order
 
-1. **FCM V1 credentials into EAS** (~10 min). Firebase console → service-account key → `eas credentials`. **Android push notifications do not work until this exists.**
-2. **Store assets, both stores** (the long one). Screenshots + a seeded demo account; listing copy is already written in `docs/STORE_LISTING.md`. Play also needs a feature graphic.
-3. **iOS privacy nutrition label** — including **Diagnostics** (Crash Data + Other Diagnostic Data, NOT linked to identity, NOT used for tracking, purpose App Functionality). Those answers match the shipped Sentry config.
+1. ~~**FCM V1 credentials into EAS**~~ ✅ **DONE 2026-08-10.** Firebase was added to the
+   EXISTING `laybell` Google Cloud project rather than a second one, so the Play service
+   account and FCM now live together. Google Analytics deliberately left OFF: the app
+   ships no Firebase SDK, so it would collect nothing — but leaving it on means analytics
+   would start silently the day anyone adds one, quietly invalidating the privacy label.
+   Blaze plan is inherited from the project's existing billing and costs nothing; FCM is
+   free on every tier and it is the only Firebase product this app touches.
+2. **Store assets, both stores** (the long one). Screenshots + a seeded demo account;
+   listing copy is in `docs/STORE_LISTING.md`, §4 now carries the shot order and the
+   caption overlay for each. ✅ **The two REQUIRED Play graphics are already built** —
+   `store/play-feature-graphic.png` (1024×500) and `store/play-icon-512.png` (512×512,
+   no alpha); regenerate with `scripts/make-store-assets.ps1`. Screenshots are the only
+   part left, and they shoot on `laybellreview`, which now holds BOTH subscription tiers
+   so no upsell wall or ad appears in frame.
+3. **iOS privacy nutrition label** — including **Diagnostics** (Crash Data + Other
+   Diagnostic Data, NOT linked to identity, NOT used for tracking, purpose App
+   Functionality). ⚠️ Answer from `docs/STORE_PRIVACY_LABELS.md`, **not** from memory:
+   that file said "no crash SDK" until 2026-08-10 because it predated Sentry, and
+   transcribing it would have filed a label contradicting the app's own Privacy Policy.
 4. **Queue the iOS production build** → TestFlight. ⚠️ **Build credits are exhausted — every build is billed.** Verify assets locally before spending.
 5. **Submit for review.** Two things that are easy to forget: the IAPs and the subscription group must be **attached to that version's submission**, and reviewers need the `laybellreview` demo credentials.
 
