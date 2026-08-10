@@ -154,11 +154,75 @@ export async function signInWithApple(): Promise<SocialAuthResult> {
     // Apple shares the name ONLY on the very first authorization — stash it in
     // auth metadata now so the starter profile below can use it.
     const name = [cred.fullName?.givenName, cred.fullName?.familyName].filter(Boolean).join(' ').trim();
-    if (name) await supabase.auth.updateUser({ data: { full_name: name } }).catch(() => {});
+    if (name) {
+      await supabase.auth.updateUser({ data: { full_name: name } }).catch(() => {});
+      // …and rename the starter profile the server just made. Apple's identity
+      // TOKEN carries no name — only this credential does — so handle_new_user()
+      // has already run without it and fallen back to a placeholder. Google is
+      // unaffected: its token includes name/given_name, so the trigger gets it
+      // right the first time. Without this line the reported bug survives the
+      // server fix: "Josh Rodney" would still land as artist/relay-gibberish.
+      await adoptProviderName(name).catch(() => {});
+    }
     return {};
   } catch (e: any) {
     if (e?.code === 'ERR_REQUEST_CANCELED') return { cancelled: true };
     return { error: e?.message ?? 'Sign-in failed' };
+  }
+}
+
+// Name → username. Folds common accents to ASCII first, so "José Muñoz" becomes
+// josemunoz rather than josmuoz. Mirrors public.slug_from_name() in SQL.
+function slugify(input?: string | null): string {
+  if (!input) return '';
+  // NFD splits an accented letter into its base plus a combining mark, and
+  // the [^a-z0-9_] filter then drops the mark — so "Jose Munoz" survives
+  // accents intact without this file needing to contain any itself.
+  return input.normalize('NFD').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+}
+
+/**
+ * Rename a PLACEHOLDER starter username once the provider finally tells us who
+ * the person is (Apple, first authorization only).
+ *
+ * Deliberately narrow, because renaming someone's handle is not a thing to get
+ * wrong. It acts only when ALL of these hold:
+ *   • the account has not finished onboarding — so nobody has seen or shared
+ *     this username yet, and no link to it exists;
+ *   • the current username is one WE invented — `artist`, `artistN`, or the
+ *     sanitized email local part (the pre-fix derivation, which for Apple relay
+ *     addresses is the gibberish this exists to replace);
+ *   • the name actually yields something different.
+ * A user who picked their own handle, or who has onboarded, is never touched.
+ */
+async function adoptProviderName(fullName: string): Promise<void> {
+  const wanted = slugify(fullName);
+  if (wanted.length < 3) return;
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { data: prof } = await supabase
+    .from('profiles').select('username, display_name, onboarded').eq('id', user.id).maybeSingle();
+  if (!prof || prof.onboarded) return;
+
+  const current = String((prof as any).username ?? '');
+  const emailSlug = slugify(user.email?.split('@')[0] ?? '');
+  const looksGenerated =
+    /^artist\d*$/.test(current) ||
+    (!!emailSlug && (current === emailSlug || current.startsWith(emailSlug)));
+  if (!looksGenerated || current === wanted) return;
+
+  const base = wanted.length < 5 ? (wanted + 'artist').slice(0, 20) : wanted;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const username = attempt === 0 ? base
+      : attempt <= 3 ? `${base}${attempt}`
+      : `${base}${Math.floor(100 + Math.random() * 9900)}`;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ username, display_name: fullName.slice(0, 40) })
+      .eq('id', user.id);
+    if (!error) return;
+    if (!/duplicate|unique/i.test(error.message)) return; // not a collision — stop
   }
 }
 
@@ -177,15 +241,31 @@ export async function ensureProfileForSession(user: User): Promise<void> {
     if (existing?.username) return;
 
     const meta: any = user.user_metadata ?? {};
-    const displayName = String(
-      meta.full_name || meta.name || meta.display_name || user.email?.split('@')[0] || 'Artist',
-    ).slice(0, 40);
-    let base = String(meta.username || user.email?.split('@')[0] || 'artist')
-      .toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24);
-    if (base.length < 5) base = (base + 'artist').slice(0, 24);
+    const fullName = String(
+      meta.full_name || meta.name || meta.display_name ||
+      [meta.given_name, meta.family_name].filter(Boolean).join(' ') || '',
+    ).trim();
+    const displayName = (fullName || user.email?.split('@')[0] || 'Artist').slice(0, 40);
 
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const username = attempt === 0 ? base : `${base}${Math.floor(1000 + Math.random() * 9000)}`.slice(0, 30);
+    // The username must look like the PERSON. Apple's Hide My Email hands out
+    // addresses like shyrtei78@privaterelay.appleid.com, so deriving from the
+    // email local part turned "Josh Rodney" into shyrtei78. Name first; the
+    // local part only when it isn't a relay token. Mirrors handle_new_user()
+    // in supabase/sql/social_username_from_name.sql — keep the two in step.
+    const isRelay = /@privaterelay\.appleid\.com$/i.test(user.email ?? '');
+    const emailLocal = isRelay ? '' : (user.email?.split('@')[0] ?? '');
+    let base = slugify(meta.username) || slugify(fullName) || slugify(emailLocal) || 'artist';
+    if (base.length < 5) base = (base + 'artist').slice(0, 20);
+    base = base.slice(0, 20); // leave room for a suffix inside the 24-char cap
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      // Clean name first, then small numbers (joshrodney2) — a human-looking
+      // name with a 2 after it still reads as the person. Random only after.
+      const username = attempt === 0
+        ? base
+        : attempt <= 3
+          ? `${base}${attempt}`
+          : `${base}${Math.floor(100 + Math.random() * 9900)}`;
       const { error } = existing
         ? await supabase.from('profiles').update({ username, display_name: displayName }).eq('id', user.id)
         : await supabase.from('profiles').insert({ id: user.id, username, display_name: displayName, onboarded: false });

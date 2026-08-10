@@ -331,6 +331,14 @@ export default function SettingsScreen() {
       subtitle: t('account.badgesSub'),
       onPress: () => router.push('/badges'),
     },
+    // Sits with Badges rather than the paid Promotion Tools: inviting people is
+    // how the Advocate badge is earned, and it costs nothing.
+    {
+      icon: 'person-add-outline',
+      label: t('account.invite'),
+      subtitle: t('account.inviteSub'),
+      onPress: () => router.push('/invite'),
+    },
     {
       icon: 'albums-outline',
       label: t('account.playlists'),

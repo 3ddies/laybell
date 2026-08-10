@@ -368,6 +368,10 @@ function AppContent() {
           // slid up as a sheet instead of pushing in as a page. Exactly the
           // trap described above for the chat transcripts.
           'films',
+          // Invite friends (the App-sharing badge). Same reason as the rest:
+          // it renders a SwipeBackPager and is opened from Settings, itself a
+          // transparentModal.
+          'invite',
           // The chat transcripts. They were plain pushes, which meant they
           // INHERITED modal presentation from whichever transparentModal opened
           // them (messages/index, or notifications) and so carried iOS's sheet
