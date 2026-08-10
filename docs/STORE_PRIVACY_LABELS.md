@@ -290,7 +290,7 @@ Play uses a different taxonomy and asks two extra questions. Both are answered b
 | Messages | Emails / SMS | **No** | — | — | — | — | App never reads SMS or mail |
 | Photos and videos | Photos, Videos | Yes | No | No | No | App functionality | `app/(tabs)/post.tsx`; `lib/upload.ts`; `lib/streamUpload.ts` |
 | Audio files | Music files, Other audio | Yes | No | No | No | App functionality | Audio posts; `lib/live.ts`, `lib/studio.ts` |
-| Files and docs | — | **No** | — | — | — | — | `expo-document-picker` present but used for media import only |
+| Files and docs | Files and docs | **Yes** | No | No | No | App functionality | ⚠️ **Corrected 2026-08-10.** A shop deliverable is picked with `type: '*/*'` — arbitrary files, not media — then uploaded and delivered to buyers (`app/shop/new-listing.tsx:102-106`). Audio-only pickers elsewhere (`app/(tabs)/post.tsx:751`, `app/ad-manager/create.tsx:319`) are covered by *Audio files* |
 | Calendar | — | **No** | — | — | — | — | No calendar dependency |
 | Contacts | Contacts | **Yes** | No | **Yes** | **Yes — processed ephemerally** | App functionality | §5; `supabase/sql/contacts_discovery.sql:49-64` |
 | App activity | App interactions | Yes | No | No | No | App functionality, Analytics, Personalization | `lib/viewTracker.ts:59-89`; `lib/listenMeter.ts:26-34` |
@@ -372,6 +372,19 @@ Also in `app.json`: `ITSAppUsesNonExemptEncryption: false` (`:25`), `usesAppleSi
 ## ⚠️ UNCERTAIN — a human must verify
 
 These could not be settled from source alone. Do not fill in the store forms on these rows without checking.
+
+> ### ✅ Settled on 2026-08-10 — items 5, 7, 8, 9 and 13 below are DONE
+>
+> | # | Was uncertain | Answer, and how it was established |
+> |---|---|---|
+> | **5** | iOS might hand over precise location | **Already fixed.** `NSLocationDefaultAccuracyReduced: true` is in `app.json:27`, so the OS never supplies a precise fix. **Coarse is unassailable** — but it only takes effect in a *native build*, so the pending production build is what makes it true on shipped devices. |
+> | **7** | Which translation provider is live | **Google.** `supabase secrets list` publishes a SHA-256 of each value, and the `TRANSLATE_PROVIDER` digest is exactly `sha256("google")`. User-typed text goes to **Google Cloud Translation**, *not* the public LibreTranslate instance the code falls back to. Name Google in the Privacy Policy. |
+> | **8** | Whether Safe Browsing is on | **Off.** `LINK_CHECK_PROVIDER` is not set in production at all, so `check-link` uses its `none` default. No URL leaves the app to Google. **Web browsing stays No.** |
+> | **9** | 13-month retention was aspirational | **Enforced now.** There was no pruning job — `access_log` would have grown forever, making the stated period false the day the first row aged out. `supabase/sql/access_log_retention.sql` adds `prune_access_log()` on a monthly cron, skipping rows tied to a post or profile under `legal_hold` so a hold still beats the schedule. Verified: job active, runs clean, `anon`/`authenticated` cannot call it. |
+> | **13** | Whether any flow reads arbitrary files | **It does — answer Play "Files and docs = YES".** The shop deliverable picker uses `type: '*/*'` (`app/shop/new-listing.tsx:104`), so a seller can upload a ZIP, PDF or project file, which Laybell stores and delivers. The table above said No; **that would have been a false declaration.** |
+>
+> Still genuinely open below: **1, 2, 3, 4** (judgment calls for counsel), **6** (RevenueCat dashboard),
+> **10, 11** (Supabase + Cloudflare consoles), **12** (Giphy key hygiene, not a labelling question).
 
 1. **Is DOB/age "Sensitive Info" under Apple's definition?** Apple's Sensitive Info list is racial/ethnic origin,
    sexual orientation, pregnancy, disability, religious belief, trade union membership, political opinion,
