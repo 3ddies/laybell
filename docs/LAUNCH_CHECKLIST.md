@@ -544,13 +544,17 @@ real cost of leaving it.
      makes TikTok's cards feel alive. Cloudflare Stream can expose per-video MP4 downloads,
      so this is real work rather than a tag.
   2. **No blue "View" button.** That is the Universal Link affordance, confirmed by TikTok's
-     AASA covering `/@*`, `/v/*` and `/share/video/*`. Laybell cannot get it as things stand:
-     `open.laybell.app` 404s `/.well-known/apple-app-site-association` because Supabase can't
-     serve arbitrary paths, and `laybell.app` does serve one but with a literal `TEAMID`
-     placeholder, so its universal links are inert regardless. Needs the real Team ID **and**
-     share links served from a host that can do both the AASA and per-post OG — i.e. moving
-     `laybell.app` off GitHub Pages to Cloudflare Pages / Vercel / Netlify. That migration
-     also fixes the `octet-stream` item directly below, so do them together.
+     AASA covering `/@*`, `/v/*` and `/share/video/*`.
+     ✅ **Half of this is now fixed — re-verified live 2026-08-10.** `laybell.app` serves a
+     real AASA carrying the actual Team ID (`7X9PRLSGZC.com.laybell.app`); the `TEAMID`
+     placeholder this section used to describe is gone, so the links are no longer inert by
+     construction. What remains is that SHARE links point at `open.laybell.app` (the
+     share-page Edge Function, for per-post OG), and Supabase can't serve
+     `/.well-known/apple-app-site-association` on that host — so a shared post still won't
+     carry the affordance even though the domain itself is now set up correctly.
+     Fixing the rest means serving share links from a host that does BOTH the AASA and
+     per-post OG — i.e. moving off GitHub Pages to Cloudflare Pages / Vercel / Netlify. That
+     migration also fixes the `octet-stream` item below, so do them together.
 
   Already fixed and not to be re-litigated: the shared `*.supabase.co` domain force-serving
   `text/plain` (hence the custom domain); the user-agent split that redirected Apple to
@@ -559,9 +563,15 @@ real cost of leaving it.
 
 - **`apple-app-site-association` is served as `application/octet-stream`.** Apple asks for
   `application/json`; GitHub Pages cannot set headers and ignores `web/_headers`. Measured on
-  the live domain, not predicted. Android is unaffected. If iOS universal links fail once a
-  build exists, this is the first suspect and Cloudflare Pages is the fix — which would also
-  give free email routing.
+  the live domain, not predicted — **still true on 2026-08-10.** Android is unaffected: its
+  `assetlinks.json` IS served as `application/json`, verified live, with the real app-signing
+  SHA-256. If iOS universal links fail once a build exists, this is the first suspect and
+  Cloudflare Pages is the fix — which would also give free email routing.
+- ✅ **The Stripe payout return page is live** (verified 2026-08-10). `stripe-connect` sends
+  creators to `https://laybell.app/payouts`, which used to 404 — the site's error page at the
+  exact moment someone finished handing over bank details. `web/payouts.html` now answers
+  there (GitHub Pages resolves the extensionless path), and `open.html` carries the real App
+  Store ID `6795675871`.
 - **Icon-only buttons — largely closed 2026-07-30.** The "~76 unlabelled" figure was
   misleading: **538** of the codemod's skips are touchables with visible text, which
   VoiceOver already reads and where a label would *override* the words on screen. The real
