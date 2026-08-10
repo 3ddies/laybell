@@ -60,3 +60,9 @@ scripts/.schema-audit-map.json
 
 # Generated store graphics are committed (Play requires exact sizes), but the
 # scratch previews are not.
+
+# Raw phone captures for store screenshots - personal, large, and regenerable
+# into store/screenshots/{appstore,play} by scripts/make-screenshots.ps1.
+store/screenshots/raw/*.png
+store/screenshots/raw/*.jpg
+store/screenshots/raw/*.jpeg

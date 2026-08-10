@@ -57,3 +57,19 @@ function normalize(rel, colorType, label) {
 console.log('Normalising Play graphics to Google\'s stated formats:');
 normalize('store/play-feature-graphic.png', 2, '24-bit RGB, no alpha');
 normalize('store/play-icon-512.png', 6, '32-bit RGBA, with alpha');
+
+// Screenshots: BOTH stores refuse transparency, so there is no 32-bit case here.
+//   Apple — "No alpha channels or transparencies permitted."
+//   Play  — "JPEG or 24-bit PNG (no alpha)"
+// make-screenshots.ps1 draws through System.Drawing, which can only write 32bpp
+// ARGB, so every frame it produces would be rejected without this pass.
+const shotDirs = ['store/screenshots/appstore', 'store/screenshots/play', 'store/screenshots/landscape'];
+let shots = 0;
+for (const dir of shotDirs) {
+  const abs = path.join(ROOT, dir);
+  if (!fs.existsSync(abs)) continue;
+  for (const f of fs.readdirSync(abs).filter((n) => n.toLowerCase().endsWith('.png')).sort()) {
+    if (normalize(path.join(dir, f).replace(/\\/g, '/'), 2, '24-bit RGB, no alpha')) shots++;
+  }
+}
+if (shots) console.log(`  ${shots} screenshot frame(s) flattened.`);
