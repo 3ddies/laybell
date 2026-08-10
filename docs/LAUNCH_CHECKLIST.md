@@ -18,7 +18,7 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-08-09 (end of session)
+## 0.0 ✅ THE CURRENT STATE — updated 2026-08-10 (end of session)
 
 **One-line status: nothing is blocking. Everything left is store paperwork, three
 inbox waits, and one test that needs Android hardware.**
@@ -78,6 +78,15 @@ inbox waits, and one test that needs Android hardware.**
 - **Do not automate Stripe's hosted Express form.** It asks for SSN and bank details on
   the owner's real account. Laybell's half is proven; the first real creator exercises
   Stripe's.
+- **Watch one encoder / horizontal live end-to-end before launch** (~10 min, needs a
+  second device or a browser as the viewer). Fixed 2026-08-10 in `0325f3e`: since
+  2026-07-28 every RTMP-ingest broadcast — Studio encoder **and** phone-horizontal, i.e.
+  everything bound for Laybell TV — was created with Cloudflare recording `off`, and
+  Cloudflare serves live HLS *out of* the recording pipeline, so no manifest existed and
+  **no viewer could watch**. Vertical WHIP lives never touch HLS, which is why the one
+  path tested daily was the one path unaffected. The config is restored to what provably
+  worked in July and the recordings are now purged when a broadcast ends, but only a real
+  stream proves a viewer can actually watch one.
 
 ### 🚀 LAUNCH-DAY SEQUENCE — only when the owner says "we are going live"
 
