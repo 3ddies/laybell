@@ -6,13 +6,92 @@ Play Store." Written 2026-07-28.
 Every item is either **[CODE]** (work in this repo), **[OWNER]** (only you can do it —
 console access, money, identity), or **[LEGAL]** (needs a professional or a filing).
 
-> **Sections 1–4 below were written on 2026-07-28 and are now partly historical.**
-> Read §0.1 first — it is the current state. Sections 5–7 are legal research and remain
-> accurate; treat them as reference, not as a to-do list.
+> ## ⚠️ READ §0.0 AND NOTHING ELSE FIRST
+>
+> **§0.0 is the only current section.** It is rewritten at the end of every working
+> session and supersedes everything below it.
+>
+> Every other section is HISTORY or REFERENCE, kept because the reasoning in them is
+> still worth having — **but items in §0.1–§0.2b may claim to be "next" when they were
+> finished days ago.** Never action anything outside §0.0 without checking §0.0 first.
+> Sections 5–7 (legal research) remain accurate as reference.
 
 ---
 
-## 0.1 WHERE THINGS ACTUALLY STAND — 2026-07-29
+## 0.0 ✅ THE CURRENT STATE — updated 2026-08-09 (end of session)
+
+**One-line status: nothing is blocking. Everything left is store paperwork, three
+inbox waits, and one test that needs Android hardware.**
+
+### What is DONE and verified — do not re-check these
+
+| Area | State |
+|---|---|
+| **Money code** | 💰 **THE MONEY TEST IS COMPLETE** (2026-08-09). All 12 payment paths executed against production, 7 guards attacked and held, `ledger_verify()` = 0 rows. **Full evidence: `docs/MONEY_TEST_2026-08-09.md`** — read that instead of re-testing. |
+| **Database schema** | **557/557 declared objects present** (audited by parsing all 131 SQL files). Three never-applied migrations found and fixed that day. **No pending SQL. Do not tell the owner to "run X.sql" without re-auditing first.** |
+| **Edge functions** | All 23 deployed from reviewed source 2026-08-09, every `verify_jwt` correct. A drift audit that day found the **RevenueCat webhook two days stale — Premium+ buyers would have been granted the $9.99 tier** — plus `parent-consent` never deployed. Both fixed. |
+| **Scheduled jobs** | 4 cron jobs, all healthy. The hourly `sweep-video-staging` was failing ~60× (Supabase now forbids direct deletes from `storage.objects`); replaced by the `staging-sweep` Edge Function invoked at app boot. |
+| **Apple** | Org conversion COMPLETE (Laybell LLC). **Paid Applications agreement ACTIVE** (Aug 5) — the gate that blocked everything. Bank + W-9 active. All 7 IAPs created with full metadata + review screenshots. Premium+ ranked Level 1 above Premium. Sandbox tester exists. |
+| **Google Play** | App live in **internal testing** (build 4 / 1.0.0, carries the RevenueCat key). All 7 products created and active. License testers set. App-signing SHA-256 → `assetlinks.json`; SHA-1 → Google OAuth Android client. |
+| **RevenueCat** | Both stores wired. Entitlements `premium` (both stores' monthly) and `premium_plus` (both stores' plus). Credits offering + `plus_monthly` package populated. |
+| **Store identifiers** | All three set — `node scripts/set-store-ids.mjs --check` passes clean. |
+| **Stripe** | Platform account **activated**, Connect configured (Marketplace/Express), identity verified, **test** key set. A real Express connected account exists on the owner's profile. |
+
+### ⏳ WAITING ON SOMEONE ELSE — no action, just watch the inbox
+
+| What | When | What to do when it lands |
+|---|---|---|
+| **ASCAP licence PDF** | **due ~2026-08-11** | If not there by Tue: **phone (800) 505-4052. NEVER resubmit** — re-entry is duplicate-blocked and risks a double charge. |
+| **Apple Small Business Program approval** | submitted 2026-08-09 | Tell Claude → it flips the three fee rates in §0.3 the same hour. Until then Laybell earns **nothing** on shop sales and Premium tips. |
+| **Stripe live-mode review** | 2–3 days from 2026-08-09 | Only matters at launch (live key + funded balance). |
+
+### 📋 WHAT THE OWNER STILL HAS TO DO — in this order
+
+1. **FCM V1 credentials into EAS** (~10 min). Firebase console → service-account key → `eas credentials`. **Android push notifications do not work until this exists.**
+2. **Store assets, both stores** (the long one). Screenshots + a seeded demo account; listing copy is already written in `docs/STORE_LISTING.md`. Play also needs a feature graphic.
+3. **iOS privacy nutrition label** — including **Diagnostics** (Crash Data + Other Diagnostic Data, NOT linked to identity, NOT used for tracking, purpose App Functionality). Those answers match the shipped Sentry config.
+4. **Queue the iOS production build** → TestFlight. ⚠️ **Build credits are exhausted — every build is billed.** Verify assets locally before spending.
+5. **Submit for review.** Two things that are easy to forget: the IAPs and the subscription group must be **attached to that version's submission**, and reviewers need the `laybellreview` demo credentials.
+
+### 🚧 GATES — conditions that must be met before a specific action
+
+- **Android must NOT be promoted past internal testing** until someone runs a real
+  purchase on Android hardware (~15 min). The owner has no Android device as of
+  2026-08-09. Server-side money code is store-agnostic and fully tested; what is
+  unproven is the RevenueCat Play SDK + Play Billing client layer.
+- **Do not automate Stripe's hosted Express form.** It asks for SSN and bank details on
+  the owner's real account. Laybell's half is proven; the first real creator exercises
+  Stripe's.
+
+### 🚀 LAUNCH-DAY SEQUENCE — only when the owner says "we are going live"
+
+1. **Fresh-start reset** — wipe test accounts/posts, keep `laybellreview`, sweep Storage
+   + Cloudflare separately, re-seed. Plan: `docs/FRESH_START_RESET.md`. This also clears
+   the money-test artifacts and 11 expired ad campaigns.
+2. **Legal rollout** manual steps — `docs/LEGAL_ROLLOUT.md`.
+3. **Email**: custom SMTP + SPF/DKIM/DMARC — `docs/EMAIL_SETUP.md`.
+4. **Stripe live**: swap `STRIPE_SECRET_KEY` to `sk_live_…`, fund the Stripe balance,
+   then flip `payoutsAvailable()`. Credits money arrives in a *bank* account, not
+   Stripe, so transfers fail until it is topped up.
+5. Re-check universal links on a device once a store build exists.
+
+### 🧭 STANDING RULES for whoever picks this up
+
+- **Audit before believing.** Two audits on 2026-08-09 found **six** real problems that
+  no test caught, because everything *looked* fine. Re-run both near launch:
+  (a) parse `supabase/sql/*.sql` for declared objects and check them against prod;
+  (b) compare `supabase functions list` against the repo, then
+  `npx supabase functions deploy` with no args to end drift permanently.
+- **Always review money code before it runs.** Two adversarial reviews found 11 money
+  bugs, 6 of which could mint money.
+- **No OTA on this project** (no `expo-updates`). A production build's JavaScript is
+  frozen at build time — every JS fix needs a rebuild.
+- **Never rewrite files with PowerShell text cmdlets** — it corrupts UTF-8 into mojibake.
+  Use the Edit tool or Node.
+
+---
+
+## 0.1 WHERE THINGS STOOD — 2026-07-29 *(HISTORICAL — superseded by §0.0)*
 
 ### Done and verified against the live database
 
@@ -45,7 +124,7 @@ caught by review, not by testing. Assume there are more.
 
 ---
 
-## 0.2 NEXT, IN ORDER
+## 0.2 NEXT, IN ORDER *(HISTORICAL — every numbered item here is DONE; see §0.0)*
 
 ### Done in code, 2026-07-29 (second pass) — needs only the rebuild / a deploy
 
@@ -302,7 +381,7 @@ and means the first real users' crashes are invisible.
 
 ---
 
-## 0.2b 📋 THE LIST — what's left, Android + iOS in one lane
+## 0.2b 📋 THE LIST *(HISTORICAL as of 2026-08-09 — the money test, both store setups and the Android rail are all DONE. Kept for the reasoning; the live list is §0.0)*
 
 **Updated 2026-08-01.** Ordered so the two stores advance together and the money code is
 tested ONCE, with both rails live (owner's call — one sitting, not two).
@@ -425,7 +504,11 @@ checklist that unlocks one event.
 
 ---
 
-## 0.3 REVERSE THESE AFTER SMALL BUSINESS APPROVAL
+## 0.3 REVERSE THESE AFTER SMALL BUSINESS APPROVAL ⚠️ STILL PENDING — LIVE ACTION
+
+**Status 2026-08-09: enrolment SUBMITTED, awaiting Apple's approval email.** This is the
+one §0.x section outside §0.0 that still contains work to do. The moment approval lands,
+make all three changes together (two are SQL, one is a client constant) and redeploy.
 
 At Apple 15% the break-even rates net 15% each, which is more than either surface needs —
 and the surplus is better spent on creators than banked.
@@ -441,7 +524,7 @@ real cost of leaving it.
 
 ---
 
-## 0.4 KNOWN, ACCEPTED, NOT BLOCKING
+## 0.4 KNOWN, ACCEPTED, NOT BLOCKING *(still accurate — read before "fixing" any of it)*
 
 - **Perfect the custom Laybell link appearance.** [OWNER-REQUESTED, 2026-07-29] Shared links
   work — they unfurl a card with the post's own thumbnail, the caption and the author
