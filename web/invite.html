@@ -35,23 +35,23 @@
 <meta property="og:title" content="Download Laybell">
 <meta name="twitter:title" content="Download Laybell">
 
-<!-- Apple ignores this; WhatsApp, Discord and Slack show it. Worth writing. -->
-<meta property="og:description" content="The newest social media. Music and social, together — share songs, videos and moments with the people you actually listen with.">
-<meta name="description" content="The newest social media. Music and social, together — share songs, videos and moments with the people you actually listen with.">
-<meta name="twitter:description" content="The newest social media. Music and social, together — share songs, videos and moments with the people you actually listen with.">
+<!-- Apple ignores this; WhatsApp, Discord and Slack show it. Keep it plain —
+     a slogan here reads as an ad in the clients that DO render it. -->
+<meta property="og:description" content="Music and social, together.">
+<meta name="description" content="Music and social, together.">
+<meta name="twitter:description" content="Music and social, together.">
 
-<!-- The tagline is BAKED INTO THIS IMAGE, and that is on purpose: Apple draws
-     only og:title and the domain, so "The newest social media" could never
-     reach an iPhone as text. In the artwork it always shows.
-     Regenerate after editing the wording — the generator lives at
-     scripts/make-invite-card.ps1 (1200x630, brand gradient, mark + tagline).
-     Bump the ?v= below whenever the picture changes, or Apple keeps serving
-     the cached one. -->
-<meta property="og:image" content="https://laybell.app/invite-card.png?v=1">
+<!-- The mark on the brand gradient. NO TYPE IN THE IMAGE — a tagline was baked
+     in once and it looked like an ad rather than a brand; the card sits beside
+     Spotify's and Apple Music's in the same thread and those are silent. The
+     words live in og:title, set in the platform's own type.
+     Regenerate: scripts/make-invite-card.ps1. Bump ?v= after any change, or
+     Apple keeps serving the cached picture. -->
+<meta property="og:image" content="https://laybell.app/invite-card.png?v=2">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Laybell — the newest social media">
-<meta name="twitter:image" content="https://laybell.app/invite-card.png?v=1">
+<meta property="og:image:alt" content="Laybell">
+<meta name="twitter:image" content="https://laybell.app/invite-card.png?v=2">
 
 <!-- Deliberately NO og:site_name: it is what made Apple eat the first words of
      the title. -->
@@ -75,12 +75,12 @@ p { color:var(--muted); margin:0 0 26px; }
 .hint { color:#6f6e78; font-size:13px; margin-top:22px; }
 </style></head>
 <body><main>
-  <!-- Matches the card's headline and tagline: whoever lands here tapped
-       something that said exactly this, and a page that renames itself on
-       arrival reads like a redirect gone wrong. -->
+  <!-- Opens with the card's own headline: whoever lands here tapped something
+       that said exactly this, and a page that renames itself on arrival reads
+       like a redirect gone wrong. -->
   <img class="logo" src="/logo.png" alt="Laybell">
   <h1>Download Laybell</h1>
-  <p id="sub">The newest social media.</p>
+  <p id="sub">Music and social, together.</p>
   <a id="openApp" class="btn btn-primary" href="#">Open Laybell</a>
   <a id="ios" class="btn btn-store" href="#" hidden>Download on the App Store</a>
   <a id="android" class="btn btn-store" href="#" hidden>Get it on Google Play</a>
