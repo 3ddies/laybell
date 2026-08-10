@@ -92,6 +92,20 @@ inbox waits, and one test that needs Android hardware.**
 
 ### 🚀 LAUNCH-DAY SEQUENCE — only when the owner says "we are going live"
 
+0. 💵 **REVERSE THE DEMO WALLET BALANCE — do this first, it is real money.**
+   ```bash
+   npx supabase db query --linked -f supabase/sql/_DEMO_wallet_balance_REVERSE.sql
+   ```
+   Applied 2026-08-10 so the App Store wallet screenshot showed a figure instead of
+   `$0.00`. It credits `shpwkvr7jg` **$58.00 of AVAILABLE (withdrawable) earnings** —
+   the wallet's headline number is the payout-eligible balance, so this is not paint on
+   a screen. Once Stripe is live and `payoutsAvailable()` is on, "Transfer to bank"
+   would move **fifty-eight real dollars out of Laybell's Stripe balance** against value
+   that never existed. The fresh-start reset below does **not** clear it: the ledger is
+   append-only by constraint, so the only correct undo is the mirror transaction in that
+   file. Confirm `available_cents_should_be_0` comes back `0` and
+   `invariant_violations` `0`.
+
 1. **Fresh-start reset** — wipe test accounts/posts, keep `laybellreview`, sweep Storage
    + Cloudflare separately, re-seed. Plan: `docs/FRESH_START_RESET.md`. This also clears
    the money-test artifacts and 11 expired ad campaigns.
