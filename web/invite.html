@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     THE INVITE CARD — this is what iMessage/WhatsApp draw when someone gets
+     an invite from the app's Invite friends screen.
+
+     ── EDIT THE CARD HERE ──────────────────────────────────────────────────
+     Only two things actually reach an iMessage card:
+       • og:title  — the headline
+       • the domain (laybell.app), which Apple adds itself and you cannot change
+     og:description is NOT rendered by Apple. Proven on-device twice; do not
+     spend an afternoon on it again. (WhatsApp, Discord and Slack DO show it,
+     so it is still worth filling in.)
+
+     ⚠️  WHY YOUR EDITS "DIDN'T SHOW UP" LAST TIME
+     Apple caches a link's preview per-URL, on the device AND at their CDN, and
+     it does not re-fetch for a long time. Editing the tags then re-sending the
+     SAME url shows the OLD card, so the change looks like it failed when it
+     actually shipped. To see a change immediately, send a URL Apple has never
+     seen — just add a throwaway query string:
+         https://laybell.app/invite?v=2
+     The page ignores unknown params, so that is safe. Once you are happy,
+     invites keep using the clean /invite URL.
+
+     Apple also strips a leading site-name from the title: with og:site_name
+     "Laybell", a title of "Laybell — Music & Social" rendered as just
+     "Music & Social". That is why the title below does NOT start with the word
+     Laybell — write the headline you actually want shown.
+     ════════════════════════════════════════════════════════════════════════ -->
+
+<title>Join me on Laybell</title>
+<meta property="og:title" content="Join me on Laybell">
+<meta name="twitter:title" content="Join me on Laybell">
+
+<meta property="og:description" content="Music and social, together. Share songs, videos and moments with the people you actually listen with.">
+<meta name="description" content="Music and social, together. Share songs, videos and moments with the people you actually listen with.">
+<meta name="twitter:description" content="Music and social, together. Share songs, videos and moments with the people you actually listen with.">
+
+<!-- Swap this for a purpose-made 1200x630 banner if you ever want the card to
+     be artwork rather than the app mark. Square works (Apple crops to fill);
+     landscape simply fills the card edge to edge. Keep it on laybell.app —
+     an image on another origin is fetched less reliably. -->
+<meta property="og:image" content="https://laybell.app/logo.png">
+<meta name="twitter:image" content="https://laybell.app/logo.png">
+
+<!-- Deliberately NO og:site_name: it is what made Apple eat the first words of
+     the title. -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://laybell.app/invite">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#FF0A00">
+
+<style>
+:root { --bg:#0d0d0f; --ink:#f5f4f2; --muted:#a4a3ab; --brand:#F26522; --brand2:#E8401C; }
+* { box-sizing:border-box; }
+html,body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; display:flex; align-items:center; justify-content:center; padding:24px; }
+main { width:100%; max-width:380px; text-align:center; }
+.logo { width:88px; height:88px; border-radius:22px; margin:0 auto 20px; display:block; object-fit:cover; }
+h1 { font-size:25px; margin:0 0 6px; letter-spacing:-0.4px; }
+p { color:var(--muted); margin:0 0 26px; }
+.btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:15px 18px; border-radius:14px; text-decoration:none; font-weight:700; font-size:16px; margin:0 0 12px; }
+.btn-primary { background:linear-gradient(90deg,var(--brand),var(--brand2)); color:#fff; }
+.btn-store { background:#1b1a20; color:var(--ink); border:1px solid #272630; }
+.hint { color:#6f6e78; font-size:13px; margin-top:22px; }
+</style></head>
+<body><main>
+  <img class="logo" src="/logo.png" alt="Laybell">
+  <h1>Join me on Laybell</h1>
+  <p id="sub">Music and social, together.</p>
+  <a id="openApp" class="btn btn-primary" href="#">Open Laybell</a>
+  <a id="ios" class="btn btn-store" href="#" hidden>Download on the App Store</a>
+  <a id="android" class="btn btn-store" href="#" hidden>Get it on Google Play</a>
+  <p class="hint">Share songs, videos and moments with the people you listen with.</p>
+</main>
+<script>
+(function () {
+  // Same store bounce as open.html — an invite has to work for someone who does
+  // NOT have the app, which is the whole point of sending one.
+  // Keep in sync with lib/appLinks.ts (STORE_URLS).
+  var STORE = {
+    ios: 'https://apps.apple.com/app/laybell/id6795675871',
+    android: 'https://play.google.com/store/apps/details?id=com.laybell.app'
+  };
+
+  // An invite has no in-app destination, so it opens the app's root. Three
+  // slashes: in `laybell://x` the first segment is parsed as the AUTHORITY, so
+  // the app would receive an empty path and land on the unmatched-route screen.
+  var deepLink = 'laybell:///';
+
+  var ua = navigator.userAgent || '';
+  var isIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
+  var isAndroid = /Android/.test(ua);
+  var storeUrl = isIOS ? STORE.ios : isAndroid ? STORE.android : null;
+
+  document.getElementById('openApp').setAttribute('href', deepLink);
+  if (isIOS) { var a = document.getElementById('ios'); a.hidden = false; a.href = STORE.ios; }
+  else if (isAndroid) { var b = document.getElementById('android'); b.hidden = false; b.href = STORE.android; }
+  else {
+    var ios = document.getElementById('ios'); ios.hidden = false; ios.href = STORE.ios;
+    var and = document.getElementById('android'); and.hidden = false; and.href = STORE.android;
+    document.getElementById('sub').textContent = 'Open this on your phone, or grab the app:';
+    return;
+  }
+
+  // Most invitees do NOT have the app — that is who an invite is for — so try
+  // the app briefly and fall through to the store. visibilitychange cancels the
+  // bounce when the app did open, so an existing user isn't dumped in the store.
+  var bounced = false;
+  function toStore() {
+    if (bounced || document.hidden) return;
+    bounced = true;
+    if (storeUrl) location.replace(storeUrl);
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) bounced = true;
+  });
+  var timer = setTimeout(toStore, 1400);
+  window.addEventListener('pagehide', function () { clearTimeout(timer); });
+  window.location.href = deepLink;
+})();
+</script>
+</body></html>

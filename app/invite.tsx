@@ -84,7 +84,15 @@ export default function InviteScreen() {
     if (!chosen.length || sending) return;
     setSending(true);
     try {
-      const opened = await openInviteComposer(chosen, t('invite.message', { url: `${STATIC_WEB_ORIGIN}/open.html` }));
+      // /invite, not /open.html: its own page means the preview card can say
+      // something invite-specific, and a URL Apple has never cached means edits
+      // to that card actually show up (see the comment block in web/invite.html).
+      const opened = await openInviteComposer(
+        chosen,
+        `${STATIC_WEB_ORIGIN}/invite`,
+        t('invite.message'),
+        t('invite.emailSubject'),
+      );
       if (!opened) { Alert.alert(t('invite.noComposerTitle'), t('invite.noComposerBody')); return; }
       // Recorded once the composer opened. We cannot see whether they hit send
       // inside the system composer — and the alternative (never counting) would

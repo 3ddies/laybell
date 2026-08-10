@@ -110,14 +110,24 @@ export async function loadInviteContacts(): Promise<InviteLoad> {
  * Deliberately uses Linking rather than expo-sms: no new native module, so this
  * needs no rebuild.
  */
-export async function openInviteComposer(contacts: InviteContact[], message: string): Promise<boolean> {
+export async function openInviteComposer(
+  contacts: InviteContact[],
+  url: string,
+  emailIntro: string,
+  emailSubject: string,
+): Promise<boolean> {
   if (!contacts.length) return false;
   const phones = contacts.filter((c) => c.isPhone).map((c) => c.target);
   const emails = contacts.filter((c) => !c.isPhone).map((c) => c.target);
-  const body = encodeURIComponent(message);
 
   try {
     if (phones.length) {
+      // THE LINK ALONE — no sentence in front of it. Any text turns the message
+      // into a bubble PLUS a card; the bare URL renders as just the card, which
+      // is what the invite is (owner, 2026-08-10). The card's own headline
+      // carries the message, so nothing is lost. Same rule the app's other
+      // shares already follow.
+      const body = encodeURIComponent(url);
       // iOS separates recipients with a comma, Android with a semicolon; the
       // body separator differs too (& vs ?) once recipients are present.
       const list = Platform.OS === 'ios' ? phones.join(',') : phones.join(';');
@@ -126,8 +136,11 @@ export async function openInviteComposer(contacts: InviteContact[], message: str
       return true;
     }
     if (emails.length) {
+      // Email is the exception: mail clients don't draw preview cards, so a
+      // bare URL in an empty message reads like spam. Here the sentence stays.
       await Linking.openURL(
-        `mailto:${emails.join(',')}?subject=${encodeURIComponent('Join me on Laybell')}&body=${body}`);
+        `mailto:${emails.join(',')}?subject=${encodeURIComponent(emailSubject)}`
+        + `&body=${encodeURIComponent(`${emailIntro}\n\n${url}`)}`);
       return true;
     }
   } catch { /* no composer on this device */ }
