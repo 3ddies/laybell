@@ -66,36 +66,46 @@ serve(async (req) => {
 
     if (action === 'create') {
       const title = String(body?.title ?? '').slice(0, 120);
-      // Retaining a replay is OPT-IN, and defaults to off.
+      // recording:'automatic' is NOT a "keep a replay" choice — it is the switch
+      // that makes the broadcast WATCHABLE at all over HLS.
       //
-      // Broadcasting music live is a public performance, which the BMI licence
-      // covers. SAVING the broadcast is a REPRODUCTION — a new fixation — and BMI
-      // §3.B grants "only public performing rights... and does not grant any
-      // reproduction, distribution, or any other intellectual property right(s)".
-      // No PRO licence ever covers it. So a saved VOD carrying music sits outside
-      // every licence Laybell holds, while a live-only broadcast sits inside them.
+      // Cloudflare serves live HLS/DASH out of the recording pipeline: "Live
+      // playback from recording are required to serve live viewers, which is why
+      // Cloudflare doesn't currently provide an option to decouple live playback
+      // from recording." There is no mode where the stream plays but nothing is
+      // recorded.
       //
-      // This is the mistake Twitch made: PRO deals, no reproduction rights, VODs
-      // retained by default, then mass DMCA notices in 2020 and thousands of
-      // videos pulled with no warning to creators. Defaulting to off costs a
-      // feature nobody has asked for yet; defaulting to on costs a claim.
-      const saveReplay = body?.saveReplay === true;
+      // This was briefly set to 'off' whenever the (now-removed) "Save a replay"
+      // switch was off — which was its default — on the belief that HLS was
+      // served independently. It is not: every RTMP-ingest broadcast created that
+      // way had no manifest, so the Studio encoder and phone-horizontal (Laybell
+      // TV) lives could not be watched by anyone. WHIP/WebRTC lives were
+      // unaffected, which is why the breakage stayed invisible.
+      //
+      // The licensing worry that motivated 'off' is real but belongs at the other
+      // end: broadcasting music live is a public performance (BMI-licensed),
+      // while a RETAINED VOD is a reproduction that BMI §3.B explicitly does not
+      // grant — the Twitch-2020 mass-DMCA shape. So Laybell records because it
+      // must to serve viewers, and then deletes the recording when the broadcast
+      // ends (see the delete action below). Nothing is retained, so there is no
+      // reproduction to be claimed against.
       const { ok, data } = await cfFetch('', {
         method: 'POST',
         body: JSON.stringify({
           meta: { name: title || 'Laybell live', creator: uid },
-          // 'automatic' saves a VOD after the broadcast; 'off' keeps it ephemeral.
-          // Note RTMP playback works either way — HLS is served live regardless,
-          // so turning recording off does not break watching the stream.
-          recording: saveReplay
-            ? { mode: 'automatic', timeoutSeconds: 30, requireSignedURLs: false }
-            : { mode: 'off' },
+          recording: { mode: 'automatic', timeoutSeconds: 30, requireSignedURLs: false },
         }),
       });
       const r = data?.result;
       if (!ok || !r?.uid) {
         console.error('cf live_inputs create failed:', JSON.stringify(data?.errors ?? data));
-        return json({ error: 'live_input_failed' }, 502);
+        // Hand the real reason back. supabase-js nulls `data` on a non-2xx, so
+        // without this the app can only say "non-2xx status code", which is what
+        // a failed go-live used to show the host.
+        const reason = (data?.errors ?? [])
+          .map((e: any) => [e?.code, e?.message].filter(Boolean).join(' '))
+          .filter(Boolean).join('; ');
+        return json({ error: 'live_input_failed', reason: reason || undefined }, 502);
       }
       // webRTCPlayback.url looks like https://customer-<code>.cloudflarestream.com/<uid>/webRTC/play
       // — reuse its origin to build the deterministic HLS manifest for RTMP mode.
@@ -127,9 +137,35 @@ serve(async (req) => {
       return json({ connected: state === 'connected' });
     }
     if (action === 'delete') {
+      // Purge the recordings BEFORE the input. Cloudflare only records because
+      // live playback requires it (see create) — the VOD it leaves behind is a
+      // by-product nobody asked for, and Laybell has no reproduction licence for
+      // one carrying music. Deleting the input does NOT take its videos with it:
+      // they are ordinary Stream assets that would otherwise sit there billing
+      // storage and standing as a retained copy.
+      //
+      // Best-effort by design: a video that resists deletion must not strand the
+      // input (which costs money for as long as it exists), so failures here are
+      // logged and the input teardown proceeds regardless. stream-sweep is the
+      // backstop for anything left behind.
+      let recordingsDeleted = 0;
+      try {
+        const vids = await cfFetch(`/${inputUid}/videos`);
+        for (const v of (vids.data?.result ?? [])) {
+          if (!v?.uid) continue;
+          const res = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream/${v.uid}`,
+            { method: 'DELETE', headers: { Authorization: `Bearer ${CF_TOKEN}` } },
+          );
+          if (res.ok || res.status === 404) recordingsDeleted++;
+          else console.error('live recording delete failed:', v.uid, res.status);
+        }
+      } catch (e) {
+        console.error('live recording sweep failed:', inputUid, String(e));
+      }
       const del = await cfFetch(`/${inputUid}`, { method: 'DELETE' });
       if (!del.ok && del.status !== 404) return json({ error: 'live_input_delete_failed' }, 502);
-      return json({ ok: true });
+      return json({ ok: true, recordingsDeleted });
     }
     return json({ error: 'unknown_action' }, 400);
   } catch (err) {

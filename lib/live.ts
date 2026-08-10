@@ -177,21 +177,48 @@ export async function fetchLiveStreams(horizontalOnly = false): Promise<LiveStre
  * until the broadcast actually starts). Returns the row plus broadcaster
  * secrets; secrets are also stored in live_stream_keys for resuming.
  */
+/**
+ * Digs the real failure out of a functions.invoke error. supabase-js turns every
+ * non-2xx into a FunctionsHttpError, nulls `data`, and sets the message to the
+ * famously unhelpful "Edge Function returned a non-2xx status code" — the body
+ * that says what actually went wrong is left unread on `.context`. Without this
+ * a host whose go-live failed is told nothing at all.
+ */
+async function edgeErrorDetail(error: unknown, data: any): Promise<string> {
+  const join = (b: any) => [b?.error, b?.reason].filter(Boolean).join(': ');
+  if (data?.error) return join(data);
+  const ctx = (error as any)?.context;
+  if (ctx && typeof ctx.json === 'function') {
+    try {
+      const detail = join(await ctx.json());
+      if (detail) return detail;
+    } catch { /* not JSON — fall through to the generic message */ }
+  }
+  return (error as any)?.message ?? '';
+}
+
 export async function createLiveStream(
   title: string,
   mode: 'webrtc' | 'rtmp',
   orientation: LiveOrientation = 'vertical',
-  // Keep a replay after the broadcast ends. OFF unless the host explicitly asks:
-  // a live broadcast is a public performance (licensed), but a saved recording is
-  // a reproduction (not licensed by any PRO — BMI §3.B says so in terms). Must be
-  // decided here, at creation, because Cloudflare fixes the recording mode when
-  // the input is made and it cannot be changed mid-stream.
-  saveReplay = false,
 ): Promise<{ stream: LiveStream; keys: LiveStreamKeys }> {
-  const { data, error } = await supabase.functions.invoke('live-input', {
-    body: { action: 'create', title, saveReplay },
-  });
-  if (error || !data?.inputUid) throw new Error(data?.error ?? error?.message ?? 'live input failed');
+  const call = () => supabase.functions.invoke('live-input', { body: { action: 'create', title } });
+
+  let { data, error } = await call();
+  if (error || !data?.inputUid) {
+    const detail = await edgeErrorDetail(error, data);
+    // 'live_input_failed' means Cloudflare answered and refused, so a retry only
+    // burns a second input. Anything else (an expired token the client hasn't
+    // rotated yet, a cold start, a dropped connection) is worth exactly one more
+    // go with a fresh session — a host tapping "Go live" should not be defeated
+    // by a blip they can do nothing about.
+    if (detail.startsWith('live_input_failed')) throw new Error(detail);
+    await supabase.auth.refreshSession().catch(() => {});
+    ({ data, error } = await call());
+    if (error || !data?.inputUid) {
+      throw new Error((await edgeErrorDetail(error, data)) || 'live input failed');
+    }
+  }
 
   const { data: auth } = await supabase.auth.getUser();
   const userId = auth?.user?.id;
@@ -207,9 +234,9 @@ export async function createLiveStream(
       orientation,
       cf_input_uid: data.inputUid,
       playback_url: playbackUrl,
-      // Spread-conditional so a pre-migration database (no live_replay.sql yet)
-      // simply never sees these columns and the insert still succeeds.
-      ...(saveReplay ? { save_replay: true, replay_attested_at: new Date().toISOString() } : {}),
+      // save_replay / replay_attested_at are deliberately not written any more:
+      // the "Save a replay" switch is gone and every recording is deleted when
+      // the broadcast ends, so the columns would only ever record `false`.
     })
     .select()
     .single();

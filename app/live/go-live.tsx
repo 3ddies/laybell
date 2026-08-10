@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, Share, ActivityIndicator, Platform, Switch,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Share, ActivityIndicator, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,11 +51,15 @@ export default function GoLiveScreen() {
   const phaseRef = useRef<Phase>('setup');
   const setPhase = (p: Phase) => { phaseRef.current = p; setPhaseState(p); };
   const [mode, setMode] = useState<Mode>(webrtcAvailable() ? 'webrtc' : 'rtmp');
-  // Phone broadcast orientation — horizontal/both also land in Laybell TV.
+  // Broadcast orientation — horizontal/both also land in Laybell TV. Applies to
+  // encoder broadcasts too: an OBS stream is a real 16:9 picture, and filing it
+  // as vertical (which is what used to happen, unasked) meant it could never
+  // reach Laybell TV.
   const [orientation, setOrientation] = useState<LiveOrientation>('vertical');
+  // Whether the host has actually picked an orientation, so the encoder's
+  // landscape default can never quietly overwrite a real choice.
+  const [orientTouched, setOrientTouched] = useState(false);
   const [title, setTitle] = useState('');
-  // Keep a replay after the stream ends. Off by default — see live_replay.sql.
-  const [saveReplay, setSaveReplay] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -197,11 +201,7 @@ export default function GoLiveScreen() {
       // played by the feed's existing AppVideo path).
       const usePhoneRtmp = mode === 'webrtc' && orientation === 'horizontal' && rtmpAvailable();
       const ingest: Mode = mode === 'rtmp' || usePhoneRtmp ? 'rtmp' : 'webrtc';
-      // Orientation only applies to phone broadcasts; encoders set their own
-      // framing, so those default to vertical bookkeeping.
-      const { stream, keys } = await createLiveStream(
-        title.trim(), ingest, mode === 'webrtc' ? orientation : 'vertical', saveReplay,
-      );
+      const { stream, keys } = await createLiveStream(title.trim(), ingest, orientation);
       streamRef.current = stream;
       keysRef.current = keys;
       if (mode === 'webrtc') {
@@ -371,7 +371,13 @@ export default function GoLiveScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modeRow, mode === 'rtmp' && styles.modeRowActive]}
-                onPress={() => setMode('rtmp')}
+                onPress={() => {
+                  setMode('rtmp');
+                  // OBS and every other RTMP encoder ships a 16:9 canvas, so an
+                  // encoder broadcast is landscape unless its host says
+                  // otherwise. Nudge once, and never over a real choice.
+                  if (!orientTouched) setOrientation('horizontal');
+                }}
               >
                 <Ionicons name="desktop-outline" size={20} color={colors.text} />
                 <View style={styles.modeTextWrap}>
@@ -381,9 +387,11 @@ export default function GoLiveScreen() {
                 {mode === 'rtmp' && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
               </TouchableOpacity>
 
-              {/* Orientation (phone only) — horizontal/both also land in Laybell TV. */}
-              {mode === 'webrtc' && (
-                <View style={styles.orientWrap}>
+              {/* Orientation — horizontal/both also land in Laybell TV. Shown for
+                  BOTH paths: an encoder can be pointed at either shape, and
+                  silently filing every encoder broadcast as vertical kept them
+                  out of Laybell TV entirely. */}
+              <View style={styles.orientWrap}>
                   <Text style={styles.orientLabel}>{t('live.orientationLabel')}</Text>
                   <View style={styles.orientRow}>
                     {/* 'both' was retired as a choice — horizontal IS the TV-bound
@@ -395,7 +403,7 @@ export default function GoLiveScreen() {
                       <TouchableOpacity
                         key={o.key}
                         style={[styles.orientBtn, orientation === o.key && styles.orientBtnActive]}
-                        onPress={() => setOrientation(o.key)}
+                        onPress={() => { setOrientTouched(true); setOrientation(o.key); }}
                       >
                         <Ionicons name={o.icon as never} size={18} color={orientation === o.key ? colors.primary : colors.textSecondary} />
                         <Text style={[styles.orientText, orientation === o.key && { color: colors.primary }]}>{o.label}</Text>
@@ -405,33 +413,16 @@ export default function GoLiveScreen() {
                   {orientation !== 'vertical' && (
                     <View style={styles.tvNote}>
                       <Ionicons name="tv-outline" size={13} color={colors.textTertiary} />
-                      {/* With the RTMP engine in this binary, horizontal phone
-                          lives ARE TV-castable; without it (pre-rebuild), be
-                          honest that a real TV needs the Studio encoder. */}
+                      {/* An encoder always reaches a TV. On the phone path it
+                          depends on the RTMP engine being in this binary —
+                          without it (pre-rebuild), say so rather than promise a
+                          cast that won't happen. */}
                       <Text style={styles.tvNoteText}>
-                        {t('live.tvNote')}{rtmpAvailable() ? '' : ` ${t('live.tvPhoneNote')}`}
+                        {t('live.tvNote')}
+                        {mode === 'webrtc' && !rtmpAvailable() ? ` ${t('live.tvPhoneNote')}` : ''}
                       </Text>
                     </View>
                   )}
-                </View>
-              )}
-
-              {/* Replay retention. Deliberately OFF by default and phrased as a
-                  rights question rather than a convenience one: going live with
-                  music is a licensed public performance, but KEEPING the recording
-                  is a reproduction that no performing-rights licence covers. The
-                  host is the one who knows whether they hold those rights. */}
-              <View style={styles.replayRow}>
-                <View style={styles.replayText}>
-                  <Text style={styles.replayLabel}>{t('live.saveReplay')}</Text>
-                  <Text style={styles.replayHelp}>{t('live.saveReplayHelp')}</Text>
-                </View>
-                <Switch
-                  value={saveReplay}
-                  onValueChange={setSaveReplay}
-                  trackColor={{ true: colors.primary, false: colors.surfaceLight }}
-                  thumbColor="#fff"
-                />
               </View>
 
               {!!error && <Text style={styles.error}>{error}</Text>}
@@ -573,8 +564,4 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   shareBtnText: { color: c.text, fontSize: 13, fontWeight: '600' },
   waitRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
   error: { color: c.error, fontSize: 13 },
-  replayRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4, marginBottom: 8 },
-  replayText: { flex: 1 },
-  replayLabel: { color: c.text, fontSize: 15, fontWeight: '600' },
-  replayHelp: { color: c.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
 });
