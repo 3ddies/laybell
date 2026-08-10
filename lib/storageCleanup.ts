@@ -44,9 +44,13 @@ export async function removePublicUrls(urls: (string | null | undefined)[]): Pro
 }
 
 // Every Storage URL a post can reference: the main media, its thumbnail and
-// cover, plus each slideshow slide's media + thumbnail.
+// cover, plus each slideshow slide's media + thumbnail. legacy_media_url is the
+// original Storage MP4 of a video the Stream backfill migrated to HLS
+// (supabase/sql/stream_backfill.sql) — without it, deleting a migrated post
+// would orphan that MP4 (media_url points at cloudflarestream.com by then,
+// which bucketPathFromPublicUrl rightly ignores).
 export function collectPostMediaUrls(post: any): string[] {
-  const urls: (string | null | undefined)[] = [post?.media_url, post?.thumbnail_url, post?.cover_url];
+  const urls: (string | null | undefined)[] = [post?.media_url, post?.thumbnail_url, post?.cover_url, post?.legacy_media_url];
   const slides = Array.isArray(post?.slides) ? post.slides : [];
   for (const s of slides) { urls.push(s?.url); urls.push(s?.thumbnail_url); }
   return urls.filter(Boolean) as string[];

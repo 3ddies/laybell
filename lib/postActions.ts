@@ -15,11 +15,21 @@ export async function deletePostById(postId: string): Promise<boolean> {
   let media: string[] = [];
   let videoUid: string | null = null;
   try {
-    const { data } = await supabase
+    // legacy_media_url = the pre-backfill Storage MP4 (stream_backfill.sql).
+    // Selecting a missing column errors the whole select, so if that migration
+    // hasn't run yet, retry without it rather than skipping cleanup entirely.
+    let { data } = await supabase
       .from('posts')
-      .select('media_url, thumbnail_url, cover_url, slides, video_uid')
+      .select('media_url, thumbnail_url, cover_url, slides, video_uid, legacy_media_url')
       .eq('id', postId)
       .single();
+    if (!data) {
+      ({ data } = await supabase
+        .from('posts')
+        .select('media_url, thumbnail_url, cover_url, slides, video_uid')
+        .eq('id', postId)
+        .single() as any);
+    }
     if (data) { media = collectPostMediaUrls(data); videoUid = (data as any).video_uid ?? null; }
   } catch {}
   // `.select('id')` so we can tell a real delete from a no-op: an RLS-blocked
