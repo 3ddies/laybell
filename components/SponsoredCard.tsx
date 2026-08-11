@@ -11,6 +11,7 @@ import { aspectToNumber } from '../lib/aspectRatio';
 import SlideshowCarousel from './SlideshowCarousel';
 import { parseSlides, isSlideshow } from '../lib/slideshow';
 import { useCardPlayback } from '../lib/feedVideo';
+import { cfStreamThumbnail } from '../lib/cast';
 import { usePostMusicActions, useSongHostActive } from '../contexts/PostMusicContext';
 import type { AdMeta } from '../lib/ads';
 
@@ -136,6 +137,28 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions, vide
                 no longer stall the frame the way the old created-at-visible
                 AppVideo did. The black slot holds layout until readyToPlay. */}
             <View style={[styles.media, { height: Math.min(SCREEN_W / aspectToNumber(item.aspect_ratio, 16 / 9), MAX_VIDEO_H), backgroundColor: '#000' }]}>
+              {/* POSTER, same as a real post card. Without it this slot was bare
+                  black until the first frame painted, which an ad feels every
+                  single time: ads are deliberately kept OUT of the pre-warm set
+                  (see isPlayableVideoItem in the feed), so every ad landing is a
+                  cold acquire with nothing underneath to cover it. The creative
+                  carries its own thumbnail from ad_creatives; Cloudflare serves
+                  one for any Stream-hosted creative that doesn't, and a creative
+                  with neither falls back to the black slot exactly as before. */}
+              {(() => {
+                const thumb = item.thumbnail_url ?? item.cover_url ?? cfStreamThumbnail(item.media_url);
+                return thumb ? (
+                  <ExpoImage
+                    source={{ uri: thumb }}
+                    // Ad cells recycle within their own pool — never flash the
+                    // previous campaign's frame while this one decodes.
+                    recyclingKey={item.id}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                ) : null;
+              })()}
               {isVisibleVideo && (
                 // Follows the feed's shared mute toggle (was hardcoded muted, so
                 // ad audio never played even with the feed unmuted).
