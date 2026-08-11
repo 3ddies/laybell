@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { SPACING, RADIUS } from '../constants/theme';
-import { profileShareUrl } from '../lib/appLinks';
+import { profileShareUrl, profileRichShareUrl } from '../lib/appLinks';
 import { recordAppShare } from '../lib/badges';
 import QRCodeView from './QRCodeView';
 
@@ -24,14 +24,30 @@ type Props = {
 export default function ProfileQRModal({ visible, onClose, userId, username, displayName, avatarUrl }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
+  // TWO URLs for the same profile, on purpose — they are read by different
+  // things.
+  //
+  // The QR stays on open.html: a printed or screenshotted code outlives any
+  // deploy, so it should depend on the fewest moving parts (static page on the
+  // apex domain, no Edge Function, no custom-domain SSL), and it encodes
+  // shorter, which means a less dense code for a phone camera to resolve.
+  // Nothing ever renders a preview card for a scanned QR.
+  //
+  // The SHARE SHEET sends the share-page link, because that one lands in a
+  // chat and gets unfurled: the Edge Function reads the profile and returns
+  // the person's name, @handle and avatar, instead of the one generic card
+  // every profile used to produce. It bounces humans through open.html
+  // anyway, so both paths end in the same place.
   const url = profileShareUrl(userId);
+  const shareUrl = profileRichShareUrl(userId);
 
   const onShare = async () => {
     try {
-      const res = await Share.share({ message: url, url });
-      // Only count it once the user actually shares (not on dismiss). The profile
-      // QR routes non-users to the app store, so sharing it = inviting to the app;
-      // it credits the App-sharing (Advocate) badge.
+      const res = await Share.share({ message: shareUrl, url: shareUrl });
+      // Only count it once the user actually shares (not on dismiss). The link
+      // still lands non-users on the app store (share-page bounces through
+      // open.html, which does the store redirect), so sharing it = inviting to
+      // the app; it credits the App-sharing (Advocate) badge.
       if (res.action === Share.sharedAction) recordAppShare();
     } catch { /* share sheet dismissed or unavailable */ }
   };

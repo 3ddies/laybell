@@ -2,20 +2,47 @@
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Laybell — Music &amp; Social</title>
-<!-- Rich preview card when the app/profile link is shared into a chat: the
-     Laybell logo + tagline (Instagram/TikTok-style app-share unfurl). -->
-<meta name="description" content="Share music, videos and moments. Laybell — music &amp; social, together.">
+<!-- ════════════════════════════════════════════════════════════════════════
+     THE GENERIC LAYBELL CARD, and the page every share path eventually lands
+     on. Three things reach it: a scanned QR, a human bounced here by the
+     share-page Edge Function, and any preview crawler that meets a bare
+     open.html link.
+
+     A profile shared from the QR sheet no longer produces THIS card — it goes
+     through share-page, which returns the person's own name, @handle and
+     avatar (lib/appLinks.profileRichShareUrl). This one still has to be right
+     though: it is what links shared before that change already show, and it is
+     the documented fall-back if SHARE_PAGE_CUSTOM_BASE is ever set back to
+     null. Same rules as web/invite.html, learned the same hard way:
+
+       • Apple renders og:title and the domain. Nothing else. og:description is
+         NOT shown (WhatsApp, Discord and Slack DO show it, so keep it filled).
+       • Apple STRIPS A LEADING SITE-NAME from the title. This page used to
+         carry og:site_name "Laybell" with the title "Laybell — Music &
+         Social", so every profile anyone sent read as bare "Music & Social" —
+         the brand eaten, the tagline left behind. og:site_name is gone for
+         that reason, and the title below keeps "Laybell" off both ends.
+       • Apple caches a preview PER-URL, on the device and at their CDN. Re-
+         sending the same link shows the OLD card long after a change has
+         shipped. To see an edit immediately, send a URL Apple has never seen —
+         append a throwaway param (…&v=2); unknown params are ignored.
+
+     The QR sheet is only ever shown on your OWN profile, so the card speaks in
+     the first person.
+     ════════════════════════════════════════════════════════════════════════ -->
+<title>Join me on Laybell</title>
+<!-- Plain on purpose in the clients that DO render it — a slogan here reads as
+     an ad sitting next to Spotify's and Apple Music's silent cards. -->
+<meta name="description" content="Songs, videos and moments, shared on Laybell.">
 <meta name="theme-color" content="#FF0A00">
-<meta property="og:site_name" content="Laybell">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Laybell — Music &amp; Social">
-<meta property="og:description" content="Share music, videos and moments. Laybell — music &amp; social, together.">
+<meta property="og:title" content="Join me on Laybell">
+<meta property="og:description" content="Songs, videos and moments, shared on Laybell.">
 <meta property="og:image" content="https://laybell.app/logo.png">
 <meta property="og:url" content="https://laybell.app/open.html">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Laybell — Music &amp; Social">
-<meta name="twitter:description" content="Share music, videos and moments. Laybell — music &amp; social, together.">
+<meta name="twitter:title" content="Join me on Laybell">
+<meta name="twitter:description" content="Songs, videos and moments, shared on Laybell.">
 <meta name="twitter:image" content="https://laybell.app/logo.png">
 <style>
 :root { --bg:#0d0d0f; --card:#16151a; --ink:#f5f4f2; --muted:#a4a3ab; --line:#272630; --brand:#F26522; --brand2:#E8401C; }
@@ -44,7 +71,7 @@ p { color:var(--muted); margin:0 0 24px; }
     <a id="android" class="btn btn-store" href="#" hidden>Get it on Google Play</a>
   </div>
 
-  <p class="hint">Laybell — music &amp; social, together.</p>
+  <p class="hint">Share songs, videos and moments with the people you listen with.</p>
 </main>
 <script>
 (function () {
