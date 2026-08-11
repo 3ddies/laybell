@@ -246,21 +246,30 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
           <b>CABLE Output</b> = a microphone. Audio coming OUT of the pipe.</p>
         </div></details>
 
-        <details class="sub"><summary>Part 2 — send Laybell into the pipe</summary><div class="body">
+        <details class="sub"><summary>Part 2 — send Laybell into a SECOND pipe</summary><div class="body">
+          <div class="warn"><b>You need a second cable, and here is why.</b> If you send your beat as your
+          microphone (step 2 above), the first cable is already full — it carries your DAW <b>to</b> the room.
+          Pushing the room back down the same cable would feed it into itself. Get <b>VB-CABLE A+B</b> from the
+          same <a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">vb-audio.com/Cable</a> page,
+          install it the same way, reboot. You then have <b>CABLE-B Input</b> and <b>CABLE-B Output</b>.<br>
+          Still using <i>Share app audio</i> for the beat instead? Then the first cable is free — use plain
+          <b>CABLE Input / CABLE Output</b> below and ignore the B.</div>
           <p><b>Windows <i>Settings → System → Sound → Volume mixer</i></b> → find this browser in the app list →
-          set its <b>Output</b> to <b>CABLE Input</b>.</p>
-          <p>Laybell now plays into the pipe instead of your headphones, so you have gone deaf to the room. The
-          next bit gets your ears back, and it needs Windows' <b>old</b> sound window — the modern Settings app
-          cannot do it.</p>
+          set its <b>Output</b> to <b>CABLE-B Input</b>.</p>
+          <p>Laybell now plays into the second pipe instead of your headphones, so you have gone deaf to the room.
+          The next bit gets your ears back, and it needs Windows' <b>old</b> sound window — the modern Settings
+          app cannot do it.</p>
           <div class="tip"><b>How to open the old sound window.</b> Press <kbd>Win</kbd>+<kbd>R</kbd>, type
           <b>mmsys.cpl</b>, press Enter. That is the whole trick.<br>
           Prefer clicking? <i>Settings → System → Sound</i> → scroll to the bottom → <i>More sound settings</i>.
           On Windows 10 it is called <i>Sound Control Panel</i>.<br>
           You are in the right place when you see a small window with <b>Playback / Recording / Sounds /
           Communications</b> tabs.</div>
-          <p><b>In that window:</b> <i>Recording</i> tab → click <b>CABLE Output</b> → <b>Properties</b> →
+          <p><b>In that window:</b> <i>Recording</i> tab → click <b>CABLE-B Output</b> → <b>Properties</b> →
           <i>Listen</i> tab → tick <b>“Listen to this device”</b> → under <i>Playback through this device</i>
           choose your headphones → <b>Apply</b>.</p>
+          <p>You should now hear both again: your DAW through the first cable's listen-through, and the room
+          through this one.</p>
         </div></details>
 
         <details class="sub"><summary>Part 3 — get the pipe into your mixer</summary><div class="body">
@@ -273,11 +282,12 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
           Then <b>expect the mixer to still say “in 1 / in 2”</b> — ASIO names channels, not devices, so CABLE
           Output will never appear there by name. Those two ARE the cable now. The status line confirms it:
           <i>“1x2 inputs available”</i>.</p>
-          <p><b>1b. On WASAPI</b> — there is a separate <b>Input</b> dropdown under the output one. Set it to
-          <b>CABLE Output</b>, and it then appears in the mixer by name.</p>
+          <p><b>1b. On DirectSound or WASAPI</b> — inputs are listed <b>by name</b>, so there is nothing to set
+          here at all. <b>CABLE-B Output</b> simply appears in the mixer's IN dropdown. This is the easy case, and
+          it is the reason DirectSound is worth the small latency cost.</p>
           <p><b>2.</b> Open the <b>Mixer</b> and click an empty insert track.</p>
-          <p><b>3.</b> At the top of the mixer, open the <b>IN</b> dropdown and pick your input — <b>in 1 / in 2</b>
-          on ASIO, or <b>CABLE Output</b> by name on WASAPI.</p>
+          <p><b>3.</b> At the top of the mixer, open the <b>IN</b> dropdown and pick your input — <b>CABLE-B
+          Output</b> by name on DirectSound/WASAPI, or <b>in 1 / in 2</b> on ASIO.</p>
           <p><b>4. Check the meter before anything else.</b> Get the artist to talk and watch that insert's peak
           meter. <b>Moving = your DAW has the signal.</b> Dead = it does not, and no amount of pressing record
           will help.</p>
@@ -285,10 +295,12 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
           <i>“Listen to this device”</i> from Part 2 sends the artist to your headphones through WINDOWS, around
           your DAW completely. It sounds identical whether the DAW is wired up or not. <b>The meter is the only
           honest test.</b> Hearing them with a dead meter means step 1 did not take.</div>
-          <div class="warn"><b>Then mute that track's send to Master.</b> Chrome shares your master, so anything
-          sitting in it is being sent back to the artist. Click the little arrow between that insert and Master to
-          switch the send off. You will still hear them — that comes from <i>“Listen to this device”</i>, not from
-          your DAW.</div>
+          <div class="warn"><b>Now MUTE that track's send to Master — this one is not optional.</b> Your DAW's
+          master is what reaches the room, whether it goes out as your microphone or through a screen share. Leave
+          the artist's vocal sitting in it and you send them their own voice, a beat late, and the echo is back.
+          Click the little arrow between that insert and Master to switch the send off.<br>
+          You will still hear them, from <i>“Listen to this device”</i> — that is Windows, not your DAW. And it
+          still records, because a DAW records the track's INPUT, not the master.</div>
           <div class="tip"><b>One input device at a time.</b> On ASIO and WASAPI alike, your DAW can only use one.
           While its input is CABLE Output, your studio mic is not available inside it. That is fine — choose the
           mic in the <b>Microphone / audio interface</b> box at the top of this page instead. Your mic and the
@@ -316,9 +328,12 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
           <i>Options → Audio Settings</i>, shipping on 44100:</p>
           <p>· your interface's own control panel<br>
           · your DAW's audio settings<br>
-          · the old sound window (<kbd>Win</kbd>+<kbd>R</kbd> → <b>mmsys.cpl</b>) → <i><b>Playback</b> tab →
-          CABLE Input → Properties → Advanced</i><br>
-          · the same window → <i><b>Recording</b> tab → CABLE Output → Properties → Advanced</i></p>
+          · the old sound window (<kbd>Win</kbd>+<kbd>R</kbd> → <b>mmsys.cpl</b>) → <i><b>Playback</b> tab</i> →
+          <b>every CABLE … Input</b> you use → <i>Properties → Advanced</i><br>
+          · the same window → <i><b>Recording</b> tab</i> → <b>every CABLE … Output</b> → <i>Properties →
+          Advanced</i></p>
+          <p>Running two cables means <b>eight</b> places, not four — each end of each cable is set separately and
+          they all default to 44100.</p>
           <p>Still crackling? Raise your DAW's buffer length.</p>
         </div></details>
 
