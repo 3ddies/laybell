@@ -170,7 +170,22 @@ Everything else is three inbox waits and one test that needs Android hardware.
    + Cloudflare separately, re-seed. Plan: `docs/FRESH_START_RESET.md`. This also clears
    the money-test artifacts and 11 expired ad campaigns.
 2. **Legal rollout** manual steps — `docs/LEGAL_ROLLOUT.md`.
-3. **Email**: custom SMTP + SPF/DKIM/DMARC — `docs/EMAIL_SETUP.md`.
+3. **Email**: custom SMTP + SPF/DKIM/DMARC — `docs/EMAIL_SETUP.md`. ⚠️ **DO THIS BEFORE
+   LAUNCH DAY, NOT ON IT.** It is DNS work, and DNS takes hours to propagate — it is the
+   worst possible thing to be waiting on with the store listing already live.
+
+   It also closes a live compliance gap. The **Terms of Service promise** that 13–17
+   accounts get *"verifiable parental consent… by parent or guardian email confirmation"*
+   and that *"where we cannot obtain verifiable parental consent… the account will be
+   restricted or blocked."* The machinery exists and both `parent-consent` and
+   `parent-consent-verify` are deployed — but `RESEND_API_KEY`, `CONSENT_FROM_EMAIL` and
+   `CONSENT_VERIFY_URL` are **all unset** (verified 2026-08-10), so no email is ever sent.
+   A minor attests in-app, the parent is never contacted, nothing is verified, and no
+   account is restricted. Same shape as the mature-content gap: a published document
+   promising a protection that does not operate.
+
+   Setting those three secrets turns it on — the function already records the token and
+   returns `{ok:false, reason}` rather than failing, which is why nothing looked broken.
 4. **Stripe live**: swap `STRIPE_SECRET_KEY` to `sk_live_…`, fund the Stripe balance,
    then flip `payoutsAvailable()`. Credits money arrives in a *bank* account, not
    Stripe, so transfers fail until it is topped up.
