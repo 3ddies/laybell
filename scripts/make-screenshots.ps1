@@ -3,7 +3,13 @@
 #
 # IN   store/screenshots/raw/       01*.png, 02*.png ... (any size; sorted by name)
 # OUT  store/screenshots/appstore/  1320 x 2868   (Apple 6.9", covers every iPhone)
-#      store/screenshots/play/      1080 x 1920   (Play, exactly 9:16)
+#      store/screenshots/play/      1080 x 1920   (Play phone, exactly 9:16)
+#      store/screenshots/tablet/    1440 x 2560   (Play 7in AND 10in tablet)
+#
+# Play marks BOTH tablet slots required. 7-inch wants each side in 320-3840 and
+# 10-inch wants 1080-7680, so one 1440x2560 set satisfies both with room to
+# spare - the phone set's 1080 short side sits exactly ON the 10-inch minimum,
+# and a bound you are sitting exactly on is a bound worth clearing properly.
 #
 # A LANDSCAPE source is written at landscape size instead - 2868 x 1320 for
 # Apple, 1920 x 1080 for Play - keeping the numbering, so each folder can just
@@ -40,6 +46,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 $rawDir = Join-Path $repo 'store\screenshots\raw'
 $outApple = Join-Path $repo 'store\screenshots\appstore'
 $outPlay = Join-Path $repo 'store\screenshots\play'
+$outTablet = Join-Path $repo 'store\screenshots\tablet'
 $outLand = Join-Path $repo 'store\screenshots\landscape'
 
 # Captions, in shot order, from docs/STORE_LISTING.md section 4.
@@ -55,7 +62,7 @@ $CAPTIONS = @(
 )
 
 if (-not (Test-Path $rawDir)) { New-Item -ItemType Directory -Force $rawDir | Out-Null }
-foreach ($d in @($outApple, $outPlay, $outLand)) {
+foreach ($d in @($outApple, $outPlay, $outTablet, $outLand)) {
   if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force $d | Out-Null }
 }
 
@@ -188,9 +195,11 @@ foreach ($f in $raws) {
   if ($isLandscape) {
     Build-Frame $f.FullName $caption 2868 1320 (Join-Path $outApple "$n.png")
     Build-Frame $f.FullName $caption 1920 1080 (Join-Path $outPlay "$n.png")
+    Build-Frame $f.FullName $caption 2560 1440 (Join-Path $outTablet "$n.png")
   } else {
     Build-Frame $f.FullName $caption 1320 2868 (Join-Path $outApple "$n.png")
     Build-Frame $f.FullName $caption 1080 1920 (Join-Path $outPlay "$n.png")
+    Build-Frame $f.FullName $caption 1440 2560 (Join-Path $outTablet "$n.png")
   }
 
   $tag = if ($isLandscape) { '   [landscape frame]' } else { '' }

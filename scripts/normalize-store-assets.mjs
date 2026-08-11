@@ -63,7 +63,7 @@ normalize('store/play-icon-512.png', 6, '32-bit RGBA, with alpha');
 //   Play  — "JPEG or 24-bit PNG (no alpha)"
 // make-screenshots.ps1 draws through System.Drawing, which can only write 32bpp
 // ARGB, so every frame it produces would be rejected without this pass.
-const shotDirs = ['store/screenshots/appstore', 'store/screenshots/play', 'store/screenshots/landscape'];
+const shotDirs = ['store/screenshots/appstore', 'store/screenshots/play', 'store/screenshots/tablet', 'store/screenshots/landscape'];
 let shots = 0;
 for (const dir of shotDirs) {
   const abs = path.join(ROOT, dir);
