@@ -113,9 +113,13 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
       <li id="stepDaw"><b>Send your beat.</b> Hit <i>Share app audio</i>, choose the <b>Window</b> tab, pick your DAW,
         and tick <b>“Share audio.”</b>
         <details><summary>It shared but nobody can hear it</summary>
-          <p>Three causes, in order of likelihood. The <b>“Share audio” checkbox is off by default</b> and easy to miss.
-          You picked <b>Entire screen</b> — Chrome only offers that checkbox for a window or a browser tab.
-          Or your DAW is still on <b>ASIO</b>, which never reaches the Windows mixer.</p>
+          <p>Three causes, in order of likelihood. The <b>“Share audio” checkbox is off by default</b> and easy to
+          miss. You picked <b>Entire screen</b> — Chrome only offers that checkbox for a window or a browser tab.
+          Or your driver is taking the sound card exclusively, so nothing reaches Windows for Chrome to capture.</p>
+          <p><b>Not all ASIO is equal here.</b> A hardware ASIO driver or <b>ASIO4ALL</b> usually grabs the device
+          outright and the share carries silence. <b>FL Studio ASIO</b> shares the device with other apps, so it
+          works fine — if the room can hear your beat, your driver is not the problem and you can stop looking
+          here.</p>
         </details>
       </li>
 
@@ -159,15 +163,22 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
           your headphones → <b>Apply</b>.</p>
         </details>
         <details><summary>Part 3 — get the pipe into your FL Studio mixer</summary>
-          <p class="warn" style="margin:0 0 10px"><b>If your mixer only offers “in 1” and “in 2”, this is why.</b>
-          That list is not a list of everything on your PC — it is the inputs of the <b>one</b> device FL is
-          currently using, which is your interface. <b>CABLE Output cannot appear until you make it FL's input
-          device.</b></p>
-          <p><b>1.</b> FL Studio → <i>Options → Audio Settings</i>. With a <b>WASAPI</b> device selected there is a
-          separate <b>Input</b> dropdown underneath the output one. Set that <b>Input</b> to <b>CABLE Output</b>.</p>
+          <p class="warn" style="margin:0 0 10px"><b>“My mixer only shows in 1 and in 2.”</b> That list is not
+          everything on your PC — it is the inputs of the <b>one</b> device FL is using. Where you change that
+          device depends on your driver, and the two work completely differently. Check <i>Options → Audio
+          Settings</i> to see which you are on.</p>
+          <p><b>1a. On ASIO</b> (FL Studio ASIO, ASIO4ALL, your interface's own driver) — there is only ONE Device
+          box, for input and output together. The input lives inside the driver instead: click
+          <b>“Show ASIO panel”</b>, just under <i>Buffer length</i>, and set the <b>input</b> there to
+          <b>CABLE Output</b>.<br>
+          <span style="opacity:.85">Then <b>expect the mixer to still say “in 1 / in 2”</b> — ASIO names channels,
+          not devices, so CABLE Output will never appear there by name. Those two ARE the cable now. Your Audio
+          Settings status line confirms it: <i>“1x2 inputs available”</i>.</span></p>
+          <p><b>1b. On WASAPI</b> — there is a separate <b>Input</b> dropdown under the output one. Set it to
+          <b>CABLE Output</b>, and it then appears in the mixer BY NAME.</p>
           <p><b>2.</b> Open the <b>Mixer</b> and click an empty insert track.</p>
-          <p><b>3.</b> At the top of the mixer, open the <b>IN</b> dropdown. <b>CABLE Output</b> is now in the list —
-          pick it.</p>
+          <p><b>3.</b> At the top of the mixer, open the <b>IN</b> dropdown and pick your input — <b>in 1 / in 2</b>
+          on ASIO, or <b>CABLE Output</b> by name on WASAPI.</p>
           <p><b>4. Check the meter before anything else.</b> Get the artist to talk and watch that insert's peak
           meter. <b>Moving = FL has the signal.</b> Dead = it does not, and no amount of pressing record will help.</p>
           <p class="warn" style="margin:0 0 10px"><b>Careful — you can hear them without FL receiving anything.</b>
@@ -204,7 +215,8 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
         <details><summary>Part 5 — fix crackling, glitching or stuttering</summary>
           <p>It is almost never the microphone. It is a sample-rate mismatch, and the cable defaults to
           <b>44100</b> while this app runs at <b>48000</b>.</p>
-          <p>Set <b>48000 Hz</b> in all four of these — they are configured separately:</p>
+          <p>Set <b>48000 Hz</b> in all four of these — they are configured separately. FL's is right at the top of
+          <i>Options → Audio Settings</i>, and a fresh install is usually on 44100:</p>
           <p>· your interface's own control panel<br>
           · FL Studio → <i>Options → Audio Settings</i><br>
           · the old sound window (<kbd>Win</kbd>+<kbd>R</kbd> → <b>mmsys.cpl</b>) → <i><b>Playback</b> tab →
