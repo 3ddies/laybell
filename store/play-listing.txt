@@ -43,7 +43,7 @@ BUILD SOMETHING TOGETHER
 Genre communities with their own tags and moderators. Public playlists that credit the curator. Group chats. Friends are mutual follows, so your private posts stay with the people you actually know.
 
 IN YOUR LANGUAGE
-The whole app runs in 10 languages, and you can translate any comment, caption or message with one tap.
+Laybell runs in 10 languages, and you can translate any comment, caption or message with one tap.
 
 PREMIUM
 Laybell Premium is optional. It gets you an ad-free feed, a bigger share of every tip, custom ordering on your music, deeper follower insights, half the ads in Reels and Music, and a monthly spotlight boost.
