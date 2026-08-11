@@ -45,19 +45,62 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
 .meter > div { height:100%; width:0%; background:linear-gradient(90deg,var(--ok),#EAB308 70%,var(--err)); transition:width .06s linear; }
 .countin { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); font-size:140px; font-weight:900; color:#fff; z-index:50; }
 .countin.rec { color:var(--err); }
-/* Staged setup. Numbered because order matters: the driver check has to happen
-   before the share, or the share silently captures nothing. */
-.steps { counter-reset:step; margin:14px 0 0; padding:0; list-style:none; }
-.steps li { counter-increment:step; position:relative; padding:0 0 14px 30px; font-size:13px; line-height:1.5; color:var(--muted); }
-.steps li:before { content:counter(step); position:absolute; left:0; top:0; width:20px; height:20px; border-radius:50%;
-  background:#2a2a33; color:#fff; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; }
-.steps li.done:before { content:"\2713"; background:var(--ok); }
+/* ── Section heading: a label with a rule running off to the right. Cheap way
+   to separate "do this now" from "read if you need it", which is the whole
+   information problem this page had. */
+.sec { display:flex; align-items:center; gap:10px; margin:24px 0 12px; }
+.sec h2 { margin:0; font-size:11px; font-weight:800; letter-spacing:1px; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
+.sec:after { content:""; flex:1; height:1px; background:var(--line); }
+.sec .count { font-size:11px; color:var(--muted); opacity:.7; }
+
+/* Setup steps — the three things everyone does. Numbered, and they tick
+   themselves off where the page can tell. */
+.steps { counter-reset:step; margin:0; padding:0; list-style:none; }
+.steps li { counter-increment:step; position:relative; padding:0 0 15px 34px; font-size:13.5px; line-height:1.6; color:var(--muted); }
+.steps li:last-child { padding-bottom:0; }
+.steps li:before { content:counter(step); position:absolute; left:0; top:0; width:23px; height:23px; border-radius:50%;
+  background:#22212a; border:1px solid var(--line); color:#fff; font-size:11px; font-weight:800;
+  display:flex; align-items:center; justify-content:center; }
+.steps li.done:before { content:"\2713"; background:var(--ok); border-color:var(--ok); color:#062b14; }
+.steps li.done > b:first-child { color:var(--muted); text-decoration:line-through; text-decoration-color:var(--line); }
 .steps b { color:#fff; }
-.steps details { margin-top:6px; }
-.steps summary { cursor:pointer; color:var(--brand); font-weight:700; font-size:12px; }
-.steps details p { margin:6px 0 0; }
-.warn { border-left:3px solid var(--err); padding:8px 10px; margin:10px 0 0; background:rgba(255,80,80,.07); font-size:12.5px; line-height:1.5; color:var(--muted); }
-.warn b { color:#fff; }
+
+/* Accordion. Each guide answers one question and says up front who needs it,
+   so nobody reads five parts to find out they needed none of them. */
+.acc { background:#131218; border:1px solid var(--line); border-radius:13px; margin-bottom:9px; overflow:hidden; }
+.acc > summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:10px;
+  padding:13px 15px; font-size:13.5px; font-weight:700; color:var(--ink); }
+.acc > summary::-webkit-details-marker { display:none; }
+.acc > summary:before { content:"\203A"; color:var(--brand); font-size:19px; line-height:1; transition:transform .18s ease; }
+.acc[open] > summary:before { transform:rotate(90deg); }
+.acc > summary:hover { background:#181720; }
+.acc[open] > summary { border-bottom:1px solid var(--line); }
+.acc .tag { margin-left:auto; font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase;
+  color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:2px 8px; white-space:nowrap; }
+.acc .body { padding:13px 15px 15px; font-size:13px; line-height:1.65; color:var(--muted); }
+.acc .body > p { margin:0 0 10px; }
+.acc .body > p:last-child { margin-bottom:0; }
+.acc .body b { color:#fff; }
+.who { font-size:12.5px; color:var(--muted); background:#0f0e12; border:1px solid var(--line);
+  border-radius:9px; padding:9px 11px; margin:0 0 12px; }
+.who b { color:var(--brand); }
+
+/* Sub-steps inside a guide. */
+.sub { border-top:1px solid var(--line); margin-top:10px; }
+.sub > summary { cursor:pointer; list-style:none; padding:11px 0 9px; font-size:12.5px; font-weight:800; color:var(--brand); }
+.sub > summary::-webkit-details-marker { display:none; }
+.sub > summary:before { content:"+"; display:inline-block; width:14px; font-weight:800; }
+.sub[open] > summary:before { content:"\2212"; }
+.sub .body { padding:0 0 10px; }
+
+/* Two callout kinds, and they mean different things: red = this will break
+   your session, orange = this will save you twenty minutes. They used to be
+   the same style, so warnings and asides read identically. */
+.warn, .tip { border-left:3px solid; border-radius:0 9px 9px 0; padding:9px 12px; margin:11px 0; font-size:12.5px; line-height:1.55; color:var(--muted); }
+.warn { border-color:var(--err); background:rgba(244,63,94,.08); }
+.tip { border-color:var(--brand); background:rgba(242,101,34,.07); }
+.warn b, .tip b { color:#fff; }
+
 kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:0 6px; font:inherit; font-size:12px; color:var(--ink); }
 </style>
 </head><body><main>
@@ -105,152 +148,165 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
       <button class="btn btn-primary" id="dawBtn">Share app audio</button>
     </div>
     <p class="status" id="roomStatus"></p>
+    <div class="sec"><h2>Set up</h2><span class="count">3 steps</span></div>
     <ol class="steps" id="steps">
 
-      <li id="stepMic"><b>Pick your mic.</b> Choose your interface above. On <i>Raw input</i> the signal reaches
-        the room untouched — right for interfaces, instruments and anything already mixed.</li>
+      <li id="stepMic"><b>Choose your mic.</b> Pick your interface in the box above. Leave the preset on
+        <i>Raw input</i> for an interface, an instrument, or anything already mixed — the signal then reaches the
+        room untouched. The voice presets add real EQ and compression, which is right for a bare vocal and wrong
+        for a beat. Watch the meter move before you go on.</li>
 
-      <li id="stepDaw"><b>Send your beat.</b> Hit <i>Share app audio</i>, choose the <b>Window</b> tab, pick your DAW,
-        and tick <b>“Share audio.”</b>
-        <details><summary>It shared but nobody can hear it</summary>
-          <p>In order of likelihood. The <b>“Share audio” checkbox is off by default</b> and easy to miss. You
-          picked <b>Entire screen</b> — Chrome only offers that checkbox for a window or a browser tab.</p>
-          <p class="warn" style="margin:10px 0 0"><b>It was working, then went quiet? Re-share.</b> A share is
-          bound to one window. Change your DAW's audio device, or do anything else that rebuilds its window, and
-          Chrome quietly drops it — the room goes silent with no error and the button does not always show it. Hit
-          <i>Share app audio</i> again. <b>Check this first whenever the beat stops arriving</b>, especially right
-          after touching audio settings.</p>
-          <p style="margin-top:10px"><b>Still silent with the share definitely running?</b> Then your driver is
-          taking the sound card exclusively and nothing reaches Windows for Chrome to capture. A hardware ASIO
-          driver or <b>ASIO4ALL</b> does this. <b>FL Studio ASIO</b> is meant to share the device and usually works
-          — but if the room cannot hear you while the share is live, believe the room, not the driver.</p>
-          <p>Fix: set your DAW's Device to a <b>DirectSound</b> or <b>WASAPI</b> entry — your interface's own
-          <i>Speakers (…)</i> line — instead of ASIO. Bonus for FL users: in DirectSound mode FL lists system
-          inputs <b>by name</b>, so <b>CABLE Output</b> shows up in the mixer's IN dropdown directly and you can
-          skip the ASIO panel entirely. The cost is a little more latency, which barely matters next to the network
-          delay already in the round trip.</p>
-        </details>
-      </li>
+      <li id="stepDaw"><b>Send your beat.</b> Hit <i>Share app audio</i>, choose the <b>Window</b> tab, pick your
+        DAW, and tick <b>“Share audio.”</b> That checkbox is off by default and sits low in the dialog.</li>
 
       <li id="stepHear"><b>Hear them — nothing to install.</b> Leave your DAW's output and this browser's output
-        BOTH on your headphones. Your beat and their vocal mix in your ears, and you are done: no extra software,
-        no routing, and the artist can never hear themselves.
-        <p class="warn" style="margin-top:8px"><b>Do not send the room back into your DAW</b> unless you follow the
-        next step exactly. Chrome shares your DAW's <b>whole master</b>, so the moment their vocal is playing inside
-        your DAW it is also being sent straight back to them — they hear themselves a beat late, and it can build
-        into a howl. This is the single most common way to break a session.</p>
+        <b>both on your headphones</b>. Your beat and their vocal mix in your ears and you are done: no extra
+        software, no routing, and the artist can never hear themselves.
+        <div class="warn"><b>Do not send the room back into your DAW</b> unless you follow the recording guide
+        exactly. Chrome shares your DAW's <b>whole master</b>, so the moment their vocal plays inside your DAW it
+        is being sent straight back to them — they hear themselves a beat late, and it can build into a howl.
+        This is the most common way to break a session.</div>
       </li>
 
-      <li id="stepBack"><b>Optional — record their take into your DAW.</b> Only if you want the vocal on a track
-        while you work. Windows cannot hand a browser's audio to a DAW on its own, so this one needs a free driver.
-        Most sessions do not need it: see <i>“a cleaner way to get the take”</i> below.
-        <details><summary>Part 1 — install VB-CABLE (about 3 minutes)</summary>
+    </ol>
+
+    <div class="sec"><h2>Guides</h2><span class="count">open only what you need</span></div>
+
+    <details class="acc"><summary>The room can't hear my beat<span class="tag">common</span></summary>
+      <div class="body">
+        <p>In order of likelihood. The <b>“Share audio” checkbox is off by default</b> and easy to miss. Or you
+        picked <b>Entire screen</b> — Chrome only offers that checkbox for a window or a browser tab.</p>
+        <div class="warn"><b>Was it working, then went quiet? Re-share.</b> A share is bound to one window. Change
+        your DAW's audio device — or do anything else that rebuilds its window — and Chrome drops the share
+        silently. The room goes quiet with no error and the button does not always show it. <b>Check this first
+        whenever the beat stops arriving</b>, especially just after touching audio settings.</div>
+        <p><b>Still silent with the share definitely running?</b> Then your driver has taken the sound card
+        exclusively and nothing reaches Windows for Chrome to capture. A hardware ASIO driver or <b>ASIO4ALL</b>
+        does this. <b>FL Studio ASIO</b> is meant to share the device and usually works — but if the room cannot
+        hear you while the share is live, believe the room, not the driver.</p>
+        <p><b>Fix:</b> set your DAW's Device to a <b>DirectSound</b> or <b>WASAPI</b> entry — your interface's own
+        <i>Speakers (…)</i> line — instead of ASIO.</p>
+        <div class="tip"><b>Bonus for FL users.</b> In DirectSound mode FL lists system inputs <b>by name</b>, so
+        <b>CABLE Output</b> appears in the mixer's IN dropdown directly and the ASIO-panel detour disappears
+        entirely. It costs a little latency, which is nothing next to the network delay already in the round
+        trip.</div>
+      </div>
+    </details>
+
+    <details class="acc"><summary>Record their take into my DAW<span class="tag">optional</span></summary>
+      <div class="body">
+        <p class="who"><b>You need this only if</b> you want their vocal on a track while you work. Hearing them
+        needs none of it. Windows cannot hand a browser's audio to a DAW on its own, so this one needs a free
+        driver — and there is a cleaner route at the bottom worth reading first.</p>
+
+        <details class="sub"><summary>Part 1 — install VB-CABLE (about 3 minutes)</summary><div class="body">
           <p><b>Download</b> — <a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">vb-audio.com/Cable</a>,
           the Windows download. Free. You get a .zip.</p>
           <p><b>Unzip</b> — right-click it → <i>Extract All</i>.</p>
           <p><b>Install</b> — in that folder, right-click <b>VBCABLE_Setup_x64.exe</b> → <b>Run as administrator</b>
           → <i>Install Driver</i>.</p>
           <p><b>Reboot.</b> Nothing works until you do.</p>
-          <p>You now have two new audio devices in Windows, and they are two ends of one pipe:<br>
+          <p>You now have two new audio devices, and they are two ends of one pipe:<br>
           <b>CABLE Input</b> = a speaker. Audio you send INTO the pipe.<br>
           <b>CABLE Output</b> = a microphone. Audio coming OUT of the pipe.</p>
-        </details>
-        <details><summary>Part 2 — send Laybell into the pipe</summary>
+        </div></details>
+
+        <details class="sub"><summary>Part 2 — send Laybell into the pipe</summary><div class="body">
           <p><b>Windows <i>Settings → System → Sound → Volume mixer</i></b> → find this browser in the app list →
           set its <b>Output</b> to <b>CABLE Input</b>.</p>
-          <p>Laybell now plays into the pipe instead of your headphones — so you have gone deaf to the room. The
-          next bit gets your ears back, and it needs Windows' <b>old</b> sound window, because the modern Settings
-          app cannot do it.</p>
-          <p class="warn" style="margin:0 0 10px"><b>How to open the old sound window.</b> Press
-          <kbd>Win</kbd>+<kbd>R</kbd>, type <b>mmsys.cpl</b>, press Enter. That is the whole trick.<br>
-          <span style="opacity:.85">Prefer clicking? <i>Settings → System → Sound</i> → scroll to the bottom →
-          <i>More sound settings</i>. On Windows 10 it is called <i>Sound Control Panel</i> instead.</span><br>
+          <p>Laybell now plays into the pipe instead of your headphones, so you have gone deaf to the room. The
+          next bit gets your ears back, and it needs Windows' <b>old</b> sound window — the modern Settings app
+          cannot do it.</p>
+          <div class="tip"><b>How to open the old sound window.</b> Press <kbd>Win</kbd>+<kbd>R</kbd>, type
+          <b>mmsys.cpl</b>, press Enter. That is the whole trick.<br>
+          Prefer clicking? <i>Settings → System → Sound</i> → scroll to the bottom → <i>More sound settings</i>.
+          On Windows 10 it is called <i>Sound Control Panel</i>.<br>
           You are in the right place when you see a small window with <b>Playback / Recording / Sounds /
-          Communications</b> tabs. Everything below happens in there.</p>
+          Communications</b> tabs.</div>
           <p><b>In that window:</b> <i>Recording</i> tab → click <b>CABLE Output</b> → <b>Properties</b> →
-          <i>Listen</i> tab → tick <b>“Listen to this device”</b> → under <i>Playback through this device</i> choose
-          your headphones → <b>Apply</b>.</p>
-        </details>
-        <details><summary>Part 3 — get the pipe into your FL Studio mixer</summary>
-          <p class="warn" style="margin:0 0 10px"><b>“My mixer only shows in 1 and in 2.”</b> That list is not
-          everything on your PC — it is the inputs of the <b>one</b> device FL is using. Where you change that
-          device depends on your driver, and the two work completely differently. Check <i>Options → Audio
-          Settings</i> to see which you are on.</p>
+          <i>Listen</i> tab → tick <b>“Listen to this device”</b> → under <i>Playback through this device</i>
+          choose your headphones → <b>Apply</b>.</p>
+        </div></details>
+
+        <details class="sub"><summary>Part 3 — get the pipe into your mixer</summary><div class="body">
+          <div class="warn"><b>“My mixer only shows in 1 and in 2.”</b> That list is not everything on your PC — it
+          is the inputs of the <b>one</b> device your DAW is using. Where you change that device depends on your
+          driver, and the two work completely differently.</div>
           <p><b>1a. On ASIO</b> (FL Studio ASIO, ASIO4ALL, your interface's own driver) — there is only ONE Device
-          box, for input and output together. The input lives inside the driver instead: click
-          <b>“Show ASIO panel”</b>, just under <i>Buffer length</i>, and set the <b>input</b> there to
-          <b>CABLE Output</b>.<br>
-          <span style="opacity:.85">Then <b>expect the mixer to still say “in 1 / in 2”</b> — ASIO names channels,
-          not devices, so CABLE Output will never appear there by name. Those two ARE the cable now. Your Audio
-          Settings status line confirms it: <i>“1x2 inputs available”</i>.</span></p>
+          box, for input and output together. The input lives inside the driver: click <b>“Show ASIO panel”</b>,
+          just under <i>Buffer length</i>, and set the <b>input</b> there to <b>CABLE Output</b>.<br>
+          Then <b>expect the mixer to still say “in 1 / in 2”</b> — ASIO names channels, not devices, so CABLE
+          Output will never appear there by name. Those two ARE the cable now. The status line confirms it:
+          <i>“1x2 inputs available”</i>.</p>
           <p><b>1b. On WASAPI</b> — there is a separate <b>Input</b> dropdown under the output one. Set it to
-          <b>CABLE Output</b>, and it then appears in the mixer BY NAME.</p>
+          <b>CABLE Output</b>, and it then appears in the mixer by name.</p>
           <p><b>2.</b> Open the <b>Mixer</b> and click an empty insert track.</p>
           <p><b>3.</b> At the top of the mixer, open the <b>IN</b> dropdown and pick your input — <b>in 1 / in 2</b>
           on ASIO, or <b>CABLE Output</b> by name on WASAPI.</p>
           <p><b>4. Check the meter before anything else.</b> Get the artist to talk and watch that insert's peak
-          meter. <b>Moving = FL has the signal.</b> Dead = it does not, and no amount of pressing record will help.</p>
-          <p class="warn" style="margin:0 0 10px"><b>Careful — you can hear them without FL receiving anything.</b>
-          <i>“Listen to this device”</i> from Part 2 sends the artist to your headphones through WINDOWS, going
-          around FL completely. So it sounds exactly the same whether FL is wired up or not. The meter is the only
-          honest test. If you can hear them but the meter is dead, step 1 above did not take.</p>
-          <p class="warn" style="margin:0 0 10px"><b>Then mute that track's send to Master.</b> Chrome shares your
-          master, so anything sitting in it is being sent back to the artist. Click the little arrow between that
-          insert and Master to switch the send off. You will still hear the artist — that comes from
-          <i>“Listen to this device”</i> in Part 2, not from FL.</p>
-          <p><b>FL can only use ONE input device at a time on WASAPI.</b> So while its input is CABLE Output, your
-          studio mic is not available inside FL. That is fine — choose the mic in the <b>Microphone / audio
-          interface</b> box at the top of this page instead. It goes straight to the room, and the beat still
-          reaches the room through <i>Share app audio</i>. Both are sent at once.</p>
-        </details>
-        <details><summary>Part 4 — actually lay it down on the beat</summary>
-          <p>Signal reaching the mixer is not the same as FL recording it. Hearing them and capturing them are two
-          separate things, and this is where most people get stuck.</p>
-          <p><b>1. Song mode, not Pattern mode.</b> The switch is by the transport at the top. In Pattern mode the
-          take goes into a pattern instead of onto the timeline next to your beat.</p>
-          <p><b>2. ARM the insert.</b> On that mixer insert, click the small <b>record-arm</b> circle at the bottom
-          of the channel strip so it lights up. <b>FL records armed inserts and nothing else</b> — this is the step
-          that is missed most often, and it fails completely silently.</p>
-          <p><b>3. Set where the file goes</b> if FL asks. It will prompt for a name and folder the first time.</p>
-          <p><b>4. Click the transport <b>Record</b> button, then <b>Play</b>.</b> If FL asks what to record, choose
-          <b>“Audio, into the playlist”</b>. Picking <i>Automation</i> or <i>Score</i> records no audio at all and
-          gives you no warning.</p>
+          meter. <b>Moving = your DAW has the signal.</b> Dead = it does not, and no amount of pressing record
+          will help.</p>
+          <div class="warn"><b>Careful — you can hear them without your DAW receiving anything.</b>
+          <i>“Listen to this device”</i> from Part 2 sends the artist to your headphones through WINDOWS, around
+          your DAW completely. It sounds identical whether the DAW is wired up or not. <b>The meter is the only
+          honest test.</b> Hearing them with a dead meter means step 1 did not take.</div>
+          <div class="warn"><b>Then mute that track's send to Master.</b> Chrome shares your master, so anything
+          sitting in it is being sent back to the artist. Click the little arrow between that insert and Master to
+          switch the send off. You will still hear them — that comes from <i>“Listen to this device”</i>, not from
+          your DAW.</div>
+          <div class="tip"><b>One input device at a time.</b> On ASIO and WASAPI alike, your DAW can only use one.
+          While its input is CABLE Output, your studio mic is not available inside it. That is fine — choose the
+          mic in the <b>Microphone / audio interface</b> box at the top of this page instead. Your mic and the
+          shared beat publish as two separate tracks, so both reach the room at once.</div>
+        </div></details>
+
+        <details class="sub"><summary>Part 4 — actually lay it down on the beat</summary><div class="body">
+          <p>Signal reaching the mixer is not the same as your DAW recording it. Hearing and capturing are two
+          different things, and this is where most people get stuck.</p>
+          <p><b>1. Song mode, not Pattern mode.</b> The switch is by the transport. In Pattern mode the take goes
+          into a pattern instead of onto the timeline beside your beat.</p>
+          <p><b>2. ARM the insert.</b> Click the small <b>record-arm</b> circle at the bottom of that mixer channel
+          so it lights up. <b>FL records armed inserts and nothing else</b> — the most-missed step, and it fails
+          completely silently.</p>
+          <p><b>3. Set where the file goes</b> if prompted. It asks for a name and folder the first time.</p>
+          <p><b>4. Click <b>Record</b>, then <b>Play</b>.</b> If asked what to record, choose <b>“Audio, into the
+          playlist”</b>. Automation or Score record no audio at all and give you no warning.</p>
           <p><b>5. Stop.</b> The take appears in the playlist as an audio clip, on the beat.</p>
-          <p class="warn" style="margin-top:10px"><b>It will sit slightly behind the grid.</b> The vocal travelled
-          phone → room → your machine, and that delay is baked into the file — it is physics, not a setting. Record
-          a clap on the first take, measure how late it lands, then drag every take back by that amount. If the
-          timing has to be perfect, use <i>“a cleaner way to get the take”</i> below instead.</p>
-        </details>
-        <details><summary>Part 5 — fix crackling, glitching or stuttering</summary>
-          <p>It is almost never the microphone. It is a sample-rate mismatch, and the cable defaults to
-          <b>44100</b> while this app runs at <b>48000</b>.</p>
-          <p>Set <b>48000 Hz</b> in all four of these — they are configured separately. FL's is right at the top of
-          <i>Options → Audio Settings</i>, and a fresh install is usually on 44100:</p>
+        </div></details>
+
+        <details class="sub"><summary>Part 5 — fix crackling, glitching or stuttering</summary><div class="body">
+          <p>It is almost never the microphone. It is a sample-rate mismatch: the cable defaults to <b>44100</b>
+          while this app runs at <b>48000</b>.</p>
+          <p>Set <b>48000 Hz</b> in all four — they are configured separately, and FL's is at the top of
+          <i>Options → Audio Settings</i>, shipping on 44100:</p>
           <p>· your interface's own control panel<br>
-          · FL Studio → <i>Options → Audio Settings</i><br>
+          · your DAW's audio settings<br>
           · the old sound window (<kbd>Win</kbd>+<kbd>R</kbd> → <b>mmsys.cpl</b>) → <i><b>Playback</b> tab →
           CABLE Input → Properties → Advanced</i><br>
           · the same window → <i><b>Recording</b> tab → CABLE Output → Properties → Advanced</i></p>
-          <p>Still crackling? Raise FL's buffer length in Audio Settings.</p>
-        </details>
-        <details><summary>A cleaner way to get the take</summary>
-          <p>A vocal pulled back through the room has network delay baked into it and will never sit tight to the
-          grid, no matter how carefully you nudge it. For anything you intend to keep, have the artist record on
-          their phone and send you the file — it arrives clean, dry and perfectly in time.</p>
-        </details>
-      </li>
+          <p>Still crackling? Raise your DAW's buffer length.</p>
+        </div></details>
 
-      <li id="stepSync"><b>Sync the take.</b> When the host fires a <b>count-in</b>, this page counts 4 beats then
-        flashes <b style="color:var(--err)">REC</b>. Punch record on the flash.
-        <details><summary>Why the take lands slightly late</summary>
-          <p>The count-in aligns <i>when you both start</i>, but the audio still travels phone → room → your
-          machine. Expect the recording to sit a little behind the grid. Track a clap on the first take to measure
-          your offset, then nudge every take back by that amount. This is network latency, not a setting — for a
-          sample-tight vocal, have the artist record locally and send you the file.</p>
-        </details>
-      </li>
+        <div class="tip" style="margin-top:14px"><b>A cleaner way to get the take.</b> A vocal pulled back through
+        the room has network delay baked into it and will never sit tight to the grid, however carefully you nudge
+        it. For anything you intend to keep, have the artist record on their phone and send you the file — it
+        arrives clean, dry and perfectly in time, and none of the setup above is needed.</div>
+      </div>
+    </details>
 
-    </ol>
+    <details class="acc"><summary>Count-in, and why takes land late<span class="tag">timing</span></summary>
+      <div class="body">
+        <p id="stepSync">When the host fires a <b>count-in</b>, this page counts 4 beats and then flashes
+        <b style="color:var(--err)">REC</b>. Punch record on the flash.</p>
+        <p>The count-in aligns <i>when you both start</i>, but the audio still travels phone → room → your machine,
+        so the recording sits a little behind the grid. That delay is in the file — it is physics, not a setting.</p>
+        <p><b>Fix it once:</b> record a clap on the first take, measure how late it lands, then nudge every take
+        back by that amount.</p>
+        <div class="tip">For a sample-tight vocal, do not fight this. Have the artist record locally and send you
+        the file.</div>
+      </div>
+    </details>
+
     <button class="btn btn-ghost" id="leaveBtn" style="margin-top:12px">Leave</button>
   </div>
 
