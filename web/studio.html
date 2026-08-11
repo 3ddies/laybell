@@ -111,18 +111,48 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
         </details>
       </li>
 
-      <li id="stepBack"><b>Record their take into your DAW.</b> This direction needs one free tool — Windows won't
-        hand a browser's audio to a DAW on its own.
-        <details><summary>Set up the return path</summary>
-          <p><b>1.</b> Install <b>VB-CABLE</b> (free) and reboot — it adds a virtual audio device.<br>
-          <b>2.</b> Windows <i>Settings → System → Sound → Volume mixer</i> → set <b>this browser's output</b> to
-          <b>CABLE Input</b>. The room now feeds the cable.<br>
-          <b>3.</b> You just made the browser silent on your speakers. <i>Sound Control Panel → Recording →
-          CABLE Output → Properties → Listen</i> → tick <b>“Listen to this device”</b> and pick your headphones.<br>
-          <b>4.</b> In your DAW, set a track's input to <b>CABLE Output</b>, arm it, record.</p>
-          <p class="warn" style="margin-top:8px"><b>Leave that track's monitoring OFF.</b> Your DAW output is going
-          back into the room — if it also plays the incoming vocal, the artist hears themselves echoed and it can
-          build into a loop.</p>
+      <li id="stepHear"><b>Hear them — nothing to install.</b> Leave your DAW's output and this browser's output
+        BOTH on your headphones. Your beat and their vocal mix in your ears, and you are done: no extra software,
+        no routing, and the artist can never hear themselves.
+        <p class="warn" style="margin-top:8px"><b>Do not send the room back into your DAW</b> unless you follow the
+        next step exactly. Chrome shares your DAW's <b>whole master</b>, so the moment their vocal is playing inside
+        your DAW it is also being sent straight back to them — they hear themselves a beat late, and it can build
+        into a howl. This is the single most common way to break a session.</p>
+      </li>
+
+      <li id="stepBack"><b>Optional — record their take into your DAW.</b> Only if you want the vocal on a track
+        while you work. Windows cannot hand a browser's audio to a DAW on its own, so this one needs a free driver.
+        Most sessions do not need it: see <i>“a cleaner way to get the take”</i> below.
+        <details><summary>Install VB-CABLE and set up the return path</summary>
+          <p><b>1. Download it.</b> Go to <a href="https://vb-audio.com/Cable/" target="_blank"
+          rel="noopener">vb-audio.com/Cable</a> and get <b>VB-CABLE Driver Pack</b> for Windows. It is free
+          (donationware) and comes as a .zip.</p>
+          <p><b>2. Install it.</b> Right-click the .zip → <i>Extract All</i>. In the extracted folder, right-click
+          <b>VBCABLE_Setup_x64.exe</b> → <b>Run as administrator</b> → <i>Install Driver</i>. <b>Reboot.</b> It will
+          not appear until you do. Afterwards you have two new devices: <b>CABLE Input</b> (a speaker) and
+          <b>CABLE Output</b> (a microphone).</p>
+          <p><b>3. Point this browser at the cable.</b> Windows <i>Settings → System → Sound → Volume mixer</i> →
+          set <b>this browser's</b> output to <b>CABLE Input</b>. The room now feeds the cable instead of your
+          speakers.</p>
+          <p><b>4. Get your ears back.</b> You just made the browser silent to you. <i>Sound Control Panel →
+          Recording → CABLE Output → Properties → Listen</i> → tick <b>“Listen to this device”</b> and pick your
+          headphones.</p>
+          <p><b>5. Match the sample rate — do not skip this.</b> Set <b>48000 Hz</b> in FOUR places, because they
+          are all set separately and the cable defaults to 44100: your interface, your DAW's audio settings, and
+          BOTH ends of the cable — <i>Sound Control Panel → Playback → CABLE Input → Properties → Advanced</i> and
+          <i>→ Recording → CABLE Output → Properties → Advanced</i>. A mismatch here is the cause of the loud
+          glitching, crackling or stuttering people blame on their microphone.</p>
+          <p><b>6. Record.</b> In your DAW, set a track's input to <b>CABLE Output</b>, arm it, record.</p>
+          <p class="warn" style="margin-top:8px"><b>Keep that track OUT of your master.</b> Chrome shares your
+          master, so anything in it goes back to the artist. Route the Laybell track to your monitoring only, or
+          mute its master send. If you have the A+B cable pack you can go further: send a dedicated bus (beat + your
+          mic, no return) to <b>CABLE-B Input</b> and choose <b>CABLE-B Output</b> as your microphone above instead
+          of sharing the window at all — then it is impossible to send their voice back.</p>
+        </details>
+        <details><summary>A cleaner way to get the take</summary>
+          <p>A vocal pulled back through the room has network delay baked into it and will never sit tight to the
+          grid, no matter how carefully you nudge it. For anything you intend to keep, have the artist record on
+          their phone and send you the file — it arrives clean, dry and perfectly in time.</p>
         </details>
       </li>
 
