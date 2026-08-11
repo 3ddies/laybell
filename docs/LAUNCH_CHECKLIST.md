@@ -54,7 +54,23 @@ inbox waits, and one test that needs Android hardware.**
    would start silently the day anyone adds one, quietly invalidating the privacy label.
    Blaze plan is inherited from the project's existing billing and costs nothing; FCM is
    free on every tier and it is the only Firebase product this app touches.
-2. **Store assets, both stores** (the long one). Screenshots + a seeded demo account;
+2. ~~**Store assets, both stores**~~ ✅ **DONE 2026-08-10.** Eight screenshots shot,
+   composed and uploaded to **both** stores, in order, plus Play's required 7-inch and
+   10-inch tablet slots. Rebuild anytime from `store/screenshots/raw/` with
+   `scripts/make-screenshots.ps1` — it writes Apple 1320×2868, Play 1080×1920 (exactly
+   9:16; a 2:1 frame satisfies Google's *written* rule but the console demands 9:16) and
+   tablet 1440×2560, then strips alpha, which **both** stores reject and System.Drawing
+   always emits. The Play listing text is in `store/play-listing.txt`; its subscription
+   paragraph must name Google Play, not Apple. Two shots were re-taken late: the Laybell
+   TV one because its hero shelf was ripped Looney Tunes (a 5.2 rejection, and a terrible
+   thing to show a reviewer of a UGC video app), and Communities because it carried the
+   `1 members` bug fixed the same day.
+
+   **Play is now filled in and parked**, deliberately: everything except the production
+   release is entered and saved. Creating that release is what the Android hardware gate
+   below forbids, so "Send app for review" stays greyed out until the purchase test runs.
+
+   *(historical detail below)* Screenshots + a seeded demo account;
    listing copy is in `docs/STORE_LISTING.md`, §4 now carries the shot order and the
    caption overlay for each. ✅ **The two REQUIRED Play graphics are already built** —
    `store/play-feature-graphic.png` (1024×500) and `store/play-icon-512.png` (512×512,
