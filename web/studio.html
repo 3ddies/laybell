@@ -168,8 +168,22 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
         room untouched. The voice presets add real EQ and compression, which is right for a bare vocal and wrong
         for a beat. Watch the meter move before you go on.</li>
 
-      <li id="stepDaw"><b>Send your beat.</b> Hit <i>Share app audio</i>, choose the <b>Window</b> tab, pick your
-        DAW, and tick <b>“Share audio.”</b> That checkbox is off by default and sits low in the dialog.</li>
+      <li id="stepDaw"><b>Send your beat.</b> Two ways, and the second is far more reliable on Windows.
+        <div class="tip"><b>Best — send it as your “microphone”.</b> No screen capture involved, so nothing can
+        quietly capture silence, and the room can never leak back into your DAW.
+        <b>1.</b> Your DAW's audio <b>output</b> → <b>CABLE Input</b>.
+        <b>2.</b> In the <b>Microphone / audio interface</b> box above, choose <b>CABLE Output</b>, preset
+        <i>Raw input</i>.
+        <b>3.</b> Hear your own DAW again: <kbd>Win</kbd>+<kbd>R</kbd> → <b>mmsys.cpl</b> → <i>Recording</i> →
+        CABLE Output → <i>Properties → Listen</i> → tick <b>“Listen to this device”</b> → your headphones.<br>
+        Your mic can still ride along — set it as your DAW's <b>input</b> and it reaches the room through the same
+        pipe, through your own chain. Needs VB-CABLE (see the recording guide, Part 1).</div>
+        <p style="margin:10px 0 0"><b>Or — share app audio.</b> Hit <i>Share app audio</i>, tick
+        <b>“Share audio.”</b> Quicker, nothing to install, but Chrome on Windows usually offers that checkbox only
+        for a <b>Chrome Tab</b> or <b>Entire Screen</b> — a <b>Window</b> share often carries no audio at all, and
+        fails silently. <b>Watch the shared-audio meter above:</b> if it says <i>no signal</i> while your DAW is
+        playing, use the method above instead.</p>
+      </li>
 
       <li id="stepHear"><b>Hear them — nothing to install.</b> Leave your DAW's output and this browser's output
         <b>both on your headphones</b>. Your beat and their vocal mix in your ears and you are done: no extra
@@ -186,8 +200,17 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
 
     <details class="acc"><summary>The room can't hear my beat<span class="tag">common</span></summary>
       <div class="body">
-        <p>In order of likelihood. The <b>“Share audio” checkbox is off by default</b> and easy to miss. Or you
-        picked <b>Entire screen</b> — Chrome only offers that checkbox for a window or a browser tab.</p>
+        <p><b>First: watch the shared-audio meter</b> under the buttons while your DAW plays. <i>No signal</i>
+        there means the beat is not leaving your machine, and everything below applies. <i>Live</i> means it is
+        leaving, and the problem is elsewhere.</p>
+        <div class="warn"><b>The usual cause on Windows: you shared a Window.</b> Chrome normally offers the
+        “Share audio” checkbox only for a <b>Chrome Tab</b> or <b>Entire Screen</b> — pick a <b>Window</b> and the
+        share is often video-only, publishing perfect silence with no error anywhere. If your mic reaches the room
+        but your beat does not, this is almost certainly why.<br>
+        <b>The fix that always works:</b> stop sharing and send the beat as your microphone instead — see step 2.
+        Entire Screen with system audio does carry the beat, but it also captures Laybell's own output, which
+        sends the artist their own voice back.</div>
+        <p>Also worth checking: the <b>“Share audio” checkbox is off by default</b> and sits low in the dialog.</p>
         <div class="warn"><b>Was it working, then went quiet? Re-share.</b> A share is bound to one window. Change
         your DAW's audio device — or do anything else that rebuilds its window — and Chrome drops the share
         silently. The room goes quiet with no error and the button does not always show it. <b>Check this first
