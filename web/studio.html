@@ -58,6 +58,7 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
 .steps details p { margin:6px 0 0; }
 .warn { border-left:3px solid var(--err); padding:8px 10px; margin:10px 0 0; background:rgba(255,80,80,.07); font-size:12.5px; line-height:1.5; color:var(--muted); }
 .warn b { color:#fff; }
+kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:0 6px; font:inherit; font-size:12px; color:var(--ink); }
 </style>
 </head><body><main>
   <div class="logo">L</div>
@@ -144,9 +145,18 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
         <details><summary>Part 2 — send Laybell into the pipe</summary>
           <p><b>Windows <i>Settings → System → Sound → Volume mixer</i></b> → find this browser in the app list →
           set its <b>Output</b> to <b>CABLE Input</b>.</p>
-          <p>Laybell now plays into the pipe instead of your headphones — so you have gone deaf to the room. Get it
-          back: <b>Sound Control Panel → Recording → CABLE Output → Properties → Listen</b> → tick
-          <b>“Listen to this device”</b> → choose your headphones.</p>
+          <p>Laybell now plays into the pipe instead of your headphones — so you have gone deaf to the room. The
+          next bit gets your ears back, and it needs Windows' <b>old</b> sound window, because the modern Settings
+          app cannot do it.</p>
+          <p class="warn" style="margin:0 0 10px"><b>How to open the old sound window.</b> Press
+          <kbd>Win</kbd>+<kbd>R</kbd>, type <b>mmsys.cpl</b>, press Enter. That is the whole trick.<br>
+          <span style="opacity:.85">Prefer clicking? <i>Settings → System → Sound</i> → scroll to the bottom →
+          <i>More sound settings</i>. On Windows 10 it is called <i>Sound Control Panel</i> instead.</span><br>
+          You are in the right place when you see a small window with <b>Playback / Recording / Sounds /
+          Communications</b> tabs. Everything below happens in there.</p>
+          <p><b>In that window:</b> <i>Recording</i> tab → click <b>CABLE Output</b> → <b>Properties</b> →
+          <i>Listen</i> tab → tick <b>“Listen to this device”</b> → under <i>Playback through this device</i> choose
+          your headphones → <b>Apply</b>.</p>
         </details>
         <details><summary>Part 3 — get the pipe into your FL Studio mixer</summary>
           <p class="warn" style="margin:0 0 10px"><b>If your mixer only offers “in 1” and “in 2”, this is why.</b>
@@ -173,8 +183,9 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
           <p>Set <b>48000 Hz</b> in all four of these — they are configured separately:</p>
           <p>· your interface's own control panel<br>
           · FL Studio → <i>Options → Audio Settings</i><br>
-          · <i>Sound Control Panel → <b>Playback</b> → CABLE Input → Properties → Advanced</i><br>
-          · <i>Sound Control Panel → <b>Recording</b> → CABLE Output → Properties → Advanced</i></p>
+          · the old sound window (<kbd>Win</kbd>+<kbd>R</kbd> → <b>mmsys.cpl</b>) → <i><b>Playback</b> tab →
+          CABLE Input → Properties → Advanced</i><br>
+          · the same window → <i><b>Recording</b> tab → CABLE Output → Properties → Advanced</i></p>
           <p>Still crackling? Raise FL's buffer length in Audio Settings.</p>
         </details>
         <details><summary>A cleaner way to get the take</summary>
