@@ -51,8 +51,25 @@ Don't repeat words already in the name or subtitle — Apple indexes those
 separately, so repeating wastes the field.
 
 ```
-beats,producer,rapper,singer,songwriter,indie,studio,livestream,fans,tips,collab,podcast,films
+artist,beats,producer,rapper,singer,indie,song,live,stream,sell,band,dj,podcast,collab,community,rap
 ```
+
+**Exactly 100/100, 16 terms, nothing duplicated from the name or subtitle.** Rewritten
+2026-08-10; the earlier list spent characters on terms that pointed the wrong way.
+
+*Cut:* `tips` (on the App Store that means advice and how-to guides) · `films` (searchers
+want movies; it is our internal feature name) · `studio` (owned by FL Studio, GarageBand,
+BandLab) · `fans` (weak alone, drags in adult-adjacent traffic) · `social` (hyper-generic,
+and the category already signals it) · `songwriter` (ten characters for one audience;
+`song` is four and combines with everything) · `livestream` → split to `live,stream`,
+because Apple builds phrases from tokens, so two words also cover *live stream*, *live
+music* and *music stream* for one character more.
+
+*Added:* `artist` (the biggest omission) · `rap` (high volume and a DIFFERENT token from
+`rapper` — Apple does not reliably stem — for three characters) · `song` · `sell`
+("sell beats" is the actual differentiator) · `band`, `dj` · `community`.
+
+Ready to paste, with every other App Store field: `store/appstore-listing.txt`.
 
 ### Description — max 4000
 

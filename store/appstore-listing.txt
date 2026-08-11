@@ -1,0 +1,132 @@
+APP STORE CONNECT — LISTING COPY (English U.S.)
+Each block below goes straight into the matching field. Two different pages —
+see WHERE EACH ONE GOES at the bottom.
+
+
+═══════════════════════════════════════════════════════════════════════
+APP NAME  (max 30)
+═══════════════════════════════════════════════════════════════════════
+Laybell: Music & Creators
+
+
+═══════════════════════════════════════════════════════════════════════
+SUBTITLE  (max 30)
+═══════════════════════════════════════════════════════════════════════
+Make music. Find your people.
+
+
+═══════════════════════════════════════════════════════════════════════
+PROMOTIONAL TEXT  (max 170) — editable later WITHOUT a review
+═══════════════════════════════════════════════════════════════════════
+New: Films — post landscape video up to an hour and get your own shelf on Laybell TV. Plus sell beats from your profile, go live, and get tipped for the work.
+
+
+═══════════════════════════════════════════════════════════════════════
+KEYWORDS  (max 100) — no spaces after commas
+═══════════════════════════════════════════════════════════════════════
+artist,beats,producer,rapper,singer,indie,song,live,stream,sell,band,dj,podcast,collab,community,rap
+
+
+═══════════════════════════════════════════════════════════════════════
+DESCRIPTION  (max 4000)
+═══════════════════════════════════════════════════════════════════════
+Laybell is where independent artists build a real audience.
+
+Post your music. Go live. Sell your beats. Get paid by the people who actually listen.
+
+MADE FOR MUSIC, NOT REPURPOSED FOR IT
+Upload songs, podcasts and audiobooks with real cover art and credits. Tag the producers, writers and features who worked on it — they get credited on the track, with a link back to their profile.
+
+SHARE HOWEVER YOU WANT
+Songs, videos, photo slideshows, and 24-hour stories. Attach another artist's track to your video and they get credited automatically. Shoot vertical or go full cinematic landscape — rotate your phone and the whole feed follows.
+
+GO LIVE
+Broadcast to your followers from your phone, or run a listening session from the studio with real vocal presets. Fans can tip you live, and everyone in the room sees it. Cast the whole thing to your TV.
+
+LAYBELL TV AND FILMS
+Turn your phone sideways for a full landscape feed built for watching, not scrolling. Films sit on their own shelf — full-length work up to an hour, from creators who make more than clips. Cast any of it to your TV.
+
+SELL YOUR WORK
+List beats and songs on your own storefront. Sell them outright, lease them, or give them away to fans who follow you. Buyers get the files instantly.
+
+GET PAID
+Fans can tip you directly. Your earnings, your shop sales and your payout details all live in one wallet.
+
+BUILD SOMETHING TOGETHER
+Genre communities with their own tags and moderators. Public playlists that credit the curator. Group chats. Friends are mutual follows, so your private posts stay with the people you actually know.
+
+IN YOUR LANGUAGE
+The whole app runs in 10 languages, and you can translate any comment, caption or message with one tap.
+
+PREMIUM
+Laybell Premium is optional. It gets you an ad-free feed, a bigger share of every tip, custom ordering on your music, deeper follower insights, half the ads in Reels and Music, and a monthly spotlight boost.
+
+Laybell Premium+ adds Films — landscape videos up to an hour, with their own shelf on Laybell TV — plus no ads anywhere in the app, unlimited offline downloads, and badges that hold while you're subscribed.
+
+Auto-renewing subscriptions. Laybell Premium is $9.99/month and Laybell Premium+ is $19.99/month, charged to your Apple ID at confirmation of purchase. Either renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel in your Apple ID account settings.
+
+Terms of Use: https://laybell.app/terms.html
+Privacy Policy: https://laybell.app/privacy.html
+
+Laybell is built by one person who thinks independent artists deserve better tools than a repost button.
+
+
+═══════════════════════════════════════════════════════════════════════
+COPYRIGHT
+═══════════════════════════════════════════════════════════════════════
+2026 Laybell LLC
+
+
+═══════════════════════════════════════════════════════════════════════
+WHERE EACH ONE GOES
+═══════════════════════════════════════════════════════════════════════
+General > App Information
+  · Subtitle
+  · Primary category   Music
+  · Secondary category Social Networking
+  · Privacy Policy URL https://laybell.app/privacy.html
+
+1.0 Prepare for Submission  (the page with the screenshots)
+  · Promotional Text
+  · Description
+  · Keywords
+  · Support URL        https://laybell.app/
+  · Marketing URL      https://laybell.app/
+  · Copyright
+  · App Review Information — see docs/STORE_LISTING.md section 3
+
+There is NO "What's New" field on a first release. It appears from 1.1 onward.
+
+
+═══════════════════════════════════════════════════════════════════════
+WHY THE KEYWORDS ARE WHAT THEY ARE
+═══════════════════════════════════════════════════════════════════════
+Apple indexes the app NAME and SUBTITLE separately from this field, so
+"music" and "creators" are deliberately absent — they are already in the
+name, and repeating them would spend characters on ground you hold.
+
+Apple also builds phrases by combining your tokens, so single words beat
+compounds: "live" + "stream" covers live stream, stream, live, and combos
+like live music and music stream, for one character more than "livestream".
+
+Cut, and why:
+  tips       On the App Store "tips" means advice and how-to guides. It
+             points at the wrong intent entirely.
+  films      People searching "films" want to watch movies. It is our
+             internal feature name, not a term anyone uses to find us.
+  studio     Owned by FL Studio, GarageBand and BandLab. Unwinnable and
+             ambiguous.
+  fans       Weak alone, and it drags in adult-adjacent traffic.
+  social     Hyper-generic, and the Social Networking category already
+             carries that signal.
+  songwriter Ten characters for one audience. "song" is four and combines
+             with everything.
+
+Added, and why:
+  artist     The biggest omission — indie artist, music artist.
+  rap        High volume and a DIFFERENT token from "rapper"; Apple does
+             not reliably stem. Costs three characters.
+  song       Combines everywhere.
+  sell       "sell beats" is the actual differentiator.
+  band, dj   Real audiences. "dj" costs two characters.
+  community  "music community" is a genuine search.
