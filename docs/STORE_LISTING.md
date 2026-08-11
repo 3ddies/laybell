@@ -175,13 +175,20 @@ quietly costs you the teen audience the app was designed for.
 | Unrestricted Web Access | **See note** | |
 | Made for Kids | **No** | |
 
-**On "Unrestricted Web Access":** the app opens external links in the system
-browser (`expo-web-browser`), behind the "leaving Laybell" interstitial — it does
-not embed a freely-navigable browser. The honest answer is therefore **No**. But
-the studio's web connector loads a page inside the app, so if that surface can
-navigate anywhere, the answer flips to Yes. **Check that before you submit** —
-answering No when a WebView can reach arbitrary URLs is the kind of thing that
-gets caught on a later review, not the first one.
+**On "Unrestricted Web Access": ✅ RESOLVED 2026-08-10 — the answer is No.**
+
+Checked rather than assumed, because answering No while a WebView can reach arbitrary
+URLs is the kind of thing caught on a *later* review, not the first one.
+
+- **`react-native-webview` is not a dependency.** The app cannot embed a browser at all.
+  (`react-native-web` *is* present — that is Expo's web-platform renderer, not a
+  component, and it is easy to misread as the same thing.)
+- **The studio connector does not load in the app.** It runs on the collaborator's own
+  computer: the app shows a 6-character join code and shares the `laybell.app/studio.html`
+  URL (`app/studio/[id].tsx:287`). Nothing is embedded.
+- External links go to the system browser via `expo-web-browser` / `Linking`, behind the
+  "leaving Laybell" interstitial. Stripe onboarding deliberately uses a real browser too
+  (`lib/payouts.ts:50` — "never a WebView").
 
 **On user-generated content:** Apple doesn't rate UGC through this
 questionnaire; it enforces it through Guideline 1.2, which requires four things.
@@ -357,8 +364,9 @@ the actual code rather than from memory.
 - [ ] `laybell.app/privacy.html` and `/terms.html` load — reviewers click these
 - [ ] Support URL shows a way to contact you
 - [ ] Subscription block present in the description, price correct
-- [ ] Confirmed whether the studio WebView can navigate freely → answers the
-      "Unrestricted Web Access" question
+- [x] ~~Confirmed whether the studio WebView can navigate freely~~ ✅ **No WebView exists**
+      (2026-08-10) — `react-native-webview` is not a dependency and the studio connector
+      runs on the collaborator's computer. **Unrestricted Web Access = No.** See §2.
 - [ ] Privacy labels match [STORE_PRIVACY_LABELS.md](STORE_PRIVACY_LABELS.md)
 - [ ] Export compliance: `ITSAppUsesNonExemptEncryption` is already `false` in
       `app.json`, so Apple won't ask
