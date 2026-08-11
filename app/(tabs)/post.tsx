@@ -307,6 +307,12 @@ export default function PostScreen() {
   // whether others may Make GIF from a video (posts.allow_gifs).
   const [allowDownloads, setAllowDownloads] = useState(true);
   const [allowGifs, setAllowGifs] = useState(true);
+  // Marks the post as mature (artistic nudity, adult themes). The community
+  // guidelines both PERMIT that content and promise to keep it away from users
+  // known to be under 18 — this switch is the control they refer to, and
+  // mature_content.sql is the gate that actually enforces it in the database.
+  // Defaults off: nothing becomes age-restricted unless the author says so.
+  const [mature, setMature] = useState(false);
   // Sync consent for audio uploads — see DEFAULT_SOUND_OPT_IN in lib/sounds.ts,
   // where the opt-in vs opt-out tradeoff is spelled out. Kept separate from the
   // general upload grant deliberately: a specific per-track choice is what makes
@@ -564,7 +570,7 @@ export default function PostScreen() {
     setVideoDuration(0); setTrimStart(0); setTrimEnd(0); setTopCaption(null); setBottomCaption(null); setVideoCaptions([]);
     setAudioFile(null); setAudioDuration(null); setCoverUri(null); setAudioKind('audio');
     setCaption(''); setFilmTitle(''); setGenre(''); setSong(null); setMusicVideo(false); setTagged([]); setCommunities([]); setError(''); setStep('pick');
-    setAllowDownloads(true); setAllowGifs(true);
+    setAllowDownloads(true); setAllowGifs(true); setMature(false);
     // Abandoning the compose drops any parked spotlight handoff so it can't
     // silently attach to an unrelated later post — the paid campaign itself
     // stays safe as `pending` on the Spotlight screen. (No-op on the share
@@ -1313,6 +1319,9 @@ export default function PostScreen() {
         ...(trimmed
           ? { trim_start: trimStart, trim_end: trimEnd > trimStart ? trimEnd : Math.min(trimStart + videoWindowSec, videoDuration) }
           : {}),
+        // Spread-conditional so a database without mature_content.sql applied
+        // simply never sees the column and the insert still succeeds.
+        ...(mature ? { mature: true } : {}),
         ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
         ...(coverUrl ? { cover_url: coverUrl } : {}),
         ...(song && postType !== 'audio'
@@ -1869,6 +1878,23 @@ export default function PostScreen() {
               </TouchableOpacity>
             </View>
           )}
+          {/* Mature content. Shown for every post type, because "adult themes"
+              is not only a visual question — a track can carry them too. Off by
+              default; the gate in mature_content.sql does nothing until this is
+              switched on. */}
+          <View style={styles.optRow}>
+            <Text style={styles.optLabel}>{t('post.matureLabel')}</Text>
+            <Switch
+              style={styles.optSwitch}
+              value={mature}
+              onValueChange={setMature}
+              trackColor={{ true: colors.primary, false: colors.surfaceLight }}
+              thumbColor="#fff"
+            />
+            <TouchableOpacity onPress={() => setInfo({ icon: 'alert-circle-outline', title: t('post.matureLabel'), body: t('post.matureHelp') })} hitSlop={8}>
+              <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
+            </TouchableOpacity>
+          </View>
           {postType === 'video' && (
             <View style={styles.optRow}>
               <Text style={styles.optLabel}>{t('post.allowGifsLabel')}</Text>

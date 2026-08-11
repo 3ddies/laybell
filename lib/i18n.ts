@@ -36,6 +36,8 @@ export function isLang(v: any): v is Lang {
 }
 
 const en: Record<string, string> = {
+  'post.matureLabel': 'Mature content',
+  'post.matureHelp': 'Marks this post as containing adult themes or artistic nudity. Laybell hides it from anyone we know to be under 18. Sexually explicit content is never allowed.',
   'post.musicVideoLabel': 'This is a music video',
   'post.musicVideoSub': 'Credit your song from the music video. Users can tap to stream it on Laybell.',
   'post.musicLockedMv': 'Set above in the music-video section.',
@@ -2509,6 +2511,8 @@ const en: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  'post.matureLabel': 'Contenido para adultos',
+  'post.matureHelp': 'Marca esta publicación como contenido con temas adultos o desnudos artísticos. Laybell la oculta a quienes sabemos que son menores de 18 años. El contenido sexualmente explícito nunca está permitido.',
   'post.musicVideoLabel': 'Esto es un videoclip',
   'post.musicVideoSub': 'Acredita tu canción del videoclip. Los usuarios pueden tocar para escucharla en Laybell.',
   'post.musicLockedMv': 'Se elige arriba, en la sección de videoclip.',
@@ -4495,6 +4499,8 @@ const es: Record<string, string> = {
 };
 
 const fr: Record<string, string> = {
+  'post.matureLabel': 'Contenu pour adultes',
+  'post.matureHelp': 'Indique que cette publication contient des thèmes adultes ou de la nudité artistique. Laybell la masque aux personnes dont nous savons qu’elles ont moins de 18 ans. Le contenu sexuellement explicite n’est jamais autorisé.',
   'post.musicVideoLabel': 'C’est un clip musical',
   'post.musicVideoSub': 'Créditez votre morceau du clip. Les utilisateurs peuvent appuyer pour l’écouter sur Laybell.',
   'post.musicLockedMv': 'À choisir ci-dessus, dans la section clip musical.',
@@ -6481,6 +6487,8 @@ const fr: Record<string, string> = {
 };
 
 const de: Record<string, string> = {
+  'post.matureLabel': 'Nicht jugendfreier Inhalt',
+  'post.matureHelp': 'Markiert diesen Beitrag als Inhalt mit Erwachsenenthemen oder künstlerischer Nacktheit. Laybell verbirgt ihn vor allen, von denen wir wissen, dass sie unter 18 sind. Sexuell explizite Inhalte sind nie erlaubt.',
   'post.musicVideoLabel': 'Das ist ein Musikvideo',
   'post.musicVideoSub': 'Verweise auf deinen Song aus dem Musikvideo. Nutzer können tippen, um ihn auf Laybell zu hören.',
   'post.musicLockedMv': 'Wird oben im Musikvideo-Bereich gewählt.',
@@ -8467,6 +8475,8 @@ const de: Record<string, string> = {
 };
 
 const pt: Record<string, string> = {
+  'post.matureLabel': 'Conteúdo adulto',
+  'post.matureHelp': 'Marca esta publicação como conteúdo com temas adultos ou nudez artística. A Laybell a oculta de quem sabemos ter menos de 18 anos. Conteúdo sexualmente explícito nunca é permitido.',
   'post.musicVideoLabel': 'Isto é um videoclipe',
   'post.musicVideoSub': 'Credite a sua música do videoclipe. Os usuários podem tocar para ouvi-la no Laybell.',
   'post.musicLockedMv': 'Escolhida acima, na seção de videoclipe.',
@@ -10453,6 +10463,8 @@ const pt: Record<string, string> = {
 };
 
 const it: Record<string, string> = {
+  'post.matureLabel': 'Contenuto per adulti',
+  'post.matureHelp': 'Segnala che questo post contiene temi per adulti o nudità artistica. Laybell lo nasconde a chi sappiamo avere meno di 18 anni. I contenuti sessualmente espliciti non sono mai consentiti.',
   'post.musicVideoLabel': 'Questo è un videoclip',
   'post.musicVideoSub': 'Accredita il tuo brano dal videoclip. Gli utenti possono toccare per ascoltarlo su Laybell.',
   'post.musicLockedMv': 'Si sceglie sopra, nella sezione videoclip.',
@@ -12439,6 +12451,8 @@ const it: Record<string, string> = {
 };
 
 const ru: Record<string, string> = {
+  'post.matureLabel': 'Контент для взрослых',
+  'post.matureHelp': 'Отмечает, что публикация содержит взрослые темы или художественную наготу. Laybell скрывает её от тех, кто заведомо младше 18 лет. Откровенно сексуальный контент запрещён всегда.',
   'post.musicVideoLabel': 'Это клип',
   'post.musicVideoSub': 'Укажите свой трек из клипа. Пользователи смогут нажать и послушать его в Laybell.',
   'post.musicLockedMv': 'Выбирается выше, в разделе клипа.',
@@ -14390,6 +14404,8 @@ const ru: Record<string, string> = {
 };
 
 const zh: Record<string, string> = {
+  'post.matureLabel': '成人内容',
+  'post.matureHelp': '标记该帖子包含成人主题或艺术裸露。对于我们已知未满 18 岁的用户，Laybell 会将其隐藏。色情露骨内容始终不被允许。',
   'post.musicVideoLabel': '这是一支音乐视频',
   'post.musicVideoSub': '标注音乐视频中的歌曲。用户可点击在 Laybell 上收听。',
   'post.musicLockedMv': '在上方的音乐视频区域选择。',
@@ -16341,6 +16357,8 @@ const zh: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  'post.matureLabel': '成人向けコンテンツ',
+  'post.matureHelp': 'この投稿に成人向けのテーマや芸術的なヌードが含まれることを示します。18歳未満と分かっている利用者には表示されません。性的に露骨な内容は常に禁止です。',
   'post.musicVideoLabel': 'これはミュージックビデオです',
   'post.musicVideoSub': 'ミュージックビデオの曲をクレジットします。タップすると Laybell で再生できます。',
   'post.musicLockedMv': '上のミュージックビデオ欄で選びます。',
@@ -18292,6 +18310,8 @@ const ja: Record<string, string> = {
 };
 
 const hi: Record<string, string> = {
+  'post.matureLabel': 'वयस्क सामग्री',
+  'post.matureHelp': 'यह चिह्नित करता है कि इस पोस्ट में वयस्क विषय या कलात्मक नग्नता है। जिन्हें हम 18 से कम आयु का जानते हैं, उनसे Laybell इसे छिपा देता है। यौन रूप से स्पष्ट सामग्री कभी अनुमत नहीं है।',
   'post.musicVideoLabel': 'यह एक म्यूज़िक वीडियो है',
   'post.musicVideoSub': 'म्यूज़िक वीडियो का अपना गाना क्रेडिट करें। यूज़र टैप करके उसे Laybell पर सुन सकते हैं।',
   'post.musicLockedMv': 'ऊपर म्यूज़िक वीडियो सेक्शन में चुनें।',
