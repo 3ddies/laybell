@@ -79,6 +79,12 @@ const FRAME_SETTLE_SLACK = 6;
 // fall silent for the handful of pixels between one card leaving and the next
 // arriving in full.
 const FRAME_NEAR_RATIO = 0.9;
+// How much NEARER the focus line the other neighbour must be before the second
+// pooled player moves to it. Only has to beat the couple of pixels a twitch or
+// a resting thumb produces; it is tiny next to the several hundred px a video
+// still has to travel after winning this before it can become the active one,
+// so the incoming video is always warm well ahead of its handoff.
+const WARM_SWITCH_MARGIN = 80;
 // Home feed candidate POOL — how many recent posts we pull to sample the shown
 // arrangement from (see lib/feedScorer.arrangeFeed). Bigger = more genuinely
 // different content per refresh; capped by how many posts actually exist.
@@ -791,6 +797,11 @@ export default function HomeScreen() {
   // native audio player (audio-session work) mid-scroll stalls the UI thread —
   // the "1-in-3 swipes hitch, always on posts with Laybell music" symptom.
   const scrollingRef = useRef(false);
+  // Finger physically DOWN — strictly narrower than scrollingRef, which stays
+  // set through the momentum that follows the lift. checkScrollStop infers rest
+  // from "no scroll events for 100ms", and a finger held still mid-drag looks
+  // exactly like that, so this is what tells the two apart.
+  const draggingRef = useRef(false);
   const scrollSample = useRef({ y: 0, t: 0 });
   // Tap-misread guard: a main-thread hiccup can delay gesture recognition so a
   // swipe's touch-down registers as a TAP on whatever sits under the finger
@@ -798,13 +809,28 @@ export default function HomeScreen() {
   // within 130ms of live scroll MOVEMENT are swallowed — a resting feed never
   // blocks taps.
   const lastScrollMoveAt = useRef(0);
-  // Last confirmed scroll direction (≥12ms windows, |dy|>2 — same guards as the
-  // velocity gate, so coalesced-event jitter can't flip it). Drives which
-  // NEIGHBOR video holds the second pooled player: scrolling up warms the video
-  // ABOVE the active one instead of below, so up-scroll handoffs between
-  // stacked videos land on a buffered player instead of a cold acquire.
-  // 'down' default = the pre-existing warm-below behavior.
-  const scrollDirRef = useRef<'down' | 'up'>('down');
+  // Which NEIGHBOR video holds the second pooled player, so a handoff lands on
+  // a buffered player instead of a cold acquire. Chosen by PROXIMITY to the
+  // focus line (below), and remembered here so the choice can be sticky.
+  //
+  // This replaced a last-scroll-direction flag, and the reason is the whole
+  // bug: that flag flipped on any |dy|>2 sample, and every flip swapped which
+  // neighbour was warm. The dropped card's FeedVideo unmounts the instant it
+  // leaves the warm set (isVisibleVideo = active || warm), which releases its
+  // pooled player; when the flag flips back it remounts behind a FRESH keyed
+  // VideoView that must repaint before it reveals. That repaint is the poster
+  // flash the owner filmed — the picture jumping to the t=0 frame mid-loop and
+  // freezing for about a second.
+  //
+  // ⚠️ The obvious fix — delay the direction flip — was tried on 2026-08-11 and
+  // reverted the same day. Lagging the FINGER by a fixed distance leaves the
+  // warm side wrong at the moment of handoff, so up-scrolls landed on a cold
+  // acquire: the incoming video sat on its poster while it loaded. Proximity is
+  // not that. It is anchored to where the videos actually ARE, so a neighbour
+  // becomes the warm pick a few hundred px before it can possibly become
+  // active, and a 2px twitch moves both candidates equally and changes nothing.
+  const warmPickRef = useRef<string | null>(null);
+  const lastWarmSongRef = useRef<string | null>(null);   // song url already warmed for the neighbour
   const lastTapGuardY = useRef(0);
   const scrollStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current); }, []);
@@ -831,7 +857,7 @@ export default function HomeScreen() {
   // computeVisibleIndices), NOT "the first video that's 40% visible".
   // Returns null (not a decision) when geometry isn't measured yet, so the
   // caller can fall back to the viewability heuristic.
-  const resolveActiveVideoByGeometry = useRef((atRest: boolean): { activeId: string | null; warm: string[] } | null => {
+  const resolveActiveVideoByGeometry = useRef((atRest: boolean): { activeId: string | null; activeItem: any; warmItem: any; warm: string[] } | null => {
     const list: any = feedListRef.current;
     if (!list?.getLayout || !list.computeVisibleIndices) return null;
     let scrollY: number; let winH: number; let padTop: number; let range: { startIndex: number; endIndex: number };
@@ -870,9 +896,14 @@ export default function HomeScreen() {
     let sawLayout = false;
     let prevSettled = false;   // what's playing is still wholly on screen
     let prevCardOnScreen = false;
-    let settledId: string | null = null;   // whole frame visible, nearest the focus line
+    // The ITEM is carried alongside each candidate id, not just the id: the
+    // caller needs the winning post's attached song to start it in the same
+    // breath as the video (see syncSongToActiveVideo), and re-finding it
+    // afterwards would mean a second scan every scroll frame.
+    let prevItem: any = null;
+    let settledItem: any = null;           // whole frame visible, nearest the focus line
     let settledDist = Infinity;
-    let shownId: string | null = null;     // most-complete frame, however incomplete
+    let shownItem: any = null;             // most-complete frame, however incomplete
     let shownBest = 0;
     for (let i = range.startIndex; i <= range.endIndex; i++) {
       const L = list.getLayout(i);
@@ -885,7 +916,7 @@ export default function HomeScreen() {
       // top" and "the next one's frame is finally all the way in". With posts
       // taller than half the band that stretch is real, and without card-level
       // stickiness the feed would go silent inside it.
-      if (it.id === prev && L.y < bandBottom && L.y + L.height > bandTop) prevCardOnScreen = true;
+      if (it.id === prev && L.y < bandBottom && L.y + L.height > bandTop) { prevCardOnScreen = true; prevItem = it; }
       if (!isPlayableVideoItem(it)) continue;
       const frameH = videoFrameH(it);
       if (frameH <= 0) continue;
@@ -897,12 +928,12 @@ export default function HomeScreen() {
       // be, so for those this reads as "the band is full of it" — the same
       // question either way: is any more of this video showable than this?
       if (shown >= Math.min(frameH, bandH) - FRAME_SETTLE_SLACK) {
-        if (it.id === prev) prevSettled = true;
+        if (it.id === prev) { prevSettled = true; prevItem = it; }
         const d = Math.abs((top + bottom) / 2 - centerY);
-        if (d < settledDist) { settledDist = d; settledId = it.id; }
+        if (d < settledDist) { settledDist = d; settledItem = it; }
       }
       const ratio = shown / Math.min(frameH, bandH);
-      if (ratio > shownBest) { shownBest = ratio; shownId = it.id; }
+      if (ratio > shownBest) { shownBest = ratio; shownItem = it; }
     }
     if (!sawLayout) return null; // layout not measured yet — let the caller fall back
 
@@ -914,36 +945,53 @@ export default function HomeScreen() {
     //      mid-post, so play whatever fills the screen most — silence would be
     //      the wrong answer. STILL MOVING, only a nearly-complete frame may cut
     //      in, which is just the few pixels of overlap between (2) and (3).
-    const activeId =
-      prevSettled ? prev
-      : settledId ?? (
-          prevCardOnScreen ? prev
-          : (atRest || shownBest >= FRAME_NEAR_RATIO) ? shownId
+    const activeItem =
+      prevSettled ? prevItem
+      : settledItem ?? (
+          prevCardOnScreen ? prevItem
+          : (atRest || shownBest >= FRAME_NEAR_RATIO) ? shownItem
           : null
         );
-    // STAGED pre-warm (unchanged budget): the centered video + ONE neighbor
-    // hold a pooled player; everything deeper stays a poster. Two concurrent
-    // streams max, so the playing one never gets starved. The neighbor slot is
-    // DIRECTION-AWARE: it used to always be the next video below, which made
-    // up-scroll handoffs between stacked videos land on a cold acquire (the
-    // "bottom keeps playing" feel when scrubbing between multiple landscape
-    // videos). Scrolling up warms the nearest video above instead; the
-    // opposite side is the fallback when the preferred side has no candidate.
+    const activeId: string | null = activeItem ? activeItem.id : null;
+    // STAGED pre-warm (unchanged budget): the active video + ONE neighbour hold
+    // a pooled player; everything deeper stays a poster. Two concurrent streams
+    // max, so the playing one never gets starved.
+    //
+    // The neighbour is whichever video is NEAREST the focus line, above or
+    // below — not whichever side a scroll-direction flag points at. A flag
+    // flips on a twitch, and every flip costs the dropped card its surface
+    // (see warmPickRef for the full failure). Whichever way you scroll, the
+    // video you are heading toward is the one closing on the line, so proximity
+    // names the same neighbour a direction flag would, without the churn.
     const warm: string[] = [];
     if (activeId) warm.push(activeId);
-    let aboveWarm: string | null = null;
-    let belowWarm: string | null = null;
+    let nearest: any = null;
+    let nearestD = Infinity;
+    let heldItem: any = null;        // the neighbour we already warmed, if still a candidate
+    let heldD = Infinity;
+    const held = warmPickRef.current;
     for (let i = range.startIndex; i <= range.endIndex; i++) {
       const L = list.getLayout(i);
       if (!L) continue;
       const it: any = data[i];
       if (!it || it.__ad || it.type !== 'video' || !it.media_url || it.id === activeId) continue;
-      if ((L.y + L.height / 2) > centerY) { if (!belowWarm) belowWarm = it.id; }
-      else aboveWarm = it.id; // ascending scan → the last above-center one is the nearest
+      const d = Math.abs((L.y + L.height / 2) - centerY);
+      if (d < nearestD) { nearestD = d; nearest = it; }
+      if (it.id === held) { heldD = d; heldItem = it; }
     }
-    const second = scrollDirRef.current === 'up' ? (aboveWarm ?? belowWarm) : (belowWarm ?? aboveWarm);
+    // STICKY by a margin. Two neighbours are exactly equidistant at one scroll
+    // position, and without a margin a resting finger there would flip the warm
+    // pick back and forth across it — the same churn, just relocated. The margin
+    // is small next to the distance a video must still travel to become active,
+    // so the incoming one is warm long before it is needed.
+    let secondItem = nearest;
+    if (heldItem && nearest && nearest.id !== held && nearestD > heldD - WARM_SWITCH_MARGIN) {
+      secondItem = heldItem;
+    }
+    const second: string | null = secondItem ? secondItem.id : null;
+    warmPickRef.current = second;
     if (second) warm.push(second);
-    return { activeId, warm };
+    return { activeId, activeItem, warmItem: secondItem, warm };
   }).current;
   const applyVideoViewables = useRef((viewableItems: any[] | null, atRest: boolean) => {
     // Prefer precise geometry: the post whose whole frame is on screen.
@@ -951,6 +999,17 @@ export default function HomeScreen() {
     if (byGeom) {
       setVisibleVideoId(byGeom.activeId);
       setWarmVideoIds(byGeom.warm);
+      syncSongToActiveVideo(byGeom.activeItem);
+      // Warm the NEXT video's SONG url, not just its stream. Its song now starts
+      // on the same frame it takes over, so an unresolved url would put a
+      // round trip of silence at exactly that moment. Fires once per neighbour
+      // change, not per frame — resolveSongUrl caches, but a per-frame call
+      // would still churn a promise 60× a second for nothing.
+      const wSong = byGeom.warmItem && songPlaysFor(byGeom.warmItem) ? byGeom.warmItem.song_id : null;
+      if (wSong && wSong !== lastWarmSongRef.current) {
+        lastWarmSongRef.current = wSong;
+        try { musicCtl.current.prefetchSong(wSong); } catch {}
+      }
       return;
     }
     // Fallback (geometry not measured yet — the first frames after mount / a
@@ -972,6 +1031,15 @@ export default function HomeScreen() {
       if (after) ids.push(after.item.id);
     }
     setWarmVideoIds(ids);
+    // Same rule on the fallback path, or a data swap could leave the previous
+    // post's song running under whatever this picked. Gated on
+    // isPlayableVideoItem so it matches the geometry path exactly: that one can
+    // never name an AD as the active video (ads own their own creative and are
+    // excluded from the feed's gate), and this one must not either — otherwise
+    // an ad landing here at mount would silence an ambient song the geometry
+    // pass is about to keep.
+    const fb = firstVideo?.item;
+    syncSongToActiveVideo(fb && isPlayableVideoItem(fb) ? fb : null);
   }).current;
   const onVideoViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     // Remember the latest viewable-video tokens: they seed the geometry fallback
@@ -995,19 +1063,78 @@ export default function HomeScreen() {
     pendingVideoViewables.current = null;
     applyVideoViewables(pending ?? lastVideoTokens.current, true);
   }
-  // The most-visible post that carries an attached song — its track plays ambiently.
+  // ── Which post's audio you hear ─────────────────────────────────────────────
+  // THE RULE (owner, 2026-08-11): whichever video is playing, THAT post's audio
+  // is what plays. Never a different post's. A song attached to a video post is
+  // that video's audio — the video is muted and the ambient engine plays the
+  // track over it (see lib/postSong) — so a song from any other post is a second
+  // source over someone else's clip.
+  //
+  // The song therefore moves WITH the video, on the same scroll frame — one
+  // operation that both drops the old post's song and starts the new post's.
+  // Three earlier attempts got this wrong and each is worth knowing:
+  //   • bc66744 (2026-07) — disqualified a video post's song unless
+  //     `id === getVisibleVideoId()`. Treated UNKNOWN as CONFLICT, so a null or
+  //     stale active id sent ordinary song-video posts silent and flappy.
+  //   • 2026-08-11 #1 — same rule, firing only on a CONFIRMED conflict. Fixed
+  //     the null case, but SELECTION still waited for rest while the video
+  //     handoff applied live, so the song moved to a post whose video had not
+  //     started: "the video stops playing and the music continues."
+  //   • 2026-08-11 #2 — stop immediately, start at rest. No wrong song ever,
+  //     but it left a hole: "a window that just produces silence."
+  //
+  // All three deferred to rest because of a comment saying application "tears
+  // down + creates a NATIVE audio player" and stalls the UI thread mid-gesture.
+  // THAT COMMENT IS STALE — it predates the current engine. PostMusicContext now
+  // holds ONE persistent AudioPlayer: ensurePlayer() creates at most once ever
+  // (warmSongPlayer pre-creates it at the feed gate), playSong is replace() +
+  // play() on it, and stop() is pause-only. A handoff is a native source swap,
+  // not a create, so there is nothing left to hide from the gesture.
+  //
+  // The rest-time picker below still exists and still guards — it owns the case
+  // where NO video is playing (image posts with songs), and corrects anything
+  // this live pass could not see.
+  const syncSongToActiveVideo = useRef((activeItem: any) => {
+    if (!activeItem) return;   // no video playing → the rest-time picker owns it
+    const want = songPlaysFor(activeItem)
+      ? { id: activeItem.id as string, songId: activeItem.song_id as string }
+      : null;                  // playing video has no song → nothing else may sound
+    const cur = visibleMusicRef.current;
+    if (cur?.id === want?.id && cur?.songId === want?.songId) return;  // already right
+    visibleMusicRef.current = want;
+    // Deliberately syncAmbientSong rather than a stop + a later start: its
+    // PLAY-FIRST handoff lets playSong transfer ownership with zero native
+    // churn when consecutive posts share one song, which a stop would destroy.
+    syncAmbientSongRef.current();
+  }).current;
   const applyMusicViewables = useRef((viewableItems: any[]) => {
-    const firstMusic = viewableItems.find(v => songPlaysFor(v.item));
+    // The rest-time picker. A song may play only if no video is playing, or if
+    // it belongs to the video that IS. Same rule as the live pass, so the two
+    // always agree — this one just also covers image posts, which the live pass
+    // (keyed off the active video) never sees.
+    const activeVideo = getVisibleVideoId();
+    const firstMusic = viewableItems.find((v) => {
+      const it = v.item;
+      if (!songPlaysFor(it)) return false;
+      if (activeVideo && it.id !== activeVideo) return false;
+      return true;
+    });
     visibleMusicRef.current = firstMusic ? { id: firstMusic.item.id, songId: firstMusic.item.song_id } : null;
     syncAmbientSongRef.current();
   }).current;
   const pendingMusicViewables = useRef<any[] | null>(null);
   const onImpressionViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
-    // Ambient-song application is parked during ANY scrolling (not just fast) —
-    // it tears down + creates a NATIVE audio player, and that audio-session
-    // work stalls the UI thread mid-gesture. The latest snapshot applies when
-    // the scroll RESTS (flushMusicAtRest). The song URL is prefetched right
-    // away though, so the player starts instantly at rest.
+    // This snapshot stays parked until the scroll RESTS. Note what that is and
+    // is NOT for: it is the picker for posts with NO video playing (an image
+    // post carrying a song), where nothing is racing it. A post whose VIDEO is
+    // playing no longer waits — syncSongToActiveVideo moves its song on the
+    // same frame as the video handoff.
+    //
+    // The old reason given here — "it tears down + creates a NATIVE audio
+    // player" — was true of an earlier engine and is not true now (one
+    // persistent player, playSong is replace() + play()). Three attempts to fix
+    // the wrong-song bug failed by trusting it; see syncSongToActiveVideo.
+    // The song URL is still prefetched during the approach so a start is instant.
     // The impression loop below stays live: it's cheap (in-memory dedupe +
     // fire-and-forget RPC) and impression semantics must not change.
     const firstMusic = viewableItems.find(v => songPlaysFor(v.item));
@@ -1115,7 +1242,10 @@ export default function HomeScreen() {
     }
     scrollSample.current = { y, t };
     if (dt > 0 && dt < 200) { // >200ms gap = a new gesture, not a velocity sample
-      if (Math.abs(y - py) > 2) scrollDirRef.current = y > py ? 'down' : 'up';
+      // (No scroll-DIRECTION tracking here any more. It existed only to choose
+      // the pre-warmed neighbour, and that is now decided by proximity to the
+      // focus line — see warmPickRef. The velocity gate below reads |dy| only,
+      // so nothing else ever needed the sign.)
       const v = Math.abs(y - py) / dt;
       if (v >= GATE_IN) setFastScroll(true);
       else {
@@ -1153,6 +1283,22 @@ export default function HomeScreen() {
   function checkScrollStop() {
     scrollStopTimer.current = null;
     const idle = Date.now() - scrollSample.current.t;
+    // A FINGER HELD STILL is not rest. Rest is inferred from "no scroll events
+    // for 100ms", and holding mid-drag — which people do constantly, mid-read —
+    // produces exactly that silence while the gesture is still live. Declaring
+    // rest there fired all three of the things rest is allowed to do, at the
+    // worst possible moment:
+    //   • armMusicFlush() creates/tears down a NATIVE audio player, and that
+    //     audio-session work stalls the UI thread — under a live finger, which
+    //     is the hitch scrollingRef exists to prevent in the first place;
+    //   • scrollingRef=false drops the tap-misread guard mid-gesture (and after
+    //     a 100ms hold the 130ms movement window has expired too, so nothing
+    //     else is covering it);
+    //   • flushVideoAtRest() resolves as a LANDING, which is the one pass
+    //     allowed to settle on a partly-visible frame — the exact "next video
+    //     starts too early" behaviour the whole-frame rule removed.
+    // Keep waiting instead; the lift re-arms and rest lands then.
+    if (draggingRef.current) { scrollStopTimer.current = setTimeout(checkScrollStop, 100); return; }
     // flush BEFORE un-gating: set the correct centered video first, THEN flip
     // canPlay true — otherwise the previously-visible id could play for a frame.
     if (idle >= 100) { flushVideoAtRest(); setFastScroll(false); scrollingRef.current = false; armMusicFlush(); return; }
@@ -2009,9 +2155,18 @@ export default function HomeScreen() {
           trackFeedScroll(y, e.nativeEvent.contentSize.height - e.nativeEvent.layoutMeasurement.height);
           trackScrollVelocity(y);
         }}
-        onScrollBeginDrag={() => { scrollingRef.current = true; cancelMusicFlush(); feedDragStart(); }}
-        onScrollEndDrag={feedDragEnd}
-        onMomentumScrollEnd={() => { flushVideoAtRest(); setFastScroll(false); settleFeedChrome(); scrollingRef.current = false; armMusicFlush(); }}
+        onScrollBeginDrag={() => { scrollingRef.current = true; draggingRef.current = true; cancelMusicFlush(); feedDragStart(); }}
+        // The lift, not the stop. Momentum may still be running (scrollingRef
+        // stays set through it); this only re-opens checkScrollStop's ability
+        // to call rest, which it then does on the usual 100ms-idle rule — so a
+        // finger lifted with no fling still settles ~100ms later, as before.
+        onScrollEndDrag={() => { draggingRef.current = false; feedDragEnd(); }}
+        // draggingRef is cleared here too, not just on the lift: momentum can
+        // only run once the finger is up, so this is the second terminal event
+        // for a drag. Belt and braces — if onScrollEndDrag were ever missed, a
+        // stuck draggingRef would leave checkScrollStop re-arming forever and
+        // rest would never be declared at all, which is worse than the hitch.
+        onMomentumScrollEnd={() => { draggingRef.current = false; flushVideoAtRest(); setFastScroll(false); settleFeedChrome(); scrollingRef.current = false; armMusicFlush(); }}
         // 16 is deliberate: the chrome is discrete now (no per-frame JS follow),
         // so 60Hz sampling halves per-frame JS scroll work vs throttle 1 —
         // headroom for cell mounts. Don't "fix" this back to 1.
