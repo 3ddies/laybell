@@ -53,11 +53,32 @@ const isPlayableVideoItem = (it: any): boolean => !!it && !it.__ad && (
   (it.type === 'video' && !!it.media_url) ||
   (isSlideshow(it.type) && Array.isArray(it.slides) && it.slides.some((s: any) => s?.type === 'video'))
 );
-// The author-header band at the top of every post card (38px avatar +
-// 2×(SPACING.sm+2) padding ≈ 58px, +margin). Used by the center-line resolver:
-// a focus line inside this zone means the user is watching the card ABOVE.
+// The author-header band at the top of every post card: 38px avatar +
+// 2×(SPACING.sm+2) padding. Media is the header's immediate next sibling, so
+// this doubles as the offset from a card's top to the top of its video FRAME.
 // Keep in sync with styles.postHeader/avatar if those ever change.
-const HEADER_FOCUS_ZONE = 64;
+const CARD_HEADER_H = 58;
+// How tall a card's video frame actually renders. These are the SAME
+// expressions the card itself uses (styles.postVideo's height below,
+// SlideshowCarousel's width ÷ aspectRatio), so the "is the whole frame on
+// screen" test measures the real rectangle instead of estimating it.
+// 0 for cards that have no video frame at all.
+const videoFrameH = (it: any): number => {
+  if (!it) return 0;
+  if (it.type === 'video') return Math.min(SCREEN_W / aspectToNumber(it.aspect_ratio, 16 / 9), MAX_VIDEO_H);
+  if (isSlideshow(it.type)) return Math.round(SCREEN_W / (aspectToNumber(it.aspect_ratio, 1) || 1));
+  return 0;
+};
+// Slack on "the entire frame is on screen": absorbs sub-pixel layout rounding
+// and the fact that CARD_HEADER_H is a constant rather than a measurement.
+// Deliberately small — the whole point of the rule is that the frame is
+// genuinely all the way in before it takes over.
+const FRAME_SETTLE_SLACK = 6;
+// Last resort WHILE THE FINGER IS STILL MOVING (see the resolver's pickup
+// rule): a frame this close to complete may take over rather than let the feed
+// fall silent for the handful of pixels between one card leaving and the next
+// arriving in full.
+const FRAME_NEAR_RATIO = 0.9;
 // Home feed candidate POOL — how many recent posts we pull to sample the shown
 // arrangement from (see lib/feedScorer.arrangeFeed). Bigger = more genuinely
 // different content per refresh; capped by how many posts actually exist.
@@ -607,6 +628,7 @@ export default function HomeScreen() {
   gatedFeedDataRef.current = gatedFeedData;
   const lastVideoTokens = useRef<any[]>([]);       // most recent 40%-visible video tokens (geometry fallback)
   const headerHRef = useRef(140);                  // floating-header height (assigned once headerH is known)
+  const trayHRef = useRef(0);                      // stories-tray height INSIDE headerH (uncovers content once collapsed)
   const bottomClearRef = useRef(68);               // tab bar + safe-area cover at the bottom of the band
   // The optimization pass: warm everything the next user actions will touch.
   const runFeedGatePrefetch = useCallback((deep: boolean) => {
@@ -798,87 +820,107 @@ export default function HomeScreen() {
   // TWO viewability pairs. The 40% video pair is now only a TRIGGER + candidate
   // source: it fires the recompute (and seeds the fallback) whenever a video
   // enters/leaves, but the actual CHOICE of which video plays is made by
-  // geometry (resolveActiveVideoByGeometry) — the post crossing the screen's
-  // center line. The 60% + 90ms pair keeps the original deliberate rule for
+  // geometry (resolveActiveVideoByGeometry) — the post whose whole frame is on
+  // screen. The 60% + 90ms pair keeps the original deliberate rule for
   // spotlight/ad impressions + ambient music (impression semantics unchanged).
   const pendingVideoViewables = useRef<any[] | null>(null);
-  // ── Which video plays: PRECISE center detection (Instagram-style) ───────────
-  // The active video is the post whose card straddles the vertical CENTER of the
-  // visible band — read straight from FlashList's real layout geometry
-  // (getLayout / getAbsoluteLastScrollOffset / computeVisibleIndices), NOT "the
-  // first video that's 40% visible" (which let a video near the top edge play
-  // while a different post owned the middle of the screen — the reported bug).
-  // Returns null when the centered post isn't a video, so nothing plays until a
-  // video actually reaches center. Returns null (not a decision) when geometry
-  // isn't measured yet, so the caller can fall back to the viewability heuristic.
-  const resolveActiveVideoByGeometry = useRef((): { activeId: string | null; warm: string[] } | null => {
+  // ── Which video plays: WHOLE-FRAME detection (Instagram-style) ─────────────
+  // A video takes over only once its ENTIRE frame is on screen, and whatever is
+  // already playing keeps playing until then. Read straight from FlashList's
+  // real layout geometry (getLayout / getAbsoluteLastScrollOffset /
+  // computeVisibleIndices), NOT "the first video that's 40% visible".
+  // Returns null (not a decision) when geometry isn't measured yet, so the
+  // caller can fall back to the viewability heuristic.
+  const resolveActiveVideoByGeometry = useRef((atRest: boolean): { activeId: string | null; warm: string[] } | null => {
     const list: any = feedListRef.current;
     if (!list?.getLayout || !list.computeVisibleIndices) return null;
-    let scrollY: number; let winH: number; let range: { startIndex: number; endIndex: number };
+    let scrollY: number; let winH: number; let padTop: number; let range: { startIndex: number; endIndex: number };
     try {
       scrollY = list.getAbsoluteLastScrollOffset?.() ?? 0;
       winH = list.getWindowSize?.().height ?? SCREEN_H;
+      padTop = list.getFirstItemOffset?.() ?? headerHRef.current;
       range = list.computeVisibleIndices();
     } catch { return null; }
     if (!range || range.startIndex < 0) return null;
     const data = gatedFeedDataRef.current;
-    // The band the user actually SEES: the floating header covers the top
-    // headerH; the tab bar + safe area cover the bottom. Its midpoint is the
-    // "focus line" — whichever post sits under it is what the eye is on.
-    const bandTop = scrollY + headerHRef.current;
-    const bandBottom = scrollY + winH - bottomClearRef.current;
+    // TWO COORDINATE SPACES, and they are not the same one. getLayout(i).y is
+    // LAYOUT space — item 0 starts at 0, the content container's paddingTop
+    // excluded — while getAbsoluteLastScrollOffset() is the RAW scroll offset,
+    // which includes it. FlashList bridges them by adding firstItemOffset (see
+    // its own StickyHeaders), and firstItemOffset IS our paddingTop: headerH.
+    // Mixing them put the focus line a full header-height (~190px) too far down
+    // the content, so the post BELOW the one being watched owned the line —
+    // that single bug is both halves of the owner's report: the top video never
+    // played (the second card owned the line at rest), and the next video took
+    // over far too early on the way down.
+    const viewTop = scrollY - padTop;                    // layout y at screen y = 0
+    // The band the user actually SEES. The floating header covers its top —
+    // minus the stories tray once that has collapsed. The header's scroll-away
+    // glide is deliberately NOT subtracted: letting the band grow and shrink
+    // with a chrome animation would flip a video in and out of "fully on
+    // screen" from chrome motion alone.
+    const topChrome = headerHRef.current - (trayShownRef.current ? 0 : trayHRef.current);
+    const bandTop = viewTop + topChrome;
+    const bandBottom = viewTop + winH - bottomClearRef.current;
+    const bandH = bandBottom - bandTop;
     const centerY = (bandTop + bandBottom) / 2;
-    let activeId: string | null = null;
-    let centerOnNonVideo = false; // focus line is over a real card, just not a video
+    if (bandH <= 0) return null;
+
+    const prev = getVisibleVideoId();
     let sawLayout = false;
+    let prevSettled = false;   // what's playing is still wholly on screen
+    let prevCardOnScreen = false;
+    let settledId: string | null = null;   // whole frame visible, nearest the focus line
+    let settledDist = Infinity;
+    let shownId: string | null = null;     // most-complete frame, however incomplete
+    let shownBest = 0;
     for (let i = range.startIndex; i <= range.endIndex; i++) {
       const L = list.getLayout(i);
       if (!L) continue;
       sawLayout = true;
-      // The card whose vertical extent contains the focus line IS the centered post.
-      if (centerY >= L.y && centerY < L.y + L.height) {
-        if (isPlayableVideoItem(data[i])) {
-          activeId = (data[i] as any).id;
-          // HEADER-ZONE handoff: the top ~58px of every card is the author
-          // header, never media. If the focus line sits on this card's HEADER,
-          // the user's eye is on the media that ends right above it — with two
-          // short landscape videos stacked, the raw containment rule played
-          // the BOTTOM one here while the fully-visible video above owned the
-          // middle of the screen (owner-reported, caught on video). So: line
-          // in the header zone + the adjacent item above is also a playable
-          // video still overlapping the band → that one is what's watched.
-          // Asymmetric on purpose (no bottom-edge twin): a card's bottom
-          // region is its caption/actions, directly UNDER its own media —
-          // containment is already right there.
-          if (centerY < L.y + HEADER_FOCUS_ZONE && i > 0 && isPlayableVideoItem(data[i - 1])) {
-            const LA = list.getLayout(i - 1);
-            if (LA && LA.y + LA.height > bandTop) activeId = (data[i - 1] as any).id;
-          }
-        } else {
-          centerOnNonVideo = true;
-        }
-        break;
+      const it: any = data[i];
+      if (!it) continue;
+      // Sticky continuity is judged on the whole CARD, not on the frame: it has
+      // to outlast the stretch between "this video's frame has slid off the
+      // top" and "the next one's frame is finally all the way in". With posts
+      // taller than half the band that stretch is real, and without card-level
+      // stickiness the feed would go silent inside it.
+      if (it.id === prev && L.y < bandBottom && L.y + L.height > bandTop) prevCardOnScreen = true;
+      if (!isPlayableVideoItem(it)) continue;
+      const frameH = videoFrameH(it);
+      if (frameH <= 0) continue;
+      const top = L.y + CARD_HEADER_H;
+      const bottom = top + frameH;
+      const shown = Math.min(bottom, bandBottom) - Math.max(top, bandTop);
+      if (shown <= 0) continue;
+      // THE WHOLE FRAME IS ON SCREEN. A frame taller than the band never can
+      // be, so for those this reads as "the band is full of it" — the same
+      // question either way: is any more of this video showable than this?
+      if (shown >= Math.min(frameH, bandH) - FRAME_SETTLE_SLACK) {
+        if (it.id === prev) prevSettled = true;
+        const d = Math.abs((top + bottom) / 2 - centerY);
+        if (d < settledDist) { settledDist = d; settledId = it.id; }
       }
+      const ratio = shown / Math.min(frameH, bandH);
+      if (ratio > shownBest) { shownBest = ratio; shownId = it.id; }
     }
     if (!sawLayout) return null; // layout not measured yet — let the caller fall back
-    // STICKY CONTINUITY: when the focus line is momentarily over a NON-video (a
-    // photo, a caption, or the gap between two posts), don't cut off the video
-    // that's already playing — keep it going as long as its card is still on
-    // screen. It stops only once it fully leaves the visible band OR a DIFFERENT
-    // video reaches center. This is the "keep playing until it's no longer
-    // supposed to play" feel: no pause-flash mid-scroll between posts.
-    if (!activeId && centerOnNonVideo) {
-      const prev = getVisibleVideoId();
-      if (prev) {
-        for (let i = range.startIndex; i <= range.endIndex; i++) {
-          if ((data[i] as any)?.id !== prev) continue;
-          const L = list.getLayout(i);
-          // Still overlapping the visible band → keep it playing.
-          if (L && L.y < bandBottom && L.y + L.height > bandTop) activeId = prev;
-          break;
-        }
-      }
-    }
+
+    // Priority, in the order the eye works:
+    //   1. still watching something whole  → don't touch it
+    //   2. something else is now whole     → hand over (nearest the focus line)
+    //   3. neither, but the outgoing card is still on screen → let it finish
+    //   4. nothing to hold on to. AT REST that means a fling landed somewhere
+    //      mid-post, so play whatever fills the screen most — silence would be
+    //      the wrong answer. STILL MOVING, only a nearly-complete frame may cut
+    //      in, which is just the few pixels of overlap between (2) and (3).
+    const activeId =
+      prevSettled ? prev
+      : settledId ?? (
+          prevCardOnScreen ? prev
+          : (atRest || shownBest >= FRAME_NEAR_RATIO) ? shownId
+          : null
+        );
     // STAGED pre-warm (unchanged budget): the centered video + ONE neighbor
     // hold a pooled player; everything deeper stays a poster. Two concurrent
     // streams max, so the playing one never gets starved. The neighbor slot is
@@ -903,9 +945,9 @@ export default function HomeScreen() {
     if (second) warm.push(second);
     return { activeId, warm };
   }).current;
-  const applyVideoViewables = useRef((viewableItems: any[]) => {
-    // Prefer precise geometry: the post crossing the screen's center line.
-    const byGeom = resolveActiveVideoByGeometry();
+  const applyVideoViewables = useRef((viewableItems: any[] | null, atRest: boolean) => {
+    // Prefer precise geometry: the post whose whole frame is on screen.
+    const byGeom = resolveActiveVideoByGeometry(atRest);
     if (byGeom) {
       setVisibleVideoId(byGeom.activeId);
       setWarmVideoIds(byGeom.warm);
@@ -913,7 +955,8 @@ export default function HomeScreen() {
     }
     // Fallback (geometry not measured yet — the first frames after mount / a
     // data swap): the topmost sufficiently-visible video, staged warm as before.
-    const firstVideo = viewableItems.find(v =>
+    const items = viewableItems ?? [];
+    const firstVideo = items.find(v =>
       v.item?.type === 'video' ||
       (isSlideshow(v.item?.type) && Array.isArray(v.item?.slides) && v.item.slides.some((s: any) => s?.type === 'video'))
     );
@@ -923,8 +966,8 @@ export default function HomeScreen() {
       ids.push(firstVideo.item.id);
     }
     if (firstVideo) {
-      const after = viewableItems
-        .slice(viewableItems.indexOf(firstVideo) + 1)
+      const after = items
+        .slice(items.indexOf(firstVideo) + 1)
         .find((v) => { const p = v.item; return p && !p.__ad && p.type === 'video' && p.media_url; });
       if (after) ids.push(after.item.id);
     }
@@ -935,20 +978,22 @@ export default function HomeScreen() {
     // and let the at-rest / gentle-scroll passes re-resolve without a fresh event.
     lastVideoTokens.current = viewableItems;
     // Gentle scrolls apply LIVE (Instagram-style — the video starts the moment
-    // it reaches center): with the pooled players, assignment is a cheap async
-    // source swap, never a creation, so mid-gesture application is safe. Only
-    // fast flings defer (no point churning sources mid-blur).
+    // its frame is all the way in): with the pooled players, assignment is a
+    // cheap async source swap, never a creation, so mid-gesture application is
+    // safe. Only fast flings defer (no point churning sources mid-blur).
     if (fastScrollRef.current) { pendingVideoViewables.current = viewableItems; return; }
     pendingVideoViewables.current = null;
-    applyVideoViewables(viewableItems);
+    applyVideoViewables(viewableItems, false);
   }).current;
   // Scroll reached rest: re-resolve against the FINAL scroll position (where the
-  // finger landed) so the centered video is exact. Geometry reads the live
-  // offset, so this is correct even if no viewability event fired during a fling.
+  // finger landed) so the active video is exact. Geometry reads the live offset,
+  // so this is correct even if no viewability event fired during a fling — and
+  // it is the one pass allowed to settle on a partly-visible frame, because a
+  // fling that lands mid-post has to play SOMETHING.
   function flushVideoAtRest() {
     const pending = pendingVideoViewables.current;
     pendingVideoViewables.current = null;
-    applyVideoViewables(pending ?? lastVideoTokens.current);
+    applyVideoViewables(pending ?? lastVideoTokens.current, true);
   }
   // The most-visible post that carries an attached song — its track plays ambiently.
   const applyMusicViewables = useRef((viewableItems: any[]) => {
@@ -1047,13 +1092,15 @@ export default function HomeScreen() {
   // also left too little buffered stream (stall a second in). Play near rest.
   const GATE_IN = 1.0, GATE_OUT = 0.4;
   const trackScrollVelocity = (y: number) => {
-    // Live center-tracking during a gentle browse: keep the playing video locked
-    // to whichever post currently owns the screen's center line, so playback
-    // follows the finger like Instagram instead of only updating on 40%-crossing
-    // events. Cheap — setVisibleVideoId/setWarmVideoIds no-op when unchanged, and
-    // only the 1-2 affected video cards re-render. Skipped during fast flings
-    // (playback is gated off then and the snapshot is applied at rest).
-    if (!fastScrollRef.current) applyVideoViewables(lastVideoTokens.current);
+    // Live tracking during a gentle browse: re-resolve every scroll frame so
+    // playback follows the finger like Instagram instead of only updating on
+    // 40%-crossing events. Load-bearing for the whole-frame rule, not just a
+    // nicety: the stretch of scroll where a frame is entirely on screen can be
+    // only tens of pixels, and a viewability event can easily fire on either
+    // side of it and never inside. Cheap — setVisibleVideoId/setWarmVideoIds
+    // no-op when unchanged, and only the 1-2 affected video cards re-render.
+    // Skipped during fast flings (the snapshot is applied at rest instead).
+    if (!fastScrollRef.current) applyVideoViewables(lastVideoTokens.current, false);
     const t = Date.now();
     const { y: py, t: pt } = scrollSample.current;
     const dt = t - pt;
@@ -1081,7 +1128,11 @@ export default function HomeScreen() {
         if (fastScrollRef.current && pendingVideoViewables.current) {
           const pendingV = pendingVideoViewables.current;
           pendingVideoViewables.current = null;
-          applyVideoViewables(pendingV);
+          // Resolved as a LANDING (atRest): a decelerating fling has to commit to
+          // something so its stream is buffered before momentum ends — holding
+          // out for a whole frame here would pause, then play, at the end of
+          // every fling. flushVideoAtRest re-resolves at the true landing.
+          applyVideoViewables(pendingV, true);
         }
         if (v <= GATE_OUT) setFastScroll(false);
       }
@@ -1129,6 +1180,7 @@ export default function HomeScreen() {
   // or FlashList's maintainVisibleContentPosition compensates the difference and
   // the whole feed jumps mid-scroll.
   const [trayH, setTrayH] = useState(0);
+  trayHRef.current = trayH; // mirror for the geometry resolver's band math
   const trayAnim = useRef(new Animated.Value(1)).current;   // 1 = shown, 0 = collapsed
   const trayShownRef = useRef(true);
   const setTrayShown = useCallback((show: boolean) => {
