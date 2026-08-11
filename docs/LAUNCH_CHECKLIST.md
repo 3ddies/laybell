@@ -170,11 +170,15 @@ Everything else is three inbox waits and one test that needs Android hardware.
    + Cloudflare separately, re-seed. Plan: `docs/FRESH_START_RESET.md`. This also clears
    the money-test artifacts and 11 expired ad campaigns.
 2. **Legal rollout** manual steps — `docs/LEGAL_ROLLOUT.md`.
-3. **Email**: custom SMTP + SPF/DKIM/DMARC — `docs/EMAIL_SETUP.md`. ⚠️ **DO THIS BEFORE
-   LAUNCH DAY, NOT ON IT.** It is DNS work, and DNS takes hours to propagate — it is the
-   worst possible thing to be waiting on with the store listing already live.
+3. ~~**Email**: custom SMTP + SPF/DKIM/DMARC~~ ✅ **DNS IS DONE** — verified by lookup
+   2026-08-10: root SPF (`include:spf.improvmx.com`, inbound), DMARC (`p=none`, rua to
+   3ddiehall@gmail.com), Resend DKIM at `resend._domainkey`, and Resend's return path at
+   `send.laybell.app` (MX → `feedback-smtp.us-east-1.amazonses.com`, TXT →
+   `v=spf1 include:amazonses.com`). Root SPF is correctly left to ImprovMX; no conflict.
+   **Do not re-do this** — `docs/EMAIL_SETUP.md` reads as pending and is not.
 
-   It also closes a live compliance gap. The **Terms of Service promise** that 13–17
+   ⚠️ **What IS still open: three unset secrets**, which is a live compliance gap.
+   The **Terms of Service promise** that 13–17
    accounts get *"verifiable parental consent… by parent or guardian email confirmation"*
    and that *"where we cannot obtain verifiable parental consent… the account will be
    restricted or blocked."* The machinery exists and both `parent-consent` and
