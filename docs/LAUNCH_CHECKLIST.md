@@ -20,8 +20,22 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ## 0.0 ✅ THE CURRENT STATE — updated 2026-08-10 (end of session)
 
-**One-line status: nothing is blocking. Everything left is store paperwork, three
-inbox waits, and one test that needs Android hardware.**
+**One-line status: both store listings are COMPLETE and submission-ready. The only
+thing left is the production build — deliberately paused by the owner (2026-08-10) to
+keep polishing, because there is no OTA here and whatever is in that build ships.**
+
+Everything else is three inbox waits and one test that needs Android hardware.
+
+> **Resuming after the polish pass:**
+> 1. App Store Connect **Version** field says `1.0`; `app.json` says `1.0.0`. Apple matches
+>    a build to a version record by exact string, so change the field to `1.0.0` or the
+>    build cannot be selected.
+> 2. `npx eas-cli build --platform ios --profile production` — **must run interactively**;
+>    `--non-interactive` fails at "Distribution Certificate is not validated". Build
+>    credits are exhausted, so it bills pay-as-you-go. buildNumber is already at 2.
+> 3. `npx eas-cli submit --platform ios --latest`, then select the build on the version
+>    page, **attach the IAPs and subscriptions** (Apple requires the first ones to ride
+>    with a version — this is the step that cannot be done in advance), and Add for Review.
 
 ### What is DONE and verified — do not re-check these
 
