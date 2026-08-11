@@ -113,13 +113,22 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
       <li id="stepDaw"><b>Send your beat.</b> Hit <i>Share app audio</i>, choose the <b>Window</b> tab, pick your DAW,
         and tick <b>“Share audio.”</b>
         <details><summary>It shared but nobody can hear it</summary>
-          <p>Three causes, in order of likelihood. The <b>“Share audio” checkbox is off by default</b> and easy to
-          miss. You picked <b>Entire screen</b> — Chrome only offers that checkbox for a window or a browser tab.
-          Or your driver is taking the sound card exclusively, so nothing reaches Windows for Chrome to capture.</p>
-          <p><b>Not all ASIO is equal here.</b> A hardware ASIO driver or <b>ASIO4ALL</b> usually grabs the device
-          outright and the share carries silence. <b>FL Studio ASIO</b> shares the device with other apps, so it
-          works fine — if the room can hear your beat, your driver is not the problem and you can stop looking
-          here.</p>
+          <p>In order of likelihood. The <b>“Share audio” checkbox is off by default</b> and easy to miss. You
+          picked <b>Entire screen</b> — Chrome only offers that checkbox for a window or a browser tab.</p>
+          <p class="warn" style="margin:10px 0 0"><b>It was working, then went quiet? Re-share.</b> A share is
+          bound to one window. Change your DAW's audio device, or do anything else that rebuilds its window, and
+          Chrome quietly drops it — the room goes silent with no error and the button does not always show it. Hit
+          <i>Share app audio</i> again. <b>Check this first whenever the beat stops arriving</b>, especially right
+          after touching audio settings.</p>
+          <p style="margin-top:10px"><b>Still silent with the share definitely running?</b> Then your driver is
+          taking the sound card exclusively and nothing reaches Windows for Chrome to capture. A hardware ASIO
+          driver or <b>ASIO4ALL</b> does this. <b>FL Studio ASIO</b> is meant to share the device and usually works
+          — but if the room cannot hear you while the share is live, believe the room, not the driver.</p>
+          <p>Fix: set your DAW's Device to a <b>DirectSound</b> or <b>WASAPI</b> entry — your interface's own
+          <i>Speakers (…)</i> line — instead of ASIO. Bonus for FL users: in DirectSound mode FL lists system
+          inputs <b>by name</b>, so <b>CABLE Output</b> shows up in the mixer's IN dropdown directly and you can
+          skip the ASIO panel entirely. The cost is a little more latency, which barely matters next to the network
+          delay already in the round trip.</p>
         </details>
       </li>
 
