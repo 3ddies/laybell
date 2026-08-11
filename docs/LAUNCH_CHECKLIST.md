@@ -95,6 +95,24 @@ inbox waits, and one test that needs Android hardware.**
    that file said "no crash SDK" until 2026-08-10 because it predated Sentry, and
    transcribing it would have filed a label contradicting the app's own Privacy Policy.
 4. **Queue the iOS production build** → TestFlight. ⚠️ **Build credits are exhausted — every build is billed.** Verify assets locally before spending.
+
+   🚨 **Two App Store Connect settings that must be right BEFORE approval, not after:**
+
+   - **Territories → United States only** (Pricing and Availability → Availability; same on
+     Play → Countries/regions). §7 records the decision — *"v1 launches US-only… removes
+     GDPR, UK-GDPR, the Art. 27 representative and DSA obligations from v1 scope entirely."*
+     Ship worldwide by omission and you inherit every one of them, with a privacy policy
+     written for the US. This also makes the **Digital Services Act** panel inapplicable —
+     skip it.
+   - **App Store Version Release → "Manually release this version."** It defaults to
+     *Automatically*, which puts the app live the instant Apple approves — before the
+     launch-day sequence below has run. At that moment the **$58 demo balance is still
+     withdrawable**, test accounts are still present, and Stripe is still on the test key.
+     Approval arrives without warning; manual release is what makes step 0 possible.
+
+   Also worth doing now: **App Store Server Notifications → Production URL** pointing at
+   RevenueCat (their Project settings → Apple App Store). Without it, refunds, cancellations
+   and billing failures reach RevenueCat late or never, so a refunded buyer keeps Premium.
 5. **Submit for review.** Two things that are easy to forget: the IAPs and the subscription group must be **attached to that version's submission**, and reviewers need the `laybellreview` demo credentials.
 
 ### 🚧 GATES — conditions that must be met before a specific action
