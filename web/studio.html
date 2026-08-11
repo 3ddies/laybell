@@ -6,9 +6,16 @@
 <style>
 :root { --bg:#0d0d0f; --card:#16151a; --ink:#f5f4f2; --muted:#a4a3ab; --line:#272630; --brand:#F26522; --brand2:#E8401C; --ok:#22C55E; --err:#F43F5E; }
 * { box-sizing:border-box; }
-html,body { height:100%; }
-body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; display:flex; align-items:center; justify-content:center; padding:24px; }
-main { width:100%; max-width:440px; }
+/* min-height, and centring via `margin:auto` on the child rather than
+   `align-items:center` on the flex parent. With align-items:center a child
+   TALLER than the viewport overflows in BOTH directions, and the part above the
+   start becomes unreachable — no scrollbar goes there. That is exactly what
+   happened once the VB-CABLE steps were expanded: the mic picker, preset and
+   Share button scrolled off the top and could not be reached again. An auto
+   margin centres only the spare space, so overflow always goes downward. */
+html,body { min-height:100%; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; display:flex; justify-content:center; padding:24px; }
+main { width:100%; max-width:440px; margin:auto; }
 .logo { width:64px; height:64px; border-radius:16px; margin:0 auto 16px; background:linear-gradient(135deg,var(--brand),var(--brand2)); display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; color:#fff; }
 h1 { font-size:22px; margin:0 0 6px; text-align:center; }
 p.sub { color:var(--muted); margin:0 0 22px; text-align:center; font-size:14px; }
@@ -123,31 +130,52 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
       <li id="stepBack"><b>Optional — record their take into your DAW.</b> Only if you want the vocal on a track
         while you work. Windows cannot hand a browser's audio to a DAW on its own, so this one needs a free driver.
         Most sessions do not need it: see <i>“a cleaner way to get the take”</i> below.
-        <details><summary>Install VB-CABLE and set up the return path</summary>
-          <p><b>1. Download it.</b> Go to <a href="https://vb-audio.com/Cable/" target="_blank"
-          rel="noopener">vb-audio.com/Cable</a> and get <b>VB-CABLE Driver Pack</b> for Windows. It is free
-          (donationware) and comes as a .zip.</p>
-          <p><b>2. Install it.</b> Right-click the .zip → <i>Extract All</i>. In the extracted folder, right-click
-          <b>VBCABLE_Setup_x64.exe</b> → <b>Run as administrator</b> → <i>Install Driver</i>. <b>Reboot.</b> It will
-          not appear until you do. Afterwards you have two new devices: <b>CABLE Input</b> (a speaker) and
-          <b>CABLE Output</b> (a microphone).</p>
-          <p><b>3. Point this browser at the cable.</b> Windows <i>Settings → System → Sound → Volume mixer</i> →
-          set <b>this browser's</b> output to <b>CABLE Input</b>. The room now feeds the cable instead of your
-          speakers.</p>
-          <p><b>4. Get your ears back.</b> You just made the browser silent to you. <i>Sound Control Panel →
-          Recording → CABLE Output → Properties → Listen</i> → tick <b>“Listen to this device”</b> and pick your
-          headphones.</p>
-          <p><b>5. Match the sample rate — do not skip this.</b> Set <b>48000 Hz</b> in FOUR places, because they
-          are all set separately and the cable defaults to 44100: your interface, your DAW's audio settings, and
-          BOTH ends of the cable — <i>Sound Control Panel → Playback → CABLE Input → Properties → Advanced</i> and
-          <i>→ Recording → CABLE Output → Properties → Advanced</i>. A mismatch here is the cause of the loud
-          glitching, crackling or stuttering people blame on their microphone.</p>
-          <p><b>6. Record.</b> In your DAW, set a track's input to <b>CABLE Output</b>, arm it, record.</p>
-          <p class="warn" style="margin-top:8px"><b>Keep that track OUT of your master.</b> Chrome shares your
-          master, so anything in it goes back to the artist. Route the Laybell track to your monitoring only, or
-          mute its master send. If you have the A+B cable pack you can go further: send a dedicated bus (beat + your
-          mic, no return) to <b>CABLE-B Input</b> and choose <b>CABLE-B Output</b> as your microphone above instead
-          of sharing the window at all — then it is impossible to send their voice back.</p>
+        <details><summary>Part 1 — install VB-CABLE (about 3 minutes)</summary>
+          <p><b>Download</b> — <a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">vb-audio.com/Cable</a>,
+          the Windows download. Free. You get a .zip.</p>
+          <p><b>Unzip</b> — right-click it → <i>Extract All</i>.</p>
+          <p><b>Install</b> — in that folder, right-click <b>VBCABLE_Setup_x64.exe</b> → <b>Run as administrator</b>
+          → <i>Install Driver</i>.</p>
+          <p><b>Reboot.</b> Nothing works until you do.</p>
+          <p>You now have two new audio devices in Windows, and they are two ends of one pipe:<br>
+          <b>CABLE Input</b> = a speaker. Audio you send INTO the pipe.<br>
+          <b>CABLE Output</b> = a microphone. Audio coming OUT of the pipe.</p>
+        </details>
+        <details><summary>Part 2 — send Laybell into the pipe</summary>
+          <p><b>Windows <i>Settings → System → Sound → Volume mixer</i></b> → find this browser in the app list →
+          set its <b>Output</b> to <b>CABLE Input</b>.</p>
+          <p>Laybell now plays into the pipe instead of your headphones — so you have gone deaf to the room. Get it
+          back: <b>Sound Control Panel → Recording → CABLE Output → Properties → Listen</b> → tick
+          <b>“Listen to this device”</b> → choose your headphones.</p>
+        </details>
+        <details><summary>Part 3 — get the pipe into your FL Studio mixer</summary>
+          <p class="warn" style="margin:0 0 10px"><b>If your mixer only offers “in 1” and “in 2”, this is why.</b>
+          That list is not a list of everything on your PC — it is the inputs of the <b>one</b> device FL is
+          currently using, which is your interface. <b>CABLE Output cannot appear until you make it FL's input
+          device.</b></p>
+          <p><b>1.</b> FL Studio → <i>Options → Audio Settings</i>. With a <b>WASAPI</b> device selected there is a
+          separate <b>Input</b> dropdown underneath the output one. Set that <b>Input</b> to <b>CABLE Output</b>.</p>
+          <p><b>2.</b> Open the <b>Mixer</b> and click an empty insert track.</p>
+          <p><b>3.</b> At the top of the mixer, open the <b>IN</b> dropdown. <b>CABLE Output</b> is now in the list —
+          pick it. Arm the track and record.</p>
+          <p class="warn" style="margin-top:10px"><b>Then mute that track's send to Master.</b> Chrome shares your
+          master, so anything sitting in it is being sent back to the artist. Click the little arrow between that
+          insert and Master to switch the send off. You will still hear the artist — that comes from
+          <i>“Listen to this device”</i> in Part 2, not from FL.</p>
+          <p><b>FL can only use ONE input device at a time on WASAPI.</b> So while its input is CABLE Output, your
+          studio mic is not available inside FL. That is fine — choose the mic in the <b>Microphone / audio
+          interface</b> box at the top of this page instead. It goes straight to the room, and the beat still
+          reaches the room through <i>Share app audio</i>. Both are sent at once.</p>
+        </details>
+        <details><summary>Part 4 — fix crackling, glitching or stuttering</summary>
+          <p>It is almost never the microphone. It is a sample-rate mismatch, and the cable defaults to
+          <b>44100</b> while this app runs at <b>48000</b>.</p>
+          <p>Set <b>48000 Hz</b> in all four of these — they are configured separately:</p>
+          <p>· your interface's own control panel<br>
+          · FL Studio → <i>Options → Audio Settings</i><br>
+          · <i>Sound Control Panel → <b>Playback</b> → CABLE Input → Properties → Advanced</i><br>
+          · <i>Sound Control Panel → <b>Recording</b> → CABLE Output → Properties → Advanced</i></p>
+          <p>Still crackling? Raise FL's buffer length in Audio Settings.</p>
         </details>
         <details><summary>A cleaner way to get the take</summary>
           <p>A vocal pulled back through the room has network delay baked into it and will never sit tight to the
