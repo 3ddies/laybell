@@ -147,6 +147,18 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
       <button class="btn btn-ghost" id="muteBtn">Mute mic</button>
       <button class="btn btn-primary" id="dawBtn">Share app audio</button>
     </div>
+    <!-- Shared-audio meter. "I clicked share" and "the room is hearing my beat"
+         are different claims, and a share that captures SILENCE looks exactly
+         like one that works — the button changes, no error appears, and the
+         room just sits quiet. This is the only honest read on it. -->
+    <div id="dawMeterWrap" style="display:none">
+      <label style="margin-top:12px">Shared app audio <span id="dawMeterState" style="text-transform:none;letter-spacing:0;font-weight:600"></span></label>
+      <div class="meter"><div id="dawMeterFill"></div></div>
+      <div class="warn" id="dawSilentHint" style="display:none;margin-top:0"><b>Sharing, but no sound is coming through.</b>
+        Play something in your DAW — if this stays flat, the room is hearing silence. Re-share and make sure you
+        ticked <b>“Share audio”</b>, and that you picked the <b>Window</b> (or a browser tab), not <i>Entire
+        screen</i>. See <i>The room can't hear my beat</i> below.</div>
+    </div>
     <p class="status" id="roomStatus"></p>
     <div class="sec"><h2>Set up</h2><span class="count">3 steps</span></div>
     <ol class="steps" id="steps">
@@ -472,6 +484,39 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     chain = null;
   }
 
+  // Meter for the SHARED app audio. Separate from the mic meter on purpose:
+  // the two fail independently, and the failure that costs the most time is a
+  // share that publishes happily and carries silence. Nothing else on this page
+  // — or in the room — distinguishes that from working.
+  var dawRaf = 0, dawLoudAt = 0;
+  function runDawMeter(track) {
+    cancelAnimationFrame(dawRaf);
+    var analyser = meterFromTrack(new MediaStream([track]));
+    var buf = new Uint8Array(analyser.fftSize);
+    $('dawMeterWrap').style.display = '';
+    dawLoudAt = Date.now();
+    (function tick() {
+      analyser.getByteTimeDomainData(buf);
+      var peak = 0;
+      for (var i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128) / 128);
+      $('dawMeterFill').style.width = Math.min(100, Math.round(peak * 130)) + '%';
+      if (peak > 0.01) dawLoudAt = Date.now();
+      var quiet = Date.now() - dawLoudAt;
+      // Three seconds of nothing is worth flagging; five is worth explaining.
+      // Short enough to notice, long enough to survive a gap between takes.
+      $('dawMeterState').textContent = quiet > 3000 ? '— no signal reaching the room' : '— live';
+      $('dawMeterState').style.color = quiet > 3000 ? 'var(--err)' : 'var(--ok)';
+      $('dawSilentHint').style.display = quiet > 5000 ? '' : 'none';
+      dawRaf = requestAnimationFrame(tick);
+    })();
+  }
+  function stopDawMeter() {
+    cancelAnimationFrame(dawRaf);
+    $('dawMeterFill').style.width = '0%';
+    $('dawMeterWrap').style.display = 'none';
+    $('dawSilentHint').style.display = 'none';
+  }
+
   async function republishMic() {
     if (!room) return;
     var preset = currentPreset();
@@ -589,9 +634,11 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
       // actually going out — 'I clicked it' and 'it is publishing' are not the
       // same thing, and the silent-capture failure looks identical to success.
       $('stepDaw').classList.add('done');
+      runDawMeter(audio);
       audio.addEventListener('ended', function () {
-        setStatus($('roomStatus'), 'App audio share stopped.');
+        setStatus($('roomStatus'), 'App audio share stopped — hit Share app audio again.', 'err');
         $('stepDaw').classList.remove('done');
+        stopDawMeter();
         dawTrack = null;
       });
       setStatus($('roomStatus'), 'Your app audio is live in the session.', 'ok');
