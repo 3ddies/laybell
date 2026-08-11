@@ -46,17 +46,32 @@ const SCREEN_W = Dimensions.get('window').width;
 const HEADER_HIT_SLOP = { top: 12, bottom: 12, left: 8, right: 8 } as const;
 const SCREEN_H = Dimensions.get('window').height;
 const MAX_VIDEO_H = SCREEN_W * 1.25; // cap feed video at 4:5 so tall (9:16) clips aren't too long
-// A feed item that should drive the video gate: a video post, or a slideshow
-// whose slides include a video. Ads never autoplay through the feed's gate —
-// SponsoredCard owns its own creative — so they're excluded here.
-const isPlayableVideoItem = (it: any): boolean => !!it && !it.__ad && (
+// A feed item that should drive the video gate: a video post, a slideshow whose
+// slides include a video, or a VIDEO AD.
+//
+// Ads used to be excluded here, on the reasoning that "SponsoredCard owns its
+// own creative". It does not — it renders the same pooled <FeedVideo> and reads
+// the same store (useCardPlayback), so it needs this gate to name it before its
+// video mounts at all. Excluding ads meant `visibleVideoId` could never be an ad
+// id, so a video ad's player never mounted, it never autoplayed, and even its
+// mute button (also gated on isVisibleVideo) never appeared. Owner-confirmed
+// 2026-08-11. Simple shop ads are unaffected: those are `type: 'image'` with a
+// song_url and play through their own preview strip, not this gate.
+//
+// Ads still stay OUT OF THE WARM SET — that loop has its own `__ad` filter and
+// keeps it, so SponsoredCard's "isVisibleVideo means exactly 'this ad is the
+// visible video'" stays true and a merely-approaching ad does not pre-buffer.
+const isPlayableVideoItem = (it: any): boolean => !!it && (
   (it.type === 'video' && !!it.media_url) ||
   (isSlideshow(it.type) && Array.isArray(it.slides) && it.slides.some((s: any) => s?.type === 'video'))
 );
-// The author-header band at the top of every post card: 38px avatar +
+// The author-header band at the top of every card: 38px avatar +
 // 2×(SPACING.sm+2) padding. Media is the header's immediate next sibling, so
 // this doubles as the offset from a card's top to the top of its video FRAME.
-// Keep in sync with styles.postHeader/avatar if those ever change.
+// Holds for SPONSORED cards too — SponsoredCard's header/brandAvatar styles are
+// identical to these, which is what lets a video ad go through the same
+// whole-frame test. Keep in sync with styles.postHeader/avatar AND
+// SponsoredCard's header/brandAvatar if either ever changes.
 const CARD_HEADER_H = 58;
 // How tall a card's video frame actually renders. These are the SAME
 // expressions the card itself uses (styles.postVideo's height below,
