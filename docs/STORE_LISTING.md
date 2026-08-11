@@ -185,6 +185,12 @@ can't reach a feature assumes it doesn't work.
 **Demo account: required.** Create a real account, seed it with a few posts, a
 shop listing, and some credits, and hand over working credentials.
 
+> ⚠️ **Checked 2026-08-10: `laybellreview` has 0 shop listings.** The notes below
+> promise the reviewer one. Either publish a listing from that account first, or cut
+> the claim — this doc's own rule is that a reviewer who cannot reach a feature
+> assumes it does not work, and pointing them at something that isn't there is worse
+> than staying quiet. Credits (~$482) and both subscription tiers ARE active on it.
+
 **Notes field:**
 
 ```
@@ -215,7 +221,7 @@ FILMS
 Films are landscape videos longer than nine minutes, available to Premium+ subscribers and shown on their own shelf inside Laybell TV (turn the device sideways, or use the TV entry beside the home logo). The demo account has Premium+ active, so this is reachable without a purchase.
 
 LIVESTREAMING
-The LIVE button sits next to the home logo. The demo account can start a broadcast. Streams are recorded only if the broadcaster opts in.
+The LIVE button sits next to the home logo. The demo account can start a broadcast. Our streaming provider serves live playback out of its recording pipeline, so a broadcast is necessarily recorded while it is live. That recording is deleted automatically when the broadcast ends — no replay is retained, published or offered for download.
 
 MUSIC LICENSING
 Content is uploaded by users, who warrant they hold the rights. Laybell additionally holds BMI and ASCAP public performance licences. A registered DMCA agent and a repeat-infringer termination policy are in place.
