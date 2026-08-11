@@ -233,7 +233,7 @@ All four required protections are implemented:
 - Contact information published in the app and on laybell.app
 
 MINORS
-Users under 18 are identified at signup. For them the app disables location capture, disables targeted advertising, defaults posts to friends-only, restricts incoming direct messages to accounts they follow, and blocks livestream broadcasting. The messaging restriction is enforced server-side in the database, not only in the UI.
+Users under 18 are identified at signup. For them the app disables location capture, disables targeted advertising, defaults posts to friends-only, restricts incoming direct messages to accounts they follow, blocks livestream broadcasting, and hides any post or story an author has marked as mature. The messaging restriction and the mature-content gate are both enforced server-side in the database, not only in the UI.
 
 PURCHASES (Guideline 3.1.1)
 All digital purchases use In-App Purchase. Users buy credits, and credits are spent on tips, shop purchases and promotion. Credits cannot be converted back to money and cannot be transferred between users. Creator earnings are a separate balance, paid out by bank transfer via Stripe, and are never redeemable as credits.
