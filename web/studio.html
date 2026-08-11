@@ -167,8 +167,14 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
           separate <b>Input</b> dropdown underneath the output one. Set that <b>Input</b> to <b>CABLE Output</b>.</p>
           <p><b>2.</b> Open the <b>Mixer</b> and click an empty insert track.</p>
           <p><b>3.</b> At the top of the mixer, open the <b>IN</b> dropdown. <b>CABLE Output</b> is now in the list —
-          pick it. Arm the track and record.</p>
-          <p class="warn" style="margin-top:10px"><b>Then mute that track's send to Master.</b> Chrome shares your
+          pick it.</p>
+          <p><b>4. Check the meter before anything else.</b> Get the artist to talk and watch that insert's peak
+          meter. <b>Moving = FL has the signal.</b> Dead = it does not, and no amount of pressing record will help.</p>
+          <p class="warn" style="margin:0 0 10px"><b>Careful — you can hear them without FL receiving anything.</b>
+          <i>“Listen to this device”</i> from Part 2 sends the artist to your headphones through WINDOWS, going
+          around FL completely. So it sounds exactly the same whether FL is wired up or not. The meter is the only
+          honest test. If you can hear them but the meter is dead, step 1 above did not take.</p>
+          <p class="warn" style="margin:0 0 10px"><b>Then mute that track's send to Master.</b> Chrome shares your
           master, so anything sitting in it is being sent back to the artist. Click the little arrow between that
           insert and Master to switch the send off. You will still hear the artist — that comes from
           <i>“Listen to this device”</i> in Part 2, not from FL.</p>
@@ -177,7 +183,25 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
           interface</b> box at the top of this page instead. It goes straight to the room, and the beat still
           reaches the room through <i>Share app audio</i>. Both are sent at once.</p>
         </details>
-        <details><summary>Part 4 — fix crackling, glitching or stuttering</summary>
+        <details><summary>Part 4 — actually lay it down on the beat</summary>
+          <p>Signal reaching the mixer is not the same as FL recording it. Hearing them and capturing them are two
+          separate things, and this is where most people get stuck.</p>
+          <p><b>1. Song mode, not Pattern mode.</b> The switch is by the transport at the top. In Pattern mode the
+          take goes into a pattern instead of onto the timeline next to your beat.</p>
+          <p><b>2. ARM the insert.</b> On that mixer insert, click the small <b>record-arm</b> circle at the bottom
+          of the channel strip so it lights up. <b>FL records armed inserts and nothing else</b> — this is the step
+          that is missed most often, and it fails completely silently.</p>
+          <p><b>3. Set where the file goes</b> if FL asks. It will prompt for a name and folder the first time.</p>
+          <p><b>4. Click the transport <b>Record</b> button, then <b>Play</b>.</b> If FL asks what to record, choose
+          <b>“Audio, into the playlist”</b>. Picking <i>Automation</i> or <i>Score</i> records no audio at all and
+          gives you no warning.</p>
+          <p><b>5. Stop.</b> The take appears in the playlist as an audio clip, on the beat.</p>
+          <p class="warn" style="margin-top:10px"><b>It will sit slightly behind the grid.</b> The vocal travelled
+          phone → room → your machine, and that delay is baked into the file — it is physics, not a setting. Record
+          a clap on the first take, measure how late it lands, then drag every take back by that amount. If the
+          timing has to be perfect, use <i>“a cleaner way to get the take”</i> below instead.</p>
+        </details>
+        <details><summary>Part 5 — fix crackling, glitching or stuttering</summary>
           <p>It is almost never the microphone. It is a sample-rate mismatch, and the cable defaults to
           <b>44100</b> while this app runs at <b>48000</b>.</p>
           <p>Set <b>48000 Hz</b> in all four of these — they are configured separately:</p>
