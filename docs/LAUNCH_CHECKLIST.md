@@ -177,7 +177,13 @@ Everything else is three inbox waits and one test that needs Android hardware.
    `v=spf1 include:amazonses.com`). Root SPF is correctly left to ImprovMX; no conflict.
    **Do not re-do this** — `docs/EMAIL_SETUP.md` reads as pending and is not.
 
-   ⚠️ **What IS still open: three unset secrets**, which is a live compliance gap.
+   ✅ **The three secrets are now SET (2026-08-10)** — `RESEND_API_KEY` (its own
+   "parent-consent" key, separate from the "Supabase SMTP" one so either can be revoked
+   alone), `CONSENT_FROM_EMAIL`, `CONSENT_VERIFY_URL`. `parent-consent` was redeployed
+   afterwards so the running instance picks up the new env rather than holding stale
+   values. **Not yet proven end-to-end** — that needs one 13–17 signup with a guardian
+   address you control; watch Resend → Logs. The gap it closed:
+
    The **Terms of Service promise** that 13–17
    accounts get *"verifiable parental consent… by parent or guardian email confirmation"*
    and that *"where we cannot obtain verifiable parental consent… the account will be
