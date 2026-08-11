@@ -103,7 +103,16 @@ components. Nothing is fetched from, or reported to, an ad network.
 - Known minors **never** receive targeted ads regardless of their own setting, and an *unknown* age is treated
   as a minor for this purpose (`lib/ads.ts:522` → `lib/minors.ts:43-46,76-78`).
 
-**Ad payments are simulated**, not real: `provider: 'simulated'` at `lib/ads.ts:909-915`.
+**No third-party advertising, analytics or attribution SDK exists in this app.** Verified 2026-08-10 by
+scanning all 72 entries in `package.json` against AdMob, google-mobile-ads, Facebook/FBSDK, AppLovin,
+Unity Ads, ironSource, Vungle, Adjust, AppsFlyer, Branch, Amplitude, Mixpanel, Segment, OneSignal,
+Tenjin, Kochava and Singular — **zero matches**. The ad system is Laybell's own, and its payments are
+simulated (`lib/ads.ts:372` notes "the simulated model doesn't track yet").
+
+> ⚠️ An earlier revision cited `provider: 'simulated'` at `lib/ads.ts:909-915`. **That string does not
+> exist in the file** — the citation was stale. The conclusion was right and is now better supported by
+> the dependency scan above, but a privacy filing is only as good as its evidence, so check the citation
+> rather than the sentence.
 
 ---
 
@@ -457,7 +466,7 @@ These could not be settled from source alone. Do not fill in the store forms on 
 | No mention of **IP address logging** | `access_log` stores IP + user agent for 5 event types, 13-month retention (§6). Must be disclosed. |
 | No mention of **creator earnings** as financial data | Ledger holds per-user income-like balances (⚠️ 3). |
 | Third-party recipients listed as "Supabase, Expo, RevenueCat" | Also **Cloudflare Stream, Stripe, LiveKit, Giphy, Resend, a translation provider**, and conditionally Google Safe Browsing (§8). |
-| "Spotlight & Ad Manager remain simulated" | Confirmed — `provider: 'simulated'` (`lib/ads.ts:913`). |
+| "Spotlight & Ad Manager remain simulated" | Confirmed, but **not** by the `provider: 'simulated'` line this row used to cite — that string is not in `lib/ads.ts`. Confirmed instead by a full `package.json` scan finding no ad/analytics/attribution SDK at all (§2). |
 | "no third-party ad/analytics/crash SDKs" | Confirmed. |
 | "We do NOT use data to track you" → Tracking: No | Confirmed, with the RevenueCat-dashboard caveat (⚠️ 6). |
 | Coarse location declared | Confirmed, and the exact ~11 km rounding is now cited (§4). |
