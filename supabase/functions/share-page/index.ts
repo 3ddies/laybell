@@ -9,9 +9,21 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // laybell.app/open.html, which deep-links into the app or forwards to the
 // right app store.
 //
-// Uses the ANON key deliberately: RLS applies, so hidden accounts, private
-// posts and archived content naturally fall back to the generic Laybell card
-// instead of leaking through a service-role read.
+// Uses the ANON key deliberately: RLS applies, so private posts (is_public
+// false) and every post/story/playlist belonging to a HIDDEN author fall back
+// to the generic Laybell card instead of leaking through a service-role read.
+//
+// RLS does NOT cover everything, and the gaps are load-bearing here because
+// this endpoint is public and takes a raw id. Verified against production with
+// the anon key:
+//   • profiles has NO restrictive policy — a hidden account's row (name,
+//     @handle, bio, avatar) reads back fine. In the app that is masked in
+//     application code (lib/hiddenProfile.maskHiddenProfile); a crawler runs
+//     none of that, so the profile branch checks `hidden` ITSELF below.
+//   • archived_at is not filtered by any policy either, so a post the author
+//     archived still reads back. The post branch drops those below.
+// Anything caught by those checks is left as the generic card, which is the
+// same thing a deleted id produces.
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
@@ -107,6 +119,11 @@ serve(async (req: Request) => {
         .from('posts')
         .select('id, caption, type, thumbnail_url, cover_url, media_url, profiles!posts_user_id_fkey(username, display_name)')
         .eq('id', id)
+        // Archiving is the author saying "take this down" — no policy enforces
+        // that (checked against production: an archived post reads back to
+        // anon), so the filter lives here. Without it a link shared months ago
+        // keeps unfurling a post its author has since pulled.
+        .is('archived_at', null)
         .single();
       if (p) {
         const prof: any = (p as any).profiles;
@@ -173,13 +190,27 @@ serve(async (req: Request) => {
     } else if (t === 'profile' && id) {
       const { data: u } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url, bio')
+        .select('id, username, display_name, avatar_url, bio, hidden')
         .eq('id', id)
         .single();
-      if (u) {
+      // `hidden` is checked HERE, not by a policy — profiles has no restrictive
+      // RLS (see the header). A hidden account is invisible to everyone but its
+      // owner, and a crawler is never the owner, so it gets the generic card.
+      // This has to hold for links sent BEFORE the account was hidden too,
+      // which is exactly why the check is on read rather than on share.
+      if (u && !(u as any).hidden) {
         const name = (u as any).display_name || (u as any).username || 'Laybell artist';
+        // Same one-line budget as a post: Apple prints og:title and the domain
+        // and nothing else, so the person, their handle and the brand all have
+        // to ride here. The word Laybell is load-bearing — the QR sheet's share
+        // used to send open.html, whose title Apple reduced to bare "Music &
+        // Social", and carrying the brand in the headline is the whole reason
+        // this path exists now.
         title = `${name}${(u as any).username ? ` (@${(u as any).username})` : ''} • Laybell`;
-        desc = ((u as any).bio || '').trim().slice(0, 160) || `Follow ${name} on Laybell — music & social, together.`;
+        // No slogan in the fallback: this line is rendered by WhatsApp, Discord
+        // and Slack, sitting beside cards from apps that say nothing about
+        // themselves, and a tagline there reads as an ad.
+        desc = ((u as any).bio || '').trim().slice(0, 160) || `${name} on Laybell`;
         image = (u as any).avatar_url || LOGO;
         ogType = 'profile';
         openPath = `profile/${(u as any).id}`;
@@ -220,8 +251,17 @@ serve(async (req: Request) => {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(desc)}">
-<meta name="theme-color" content="#FF0A00">
-<meta property="og:site_name" content="Laybell">
+<meta name="theme-color" content="#FF0A00">${ogType === 'profile' ? `
+<!-- No og:site_name on a PROFILE card, and that is deliberate. Apple dedupes
+     the site name out of the title: with og:site_name "Laybell", the title
+     "Laybell — Music & Social" rendered as bare "Music & Social" (proven on
+     device — see the header of web/invite.html). A profile's title ends in
+     "• Laybell", which is the one word this card exists to show, so the tag
+     that could eat it is omitted here rather than gambling on Apple only ever
+     trimming from the front. Every other card type keeps it: their titles are
+     a caption or a community name, nothing Laybell-shaped to dedupe, and
+     og:site_name is part of the Spotify head this one is modelled on. -->` : `
+<meta property="og:site_name" content="Laybell">`}
 <meta property="og:type" content="${esc(ogType)}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(desc)}">
