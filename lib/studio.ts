@@ -11,6 +11,7 @@
 // every client beeps 4 counts and flashes REC at the same wall-clock moment so
 // everyone can punch record in their own DAW in sync.
 
+import { Platform } from 'react-native';
 import type { Room } from 'livekit-client';
 import { supabase } from './supabase';
 
@@ -339,56 +340,35 @@ export async function applyVocalPreset(room: Room, key: VocalPresetKey): Promise
   try { await room.localParticipant.setAttributes({ vocalPreset: key }); } catch { /* older server */ }
 }
 
-// The RN audio session must be running before any WebRTC audio flows. Guarded
-// require so a binary without the livekit natives doesn't crash at import.
-async function setAudioSession(on: boolean, playbackOnly = false): Promise<void> {
+// ANDROID ONLY — and the iOS half of this being deleted IS the broadcast fix.
+//
+// On iOS the audio session belongs to the SDK. registerGlobals installs
+// setupIOSAudioManagement (see app/_layout.tsx, which now owns the policy),
+// and that manager re-applies ITS OWN category on every audio-engine
+// transition and activates the session itself. Two owners is what broke studio
+// broadcasts twice over:
+//   · whatever this function configured was overwritten the moment a track
+//     arrived and the engine flipped playout on — so the 2026-08-11 change from
+//     playAndRecord to `playback` for listeners had no effect at all, because
+//     it was applied somewhere with no authority; and
+//   · the stopAudioSession() on the way out never told the manager, whose
+//     cached engine state still read "playout enabled". On the NEXT connect its
+//     false→true transition therefore never happened, so it configured the
+//     session and skipped startAudioSession() — configured, never activated.
+//     That is permanent silence for the rest of the app run.
+//
+// Android has no automatic manager (setupIOSAudioManagement no-ops off iOS), so
+// it still needs this. Without it the OS stays in communication mode:
+// echo-cancelled, ducked and tuned for speech, which guts a mix and presents as
+// "no audio" every bit as convincingly as silence. The `media` preset is what
+// says this is music rather than a call.
+async function setAudioSession(on: boolean): Promise<void> {
+  if (Platform.OS !== 'android') return;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { AudioSession, AndroidAudioTypePresets } = require('@livekit/react-native');
-    if (on && playbackOnly) {
-      // LISTENERS NEVER PUBLISH, so they must not ask for playAndRecord.
-      // That category requires an active microphone route: iOS will not
-      // activate it without mic permission, and a listener has no reason to
-      // have granted it — the session then fails to activate and NOTHING
-      // plays, which is exactly "I can hear no audio as a spectator" while
-      // hosts (who do hold mic permission) are unaffected.
-      //
-      // `playback` needs no input route at all, and is the correct category for
-      // receive-only media. Android likewise gets the media preset without the
-      // communication-mode capture path.
-      await AudioSession.configureAudio({
-        android: { audioTypeOptions: AndroidAudioTypePresets.media },
-        ios: {
-          audioCategory: 'playback',
-          audioCategoryOptions: ['allowBluetooth', 'allowBluetoothA2DP', 'allowAirPlay'],
-          audioMode: 'default',
-          defaultOutput: 'speaker',
-        },
-      });
-      await AudioSession.startAudioSession();
-      return;
-    }
     if (on) {
-      // WITHOUT configureAudio, startAudioSession leaves the OS on its default
-      // voice-call routing and a broadcast is inaudible: iOS puts playAndRecord
-      // out of the EARPIECE, so the audio is arriving and playing but only
-      // audible with the phone against your ear, and Android sits in
-      // communication mode — echo-cancelled, ducked, and tuned for speech.
-      // Neither is right for music, and both present as "no audio".
-      //
-      // The `media` preset (NOT `communication`) tells the SDK this is media
-      // rather than a call: speaker output, media volume, and none of the voice
-      // processing that would gut a mix. iOS additionally needs defaultToSpeaker,
-      // since playAndRecord's default route is the receiver.
-      await AudioSession.configureAudio({
-        android: { audioTypeOptions: AndroidAudioTypePresets.media },
-        ios: {
-          audioCategory: 'playAndRecord',
-          audioCategoryOptions: ['allowBluetooth', 'allowBluetoothA2DP', 'allowAirPlay', 'defaultToSpeaker'],
-          audioMode: 'default',
-          defaultOutput: 'speaker',
-        },
-      });
+      await AudioSession.configureAudio({ android: { audioTypeOptions: AndroidAudioTypePresets.media } });
       await AudioSession.startAudioSession();
     } else {
       await AudioSession.stopAudioSession();
@@ -429,12 +409,68 @@ export async function connectStudioListener(sessionId: string): Promise<Room> {
   });
   if (error || !data?.token) throw new Error(data?.error ?? error?.message ?? 'token failed');
 
-  // playbackOnly: a listener never publishes, so requesting playAndRecord would
-  // gate their audio behind a microphone permission they have no reason to hold.
-  await setAudioSession(true, true);
+  await setAudioSession(true);                       // Android media mode; no-op on iOS
   const room = new (lk().Room)({ adaptiveStream: false });
   await room.connect(data.url, data.token);
+  if (Platform.OS === 'ios') await startListenerAudio();
   return room;
+}
+
+/**
+ * Starts iOS audio for a RECEIVE-ONLY participant. Every line here was proven on
+ * device across a long debugging session; these comments are the findings.
+ *
+ * THE BUG THIS SOLVES: an audience listener heard nothing while session members
+ * heard each other perfectly. The track was subscribed and unmuted, and the
+ * server pushed speaker activity so avatars lit up on cue - everything looked
+ * right, and the audio was decoding into an audio engine that was never running.
+ *
+ * WHY: this SDK brings the engine up with its RECORDING side. A member always
+ * publishes a mic, so their engine starts as a side effect and they were never
+ * affected. A listener publishes nothing, so nothing ever started it. Starting
+ * playout alone is NOT enough - measured on device: isPlayoutEnabled read true
+ * while isEngineRunning stayed FALSE.
+ *
+ * Two dead ends worth not repeating:
+ *   - setEngineAvailability({ isInputAvailable: false }) sounds exactly right
+ *     for a listener and is backwards: declaring no input keeps the engine
+ *     down, because input is what raises it.
+ *   - granting listeners canPublish so they publish a muted track also works,
+ *     and is a bad trade. Listeners are hidden, so a modified client could
+ *     inject audio into a session with no way for the host to see or remove
+ *     them. Nothing below publishes anything or needs canPublish.
+ *
+ * COST: iOS asks an audience member for microphone permission. That is
+ * unavoidable if the engine needs an input to run. Nothing is captured or
+ * transmitted - the input mixer is zeroed as soon as the engine is up.
+ */
+async function startListenerAudio(): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const lkrn = require('@livekit/react-native');
+  const ADM = lkrn.AudioDeviceModule;
+  // Deliberately NOT a bare catch. Every one of these was silently swallowed at
+  // first, which made a native method missing from the binary indistinguishable
+  // from success, and that is the single reason this took as long as it did. A
+  // failure here still must not stop someone tuning in, but it must be sayable.
+  const step = async (name: string, fn: () => unknown) => {
+    try { await fn(); } catch (e) { console.warn('[studio-audio] ' + name + ' failed:', e); }
+  };
+
+  // Input available, exactly as a member has it - see the dead ends above.
+  await step('engine-availability', () => ADM?.setEngineAvailability({ isInputAvailable: true, isOutputAvailable: true }));
+  // Session before engine: it needs an active route to render into.
+  await step('audio-session', () => lkrn.AudioSession.startAudioSession());
+  await step('playout', () => ADM?.startPlayout());
+  await step('prepared-mode', () => ADM?.setRecordingAlwaysPreparedMode?.(true));
+  // The step that actually fixed it: bring the recording side up directly.
+  if (!ADM?.isEngineRunning?.()) await step('recording', () => ADM?.startRecording());
+  // Mute at the INPUT MIXER, never by stopping capture - stopping it takes the
+  // recording side, and the engine with it, straight back down.
+  await step('mute-input', async () => {
+    await ADM?.setMuteMode?.(lkrn.AudioEngineMuteMode.InputMixer);
+    await ADM?.setMicrophoneMuted?.(true);
+  });
+  if (!ADM?.isEngineRunning?.()) console.warn('[studio-audio] engine still not running - listener will be silent');
 }
 
 // --- Sync count-in --------------------------------------------------------------

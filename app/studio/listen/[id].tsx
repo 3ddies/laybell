@@ -116,6 +116,14 @@ export default function StudioListenScreen() {
         roomRef.current = room;
         const update = () => force((n) => n + 1);
         const RoomEvent = getRoomEvents();
+        // Track events refresh the on-air list as artists mute/unmute or a
+        // publication lands after the room is already joined.
+        room
+          .on(RoomEvent.TrackSubscribed, update)
+          .on(RoomEvent.TrackUnsubscribed, update)
+          .on(RoomEvent.TrackPublished, update)
+          .on(RoomEvent.TrackMuted, update)
+          .on(RoomEvent.TrackUnmuted, update);
         room
           .on(RoomEvent.ActiveSpeakersChanged, update)
           .on(RoomEvent.ParticipantConnected, update)
@@ -250,6 +258,7 @@ export default function StudioListenScreen() {
               button below still works. */}
           <TouchableWithoutFeedback accessible={false} onPress={Keyboard.dismiss}>
           <View style={{ flex: 1 }}>
+
             {/* Session identity */}
             <View style={styles.meta}>
               <Text style={styles.title} numberOfLines={2}>{title || t('studio.untitled')}</Text>

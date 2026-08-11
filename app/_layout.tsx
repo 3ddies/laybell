@@ -73,9 +73,78 @@ if (typeof (global as { DOMException?: unknown }).DOMException === 'undefined') 
     }
   };
 }
+// …and Hermes has no DOM `Event` either, which the DOMException shim above
+// missed. livekit-client bundles webrtc-adapter, which constructs one in SEVEN
+// places — `new Event("track")`, `"addstream"`, `"negotiationneeded"`,
+// `"connectionstatechange"` — i.e. the peer-connection event-dispatch path,
+// remote track delivery included. registerGlobals does not provide it, so each
+// of those sites threw `ReferenceError: Property 'Event' doesn't exist` inside
+// livekit-client, as an unhandled promise rejection with no obvious owner.
+//
+// The damage is quiet and easy to misread: the SIGNALLING layer still learns
+// about a remote track, so a listener reports it as subscribed and unmuted,
+// while the media event that would actually wire it up never dispatches.
+// Subscribed, unmuted, silent.
+//
+// Deliberately a plain class, not frozen: the adapter assigns `track`,
+// `receiver`, `transceiver` and `streams` onto the instance after construction,
+// and calls `new Event(type, someOtherEvent)` in one place, so the init arg has
+// to be tolerated rather than validated.
+if (typeof (global as { Event?: unknown }).Event === 'undefined') {
+  (global as { Event?: unknown }).Event = class Event {
+    type: string;
+    bubbles: boolean;
+    cancelable: boolean;
+    defaultPrevented = false;
+    timeStamp: number = Date.now();
+    constructor(type: string, init?: { bubbles?: boolean; cancelable?: boolean }) {
+      this.type = type;
+      this.bubbles = !!init?.bubbles;
+      this.cancelable = !!init?.cancelable;
+    }
+    preventDefault() { this.defaultPrevented = true; }
+    stopPropagation() {}
+    stopImmediatePropagation() {}
+  };
+}
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  require('@livekit/react-native').registerGlobals();
+  const lkrn = require('@livekit/react-native');
+  // ON iOS THE SDK OWNS THE AUDIO SESSION. registerGlobals() installs
+  // setupIOSAudioManagement, which re-applies its own category on every
+  // audio-engine transition and activates the session itself. There must be
+  // exactly one owner: anything a screen configures by hand is overwritten the
+  // moment a track arrives, and a hand-rolled stopAudioSession() desyncs the
+  // manager so the NEXT session is configured but never activated. lib/studio
+  // used to be a second owner; it is Android-only now.
+  //
+  // ⚠️ DO NOT HAND-WRITE audioCategoryOptions HERE. The option list is
+  // validated against the category, and an illegal pair makes setCategory
+  // throw OSStatus -50 (paramErr). The manager treats that as fatal — it
+  // rethrows kAudioEngineErrorFailedToConfigureAudioSession and the native
+  // audio engine STOPS AND ROLLS BACK, so audio arrives and is never played.
+  // That is the studio-broadcast silence, and it survived two attempted fixes
+  // because the throw was being swallowed by a catch{} and nobody saw it.
+  //
+  // The trap is that ALL THREE route options — allowBluetooth,
+  // allowBluetoothA2DP and allowAirPlay — are playAndRecord-only. Output-only
+  // categories reach A2DP and AirPlay by default and reject the options as
+  // parameters. So a listener (playout, no recording) takes NO route options.
+  // Members were never affected because playAndRecord makes all three legal,
+  // which is exactly the members-fine/listeners-silent split that was reported.
+  //
+  // The SDK's own defaults already encode these rules and are the maintained,
+  // validated path — and they are what members have been hearing all along,
+  // since this manager always applied its config last. Use them.
+  lkrn.registerGlobals();
+  // If you ever need to see what the audio session is doing, this is the switch —
+  // and it must be THIS package's setLogLevel, not livekit-client's. The RN
+  // package logs through its own loglevel instance ('lk-react-native', defaulted
+  // to WARN), so livekit-client's setter leaves it untouched. That cost real
+  // time: a fatal OSStatus -50 was visible (error ≥ warn) while every info line
+  // saying which category was applied, and whether the session ever activated,
+  // was silently dropped.
+  //   lkrn.setLogLevel('info');
 } catch { /* native module not in this binary yet */ }
 
 function AppContent() {
