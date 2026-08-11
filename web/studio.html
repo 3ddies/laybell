@@ -431,7 +431,17 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
         analyser = meterFromTrack(stream);
       }
       if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-      micPub = await room.localParticipant.publishTrack(outTrack, Object.assign({}, PUBLISH_OPTS, { name: 'mic-audio' }));
+      // source MUST be set. Publishing a raw MediaStreamTrack without it leaves
+      // the source Unknown, and the app decides whether a participant is muted
+      // with `isMicrophoneEnabled`, which only counts a publication whose source
+      // is Microphone. Without this the producer showed as MUTED on every phone
+      // in the session, permanently, whether their mic was live or not — while
+      // still being perfectly audible, since the audio itself was flowing.
+      // (The DAW share below has always set its own source, which is why that
+      // half behaved.)
+      micPub = await room.localParticipant.publishTrack(outTrack, Object.assign({}, PUBLISH_OPTS, {
+        name: 'mic-audio', source: LK.Track.Source.Microphone,
+      }));
       if (muted) { try { micPub.track.mute(); } catch (_) {} }
       runMeter(analyser);
       setStatus($('roomStatus'), '', '');
