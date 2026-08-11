@@ -77,7 +77,19 @@ inbox waits, and one test that needs Android hardware.**
    no alpha); regenerate with `scripts/make-store-assets.ps1`. Screenshots are the only
    part left, and they shoot on `laybellreview`, which now holds BOTH subscription tiers
    so no upsell wall or ad appears in frame.
-3. **iOS privacy nutrition label** — including **Diagnostics** (Crash Data + Other
+3. ~~**iOS privacy nutrition label**~~ ✅ **DONE 2026-08-10.** All 20 data types filed,
+   Privacy Policy URL set. Two things prove it came out right: the product-page preview
+   shows **no "Data Used to Track You" section at all** (so Tracking = No everywhere), and
+   "Data Not Linked to You" holds exactly **Contacts + Diagnostics** and nothing else.
+   ⚠️ Apple's *last* question on every tile is the tracking one, and it was initially
+   answered **Yes** — which is false and would have been a certain rejection, since the
+   repo contains no ATT prompt at all (no `expo-tracking-transparency`, no IDFA, no
+   `NSUserTrackingUsageDescription`) and Apple requires one whenever the label declares
+   tracking. If these are ever re-filed, that question is the one to watch.
+   Pre-submit checks that pass: `set-store-ids --check`, privacy.html + terms.html both
+   200, `ITSAppUsesNonExemptEncryption: false`.
+
+   *(historical detail below)* — including **Diagnostics** (Crash Data + Other
    Diagnostic Data, NOT linked to identity, NOT used for tracking, purpose App
    Functionality). ⚠️ Answer from `docs/STORE_PRIVACY_LABELS.md`, **not** from memory:
    that file said "no crash SDK" until 2026-08-10 because it predated Sentry, and
