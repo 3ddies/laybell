@@ -39,7 +39,14 @@ type Props = {
   children: ReactNode;
   // Inner horizontal scrollers (e.g. the slideshow carousel) flip this off
   // while they're being touched so their swipe doesn't also drag the page.
+  // DYNAMIC — it changes during a gesture.
   scrollEnabled?: boolean;
+  // Turns swipe-back off for the whole screen. Deliberately separate from
+  // `scrollEnabled`, and expected to be constant for a screen's lifetime: this
+  // one decides whether the pager is RENDERED AT ALL, so toggling it mid-life
+  // would remount the children. Used where an accidental drag costs something
+  // that cannot be undone — a live session, a stream, a half-built form.
+  swipeBackEnabled?: boolean;
   // Off for screens that run their own entrance (the post viewer grows out of
   // the tapped thumbnail) — the pager then starts on the content page.
   animateIn?: boolean;
@@ -71,7 +78,9 @@ const EXIT_MS = 220;
 // How dark the previous screen gets once fully covered (iOS push dim).
 const SCRIM_MAX = 0.32;
 
-export default function SwipeBackPager({ children, scrollEnabled = true, animateIn = true, onClose, fastExit = false }: Props) {
+export default function SwipeBackPager({
+  children, scrollEnabled = true, swipeBackEnabled = true, animateIn = true, onClose, fastExit = false,
+}: Props) {
   const searchLocked = useSearchLocked();
   const router = useRouter();
   const navigation = useNavigation<any>();
@@ -140,6 +149,36 @@ export default function SwipeBackPager({ children, scrollEnabled = true, animate
     });
     return unsub;
   }, [navigation, onClose]);
+
+  // SWIPE OFF — and NOT by handing scrollEnabled:false to the pager, which does
+  // not work on iOS. Fabric applies that prop with:
+  //
+  //     if (newScreenProps.scrollEnabled != scrollView.scrollEnabled) { … }
+  //
+  // and `scrollView` is only bound when the UIPageViewController is built. If
+  // props land first it is nil, messaging nil returns NO, so the test reads
+  // `false != false`, the assignment is skipped — and because the prop never
+  // changes again after mount, updateProps never re-runs to correct it. The
+  // pager stays swipeable while the JS looks entirely correct, which is exactly
+  // how this shipped once already.
+  //
+  // So when the swipe is off there is no pager at all. No dismiss page, no
+  // gesture to disable, nothing to get wrong natively. The entrance slide and
+  // the scrim are unaffected — both live out here — and back-press handling is
+  // the beforeRemove listener above, which never touched the pager either.
+  if (!swipeBackEnabled) {
+    return (
+      <View style={styles.pager}>
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, styles.scrim, { opacity: scrimOpacity }]}
+        />
+        <Animated.View style={[styles.page, { transform: [{ translateX: contentTx }] }]}>
+          {children}
+        </Animated.View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.pager}>

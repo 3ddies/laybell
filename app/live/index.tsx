@@ -432,7 +432,7 @@ export default function LiveScreen() {
       // The header back button and the hardware/gesture back still work, and
       // both route through this screen's own confirm — so leaving stays a
       // decision rather than a twitch.
-      scrollEnabled={false}
+      swipeBackEnabled={false}
     >
       <View style={styles.root} onLayout={(e) => setPageH(e.nativeEvent.layout.height)}>
         {loading ? (

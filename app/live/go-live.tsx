@@ -321,7 +321,7 @@ export default function GoLiveScreen() {
       // the whole screen: the setup step holds a title, a thumbnail and camera
       // permissions, and losing that to a stray swipe is its own small disaster.
       // Back button and hardware back still work.
-      scrollEnabled={false}
+      swipeBackEnabled={false}
     >
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
         {/* Camera preview behind everything in phone mode. WHIP path shows the
