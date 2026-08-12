@@ -314,9 +314,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     padding: SPACING.md,
   },
   rateValue: { color: colors.primaryLight, fontSize: 30, fontWeight: '800' },
-  rateLabel: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+  // Same rule as the post view's audio card: rateCard is a fixed dark gradient
+  // in both themes, so theme text tokens vanish on it in light mode.
+  rateLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 13, marginTop: 2 },
   rateRight: { alignItems: 'flex-end', gap: 4 },
-  rateSmall: { color: colors.textSecondary, fontSize: 12 },
+  rateSmall: { color: 'rgba(255,255,255,0.72)', fontSize: 12 },
 
   rangeRow: {
     flexDirection: 'row', gap: SPACING.xs,

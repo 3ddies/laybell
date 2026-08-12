@@ -587,8 +587,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   audioCover: { width: 52, height: 52, borderRadius: RADIUS.sm, overflow: 'hidden' },
   audioCoverImg: { width: 52, height: 52 },
   audioCoverOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
-  audioTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
-  audioArtist: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  // The card underneath is a FIXED dark gradient in both themes, so its text has
+  // to be fixed light. Using colors.text here put dark text on a dark card in
+  // light mode and the whole track line — title, artist, play count —
+  // disappeared. Theme tokens are only safe on a themed surface.
+  audioTitle: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  audioArtist: { color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 2 },
   captionRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   caption: { color: colors.text, fontSize: 15, lineHeight: 22, flexShrink: 1 },
   actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.lg },

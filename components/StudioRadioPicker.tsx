@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Image, Modal, ScrollView, StyleSheet, Text, TextInput,
-  TouchableOpacity, View,
+  ActivityIndicator, Animated, FlatList, Image, Modal, PanResponder, Pressable, ScrollView,
+  StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -58,6 +58,28 @@ export default function StudioRadioPicker({
   // id -> what just happened to it, so the row can say so for a moment.
   const [flash, setFlash] = useState<Record<string, 'playing' | 'queued'>>({});
 
+  // Drag-to-dismiss. The responder is on the grab handle and header ONLY — put
+  // it on the whole sheet and it competes with the song list's own scroll, so a
+  // flick down the list closes the crate instead of scrolling it.
+  const dragY = useRef(new Animated.Value(0)).current;
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+  useEffect(() => { if (visible) dragY.setValue(0); }, [visible, dragY]);
+  const drag = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: (_e, g) => { if (g.dy > 0) dragY.setValue(g.dy); },
+      onPanResponderRelease: (_e, g) => {
+        // Far enough, or fast enough — a quick flick should not have to travel.
+        if (g.dy > 110 || g.vy > 0.85) {
+          Animated.timing(dragY, { toValue: 700, duration: 170, useNativeDriver: true })
+            .start(() => closeRef.current());
+        } else {
+          Animated.spring(dragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+        }
+      },
+    }),
+  ).current;
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -92,10 +114,17 @@ export default function StudioRadioPicker({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + 10 }]}>
-          <View style={styles.grabber} />
+        {/* Tapping the dimmed area closes the crate — the gesture everyone
+            already tries first on a bottom sheet. */}
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessible={false} />
+        <Animated.View
+          style={[styles.sheet, { paddingBottom: insets.bottom + 10, transform: [{ translateY: dragY }] }]}
+        >
+          <View {...drag.panHandlers}>
+            <View style={styles.grabber} />
+          </View>
 
-          <View style={styles.header}>
+          <View style={styles.header} {...drag.panHandlers}>
             {!!openList && (
               <TouchableOpacity
                 onPress={() => setOpenList(null)}
@@ -252,7 +281,7 @@ export default function StudioRadioPicker({
               }}
             />
           )}
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );

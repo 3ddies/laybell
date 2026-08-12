@@ -19,6 +19,18 @@ import {
 const streamCreditAtMs = (durationMs: number | null) =>
   Math.min(30_000, durationMs ? durationMs * 0.5 : 30_000);
 
+/**
+ * Slider position → actual gain.
+ *
+ * Loudness is heard logarithmically, so a LINEAR gain barely moves the bottom
+ * half of the fader: at 0.15 the signal is only about −16 dB and still plainly
+ * audible, which is exactly the "I dragged it almost to zero and it is still
+ * loud" complaint. Cubing it makes the fader behave like every other volume
+ * control — 0.5 lands near a quarter of the power, and the last tenth of travel
+ * actually reaches silence.
+ */
+export const volumeGain = (v: number) => Math.max(0, Math.min(1, v)) ** 3;
+
 /** A tick longer than this is a seek or a track change, not listening. */
 const MAX_GENUINE_DELTA_MS = 2600;
 const TICK_MS = 2000;
@@ -62,7 +74,7 @@ export function useStudioRadio({ isHost, publish, request, ready, onTakeOver, vi
   const stateRef = useRef(state); stateRef.current = state;
   const listRef = useRef(list); listRef.current = list;
   const indexRef = useRef(index); indexRef.current = index;
-  const gainRef = useRef(1); gainRef.current = localMuted ? 0 : volume;
+  const gainRef = useRef(1); gainRef.current = localMuted ? 0 : volumeGain(volume);
 
   // Stream credit, accumulated the same way the main player does it: genuine
   // forward playback only, then one credit per track. Every device counts its
@@ -208,7 +220,7 @@ export function useStudioRadio({ isHost, publish, request, ready, onTakeOver, vi
 
   useEffect(() => {
     const p = playerRef.current;
-    if (p) { try { p.volume = localMuted ? 0 : volume; } catch {} }
+    if (p) { try { p.volume = localMuted ? 0 : volumeGain(volume); } catch {} }
   }, [volume, localMuted]);
 
   // One timer: drift, end-of-song, and stream credit all need the same reading.
