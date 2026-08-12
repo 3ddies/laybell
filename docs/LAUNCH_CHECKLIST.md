@@ -55,7 +55,7 @@ Everything else is three inbox waits and one test that needs Android hardware.
 
 | What | When | What to do when it lands |
 |---|---|---|
-| **ASCAP licence PDF** | **due ~2026-08-11** | If not there by Tue: **phone (800) 505-4052. NEVER resubmit** — re-entry is duplicate-blocked and risks a double charge. |
+| **ASCAP licence PDF** | **overdue — voicemail left 2026-08-12** | Direct line **(615) 742-5017** (no answer 08-12); (800) 505-4052 is the general line. **Call again by ~08-14** — a voicemail leaves no ticket, same trap as the 07-28 email. First check **ascap.com/mylicense** + spam; the PDF may already exist. **NEVER resubmit** the purchase form — duplicate-blocked, risks a double charge. A status email to `weblicense@ascap.com` is fine. |
 | **Apple Small Business Program approval** | submitted 2026-08-09 | Tell Claude → it flips the three fee rates in §0.3 the same hour. Until then Laybell earns **nothing** on shop sales and Premium tips. |
 | **Stripe live-mode review** | 2–3 days from 2026-08-09 | Only matters at launch (live key + funded balance). |
 
@@ -619,7 +619,7 @@ checklist that unlocks one event.
 
 ### ⏳ Passive — no action, just don't forget
 
-- 🟡 **ASCAP: paid 2026-08-02, awaiting confirmation.** Website & Mobile App licence, **$336/yr, 08/01/2026 → 07/31/2027**, bought self-serve after the 07-28 email turned out to be an enquiry rather than a filing. **Card charge confirmed 08-02** (the timeout was cosmetic — the transaction completed). Remaining: the acceptance email + licence PDF **by ~Aug 11** (ASCAP quotes 5-7 business days), and **do not resubmit** — re-entry is duplicate-blocked and re-paying risks a double charge. Escalate by PHONE, (800) 505-4052. Details in `PRO_DEFERRAL_NOTE.md`.
+- 🟡 **ASCAP: paid 2026-08-02, awaiting confirmation.** Website & Mobile App licence, **$336/yr, 08/01/2026 → 07/31/2027**, bought self-serve after the 07-28 email turned out to be an enquiry rather than a filing. **Card charge confirmed 08-02** (the timeout was cosmetic — the transaction completed). Remaining: the acceptance email + licence PDF **by ~Aug 11** (ASCAP quotes 5-7 business days), and **do not resubmit** — re-entry is duplicate-blocked and re-paying risks a double charge. Escalate by PHONE — **licensing dept direct (615) 742-5017**, given out by ASCAP on 2026-08-12; (800) 505-4052 is the general line. Details in `PRO_DEFERRAL_NOTE.md`.
 - 📅 **Both PRO licences expire within days of each other and NEITHER auto-renews** — BMI (signed 07-28) and ASCAP (term ends 07/31/2027). Set ONE reminder for **early July 2027** and re-apply to both together. A lapsed licence while the app is live is the exact exposure these were bought to prevent.
 - **BMI**: all revenue is reported; **contact Violet Cieri at ~$18,500 gross** (§5.1).
   Monthly check pairs with the §8 stream-hours auto-terminate clause.

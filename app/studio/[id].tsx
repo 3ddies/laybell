@@ -578,6 +578,7 @@ export default function StudioRoomScreen() {
                   mute: t('studio.radioMute'),
                   unmute: t('studio.radioUnmute'),
                   volume: t('studio.radioVolume'),
+                  volumeNote: t('studio.radioVolumeNote'),
                   stop: t('studio.radioStop'),
                 }}
               />

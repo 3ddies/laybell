@@ -96,6 +96,7 @@ type Props = {
     mute: string;
     unmute: string;
     volume: string;
+    volumeNote: string;
     stop: string;
   };
 };
@@ -182,21 +183,6 @@ function StudioRadioBar({
         )}
       </TouchableOpacity>
 
-      {volOpen && (
-        <View style={styles.volRow}>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel={localMuted ? labels.unmute : labels.mute}
-            onPress={onToggleMute}
-            hitSlop={8}
-          >
-            <Ionicons name={localMuted ? 'volume-mute' : 'volume-off'} size={16} color={localMuted ? '#F43F5E' : 'rgba(255,255,255,0.75)'} />
-          </TouchableOpacity>
-          <VolumeSlider value={localMuted ? 0 : volume} onChange={onVolume} />
-          <Text style={styles.volPct}>{Math.round((localMuted ? 0 : volume) * 100)}</Text>
-        </View>
-      )}
-
       {isHost && (
         <View style={styles.controls}>
           {/* Previous is never disabled: deep into a song it restarts the
@@ -217,21 +203,77 @@ function StudioRadioBar({
           <TouchableOpacity accessibilityRole="button" onPress={onSkip} style={styles.ctrl} disabled={!hasNext}>
             <Ionicons name="play-skip-forward" size={17} color={hasNext ? '#fff' : 'rgba(255,255,255,0.35)'} />
           </TouchableOpacity>
-          {/* Volume takes the corner stop used to occupy — it is the control you
-              reach for most often mid-song, and the safest thing to mis-tap. */}
+        </View>
+      )}
+
+      {/* MONITOR — the host's own level, on its own row below the card.
+          It is labelled rather than iconic on purpose. A volume control sitting
+          on a broadcast card is genuinely ambiguous: the reasonable reading is
+          that it sets how loud the room hears the song. It does not, and a host
+          who believes it does will quietly ruin their own broadcast trying to
+          duck a record while they talk. So the row says what it is, and the
+          slider carries the sentence. */}
+      {isHost && (
+        <View style={styles.monitor}>
           <TouchableOpacity
+            style={styles.monitorHead}
+            onPress={() => setVolOpen((v) => !v)}
+            activeOpacity={0.75}
             accessibilityRole="button"
             accessibilityLabel={labels.volume}
-            onPress={() => setVolOpen((v) => !v)}
-            onLongPress={onToggleMute}
-            style={[styles.ctrl, volOpen && styles.ctrlOn]}
           >
             <Ionicons
               name={localMuted || volume === 0 ? 'volume-mute' : volume < 0.45 ? 'volume-low' : 'volume-high'}
-              size={17}
-              color={localMuted ? '#F43F5E' : '#fff'}
+              size={16}
+              color={localMuted ? '#F43F5E' : 'rgba(255,255,255,0.85)'}
+            />
+            <Text style={styles.monitorLabel} numberOfLines={1}>{labels.volume}</Text>
+            <Text style={styles.monitorPct}>{localMuted ? 0 : Math.round(volume * 100)}</Text>
+            <Ionicons
+              name={volOpen ? 'chevron-up' : 'chevron-down'}
+              size={15}
+              color="rgba(255,255,255,0.5)"
             />
           </TouchableOpacity>
+
+          {volOpen && (
+            <>
+              <View style={styles.monitorRow}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={localMuted ? labels.unmute : labels.mute}
+                  onPress={onToggleMute}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={localMuted ? 'volume-mute' : 'volume-off'}
+                    size={16}
+                    color={localMuted ? '#F43F5E' : 'rgba(255,255,255,0.75)'}
+                  />
+                </TouchableOpacity>
+                <VolumeSlider value={localMuted ? 0 : volume} onChange={onVolume} />
+              </View>
+              <Text style={styles.monitorNote}>{labels.volumeNote}</Text>
+            </>
+          )}
+        </View>
+      )}
+
+      {/* Listeners get the compact toggle in the corner instead — they have no
+          stop button, so it is free, and they have no broadcast to confuse it
+          with. */}
+      {!isHost && volOpen && (
+        <View style={styles.volRow}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={localMuted ? labels.unmute : labels.mute}
+            onPress={onToggleMute}
+            hitSlop={8}
+          >
+            <Ionicons name={localMuted ? 'volume-mute' : 'volume-off'} size={16} color={localMuted ? '#F43F5E' : 'rgba(255,255,255,0.75)'} />
+          </TouchableOpacity>
+          <VolumeSlider value={localMuted ? 0 : volume} onChange={onVolume} />
+          <Text style={styles.volPct}>{Math.round((localMuted ? 0 : volume) * 100)}</Text>
         </View>
       )}
     </View>
@@ -253,6 +295,12 @@ const styles = StyleSheet.create({
   iconBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   eq: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 12 },
   eqBar: { width: 2.5, height: 12, borderRadius: 1.5, backgroundColor: '#FAB525' },
+  monitor: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.10)', paddingHorizontal: 13, paddingVertical: 9 },
+  monitorHead: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 26 },
+  monitorLabel: { flex: 1, color: 'rgba(255,255,255,0.85)', fontSize: 12.5, fontWeight: '600' },
+  monitorPct: { color: 'rgba(255,255,255,0.6)', fontSize: 11.5, fontWeight: '700' },
+  monitorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
+  monitorNote: { color: 'rgba(255,255,255,0.55)', fontSize: 11, lineHeight: 15, marginTop: 7 },
   volRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13, paddingBottom: 11 },
   sliderHit: { flex: 1, height: 26, justifyContent: 'center' },
   sliderTrack: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden' },
