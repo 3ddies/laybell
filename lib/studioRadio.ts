@@ -38,8 +38,9 @@ type PostRow = {
   id: string;
   caption: string | null;
   media_url: string | null;
+  cover_url: string | null;
   thumbnail_url: string | null;
-  duration: number | null;
+  duration_seconds: number | null;
   profiles?: { username?: string | null; display_name?: string | null } | null;
 };
 
@@ -49,14 +50,21 @@ function toTrack(p: PostRow): RadioTrack | null {
     id: p.id,
     title: (p.caption || 'Untitled').slice(0, 120),
     artist: p.profiles?.display_name || p.profiles?.username || '',
-    cover: p.thumbnail_url ?? null,
+    // Songs carry cover_url; thumbnail_url is the fallback, same order the
+    // Music tab uses.
+    cover: p.cover_url ?? p.thumbnail_url ?? null,
     uri: p.media_url,
-    // `duration` is stored in SECONDS on posts; everything below is in ms.
-    durationMs: p.duration ? Math.round(p.duration * 1000) : null,
+    durationMs: p.duration_seconds ? Math.round(p.duration_seconds * 1000) : null,
   };
 }
 
-const SELECT = 'id, caption, media_url, thumbnail_url, duration, profiles!posts_user_id_fkey (username, display_name)';
+// EVERY COLUMN HERE MUST EXIST. Naming one that does not makes PostgREST answer
+// 400, which arrives as `data: null` and reads exactly like "this artist has no
+// songs" — which is precisely what happened: the first version asked for
+// `duration`, the column is `duration_seconds`, and the crate was empty for
+// everyone with no error anywhere. Same trap as `profiles.name` in
+// supabase/functions/livekit-token.
+const SELECT = 'id, caption, media_url, cover_url, thumbnail_url, duration_seconds, profiles!posts_user_id_fkey (username, display_name)';
 
 /**
  * Songs the host can put on air. Public, non-archived audio only — the same two

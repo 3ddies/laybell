@@ -548,12 +548,13 @@ export default function StudioRoomScreen() {
               ); })}
           </View>
 
-          {/* Radio — Laybell songs played into the live session. Only while the
-              broadcast is on: the channel it rides does not exist otherwise, and
-              a radio with no audience is just a music player. */}
-          {isLive && (
+          {/* The ON AIR card only. The button that opens the crate lives down in
+              the broadcast group with the other things you can choose to do
+              while live — up here, directly under the host's own avatar, a
+              highlighted button read as a step the host had to complete. */}
+          {isLive && radio.state.track && (
             <View style={styles.radioWrap}>
-              {radio.state.track ? (
+              {(
                 <StudioRadioBar
                   track={radio.state.track}
                   paused={radio.state.paused}
@@ -574,19 +575,6 @@ export default function StudioRoomScreen() {
                     unmute: t('studio.radioUnmute'),
                   }}
                 />
-              ) : null}
-              {isHost && (
-                <TouchableOpacity
-                  style={styles.radioBtn}
-                  onPress={() => setRadioOpen(true)}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="radio-outline" size={17} color="#fff" />
-                  <Text style={styles.radioBtnText}>
-                    {radio.state.track ? t('studio.radioAddSong') : t('studio.radioStart')}
-                  </Text>
-                </TouchableOpacity>
               )}
             </View>
           )}
@@ -636,6 +624,32 @@ export default function StudioRoomScreen() {
                     />
                   )}
               </View>
+
+              {/* Radio. Styled as a plain settings row, deliberately: it is one
+                  of the things a host CAN do while live, not a step they have
+                  to take. Only appears once the broadcast is on, because the
+                  channel it rides does not exist before that. */}
+              {isLive && (
+                <TouchableOpacity
+                  style={styles.settingRowInner}
+                  onPress={() => setRadioOpen(true)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                >
+                  <View style={styles.settingTextWrap}>
+                    <Text style={styles.settingTitle}>{t('studio.radioTitle')}</Text>
+                    <Text style={styles.settingSub}>
+                      {radio.state.track ? t('studio.radioAddSong') : t('studio.radioSub')}
+                    </Text>
+                  </View>
+                  <View style={styles.settingRowRight}>
+                    {radio.queue.length > 0 && (
+                      <Text style={styles.radioCount}>{radio.queue.length}</Text>
+                    )}
+                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                  </View>
+                </TouchableOpacity>
+              )}
 
               {/* Pending join requests */}
               {isLive && joinReqs.map((r) => (
@@ -821,12 +835,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   tileAvatar: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   tileInitial: { color: '#fff', fontSize: 22, fontWeight: '700' },
   micOffBadge: { position: 'absolute', bottom: 2, right: 2, width: 20, height: 20, borderRadius: 10, backgroundColor: '#F43F5E', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: c.background },
-  radioWrap: { gap: 10, marginBottom: 14 },
-  radioBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44,
-    borderRadius: 14, backgroundColor: 'rgba(242,101,34,0.16)', borderWidth: 1, borderColor: 'rgba(242,101,34,0.45)',
+  radioWrap: { marginBottom: 14 },
+  settingRowRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  radioCount: {
+    color: '#fff', fontSize: 11, fontWeight: '800', overflow: 'hidden',
+    backgroundColor: 'rgba(242,101,34,0.85)', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2,
   },
-  radioBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   // Sits opposite the mic badge so the two never collide on one avatar.
   kickBadge: { position: 'absolute', top: 0, right: 0, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: c.background },
   tileName: { color: c.text, fontSize: 12, fontWeight: '600', maxWidth: 84 },
