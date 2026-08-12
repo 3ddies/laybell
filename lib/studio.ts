@@ -605,6 +605,44 @@ export async function fetchJoinRequests(sessionId: string): Promise<StudioJoinRe
   }));
 }
 
+/**
+ * Host: remove one participant from the session.
+ *
+ * `identity` is what LiveKit knows them by — a user id for an app member,
+ * `guest-xxxxxxxx` for the web DAW connector. Both halves (drop the seat, close
+ * the connection) live in the edge function, because disconnecting anyone needs
+ * the LiveKit API secret and that never reaches a client.
+ */
+export async function removeStudioParticipant(sessionId: string, identity: string): Promise<boolean> {
+  const { data, error } = await supabase.functions.invoke('studio-kick', {
+    body: { sessionId, identity },
+  });
+  if (error || !data?.ok) return false;
+  return true;
+}
+
+/**
+ * Am I still seated in this session?
+ *
+ * Used to tell "the host removed me" apart from "my network dropped" — both
+ * arrive as the same LiveKit disconnect, and guessing wrong means either
+ * accusing the host or silently stranding someone who was thrown out.
+ */
+export async function amStillMember(sessionId: string): Promise<boolean> {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth?.user?.id;
+  if (!uid) return false;
+  const { data, error } = await supabase
+    .from('studio_session_members')
+    .select('user_id')
+    .eq('session_id', sessionId)
+    .eq('user_id', uid)
+    .maybeSingle();
+  // A failed query is not proof of removal — say nothing rather than accuse.
+  if (error) return true;
+  return !!data;
+}
+
 /** Listener: my request's current status for this session (null = none yet). */
 export async function myJoinRequestStatus(sessionId: string):
   Promise<'pending' | 'accepted' | 'declined' | null> {

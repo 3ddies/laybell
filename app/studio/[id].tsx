@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Room } from 'livekit-client';
 import SwipeBackPager from '../../components/SwipeBackPager';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import Toast from '../../components/Toast';
 import LiveChatOverlay, { useBufferedChat } from '../../components/LiveChatOverlay';
 import LiveDonationAlerts from '../../components/LiveDonationAlerts';
 import LiveEarnedOverlay from '../../components/LiveEarnedOverlay';
@@ -27,8 +28,8 @@ import { joinStudioChannel, type LiveChannelHandle, type LiveDonationEvent } fro
 import { fetchStudioEarnings } from '../../lib/donations';
 import {
   applyVocalPreset, connectStudioRoom, disconnectStudioRoom, endSession, fetchJoinRequests, hostExitSession,
-  fetchRoster, fetchSession, getRoomEvents, leaveSession, onCountIn, respondStudioJoin,
-  sendCountIn, setListenerPeak, setSessionLive, beatStudioSession, VOCAL_PRESETS,
+  fetchRoster, fetchSession, getRoomEvents, leaveSession, onCountIn, respondStudioJoin, amStillMember,
+  sendCountIn, setListenerPeak, setSessionLive, beatStudioSession, removeStudioParticipant, VOCAL_PRESETS,
   type StudioJoinRequest, type StudioMember, type StudioSession, type VocalPresetKey,
 } from '../../lib/studio';
 
@@ -44,7 +45,7 @@ import {
 // livestream's, and listeners can request a seat — accepted requests join the
 // session for real.
 
-type ConnState = 'connecting' | 'connected' | 'unavailable' | 'error';
+type ConnState = 'connecting' | 'connected' | 'unavailable' | 'error' | 'removed';
 
 const PRESET_STORE_KEY = 'studio.vocalPreset';
 
@@ -63,6 +64,11 @@ export default function StudioRoomScreen() {
   const [muted, setMuted] = useState(false);
   const [preset, setPreset] = useState<VocalPresetKey>('natural');
   const [confirmEnd, setConfirmEnd] = useState(false);
+  // Who the host has tapped to remove — held until they confirm, since this is
+  // not undoable and it throws someone out mid-take.
+  const [confirmKick, setConfirmKick] = useState<{ identity: string; name: string } | null>(null);
+  const [kicking, setKicking] = useState(false);
+  const [kickError, setKickError] = useState(false);
   const [count, setCount] = useState<string | null>(null); // '4'…'1' | 'REC'
   const [, force] = useState(0);
   const roomRef = useRef<Room | null>(null);
@@ -133,7 +139,15 @@ export default function StudioRoomScreen() {
           .on(RoomEvent.TrackMuted, update)
           .on(RoomEvent.TrackUnmuted, update)
           .on(RoomEvent.TrackSubscribed, update)
-          .on(RoomEvent.Disconnected, () => { if (alive) setConn('error'); });
+          // A removal and a dropped network arrive as the same event. Ask the
+          // server which it was: if the seat is gone, say so plainly rather
+          // than showing a connection error and letting them keep retrying
+          // into a room that will refuse them.
+          .on(RoomEvent.Disconnected, () => {
+            if (!alive) return;
+            setConn('error');
+            amStillMember(id).then((still) => { if (alive && !still) setConn('removed'); }).catch(() => {});
+          });
         cleanupCountIn = onCountIn(room, runCountIn);
         setConn('connected');
         // Restore the artist's last vocal preset (persisted across sessions).
@@ -318,6 +332,21 @@ export default function StudioRoomScreen() {
     router.back();
   }
 
+  // Remove someone. The seat and the connection both go — see the studio-kick
+  // function. The roster is refreshed rather than patched locally so the screen
+  // shows what the server actually did, and LiveKit drops them from `live` on
+  // its own within a tick.
+  async function doKick() {
+    const target = confirmKick;
+    if (!target || !session || kicking) return;
+    setKicking(true);
+    const ok = await removeStudioParticipant(session.id, target.identity).catch(() => false);
+    setKicking(false);
+    setConfirmKick(null);
+    if (!ok) { setKickError(true); return; }
+    loadMeta();
+  }
+
   // Live participants come from LiveKit (who's actually connected — including
   // web/DAW guests); avatars come from the roster.
   const room = roomRef.current;
@@ -341,6 +370,7 @@ export default function StudioRoomScreen() {
               {conn === 'connected' ? t('studio.membersIn', { n: Math.max(live.length, roster.length) })
                 : conn === 'connecting' ? t('studio.connecting')
                 : conn === 'unavailable' ? t('live.rebuildNeeded')
+                : conn === 'removed' ? t('studio.removedByHost')
                 : t('studio.connectionLost')}
               {isLive ? `  ·  ${t('studio.listenersIn', { n: listeners })}` : ''}
             </Text>
@@ -419,8 +449,19 @@ export default function StudioRoomScreen() {
               const speaking = p.isSpeaking;
               const micOff = p.isLocal ? muted : p.isMicrophoneEnabled === false;
               const isGuest = !member && !p.isLocal;
+              // The host can remove anyone but themselves — including a web/DAW
+              // guest, who has no seat to revoke and exists only in LiveKit.
+              const canKick = isHost && !p.isLocal && member?.role !== 'host';
               return (
-                <View key={p.identity} style={styles.tile}>
+                <TouchableOpacity
+                  key={p.identity}
+                  style={styles.tile}
+                  activeOpacity={canKick ? 0.7 : 1}
+                  disabled={!canKick}
+                  accessibilityRole={canKick ? 'button' : undefined}
+                  accessibilityLabel={canKick ? t('studio.removeFrom', { name }) : undefined}
+                  onPress={() => canKick && setConfirmKick({ identity: p.identity, name })}
+                >
                   <View style={[styles.tileAvatarWrap, speaking && { borderColor: colors.primary }]}>
                     {member?.avatar_url ? (
                       <Image source={{ uri: member.avatar_url }} style={styles.tileAvatar} />
@@ -436,17 +477,35 @@ export default function StudioRoomScreen() {
                         <Ionicons name="mic-off" size={11} color="#fff" />
                       </View>
                     )}
+                    {canKick && (
+                      <View style={styles.kickBadge}>
+                        <Ionicons name="close" size={12} color="#fff" />
+                      </View>
+                    )}
                   </View>
                   <Text style={styles.tileName} numberOfLines={1}>{name}</Text>
                   {member?.role === 'host' && <Text style={styles.hostTag}>{t('studio.host')}</Text>}
-                </View>
+                </TouchableOpacity>
               );
             })}
-            {/* Members not yet connected to audio */}
+            {/* Members not yet connected to audio. Removable too — a seat held
+                by someone who never came back is the commonest reason a host
+                needs this at all, and the 12-seat cap is real. */}
             {conn !== 'connecting' && roster
               .filter((m) => !live.some((p) => p.identity === m.user_id))
-              .map((m) => (
-                <View key={m.user_id} style={[styles.tile, { opacity: 0.45 }]}>
+              .map((m) => {
+                const mName = m.display_name || m.username || '';
+                const canKickSeat = isHost && m.role !== 'host' && m.user_id !== profile?.id;
+                return (
+                <TouchableOpacity
+                  key={m.user_id}
+                  style={[styles.tile, { opacity: 0.45 }]}
+                  activeOpacity={canKickSeat ? 0.7 : 1}
+                  disabled={!canKickSeat}
+                  accessibilityRole={canKickSeat ? 'button' : undefined}
+                  accessibilityLabel={canKickSeat ? t('studio.removeFrom', { name: mName }) : undefined}
+                  onPress={() => canKickSeat && setConfirmKick({ identity: m.user_id, name: mName })}
+                >
                   <View style={styles.tileAvatarWrap}>
                     {m.avatar_url ? (
                       <Image source={{ uri: m.avatar_url }} style={styles.tileAvatar} />
@@ -455,11 +514,16 @@ export default function StudioRoomScreen() {
                         <Text style={styles.tileInitial}>{(m.display_name || m.username || '?').charAt(0).toUpperCase()}</Text>
                       </LinearGradient>
                     )}
+                    {canKickSeat && (
+                      <View style={styles.kickBadge}>
+                        <Ionicons name="close" size={12} color="#fff" />
+                      </View>
+                    )}
                   </View>
-                  <Text style={styles.tileName} numberOfLines={1}>{m.display_name || m.username}</Text>
+                  <Text style={styles.tileName} numberOfLines={1}>{mName}</Text>
                   {m.role === 'host' && <Text style={styles.hostTag}>{t('studio.host')}</Text>}
-                </View>
-              ))}
+                </TouchableOpacity>
+              ); })}
           </View>
 
           {/* Vocal preset — one tap from raw signal to a mixed, polished voice */}
@@ -613,6 +677,24 @@ export default function StudioRoomScreen() {
         )}
 
         <ConfirmDialog
+          visible={!!confirmKick}
+          title={t('studio.confirmRemoveTitle', { name: confirmKick?.name ?? '' })}
+          message={t('studio.confirmRemoveMsg')}
+          confirmLabel={t('studio.remove')}
+          cancelLabel={t('common.cancel')}
+          destructive
+          onConfirm={doKick}
+          onCancel={() => setConfirmKick(null)}
+        />
+
+        <Toast
+          visible={kickError}
+          title={t('studio.removeFailed')}
+          icon="alert-circle"
+          onHide={() => setKickError(false)}
+        />
+
+        <ConfirmDialog
           visible={confirmEnd}
           title={isHost ? t('studio.confirmEndTitle') : t('studio.confirmLeaveTitle')}
           message={isHost ? t('studio.confirmEndMsg') : undefined}
@@ -653,6 +735,8 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   tileAvatar: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   tileInitial: { color: '#fff', fontSize: 22, fontWeight: '700' },
   micOffBadge: { position: 'absolute', bottom: 2, right: 2, width: 20, height: 20, borderRadius: 10, backgroundColor: '#F43F5E', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: c.background },
+  // Sits opposite the mic badge so the two never collide on one avatar.
+  kickBadge: { position: 'absolute', top: 0, right: 0, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: c.background },
   tileName: { color: c.text, fontSize: 12, fontWeight: '600', maxWidth: 84 },
   hostTag: { color: c.textTertiary, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   presetCard: { backgroundColor: c.surface, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 14, gap: 10 },

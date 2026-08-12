@@ -142,6 +142,13 @@ function StudioStage({ room, roster, onPressMember, hostLabel }: Props) {
   const roomLevel = useRef(new Animated.Value(0)).current;
   const [onMic, setOnMic] = useState<string | null>(null);
   const heldAt = useRef(0);
+  // Who is ACTUALLY in the room. The roster is the database's answer — every
+  // seat ever granted — so on its own it left the face of someone who had
+  // closed the app hours ago sitting on stage. LiveKit's participant list is
+  // the honest one, and it is also what makes a host removing someone take
+  // effect on the audience's screen within a tick rather than at the next
+  // 25-second roster poll.
+  const [present, setPresent] = useState<string[] | null>(null);
 
   // Stable across renders — `levels` is a ref-held Map — so the sampling effect
   // below is not torn down and rebuilt on every render.
@@ -180,6 +187,11 @@ function StudioStage({ room, roster, onPressMember, hostLabel }: Props) {
       // Anyone in the roster the room is not reporting has gone quiet or left.
       levels.forEach((v, id) => { if (!seen.has(id)) drive(v, 0); });
       drive(roomLevel, peak);
+      // Only re-render when the set of people in the room actually changes —
+      // this runs ten times a second.
+      const ids = [...seen].sort();
+      setPresent((prev) =>
+        prev && prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids);
       // `isSpeaking` drops between words, so writing it straight through would
       // blink the name out mid-sentence. Hold the last speaker briefly and only
       // clear once the pause is longer than a breath.
@@ -195,10 +207,14 @@ function StudioStage({ room, roster, onPressMember, hostLabel }: Props) {
     return () => { alive = false; clearInterval(iv); };
   }, [room, levels, levelFor, roomLevel]);
 
+  // `present` is null only until the first sample lands. Falling back to the
+  // roster for that one tick avoids an empty stage flashing on connect;
+  // afterwards an empty list is the truth and is rendered as one.
+  const onAir = present === null ? roster : roster.filter((m) => present.includes(m.user_id));
   const onMicName = onMic
-    ? (() => { const m = roster.find((r) => r.user_id === onMic); return m?.display_name || m?.username || null; })()
+    ? (() => { const m = onAir.find((r) => r.user_id === onMic); return m?.display_name || m?.username || null; })()
     : null;
-  const size = avatarSize(roster.length);
+  const size = avatarSize(onAir.length);
 
   return (
     <View style={styles.stage} pointerEvents="box-none">
@@ -215,7 +231,7 @@ function StudioStage({ room, roster, onPressMember, hostLabel }: Props) {
 
       {/* On-air artists */}
       <View style={styles.grid}>
-        {roster.map((m) => (
+        {onAir.map((m) => (
           <SpeakerTile
             key={m.user_id}
             member={m}
