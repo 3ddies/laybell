@@ -26,14 +26,14 @@ import { displayedTier } from '../../lib/badges';
 import LiveChatOverlay, { nameColor, useBufferedChat } from '../../components/LiveChatOverlay';
 import LiveDonateModal from '../../components/LiveDonateModal';
 import FloatingReactions from '../../components/FloatingReactions';
-
-// The cycle behind the react button's long-press. Kept short and unambiguous —
-// a picker would be more choice than the moment deserves.
-const REACTIONS = ['❤️', '🔥', '😂', '👏', '🎉', '😮'];
 import LiveDonationAlerts from '../../components/LiveDonationAlerts';
 import { WhepPlayer, getRTCView, webrtcAvailable } from '../../lib/whip';
 import AppVideo from '../../components/AppVideo';
 import { Skeleton, SkeletonCircle } from '../../components/Skeleton';
+
+// The cycle behind the react button's long-press. Kept short and unambiguous —
+// a picker would be more choice than the moment deserves.
+const REACTIONS = ['❤️', '🔥', '😂', '👏', '🎉', '😮'];
 
 // The Live feed, opened from the tv button next to the Laybell logo on Home:
 // a reels-style vertical pager of CURRENT livestreams — the only place
@@ -137,6 +137,7 @@ function LiveCard({
       onViewers: setViewers,
       onChat: pushChat,
       onDonation: setDonationEvent,
+      onReaction: pushReaction,
     });
     channelRef.current = handle;
     // Leave the room channel when the card goes inactive, but DON'T wipe the

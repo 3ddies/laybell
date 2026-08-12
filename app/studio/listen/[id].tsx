@@ -67,6 +67,15 @@ export default function StudioListenScreen() {
   const roomRef = useRef<Room | null>(null);
   const channelRef = useRef<LiveChannelHandle | null>(null);
   const endedRef = useRef(false);
+  // The stage is a centring flex child, so once the keyboard shortens its box
+  // the content overflows in BOTH directions and the circles ride up over the
+  // title. Compact mode shrinks them instead.
+  const [kbUp, setKbUp] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', () => setKbUp(true));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKbUp(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const markEnded = useCallback(() => {
     if (endedRef.current) return;
@@ -222,6 +231,10 @@ export default function StudioListenScreen() {
     if (!text || !channelRef.current) return;
     setDraft('');
     channelRef.current.sendChat(text);
+    // Drop the keyboard on send. It covers the chat and most of the stage, so
+    // without this you fire a message and watch none of it happen — including
+    // the emoji you just launched.
+    Keyboard.dismiss();
   }
 
   const hostName = hostProfile?.display_name || hostProfile?.username || '';
@@ -304,6 +317,7 @@ export default function StudioListenScreen() {
                 room={roomRef.current}
                 roster={roster}
                 hostLabel={t('studio.host')}
+                compact={kbUp}
                 onPressMember={(userId) => router.push(`/profile/${userId}`)}
               />
             </View>
@@ -463,7 +477,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   meta: { paddingHorizontal: 20, paddingTop: 14, gap: 4, alignItems: 'center' },
   title: { color: '#fff', fontSize: 22, fontWeight: '800', textAlign: 'center' },
   hostLine: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
-  stageWrap: { flex: 1, justifyContent: 'center' },
+  stageWrap: { flex: 1, minHeight: 0, justifyContent: 'center', overflow: 'hidden' },
   bottom: { paddingHorizontal: 14, gap: 10 },
   chatWrap: { position: 'relative' },
   chatFade: { position: 'absolute', top: 0, left: 0, right: 0, height: 46 },

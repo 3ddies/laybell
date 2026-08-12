@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, Share, ActivityIndicator, ScrollView, Switch,
-  TextInput, KeyboardAvoidingView, Platform,
+  TextInput, KeyboardAvoidingView, Keyboard, Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -336,6 +336,9 @@ export default function StudioRoomScreen() {
     if (!text || !channelRef.current) return;
     setDraft('');
     channelRef.current.sendChat(text);
+    // See the listener screen: the keyboard covers the very thing you just
+    // caused, so it gets out of the way on send.
+    Keyboard.dismiss();
   }
 
   function invite() {
