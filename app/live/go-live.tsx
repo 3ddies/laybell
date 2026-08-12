@@ -316,7 +316,13 @@ export default function GoLiveScreen() {
   const openChatProfile = useCallback((m: LiveChatMessage) => router.push(`/profile/${m.userId}`), [router]);
 
   return (
-    <SwipeBackPager scrollEnabled={!live}>
+    <SwipeBackPager
+      // Was {!live}, i.e. only guarded once the broadcast started. Now off for
+      // the whole screen: the setup step holds a title, a thumbnail and camera
+      // permissions, and losing that to a stray swipe is its own small disaster.
+      // Back button and hardware back still work.
+      scrollEnabled={false}
+    >
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
         {/* Camera preview behind everything in phone mode. WHIP path shows the
             local WebRTC stream; the RTMP path's view IS the camera preview and

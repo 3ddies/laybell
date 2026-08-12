@@ -426,7 +426,14 @@ export default function LiveScreen() {
   const openProfile = (userId: string) => router.push(`/profile/${userId}`);
 
   return (
-    <SwipeBackPager>
+    <SwipeBackPager
+      // Horizontal swipe-back is OFF here. Same reason as the studio: a stray horizontal drag while watching should not
+      // tear the viewer out of a live stream.
+      // The header back button and the hardware/gesture back still work, and
+      // both route through this screen's own confirm — so leaving stays a
+      // decision rather than a twitch.
+      scrollEnabled={false}
+    >
       <View style={styles.root} onLayout={(e) => setPageH(e.nativeEvent.layout.height)}>
         {loading ? (
           <View style={styles.skeletonWrap}>

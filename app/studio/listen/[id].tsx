@@ -226,7 +226,14 @@ export default function StudioListenScreen() {
   const hostName = hostProfile?.display_name || hostProfile?.username || '';
 
   return (
-    <SwipeBackPager>
+    <SwipeBackPager
+      // Horizontal swipe-back is OFF here. Listeners hold the phone loosely while a session plays; an accidental drag
+      // should not drop them out of the broadcast.
+      // The header back button and the hardware/gesture back still work, and
+      // both route through this screen's own confirm — so leaving stays a
+      // decision rather than a twitch.
+      scrollEnabled={false}
+    >
       <View style={styles.root}>
         <LinearGradient colors={['#17120C', '#0B0908', '#000']} style={StyleSheet.absoluteFill} />
 

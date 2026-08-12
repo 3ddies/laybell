@@ -79,7 +79,13 @@ export default function StudioHubScreen() {
   }
 
   return (
-    <SwipeBackPager>
+    <SwipeBackPager
+      // Horizontal swipe-back is OFF here. Mid-way through creating a session, a stray swipe throws the setup away.
+      // The header back button and the hardware/gesture back still work, and
+      // both route through this screen's own confirm — so leaving stays a
+      // decision rather than a twitch.
+      scrollEnabled={false}
+    >
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
         <View style={styles.header}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} onPress={() => router.back()} style={styles.headerBtn}>

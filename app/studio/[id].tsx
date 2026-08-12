@@ -379,7 +379,14 @@ export default function StudioRoomScreen() {
   const selected = VOCAL_PRESETS.find((p) => p.key === preset) ?? VOCAL_PRESETS[1];
 
   return (
-    <SwipeBackPager>
+    <SwipeBackPager
+      // Horizontal swipe-back is OFF here. A sideways flick while reaching for a control would end a live session for
+      // everyone in it, and there is no undo for that.
+      // The header back button and the hardware/gesture back still work, and
+      // both route through this screen's own confirm — so leaving stays a
+      // decision rather than a twitch.
+      scrollEnabled={false}
+    >
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
         {/* Header */}
         <View style={styles.header}>
