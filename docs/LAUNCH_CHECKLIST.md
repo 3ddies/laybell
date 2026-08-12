@@ -18,11 +18,16 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-08-10 (end of session)
+## 0.0 ✅ THE CURRENT STATE — updated 2026-08-12 (end of session)
 
 **One-line status: both store listings are COMPLETE and submission-ready. The only
 thing left is the production build — deliberately paused by the owner (2026-08-10) to
 keep polishing, because there is no OTA here and whatever is in that build ships.**
+
+The polish pass is still running. **Studio sessions are DONE** — 2026-08-12: host and
+member views, the audience stage, studio radio, participant removal, floating
+reactions, the swipe-back lock and both themes, all tested on device. **Two checks are
+queued before the build: lives, and audio across the app** (step 4 below).
 
 Everything else is three inbox waits and one test that needs Android hardware.
 
@@ -108,7 +113,28 @@ Everything else is three inbox waits and one test that needs Android hardware.
    Functionality). ⚠️ Answer from `docs/STORE_PRIVACY_LABELS.md`, **not** from memory:
    that file said "no crash SDK" until 2026-08-10 because it predated Sentry, and
    transcribing it would have filed a label contradicting the app's own Privacy Policy.
-4. **Queue the iOS production build** → TestFlight. ⚠️ **Build credits are exhausted — every build is billed.** Verify assets locally before spending.
+4. 🧪 **POLISH-PASS TESTING — do these two before anything else, then resume at 5.**
+   Added 2026-08-12 at the owner's request. Studio sessions are **done** — hosting,
+   the audience view, radio, removal, reactions and both themes were all tested on
+   device this session and are signed off. These two are what is left of the pass.
+
+   - [ ] **Lives.** The same sweep sessions just had: go live, watch from a second
+         phone, chat, the new **tap-react button** and floating emoji (both directions
+         — viewer *and* broadcaster see them), donations, ending cleanly. Reactions
+         and the swipe-back lock are **new and unverified on device**. Worth knowing
+         before you start: lives are Cloudflare WHIP/WHEP, so there is no hand-raise
+         and no co-host — that is architectural, not missing. See the note in
+         commit `6fc0c7d`.
+   - [ ] **Audio across the app.** The studio work moved shared audio plumbing —
+         the studio radio runs its own `expo-audio` player and **stops the main
+         player** when it takes over. So check the ordinary paths still behave:
+         feed songs, the Music tab, the mini-player, offline pins, an audio ad, and
+         going into and out of a session/live while music is playing.
+
+   Everything in the studio work is **JavaScript only** — no native module, no SQL,
+   no function deploy. It reaches a device on the next build like the rest.
+
+5. **Queue the iOS production build** → TestFlight. ⚠️ **Build credits are exhausted — every build is billed.** Verify assets locally before spending.
 
    🚨 **Two App Store Connect settings that must be right BEFORE approval, not after:**
 
@@ -127,7 +153,7 @@ Everything else is three inbox waits and one test that needs Android hardware.
    Also worth doing now: **App Store Server Notifications → Production URL** pointing at
    RevenueCat (their Project settings → Apple App Store). Without it, refunds, cancellations
    and billing failures reach RevenueCat late or never, so a refunded buyer keeps Premium.
-5. **Submit for review.** Two things that are easy to forget: the IAPs and the subscription group must be **attached to that version's submission**, and reviewers need the `laybellreview` demo credentials.
+6. **Submit for review.** Two things that are easy to forget: the IAPs and the subscription group must be **attached to that version's submission**, and reviewers need the `laybellreview` demo credentials.
 
 ### 🚧 GATES — conditions that must be met before a specific action
 
