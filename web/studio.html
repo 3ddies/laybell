@@ -71,9 +71,13 @@ main { width:100%; max-width:440px; margin:auto; }
 /* The real mark, not a CSS letter standing in for it. Same asset the invite
    and open pages use, so every Laybell surface a producer meets looks alike. */
 .logo { width:64px; height:64px; border-radius:16px; margin:0 auto 14px; display:block; object-fit:cover; }
-.brandline { display:flex; align-items:center; justify-content:center; gap:8px; margin:0 0 6px; }
-.brandline h1 { margin:0; }
-.brandline .tm { font-size:10px; color:var(--muted); font-weight:700; align-self:flex-start; margin-top:4px; }
+/* The ™ is taken OUT of the flow. As a flex sibling it added its own width to
+   the centred row, so "Laybell Studio" was pushed left by half that width and
+   sat visibly off-centre under a logo that was centred properly. Absolutely
+   positioned, the wordmark centres on its own and the ™ hangs off the end. */
+.brandwrap { text-align:center; margin:0 0 6px; }
+h1.brandline { position:relative; display:inline-block; margin:0; }
+h1.brandline .tm { position:absolute; left:100%; top:.2em; margin-left:3px; font-size:10px; font-weight:700; color:var(--muted); }
 h1 { font-size:22px; margin:0 0 6px; text-align:center; }
 p.sub { color:var(--muted); margin:0 0 22px; text-align:center; font-size:14px; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; margin-bottom:14px; }
@@ -105,7 +109,12 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
 /* ── Section heading: a label with a rule running off to the right. Cheap way
    to separate "do this now" from "read if you need it", which is the whole
    information problem this page had. */
+/* A column's first heading must not carry a top margin, or the three columns
+   start at three different heights and the whole row reads as sloppy. */
 .sec { display:flex; align-items:center; gap:10px; margin:24px 0 12px; }
+.col-steps > .sec:first-child,
+.col-console > .sec:first-child,
+.col-guides > .sec:first-child { margin-top:0; }
 .sec h2 { margin:0; font-size:11px; font-weight:800; letter-spacing:1px; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
 .sec:after { content:""; flex:1; height:1px; background:var(--line); }
 .sec .count { font-size:11px; color:var(--muted); opacity:.7; }
@@ -162,7 +171,7 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
 </style>
 </head><body><main>
   <img class="logo" src="/logo.png" alt="Laybell">
-  <div class="brandline"><h1>Laybell Studio</h1><span class="tm">™</span></div>
+  <div class="brandwrap"><h1 class="brandline">Laybell Studio<span class="tm">™</span></h1></div>
   <p class="sub">Join and host online studio sessions with artists from anywhere — pro mics and interfaces, FL&nbsp;Studio / BandLab audio, and one-tap vocal polish.</p>
 
   <!-- Join -->
@@ -184,7 +193,9 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
   <!-- In-room -->
   <div id="room">
    <div class="cols">
-    <div class="card col-console">
+    <div class="col-console">
+    <div class="sec"><h2>Interface</h2><span class="count">your gear</span></div>
+    <div class="card">
     <div style="margin-bottom:10px">In session<span class="pill live" id="connPill"><span class="dot"></span><span id="connText">connected</span></span></div>
     <div class="people" id="people"></div>
 
@@ -231,9 +242,10 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     <p class="status" id="roomStatus"></p>
       <button class="btn btn-ghost" id="leaveBtn" style="margin-top:14px">Leave</button>
     </div>
+    </div>
 
     <div class="col-steps">
-    <div class="sec" style="margin-top:0"><h2>Set up</h2><span class="count">3 steps</span></div>
+    <div class="sec"><h2>General setup</h2><span class="count">3 steps</span></div>
     <ol class="steps" id="steps">
 
       <li id="stepMic"><b>Choose your mic.</b> Pick your interface in the box above. Leave the preset on
@@ -272,7 +284,7 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     </div>
 
     <div class="col-guides">
-    <div class="sec" style="margin-top:0"><h2>Guides</h2><span class="count">open only what you need</span></div>
+    <div class="sec"><h2>Guides</h2><span class="count">open only what you need</span></div>
 
     <details class="acc"><summary>Set up FL Studio, start to finish<span class="tag">producer</span></summary>
       <div class="body">
