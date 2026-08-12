@@ -29,6 +29,7 @@ import { useStudioRadio } from '../../hooks/useStudioRadio';
 import { useAudioControls } from '../../contexts/AudioContext';
 import StudioStage, { type StagePerson } from '../../components/StudioStage';
 import StudioRadioBar from '../../components/StudioRadioBar';
+import FloatingReactions from '../../components/FloatingReactions';
 import StudioRadioPicker from '../../components/StudioRadioPicker';
 import { fetchStudioEarnings } from '../../lib/donations';
 import {
@@ -81,6 +82,10 @@ export default function StudioRoomScreen() {
   const [confirmKick, setConfirmKick] = useState<{ identity: string; name: string } | null>(null);
   const [kicking, setKicking] = useState(false);
   const [kickError, setKickError] = useState(false);
+  // Shown to the person who was removed, at the moment it happens. The header
+  // line says it too, but a line of small grey text under a title is not how
+  // you tell somebody they have just been put out of a room.
+  const [removedToast, setRemovedToast] = useState(false);
   const [count, setCount] = useState<string | null>(null); // '4'…'1' | 'REC'
   const [, force] = useState(0);
   const roomRef = useRef<Room | null>(null);
@@ -158,7 +163,11 @@ export default function StudioRoomScreen() {
           .on(RoomEvent.Disconnected, () => {
             if (!alive) return;
             setConn('error');
-            amStillMember(id).then((still) => { if (alive && !still) setConn('removed'); }).catch(() => {});
+            amStillMember(id).then((still) => {
+              if (!alive || still) return;
+              setConn('removed');
+              setRemovedToast(true);
+            }).catch(() => {});
           });
         cleanupCountIn = onCountIn(room, runCountIn);
         setConn('connected');
@@ -769,6 +778,10 @@ export default function StudioRoomScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* The audience's reactions reach the room as well — the point is that
+            the people being reacted TO can see it happen. */}
+        {isLive && <FloatingReactions messages={chat} />}
+
         {/* Donation alerts ride over everything while on air */}
         <LiveDonationAlerts event={donationEvent} topOffset={insets.top + 54} />
 
@@ -825,6 +838,14 @@ export default function StudioRoomScreen() {
           destructive
           onConfirm={doKick}
           onCancel={() => setConfirmKick(null)}
+        />
+
+        <Toast
+          visible={removedToast}
+          title={t('studio.removedByHost')}
+          icon="exit-outline"
+          duration={5200}
+          onHide={() => setRemovedToast(false)}
         />
 
         <Toast

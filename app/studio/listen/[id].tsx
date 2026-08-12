@@ -11,6 +11,7 @@ import type { Room } from 'livekit-client';
 import SwipeBackPager from '../../../components/SwipeBackPager';
 import StudioStage, { CountPop, LiveDot } from '../../../components/StudioStage';
 import StudioRadioBar from '../../../components/StudioRadioBar';
+import FloatingReactions from '../../../components/FloatingReactions';
 import { useStudioRadio } from '../../../hooks/useStudioRadio';
 import { useAudioControls } from '../../../contexts/AudioContext';
 import LiveChatOverlay, { useBufferedChat } from '../../../components/LiveChatOverlay';
@@ -341,11 +342,19 @@ export default function StudioListenScreen() {
                   maxHeight={200}
                   onPressName={(m) => router.push(`/profile/${m.userId}`)}
                 />
-                <LinearGradient
-                  colors={['#000', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']}
-                  style={styles.chatFade}
-                  pointerEvents="none"
-                />
+                {/* Only once there is enough chat to actually run under it. The
+                    list HUGS ITS CONTENT while the room is quiet, so with one
+                    or two messages the box is shorter than this fade — and a
+                    gradient starting at opaque black then covered the only
+                    message anybody had sent. That is what the very first
+                    comment of every session looked like. */}
+                {chat.length > 3 && (
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.92)', 'rgba(0,0,0,0.45)', 'rgba(0,0,0,0)']}
+                    style={styles.chatFade}
+                    pointerEvents="none"
+                  />
+                )}
               </View>
 
               <View style={styles.actionsRow}>
@@ -419,6 +428,10 @@ export default function StudioListenScreen() {
           </KeyboardAvoidingView>
         )}
 
+        {/* Emoji from the chat, drifting up over the stage. Pointer-transparent,
+            so it never eats a tap meant for anything underneath. */}
+        {phase === 'live' && <FloatingReactions messages={chat} />}
+
         <LiveDonationAlerts event={donationEvent} />
 
         {phase === 'live' && (
@@ -459,7 +472,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.09)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderRadius: 999, paddingLeft: 15, paddingRight: 5, height: 46,
   },
-  input: { flex: 1, color: '#fff', fontSize: 14 },
+  input: { flex: 1, color: '#fff', fontSize: 15, paddingVertical: 0, paddingRight: 8, includeFontPadding: false },
   sendBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   tipBtn: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
   roundBtn: {
