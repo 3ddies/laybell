@@ -726,7 +726,7 @@ export default function StudioRoomScreen() {
               </View>
               {chat.length === 0
                 ? <Text style={styles.chatEmpty}>{t('studio.chatEmpty')}</Text>
-                : <LiveChatOverlay messages={chat} maxHeight={180} onPressName={(m) => router.push(`/profile/${m.userId}`)} />}
+                : <LiveChatOverlay messages={chat} maxHeight={180} plain onPressName={(m) => router.push(`/profile/${m.userId}`)} />}
               <View style={styles.chatInputRow}>
                 <TextInput
                   style={styles.chatInput}

@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
+import { FlatList, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import type { LiveChatMessage } from '../lib/live';
 import { badgeRingColors, tierRank, type Tier } from '../lib/badges';
 import MentionText from './MentionText';
@@ -96,10 +96,28 @@ const Row = memo(function Row({ m, onPressName, onPressComment }: {
   );
 });
 
-export default function LiveChatOverlay({ messages, maxHeight = 210, style, onPressName, onPressComment }: {
+/** Rendered without virtualization; see `plain` below. */
+const PLAIN_KEEP = 25;
+
+export default function LiveChatOverlay({ messages, maxHeight = 210, style, plain = false, onPressName, onPressComment }: {
   messages: LiveChatMessage[];
   maxHeight?: number;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Render as plain Views instead of a FlatList.
+   *
+   * For the ONE place this sits inside a vertical ScrollView — the studio
+   * session room. A VirtualizedList nested in a ScrollView of the same
+   * orientation is not merely a console warning: windowing breaks, and the
+   * inner list can steal drags meant for the outer scroll. Virtualization buys
+   * nothing at this size anyway (the buffer caps at 80 and the strip shows
+   * about five), so the nested case renders the tail directly and the problem
+   * stops existing rather than being suppressed.
+   *
+   * The cost is scrollback inside the strip, which is why it is opt-in: the
+   * live screens are not nested and keep the real list.
+   */
+  plain?: boolean;
   // Tap a name / comment → the host or viewer screen decides (open profile,
   // prefill a reply, …). Both receive the full message.
   onPressName?: (m: LiveChatMessage) => void;
@@ -107,6 +125,20 @@ export default function LiveChatOverlay({ messages, maxHeight = 210, style, onPr
 }) {
   // Inverted list ⇒ data index 0 renders at the visual bottom, so feed newest-first.
   const data = useMemo(() => [...messages].reverse(), [messages]);
+
+  if (plain) {
+    // Natural order with the newest last is the same picture an inverted list
+    // paints, without the list.
+    const tail = messages.slice(-PLAIN_KEEP);
+    return (
+      <View style={[{ maxHeight, overflow: 'hidden' }, styles.content, style]}>
+        {tail.map((m) => (
+          <Row key={m.id} m={m} onPressName={onPressName} onPressComment={onPressComment} />
+        ))}
+      </View>
+    );
+  }
+
   return (
     <FlatList
       data={data}
