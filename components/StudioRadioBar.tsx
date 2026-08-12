@@ -1,5 +1,5 @@
-import { memo, useEffect, useRef } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Animated, Easing, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { memo, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Animated, Easing, Image, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GRADIENTS } from '../constants/theme';
@@ -39,15 +39,53 @@ const EqBars = memo(function EqBars({ animate }: { animate: boolean }) {
   );
 });
 
+// A volume control, built here because the project carries no slider package
+// and this needs exactly one behaviour: drag a bar, get a number 0–1.
+//
+// It is LOCAL. The room is unaffected — this is how loud the song is in the
+// holder's own ears, which is the whole point: a host talking over a record
+// needs it down without taking it down for the audience.
+const VolumeSlider = memo(function VolumeSlider({
+  value, onChange,
+}: { value: number; onChange: (v: number) => void }) {
+  const width = useRef(1);
+  const set = (x: number) => onChange(Math.max(0, Math.min(1, x / width.current)));
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => set(e.nativeEvent.locationX),
+      onPanResponderMove: (e) => set(e.nativeEvent.locationX),
+    }),
+  ).current;
+  return (
+    <View
+      style={styles.sliderHit}
+      onLayout={(e) => { width.current = Math.max(1, e.nativeEvent.layout.width); }}
+      {...pan.panHandlers}
+    >
+      <View style={styles.sliderTrack}>
+        <View style={[styles.sliderFill, { width: `${Math.round(value * 100)}%` }]} />
+      </View>
+      <View style={[styles.sliderKnob, { left: `${Math.round(value * 100)}%` }]} />
+    </View>
+  );
+});
+
 type Props = {
   track: RadioTrack;
   paused: boolean;
   /** Host-only transport. Omit them all and the card is read-only. */
   onPause?: () => void;
   onResume?: () => void;
+  onPrevious?: () => void;
   onSkip?: () => void;
   onStop?: () => void;
+  hasPrevious?: boolean;
+  hasNext?: boolean;
   queueCount?: number;
+  volume: number;
+  onVolume: (v: number) => void;
   localMuted: boolean;
   onToggleMute: () => void;
   onOpenTrack?: (id: string) => void;
@@ -57,14 +95,17 @@ type Props = {
     queued: (n: number) => string;
     mute: string;
     unmute: string;
+    volume: string;
   };
 };
 
 function StudioRadioBar({
-  track, paused, onPause, onResume, onSkip, onStop, queueCount = 0,
-  localMuted, onToggleMute, onOpenTrack, busy, labels,
+  track, paused, onPause, onResume, onPrevious, onSkip, onStop,
+  hasPrevious, hasNext, queueCount = 0,
+  volume, onVolume, localMuted, onToggleMute, onOpenTrack, busy, labels,
 }: Props) {
   const isHost = !!(onPause || onResume);
+  const [volOpen, setVolOpen] = useState(false);
   const reduceRef = useRef(false);
   useEffect(() => {
     let alive = true;
@@ -109,17 +150,42 @@ function StudioRadioBar({
 
         <TouchableOpacity
           accessibilityRole="button"
-          accessibilityLabel={localMuted ? labels.unmute : labels.mute}
-          onPress={onToggleMute}
+          accessibilityLabel={labels.volume}
+          onPress={() => setVolOpen((v) => !v)}
+          onLongPress={onToggleMute}
           style={styles.iconBtn}
           hitSlop={8}
         >
-          <Ionicons name={localMuted ? 'volume-mute' : 'volume-high'} size={18} color={localMuted ? '#F43F5E' : '#fff'} />
+          <Ionicons
+            name={localMuted || volume === 0 ? 'volume-mute' : volume < 0.45 ? 'volume-low' : 'volume-high'}
+            size={18}
+            color={localMuted ? '#F43F5E' : '#fff'}
+          />
         </TouchableOpacity>
       </TouchableOpacity>
 
+      {volOpen && (
+        <View style={styles.volRow}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={localMuted ? labels.unmute : labels.mute}
+            onPress={onToggleMute}
+            hitSlop={8}
+          >
+            <Ionicons name={localMuted ? 'volume-mute' : 'volume-off'} size={16} color={localMuted ? '#F43F5E' : 'rgba(255,255,255,0.75)'} />
+          </TouchableOpacity>
+          <VolumeSlider value={localMuted ? 0 : volume} onChange={onVolume} />
+          <Text style={styles.volPct}>{Math.round((localMuted ? 0 : volume) * 100)}</Text>
+        </View>
+      )}
+
       {isHost && (
         <View style={styles.controls}>
+          {/* Previous is never disabled: deep into a song it restarts the
+              track, which is useful even when there is nothing behind it. */}
+          <TouchableOpacity accessibilityRole="button" onPress={onPrevious} style={styles.ctrl}>
+            <Ionicons name="play-skip-back" size={17} color={hasPrevious ? '#fff' : 'rgba(255,255,255,0.75)'} />
+          </TouchableOpacity>
           <TouchableOpacity
             accessibilityRole="button"
             onPress={paused ? onResume : onPause}
@@ -130,8 +196,8 @@ function StudioRadioBar({
               ? <ActivityIndicator color="#fff" size="small" />
               : <Ionicons name={paused ? 'play' : 'pause'} size={18} color="#fff" />}
           </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" onPress={onSkip} style={styles.ctrl}>
-            <Ionicons name="play-skip-forward" size={17} color="#fff" />
+          <TouchableOpacity accessibilityRole="button" onPress={onSkip} style={styles.ctrl} disabled={!hasNext}>
+            <Ionicons name="play-skip-forward" size={17} color={hasNext ? '#fff' : 'rgba(255,255,255,0.35)'} />
           </TouchableOpacity>
           <TouchableOpacity accessibilityRole="button" onPress={onStop} style={styles.ctrl}>
             <Ionicons name="stop" size={16} color="#fff" />
@@ -157,6 +223,12 @@ const styles = StyleSheet.create({
   iconBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   eq: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 12 },
   eqBar: { width: 2.5, height: 12, borderRadius: 1.5, backgroundColor: '#FAB525' },
+  volRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13, paddingBottom: 11 },
+  sliderHit: { flex: 1, height: 26, justifyContent: 'center' },
+  sliderTrack: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden' },
+  sliderFill: { height: 4, borderRadius: 2, backgroundColor: '#FAB525' },
+  sliderKnob: { position: 'absolute', width: 13, height: 13, borderRadius: 7, backgroundColor: '#fff', marginLeft: -6.5 },
+  volPct: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '700', width: 26, textAlign: 'right' },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingBottom: 11 },
   ctrlPrimary: {
     flex: 1, height: 38, borderRadius: 19, backgroundColor: 'rgba(242,101,34,0.85)',

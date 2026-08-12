@@ -189,7 +189,7 @@ export default function StudioRoomScreen() {
   const publishRadio = useCallback((s: Parameters<NonNullable<LiveChannelHandle['sendRadio']>>[0]) => {
     channelRef.current?.sendRadio(s);
   }, []);
-  const radio = useStudioRadio({ isHost, publish: publishRadio, ready: isLive, onTakeOver: audioControls.stop });
+  const radio = useStudioRadio({ isHost, publish: publishRadio, ready: isLive, onTakeOver: audioControls.stop, viewerId: profile?.id ?? null });
   const [radioOpen, setRadioOpen] = useState(false);
 
   // Every session member joins while the broadcast is live — as 'host' so the
@@ -554,28 +554,32 @@ export default function StudioRoomScreen() {
               highlighted button read as a step the host had to complete. */}
           {isLive && radio.state.track && (
             <View style={styles.radioWrap}>
-              {(
-                <StudioRadioBar
-                  track={radio.state.track}
-                  paused={radio.state.paused}
-                  queueCount={radio.queue.length}
-                  localMuted={radio.localMuted}
-                  onToggleMute={() => radio.setLocalMuted((m) => !m)}
-                  onOpenTrack={(sid) => router.push(`/post/${sid}`)}
-                  {...(isHost ? {
-                    onPause: radio.pause,
-                    onResume: radio.resume,
-                    onSkip: radio.advance,
-                    onStop: radio.stop,
-                  } : {})}
-                  labels={{
-                    onAir: t('studio.radioOnAir'),
-                    queued: (n) => t('studio.radioQueued', { n }),
-                    mute: t('studio.radioMute'),
-                    unmute: t('studio.radioUnmute'),
-                  }}
-                />
-              )}
+              <StudioRadioBar
+                track={radio.state.track}
+                paused={radio.state.paused}
+                queueCount={radio.upNext.length}
+                volume={radio.volume}
+                onVolume={radio.setVolume}
+                localMuted={radio.localMuted}
+                onToggleMute={() => radio.setLocalMuted((m) => !m)}
+                onOpenTrack={(sid) => router.push(`/post/${sid}`)}
+                {...(isHost ? {
+                  onPause: radio.pause,
+                  onResume: radio.resume,
+                  onPrevious: radio.previous,
+                  onSkip: radio.next,
+                  onStop: radio.stop,
+                  hasPrevious: radio.hasPrevious,
+                  hasNext: radio.hasNext,
+                } : {})}
+                labels={{
+                  onAir: t('studio.radioOnAir'),
+                  queued: (n) => t('studio.radioQueued', { n }),
+                  mute: t('studio.radioMute'),
+                  unmute: t('studio.radioUnmute'),
+                  volume: t('studio.radioVolume'),
+                }}
+              />
             </View>
           )}
 
@@ -643,8 +647,8 @@ export default function StudioRoomScreen() {
                     </Text>
                   </View>
                   <View style={styles.settingRowRight}>
-                    {radio.queue.length > 0 && (
-                      <Text style={styles.radioCount}>{radio.queue.length}</Text>
+                    {radio.upNext.length > 0 && (
+                      <Text style={styles.radioCount}>{radio.upNext.length}</Text>
                     )}
                     <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
                   </View>
@@ -758,14 +762,18 @@ export default function StudioRoomScreen() {
         <StudioRadioPicker
           visible={radioOpen}
           userId={profile?.id ?? null}
-          queue={radio.queue}
+          queue={radio.upNext}
           nowPlayingId={radio.state.track?.id ?? null}
           onPick={radio.enqueue}
+          onPlayList={radio.playList}
           onRemoveQueued={radio.removeQueued}
           onClose={() => setRadioOpen(false)}
           labels={{
             title: t('studio.radioTitle'),
             mine: t('studio.radioMine'),
+            liked: t('studio.radioLiked'),
+            saved: t('studio.radioSaved'),
+            lists: t('studio.radioLists'),
             all: t('studio.radioAll'),
             search: t('studio.radioSearch'),
             empty: t('studio.radioEmpty'),
@@ -773,6 +781,9 @@ export default function StudioRoomScreen() {
             nowPlaying: t('studio.radioOnAir'),
             queued: t('studio.radioAdded'),
             play: t('studio.radioPlaying'),
+            playAll: t('studio.radioPlayAll'),
+            songs: (n: number) => t('studio.radioSongCount', { n }),
+            back: t('a11y.back'),
           }}
         />
 

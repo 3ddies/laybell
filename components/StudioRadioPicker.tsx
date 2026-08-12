@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Image, Modal, StyleSheet, Text, TextInput,
+  ActivityIndicator, FlatList, Image, Modal, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,7 +8,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GRADIENTS, type ThemePalette } from '../constants/theme';
 import { useThemedStyles } from '../contexts/ThemeContext';
-import { myRadioSongs, searchRadioSongs, type RadioTrack } from '../lib/studioRadio';
+import {
+  likedRadioSongs, myRadioPlaylists, myRadioSongs, playlistRadioSongs, savedRadioSongs,
+  searchRadioSongs, type RadioPlaylist, type RadioTrack,
+} from '../lib/studioRadio';
 
 // The host's record crate. Two tabs, because the two things a host actually
 // wants are "play my own record" and "play that song I heard" — and an empty
@@ -18,7 +21,10 @@ import { myRadioSongs, searchRadioSongs, type RadioTrack } from '../lib/studioRa
 // queue if something is. The row says which happened, so the host never has to
 // guess whether that tap did anything.
 
-type Tab = 'mine' | 'all';
+// Five ways in, because "what do I want to play" has five different answers
+// and only one of them is a search box.
+type Tab = 'mine' | 'liked' | 'saved' | 'lists' | 'all';
+const TABS: Tab[] = ['mine', 'liked', 'saved', 'lists', 'all'];
 
 type Props = {
   visible: boolean;
@@ -26,22 +32,28 @@ type Props = {
   queue: RadioTrack[];
   nowPlayingId: string | null;
   onPick: (t: RadioTrack) => 'playing' | 'queued';
+  /** Load a whole list and start it — a playlist, or all of your likes. */
+  onPlayList: (tracks: RadioTrack[], startIndex: number) => void;
   onRemoveQueued: (id: string) => void;
   onClose: () => void;
   labels: {
-    title: string; mine: string; all: string; search: string;
-    empty: string; queue: string; nowPlaying: string; queued: string; play: string;
+    title: string; mine: string; liked: string; saved: string; lists: string; all: string;
+    search: string; empty: string; queue: string; nowPlaying: string; queued: string;
+    play: string; playAll: string; songs: (n: number) => string; back: string;
   };
 };
 
 export default function StudioRadioPicker({
-  visible, userId, queue, nowPlayingId, onPick, onRemoveQueued, onClose, labels,
+  visible, userId, queue, nowPlayingId, onPick, onPlayList, onRemoveQueued, onClose, labels,
 }: Props) {
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('mine');
   const [term, setTerm] = useState('');
   const [rows, setRows] = useState<RadioTrack[]>([]);
+  const [lists, setLists] = useState<RadioPlaylist[]>([]);
+  // Which playlist the host has opened, if any. Null = the tab's own list.
+  const [openList, setOpenList] = useState<RadioPlaylist | null>(null);
   const [loading, setLoading] = useState(false);
   // id -> what just happened to it, so the row can say so for a moment.
   const [flash, setFlash] = useState<Record<string, 'playing' | 'queued'>>({});
@@ -49,8 +61,12 @@ export default function StudioRadioPicker({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = tab === 'mine' && userId
-        ? await myRadioSongs(userId)
+      if (openList) { setRows(await playlistRadioSongs(openList.id)); return; }
+      if (tab === 'lists') { setLists(userId ? await myRadioPlaylists(userId) : []); setRows([]); return; }
+      const data =
+        tab === 'mine' && userId ? await myRadioSongs(userId)
+        : tab === 'liked' && userId ? await likedRadioSongs(userId)
+        : tab === 'saved' && userId ? await savedRadioSongs(userId)
         : await searchRadioSongs(term);
       setRows(data);
     } catch {
@@ -58,7 +74,7 @@ export default function StudioRadioPicker({
     } finally {
       setLoading(false);
     }
-  }, [tab, term, userId]);
+  }, [tab, term, userId, openList]);
 
   useEffect(() => {
     if (!visible) return;
@@ -80,28 +96,53 @@ export default function StudioRadioPicker({
           <View style={styles.grabber} />
 
           <View style={styles.header}>
-            <Text style={styles.title}>{labels.title}</Text>
+            {!!openList && (
+              <TouchableOpacity
+                onPress={() => setOpenList(null)}
+                accessibilityRole="button"
+                accessibilityLabel={labels.back}
+                hitSlop={10}
+                style={styles.closeBtn}
+              >
+                <Ionicons name="chevron-back" size={20} color="#fff" />
+              </TouchableOpacity>
+            )}
+            <Text style={styles.title} numberOfLines={1}>{openList ? openList.name : labels.title}</Text>
+            {!!openList && rows.length > 0 && (
+              <TouchableOpacity
+                onPress={() => { onPlayList(rows, 0); onClose(); }}
+                accessibilityRole="button"
+                style={styles.playAll}
+              >
+                <Ionicons name="play" size={13} color="#fff" />
+                <Text style={styles.playAllText}>{labels.playAll}</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity onPress={onClose} accessibilityRole="button" hitSlop={10} style={styles.closeBtn}>
               <Ionicons name="close" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.tabs}>
-            {(['mine', 'all'] as Tab[]).map((k) => (
-              <TouchableOpacity
-                key={k}
-                style={[styles.tab, tab === k && styles.tabOn]}
-                onPress={() => setTab(k)}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.tabText, tab === k && styles.tabTextOn]}>
-                  {k === 'mine' ? labels.mine : labels.all}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {!openList && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tabs}
+            >
+              {TABS.map((k) => (
+                <TouchableOpacity
+                  key={k}
+                  style={[styles.tab, tab === k && styles.tabOn]}
+                  onPress={() => setTab(k)}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.tabText, tab === k && styles.tabTextOn]}>{labels[k]}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
 
-          {tab === 'all' && (
+          {tab === 'all' && !openList && (
             <View style={styles.searchWrap}>
               <Ionicons name="search" size={16} color="rgba(255,255,255,0.5)" />
               <TextInput
@@ -146,6 +187,29 @@ export default function StudioRadioPicker({
 
           {loading ? (
             <ActivityIndicator style={{ marginTop: 28 }} color="#F26522" />
+          ) : tab === 'lists' && !openList ? (
+            <FlatList
+              data={lists}
+              keyExtractor={(p) => p.id}
+              contentContainerStyle={{ paddingBottom: 12 }}
+              ListEmptyComponent={<Text style={styles.empty}>{labels.empty}</Text>}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.row} onPress={() => setOpenList(item)} activeOpacity={0.75}>
+                  {item.cover ? (
+                    <Image source={{ uri: item.cover }} style={styles.cover} />
+                  ) : (
+                    <LinearGradient colors={GRADIENTS.primary} style={styles.cover}>
+                      <Ionicons name="list" size={16} color="#fff" />
+                    </LinearGradient>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.rowArtist}>{labels.songs(item.count)}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+              )}
+            />
           ) : (
             <FlatList
               data={rows}
@@ -157,7 +221,14 @@ export default function StudioRadioPicker({
                 const f = flash[item.id];
                 const live = nowPlayingId === item.id;
                 return (
-                  <TouchableOpacity style={styles.row} onPress={() => pick(item)} activeOpacity={0.75}>
+                  <TouchableOpacity
+                    style={styles.row}
+                    onPress={() => {
+                      if (openList) { onPlayList(rows, rows.findIndex((r) => r.id === item.id)); onClose(); return; }
+                      pick(item);
+                    }}
+                    activeOpacity={0.75}
+                  >
                     {item.cover ? (
                       <Image source={{ uri: item.cover }} style={styles.cover} />
                     ) : (
@@ -194,7 +265,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   title: { flex: 1, color: '#fff', fontSize: 18, fontWeight: '800' },
   closeBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  tabs: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  tabs: { flexDirection: 'row', gap: 8, paddingBottom: 10 },
+  playAll: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: c.primary, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
+  playAllText: { color: '#fff', fontSize: 12.5, fontWeight: '700' },
   tab: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)' },
   tabOn: { backgroundColor: c.primary },
   tabText: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '700' },

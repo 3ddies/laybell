@@ -103,6 +103,80 @@ export async function myRadioSongs(userId: string, limit = 40): Promise<RadioTra
   return ((data ?? []) as PostRow[]).map(toTrack).filter(Boolean) as RadioTrack[];
 }
 
+/** Songs the host liked. `likes` holds post ids; the posts come back in one go. */
+export async function likedRadioSongs(userId: string, limit = 60): Promise<RadioTrack[]> {
+  const { data: likes } = await supabase
+    .from('likes').select('post_id').eq('user_id', userId)
+    .order('created_at', { ascending: false }).limit(limit);
+  return tracksByIds((likes ?? []).map((l: { post_id: string }) => l.post_id));
+}
+
+/** Songs the host saved. Same shape as likes. */
+export async function savedRadioSongs(userId: string, limit = 60): Promise<RadioTrack[]> {
+  const { data: saves } = await supabase
+    .from('saves').select('post_id').eq('user_id', userId)
+    .order('created_at', { ascending: false }).limit(limit);
+  return tracksByIds((saves ?? []).map((s: { post_id: string }) => s.post_id));
+}
+
+export type RadioPlaylist = { id: string; name: string; cover: string | null; count: number };
+
+/** The host's playlists, for the crate's playlist tab. */
+export async function myRadioPlaylists(userId: string): Promise<RadioPlaylist[]> {
+  const { data } = await supabase
+    .from('playlists').select('id, name').eq('user_id', userId)
+    .order('created_at', { ascending: false }).limit(50);
+  const rows = (data ?? []) as Array<{ id: string; name: string | null }>;
+  if (!rows.length) return [];
+  const { data: tracks } = await supabase
+    .from('playlist_tracks')
+    .select('playlist_id, position, posts(cover_url, thumbnail_url, archived_at)')
+    .in('playlist_id', rows.map((r) => r.id))
+    .order('position', { ascending: true });
+  const cover: Record<string, string | null> = {};
+  const count: Record<string, number> = {};
+  for (const t of (tracks ?? []) as any[]) {
+    if (!t.posts || t.posts.archived_at) continue;   // a deleted track is not a face
+    count[t.playlist_id] = (count[t.playlist_id] ?? 0) + 1;
+    if (!(t.playlist_id in cover)) cover[t.playlist_id] = t.posts.cover_url ?? t.posts.thumbnail_url ?? null;
+  }
+  return rows.map((r) => ({
+    id: r.id, name: r.name || 'Playlist', cover: cover[r.id] ?? null, count: count[r.id] ?? 0,
+  }));
+}
+
+/** One playlist, in order — this is what "play my playlist" loads. */
+export async function playlistRadioSongs(playlistId: string): Promise<RadioTrack[]> {
+  const { data } = await supabase
+    .from('playlist_tracks')
+    .select('position, post_id')
+    .eq('playlist_id', playlistId)
+    .order('position', { ascending: true });
+  return tracksByIds((data ?? []).map((r: { post_id: string }) => r.post_id));
+}
+
+/**
+ * Fetch posts by id and return them IN THE ORDER ASKED FOR. PostgREST does not
+ * preserve `in()` order, and a playlist that plays back in an arbitrary order is
+ * not that playlist.
+ */
+async function tracksByIds(ids: string[]): Promise<RadioTrack[]> {
+  const wanted = ids.filter(Boolean);
+  if (!wanted.length) return [];
+  const { data } = await supabase
+    .from('posts').select(SELECT)
+    .in('id', wanted)
+    .is('archived_at', null)
+    .in('type', SONG_TYPES)
+    .not('media_url', 'is', null);
+  const byId = new Map<string, RadioTrack>();
+  for (const row of (data ?? []) as PostRow[]) {
+    const t = toTrack(row);
+    if (t) byId.set(t.id, t);
+  }
+  return wanted.map((id) => byId.get(id)).filter(Boolean) as RadioTrack[];
+}
+
 /**
  * Where the room is in the song, right now, in ms.
  *

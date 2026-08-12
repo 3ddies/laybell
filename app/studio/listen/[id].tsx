@@ -154,7 +154,7 @@ export default function StudioListenScreen() {
   // The room's radio. A listener is a pure follower here — it never publishes,
   // it just asks once on arrival ("what's on?") and plays whatever comes back.
   const requestRadio = useCallback(() => { channelRef.current?.requestRadio(); }, []);
-  const radio = useStudioRadio({ isHost: false, request: requestRadio, ready: phase === 'live', onTakeOver: audioControls.stop });
+  const radio = useStudioRadio({ isHost: false, request: requestRadio, ready: phase === 'live', onTakeOver: audioControls.stop, viewerId: profile?.id ?? null });
 
   // Audience channel: chat + donations + the listener count + the end signal.
   useEffect(() => {
@@ -309,6 +309,8 @@ export default function StudioListenScreen() {
                 <StudioRadioBar
                   track={radio.state.track}
                   paused={radio.state.paused}
+                  volume={radio.volume}
+                  onVolume={radio.setVolume}
                   localMuted={radio.localMuted}
                   onToggleMute={() => radio.setLocalMuted((m) => !m)}
                   onOpenTrack={(sid) => router.push(`/post/${sid}`)}
@@ -317,6 +319,7 @@ export default function StudioListenScreen() {
                     queued: (n) => t('studio.radioQueued', { n }),
                     mute: t('studio.radioMute'),
                     unmute: t('studio.radioUnmute'),
+                    volume: t('studio.radioVolume'),
                   }}
                 />
               )}
