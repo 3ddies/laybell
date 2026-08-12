@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { Room } from 'livekit-client';
 import { GRADIENTS } from '../constants/theme';
+import { useTheme } from '../contexts/ThemeContext';
 import type { StudioMember } from '../lib/studio';
 
 // The stage an AUDIENCE member sees during a live studio session — the artists
@@ -175,9 +176,25 @@ type Props = {
    * not.
    */
   showField?: boolean;
+  /**
+   * The stage is on a THEMED surface rather than the always-dark audience
+   * screen, so its text and speaking cues have to follow the theme.
+   *
+   * White names read perfectly over the listener screen's fixed dark gradient
+   * and vanish completely on the session screen in light mode — white on white.
+   * The speaking bloom and ring have the same problem and it costs more than
+   * legibility: an invisible ring means no way to tell who is talking.
+   */
+  themed?: boolean;
 };
 
-function StudioStage({ room, roster, onPressMember, hostLabel, people, showField = true }: Props) {
+function StudioStage({ room, roster, onPressMember, hostLabel, people, showField = true, themed = false }: Props) {
+  const { colors } = useTheme();
+  // Brand orange for the speaking cues on a themed surface: it carries on both
+  // a light and a dark theme, where white only ever works on one.
+  const ink = themed
+    ? { name: colors.text, sub: colors.textSecondary, cue: colors.primary }
+    : { name: '#fff', sub: 'rgba(255,255,255,0.5)', cue: '#fff' };
   const reduce = useReduceMotion();
 
   // One Animated.Value per member plus one for the room. Kept in a ref and
@@ -313,6 +330,7 @@ function StudioStage({ room, roster, onPressMember, hostLabel, people, showField
             level={levelFor(p.id)}
             reduce={reduce}
             hostLabel={hostLabel}
+            ink={ink}
             onPress={() => onPressMember(p.id)}
           />
         ))}
@@ -333,7 +351,7 @@ function StudioStage({ room, roster, onPressMember, hostLabel, people, showField
         {!!onMicName && (
           <>
             <Ionicons name="mic" size={13} color="#FAB525" />
-            <Text style={styles.onMicName} numberOfLines={1}>{onMicName}</Text>
+            <Text style={[styles.onMicName, { color: ink.name }]} numberOfLines={1}>{onMicName}</Text>
           </>
         )}
       </View>
@@ -371,13 +389,14 @@ const Bar = memo(function Bar({
 });
 
 const SpeakerTile = memo(function SpeakerTile({
-  person, size, level, reduce, hostLabel, onPress,
+  person, size, level, reduce, hostLabel, ink, onPress,
 }: {
   person: StagePerson;
   size: number;
   level: Animated.Value;
   reduce: boolean;
   hostLabel: string;
+  ink: { name: string; sub: string; cue: string };
   onPress: () => void;
 }) {
   const name = person.name;
@@ -407,9 +426,9 @@ const SpeakerTile = memo(function SpeakerTile({
       activeOpacity={0.85}
     >
       <Animated.View style={[styles.tileAvatarWrap, wrap, reduce ? null : lift]}>
-        {!reduce && <Animated.View style={[styles.bloom, wrap, bloom]} pointerEvents="none" />}
+        {!reduce && <Animated.View style={[styles.bloom, wrap, { backgroundColor: ink.cue }, bloom]} pointerEvents="none" />}
         <Animated.View
-          style={[styles.ring, wrap, { borderWidth: size >= 112 ? 3 : 2.5 }, ring]}
+          style={[styles.ring, wrap, { borderWidth: size >= 112 ? 3 : 2.5, borderColor: ink.cue }, ring]}
           pointerEvents="none"
         />
         {person.avatarUrl ? (
@@ -438,8 +457,8 @@ const SpeakerTile = memo(function SpeakerTile({
           </View>
         )}
       </Animated.View>
-      <Text style={[styles.tileName, { maxWidth: size + 10 }]} numberOfLines={1}>{name}</Text>
-      {person.isHost && <Text style={styles.hostTag}>{hostLabel}</Text>}
+      <Text style={[styles.tileName, { maxWidth: size + 10, color: ink.name }]} numberOfLines={1}>{name}</Text>
+      {person.isHost && <Text style={[styles.hostTag, { color: ink.sub }]}>{hostLabel}</Text>}
     </TouchableOpacity>
   );
 });

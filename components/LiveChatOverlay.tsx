@@ -3,6 +3,7 @@ import { FlatList, StyleSheet, Text, View, type StyleProp, type ViewStyle } from
 import type { LiveChatMessage } from '../lib/live';
 import { badgeRingColors, tierRank, type Tier } from '../lib/badges';
 import MentionText from './MentionText';
+import { useTheme } from '../contexts/ThemeContext';
 
 // Live-chat overlay shared by the viewer feed (app/live/index.tsx) and the
 // broadcaster screen (app/live/go-live.tsx). Built for busy rooms:
@@ -62,8 +63,10 @@ export function useBufferedChat() {
   return { messages, push, clear };
 }
 
-const Row = memo(function Row({ m, onPressName, onPressComment }: {
+const Row = memo(function Row({ m, ink, onPressName, onPressComment }: {
   m: LiveChatMessage;
+  // null = the default white, for chat over video or a dark stage.
+  ink?: { line: string; name: string } | null;
   onPressName?: (m: LiveChatMessage) => void;
   onPressComment?: (m: LiveChatMessage) => void;
 }) {
@@ -76,13 +79,13 @@ const Row = memo(function Row({ m, onPressName, onPressComment }: {
     // Text, so it wins the touch) fires onPressName; @mentions inside the text are
     // their own tappable blue spans (MentionText → open that user's profile).
     <Text
-      style={styles.line}
+      style={[styles.line, ink && { color: ink.line, textShadowRadius: 0 }]}
       numberOfLines={3}
       suppressHighlighting
       onPress={onPressComment ? () => onPressComment(m) : undefined}
     >
       <Text
-        style={[styles.name, nameColor(m.tier), pressed && styles.namePressed]}
+        style={[styles.name, ink && { color: ink.name }, nameColor(m.tier), pressed && styles.namePressed]}
         suppressHighlighting
         onPressIn={onPressName ? () => setPressed(true) : undefined}
         onPressOut={onPressName ? () => setPressed(false) : undefined}
@@ -99,7 +102,7 @@ const Row = memo(function Row({ m, onPressName, onPressComment }: {
 /** Rendered without virtualization; see `plain` below. */
 const PLAIN_KEEP = 25;
 
-export default function LiveChatOverlay({ messages, maxHeight = 210, style, plain = false, fill = false, onPressName, onPressComment }: {
+export default function LiveChatOverlay({ messages, maxHeight = 210, style, plain = false, fill = false, themed = false, onPressName, onPressComment }: {
   messages: LiveChatMessage[];
   maxHeight?: number;
   style?: StyleProp<ViewStyle>;
@@ -131,12 +134,22 @@ export default function LiveChatOverlay({ messages, maxHeight = 210, style, plai
    * does not scroll.
    */
   fill?: boolean;
+  /**
+   * The chat is on a THEMED card, not floating over video or a dark stage.
+   *
+   * Its text is white because that is right over a livestream and over the
+   * audience screen's fixed dark gradient. On the session screen's themed card
+   * in light mode it is white on white — invisible.
+   */
+  themed?: boolean;
   // Tap a name / comment → the host or viewer screen decides (open profile,
   // prefill a reply, …). Both receive the full message.
   onPressName?: (m: LiveChatMessage) => void;
   onPressComment?: (m: LiveChatMessage) => void;
 }) {
   // Inverted list ⇒ data index 0 renders at the visual bottom, so feed newest-first.
+  const { colors } = useTheme();
+  const ink = themed ? { line: colors.text, name: colors.text } : null;
   const data = useMemo(() => [...messages].reverse(), [messages]);
 
   if (plain) {
@@ -146,7 +159,7 @@ export default function LiveChatOverlay({ messages, maxHeight = 210, style, plai
     return (
       <View style={[{ maxHeight, overflow: 'hidden' }, styles.content, style]}>
         {tail.map((m) => (
-          <Row key={m.id} m={m} onPressName={onPressName} onPressComment={onPressComment} />
+          <Row key={m.id} m={m} ink={ink} onPressName={onPressName} onPressComment={onPressComment} />
         ))}
       </View>
     );
@@ -160,7 +173,7 @@ export default function LiveChatOverlay({ messages, maxHeight = 210, style, plai
       // Let a tap on a chat name register while the keyboard is up instead of
       // being swallowed just to dismiss it.
       keyboardShouldPersistTaps="handled"
-      renderItem={({ item }) => <Row m={item} onPressName={onPressName} onPressComment={onPressComment} />}
+      renderItem={({ item }) => <Row m={item} ink={ink} onPressName={onPressName} onPressComment={onPressComment} />}
       // Hug the messages (flexGrow 0 + maxHeight) unless asked to fill — the two
       // are mutually exclusive and must not be combined; see `fill`.
       style={[fill ? { flex: 1 } : { maxHeight, flexGrow: 0 }, style]}
