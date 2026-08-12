@@ -99,7 +99,7 @@ const Row = memo(function Row({ m, onPressName, onPressComment }: {
 /** Rendered without virtualization; see `plain` below. */
 const PLAIN_KEEP = 25;
 
-export default function LiveChatOverlay({ messages, maxHeight = 210, style, plain = false, onPressName, onPressComment }: {
+export default function LiveChatOverlay({ messages, maxHeight = 210, style, plain = false, fill = false, onPressName, onPressComment }: {
   messages: LiveChatMessage[];
   maxHeight?: number;
   style?: StyleProp<ViewStyle>;
@@ -118,6 +118,19 @@ export default function LiveChatOverlay({ messages, maxHeight = 210, style, plai
    * live screens are not nested and keep the real list.
    */
   plain?: boolean;
+  /**
+   * Fill the parent instead of hugging the messages.
+   *
+   * A real prop rather than something a caller can pass through `style`,
+   * because the two cannot be merged: the default carries flexGrow:0, and
+   * layering flex:1 on top leaves BOTH on the resolved style — flexBasis 0 with
+   * no permission to grow, i.e. a list of zero height that renders nothing.
+   *
+   * Use it wherever the chat sits in a fixed-height strip: hugging makes the
+   * empty space above the messages belong to something else, so a drag there
+   * does not scroll.
+   */
+  fill?: boolean;
   // Tap a name / comment → the host or viewer screen decides (open profile,
   // prefill a reply, …). Both receive the full message.
   onPressName?: (m: LiveChatMessage) => void;
@@ -148,9 +161,9 @@ export default function LiveChatOverlay({ messages, maxHeight = 210, style, plai
       // being swallowed just to dismiss it.
       keyboardShouldPersistTaps="handled"
       renderItem={({ item }) => <Row m={item} onPressName={onPressName} onPressComment={onPressComment} />}
-      // flexGrow 0 + maxHeight: hugs its content while the room is quiet,
-      // stops growing (and scrolls) once chat fills the strip.
-      style={[{ maxHeight, flexGrow: 0 }, style]}
+      // Hug the messages (flexGrow 0 + maxHeight) unless asked to fill — the two
+      // are mutually exclusive and must not be combined; see `fill`.
+      style={[fill ? { flex: 1 } : { maxHeight, flexGrow: 0 }, style]}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
       nestedScrollEnabled

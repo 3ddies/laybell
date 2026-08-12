@@ -354,16 +354,15 @@ export default function StudioListenScreen() {
               {/* Messages dissolve upward into the background instead of being
                   clipped by a hard edge. */}
               <View style={styles.chatWrap}>
-                {/* flex:1 inside a FIXED-height strip, rather than the default
-                    hug-your-content. Hugging meant the list was only as tall as
-                    the messages in it, so the wide empty area above them was
-                    not part of the list at all — a drag there hit nothing, and
-                    the only place a scroll registered was on a line of text.
-                    Filling the strip makes the whole area the scroll surface. */}
+                {/* Fills the fixed-height strip rather than hugging its
+                    messages. Hugging left the empty area above them outside the
+                    list, so a drag there scrolled nothing and only a line of
+                    text responded. `fill` is a prop rather than a style
+                    override because the two cannot be merged — see the note on
+                    it. */}
                 <LiveChatOverlay
                   messages={chat}
-                  maxHeight={CHAT_H}
-                  style={{ flex: 1 }}
+                  fill
                   onPressName={(m) => router.push(`/profile/${m.userId}`)}
                 />
                 {/* Only once there is enough chat to actually run under it. The
