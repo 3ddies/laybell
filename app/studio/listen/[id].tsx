@@ -37,6 +37,9 @@ import {
 // as a livestream's; "request to join" can upgrade a listener into the
 // session itself once the host accepts.
 
+// The chat strip's height. Fixed on purpose — see the note where it is used.
+const CHAT_H = 200;
+
 type Phase = 'connecting' | 'live' | 'ended' | 'unavailable' | 'error';
 type ReqState = 'none' | 'pending' | 'declined' | 'busy';
 
@@ -351,9 +354,16 @@ export default function StudioListenScreen() {
               {/* Messages dissolve upward into the background instead of being
                   clipped by a hard edge. */}
               <View style={styles.chatWrap}>
+                {/* flex:1 inside a FIXED-height strip, rather than the default
+                    hug-your-content. Hugging meant the list was only as tall as
+                    the messages in it, so the wide empty area above them was
+                    not part of the list at all — a drag there hit nothing, and
+                    the only place a scroll registered was on a line of text.
+                    Filling the strip makes the whole area the scroll surface. */}
                 <LiveChatOverlay
                   messages={chat}
-                  maxHeight={200}
+                  maxHeight={CHAT_H}
+                  style={{ flex: 1 }}
                   onPressName={(m) => router.push(`/profile/${m.userId}`)}
                 />
                 {/* Only once there is enough chat to actually run under it. The
@@ -479,7 +489,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   hostLine: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
   stageWrap: { flex: 1, minHeight: 0, justifyContent: 'center', overflow: 'hidden' },
   bottom: { paddingHorizontal: 14, gap: 10 },
-  chatWrap: { position: 'relative' },
+  chatWrap: { position: 'relative', height: CHAT_H },
   chatFade: { position: 'absolute', top: 0, left: 0, right: 0, height: 46 },
   actionsRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   inputWrap: {
