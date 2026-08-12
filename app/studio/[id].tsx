@@ -71,6 +71,10 @@ export default function StudioRoomScreen() {
   const [conn, setConn] = useState<ConnState>('connecting');
   const [muted, setMuted] = useState(false);
   const [preset, setPreset] = useState<VocalPresetKey>('natural');
+  // Always opens on Vibe. Not remembered between sessions on purpose — the
+  // common session has no computer in it, so that is the honest default every
+  // time, and Studio is a deliberate choice you make for the session you are in.
+  const [mode, setMode] = useState<'vibe' | 'studio'>('vibe');
   const [confirmEnd, setConfirmEnd] = useState(false);
   // Who the host has tapped to remove — held until they confirm, since this is
   // not undoable and it throws someone out mid-take.
@@ -427,7 +431,16 @@ export default function StudioRoomScreen() {
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.headerTextWrap}>
-            <Text style={styles.headerTitle} numberOfLines={1}>{session?.title || t('studio.untitled')}</Text>
+            <View style={styles.headerTitleRow}>
+              <Text style={styles.headerTitle} numberOfLines={1}>{session?.title || t('studio.untitled')}</Text>
+              {/* The code lives up here now, beside the name. It used to sit in
+                  a card that only exists in Studio mode — so in Vibe mode the
+                  host would have had no way to read out the code that lets
+                  anyone join. Host only: it is the thing that grants access. */}
+              {isHost && !!session?.join_code && (
+                <Text style={styles.headerCode} selectable>{session.join_code}</Text>
+              )}
+            </View>
             <Text style={styles.headerSub}>
               {conn === 'connected' ? t('studio.membersIn', { n: Math.max(live.length, roster.length) })
                 : conn === 'connecting' ? t('studio.connecting')
@@ -463,12 +476,41 @@ export default function StudioRoomScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          {/* Join code + DAW connector hint */}
+          {/* MODE. Two readings of the same room: most sessions are people on
+              phones, and the DAW/interface/count-in guidance was permanent
+              furniture in front of every one of them. Vibe is the default
+              because it is the common case; Studio is opt-in for the session
+              that actually has a computer in it.
+
+              Shown to members too, not only the host. The "before you record"
+              card is written FOR the artist holding the mic — locking them into
+              Vibe with no way to reach it would take the guidance away from the
+              person it was written for. Each screen keeps its own choice. */}
+          <View style={styles.modeTabs}>
+            {(['vibe', 'studio'] as const).map((m) => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.modeTab, mode === m && styles.modeTabOn]}
+                onPress={() => { setMode(m); tabTick(); }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: mode === m }}
+              >
+                <Ionicons
+                  name={m === 'vibe' ? 'sparkles-outline' : 'desktop-outline'}
+                  size={15}
+                  color={mode === m ? '#fff' : colors.textSecondary}
+                />
+                <Text style={[styles.modeTabText, mode === m && styles.modeTabTextOn]}>
+                  {t(m === 'vibe' ? 'studio.modeVibe' : 'studio.modeStudio')}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Studio-only: the computer, the interface, the artist's checklist. */}
+          {mode === 'studio' && (
+          <>
           <View style={styles.codeCard}>
-            <View style={styles.codeRow}>
-              <Text style={styles.codeLabel}>{t('studio.codeTitle')}</Text>
-              <Text style={styles.codeValue} selectable>{session?.join_code ?? '——————'}</Text>
-            </View>
             <View style={styles.dawRow}>
               <Ionicons name="laptop-outline" size={17} color={colors.textSecondary} />
               <Text style={styles.dawText}>{t('studio.connectDawSub')}</Text>
@@ -499,6 +541,8 @@ export default function StudioRoomScreen() {
               <Text style={styles.dawText}>{t('studio.artistMute')}</Text>
             </View>
           </View>
+          </>
+          )}
 
           {/* The stage — the same one the audience sees. Big circles that
               bloom with whoever is talking, a field driven by the room's real
@@ -703,17 +747,22 @@ export default function StudioRoomScreen() {
           >
             <Ionicons name={muted ? 'mic-off' : 'mic'} size={22} color={muted ? '#fff' : colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.countInBtn}
-            onPress={() => { const r = roomRef.current; if (r) { sendCountIn(r).then(runCountIn).catch(() => {}); } }}
-            disabled={conn !== 'connected'}
-            activeOpacity={0.85}
-          >
-            <LinearGradient colors={GRADIENTS.primary} style={styles.countInBg}>
-              <Ionicons name="timer-outline" size={18} color="#fff" />
-              <Text style={styles.countInText}>{t('studio.countIn')}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          {/* The count-in exists to punch record on the same beat in a DAW.
+              With no DAW in the room it is a countdown to nothing, so it
+              belongs to Studio mode along with the rest of the desk. */}
+          {mode === 'studio' && (
+            <TouchableOpacity
+              style={styles.countInBtn}
+              onPress={() => { const r = roomRef.current; if (r) { sendCountIn(r).then(runCountIn).catch(() => {}); } }}
+              disabled={conn !== 'connected'}
+              activeOpacity={0.85}
+            >
+              <LinearGradient colors={GRADIENTS.primary} style={styles.countInBg}>
+                <Ionicons name="timer-outline" size={18} color="#fff" />
+                <Text style={styles.countInText}>{t('studio.countIn')}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.leave')} style={[styles.controlBtn, styles.leaveBtn]} onPress={() => setConfirmEnd(true)}>
             <Ionicons name="exit-outline" size={22} color="#fff" />
           </TouchableOpacity>
@@ -804,16 +853,27 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 6 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTextWrap: { flex: 1, gap: 1 },
-  headerTitle: { color: c.text, fontSize: 16, fontWeight: '700' },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerTitle: { color: c.text, fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  headerCode: {
+    color: c.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
+    backgroundColor: c.primary + '1F', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2, overflow: 'hidden',
+  },
+  modeTabs: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  modeTab: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    paddingVertical: 10, borderRadius: 12, backgroundColor: c.surface,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+  },
+  modeTabOn: { backgroundColor: c.primary, borderColor: c.primary },
+  modeTabText: { color: c.textSecondary, fontSize: 13.5, fontWeight: '700' },
+  modeTabTextOn: { color: '#fff' },
   headerSub: { color: c.textTertiary, fontSize: 12 },
   liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F43F5E', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' },
   liveBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   scrollContent: { padding: 16, gap: 14, paddingBottom: 24 },
   codeCard: { backgroundColor: c.surface, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 14, gap: 10 },
-  codeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  codeLabel: { color: c.textSecondary, fontSize: 13, fontWeight: '600' },
-  codeValue: { color: c.text, fontSize: 20, fontWeight: '800', letterSpacing: 4 },
   // Titles this card, since it sits directly under the code card and would
   // otherwise read as more of the same producer setup.
   artistTitle: { color: c.text, fontSize: 13, fontWeight: '700', letterSpacing: -0.1 },
