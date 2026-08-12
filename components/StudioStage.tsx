@@ -162,9 +162,22 @@ type Props = {
    */
   people?: StagePerson[];
   youLabel?: string;
+  /**
+   * The reactive bar field. ON for the audience, OFF inside a session.
+   *
+   * Not a taste call — the field is honest for a listener and misleading for a
+   * participant. An audience hears the same broadcast the levels describe, so
+   * the bars and the sound land together. In the room you hear each other in
+   * real time while the levels arrive on the server's speaker updates a few
+   * times a second, so the field visibly trails the voice it claims to be
+   * drawing. The avatar bloom stays either way: it answers "who is talking",
+   * which survives the lag; the field draws "how loud, right now", which does
+   * not.
+   */
+  showField?: boolean;
 };
 
-function StudioStage({ room, roster, onPressMember, hostLabel, people }: Props) {
+function StudioStage({ room, roster, onPressMember, hostLabel, people, showField = true }: Props) {
   const reduce = useReduceMotion();
 
   // One Animated.Value per member plus one for the room. Kept in a ref and
@@ -297,11 +310,13 @@ function StudioStage({ room, roster, onPressMember, hostLabel, people }: Props) 
       </View>
 
       {/* The field */}
-      <View style={styles.bars} pointerEvents="none">
-        {BAR_COLORS.map((color, i) => (
-          <Bar key={i} index={i} color={color} level={roomLevel} reduce={reduce} />
-        ))}
-      </View>
+      {showField && (
+        <View style={styles.bars} pointerEvents="none">
+          {BAR_COLORS.map((color, i) => (
+            <Bar key={i} index={i} color={color} level={roomLevel} reduce={reduce} />
+          ))}
+        </View>
+      )}
 
       {/* Who is on the mic right now. A glyph and a name — no copy, so it needs
           no translation and reads the same in every language. */}

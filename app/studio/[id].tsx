@@ -431,16 +431,7 @@ export default function StudioRoomScreen() {
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.headerTextWrap}>
-            <View style={styles.headerTitleRow}>
-              <Text style={styles.headerTitle} numberOfLines={1}>{session?.title || t('studio.untitled')}</Text>
-              {/* The code lives up here now, beside the name. It used to sit in
-                  a card that only exists in Studio mode — so in Vibe mode the
-                  host would have had no way to read out the code that lets
-                  anyone join. Host only: it is the thing that grants access. */}
-              {isHost && !!session?.join_code && (
-                <Text style={styles.headerCode} selectable>{session.join_code}</Text>
-              )}
-            </View>
+            <Text style={styles.headerTitle} numberOfLines={1}>{session?.title || t('studio.untitled')}</Text>
             <Text style={styles.headerSub}>
               {conn === 'connected' ? t('studio.membersIn', { n: Math.max(live.length, roster.length) })
                 : conn === 'connecting' ? t('studio.connecting')
@@ -450,6 +441,14 @@ export default function StudioRoomScreen() {
               {isLive ? `  ·  ${t('studio.listenersIn', { n: listeners })}` : ''}
             </Text>
           </View>
+          {/* The code sits in the gap between the name and the add button — the
+              two things it belongs between, since it is what you read out to
+              someone before you tap that button. It used to live in a card that
+              only exists in Studio mode, which left a Vibe host with no way to
+              read out the code at all. Host only: it grants access. */}
+          {isHost && !!session?.join_code && (
+            <Text style={styles.headerCode} selectable>{session.join_code}</Text>
+          )}
           {isLive && (
             <View style={styles.liveBadge}>
               <View style={styles.liveDot} />
@@ -482,30 +481,31 @@ export default function StudioRoomScreen() {
               because it is the common case; Studio is opt-in for the session
               that actually has a computer in it.
 
-              Shown to members too, not only the host. The "before you record"
-              card is written FOR the artist holding the mic — locking them into
-              Vibe with no way to reach it would take the guidance away from the
-              person it was written for. Each screen keeps its own choice. */}
-          <View style={styles.modeTabs}>
-            {(['vibe', 'studio'] as const).map((m) => (
-              <TouchableOpacity
-                key={m}
-                style={[styles.modeTab, mode === m && styles.modeTabOn]}
-                onPress={() => { setMode(m); tabTick(); }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: mode === m }}
-              >
-                <Ionicons
-                  name={m === 'vibe' ? 'sparkles-outline' : 'desktop-outline'}
-                  size={15}
-                  color={mode === m ? '#fff' : colors.textSecondary}
-                />
-                <Text style={[styles.modeTabText, mode === m && styles.modeTabTextOn]}>
-                  {t(m === 'vibe' ? 'studio.modeVibe' : 'studio.modeStudio')}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+              The HOST decides the shape of the room, so only the host gets the
+              switch. Members see whatever the host is not hiding — the cards
+              below follow `mode` for everyone in the session. */}
+          {isHost && (
+            <View style={styles.modeTabs}>
+              {(['vibe', 'studio'] as const).map((m) => (
+                <TouchableOpacity
+                  key={m}
+                  style={[styles.modeTab, mode === m && styles.modeTabOn]}
+                  onPress={() => { setMode(m); tabTick(); }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: mode === m }}
+                >
+                  <Ionicons
+                    name={m === 'vibe' ? 'sparkles-outline' : 'desktop-outline'}
+                    size={15}
+                    color={mode === m ? colors.text : colors.textTertiary}
+                  />
+                  <Text style={[styles.modeTabText, mode === m && styles.modeTabTextOn]}>
+                    {t(m === 'vibe' ? 'studio.modeVibe' : 'studio.modeStudio')}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* Studio-only: the computer, the interface, the artist's checklist. */}
           {mode === 'studio' && (
@@ -562,6 +562,7 @@ export default function StudioRoomScreen() {
               roster={roster}
               hostLabel={t('studio.host')}
               people={stageCast}
+              showField={false}
               onPressMember={(identity) => {
                 const target = stageCast.find((p) => p.id === identity);
                 if (target?.removable) setConfirmKick({ identity, name: target.name });
@@ -853,21 +854,28 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 6 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTextWrap: { flex: 1, gap: 1 },
-  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerTitle: { color: c.text, fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  // Deliberately neutral. It is a fact to read out, not a call to action —
+  // brand orange on it competed with the controls that actually do something.
   headerCode: {
-    color: c.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
-    backgroundColor: c.primary + '1F', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2, overflow: 'hidden',
+    color: c.text, fontSize: 12.5, fontWeight: '700', letterSpacing: 1.4,
+    backgroundColor: c.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+    borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4, overflow: 'hidden',
   },
-  modeTabs: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  modeTabs: {
+    flexDirection: 'row', gap: 4, marginBottom: 4, padding: 3, borderRadius: 13,
+    backgroundColor: c.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+  },
+  // A quiet segmented control. This picks a VIEW; it is not an action, and two
+  // filled orange buttons read like the most important thing on the screen.
+  // Selection is carried by contrast and weight instead of colour.
   modeTab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-    paddingVertical: 10, borderRadius: 12, backgroundColor: c.surface,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
+    paddingVertical: 9, borderRadius: 10, backgroundColor: 'transparent',
   },
-  modeTabOn: { backgroundColor: c.primary, borderColor: c.primary },
-  modeTabText: { color: c.textSecondary, fontSize: 13.5, fontWeight: '700' },
-  modeTabTextOn: { color: '#fff' },
+  modeTabOn: { backgroundColor: c.surfaceLight },
+  modeTabText: { color: c.textTertiary, fontSize: 13, fontWeight: '600' },
+  modeTabTextOn: { color: c.text, fontWeight: '700' },
   headerSub: { color: c.textTertiary, fontSize: 12 },
   liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F43F5E', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' },
