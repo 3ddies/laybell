@@ -221,10 +221,10 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
         hear you while the share is live, believe the room, not the driver.</p>
         <p><b>Fix:</b> set your DAW's Device to a <b>DirectSound</b> or <b>WASAPI</b> entry — your interface's own
         <i>Speakers (…)</i> line — instead of ASIO.</p>
-        <div class="tip"><b>Bonus for FL users.</b> In DirectSound mode FL lists system inputs <b>by name</b>, so
-        <b>CABLE Output</b> appears in the mixer's IN dropdown directly and the ASIO-panel detour disappears
-        entirely. It costs a little latency, which is nothing next to the network delay already in the round
-        trip.</div>
+        <div class="warn"><b>But not if you are recording the artist.</b> FL Studio cannot record audio on
+        DirectSound — the mixer's IN box goes grey, because that driver hands FL no inputs at all. If you need
+        both the share AND recording, you cannot have them: send the beat as your <b>microphone</b> instead
+        (step 2), which frees you to stay on ASIO and record normally.</div>
       </div>
     </details>
 
@@ -273,21 +273,24 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
         </div></details>
 
         <details class="sub"><summary>Part 3 — get the pipe into your mixer</summary><div class="body">
-          <div class="warn"><b>“My mixer only shows in 1 and in 2.”</b> That list is not everything on your PC — it
-          is the inputs of the <b>one</b> device your DAW is using. Where you change that device depends on your
-          driver, and the two work completely differently.</div>
-          <p><b>1a. On ASIO</b> (FL Studio ASIO, ASIO4ALL, your interface's own driver) — there is only ONE Device
-          box, for input and output together. The input lives inside the driver: click <b>“Show ASIO panel”</b>,
-          just under <i>Buffer length</i>, and set the <b>input</b> there to <b>CABLE Output</b>.<br>
-          Then <b>expect the mixer to still say “in 1 / in 2”</b> — ASIO names channels, not devices, so CABLE
-          Output will never appear there by name. Those two ARE the cable now. The status line confirms it:
-          <i>“1x2 inputs available”</i>.</p>
-          <p><b>1b. On DirectSound or WASAPI</b> — inputs are listed <b>by name</b>, so there is nothing to set
-          here at all. <b>CABLE-B Output</b> simply appears in the mixer's IN dropdown. This is the easy case, and
-          it is the reason DirectSound is worth the small latency cost.</p>
+          <div class="warn"><b>“The IN box is greyed out.”</b> You are on <b>DirectSound</b>. <b>FL Studio cannot
+          record audio on DirectSound at all</b> — that driver exposes no inputs to FL, so there is nothing for
+          the box to offer. Recording in FL requires <b>ASIO</b>. This is an FL limitation, not a cable problem,
+          and no amount of routing fixes it.<br>
+          If the page sent you to DirectSound earlier, that was to fix <i>Share app audio</i> — and it is the
+          right call while you use the share. The moment you send the beat as your <b>microphone</b> instead, the
+          share is out of the picture and ASIO is safe again. Switch back.</div>
+          <p><b>1. Set Device to an ASIO driver</b> — <b>FL Studio ASIO</b> is the friendly one. There is only ONE
+          Device box on ASIO, for input and output together; both live inside the driver instead. Click
+          <b>“Show ASIO panel”</b>, just under <i>Buffer length</i>, and set:<br>
+          · <b>Input</b> → <b>CABLE-B Output</b> — the room, so you can record it<br>
+          · <b>Output</b> → <b>CABLE Input</b> — your DAW going out to the room as your microphone</p>
+          <div class="warn"><b>“My mixer only shows in 1 and in 2.”</b> That is correct on ASIO and nothing is
+          wrong. ASIO names <b>channels</b>, not devices, so CABLE-B Output will never appear there by name —
+          those two entries ARE it, once the ASIO panel points at it. Audio Settings confirms it on the status
+          line: <i>“1x2 inputs available”</i>.</div>
           <p><b>2.</b> Open the <b>Mixer</b> and click an empty insert track.</p>
-          <p><b>3.</b> At the top of the mixer, open the <b>IN</b> dropdown and pick your input — <b>CABLE-B
-          Output</b> by name on DirectSound/WASAPI, or <b>in 1 / in 2</b> on ASIO.</p>
+          <p><b>3.</b> At the top of the mixer, open the <b>IN</b> dropdown and pick <b>in 1</b> (or <b>in 2</b>).</p>
           <p><b>4. Check the meter before anything else.</b> Get the artist to talk and watch that insert's peak
           meter. <b>Moving = your DAW has the signal.</b> Dead = it does not, and no amount of pressing record
           will help.</p>
