@@ -315,7 +315,7 @@ export default function StudioListenScreen() {
             {/* The stage — big circles that bloom with whoever is talking, and
                 a field driven by the room's actual audio. Given the whole
                 middle of the screen and centred in it. */}
-            <View style={styles.stageWrap}>
+            <View style={[styles.stageWrap, kbUp && styles.stageWrapHidden]}>
               <StudioStage
                 room={roomRef.current}
                 roster={roster}
@@ -353,7 +353,7 @@ export default function StudioListenScreen() {
 
               {/* Messages dissolve upward into the background instead of being
                   clipped by a hard edge. */}
-              <View style={styles.chatWrap}>
+              <View style={[styles.chatWrap, kbUp && styles.chatWrapGrow]}>
                 {/* Fills the fixed-height strip rather than hugging its
                     messages. Hugging left the empty area above them outside the
                     list, so a drag there scrolled nothing and only a line of
@@ -373,7 +373,7 @@ export default function StudioListenScreen() {
                     comment of every session looked like. */}
                 {chat.length > 3 && (
                   <LinearGradient
-                    colors={['rgba(0,0,0,0.92)', 'rgba(0,0,0,0.45)', 'rgba(0,0,0,0)']}
+                    colors={['#0B0908', 'rgba(11,9,8,0.55)', 'rgba(11,9,8,0)']}
                     style={styles.chatFade}
                     pointerEvents="none"
                   />
@@ -439,12 +439,17 @@ export default function StudioListenScreen() {
                       />}
                 </TouchableOpacity>
               </View>
-              <Text style={styles.reqHint}>
-                {reqState === 'pending' ? t('studio.requestPending')
-                  : reqState === 'declined' ? t('studio.requestDeclined')
-                  : t('studio.requestHint')}
-              </Text>
-              <View style={{ height: insets.bottom + 8 }} />
+              {/* Guidance for someone watching, not for someone mid-sentence. */}
+              {!kbUp && (
+                <Text style={styles.reqHint}>
+                  {reqState === 'pending' ? t('studio.requestPending')
+                    : reqState === 'declined' ? t('studio.requestDeclined')
+                    : t('studio.requestHint')}
+                </Text>
+              )}
+              {/* The home-indicator inset sits UNDER the keyboard, so reserving
+                  it while typing is the gap between the input and the keys. */}
+              <View style={{ height: kbUp ? 4 : insets.bottom + 8 }} />
             </View>
           </View>
           </TouchableWithoutFeedback>
@@ -489,6 +494,10 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   stageWrap: { flex: 1, minHeight: 0, justifyContent: 'center', overflow: 'hidden' },
   bottom: { paddingHorizontal: 14, gap: 10 },
   chatWrap: { position: 'relative', height: CHAT_H },
+  // Keyboard up: the stage steps aside and chat takes the room, so the reader
+  // sees as much conversation as the space allows instead of a clipped face.
+  chatWrapGrow: { height: undefined, flex: 1, minHeight: 120 },
+  stageWrapHidden: { flex: 0, height: 0 },
   chatFade: { position: 'absolute', top: 0, left: 0, right: 0, height: 46 },
   actionsRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   inputWrap: {
