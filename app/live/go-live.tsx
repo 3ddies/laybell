@@ -24,6 +24,7 @@ import { displayedTier } from '../../lib/badges';
 import { viewerIsAdult } from '../../lib/minors';
 import LiveChatOverlay, { useBufferedChat } from '../../components/LiveChatOverlay';
 import LiveDonationAlerts from '../../components/LiveDonationAlerts';
+import FloatingReactions from '../../components/FloatingReactions';
 import LiveEarnedOverlay from '../../components/LiveEarnedOverlay';
 import { fetchDonationEarnings, fetchStreamEarnings, fmtCents } from '../../lib/donations';
 
@@ -144,6 +145,13 @@ export default function GoLiveScreen() {
   const publisherRef = useRef<WhipPublisher | null>(null);
   const rtmpRef = useRef<RtmpPublisherHandle | null>(null);
   const channelRef = useRef<ReturnType<typeof joinLiveChannel> | null>(null);
+  // Tap-reactions from viewers. The broadcaster is the person they are aimed at,
+  // so they land here too — a reaction nobody on camera can see is just a
+  // private animation.
+  const [reactions, setReactions] = useState<Array<{ id: string; text: string }>>([]);
+  const pushReaction = useCallback((emoji: string) => {
+    setReactions((prev) => [...prev, { id: `r${Date.now()}${Math.random()}`, text: emoji }].slice(-30));
+  }, []);
   const viewerPeak = useRef(0);
   // setTimeout, not setInterval: the encoder poll reschedules itself with a
   // growing delay instead of running at a fixed rate.
@@ -284,6 +292,7 @@ export default function GoLiveScreen() {
           onViewers: (n) => { viewerPeak.current = Math.max(viewerPeak.current, n); setViewers(n); },
           onChat: pushChat,
           onDonation: setDonationEvent,
+      onReaction: pushReaction,
         });
       }
     } catch (e) {
@@ -507,6 +516,7 @@ export default function GoLiveScreen() {
           {/* Host mounts this inside `body` (already below the header + safe area),
               so a small offset keeps the alert up near the top instead of the
               double-inset middle. The viewer keeps the default full-screen offset. */}
+          {live && <FloatingReactions messages={[...chat, ...reactions]} />}
           {live && <LiveDonationAlerts event={donationEvent} topOffset={8} />}
           {live && (
             <View style={styles.previewControls}>

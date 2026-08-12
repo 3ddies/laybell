@@ -25,6 +25,11 @@ import { hostCanReceive } from '../../lib/donations';
 import { displayedTier } from '../../lib/badges';
 import LiveChatOverlay, { nameColor, useBufferedChat } from '../../components/LiveChatOverlay';
 import LiveDonateModal from '../../components/LiveDonateModal';
+import FloatingReactions from '../../components/FloatingReactions';
+
+// The cycle behind the react button's long-press. Kept short and unambiguous —
+// a picker would be more choice than the moment deserves.
+const REACTIONS = ['❤️', '🔥', '😂', '👏', '🎉', '😮'];
 import LiveDonationAlerts from '../../components/LiveDonationAlerts';
 import { WhepPlayer, getRTCView, webrtcAvailable } from '../../lib/whip';
 import AppVideo from '../../components/AppVideo';
@@ -91,6 +96,15 @@ function LiveCard({
     return () => { show.remove(); hide.remove(); };
   }, []);
   const [donateOpen, setDonateOpen] = useState(false);
+  // Tap-reactions, kept apart from chat. They are the low-effort end of taking
+  // part — most viewers will never type — and they must not fill the transcript
+  // with a hundred single-emoji lines. Shaped {id,text} so FloatingReactions
+  // consumes them exactly like a message, with no changes to it at all.
+  const [reactions, setReactions] = useState<Array<{ id: string; text: string }>>([]);
+  const [reactEmoji, setReactEmoji] = useState(REACTIONS[0]);
+  const pushReaction = useCallback((emoji: string) => {
+    setReactions((prev) => [...prev, { id: `r${Date.now()}${Math.random()}`, text: emoji }].slice(-30));
+  }, []);
   // Latest donation broadcast → drives the Twitch-style alert overlay.
   const [donationEvent, setDonationEvent] = useState<LiveDonationEvent | null>(null);
   const channelRef = useRef<ReturnType<typeof joinLiveChannel> | null>(null);
@@ -130,7 +144,7 @@ function LiveCard({
     // away and back, and the chat must still show the history from when the viewer
     // joined — not reset to empty. The buffer is dropped naturally on unmount.
     return () => { handle.leave(); channelRef.current = null; setViewers(0); };
-  }, [active, stream.id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url, pushChat]);
+  }, [active, stream.id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url, pushChat, pushReaction]);
 
   const send = () => {
     const text = draft.trim();
@@ -262,9 +276,24 @@ function LiveCard({
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.send')} onPress={send} style={[styles.sendBtn, !!draft.trim() && styles.sendBtnActive, isLandscape && styles.sendBtnLandscape]} disabled={!draft.trim()}>
               <Ionicons name="arrow-up" size={18} color={draft.trim() ? '#000' : 'rgba(255,255,255,0.4)'} />
             </TouchableOpacity>
+            {/* One tap = one emoji on everyone's screen. Long-press cycles it,
+                so a room is never stuck on the same reaction all night. */}
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={t('live.react')}
+              onPress={() => channelRef.current?.sendReaction(reactEmoji)}
+              onLongPress={() => setReactEmoji((e) => REACTIONS[(REACTIONS.indexOf(e) + 1) % REACTIONS.length])}
+              style={[styles.reactBtn, isLandscape && styles.sendBtnLandscape]}
+            >
+              <Text style={styles.reactGlyph}>{reactEmoji}</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Emoji from chat and from the react button, drifting up together.
+          Pointer-transparent, so it never eats a tap on the video. */}
+      <FloatingReactions messages={[...chat, ...reactions]} />
 
       {canDonate && (
         <LiveDonateModal
@@ -621,6 +650,14 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 4,
   },
+  // Matches the send button's shape so the pair reads as one control strip.
+  reactBtn: {
+    width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center', justifyContent: 'center', marginLeft: 8,
+    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 4,
+  },
+  reactGlyph: { fontSize: 19 },
   // Postable draft → the button lights up solid white (with a black arrow) so it
   // reads as "ready to send"; a faint dark ring keeps it defined on light video.
   sendBtnActive: { backgroundColor: '#fff', borderColor: 'rgba(0,0,0,0.18)' },

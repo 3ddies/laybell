@@ -359,6 +359,14 @@ export type LiveChannelOpts = {
   // themselves from the CDN, in step — see lib/studioRadio.ts for why the audio
   // does not travel through LiveKit.
   onRadio?: (state: StudioRadioState) => void;
+  /**
+   * A tap-reaction: one emoji, floated on everyone's screen.
+   *
+   * Separate from chat on purpose. Reactions are the low-effort end of taking
+   * part — most people will never type, and a tap should not put a message in
+   * the transcript for everyone to scroll past.
+   */
+  onReaction?: (emoji: string) => void;
   // Host only: somebody just arrived and is asking what is on. Answering this
   // is what makes a late joiner hear the current song immediately instead of
   // waiting for the next heartbeat.
@@ -427,6 +435,12 @@ function joinBroadcastChannel(channelName: string, opts: LiveChannelOpts) {
   channel.on('broadcast', { event: 'ended' }, () => {
     opts.onEnded?.();
   });
+  channel.on('broadcast', { event: 'reaction' }, ({ payload }) => {
+    const e = (payload as { emoji?: unknown })?.emoji;
+    // Length-capped: this arrives from another client and lands straight in a
+    // <Text>. One emoji is one or two code points plus a possible modifier.
+    if (typeof e === 'string' && e.length > 0 && e.length <= 8) opts.onReaction?.(e);
+  });
   channel.on('broadcast', { event: 'radio' }, ({ payload }) => {
     if (payload) opts.onRadio?.(payload as StudioRadioState);
   });
@@ -473,6 +487,9 @@ function joinBroadcastChannel(channelName: string, opts: LiveChannelOpts) {
     // have no RLS view of the session row, so this IS their end signal).
     sendEnded() {
       channel.send({ type: 'broadcast', event: 'ended', payload: { at: Date.now() } }).catch(() => {});
+    },
+    sendReaction(emoji: string) {
+      channel.send({ type: 'broadcast', event: 'reaction', payload: { emoji: emoji.slice(0, 8) } }).catch(() => {});
     },
     // Host only: publish what is playing. Sent on every change AND on a
     // heartbeat, so a client that missed one packet is never wrong for long.
