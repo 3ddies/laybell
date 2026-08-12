@@ -98,6 +98,29 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
 .btn-primary { background:linear-gradient(90deg,var(--brand),var(--brand2)); color:#fff; }
 .btn-ghost { background:transparent; border:1px solid var(--line); color:var(--ink); }
 .btn[disabled] { opacity:.5; cursor:default; }
+/* The mic button carries its own state. "Am I live?" is the one question you
+   ask in the middle of a take, and it has to answer from across the room:
+   green means they can hear you, red means they cannot. Grey is the state
+   before a mic exists at all — never a lie about being live. */
+.btn-mic { background:transparent; border:1px solid var(--line); color:var(--ink); }
+.btn-mic.live  { background:rgba(34,197,94,.13);  border-color:var(--ok);  color:#7de3a5; }
+.btn-mic.muted { background:rgba(244,63,94,.13);  border-color:var(--err); color:#ff9aa8; }
+
+/* A fold inside the console, for controls most people never touch. Same
+   chevron language as the setup steps so one gesture works everywhere. */
+.fold { border:1px solid var(--line); border-radius:12px; background:#131218; padding:11px 13px; margin:14px 0 0; }
+.fold > summary { cursor:pointer; list-style:none; user-select:none; display:flex; align-items:center; gap:8px;
+  font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; }
+.fold > summary::-webkit-details-marker { display:none; }
+.fold > summary:after { content:"\203A"; margin-left:auto; color:var(--brand); font-weight:800; font-size:15px;
+  display:inline-block; transition:transform .18s ease; }
+.fold[open] > summary:after { transform:rotate(90deg); }
+.fold > summary:hover { color:var(--ink); }
+.fold > summary:focus-visible { outline:2px solid var(--brand); outline-offset:3px; border-radius:5px; }
+.fold .foldnote { text-transform:none; letter-spacing:0; font-weight:600; opacity:.8; }
+.fold.active .foldnote { color:var(--ok); opacity:1; }
+.fold .foldbody { padding-top:12px; }
+.fold .foldbody select:last-of-type { margin-bottom:0; }
 .hint { font-size:13px; color:var(--muted); line-height:1.55; }
 .status { font-size:13px; margin:6px 0 0; min-height:20px; }
 .status.ok { color:var(--ok); } .status.err { color:var(--err); }
@@ -234,10 +257,8 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
 
     <div class="meter"><div id="meterFill"></div></div>
 
-    <div class="row">
-      <button class="btn btn-ghost" id="muteBtn">Mute mic</button>
-      <button class="btn btn-primary" id="dawBtn">Share app audio</button>
-    </div>
+    <button class="btn btn-mic" id="muteBtn">Mic not ready</button>
+    <button class="btn btn-ghost" id="dawBtn">Share app audio</button>
     <!-- Shared-audio meter. "I clicked share" and "the room is hearing my beat"
          are different claims, and a share that captures SILENCE looks exactly
          like one that works — the button changes, no error appears, and the
@@ -255,10 +276,14 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
          entire room mix and takes your monitoring with it. This routes a single
          person to a single device, on a second audio element, so you keep
          hearing everything normally. -->
-    <label style="margin-top:14px">Send to my DAW <span style="text-transform:none;letter-spacing:0;font-weight:600;opacity:.75">— optional, for recording</span></label>
-    <select id="routeWho"></select>
-    <select id="routeWhere"></select>
-    <p class="hint" id="routeHint" style="font-size:12px;margin:-6px 0 12px"></p>
+    <details class="fold" id="routeFold">
+      <summary>Send to my DAW <span class="foldnote" id="routeState">— optional, for recording</span></summary>
+      <div class="foldbody">
+        <select id="routeWho"></select>
+        <select id="routeWhere"></select>
+        <p class="hint" id="routeHint" style="font-size:12px;margin:-6px 0 0"></p>
+      </div>
+    </details>
 
     <p class="status" id="roomStatus"></p>
       <button class="btn btn-ghost" id="leaveBtn" style="margin-top:14px">Leave</button>
@@ -266,16 +291,16 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     </div>
 
     <div class="col-steps">
-    <div class="sec"><h2>General setup</h2><span class="count">3 steps</span></div>
+    <div class="sec"><h2>General setup</h2><span class="count">3 steps · tap to open</span></div>
     <ol class="steps" id="steps">
 
-      <li id="stepMic"><details class="step" open><summary><b>Choose your mic.</b></summary>
+      <li id="stepMic"><details class="step"><summary><b>Choose your mic.</b></summary>
         <div class="stepbody">Pick your interface in the box above. Leave the preset on
         <i>Raw input</i> for an interface, an instrument, or anything already mixed — the signal then reaches the
         room untouched. The voice presets add real EQ and compression, which is right for a bare vocal and wrong
         for a beat. Watch the meter move before you go on.</div></details></li>
 
-      <li id="stepDaw"><details class="step" open><summary><b>Send your beat.</b></summary>
+      <li id="stepDaw"><details class="step"><summary><b>Send your beat.</b></summary>
         <div class="stepbody">Two ways, and the second is far more reliable on Windows.
         <div class="tip"><b>Best — send it as your “microphone”.</b> No screen capture involved, so nothing can
         quietly capture silence, and the room can never leak back into your DAW.
@@ -294,7 +319,7 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
         </div></details>
       </li>
 
-      <li id="stepHear"><details class="step" open><summary><b>Hear them — nothing to install.</b></summary>
+      <li id="stepHear"><details class="step"><summary><b>Hear them — nothing to install.</b></summary>
         <div class="stepbody">Leave your DAW's output and this browser's output
         <b>both on your headphones</b>. Your beat and their vocal mix in your ears and you are done: no extra
         software, no routing, and the artist can never hear themselves.
@@ -571,9 +596,10 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
   function setStatus(el, msg, cls) { el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
 
   // ── Setup steps ────────────────────────────────────────────────────────────
-  // Each step folds. A producer who has done this before wants three lines, not
-  // three screens. Two things drive it: folding one by hand is remembered, and
-  // a step the page can verify folds itself the moment it goes green.
+  // Every step starts SHUT. Three titles read as a checklist you can take in at
+  // a glance; three open steps read as a wall of text in front of the console.
+  // Open the one you need, and it stays open on your next visit; the page shuts
+  // one by itself when it can prove that step is done.
   var STEP_KEY = 'laybell.studio.step.';
   function stepStore(id, open) {
     try { localStorage.setItem(STEP_KEY + id, open ? '1' : '0'); } catch (e) {}
@@ -582,14 +608,14 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     var id = d.parentNode.id;
     var saved = null;
     try { saved = localStorage.getItem(STEP_KEY + id); } catch (e) {}
-    if (saved === '0') d.open = false;
+    if (saved === '1') d.open = true;
     // Persist ONLY folds the producer performed by hand. `toggle` alone cannot
-    // tell us that: Chrome fires it once at parse time for every step that
-    // starts open, and again when the page folds a finished step itself. Either
-    // would stamp a preference nobody expressed — and worse, the
-    // parse-time one marks all three "deliberately opened" on a first visit,
-    // which permanently defeats the auto-fold below. A preceding click on the
-    // summary is what makes a toggle real (Enter and Space fire one too).
+    // tell us that: it also fires when the page opens a remembered step here,
+    // and when it shuts a finished step by itself. Recording either would stamp
+    // a preference nobody expressed, and a step marked "deliberately opened"
+    // is one the auto-fold will never touch again. A click on the summary
+    // immediately before the toggle is what makes it real (Enter and Space
+    // fire one too).
     d.querySelector('summary').addEventListener('click', function () { d.dataset.user = '1'; });
     d.addEventListener('toggle', function () {
       if (d.dataset.user !== '1') return;
@@ -598,8 +624,9 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     });
   });
 
-  // Tick a step off. Done folds it away; undone brings it back, because a step
-  // that stopped being true is exactly the one they now need to read.
+  // Tick a step off. Done shuts it; undone returns it to whatever the producer
+  // last chose — which is shut unless they had opened it, since steps opening
+  // themselves is exactly what the default-shut layout is avoiding.
   function markStep(id, done) {
     var li = $(id); if (!li) return;
     li.classList.toggle('done', !!done);
@@ -607,7 +634,7 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     var saved = null;
     try { saved = localStorage.getItem(STEP_KEY + id); } catch (e) {}
     if (done && saved === '1') return;   // they deliberately opened it — leave it
-    d.open = !done;
+    d.open = done ? false : (saved === '1');
   }
 
   // Music-grade capture: raw signal, no voice processing, stereo 48k.
@@ -832,6 +859,11 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     if (prev) sel.value = prev;
   }
 
+  function setRouteState(text, on) {
+    $('routeState').textContent = text;
+    $('routeFold').classList.toggle('active', !!on);
+  }
+
   async function applyRoute() {
     if (routedEl) {
       try { routedEl.pause(); routedEl.srcObject = null; routedEl.remove(); } catch (_) {}
@@ -839,6 +871,10 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     }
     var who = $('routeWho').value, sink = $('routeWhere').value;
     $('routeHint').textContent = '';
+    // The fold is shut most of the time, so its title has to carry the answer.
+    // A routing that quietly stopped, hidden inside a closed panel, is how a
+    // take gets recorded into nothing.
+    setRouteState('— optional, for recording', false);
     if (!who || !room) return;
 
     var person = null;
@@ -860,6 +896,7 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
       await el.setSinkId(sink);
       var where = $('routeWhere').selectedOptions[0];
       $('routeHint').textContent = 'Only ' + (person.name || person.identity) + ' → ' + (where ? where.textContent : 'that device');
+      setRouteState('— sending ' + (person.name || person.identity), true);
       routedEl = el;
     } catch (_) {
       $('routeHint').textContent = 'Could not route to that device.';
@@ -873,6 +910,7 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     try {
       // Tear down the previous publication + capture.
       if (micPub) { try { await room.localParticipant.unpublishTrack(micPub.track, true); } catch (_) {} micPub = null; }
+      paintMute();   // grey while there is genuinely no mic published
       stopChain();
 
       var constraints = Object.assign({}, preset.capture);
@@ -903,9 +941,11 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
         name: 'mic-audio', source: LK.Track.Source.Microphone,
       }));
       if (muted) { try { micPub.track.mute(); } catch (_) {} }
+      paintMute();
       runMeter(analyser);
       setStatus($('roomStatus'), '', '');
     } catch (e) {
+      paintMute();
       setStatus($('roomStatus'), 'Could not open that microphone.', 'err');
     }
   }
@@ -960,11 +1000,22 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     });
   }
 
+  // Paint the mic button from the real publication, not from what was clicked.
+  // Grey is reserved for "there is no mic yet" — showing live green before a
+  // track exists would be the one lie this button must never tell.
+  function paintMute() {
+    var b = $('muteBtn');
+    var haveMic = !!(micPub && micPub.track);
+    b.classList.toggle('live', haveMic && !muted);
+    b.classList.toggle('muted', haveMic && muted);
+    b.textContent = !haveMic ? 'Mic not ready' : (muted ? 'Unmute mic — you are muted' : 'Mute mic');
+  }
+
   function toggleMute() {
     if (!micPub || !micPub.track) return;
     muted = !muted;
     if (muted) micPub.track.mute(); else micPub.track.unmute();
-    $('muteBtn').textContent = muted ? 'Unmute mic' : 'Mute mic';
+    paintMute();
   }
 
   // The DAW connector: capture a window/screen WITH audio and publish only the
