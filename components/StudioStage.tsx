@@ -126,14 +126,45 @@ export const CountPop = memo(function CountPop({ value }: { value: number }) {
   );
 });
 
+/**
+ * One face on the stage.
+ *
+ * The listener screen does not pass these — it derives the cast from the roster
+ * and LiveKit presence, which is all an audience can see. The SESSION screens
+ * do, because they know things an audience never does: who is connected but
+ * seated silently, who is a DAW guest with no Laybell account, whose mic is
+ * off, and who the host is allowed to remove.
+ */
+export type StagePerson = {
+  /** LiveKit identity — this is the key audio levels arrive under. */
+  id: string;
+  name: string;
+  avatarUrl?: string | null;
+  isHost?: boolean;
+  /** A web/DAW connector: no profile, no avatar, gets the laptop glyph. */
+  isGuest?: boolean;
+  micOff?: boolean;
+  /** Draw the host's remove affordance. */
+  removable?: boolean;
+  /** Seated but not connected to audio yet — dimmed, as before. */
+  offline?: boolean;
+};
+
 type Props = {
   room: Room | null;
   roster: StudioMember[];
   onPressMember: (userId: string) => void;
   hostLabel: string;
+  /**
+   * Explicit cast. When given, it replaces the roster∩presence list the
+   * audience view computes for itself — the session screens already track
+   * exactly who is in the room and need to show more than a listener can.
+   */
+  people?: StagePerson[];
+  youLabel?: string;
 };
 
-function StudioStage({ room, roster, onPressMember, hostLabel }: Props) {
+function StudioStage({ room, roster, onPressMember, hostLabel, people }: Props) {
   const reduce = useReduceMotion();
 
   // One Animated.Value per member plus one for the room. Kept in a ref and
@@ -184,6 +215,18 @@ function StudioStage({ room, roster, onPressMember, hostLabel }: Props) {
         if (lv > peak) peak = lv;
         if (p.isSpeaking && lv > loudest) { loudest = lv; loudestId = p.identity; }
       });
+      // YOU. On the audience screen the local participant is a hidden listener
+      // publishing nothing, so this reads 0 and costs nothing. In a session it
+      // is the whole point — without it the host's own circle is the one face
+      // on stage that never reacts to its owner talking.
+      const me: any = (room as any).localParticipant;
+      if (me?.identity) {
+        const lv = Math.max(0, Math.min(1, (me.audioLevel || 0) * LEVEL_GAIN));
+        seen.add(me.identity);
+        drive(levelFor(me.identity), lv);
+        if (lv > peak) peak = lv;
+        if (me.isSpeaking && lv > loudest) { loudest = lv; loudestId = me.identity; }
+      }
       // Anyone in the roster the room is not reporting has gone quiet or left.
       levels.forEach((v, id) => { if (!seen.has(id)) drive(v, 0); });
       drive(roomLevel, peak);
@@ -207,12 +250,21 @@ function StudioStage({ room, roster, onPressMember, hostLabel }: Props) {
     return () => { alive = false; clearInterval(iv); };
   }, [room, levels, levelFor, roomLevel]);
 
-  // `present` is null only until the first sample lands. Falling back to the
-  // roster for that one tick avoids an empty stage flashing on connect;
-  // afterwards an empty list is the truth and is rendered as one.
-  const onAir = present === null ? roster : roster.filter((m) => present.includes(m.user_id));
+  // An explicit cast wins. Otherwise derive it the audience way: the roster,
+  // filtered to whoever LiveKit says is actually here. `present` is null only
+  // until the first sample lands — falling back to the roster for that one tick
+  // avoids an empty stage flashing on connect; afterwards an empty list is the
+  // truth and is rendered as one.
+  const onAir: StagePerson[] = people ?? (
+    present === null ? roster : roster.filter((m) => present.includes(m.user_id))
+  ).map((m) => ({
+    id: m.user_id,
+    name: m.display_name || m.username || '',
+    avatarUrl: m.avatar_url,
+    isHost: m.role === 'host',
+  }));
   const onMicName = onMic
-    ? (() => { const m = onAir.find((r) => r.user_id === onMic); return m?.display_name || m?.username || null; })()
+    ? (onAir.find((p) => p.id === onMic)?.name || null)
     : null;
   const size = avatarSize(onAir.length);
 
@@ -231,15 +283,15 @@ function StudioStage({ room, roster, onPressMember, hostLabel }: Props) {
 
       {/* On-air artists */}
       <View style={styles.grid}>
-        {onAir.map((m) => (
+        {onAir.map((p) => (
           <SpeakerTile
-            key={m.user_id}
-            member={m}
+            key={p.id}
+            person={p}
             size={size}
-            level={levelFor(m.user_id)}
+            level={levelFor(p.id)}
             reduce={reduce}
             hostLabel={hostLabel}
-            onPress={() => onPressMember(m.user_id)}
+            onPress={() => onPressMember(p.id)}
           />
         ))}
       </View>
@@ -295,16 +347,16 @@ const Bar = memo(function Bar({
 });
 
 const SpeakerTile = memo(function SpeakerTile({
-  member, size, level, reduce, hostLabel, onPress,
+  person, size, level, reduce, hostLabel, onPress,
 }: {
-  member: StudioMember;
+  person: StagePerson;
   size: number;
   level: Animated.Value;
   reduce: boolean;
   hostLabel: string;
   onPress: () => void;
 }) {
-  const name = member.display_name || member.username || '';
+  const name = person.name;
   // Three layers of the same signal, so it reads at a glance and up close:
   // a soft white bloom that swells, a crisp ring that snaps on, and the whole
   // circle lifting very slightly. White rather than brand orange — against the
@@ -325,25 +377,45 @@ const SpeakerTile = memo(function SpeakerTile({
   const wrap = { width: size, height: size, borderRadius: size / 2 };
   const inner = size - 10;
   return (
-    <TouchableOpacity style={[styles.tile, { width: size + 12 }]} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity
+      style={[styles.tile, { width: size + 12 }, person.offline && { opacity: 0.45 }]}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
       <Animated.View style={[styles.tileAvatarWrap, wrap, reduce ? null : lift]}>
         {!reduce && <Animated.View style={[styles.bloom, wrap, bloom]} pointerEvents="none" />}
         <Animated.View
           style={[styles.ring, wrap, { borderWidth: size >= 112 ? 3 : 2.5 }, ring]}
           pointerEvents="none"
         />
-        {member.avatar_url ? (
-          <Image source={{ uri: member.avatar_url }} style={[styles.tileAvatar, { width: inner, height: inner, borderRadius: inner / 2 }]} />
+        {person.avatarUrl ? (
+          <Image source={{ uri: person.avatarUrl }} style={[styles.tileAvatar, { width: inner, height: inner, borderRadius: inner / 2 }]} />
         ) : (
           <LinearGradient colors={GRADIENTS.avatar} style={[styles.tileAvatar, { width: inner, height: inner, borderRadius: inner / 2 }]}>
-            <Text style={[styles.tileInitial, { fontSize: Math.round(inner * 0.36) }]}>
-              {(name || '?').charAt(0).toUpperCase()}
-            </Text>
+            {person.isGuest ? (
+              <Ionicons name="laptop-outline" size={Math.round(inner * 0.34)} color="#fff" />
+            ) : (
+              <Text style={[styles.tileInitial, { fontSize: Math.round(inner * 0.36) }]}>
+                {(name || '?').charAt(0).toUpperCase()}
+              </Text>
+            )}
           </LinearGradient>
+        )}
+
+        {/* Badges the audience view never passes, so it never draws them. */}
+        {person.micOff && (
+          <View style={[styles.micOff, { width: size * 0.26, height: size * 0.26, borderRadius: size * 0.13 }]}>
+            <Ionicons name="mic-off" size={Math.round(size * 0.14)} color="#fff" />
+          </View>
+        )}
+        {person.removable && (
+          <View style={[styles.removeBadge, { width: size * 0.24, height: size * 0.24, borderRadius: size * 0.12 }]}>
+            <Ionicons name="close" size={Math.round(size * 0.14)} color="#fff" />
+          </View>
         )}
       </Animated.View>
       <Text style={[styles.tileName, { maxWidth: size + 10 }]} numberOfLines={1}>{name}</Text>
-      {member.role === 'host' && <Text style={styles.hostTag}>{hostLabel}</Text>}
+      {person.isHost && <Text style={styles.hostTag}>{hostLabel}</Text>}
     </TouchableOpacity>
   );
 });
@@ -358,6 +430,8 @@ const styles = StyleSheet.create({
   tile: { alignItems: 'center', gap: 9 },
   tileAvatarWrap: { alignItems: 'center', justifyContent: 'center' },
   bloom: { position: 'absolute', backgroundColor: '#fff' },
+  micOff: { position: 'absolute', bottom: 0, right: 2, backgroundColor: '#F43F5E', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#0B0908' },
+  removeBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.35)' },
   ring: { position: 'absolute', borderColor: 'rgba(255,255,255,0.92)' },
   tileAvatar: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   tileInitial: { color: '#fff', fontWeight: '700' },

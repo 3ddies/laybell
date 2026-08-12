@@ -27,6 +27,7 @@ import { displayedTier } from '../../lib/badges';
 import { joinStudioChannel, type LiveChannelHandle, type LiveDonationEvent } from '../../lib/live';
 import { useStudioRadio } from '../../hooks/useStudioRadio';
 import { useAudioControls } from '../../contexts/AudioContext';
+import StudioStage, { type StagePerson } from '../../components/StudioStage';
 import StudioRadioBar from '../../components/StudioRadioBar';
 import StudioRadioPicker from '../../components/StudioRadioPicker';
 import { fetchStudioEarnings } from '../../lib/donations';
@@ -378,6 +379,38 @@ export default function StudioRoomScreen() {
   const byId = new Map(roster.map((m) => [m.user_id, m]));
   const selected = VOCAL_PRESETS.find((p) => p.key === preset) ?? VOCAL_PRESETS[1];
 
+  // The cast for the stage: everyone actually connected, then the seats of
+  // people who have not joined audio yet, dimmed — the same two groups the old
+  // tile grid drew, in the same order.
+  const stageCast: StagePerson[] = [
+    ...(conn === 'connected' ? live : []).map((p: any) => {
+      const member = byId.get(p.identity);
+      return {
+        id: p.identity,
+        name: p.isLocal
+          ? t('studio.you')
+          : member?.display_name || member?.username || p.name || t('studio.guest'),
+        avatarUrl: member?.avatar_url ?? null,
+        isHost: member?.role === 'host',
+        isGuest: !member && !p.isLocal,
+        micOff: p.isLocal ? muted : p.isMicrophoneEnabled === false,
+        // A guest holds no seat, but removing one still works — it closes their
+        // LiveKit connection, which is all a guest has.
+        removable: isHost && !p.isLocal && member?.role !== 'host',
+      };
+    }),
+    ...roster
+      .filter((m) => !live.some((p: any) => p.identity === m.user_id))
+      .map((m) => ({
+        id: m.user_id,
+        name: m.display_name || m.username || '',
+        avatarUrl: m.avatar_url,
+        isHost: m.role === 'host',
+        offline: true,
+        removable: isHost && m.role !== 'host' && m.user_id !== profile?.id,
+      })),
+  ];
+
   return (
     <SwipeBackPager
       // Horizontal swipe-back is OFF here. A sideways flick while reaching for a control would end a live session for
@@ -467,93 +500,30 @@ export default function StudioRoomScreen() {
             </View>
           </View>
 
-          {/* Participants */}
-          <View style={styles.grid}>
-            {conn === 'connecting' && <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />}
-            {(conn === 'connected' ? live : []).map((p) => {
-              const member = byId.get(p.identity);
-              const name = p.isLocal
-                ? t('studio.you')
-                : member?.display_name || member?.username || p.name || t('studio.guest');
-              const speaking = p.isSpeaking;
-              const micOff = p.isLocal ? muted : p.isMicrophoneEnabled === false;
-              const isGuest = !member && !p.isLocal;
-              // The host can remove anyone but themselves — including a web/DAW
-              // guest, who has no seat to revoke and exists only in LiveKit.
-              const canKick = isHost && !p.isLocal && member?.role !== 'host';
-              return (
-                <TouchableOpacity
-                  key={p.identity}
-                  style={styles.tile}
-                  activeOpacity={canKick ? 0.7 : 1}
-                  disabled={!canKick}
-                  accessibilityRole={canKick ? 'button' : undefined}
-                  accessibilityLabel={canKick ? t('studio.removeFrom', { name }) : undefined}
-                  onPress={() => canKick && setConfirmKick({ identity: p.identity, name })}
-                >
-                  <View style={[styles.tileAvatarWrap, speaking && { borderColor: colors.primary }]}>
-                    {member?.avatar_url ? (
-                      <Image source={{ uri: member.avatar_url }} style={styles.tileAvatar} />
-                    ) : (
-                      <LinearGradient colors={GRADIENTS.avatar} style={styles.tileAvatar}>
-                        {isGuest
-                          ? <Ionicons name="laptop-outline" size={22} color="#fff" />
-                          : <Text style={styles.tileInitial}>{name.charAt(0).toUpperCase()}</Text>}
-                      </LinearGradient>
-                    )}
-                    {micOff && (
-                      <View style={styles.micOffBadge}>
-                        <Ionicons name="mic-off" size={11} color="#fff" />
-                      </View>
-                    )}
-                    {canKick && (
-                      <View style={styles.kickBadge}>
-                        <Ionicons name="close" size={12} color="#fff" />
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.tileName} numberOfLines={1}>{name}</Text>
-                  {member?.role === 'host' && <Text style={styles.hostTag}>{t('studio.host')}</Text>}
-                </TouchableOpacity>
-              );
-            })}
-            {/* Members not yet connected to audio. Removable too — a seat held
-                by someone who never came back is the commonest reason a host
-                needs this at all, and the 12-seat cap is real. */}
-            {conn !== 'connecting' && roster
-              .filter((m) => !live.some((p) => p.identity === m.user_id))
-              .map((m) => {
-                const mName = m.display_name || m.username || '';
-                const canKickSeat = isHost && m.role !== 'host' && m.user_id !== profile?.id;
-                return (
-                <TouchableOpacity
-                  key={m.user_id}
-                  style={[styles.tile, { opacity: 0.45 }]}
-                  activeOpacity={canKickSeat ? 0.7 : 1}
-                  disabled={!canKickSeat}
-                  accessibilityRole={canKickSeat ? 'button' : undefined}
-                  accessibilityLabel={canKickSeat ? t('studio.removeFrom', { name: mName }) : undefined}
-                  onPress={() => canKickSeat && setConfirmKick({ identity: m.user_id, name: mName })}
-                >
-                  <View style={styles.tileAvatarWrap}>
-                    {m.avatar_url ? (
-                      <Image source={{ uri: m.avatar_url }} style={styles.tileAvatar} />
-                    ) : (
-                      <LinearGradient colors={GRADIENTS.avatar} style={styles.tileAvatar}>
-                        <Text style={styles.tileInitial}>{(m.display_name || m.username || '?').charAt(0).toUpperCase()}</Text>
-                      </LinearGradient>
-                    )}
-                    {canKickSeat && (
-                      <View style={styles.kickBadge}>
-                        <Ionicons name="close" size={12} color="#fff" />
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.tileName} numberOfLines={1}>{mName}</Text>
-                  {m.role === 'host' && <Text style={styles.hostTag}>{t('studio.host')}</Text>}
-                </TouchableOpacity>
-              ); })}
-          </View>
+          {/* The stage — the same one the audience sees. Big circles that
+              bloom with whoever is talking, a field driven by the room's real
+              audio, and the current speaker named underneath.
+
+              The session passes an explicit cast rather than letting the stage
+              derive it from the roster, because this screen knows three things
+              an audience never does: YOU are in the room (the local
+              participant, who is not in remoteParticipants and would otherwise
+              be the one face that never reacts to its owner), DAW guests are
+              here without a Laybell account, and the host may remove people. */}
+          {conn === 'connecting' ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
+          ) : (
+            <StudioStage
+              room={roomRef.current}
+              roster={roster}
+              hostLabel={t('studio.host')}
+              people={stageCast}
+              onPressMember={(identity) => {
+                const target = stageCast.find((p) => p.id === identity);
+                if (target?.removable) setConfirmKick({ identity, name: target.name });
+              }}
+            />
+          )}
 
           {/* The ON AIR card only. The button that opens the crate lives down in
               the broadcast group with the other things you can choose to do
@@ -849,22 +819,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   artistTitle: { color: c.text, fontSize: 13, fontWeight: '700', letterSpacing: -0.1 },
   dawRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
   dawText: { flex: 1, color: c.textTertiary, fontSize: 12, lineHeight: 17 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, justifyContent: 'center', paddingVertical: 8 },
-  tile: { width: 86, alignItems: 'center', gap: 6 },
-  tileAvatarWrap: { width: 68, height: 68, borderRadius: 34, borderWidth: 2.5, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
-  tileAvatar: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  tileInitial: { color: '#fff', fontSize: 22, fontWeight: '700' },
-  micOffBadge: { position: 'absolute', bottom: 2, right: 2, width: 20, height: 20, borderRadius: 10, backgroundColor: '#F43F5E', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: c.background },
   radioWrap: { marginBottom: 14 },
   settingRowRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   radioCount: {
     color: '#fff', fontSize: 11, fontWeight: '800', overflow: 'hidden',
     backgroundColor: 'rgba(242,101,34,0.85)', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2,
   },
-  // Sits opposite the mic badge so the two never collide on one avatar.
-  kickBadge: { position: 'absolute', top: 0, right: 0, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: c.background },
-  tileName: { color: c.text, fontSize: 12, fontWeight: '600', maxWidth: 84 },
-  hostTag: { color: c.textTertiary, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   presetCard: { backgroundColor: c.surface, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, padding: 14, gap: 10 },
   presetRow: { gap: 8 },
   presetPill: {
