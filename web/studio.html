@@ -137,8 +137,20 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
   background:#22212a; border:1px solid var(--line); color:#fff; font-size:11px; font-weight:800;
   display:flex; align-items:center; justify-content:center; }
 .steps li.done:before { content:"\2713"; background:var(--ok); border-color:var(--ok); color:#062b14; }
-.steps li.done > b:first-child { color:var(--muted); text-decoration:line-through; text-decoration-color:var(--line); }
+.steps li.done summary b { color:var(--muted); text-decoration:line-through; text-decoration-color:var(--line); }
 .steps b { color:#fff; }
+
+/* Each step folds away. A producer on their third session should not have to
+   scroll past setup they finished weeks ago. Steps the page can tick off close
+   themselves; anything folded by hand stays folded on the next visit. */
+.steps details.step > summary { cursor:pointer; list-style:none; display:block; user-select:none; }
+.steps details.step > summary::-webkit-details-marker { display:none; }
+.steps details.step > summary:after { content:"\203A"; margin-left:7px; color:var(--brand); font-weight:800;
+  display:inline-block; transition:transform .18s ease; }
+.steps details.step[open] > summary:after { transform:rotate(90deg); }
+.steps details.step > summary:hover b { color:var(--brand); }
+.steps details.step > summary:focus-visible { outline:2px solid var(--brand); outline-offset:3px; border-radius:5px; }
+.steps .stepbody { padding-top:7px; }
 
 /* Accordion. Each guide answers one question and says up front who needs it,
    so nobody reads five parts to find out they needed none of them. */
@@ -257,12 +269,14 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     <div class="sec"><h2>General setup</h2><span class="count">3 steps</span></div>
     <ol class="steps" id="steps">
 
-      <li id="stepMic"><b>Choose your mic.</b> Pick your interface in the box above. Leave the preset on
+      <li id="stepMic"><details class="step" open><summary><b>Choose your mic.</b></summary>
+        <div class="stepbody">Pick your interface in the box above. Leave the preset on
         <i>Raw input</i> for an interface, an instrument, or anything already mixed — the signal then reaches the
         room untouched. The voice presets add real EQ and compression, which is right for a bare vocal and wrong
-        for a beat. Watch the meter move before you go on.</li>
+        for a beat. Watch the meter move before you go on.</div></details></li>
 
-      <li id="stepDaw"><b>Send your beat.</b> Two ways, and the second is far more reliable on Windows.
+      <li id="stepDaw"><details class="step" open><summary><b>Send your beat.</b></summary>
+        <div class="stepbody">Two ways, and the second is far more reliable on Windows.
         <div class="tip"><b>Best — send it as your “microphone”.</b> No screen capture involved, so nothing can
         quietly capture silence, and the room can never leak back into your DAW.
         <b>1.</b> Your DAW's audio <b>output</b> → <b>CABLE Input</b>.
@@ -277,15 +291,18 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
         for a <b>Chrome Tab</b> or <b>Entire Screen</b> — a <b>Window</b> share often carries no audio at all, and
         fails silently. <b>Watch the shared-audio meter above:</b> if it says <i>no signal</i> while your DAW is
         playing, use the method above instead.</p>
+        </div></details>
       </li>
 
-      <li id="stepHear"><b>Hear them — nothing to install.</b> Leave your DAW's output and this browser's output
+      <li id="stepHear"><details class="step" open><summary><b>Hear them — nothing to install.</b></summary>
+        <div class="stepbody">Leave your DAW's output and this browser's output
         <b>both on your headphones</b>. Your beat and their vocal mix in your ears and you are done: no extra
         software, no routing, and the artist can never hear themselves.
         <div class="warn"><b>Do not send the room back into your DAW</b> unless you follow the recording guide
         exactly. Chrome shares your DAW's <b>whole master</b>, so the moment their vocal plays inside your DAW it
         is being sent straight back to them — they hear themselves a beat late, and it can build into a howl.
         This is the most common way to break a session.</div>
+        </div></details>
       </li>
 
     </ol>
@@ -552,6 +569,46 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
   if (preCode) $('code').value = preCode.toUpperCase();
 
   function setStatus(el, msg, cls) { el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
+
+  // ── Setup steps ────────────────────────────────────────────────────────────
+  // Each step folds. A producer who has done this before wants three lines, not
+  // three screens. Two things drive it: folding one by hand is remembered, and
+  // a step the page can verify folds itself the moment it goes green.
+  var STEP_KEY = 'laybell.studio.step.';
+  function stepStore(id, open) {
+    try { localStorage.setItem(STEP_KEY + id, open ? '1' : '0'); } catch (e) {}
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.steps li > details.step'), function (d) {
+    var id = d.parentNode.id;
+    var saved = null;
+    try { saved = localStorage.getItem(STEP_KEY + id); } catch (e) {}
+    if (saved === '0') d.open = false;
+    // Persist ONLY folds the producer performed by hand. `toggle` alone cannot
+    // tell us that: Chrome fires it once at parse time for every step that
+    // starts open, and again when the page folds a finished step itself. Either
+    // would stamp a preference nobody expressed — and worse, the
+    // parse-time one marks all three "deliberately opened" on a first visit,
+    // which permanently defeats the auto-fold below. A preceding click on the
+    // summary is what makes a toggle real (Enter and Space fire one too).
+    d.querySelector('summary').addEventListener('click', function () { d.dataset.user = '1'; });
+    d.addEventListener('toggle', function () {
+      if (d.dataset.user !== '1') return;
+      delete d.dataset.user;
+      stepStore(id, d.open);
+    });
+  });
+
+  // Tick a step off. Done folds it away; undone brings it back, because a step
+  // that stopped being true is exactly the one they now need to read.
+  function markStep(id, done) {
+    var li = $(id); if (!li) return;
+    li.classList.toggle('done', !!done);
+    var d = li.querySelector('details.step'); if (!d) return;
+    var saved = null;
+    try { saved = localStorage.getItem(STEP_KEY + id); } catch (e) {}
+    if (done && saved === '1') return;   // they deliberately opened it — leave it
+    d.open = !done;
+  }
 
   // Music-grade capture: raw signal, no voice processing, stereo 48k.
   var STUDIO_AUDIO = {
@@ -934,11 +991,11 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
       // Tick the step so the producer can see at a glance that the beat is
       // actually going out — 'I clicked it' and 'it is publishing' are not the
       // same thing, and the silent-capture failure looks identical to success.
-      $('stepDaw').classList.add('done');
+      markStep('stepDaw', true);
       runDawMeter(audio);
       audio.addEventListener('ended', function () {
         setStatus($('roomStatus'), 'App audio share stopped — hit Share app audio again.', 'err');
-        $('stepDaw').classList.remove('done');
+        markStep('stepDaw', false);
         stopDawMeter();
         dawTrack = null;
       });
