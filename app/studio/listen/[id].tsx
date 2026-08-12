@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Image, TextInput, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator,
   KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Room } from 'livekit-client';
 import SwipeBackPager from '../../../components/SwipeBackPager';
+import StudioStage, { CountPop, LiveDot } from '../../../components/StudioStage';
 import LiveChatOverlay, { useBufferedChat } from '../../../components/LiveChatOverlay';
 import LiveDonateModal from '../../../components/LiveDonateModal';
 import LiveDonationAlerts from '../../../components/LiveDonationAlerts';
@@ -210,10 +211,6 @@ export default function StudioListenScreen() {
   }
 
   const hostName = hostProfile?.display_name || hostProfile?.username || '';
-  const room = roomRef.current;
-  const speakingIds = new Set(
-    room ? [...room.remoteParticipants.values()].filter((p) => p.isSpeaking).map((p) => p.identity) : [],
-  );
 
   return (
     <SwipeBackPager>
@@ -226,12 +223,12 @@ export default function StudioListenScreen() {
             <Ionicons name="chevron-back" size={24} color="#fff" />
           </TouchableOpacity>
           <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
+            <LiveDot />
             <Text style={styles.liveBadgeText}>{t('studio.liveStudio')}</Text>
           </View>
           <View style={styles.listenerPill}>
             <Ionicons name="headset-outline" size={13} color="#fff" />
-            <Text style={styles.listenerPillText}>{listeners}</Text>
+            <CountPop value={listeners} />
           </View>
         </View>
 
@@ -278,63 +275,81 @@ export default function StudioListenScreen() {
               {!!hostName && <Text style={styles.hostLine}>{t('studio.hostedBy', { name: hostName })}</Text>}
             </View>
 
-            {/* On-air artists */}
-            <View style={styles.grid}>
-              {roster.map((m) => {
-                const speaking = speakingIds.has(m.user_id);
-                return (
-                  <TouchableOpacity
-                    key={m.user_id}
-                    style={styles.tile}
-                    onPress={() => router.push(`/profile/${m.user_id}`)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[styles.tileAvatarWrap, speaking && { borderColor: colors.primary }]}>
-                      {m.avatar_url ? (
-                        <Image source={{ uri: m.avatar_url }} style={styles.tileAvatar} />
-                      ) : (
-                        <LinearGradient colors={GRADIENTS.avatar} style={styles.tileAvatar}>
-                          <Text style={styles.tileInitial}>{(m.display_name || m.username || '?').charAt(0).toUpperCase()}</Text>
-                        </LinearGradient>
-                      )}
-                    </View>
-                    <Text style={styles.tileName} numberOfLines={1}>{m.display_name || m.username}</Text>
-                    {m.role === 'host' && <Text style={styles.hostTag}>{t('studio.host')}</Text>}
-                  </TouchableOpacity>
-                );
-              })}
+            {/* The stage — big circles that bloom with whoever is talking, and
+                a field driven by the room's actual audio. Given the whole
+                middle of the screen and centred in it. */}
+            <View style={styles.stageWrap}>
+              <StudioStage
+                room={roomRef.current}
+                roster={roster}
+                hostLabel={t('studio.host')}
+                onPressMember={(userId) => router.push(`/profile/${userId}`)}
+              />
             </View>
-
-            <View style={{ flex: 1 }} />
 
             {/* Chat + actions, pinned above the input */}
             <View style={styles.bottom}>
-              <LiveChatOverlay
-                messages={chat}
-                maxHeight={190}
-                onPressName={(m) => router.push(`/profile/${m.userId}`)}
-              />
+              {/* Messages dissolve upward into the background instead of being
+                  clipped by a hard edge. */}
+              <View style={styles.chatWrap}>
+                <LiveChatOverlay
+                  messages={chat}
+                  maxHeight={200}
+                  onPressName={(m) => router.push(`/profile/${m.userId}`)}
+                />
+                <LinearGradient
+                  colors={['#000', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']}
+                  style={styles.chatFade}
+                  pointerEvents="none"
+                />
+              </View>
+
               <View style={styles.actionsRow}>
                 <View style={styles.inputWrap}>
                   <TextInput
                     style={styles.input}
                     placeholder={t('live.chatPlaceholder')}
-                    placeholderTextColor="rgba(255,255,255,0.5)"
+                    placeholderTextColor="rgba(255,255,255,0.45)"
                     value={draft}
                     onChangeText={setDraft}
                     maxLength={300}
                     onSubmitEditing={sendChat}
                     returnKeyType="send"
                   />
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.send')} onPress={sendChat} disabled={!draft.trim()} style={[styles.sendBtn, !draft.trim() && { opacity: 0.4 }]}>
-                    <Ionicons name="arrow-up" size={17} color="#fff" />
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={t('a11y.send')}
+                    onPress={sendChat}
+                    disabled={!draft.trim()}
+                    activeOpacity={0.85}
+                    style={!draft.trim() && { opacity: 0.35 }}
+                  >
+                    <LinearGradient colors={GRADIENTS.primary} style={styles.sendBtn}>
+                      <Ionicons name="arrow-up" size={17} color="#fff" />
+                    </LinearGradient>
                   </TouchableOpacity>
                 </View>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.tip')} style={styles.roundBtn} onPress={() => setDonateOpen(true)} activeOpacity={0.85}>
-                  <Ionicons name="cash-outline" size={20} color="#fff" />
-                </TouchableOpacity>
+
+                {/* Tipping is the one action that should look like money. */}
                 <TouchableOpacity
-                  style={[styles.roundBtn, reqState === 'pending' && styles.roundBtnPending]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y.tip')}
+                  onPress={() => setDonateOpen(true)}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient colors={GRADIENTS.primaryWarm} style={styles.tipBtn}>
+                    <Ionicons name="cash-outline" size={21} color="#fff" />
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={t('studio.requestHint')}
+                  style={[
+                    styles.roundBtn,
+                    reqState === 'pending' && styles.roundBtnPending,
+                    reqState === 'declined' && styles.roundBtnDeclined,
+                  ]}
                   onPress={onRequestJoin}
                   disabled={reqState === 'busy'}
                   activeOpacity={0.85}
@@ -380,7 +395,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 8 },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F43F5E', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' },
   liveBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   listenerPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, marginLeft: 'auto', marginRight: 6 },
   listenerPillText: { color: '#fff', fontSize: 12, fontWeight: '700' },
@@ -389,22 +403,26 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   endedTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
   endedBtn: { backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 999, paddingHorizontal: 26, paddingVertical: 11, marginTop: 4 },
   endedBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  meta: { paddingHorizontal: 20, paddingTop: 14, gap: 4 },
-  title: { color: '#fff', fontSize: 22, fontWeight: '800' },
-  hostLine: { color: 'rgba(255,255,255,0.65)', fontSize: 13 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, justifyContent: 'center', paddingVertical: 22, paddingHorizontal: 16 },
-  tile: { width: 84, alignItems: 'center', gap: 6 },
-  tileAvatarWrap: { width: 72, height: 72, borderRadius: 36, borderWidth: 2.5, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
-  tileAvatar: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  tileInitial: { color: '#fff', fontSize: 24, fontWeight: '700' },
-  tileName: { color: '#fff', fontSize: 12, fontWeight: '600', maxWidth: 82 },
-  hostTag: { color: 'rgba(255,255,255,0.55)', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  meta: { paddingHorizontal: 20, paddingTop: 14, gap: 4, alignItems: 'center' },
+  title: { color: '#fff', fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  hostLine: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
+  stageWrap: { flex: 1, justifyContent: 'center' },
   bottom: { paddingHorizontal: 14, gap: 10 },
-  actionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  inputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 999, paddingLeft: 14, paddingRight: 4, height: 42 },
+  chatWrap: { position: 'relative' },
+  chatFade: { position: 'absolute', top: 0, left: 0, right: 0, height: 46 },
+  actionsRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  inputWrap: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.09)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderRadius: 999, paddingLeft: 15, paddingRight: 5, height: 46,
+  },
   input: { flex: 1, color: '#fff', fontSize: 14 },
-  sendBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' },
-  roundBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
-  roundBtnPending: { backgroundColor: 'rgba(242,101,34,0.5)' },
-  reqHint: { color: 'rgba(255,255,255,0.45)', fontSize: 11, textAlign: 'right' },
+  sendBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  tipBtn: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  roundBtn: {
+    width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.09)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center',
+  },
+  roundBtnPending: { backgroundColor: 'rgba(242,101,34,0.28)', borderColor: c.primary },
+  roundBtnDeclined: { backgroundColor: 'rgba(244,63,94,0.20)', borderColor: 'rgba(244,63,94,0.6)' },
+  reqHint: { color: 'rgba(255,255,255,0.42)', fontSize: 11, textAlign: 'center' },
 });
