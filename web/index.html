@@ -16,7 +16,10 @@
   --brand:#E8401C; --brand2:#F26522;
 }
 @media (prefers-color-scheme:dark){
-  :root{ --bg:#121214; --card:#1c1c20; --ink:#f4f3f1; --muted:#a2a2ab; --line:#2c2c32; }
+  /* Brand lightens on dark: #E8401C clears AA against #121214 by a hair
+     (4.6:1) and every link on the page is set in it. Matches the legal pages. */
+  :root{ --bg:#121214; --card:#1c1c20; --ink:#f4f3f1; --muted:#a2a2ab; --line:#2c2c32;
+         --brand:#F26522; --brand2:#FF7A3D; }
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
@@ -51,6 +54,7 @@ h2{font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute
 .links a{padding:10px 15px;background:var(--card);border:1px solid var(--line);
   border-radius:10px;text-decoration:none;color:var(--ink);font-weight:600;font-size:14px}
 .links a:hover{border-color:var(--brand)}
+.note{max-width:62ch;color:var(--muted);font-size:14.5px;margin:12px 0 0}
 
 footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--line);
   color:var(--muted);font-size:13.5px;line-height:1.7}
@@ -113,6 +117,13 @@ footer a{color:var(--muted)}
   Copyright and DMCA notices: <a href="mailto:dmca@laybell.app">dmca@laybell.app</a></p>
 </div>
 
+<h2>On the web</h2>
+<div class="links">
+  <a href="./studio.html">Laybell Studio →</a>
+</div>
+<p class="note">Studio runs in the browser — host or join a recording session with an artist
+anywhere, and send your DAW's audio into the room. Nothing to install.</p>
+
 <h2>Legal</h2>
 <div class="links">
   <a href="./privacy.html">Privacy Policy</a>
@@ -120,6 +131,7 @@ footer a{color:var(--muted)}
   <a href="./community.html">Community Guidelines</a>
   <a href="./advertising.html">Advertiser Terms</a>
   <a href="./marketplace.html">Marketplace &amp; Beat Licensing</a>
+  <a href="./delete-account.html">Delete Your Account</a>
 </div>
 
 <footer>
