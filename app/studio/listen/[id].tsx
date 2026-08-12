@@ -165,15 +165,28 @@ export default function StudioListenScreen() {
   // Accepted → I'm a member now: hop into the session for real.
   useEffect(() => {
     if (!id || !profile?.id || reqState !== 'pending') return;
+    const act = (status: string) => {
+      if (status === 'accepted' || status === 'member') router.replace(`/studio/${id}`);
+      else if (status === 'declined') setReqState('declined');
+    };
     const channel = supabase
       .channel(`studio-myreq:${id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'studio_join_requests', filter: `session_id=eq.${id}` }, (payload: any) => {
         if (payload?.new?.user_id !== profile.id) return;
-        if (payload.new.status === 'accepted') router.replace(`/studio/${id}`);
-        else if (payload.new.status === 'declined') setReqState('declined');
+        act(payload.new.status);
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    // POLL TOO — same reason as the host side. studio_join_requests was never
+    // in the `supabase_realtime` publication, so this subscription has never
+    // fired: being accepted left the listener sitting on "Request sent" while
+    // the host watched them not arrive. Waiting on a realtime event is also the
+    // wrong bet generally here, because this is the moment the person is
+    // staring at the screen. supabase/sql/studio_join_requests_realtime.sql
+    // fixes the publication; this makes the outcome not depend on it.
+    const poll = setInterval(() => {
+      myJoinRequestStatus(id).then((s) => { if (s) act(s); }).catch(() => {});
+    }, 5000);
+    return () => { clearInterval(poll); supabase.removeChannel(channel); };
   }, [id, profile?.id, reqState, router]);
 
   // Raising a hand is RE-SENDABLE. A host mid-take misses requests, and a

@@ -191,7 +191,17 @@ export default function StudioRoomScreen() {
       .channel(`studio-reqs:${id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'studio_join_requests', filter: `session_id=eq.${id}` }, load)
       .subscribe();
-    return () => { alive = false; supabase.removeChannel(channel); };
+    // POLL AS WELL, deliberately. This screen used to depend on the realtime
+    // subscription alone, and studio_join_requests was never added to the
+    // `supabase_realtime` publication — so no change event has ever been
+    // delivered and a raised hand was invisible unless the host happened to
+    // re-open the screen afterwards. supabase/sql/studio_join_requests_realtime.sql
+    // fixes the publication, but a feature this visible should not be one
+    // dashboard toggle away from silently doing nothing, on any environment.
+    // Cheap: one indexed read of the pending rows for this session, and only
+    // while the host is actually live.
+    const poll = setInterval(load, 8000);
+    return () => { alive = false; clearInterval(poll); supabase.removeChannel(channel); };
   }, [isLive, isHost, id]);
 
   // Runs the 4-beat visual/haptic count-in ending exactly at msg.startAt.
