@@ -24,10 +24,10 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 thing left is the production build — deliberately paused by the owner (2026-08-10) to
 keep polishing, because there is no OTA here and whatever is in that build ships.**
 
-The polish pass is still running. **Studio sessions are DONE** — 2026-08-12: host and
-member views, the audience stage, studio radio, participant removal, floating
-reactions, the swipe-back lock and both themes, all tested on device. **Two checks are
-queued before the build: lives, and audio across the app** (step 4 below).
+**The polish pass is COMPLETE (2026-08-12).** Studio sessions, lives and audio across
+the app were all tested on device and signed off. Nothing else stands between here and
+the production build — the next actions are the App Store Connect version field, then
+the build itself (steps 4–6 below).
 
 Everything else is three inbox waits and one test that needs Android hardware.
 
@@ -114,19 +114,20 @@ Everything else is three inbox waits and one test that needs Android hardware.
    Functionality). ⚠️ Answer from `docs/STORE_PRIVACY_LABELS.md`, **not** from memory:
    that file said "no crash SDK" until 2026-08-10 because it predated Sentry, and
    transcribing it would have filed a label contradicting the app's own Privacy Policy.
-4. 🧪 **POLISH-PASS TESTING — do these two before anything else, then resume at 5.**
-   Added 2026-08-12 at the owner's request. Studio sessions are **done** — hosting,
-   the audience view, radio, removal, reactions and both themes were all tested on
-   device this session and are signed off. These two are what is left of the pass.
+4. ~~🧪 **POLISH-PASS TESTING**~~ ✅ **DONE 2026-08-12.** All three areas tested on
+   device and signed off by the owner: studio sessions, lives, and audio across the
+   app. **The polish pass that paused the build on 2026-08-10 is complete.**
 
-   - [ ] **Lives.** The same sweep sessions just had: go live, watch from a second
+   *(what was checked, kept for the record)*
+
+   - [x] **Lives.** The same sweep sessions just had: go live, watch from a second
          phone, chat, the new **tap-react button** and floating emoji (both directions
          — viewer *and* broadcaster see them), donations, ending cleanly. Reactions
          and the swipe-back lock are **new and unverified on device**. Worth knowing
          before you start: lives are Cloudflare WHIP/WHEP, so there is no hand-raise
          and no co-host — that is architectural, not missing. See the note in
          commit `6fc0c7d`.
-   - [ ] **Audio across the app.** The studio work moved shared audio plumbing —
+   - [x] **Audio across the app.** The studio work moved shared audio plumbing —
          the studio radio runs its own `expo-audio` player and **stops the main
          player** when it takes over. So check the ordinary paths still behave:
          feed songs, the Music tab, the mini-player, offline pins, an audio ad, and
