@@ -48,13 +48,25 @@ main { width:100%; max-width:440px; margin:auto; }
    on screen, and the left column is STICKY so it stays put however far down
    the guides you go. Below 1000px it falls back to the single column, which is
    what a phone or a narrow window wants anyway. */
-@media (min-width:1000px) {
-  main { max-width:1060px; }
-  p.sub { max-width:620px; margin-left:auto; margin-right:auto; }
+/* ── Laptop: STEPS left · INTERFACE middle · GUIDES right ───────────────────
+   Every column gets a fixed reading width and the row is centred. A stretchy
+   column is what made the first attempt look broken: the guide rows spanned the
+   whole page, so each title and its tag pill sat marooned at opposite ends with
+   a lake of dead space between them, and the right side towered over the left.
+   Widths that add up to about a page keep the three balanced and scannable.
+
+   DOM order is console → steps → guides, so that a phone (which stacks) gets
+   the controls first, where they belong. `order` puts them left-middle-right
+   here without the markup having to fight the small-screen case. */
+@media (min-width:1180px) {
+  main { max-width:1160px; }
+  p.sub { max-width:560px; margin-left:auto; margin-right:auto; }
   /* The join card is a small form and looks lost stretched across a wide page. */
   #join { max-width:440px; margin-left:auto; margin-right:auto; }
-  .cols { display:grid; grid-template-columns:minmax(0,410px) minmax(0,1fr); gap:20px; align-items:start; }
-  .col-main { position:sticky; top:24px; }
+  .cols { display:grid; grid-template-columns:320px 380px 400px; gap:20px; align-items:start; justify-content:center; }
+  .col-steps   { order:1; }
+  .col-console { order:2; position:sticky; top:24px; }
+  .col-guides  { order:3; }
 }
 /* The real mark, not a CSS letter standing in for it. Same asset the invite
    and open pages use, so every Laybell surface a producer meets looks alike. */
@@ -172,7 +184,7 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
   <!-- In-room -->
   <div id="room">
    <div class="cols">
-    <div class="card col-main">
+    <div class="card col-console">
     <div style="margin-bottom:10px">In session<span class="pill live" id="connPill"><span class="dot"></span><span id="connText">connected</span></span></div>
     <div class="people" id="people"></div>
 
@@ -217,7 +229,11 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     <p class="hint" id="routeHint" style="font-size:12px;margin:-6px 0 12px"></p>
 
     <p class="status" id="roomStatus"></p>
-    <div class="sec"><h2>Set up</h2><span class="count">3 steps</span></div>
+      <button class="btn btn-ghost" id="leaveBtn" style="margin-top:14px">Leave</button>
+    </div>
+
+    <div class="col-steps">
+    <div class="sec" style="margin-top:0"><h2>Set up</h2><span class="count">3 steps</span></div>
     <ol class="steps" id="steps">
 
       <li id="stepMic"><b>Choose your mic.</b> Pick your interface in the box above. Leave the preset on
@@ -253,7 +269,6 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
 
     </ol>
 
-      <button class="btn btn-ghost" id="leaveBtn" style="margin-top:14px">Leave</button>
     </div>
 
     <div class="col-guides">
