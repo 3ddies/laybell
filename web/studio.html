@@ -39,6 +39,23 @@
 html,body { min-height:100%; }
 body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; display:flex; justify-content:center; padding:24px; }
 main { width:100%; max-width:440px; margin:auto; }
+
+/* ── Laptop: console left, guides right ─────────────────────────────────────
+   One column stacks the guides under the controls, so reading a guide scrolls
+   the mic picker, preset and Share button off the screen — exactly when you
+   need them, since a guide is usually telling you to go and change one. Side
+   by side, the thing you are reading and the thing you are adjusting are both
+   on screen, and the left column is STICKY so it stays put however far down
+   the guides you go. Below 1000px it falls back to the single column, which is
+   what a phone or a narrow window wants anyway. */
+@media (min-width:1000px) {
+  main { max-width:1060px; }
+  p.sub { max-width:620px; margin-left:auto; margin-right:auto; }
+  /* The join card is a small form and looks lost stretched across a wide page. */
+  #join { max-width:440px; margin-left:auto; margin-right:auto; }
+  .cols { display:grid; grid-template-columns:minmax(0,410px) minmax(0,1fr); gap:20px; align-items:start; }
+  .col-main { position:sticky; top:24px; }
+}
 /* The real mark, not a CSS letter standing in for it. Same asset the invite
    and open pages use, so every Laybell surface a producer meets looks alike. */
 .logo { width:64px; height:64px; border-radius:16px; margin:0 auto 14px; display:block; object-fit:cover; }
@@ -134,7 +151,7 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
 </head><body><main>
   <img class="logo" src="/logo.png" alt="Laybell">
   <div class="brandline"><h1>Laybell Studio</h1><span class="tm">™</span></div>
-  <p class="sub">Join a live studio session from your computer — pro mics and interfaces, FL&nbsp;Studio / BandLab audio, and one-tap vocal polish.</p>
+  <p class="sub">Join and host online studio sessions with artists from anywhere — pro mics and interfaces, FL&nbsp;Studio / BandLab audio, and one-tap vocal polish.</p>
 
   <!-- Join -->
   <div class="card" id="join">
@@ -153,7 +170,9 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
   </div>
 
   <!-- In-room -->
-  <div class="card" id="room">
+  <div id="room">
+   <div class="cols">
+    <div class="card col-main">
     <div style="margin-bottom:10px">In session<span class="pill live" id="connPill"><span class="dot"></span><span id="connText">connected</span></span></div>
     <div class="people" id="people"></div>
 
@@ -234,7 +253,11 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
 
     </ol>
 
-    <div class="sec"><h2>Guides</h2><span class="count">open only what you need</span></div>
+      <button class="btn btn-ghost" id="leaveBtn" style="margin-top:14px">Leave</button>
+    </div>
+
+    <div class="col-guides">
+    <div class="sec" style="margin-top:0"><h2>Guides</h2><span class="count">open only what you need</span></div>
 
     <details class="acc"><summary>Set up FL Studio, start to finish<span class="tag">producer</span></summary>
       <div class="body">
@@ -465,12 +488,13 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
       </div>
     </details>
 
-    <button class="btn btn-ghost" id="leaveBtn" style="margin-top:12px">Leave</button>
+    </div>
+   </div>
   </div>
 
   <p class="hint" style="text-align:center;display:flex;align-items:center;justify-content:center;gap:7px;margin-top:18px">
     <img src="/logo.png" alt="" width="16" height="16" style="border-radius:4px;opacity:.9">
-    <span>Laybell — the connector for online studio sessions.</span>
+    <span>Laybell — Online Studio Sessions</span>
   </p>
 </main>
 
