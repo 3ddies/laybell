@@ -390,41 +390,7 @@ export async function connectStudioRoom(sessionId: string): Promise<Room> {
   });
   await room.connect(data.url, data.token);
   await room.localParticipant.setMicrophoneEnabled(true, VOICE_CAPTURE, MUSIC_PUBLISH);
-  stopBeatDucking();
   return room;
-}
-
-/**
- * "When I rap, the beat goes quiet." — owner, on device.
- *
- * iOS's voice-processing unit ducks OTHER AUDIO whenever it hears the local
- * voice. On a call that is exactly right; on a beat it is the worst possible
- * behaviour, because it dips the very thing the artist is trying to ride, at
- * the exact moment they open their mouth. Apple exposes this as the voice unit's
- * other-audio ducking configuration, and the SDK surfaces it here.
- *
- * WHY NOT JUST TURN VOICE PROCESSING OFF: because the SAME unit runs the echo
- * canceller, and that is what keeps the artist's phone from sending the beat
- * back up as bleed. Kill it and the producer's recording arrives with a
- * low-quality ghost of the beat printed underneath the vocal — which is the
- * other half of what was reported. Ducking and echo cancellation happen to be
- * separately configurable, so the fix is to take the ducking and keep the
- * canceller. Do not "simplify" this to setVoiceProcessingEnabled(false).
- *
- * Applied for LISTENERS too: they publish nothing, but the recording side is
- * started to bring the audio engine up, so the voice unit is live for them as
- * well and room noise at their end could otherwise dip the broadcast.
- */
-function stopBeatDucking(): void {
-  if (Platform.OS !== 'ios') return;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const ADM = require('@livekit/react-native').AudioDeviceModule;
-    ADM?.setAdvancedDuckingEnabled?.(false);
-    ADM?.setDuckingLevel?.(0);
-  } catch (e) {
-    console.warn('[studio-audio] could not disable ducking - the beat will dip when they rap:', e);
-  }
 }
 
 export async function disconnectStudioRoom(room: Room): Promise<void> {
@@ -504,9 +470,6 @@ async function startListenerAudio(): Promise<void> {
     await ADM?.setMuteMode?.(lkrn.AudioEngineMuteMode.InputMixer);
     await ADM?.setMicrophoneMuted?.(true);
   });
-  // The recording side is up, so the voice unit is live here too and room noise
-  // at the listener's end would otherwise dip the broadcast they came to hear.
-  stopBeatDucking();
   if (!ADM?.isEngineRunning?.()) console.warn('[studio-audio] engine still not running - listener will be silent');
 }
 
