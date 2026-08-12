@@ -226,11 +226,18 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     <input id="name" maxlength="40" placeholder="Producer">
     <button class="btn btn-primary" id="joinBtn">Join session</button>
     <p class="status" id="joinStatus"></p>
+    <!-- This box used to say "if your DAW is on ASIO, switch to WASAPI first",
+         full stop — which flatly contradicted the FL guide below it, where ASIO
+         is REQUIRED (FL cannot record audio on DirectSound at all; the mixer's
+         IN box greys out). Both were right about different routes. The conflict
+         is only ever with SCREEN SHARING, so that is what it now says. -->
     <div class="warn">
-      <b>Before you join.</b> Use <b>Chrome or Edge on Windows</b> — sending your DAW's audio needs desktop
-      capture, which Safari and Firefox don't do. And if your DAW is on <b>ASIO</b>, switch it to a
-      <b>Windows/WASAPI</b> driver first (FL&nbsp;Studio: <i>Options → Audio Settings → Device</i>). ASIO bypasses the
-      Windows mixer, so the share goes through but carries <b>silence</b>.
+      <b>Before you join.</b> Use <b>Chrome or Edge</b> — choosing your own output device and sharing app audio
+      are both Chromium-only. <b>Staying on ASIO is fine</b>, and it is required if you want to record the artist
+      into your DAW. Send your beat down a <b>cable</b> (step 2 once you are in) rather than through
+      <i>Share app audio</i>: a screen share cannot capture a device ASIO is holding exclusively, so that route
+      publishes <b>silence</b>. Only if you insist on <i>Share app audio</i> do you need a
+      <b>Windows/WASAPI</b> driver instead.
     </div>
   </div>
 
@@ -386,6 +393,96 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
         <p><b>6 · Check before the take.</b> Artist hears the beat · you hear the artist · no echo · the FL insert
         meter moves when they rap. That last one is the one people skip — <b>hearing them is not proof FL has
         them</b>, because listen-through works whether FL is wired up or not.</p>
+      </div>
+    </details>
+
+    <details class="acc"><summary>Set up BandLab, start to finish<span class="tag">producer</span></summary>
+      <div class="body">
+        <p class="who"><b>BandLab Studio runs in a browser tab, and that makes it the easiest setup here.</b>
+        A <b>Chrome Tab</b> share is the one screen-share case Chrome on Windows handles properly, so there is no
+        cable to install, no ASIO, and nothing to undo afterwards.</p>
+        <p class="who">Using <b>Cakewalk</b> — BandLab's desktop DAW — instead? Follow the FL&nbsp;Studio guide.
+        It is a desktop DAW with a real ASIO driver and the routing there applies to it unchanged.</p>
+
+        <p><b>1 · Two tabs.</b> Open <b>BandLab Studio</b> in its own tab and load your beat. Keep this page in a
+        separate tab. Both can use audio at once; they do not fight.</p>
+
+        <p><b>2 · Join here, then share the tab.</b> Hit <b>Share app audio</b> → the <b>Chrome Tab</b> row → pick
+        the <b>BandLab</b> tab → tick <b>“Share audio”</b> → <b>Share</b>.</p>
+        <div class="tip"><b>You do not lose your own beat.</b> Tab capture copies the audio, it does not take it
+        away, so it keeps playing in your headphones with no “Listen to this device” step. Play something and
+        watch the <b>shared-audio meter</b> — if it stays flat you shared the wrong tab, or missed the tick box.</div>
+
+        <p><b>3 · Your mic, separately.</b> In <b>Microphone / audio interface</b> pick your mic or interface —
+        preset <i>Natural voice</i> for a bare mic, <i>Raw input</i> for an interface. Your voice and your beat
+        go out as two independent streams here, which is cleaner than the single-cable route a desktop DAW needs.</p>
+
+        <p><b>4 · Hearing them.</b> Nothing to do. Leave this browser's output on your headphones; their vocal and
+        your beat meet in your ears.</p>
+
+        <p><b>5 · Record the artist into BandLab</b> — optional. Needs <b>VB-CABLE</b> (recording guide, Part 1).<br>
+        · <b>Send to my DAW</b> (in the console) → the <b>artist</b> → <b>CABLE Input</b><br>
+        · In BandLab, add an <b>Audio / Voice</b> track and set its input to <b>CABLE Output</b><br>
+        · <b>Turn that track's input monitoring OFF</b>, then arm it and record</p>
+        <div class="tip"><b>If BandLab only offers your default input,</b> point the default at the cable instead:
+        <kbd>Win</kbd>+<kbd>R</kbd> → <b>mmsys.cpl</b> → <i>Recording</i> → <b>CABLE Output</b> → <b>Set Default</b>.
+        Or set it for BandLab alone — click the <b>padlock</b> in Chrome's address bar → <i>Site settings</i> →
+        <i>Microphone</i>. This page is unaffected either way; it has its own picker.</div>
+
+        <div class="warn"><b>Anything playing in that tab goes to the room.</b> You are sharing the tab, not a
+        track. Monitor the artist's vocal in BandLab and it goes straight back to them a beat late — that is the
+        echo, and they cannot rap over it. Leave monitoring off; you still hear them from this page, and the track
+        still records, because it records its input.</div>
+
+        <div class="warn"><b>A tab share is bound to that tab.</b> Close it, or navigate it somewhere else, and
+        the room goes quiet with no error. Re-share if you do.</div>
+      </div>
+    </details>
+
+    <details class="acc"><summary>Set up Pro Tools, start to finish<span class="tag">producer</span></summary>
+      <div class="body">
+        <p class="who"><b>The principle never changes:</b> your DAW's output has to reach this page as an
+        <b>input device</b>, and the room must never reach your <b>master</b>. Only the dialogs differ —
+        <i>Setup → Playback Engine</i> chooses the device, <i>Setup → I/O</i> maps the paths. Pro Tools has not
+        been run against this page here; the routing below is the one proven with FL&nbsp;Studio, through
+        Pro Tools' two dialogs.</p>
+
+        <p><b>Windows · getting your beat out.</b> Pro Tools only talks to <b>ASIO</b>, and VB-CABLE is not an ASIO
+        device — Pro Tools cannot see it at all. Two ways round, best first.</p>
+
+        <p><b>A · Your interface's loopback</b> — no install, no wrapper, and Pro Tools stays on its own driver at
+        your normal buffer. Most modern interfaces have one: Focusrite Control's <b>Loopback</b>, Audient EVO,
+        SSL&nbsp;2+, MOTU, Behringer UMC, RME TotalMix. It carries your Pro Tools output back as a recordable
+        input. Pick that loopback channel in <b>Microphone / audio interface</b> above, preset <i>Raw input</i>.</p>
+
+        <p><b>B · ASIO4ALL</b> — a free WDM-to-ASIO wrapper that can show VB-CABLE to Pro Tools.
+        <i>Setup → Playback Engine</i> → <b>ASIO4ALL</b>, then in its panel enable <b>CABLE Input</b> for output
+        and <b>CABLE-B Output</b> for input. Expect more latency than your interface's own driver, and set every
+        cable endpoint to <b>48000&nbsp;Hz</b> first (FL guide, step 1 — the same four devices).</p>
+
+        <p><b>Mac.</b> Core Audio, so nothing to wrap. Install <b>BlackHole</b> (free). In <b>Audio MIDI Setup</b>
+        build a <b>Multi-Output Device</b> containing <b>BlackHole</b> <i>and</i> your headphones, and point
+        Pro Tools' Playback Engine at it — the room gets the beat and you still hear it. Then choose
+        <b>BlackHole</b> in <b>Microphone / audio interface</b> above.</p>
+
+        <div class="warn"><b>I/O Setup is where the silence comes from.</b> After any Playback Engine change, open
+        <i>Setup → I/O</i> and check your <b>Output</b> path is still mapped to channels <b>1–2</b> of the new
+        device. Changing the engine can leave paths unmapped, and Pro Tools then plays perfectly into nothing —
+        meters moving, room silent.</div>
+
+        <p><b>Record the artist</b> — optional.<br>
+        · <b>Send to my DAW</b> → the <b>artist</b> → the <b>second</b> cable (<b>CABLE-B Input</b> on Windows, a
+        second BlackHole device on Mac)<br>
+        · New <b>audio track</b>, input = that device · <b>input monitoring off</b> · record-arm · record</p>
+
+        <div class="warn"><b>Take that track off your main output.</b> Pro Tools' main output is what the room
+        hears. Leave the artist's vocal in it and you send them their own voice a beat late — instant echo. Set the
+        track's output to a bus you are not sending, or mute it. You will still hear them from this page, and it
+        still records, because Pro Tools records the track's input, not the master.</div>
+
+        <p><b>Check before the take.</b> Artist hears the beat · you hear the artist · no echo · the Pro Tools
+        track meter moves when they rap. That last one is the one people skip — <b>hearing them is not proof
+        Pro Tools has them.</b></p>
       </div>
     </details>
 
