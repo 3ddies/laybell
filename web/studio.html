@@ -3,6 +3,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Laybell Studio — connect your DAW</title>
+<link rel="icon" href="/logo.png">
+<link rel="apple-touch-icon" href="/logo.png">
+<meta name="theme-color" content="#F26522">
+
+<!-- This page is SENT AS A LINK — the app's studio invite mails
+     laybell.app/studio.html?code=XXXX straight to a producer — and it had no
+     preview markup at all, so it unfurled as a bare URL. Same rules as
+     web/invite.html, learned the hard way:
+       • Apple renders og:title and the domain. Nothing else.
+       • It STRIPS a leading site-name, so no og:site_name here and "Laybell"
+         sits in the MIDDLE of the title, safe from a trim at either end.
+       • Previews cache per-URL. Every invite carries a different ?code, so each
+         one is a fresh fetch — but a plain /studio.html test link will stick. -->
+<meta name="description" content="Join a live studio session from your computer. Pro mics and interfaces, DAW audio, and a clean take straight into your project.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Join my Laybell studio session">
+<meta property="og:description" content="Join a live studio session from your computer. Pro mics and interfaces, DAW audio, and a clean take straight into your project.">
+<meta property="og:image" content="https://laybell.app/logo.png">
+<meta property="og:url" content="https://laybell.app/studio.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Join my Laybell studio session">
+<meta name="twitter:description" content="Join a live studio session from your computer. Pro mics and interfaces, DAW audio, and a clean take straight into your project.">
+<meta name="twitter:image" content="https://laybell.app/logo.png">
 <style>
 :root { --bg:#0d0d0f; --card:#16151a; --ink:#f5f4f2; --muted:#a4a3ab; --line:#272630; --brand:#F26522; --brand2:#E8401C; --ok:#22C55E; --err:#F43F5E; }
 * { box-sizing:border-box; }
@@ -16,7 +39,12 @@
 html,body { min-height:100%; }
 body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; display:flex; justify-content:center; padding:24px; }
 main { width:100%; max-width:440px; margin:auto; }
-.logo { width:64px; height:64px; border-radius:16px; margin:0 auto 16px; background:linear-gradient(135deg,var(--brand),var(--brand2)); display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; color:#fff; }
+/* The real mark, not a CSS letter standing in for it. Same asset the invite
+   and open pages use, so every Laybell surface a producer meets looks alike. */
+.logo { width:64px; height:64px; border-radius:16px; margin:0 auto 14px; display:block; object-fit:cover; }
+.brandline { display:flex; align-items:center; justify-content:center; gap:8px; margin:0 0 6px; }
+.brandline h1 { margin:0; }
+.brandline .tm { font-size:10px; color:var(--muted); font-weight:700; align-self:flex-start; margin-top:4px; }
 h1 { font-size:22px; margin:0 0 6px; text-align:center; }
 p.sub { color:var(--muted); margin:0 0 22px; text-align:center; font-size:14px; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; margin-bottom:14px; }
@@ -104,8 +132,8 @@ input#code { letter-spacing:5px; font-weight:800; text-transform:uppercase; }
 kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:0 6px; font:inherit; font-size:12px; color:var(--ink); }
 </style>
 </head><body><main>
-  <div class="logo">L</div>
-  <h1>Laybell Studio</h1>
+  <img class="logo" src="/logo.png" alt="Laybell">
+  <div class="brandline"><h1>Laybell Studio</h1><span class="tm">™</span></div>
   <p class="sub">Join a live studio session from your computer — pro mics and interfaces, FL&nbsp;Studio / BandLab audio, and one-tap vocal polish.</p>
 
   <!-- Join -->
@@ -207,6 +235,81 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     </ol>
 
     <div class="sec"><h2>Guides</h2><span class="count">open only what you need</span></div>
+
+    <details class="acc"><summary>Set up FL Studio, start to finish<span class="tag">producer</span></summary>
+      <div class="body">
+        <p class="who"><b>Do these in order.</b> Almost every problem in a studio session comes from doing them
+        out of order — above all, <b>finish FL before you join</b>. Changing FL's audio device later rebuilds its
+        window and quietly breaks a running share.</p>
+
+        <p><b>Before you start:</b> install <b>VB-CABLE</b> (see the recording guide, Part 1). Add
+        <b>VB-CABLE A+B</b> as well if you want the artist recorded onto your timeline.</p>
+
+        <p><b>1 · Sample rates — 48000 Hz, once.</b> <kbd>Win</kbd>+<kbd>R</kbd> → <b>mmsys.cpl</b>. For each
+        device: click it → <b>Properties</b> → <b>Advanced</b> → pick any <b>48000 Hz</b> entry under
+        <i>Default Format</i>. Do it for <b>CABLE Input</b> and <b>CABLE-B Input</b> on the <i>Playback</i> tab,
+        and <b>CABLE Output</b> and <b>CABLE-B Output</b> on the <i>Recording</i> tab. Four devices, each set
+        separately, all shipping on 44100.</p>
+
+        <p><b>2 · FL audio settings.</b> <i>Options → Audio Settings</i>:<br>
+        · <b>Device</b> → <b>FL Studio ASIO</b><br>
+        · <b>Sample rate</b> → <b>48000</b><br>
+        · <b>Show ASIO panel</b> → <b>Output</b>: <b>CABLE Input</b> · <b>Input</b>: <b>CABLE-B Output</b><br>
+        Then close it and do not come back this session.</p>
+        <div class="warn"><b>ASIO is required if you want to record.</b> FL cannot record audio on DirectSound at
+        all — the mixer's IN box greys out, because that driver gives FL no inputs.</div>
+
+        <p><b>3 · Hear your own beat.</b> FL now plays into a cable, not your headphones. Back in
+        <b>mmsys.cpl</b> → <i>Recording</i> → <b>CABLE Output</b> → <b>Properties</b> → <b>Listen</b> → tick
+        <b>“Listen to this device”</b> → choose your headphones → <b>Apply</b>.</p>
+
+        <p><b>4 · Join, then set your inputs.</b> Open this page with the session code. Then at the top:<br>
+        · <b>Microphone / audio interface</b> → <b>CABLE Output</b> — this is your beat going out<br>
+        · <b>Vocal preset</b> → <b>Raw input</b> — never a voice preset, they EQ and compress a finished mix<br>
+        Play something and watch the meter move before you go further.</p>
+        <div class="tip"><b>Your own voice rides along.</b> Set your mic or interface as FL's <b>input</b> and it
+        reaches the room through the same cable — and through your own FL chain, which sharing a window never
+        allowed. Note you cannot do this AND record the artist: FL takes one input device at a time.</div>
+
+        <p><b>5 · Record the artist</b> — optional.<br>
+        · <b>Send to my DAW</b> (above) → the <b>artist</b> → <b>CABLE-B Input</b><br>
+        · FL <b>Mixer</b> → empty insert → <b>IN</b> → <b>in 1</b><br>
+        · <b>Mute that insert's send to Master</b> — click the arrow between it and Master<br>
+        · <b>Arm</b> the insert (the record circle at the bottom of the strip)<br>
+        · <b>Song mode</b>, then <b>Record</b> → <b>Play</b> → <b>“Audio, into the playlist”</b></p>
+        <div class="warn"><b>The master send is the one that bites.</b> Your FL master is what the room hears.
+        Leave the artist's vocal in it and you send them their own voice a beat late — instant echo, and they
+        cannot rap over it. You will still hear them from <i>“Listen to this device”</i>, and it still records,
+        because FL records the track's INPUT, not the master.</div>
+
+        <p><b>6 · Check before the take.</b> Artist hears the beat · you hear the artist · no echo · the FL insert
+        meter moves when they rap. That last one is the one people skip — <b>hearing them is not proof FL has
+        them</b>, because listen-through works whether FL is wired up or not.</p>
+      </div>
+    </details>
+
+    <details class="acc"><summary>Get the best-sounding take<span class="tag">quality</span></summary>
+      <div class="body">
+        <div class="warn"><b>Closed-back headphones on the artist. This is the big one.</b> If they monitor on
+        their phone speaker, their microphone hears the beat and sends it back up — and it prints underneath the
+        vocal on your recording as a thin, low-quality copy. Nothing on your end can remove what their mic
+        genuinely heard. Closed-back headphones remove the path entirely; earbuds and open-backs leak enough to
+        still hear it.</div>
+        <p><b>Keep their headphone volume moderate.</b> Loud monitoring leaks more, and the phone's echo canceller
+        is doing the cleanup — the quieter the beat at the mic, the less residue survives.</p>
+        <p><b>The artist should be on a VOICE preset</b> — Natural, Low, Mid or High — not <i>Raw input</i>. Raw
+        deliberately turns echo cancellation off, which is right for an interface carrying a finished mix and
+        exactly wrong for someone rapping next to a speaker.</p>
+        <p><b>You should be on Raw input</b>, for the opposite reason: your cable is carrying a mix, and the voice
+        presets would EQ and compress it.</p>
+        <div class="tip"><b>Expect the take to land behind the grid.</b> The vocal travelled phone → room → your
+        machine and that delay is in the file. Record a clap on the first take, measure how late it lands, then
+        drag every take back by that amount.</div>
+        <p><b>For anything you intend to keep, do not track it through the room at all.</b> Have the artist record
+        on their phone and send you the file — it arrives dry, clean and perfectly in time. Use the live take as
+        the reference while you write, and swap it for theirs.</p>
+      </div>
+    </details>
 
     <details class="acc"><summary>The room can't hear my beat<span class="tag">common</span></summary>
       <div class="body">
@@ -365,7 +468,10 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     <button class="btn btn-ghost" id="leaveBtn" style="margin-top:12px">Leave</button>
   </div>
 
-  <p class="hint" style="text-align:center">Laybell — the connector for online studio sessions.</p>
+  <p class="hint" style="text-align:center;display:flex;align-items:center;justify-content:center;gap:7px;margin-top:18px">
+    <img src="/logo.png" alt="" width="16" height="16" style="border-radius:4px;opacity:.9">
+    <span>Laybell — the connector for online studio sessions.</span>
+  </p>
 </main>
 
 <div class="countin" id="countin"></div>
