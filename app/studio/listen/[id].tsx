@@ -10,6 +10,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Room } from 'livekit-client';
 import SwipeBackPager from '../../../components/SwipeBackPager';
 import StudioStage, { CountPop, LiveDot } from '../../../components/StudioStage';
+import StudioRadioBar from '../../../components/StudioRadioBar';
+import { useStudioRadio } from '../../../hooks/useStudioRadio';
+import { useAudioControls } from '../../../contexts/AudioContext';
 import LiveChatOverlay, { useBufferedChat } from '../../../components/LiveChatOverlay';
 import LiveDonateModal from '../../../components/LiveDonateModal';
 import LiveDonationAlerts from '../../../components/LiveDonationAlerts';
@@ -44,6 +47,9 @@ export default function StudioListenScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { profile } = useProfile();
+  // Stops the app's own music player when the radio takes over — two separate
+  // players, both audible otherwise.
+  const audioControls = useAudioControls();
 
   const [phase, setPhase] = useState<Phase>('connecting');
   const [title, setTitle] = useState<string | null>(null);
@@ -145,6 +151,11 @@ export default function StudioListenScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // The room's radio. A listener is a pure follower here — it never publishes,
+  // it just asks once on arrival ("what's on?") and plays whatever comes back.
+  const requestRadio = useCallback(() => { channelRef.current?.requestRadio(); }, []);
+  const radio = useStudioRadio({ isHost: false, request: requestRadio, ready: phase === 'live', onTakeOver: audioControls.stop });
+
   // Audience channel: chat + donations + the listener count + the end signal.
   useEffect(() => {
     if (!id || !profile?.id) return;
@@ -158,10 +169,12 @@ export default function StudioListenScreen() {
       onChat: pushChat,
       onDonation: setDonationEvent,
       onEnded: markEnded,
+      onRadio: radio.applyRemote,
     });
     channelRef.current = handle;
     return () => { handle.leave(); channelRef.current = null; };
-  }, [id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url, pushChat, markEnded]);
+  }, [id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url, pushChat, markEnded,
+      radio.applyRemote]);
 
   // Accepted → I'm a member now: hop into the session for real.
   useEffect(() => {
@@ -289,6 +302,25 @@ export default function StudioListenScreen() {
 
             {/* Chat + actions, pinned above the input */}
             <View style={styles.bottom}>
+              {/* What the room is playing. Sits above the chat because it is
+                  the reason a listener is here, and it is tappable — a song
+                  heard on the radio is one tap from the artist who made it. */}
+              {!!radio.state.track && (
+                <StudioRadioBar
+                  track={radio.state.track}
+                  paused={radio.state.paused}
+                  localMuted={radio.localMuted}
+                  onToggleMute={() => radio.setLocalMuted((m) => !m)}
+                  onOpenTrack={(sid) => router.push(`/post/${sid}`)}
+                  labels={{
+                    onAir: t('studio.radioOnAir'),
+                    queued: (n) => t('studio.radioQueued', { n }),
+                    mute: t('studio.radioMute'),
+                    unmute: t('studio.radioUnmute'),
+                  }}
+                />
+              )}
+
               {/* Messages dissolve upward into the background instead of being
                   clipped by a hard edge. */}
               <View style={styles.chatWrap}>

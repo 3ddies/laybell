@@ -355,6 +355,37 @@ export type LiveChannelOpts = {
   // Studio broadcasts: the host announces the end over the channel (listeners
   // can't watch the session row through RLS the way stream viewers can).
   onEnded?: () => void;
+  // Studio RADIO. The host publishes what is playing and everyone plays it
+  // themselves from the CDN, in step — see lib/studioRadio.ts for why the audio
+  // does not travel through LiveKit.
+  onRadio?: (state: StudioRadioState) => void;
+  // Host only: somebody just arrived and is asking what is on. Answering this
+  // is what makes a late joiner hear the current song immediately instead of
+  // waiting for the next heartbeat.
+  onRadioRequest?: () => void;
+};
+
+/**
+ * What the room is playing. `positionMs` is the position at `startedAt`, so the
+ * live position is positionMs + (now - startedAt) unless paused.
+ *
+ * `hostAt` is the host's clock at send time. A receiver compares it with its own
+ * clock to correct for device clock skew, which is otherwise the single biggest
+ * source of drift between two phones — bigger than network latency.
+ */
+export type StudioRadioState = {
+  track: {
+    id: string;
+    title: string;
+    artist: string;
+    cover: string | null;
+    uri: string;
+    durationMs: number | null;
+  } | null;
+  startedAt: number;
+  positionMs: number;
+  paused: boolean;
+  hostAt: number;
 };
 
 export type LiveChannelHandle = ReturnType<typeof joinBroadcastChannel>;
@@ -396,6 +427,14 @@ function joinBroadcastChannel(channelName: string, opts: LiveChannelOpts) {
   channel.on('broadcast', { event: 'ended' }, () => {
     opts.onEnded?.();
   });
+  channel.on('broadcast', { event: 'radio' }, ({ payload }) => {
+    if (payload) opts.onRadio?.(payload as StudioRadioState);
+  });
+  // `broadcast: { self: true }` means the host hears its own request too — it
+  // answers that harmlessly, and the guard is that only a host wires this up.
+  channel.on('broadcast', { event: 'radio:req' }, () => {
+    opts.onRadioRequest?.();
+  });
   channel.subscribe((status) => {
     if (status === 'SUBSCRIBED') channel.track({ at: Date.now() }).catch(() => {});
   });
@@ -434,6 +473,17 @@ function joinBroadcastChannel(channelName: string, opts: LiveChannelOpts) {
     // have no RLS view of the session row, so this IS their end signal).
     sendEnded() {
       channel.send({ type: 'broadcast', event: 'ended', payload: { at: Date.now() } }).catch(() => {});
+    },
+    // Host only: publish what is playing. Sent on every change AND on a
+    // heartbeat, so a client that missed one packet is never wrong for long.
+    sendRadio(state: Omit<StudioRadioState, 'hostAt'>) {
+      const payload: StudioRadioState = { ...state, hostAt: Date.now() };
+      channel.send({ type: 'broadcast', event: 'radio', payload }).catch(() => {});
+      return payload;
+    },
+    // Anyone: "I just got here, what's on?" The host replies with sendRadio.
+    requestRadio() {
+      channel.send({ type: 'broadcast', event: 'radio:req', payload: { at: Date.now() } }).catch(() => {});
     },
     leave() {
       supabase.removeChannel(channel);

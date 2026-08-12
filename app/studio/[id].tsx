@@ -25,6 +25,10 @@ import { tabTick } from '../../lib/haptics';
 import { webrtcAvailable } from '../../lib/whip';
 import { displayedTier } from '../../lib/badges';
 import { joinStudioChannel, type LiveChannelHandle, type LiveDonationEvent } from '../../lib/live';
+import { useStudioRadio } from '../../hooks/useStudioRadio';
+import { useAudioControls } from '../../contexts/AudioContext';
+import StudioRadioBar from '../../components/StudioRadioBar';
+import StudioRadioPicker from '../../components/StudioRadioPicker';
 import { fetchStudioEarnings } from '../../lib/donations';
 import {
   applyVocalPreset, connectStudioRoom, disconnectStudioRoom, endSession, fetchJoinRequests, hostExitSession,
@@ -57,6 +61,9 @@ export default function StudioRoomScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { profile } = useProfile();
+  // Stops the app's own music player when the radio takes over — two separate
+  // players, both audible otherwise.
+  const audioControls = useAudioControls();
 
   const [session, setSession] = useState<StudioSession | null>(null);
   const [roster, setRoster] = useState<StudioMember[]>([]);
@@ -173,6 +180,18 @@ export default function StudioRoomScreen() {
   }, [id]);
 
   // ── Audience channel (chat + donations + listener count) ────────────────────
+  // ── Radio ───────────────────────────────────────────────────────────────────
+  // Rides the studio channel, which only exists while the session is LIVE — so
+  // the radio is a broadcast feature by construction, which is also the only
+  // shape that makes sense: it plays to the audience as much as to the room.
+  // `publish` reads the ref at call time so the hook can be created before the
+  // channel that it publishes through.
+  const publishRadio = useCallback((s: Parameters<NonNullable<LiveChannelHandle['sendRadio']>>[0]) => {
+    channelRef.current?.sendRadio(s);
+  }, []);
+  const radio = useStudioRadio({ isHost, publish: publishRadio, ready: isLive, onTakeOver: audioControls.stop });
+  const [radioOpen, setRadioOpen] = useState(false);
+
   // Every session member joins while the broadcast is live — as 'host' so the
   // presence count stays listeners-only (musicians aren't their own audience).
   useEffect(() => {
@@ -190,10 +209,13 @@ export default function StudioRoomScreen() {
       },
       onChat: pushChat,
       onDonation: setDonationEvent,
+      onRadio: radio.applyRemote,
+      onRadioRequest: radio.answerRequest,
     });
     channelRef.current = handle;
     return () => { handle.leave(); channelRef.current = null; setListeners(0); };
-  }, [isLive, id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url, pushChat]);
+  }, [isLive, id, profile?.id, profile?.display_name, profile?.username, profile?.avatar_url, pushChat,
+      radio.applyRemote, radio.answerRequest]);
 
   // ── Join requests (host only, while live) ───────────────────────────────────
   useEffect(() => {
@@ -526,6 +548,49 @@ export default function StudioRoomScreen() {
               ); })}
           </View>
 
+          {/* Radio — Laybell songs played into the live session. Only while the
+              broadcast is on: the channel it rides does not exist otherwise, and
+              a radio with no audience is just a music player. */}
+          {isLive && (
+            <View style={styles.radioWrap}>
+              {radio.state.track ? (
+                <StudioRadioBar
+                  track={radio.state.track}
+                  paused={radio.state.paused}
+                  queueCount={radio.queue.length}
+                  localMuted={radio.localMuted}
+                  onToggleMute={() => radio.setLocalMuted((m) => !m)}
+                  onOpenTrack={(sid) => router.push(`/post/${sid}`)}
+                  {...(isHost ? {
+                    onPause: radio.pause,
+                    onResume: radio.resume,
+                    onSkip: radio.advance,
+                    onStop: radio.stop,
+                  } : {})}
+                  labels={{
+                    onAir: t('studio.radioOnAir'),
+                    queued: (n) => t('studio.radioQueued', { n }),
+                    mute: t('studio.radioMute'),
+                    unmute: t('studio.radioUnmute'),
+                  }}
+                />
+              ) : null}
+              {isHost && (
+                <TouchableOpacity
+                  style={styles.radioBtn}
+                  onPress={() => setRadioOpen(true)}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="radio-outline" size={17} color="#fff" />
+                  <Text style={styles.radioBtnText}>
+                    {radio.state.track ? t('studio.radioAddSong') : t('studio.radioStart')}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {/* Vocal preset — one tap from raw signal to a mixed, polished voice */}
           <View style={styles.presetCard}>
             <Text style={styles.settingTitle}>{t('studio.voicePreset')}</Text>
@@ -676,6 +741,27 @@ export default function StudioRoomScreen() {
           />
         )}
 
+        <StudioRadioPicker
+          visible={radioOpen}
+          userId={profile?.id ?? null}
+          queue={radio.queue}
+          nowPlayingId={radio.state.track?.id ?? null}
+          onPick={radio.enqueue}
+          onRemoveQueued={radio.removeQueued}
+          onClose={() => setRadioOpen(false)}
+          labels={{
+            title: t('studio.radioTitle'),
+            mine: t('studio.radioMine'),
+            all: t('studio.radioAll'),
+            search: t('studio.radioSearch'),
+            empty: t('studio.radioEmpty'),
+            queue: t('studio.radioQueue'),
+            nowPlaying: t('studio.radioOnAir'),
+            queued: t('studio.radioAdded'),
+            play: t('studio.radioPlaying'),
+          }}
+        />
+
         <ConfirmDialog
           visible={!!confirmKick}
           title={t('studio.confirmRemoveTitle', { name: confirmKick?.name ?? '' })}
@@ -735,6 +821,12 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   tileAvatar: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   tileInitial: { color: '#fff', fontSize: 22, fontWeight: '700' },
   micOffBadge: { position: 'absolute', bottom: 2, right: 2, width: 20, height: 20, borderRadius: 10, backgroundColor: '#F43F5E', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: c.background },
+  radioWrap: { gap: 10, marginBottom: 14 },
+  radioBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44,
+    borderRadius: 14, backgroundColor: 'rgba(242,101,34,0.16)', borderWidth: 1, borderColor: 'rgba(242,101,34,0.45)',
+  },
+  radioBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   // Sits opposite the mic badge so the two never collide on one avatar.
   kickBadge: { position: 'absolute', top: 0, right: 0, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: c.background },
   tileName: { color: c.text, fontSize: 12, fontWeight: '600', maxWidth: 84 },
