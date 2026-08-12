@@ -291,7 +291,16 @@ function StudioStage({ room, roster, onPressMember, hostLabel, people, showField
           { opacity: reduce ? 0.16 : roomLevel.interpolate({ inputRange: [0, 1], outputRange: [0.1, 0.34] }) },
         ]}
       >
-        <LinearGradient colors={['#FFFFFF40', '#FFFFFF00']} style={StyleSheet.absoluteFill} />
+        {/* Fades in AND out. It used to be brightest at its top edge, which was
+            80px above the stage — so the brightest part of the wash landed on
+            whatever sat above, and in Studio mode that is the "Before you
+            record" card. Peaking in the middle puts the light behind the faces
+            where it belongs and leaves no hard edge at either end. */}
+        <LinearGradient
+          colors={['#FFFFFF00', '#FFFFFF3A', '#FFFFFF00']}
+          locations={[0, 0.42, 1]}
+          style={StyleSheet.absoluteFill}
+        />
       </Animated.View>
 
       {/* On-air artists */}
@@ -437,9 +446,14 @@ const SpeakerTile = memo(function SpeakerTile({
 
 const styles = StyleSheet.create({
   stage: { alignItems: 'center', justifyContent: 'center' },
+  // Contained by the stage. Reaching above it was fine on the audience screen,
+  // where the stage floats in the middle of an empty flex:1 — but the session
+  // screen stacks it directly under a card in a scroll list, so anything that
+  // escaped upward landed on that card. `bottom:0` rather than a fixed height
+  // so it always matches the stage however many faces are on it.
   glow: {
-    position: 'absolute', top: -80, left: -100, right: -100, height: 360,
-    borderRadius: 360, overflow: 'hidden',
+    position: 'absolute', top: 0, bottom: 0, left: -100, right: -100,
+    borderRadius: 300, overflow: 'hidden',
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 18, justifyContent: 'center', paddingHorizontal: 16 },
   tile: { alignItems: 'center', gap: 9 },
