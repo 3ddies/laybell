@@ -159,6 +159,16 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
         ticked <b>“Share audio”</b>, and that you picked the <b>Window</b> (or a browser tab), not <i>Entire
         screen</i>. See <i>The room can't hear my beat</i> below.</div>
     </div>
+    <!-- Send ONE participant to a chosen output. Recording used to mean pointing
+         the whole browser at a cable in Windows sound settings, which sends the
+         entire room mix and takes your monitoring with it. This routes a single
+         person to a single device, on a second audio element, so you keep
+         hearing everything normally. -->
+    <label style="margin-top:14px">Send to my DAW <span style="text-transform:none;letter-spacing:0;font-weight:600;opacity:.75">— optional, for recording</span></label>
+    <select id="routeWho"></select>
+    <select id="routeWhere"></select>
+    <p class="hint" id="routeHint" style="font-size:12px;margin:-6px 0 12px"></p>
+
     <p class="status" id="roomStatus"></p>
     <div class="sec"><h2>Set up</h2><span class="count">3 steps</span></div>
     <ol class="steps" id="steps">
@@ -246,30 +256,22 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
           <b>CABLE Output</b> = a microphone. Audio coming OUT of the pipe.</p>
         </div></details>
 
-        <details class="sub"><summary>Part 2 — send Laybell into a SECOND pipe</summary><div class="body">
-          <div class="warn"><b>You need a second cable, and here is why.</b> If you send your beat as your
-          microphone (step 2 above), the first cable is already full — it carries your DAW <b>to</b> the room.
-          Pushing the room back down the same cable would feed it into itself. Get <b>VB-CABLE A+B</b> from the
-          same <a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">vb-audio.com/Cable</a> page,
-          install it the same way, reboot. You then have <b>CABLE-B Input</b> and <b>CABLE-B Output</b>.<br>
-          Still using <i>Share app audio</i> for the beat instead? Then the first cable is free — use plain
-          <b>CABLE Input / CABLE Output</b> below and ignore the B.</div>
-          <p><b>Windows <i>Settings → System → Sound → Volume mixer</i></b> → find this browser in the app list →
-          set its <b>Output</b> to <b>CABLE-B Input</b>.</p>
-          <p>Laybell now plays into the second pipe instead of your headphones, so you have gone deaf to the room.
-          The next bit gets your ears back, and it needs Windows' <b>old</b> sound window — the modern Settings
-          app cannot do it.</p>
-          <div class="tip"><b>How to open the old sound window.</b> Press <kbd>Win</kbd>+<kbd>R</kbd>, type
-          <b>mmsys.cpl</b>, press Enter. That is the whole trick.<br>
-          Prefer clicking? <i>Settings → System → Sound</i> → scroll to the bottom → <i>More sound settings</i>.
-          On Windows 10 it is called <i>Sound Control Panel</i>.<br>
-          You are in the right place when you see a small window with <b>Playback / Recording / Sounds /
-          Communications</b> tabs.</div>
-          <p><b>In that window:</b> <i>Recording</i> tab → click <b>CABLE-B Output</b> → <b>Properties</b> →
-          <i>Listen</i> tab → tick <b>“Listen to this device”</b> → under <i>Playback through this device</i>
-          choose your headphones → <b>Apply</b>.</p>
-          <p>You should now hear both again: your DAW through the first cable's listen-through, and the room
-          through this one.</p>
+        <details class="sub"><summary>Part 2 — send the artist to the second cable</summary><div class="body">
+          <div class="warn"><b>You need a second cable.</b> If your beat goes out as your microphone (step 2
+          above), the first cable is already full — it carries your DAW <b>to</b> the room, and pushing the room
+          back down it would feed it into itself. Get <b>VB-CABLE A+B</b> from the same
+          <a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">vb-audio.com/Cable</a> page,
+          install it the same way, reboot. You then have <b>CABLE-B Input</b> and <b>CABLE-B Output</b>.</div>
+          <p>Now use <b>Send to my DAW</b> at the top of this page:</p>
+          <p><b>1.</b> First box → the <b>artist</b>.<br>
+          <b>2.</b> Second box → <b>CABLE-B Input</b>.</p>
+          <p>That is the whole step. No Windows sound settings, no listen-through, nothing else to undo.</p>
+          <div class="tip"><b>Why this is better than pointing the browser at the cable.</b> Sending the whole
+          browser sends the whole ROOM — everyone at once — and takes your monitoring with it, so you then need
+          listen-through just to hear again. This puts <b>one person</b> on the cable, on a second copy of their
+          audio, so your headphones keep working exactly as they did and your DAW receives only the take.<br>
+          Chrome or Edge only — Safari and Firefox cannot choose an output, and the line under the boxes will say
+          so rather than failing quietly.</div>
         </div></details>
 
         <details class="sub"><summary>Part 3 — get the pipe into your mixer</summary><div class="body">
@@ -411,6 +413,8 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
   $('leaveBtn').addEventListener('click', function () { location.reload(); });
   $('micSel').addEventListener('change', republishMic);
   $('presetSel').addEventListener('change', onPresetChange);
+  $('routeWho').addEventListener('change', applyRoute);
+  $('routeWhere').addEventListener('change', applyRoute);
 
   async function join() {
     var code = $('code').value.trim().toUpperCase();
@@ -433,6 +437,8 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
 
       await republishMic();
       await listMics();
+      await listRouteOutputs();   // labels need the mic permission republishMic just took
+      listRoutePeople();
 
       $('join').style.display = 'none';
       $('room').style.display = 'block';
@@ -558,6 +564,86 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
     $('dawSilentHint').style.display = 'none';
   }
 
+  // ── Send ONE person to the DAW ──────────────────────────────────────────────
+  // The old way to record was to point the WHOLE browser at a virtual cable in
+  // Windows sound settings. Three things wrong with that: it sends the entire
+  // room mix rather than the artist, it takes your own monitoring with it (so
+  // you then need listen-through just to hear again), and it is two settings
+  // screens away from the app that needs it.
+  //
+  // setSinkId puts a single element on a single device instead. The element is a
+  // SECOND attach of the same track — the first one, made in wireRoom, stays on
+  // your normal output — so you keep hearing everyone while your DAW receives
+  // exactly one person. Chrome and Edge only; Safari and Firefox have no
+  // setSinkId, and the hint says so rather than failing quietly.
+  var routedEl = null;
+
+  function listRoutePeople() {
+    var sel = $('routeWho');
+    var prev = sel.value;
+    sel.innerHTML = '';
+    var off = document.createElement('option');
+    off.value = ''; off.textContent = 'Off — send nobody';
+    sel.appendChild(off);
+    if (room) room.remoteParticipants.forEach(function (p) {
+      var o = document.createElement('option');
+      o.value = p.identity;
+      o.textContent = p.name || p.identity;
+      sel.appendChild(o);
+    });
+    if (prev) sel.value = prev;
+  }
+
+  async function listRouteOutputs() {
+    var sel = $('routeWhere');
+    var prev = sel.value;
+    var devices = await navigator.mediaDevices.enumerateDevices().catch(function () { return []; });
+    sel.innerHTML = '';
+    devices.filter(function (d) { return d.kind === 'audiooutput'; }).forEach(function (d) {
+      var o = document.createElement('option');
+      o.value = d.deviceId;
+      // Unlabelled before permission is granted; the mic prompt covers both.
+      o.textContent = d.label || ('Output ' + (sel.children.length + 1));
+      sel.appendChild(o);
+    });
+    if (prev) sel.value = prev;
+  }
+
+  async function applyRoute() {
+    if (routedEl) {
+      try { routedEl.pause(); routedEl.srcObject = null; routedEl.remove(); } catch (_) {}
+      routedEl = null;
+    }
+    var who = $('routeWho').value, sink = $('routeWhere').value;
+    $('routeHint').textContent = '';
+    if (!who || !room) return;
+
+    var person = null;
+    room.remoteParticipants.forEach(function (p) { if (p.identity === who) person = p; });
+    if (!person) return;
+    var pub = null;
+    person.trackPublications.forEach(function (t) { if (t.kind === 'audio' && t.track) pub = t; });
+    if (!pub) { $('routeHint').textContent = 'Waiting for their audio…'; return; }
+
+    var el = pub.track.attach();
+    el.style.display = 'none';
+    document.body.appendChild(el);
+    if (!el.setSinkId) {
+      $('routeHint').textContent = 'This browser cannot choose an output — use Chrome or Edge.';
+      try { el.remove(); } catch (_) {}
+      return;
+    }
+    try {
+      await el.setSinkId(sink);
+      var where = $('routeWhere').selectedOptions[0];
+      $('routeHint').textContent = 'Only ' + (person.name || person.identity) + ' → ' + (where ? where.textContent : 'that device');
+      routedEl = el;
+    } catch (_) {
+      $('routeHint').textContent = 'Could not route to that device.';
+      try { el.remove(); } catch (__) {}
+    }
+  }
+
   async function republishMic() {
     if (!room) return;
     var preset = currentPreset();
@@ -606,8 +692,8 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
   }
 
   function wireRoom(r) {
-    r.on(LK.RoomEvent.ParticipantConnected, renderPeople)
-     .on(LK.RoomEvent.ParticipantDisconnected, renderPeople)
+    r.on(LK.RoomEvent.ParticipantConnected, function () { renderPeople(); listRoutePeople(); })
+     .on(LK.RoomEvent.ParticipantDisconnected, function () { renderPeople(); listRoutePeople(); })
      .on(LK.RoomEvent.ActiveSpeakersChanged, renderPeople)
      .on(LK.RoomEvent.TrackMuted, renderPeople)
      .on(LK.RoomEvent.TrackUnmuted, renderPeople)
@@ -617,7 +703,15 @@ kbd { background:#0f0e12; border:1px solid var(--line); border-bottom-width:2px;
        stopChain();
      })
      .on(LK.RoomEvent.TrackSubscribed, function (track) {
-       if (track.kind === 'audio') { var el = track.attach(); document.body.appendChild(el); }
+       if (track.kind !== 'audio') return;
+       // Monitor copy — your own output, always. The DAW route below is a
+       // SECOND attach of the same track, so routing never costs you the ears.
+       var el = track.attach();
+       document.body.appendChild(el);
+       listRoutePeople();
+       // If this is the person already selected, their audio has only just
+       // arrived — wire the route now rather than making them re-pick.
+       if ($('routeWho').value && !routedEl) applyRoute();
      })
      .on(LK.RoomEvent.DataReceived, function (payload) {
        try {
