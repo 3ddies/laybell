@@ -175,17 +175,9 @@ type Props = {
    * not.
    */
   showField?: boolean;
-  /**
-   * Squeeze into whatever height is left. Set while the keyboard is up: the
-   * stage is a flex child that CENTRES its content, so once the box is shorter
-   * than the content the overflow escapes in BOTH directions and the circles
-   * ride up over the title above them. Smaller circles, no field, no name line
-   * — enough to still see who is on, in a fraction of the room.
-   */
-  compact?: boolean;
 };
 
-function StudioStage({ room, roster, onPressMember, hostLabel, people, showField = true, compact = false }: Props) {
+function StudioStage({ room, roster, onPressMember, hostLabel, people, showField = true }: Props) {
   const reduce = useReduceMotion();
 
   // One Animated.Value per member plus one for the room. Kept in a ref and
@@ -287,7 +279,7 @@ function StudioStage({ room, roster, onPressMember, hostLabel, people, showField
   const onMicName = onMic
     ? (onAir.find((p) => p.id === onMic)?.name || null)
     : null;
-  const size = compact ? Math.min(64, avatarSize(onAir.length)) : avatarSize(onAir.length);
+  const size = avatarSize(onAir.length);
 
   return (
     <View style={styles.stage} pointerEvents="box-none">
@@ -327,7 +319,7 @@ function StudioStage({ room, roster, onPressMember, hostLabel, people, showField
       </View>
 
       {/* The field */}
-      {showField && !compact && (
+      {showField && (
         <View style={styles.bars} pointerEvents="none">
           {BAR_COLORS.map((color, i) => (
             <Bar key={i} index={i} color={color} level={roomLevel} reduce={reduce} />
@@ -337,7 +329,6 @@ function StudioStage({ room, roster, onPressMember, hostLabel, people, showField
 
       {/* Who is on the mic right now. A glyph and a name — no copy, so it needs
           no translation and reads the same in every language. */}
-      {!compact && (
       <View style={styles.onMic} pointerEvents="none">
         {!!onMicName && (
           <>
@@ -346,7 +337,6 @@ function StudioStage({ room, roster, onPressMember, hostLabel, people, showField
           </>
         )}
       </View>
-      )}
     </View>
   );
 }

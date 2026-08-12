@@ -70,9 +70,8 @@ export default function StudioListenScreen() {
   const roomRef = useRef<Room | null>(null);
   const channelRef = useRef<LiveChannelHandle | null>(null);
   const endedRef = useRef(false);
-  // The stage is a centring flex child, so once the keyboard shortens its box
-  // the content overflows in BOTH directions and the circles ride up over the
-  // title. Compact mode shrinks them instead.
+  // Drives the typing layout: the stage empties out, the hint steps aside, and
+  // the home-indicator inset is dropped because the keyboard covers it.
   const [kbUp, setKbUp] = useState(false);
   useEffect(() => {
     const show = Keyboard.addListener('keyboardWillShow', () => setKbUp(true));
@@ -315,14 +314,21 @@ export default function StudioListenScreen() {
             {/* The stage — big circles that bloom with whoever is talking, and
                 a field driven by the room's actual audio. Given the whole
                 middle of the screen and centred in it. */}
-            <View style={[styles.stageWrap, kbUp && styles.stageWrapHidden]}>
-              <StudioStage
-                room={roomRef.current}
-                roster={roster}
-                hostLabel={t('studio.host')}
-                compact={kbUp}
-                onPressMember={(userId) => router.push(`/profile/${userId}`)}
-              />
+            {/* The wrapper KEEPS its flex:1 while typing and only its contents
+                go. It is the sole flexible child, so collapsing it to height:0
+                does not close the space — it moves it BELOW the chat, which is
+                the gap between the input and the keyboard. Empty but still
+                flexible, it absorbs the slack above the chat exactly as before,
+                and the input sits on the keys. */}
+            <View style={styles.stageWrap}>
+              {!kbUp && (
+                <StudioStage
+                  room={roomRef.current}
+                  roster={roster}
+                  hostLabel={t('studio.host')}
+                  onPressMember={(userId) => router.push(`/profile/${userId}`)}
+                />
+              )}
             </View>
 
             {/* Chat + actions, pinned above the input */}
@@ -353,7 +359,7 @@ export default function StudioListenScreen() {
 
               {/* Messages dissolve upward into the background instead of being
                   clipped by a hard edge. */}
-              <View style={[styles.chatWrap, kbUp && styles.chatWrapGrow]}>
+              <View style={styles.chatWrap}>
                 {/* Fills the fixed-height strip rather than hugging its
                     messages. Hugging left the empty area above them outside the
                     list, so a drag there scrolled nothing and only a line of
@@ -496,8 +502,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   chatWrap: { position: 'relative', height: CHAT_H },
   // Keyboard up: the stage steps aside and chat takes the room, so the reader
   // sees as much conversation as the space allows instead of a clipped face.
-  chatWrapGrow: { height: undefined, flex: 1, minHeight: 120 },
-  stageWrapHidden: { flex: 0, height: 0 },
   chatFade: { position: 'absolute', top: 0, left: 0, right: 0, height: 46 },
   actionsRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   inputWrap: {
