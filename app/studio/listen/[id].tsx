@@ -320,6 +320,7 @@ export default function StudioListenScreen() {
                     mute: t('studio.radioMute'),
                     unmute: t('studio.radioUnmute'),
                     volume: t('studio.radioVolume'),
+                    stop: t('studio.radioStop'),
                   }}
                 />
               )}

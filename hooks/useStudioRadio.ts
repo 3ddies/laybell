@@ -3,6 +3,7 @@ import type { AudioPlayer } from 'expo-audio';
 import type { StudioRadioState } from '../lib/live';
 import { getDeviceId } from '../lib/deviceId';
 import { recordStream } from '../lib/streamOutbox';
+import { useSystemVolume } from '../modules/system-volume';
 import {
   createRadioPlayer, emptyRadio, radioPositionMs,
   DRIFT_TOLERANCE_MS, RADIO_HEARTBEAT_MS, type RadioTrack,
@@ -67,6 +68,31 @@ export function useStudioRadio({ isHost, publish, request, ready, onTakeOver, vi
   // wants the song quiet in their own ears without silencing it for anyone else.
   const [volume, setVolume] = useState(1);
   const [localMuted, setLocalMuted] = useState(false);
+
+  // Follow the hardware buttons. The phone drives the fader, never the reverse
+  // — iOS has no supported way to set the system volume, so this is one-way by
+  // necessity as well as by design.
+  //
+  // It also patches over an OS behaviour we cannot: during a session the audio
+  // category is playAndRecord, where the buttons move the CALL volume, whose
+  // lowest step is still audible. Mirroring that number into our own cubed gain
+  // means the last press or two of the hardware button now actually reaches
+  // silence, which it never could on its own.
+  const systemVolume = useSystemVolume();
+  const firstSystemRef = useRef(true);
+  useEffect(() => {
+    if (systemVolume === null) return;             // module absent on this build
+    if (firstSystemRef.current) {
+      // Adopt the phone's level on arrival rather than starting at full and
+      // blasting whatever the user had set quietly.
+      firstSystemRef.current = false;
+      setVolume(systemVolume);
+      return;
+    }
+    setVolume(systemVolume);
+    // Pressing volume up is an unambiguous "let me hear it".
+    if (systemVolume > 0) setLocalMuted(false);
+  }, [systemVolume]);
 
   const playerRef = useRef<AudioPlayer | null>(null);
   const loadedIdRef = useRef<string | null>(null);

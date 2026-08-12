@@ -96,6 +96,7 @@ type Props = {
     mute: string;
     unmute: string;
     volume: string;
+    stop: string;
   };
 };
 
@@ -148,20 +149,37 @@ function StudioRadioBar({
           {!!track.artist && <Text style={styles.artist} numberOfLines={1}>{track.artist}</Text>}
         </View>
 
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel={labels.volume}
-          onPress={() => setVolOpen((v) => !v)}
-          onLongPress={onToggleMute}
-          style={styles.iconBtn}
-          hitSlop={8}
-        >
-          <Ionicons
-            name={localMuted || volume === 0 ? 'volume-mute' : volume < 0.45 ? 'volume-low' : 'volume-high'}
-            size={18}
-            color={localMuted ? '#F43F5E' : '#fff'}
-          />
-        </TouchableOpacity>
+        {/* Top-right is now the way OUT. Stop used to live down in the transport
+            row where a mis-tap while reaching for skip killed the broadcast's
+            music; an × in the corner is where people look to end something, and
+            it is nowhere near the controls you use mid-song. Listeners have no
+            stop, so they keep the volume button here. */}
+        {onStop ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={labels.stop}
+            onPress={onStop}
+            style={styles.iconBtn}
+            hitSlop={8}
+          >
+            <Ionicons name="close" size={19} color="rgba(255,255,255,0.75)" />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={labels.volume}
+            onPress={() => setVolOpen((v) => !v)}
+            onLongPress={onToggleMute}
+            style={styles.iconBtn}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={localMuted || volume === 0 ? 'volume-mute' : volume < 0.45 ? 'volume-low' : 'volume-high'}
+              size={18}
+              color={localMuted ? '#F43F5E' : '#fff'}
+            />
+          </TouchableOpacity>
+        )}
       </TouchableOpacity>
 
       {volOpen && (
@@ -199,8 +217,20 @@ function StudioRadioBar({
           <TouchableOpacity accessibilityRole="button" onPress={onSkip} style={styles.ctrl} disabled={!hasNext}>
             <Ionicons name="play-skip-forward" size={17} color={hasNext ? '#fff' : 'rgba(255,255,255,0.35)'} />
           </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" onPress={onStop} style={styles.ctrl}>
-            <Ionicons name="stop" size={16} color="#fff" />
+          {/* Volume takes the corner stop used to occupy — it is the control you
+              reach for most often mid-song, and the safest thing to mis-tap. */}
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={labels.volume}
+            onPress={() => setVolOpen((v) => !v)}
+            onLongPress={onToggleMute}
+            style={[styles.ctrl, volOpen && styles.ctrlOn]}
+          >
+            <Ionicons
+              name={localMuted || volume === 0 ? 'volume-mute' : volume < 0.45 ? 'volume-low' : 'volume-high'}
+              size={17}
+              color={localMuted ? '#F43F5E' : '#fff'}
+            />
           </TouchableOpacity>
         </View>
       )}
@@ -234,6 +264,7 @@ const styles = StyleSheet.create({
     flex: 1, height: 38, borderRadius: 19, backgroundColor: 'rgba(242,101,34,0.85)',
     alignItems: 'center', justifyContent: 'center',
   },
+  ctrlOn: { backgroundColor: 'rgba(242,101,34,0.30)', borderColor: 'rgba(242,101,34,0.7)' },
   ctrl: {
     width: 44, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center',
