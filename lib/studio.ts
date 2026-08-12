@@ -606,6 +606,19 @@ export async function fetchJoinRequests(sessionId: string): Promise<StudioJoinRe
 }
 
 /**
+ * Is this LiveKit identity the web DAW connector rather than a Laybell account?
+ *
+ * The token function mints web guests as `guest-<8 hex>` and app users as their
+ * plain user UUID (supabase/functions/livekit-token). That prefix is the ONLY
+ * reliable signal. "Absent from the roster" is not: a member who has just been
+ * seated is in the room before the next roster fetch returns them, and treating
+ * that gap as a guest put a laptop icon over a real person's face.
+ */
+export function isDawGuest(identity: string): boolean {
+  return identity.startsWith('guest-');
+}
+
+/**
  * Host: remove one participant from the session.
  *
  * `identity` is what LiveKit knows them by — a user id for an app member,

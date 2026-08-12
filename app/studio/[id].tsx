@@ -34,7 +34,7 @@ import StudioRadioPicker from '../../components/StudioRadioPicker';
 import { fetchStudioEarnings } from '../../lib/donations';
 import {
   applyVocalPreset, connectStudioRoom, disconnectStudioRoom, endSession, fetchJoinRequests, hostExitSession,
-  fetchRoster, fetchSession, getRoomEvents, leaveSession, onCountIn, respondStudioJoin, amStillMember,
+  fetchRoster, fetchSession, getRoomEvents, leaveSession, onCountIn, respondStudioJoin, amStillMember, isDawGuest,
   sendCountIn, setListenerPeak, setSessionLive, beatStudioSession, removeStudioParticipant, VOCAL_PRESETS,
   type StudioJoinRequest, type StudioMember, type StudioSession, type VocalPresetKey,
 } from '../../lib/studio';
@@ -122,7 +122,15 @@ export default function StudioRoomScreen() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'studio_session_members', filter: `session_id=eq.${id}` }, () => loadMeta())
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'studio_sessions', filter: `id=eq.${id}` }, () => loadMeta())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    // POLL TOO. Neither of those tables was in the `supabase_realtime`
+    // publication, so both subscriptions above have never fired once — the
+    // roster was read on mount and never again. A member joining mid-session
+    // therefore never gained their avatar, and nobody but the host saw the
+    // broadcast start or stop. supabase/sql/studio_realtime_tables.sql fixes the
+    // publication; this makes the screen correct whether or not it has been run,
+    // which is the same lesson studio_join_requests already taught.
+    const poll = setInterval(loadMeta, 20_000);
+    return () => { clearInterval(poll); supabase.removeChannel(channel); };
   }, [id, loadMeta]);
 
   // Check in every 15s so the server-side reaper knows this room is real.
@@ -401,14 +409,23 @@ export default function StudioRoomScreen() {
   const stageCast: StagePerson[] = [
     ...(conn === 'connected' ? live : []).map((p: any) => {
       const member = byId.get(p.identity);
+      // The laptop glyph is for the WEB DAW CONNECTOR only, and the identity
+      // prefix is what says so. It used to key off "not in the roster", which
+      // also catches a real member for the moment between being seated and the
+      // next roster fetch — so a person who had just joined wore a laptop over
+      // their face. Their avatar arrives with that fetch; until it does they get
+      // a gradient initial like anyone else, which is at worst incomplete
+      // rather than wrong.
+      const guest = !p.isLocal && isDawGuest(String(p.identity));
       return {
         id: p.identity,
         name: p.isLocal
           ? t('studio.you')
-          : member?.display_name || member?.username || p.name || t('studio.guest'),
+          : member?.display_name || member?.username || p.name
+            || (guest ? t('studio.guest') : ''),
         avatarUrl: member?.avatar_url ?? null,
         isHost: member?.role === 'host',
-        isGuest: !member && !p.isLocal,
+        isGuest: guest,
         micOff: p.isLocal ? muted : p.isMicrophoneEnabled === false,
         // A guest holds no seat, but removing one still works — it closes their
         // LiveKit connection, which is all a guest has.
