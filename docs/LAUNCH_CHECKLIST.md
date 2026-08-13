@@ -24,10 +24,16 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 thing left is the production build — deliberately paused by the owner (2026-08-10) to
 keep polishing, because there is no OTA here and whatever is in that build ships.**
 
-**The polish pass is COMPLETE (2026-08-12).** Studio sessions, lives and audio across
-the app were all tested on device and signed off. Nothing else stands between here and
-the production build — the next actions are the App Store Connect version field, then
-the build itself (steps 4–6 below).
+# 🚀 **SUBMITTED TO APPLE — 2026-08-12.** `1.0.0 (4)` is **Waiting for Review** with
+all NINE items in one submission: the version, 5 credit consumables, 2 subscriptions
+and the Laybell Premium subscription group. Build 4 was smoke-tested from TestFlight
+first, including the RTMP go-live path.
+
+**Manual release is set, so approval does NOT publish the app.** That is deliberate and
+load-bearing: the launch-day sequence in §0.0 has not run. Until it does, the **$58 demo
+wallet balance is still withdrawable**, test accounts are still present, and Stripe is
+still on the test key. When the approval email arrives, run the launch sequence FIRST,
+then release.
 
 Everything else is three inbox waits and one test that needs Android hardware.
 
@@ -149,15 +155,31 @@ Everything else is three inbox waits and one test that needs Android hardware.
    `plugins/withHaishinKitSwiftFix.js`, which compiles that one pod at `-Onone`.
    **If a future build dies in a pod, read the Xcode log — never the CLI's summary.**
 
-   Remaining before Add for Review: TestFlight smoke test (especially the **RTMP
-   go-live path**, since that pod's compilation changed), then the IAPs.
+   ✅ TestFlight smoke test passed, RTMP go-live included.
 
    ⚠️ **IAPs are NOT attached on the version page any more.** Apple moved it: "Add for
    Review" builds a *review submission*, and the in-app purchases and subscription
    group are added as items THERE, alongside the version. First-time IAPs must be
    reviewed with a version or they sit unreviewed until the next one.
 
-6. ~~**Queue the iOS production build**~~ — superseded by 5 above.
+6. ~~**Submit for review**~~ ✅ **DONE 2026-08-12.** Four gates had to be cleared that
+   the old notes did not mention, all recorded here so a second platform or a v1.1 does
+   not rediscover them:
+
+   - **App price.** "Unable to Add for Review — you must choose a price tier." A free
+     app still needs **Free** chosen explicitly in Pricing and Availability; Apple does
+     not infer it.
+   - **Per-subscription availability.** Each auto-renewable subscription needs its own
+     territory list. It does NOT inherit the app's, and the error names only the first
+     one it hits.
+   - **The subscription GROUP is its own reviewable item.** Adding both subscriptions
+     is not enough — "your auto-renewable subscription must be submitted with its
+     subscription group" — and the group carries the localization customers actually
+     see on the purchase sheet.
+   - **IAPs attach via the DRAFT SUBMISSION, not the version page.** Apple moved this.
+     "Add for Review" opens a draft; products are added from their own pages (the
+     In-App Purchases list has a bulk **Edit**), and the draft's item count is the
+     check. Nine items, not one.
 
    🚨 **Two App Store Connect settings that must be right BEFORE approval, not after:**
 
