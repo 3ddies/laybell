@@ -136,7 +136,28 @@ Everything else is three inbox waits and one test that needs Android hardware.
    Everything in the studio work is **JavaScript only** — no native module, no SQL,
    no function deploy. It reaches a device on the next build like the rest.
 
-5. **Queue the iOS production build** → TestFlight. ⚠️ **Build credits are exhausted — every build is billed.** Verify assets locally before spending.
+5. 🟡 **iOS production build — BUILT AND UPLOADED 2026-08-12.** `1.0.0 (4)`, commit
+   `bfe0638`, distribution STORE. On TestFlight and attached to the 1.0.0 version;
+   App Review Information and **Manually release** are set and saved.
+
+   ⚠️ **The first attempt FAILED and the reason is worth keeping.** EAS reported two
+   `-Wdeprecated-declarations` WARNINGS as the errors — noise. The real cause, only
+   visible in the Xcode log, was the **Swift 6.2 compiler crashing** on the HaishinKit
+   pod (SIL `CopyPropagation` → ownership-verifier abort). Not a regression: every
+   previous build was the DEVELOPMENT profile, and Debug runs no SIL performance
+   passes, so Release had simply never been built. Fixed by
+   `plugins/withHaishinKitSwiftFix.js`, which compiles that one pod at `-Onone`.
+   **If a future build dies in a pod, read the Xcode log — never the CLI's summary.**
+
+   Remaining before Add for Review: TestFlight smoke test (especially the **RTMP
+   go-live path**, since that pod's compilation changed), then the IAPs.
+
+   ⚠️ **IAPs are NOT attached on the version page any more.** Apple moved it: "Add for
+   Review" builds a *review submission*, and the in-app purchases and subscription
+   group are added as items THERE, alongside the version. First-time IAPs must be
+   reviewed with a version or they sit unreviewed until the next one.
+
+6. ~~**Queue the iOS production build**~~ — superseded by 5 above.
 
    🚨 **Two App Store Connect settings that must be right BEFORE approval, not after:**
 
