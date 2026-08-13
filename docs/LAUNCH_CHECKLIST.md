@@ -30,10 +30,12 @@ and the Laybell Premium subscription group. Build 4 was smoke-tested from TestFl
 first, including the RTMP go-live path.
 
 **Manual release is set, so approval does NOT publish the app.** That is deliberate and
-load-bearing: the launch-day sequence in §0.0 has not run. Until it does, the **$58 demo
-wallet balance is still withdrawable**, test accounts are still present, and Stripe is
-still on the test key. When the approval email arrives, run the launch sequence FIRST,
-then release.
+load-bearing: the launch-day sequence in §0.0 has not run. ✅ **The $58 demo wallet balance
+was REVERSED 2026-08-13** (`available_cents_should_be_0` = 0, `invariant_violations` = 0),
+early rather than on launch day, because its only job — making the wallet screenshot show a
+real figure — was finished when both stores' screenshots went up on 08-10. What remains
+un-run: test accounts are still present and Stripe is still on the test key. When the
+approval email arrives, run the launch sequence FIRST, then release.
 
 Everything else is three inbox waits and one test that needs Android hardware.
 
@@ -310,12 +312,21 @@ Everything else is three inbox waits and one test that needs Android hardware.
 
 ### 🚀 LAUNCH-DAY SEQUENCE — only when the owner says "we are going live"
 
-0. 💵 **REVERSE THE DEMO WALLET BALANCE — do this first, it is real money.**
+0. ~~💵 **REVERSE THE DEMO WALLET BALANCE**~~ ✅ **DONE 2026-08-13 — ran early, not on
+   launch day.** Verified `available_cents_should_be_0` = **0** and `invariant_violations`
+   = **0**. Pulled forward deliberately: the balance existed only to make the wallet
+   screenshot show a figure, and both stores' screenshots were uploaded 08-10, so it was
+   pure downside from that moment — the worst case if anything ever published unexpectedly.
+   Before running, the reversal was diffed against `_DEMO_wallet_balance.sql`: same user,
+   same $58.00, signs flipped, legs summing to zero, distinct `external_id`. **Do that diff
+   if this ever needs re-running** — a mirror that does not mirror is how you mint money.
+
+   *(the reasoning, kept)*
    ```bash
    npx supabase db query --linked -f supabase/sql/_DEMO_wallet_balance_REVERSE.sql
    ```
    Applied 2026-08-10 so the App Store wallet screenshot showed a figure instead of
-   `$0.00`. It credits `shpwkvr7jg` **$58.00 of AVAILABLE (withdrawable) earnings** —
+   `$0.00`. It credited `shpwkvr7jg` **$58.00 of AVAILABLE (withdrawable) earnings** —
    the wallet's headline number is the payout-eligible balance, so this is not paint on
    a screen. Once Stripe is live and `payoutsAvailable()` is on, "Transfer to bank"
    would move **fifty-eight real dollars out of Laybell's Stripe balance** against value
