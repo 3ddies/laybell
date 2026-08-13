@@ -222,9 +222,13 @@ Everything else is three inbox waits and one test that needs Android hardware.
     `android.googleServicesFile` is unset, so the build has no
     `default_web_client_id`. Needs a REBUILD; a follow-up, not a blocker, since the
     web flow is what Android actually uses.
-  · ⚠️ **STILL TEST THIS ON iOS.** Nothing about the broken redirect URI was
-    Android-specific, so "Continue with Google" was very likely failing there too and
-    simply never exercised. Two minutes on the TestFlight build.
+  · 🟢 **iOS was NOT separately verified — accepted as low risk 2026-08-13 (owner).**
+    The fix is console-side on the Supabase web OAuth client and nothing about it is
+    platform-specific: iOS uses the same browser-based flow Android just proved, and
+    the redirect URI is set by Supabase's auth domain, not the client. If it ever
+    needs testing, **a new email address is not required** — the failure fired at the
+    redirect, before account creation, so signing in with an already-linked Google
+    account exercises it (a still-broken client shows `Error 400` immediately).
   · Ruled out along the way, so nobody re-checks them: Supabase's Redirect URLs
     allowlist already contained `laybell://auth-callback`, `scheme: "laybell"` is set,
     and the custom auth domain serves correctly (both it and the .supabase.co host
