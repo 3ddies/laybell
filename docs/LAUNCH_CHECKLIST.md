@@ -67,7 +67,7 @@ Everything else is three inbox waits and one test that needs Android hardware.
 
 | What | When | What to do when it lands |
 |---|---|---|
-| **ASCAP licence PDF** | **overdue — voicemail left 2026-08-12** | Direct line **(615) 742-5017** (no answer 08-12); (800) 505-4052 is the general line. **Call again by ~08-14** — a voicemail leaves no ticket, same trap as the 07-28 email. First check **ascap.com/mylicense** + spam; the PDF may already exist. **NEVER resubmit** the purchase form — duplicate-blocked, risks a double charge. A status email to `weblicense@ascap.com` is fine. |
+| **ASCAP licence PDF** | ✅ **in queue — ASCAP replied 2026-08-13. STOP CHASING IT.** | Brooke Basaran (**bbasaran@ascap.com**, **(615) 727-5914**) confirmed receipt of the info + payment: they review, then send an **acknowledgment email carrying the account number**, and the licence follows. So the 08-12 voicemail worked — this is now a tracked ticket with a named human, not the void the 07-28 email fell into. **Not launch-blocking** (paid 08-02, term 08/01/2026→07/31/2027 already running). Reply to Brooke if it goes quiet past ~08-20. **NEVER resubmit** the purchase form — duplicate-blocked, risks a double charge. |
 | **Apple Small Business Program approval** | submitted 2026-08-09 | Tell Claude → it flips the three fee rates in §0.3 the same hour. Until then Laybell earns **nothing** on shop sales and Premium tips. |
 | **Stripe live-mode review** | 2–3 days from 2026-08-09 | Only matters at launch (live key + funded balance). |
 
