@@ -195,9 +195,16 @@ Everything else is three inbox waits and one test that needs Android hardware.
      withdrawable**, test accounts are still present, and Stripe is still on the test key.
      Approval arrives without warning; manual release is what makes step 0 possible.
 
-   Also worth doing now: **App Store Server Notifications → Production URL** pointing at
-   RevenueCat (their Project settings → Apple App Store). Without it, refunds, cancellations
-   and billing failures reach RevenueCat late or never, so a refunded buyer keeps Premium.
+   ✅ **App Store Server Notifications → Production URL is ALREADY SET** (verified on
+   screen 2026-08-13) to RevenueCat's `…/v1/incoming-webhooks/apple-server-to-server-notification/…`
+   endpoint. This was the thing that, if missed, lets a refunded buyer keep Premium —
+   refunds, cancellations and billing failures would reach RevenueCat late or never.
+   **Do not re-do it.** It lives in App Information, at the bottom, not in the version page.
+   ⚠️ The `v1` in that URL is *RevenueCat's API path*, not Apple's notification version —
+   the two are unrelated, and reading it as "Version 1" would send someone changing a
+   setting that is already correct. Remaining nits, both harmless: confirm the Edit dialog
+   says **Version 2**, and paste the same URL into **Sandbox Server URL** (RevenueCat wants
+   it in both; sandbox-only, so it cannot affect production).
 6. **Submit for review.** Two things that are easy to forget: the IAPs and the subscription group must be **attached to that version's submission**, and reviewers need the `laybellreview` demo credentials.
 
 ### 🚧 GATES — conditions that must be met before a specific action
