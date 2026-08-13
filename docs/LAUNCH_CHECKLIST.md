@@ -230,8 +230,25 @@ Everything else is three inbox waits and one test that needs Android hardware.
     and the custom auth domain serves correctly (both it and the .supabase.co host
     answer /auth/v1/health).
 
-- 🟡 **Android video playback is worse than iOS** (owner, 2026-08-13). Vague but real.
-  Not launch-blocking; needs a proper look with a device in hand.
+- 🟡 **Android video playback is worse than iOS** (owner, 2026-08-13). Not
+  launch-blocking. A 55s screen recording exists; frames were extracted and sampled.
+  Reported: video not playing while its audio does, a glitched region bottom-left
+  during horizontal scrolling, blank thumbnails.
+
+  **DO NOT change the Android video pipeline on this evidence.** The recording was
+  made on BAD WIFI on a Samsung A54, and every symptom listed has both a network and a
+  code explanation — at ~30s the profile grid shows play counts and view counts
+  rendering (local data) while thumbnails and the avatar do not (network), which is
+  equally consistent with a slow connection and with a broken URL. A 1fps sample
+  cannot separate them, and guessing here risks breaking a build that works.
+
+  **What makes it diagnosable — get these first:**
+  1. The same paths recorded on a GOOD connection. If it comes good, there is nothing
+     to fix and the matter is closed.
+  2. A second Android device, to rule out the A54 specifically.
+  3. Whether it is ALL video or only some surfaces — feed vs profile grid vs reels.
+     The feed and reels use expo-video; grids use thumbnails; Cloudflare Stream serves
+     HLS. Those are three different failure surfaces and the answer picks one.
 - **Do not automate Stripe's hosted Express form.** It asks for SSN and bank details on
   the owner's real account. Laybell's half is proven; the first real creator exercises
   Stripe's.
