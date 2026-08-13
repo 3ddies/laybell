@@ -210,8 +210,9 @@ Everything else is three inbox waits and one test that needs Android hardware.
   is Google's accelerated test-subscription clock and independently proves no real
   money moved. The RevenueCat Play SDK + Play Billing layer is now proven.
 
-- 🔴 **GOOGLE SIGN-IN WAS BROKEN — root cause found, fix applied 2026-08-13, RETEST
-  PENDING.** `Error 400: redirect_uri_mismatch`. Supabase uses a CUSTOM AUTH DOMAIN
+- ✅ **GOOGLE SIGN-IN FIXED AND VERIFIED ON ANDROID 2026-08-13.** One cause, one fix.
+  The first retry still hung on a loading screen — that was Google's change
+  propagating, not a second bug; the next attempt worked. Console-only, no rebuild. `Error 400: redirect_uri_mismatch`. Supabase uses a CUSTOM AUTH DOMAIN
   (`open.laybell.app`), so it sends Google `https://open.laybell.app/auth/v1/callback`
   — which was never registered on the "Laybell Supabase" web OAuth client. Only the
   `.supabase.co` URL was. Both are registered now.
@@ -221,9 +222,13 @@ Everything else is three inbox waits and one test that needs Android hardware.
     `android.googleServicesFile` is unset, so the build has no
     `default_web_client_id`. Needs a REBUILD; a follow-up, not a blocker, since the
     web flow is what Android actually uses.
-  · **This was almost certainly broken on iOS too** — iOS also lacks the native path's
-    prerequisites here, and nothing but the missing redirect URI explains the failure.
-    Worth testing "Continue with Google" on the iOS build as well.
+  · ⚠️ **STILL TEST THIS ON iOS.** Nothing about the broken redirect URI was
+    Android-specific, so "Continue with Google" was very likely failing there too and
+    simply never exercised. Two minutes on the TestFlight build.
+  · Ruled out along the way, so nobody re-checks them: Supabase's Redirect URLs
+    allowlist already contained `laybell://auth-callback`, `scheme: "laybell"` is set,
+    and the custom auth domain serves correctly (both it and the .supabase.co host
+    answer /auth/v1/health).
 
 - 🟡 **Android video playback is worse than iOS** (owner, 2026-08-13). Vague but real.
   Not launch-blocking; needs a proper look with a device in hand.
