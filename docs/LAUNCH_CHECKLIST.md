@@ -202,10 +202,31 @@ Everything else is three inbox waits and one test that needs Android hardware.
 
 ### 🚧 GATES — conditions that must be met before a specific action
 
-- **Android must NOT be promoted past internal testing** until someone runs a real
-  purchase on Android hardware (~15 min). The owner has no Android device as of
-  2026-08-09. Server-side money code is store-agnostic and fully tested; what is
-  unproven is the RevenueCat Play SDK + Play Billing client layer.
+- ~~**Android must NOT be promoted past internal testing**~~ ✅ **CLEARED 2026-08-13**
+  on a borrowed device. Install from the internal track, signup, a credits consumable,
+  a Premium subscription, and the entitlement surviving a force-quit — all passed.
+  Confirmed SERVER-SIDE, not just in the app: `premium_active = true` for the test
+  account, with `premium_until` about twenty minutes out rather than a month, which
+  is Google's accelerated test-subscription clock and independently proves no real
+  money moved. The RevenueCat Play SDK + Play Billing layer is now proven.
+
+- 🔴 **GOOGLE SIGN-IN WAS BROKEN — root cause found, fix applied 2026-08-13, RETEST
+  PENDING.** `Error 400: redirect_uri_mismatch`. Supabase uses a CUSTOM AUTH DOMAIN
+  (`open.laybell.app`), so it sends Google `https://open.laybell.app/auth/v1/callback`
+  — which was never registered on the "Laybell Supabase" web OAuth client. Only the
+  `.supabase.co` URL was. Both are registered now.
+  · The Play app-signing SHA-1 and the Android OAuth client MATCH
+    (`07:4F:FE:52…`) — that was NOT the problem, checked and ruled out.
+  · Native Google sign-in falls through to the browser because
+    `android.googleServicesFile` is unset, so the build has no
+    `default_web_client_id`. Needs a REBUILD; a follow-up, not a blocker, since the
+    web flow is what Android actually uses.
+  · **This was almost certainly broken on iOS too** — iOS also lacks the native path's
+    prerequisites here, and nothing but the missing redirect URI explains the failure.
+    Worth testing "Continue with Google" on the iOS build as well.
+
+- 🟡 **Android video playback is worse than iOS** (owner, 2026-08-13). Vague but real.
+  Not launch-blocking; needs a proper look with a device in hand.
 - **Do not automate Stripe's hosted Express form.** It asks for SSN and bank details on
   the owner's real account. Laybell's half is proven; the first real creator exercises
   Stripe's.
