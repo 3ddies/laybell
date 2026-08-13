@@ -92,9 +92,24 @@ Everything else is three inbox waits and one test that needs Android hardware.
    thing to show a reviewer of a UGC video app), and Communities because it carried the
    `1 members` bug fixed the same day.
 
-   **Play is now filled in and parked**, deliberately: everything except the production
-   release is entered and saved. Creating that release is what the Android hardware gate
-   below forbids, so "Send app for review" stays greyed out until the purchase test runs.
+   🟢 **Play is now STAGED AS A DRAFT PRODUCTION RELEASE (2026-08-13)** — bundle
+   **4 (1.0.0)** attached from the library (the same AAB already in internal testing, NOT
+   a rebuild), countries set to **United States only**, release notes written, **Saved as
+   draft**. Listing and App content were already entered. Nothing is submitted and nothing
+   is live. One click — "Send app for review" — is all that remains.
+
+   🚨 **PLAY HAS NO MANUAL-RELEASE HOLD, AND THIS INVERTS THE LAUNCH ORDER.** Turning on
+   **managed publishing was REFUSED** — "You can't turn on managed publishing right now",
+   because Play gates it on apps that have never been published. So Apple's trick (submit
+   early, hold the release) **does not exist here**: send for review, and approval publishes
+   the app on Google's schedule, not yours. **The saved draft IS the hold** — Play cannot
+   publish what was never submitted. Therefore Play's "Send app for review" belongs in the
+   launch-day sequence below, AFTER the demo-wallet reversal, not before it.
+
+   ✅ Also settled that day: the account is **not** gated behind Google's 12-testers /
+   14-continuous-days closed-testing rule (that hits personal accounts created after
+   2023-11-13; internal testing would not have counted). "Create new release" was live with
+   no production-access warning. Worth knowing before assuming a two-week delay.
 
    *(historical detail below)* Screenshots + a seeded demo account;
    listing copy is in `docs/STORE_LISTING.md`, §4 now carries the shot order and the
@@ -343,6 +358,11 @@ Everything else is three inbox waits and one test that needs Android hardware.
    then flip `payoutsAvailable()`. Credits money arrives in a *bank* account, not
    Stripe, so transfers fail until it is topped up.
 5. Re-check universal links on a device once a store build exists.
+6. **Play → Production → Send app for review.** Deliberately last: see the managed-publishing
+   note above — Play publishes on approval and there is no hold, so this is a fuse, not a
+   switch. Everything else in this sequence must already be done when it is lit. Expect a
+   review delay of days for a first release, so Android goes live *after* iOS rather than
+   with it; that is the price of not having a release gate, and it is the safe side to err on.
 
 ### 🧭 STANDING RULES for whoever picks this up
 
