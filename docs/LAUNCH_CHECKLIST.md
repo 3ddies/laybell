@@ -241,25 +241,43 @@ Everything else is three inbox waits and one test that needs Android hardware.
     and the custom auth domain serves correctly (both it and the .supabase.co host
     answer /auth/v1/health).
 
-- 🟡 **Android video playback is worse than iOS** (owner, 2026-08-13). Not
-  launch-blocking. A 55s screen recording exists; frames were extracted and sampled.
-  Reported: video not playing while its audio does, a glitched region bottom-left
-  during horizontal scrolling, blank thumbnails.
+- ✅ **Android video playback — DIAGNOSED FROM THE RECORDING ALONE, 2026-08-13. Nothing
+  to fix before launch. The video pipeline is FINE.** The tester's device was gone, so
+  this was settled by re-analysing the same 55s clip properly instead of re-shooting it:
+  frame timing, per-second audio RMS against per-frame pixel change, and 12fps bursts
+  through the transitions. Verdict per reported symptom:
 
-  **DO NOT change the Android video pipeline on this evidence.** The recording was
-  made on BAD WIFI on a Samsung A54, and every symptom listed has both a network and a
-  code explanation — at ~30s the profile grid shows play counts and view counts
-  rendering (local data) while thumbnails and the avatar do not (network), which is
-  equally consistent with a slow connection and with a broken URL. A 1fps sample
-  cannot separate them, and guessing here risks breaking a build that works.
+  1. **Blank thumbnails → NETWORK, not a bug.** At 22s the `@observer` grid renders play
+     and view counts (local) over black tiles; at **23s the same grid is fully populated**.
+     They arrive one second late. A broken URL never arrives. The app's grey skeletons
+     also appear correctly at 21s/32s/33s, i.e. the loading states work.
+  2. **"Video not playing while the audio does" → DID NOT HAPPEN in this recording.**
+     Audio RMS sits at a **0.03 room-noise floor** and only peaks (0.07–0.13) where real
+     audio plays; every second where the screen was frozen was also *silent*. The two
+     stretches that look frozen (5–8s, 12–13s) are the near-static white-wall shot of the
+     "The one" post with nothing playing over it. ⚠️ The naive test — "audio > 0 and screen
+     static" — flags those as frozen. It is reading the mic's noise floor as playback.
+  3. **Bottom-left glitch → REAL, and already an ACCEPTED DESIGN TRADE-OFF.** Caught at
+     **46.9s**: mid-swipe the new post's video has swapped in while the overlay still shows
+     the previous post's `@shpwkvr7jg` / "Haha" / "Buddy — Mom's Account" song card, with
+     the video's left third still black.
 
-  **What makes it diagnosable — get these first:**
-  1. The same paths recorded on a GOOD connection. If it comes good, there is nothing
-     to fix and the matter is closed.
-  2. A second Android device, to rule out the A54 specifically.
-  3. Whether it is ALL video or only some surfaces — feed vs profile grid vs reels.
-     The feed and reels use expo-video; grids use thumbnails; Cloudflare Stream serves
-     HLS. Those are three different failure surfaces and the answer picks one.
+  **Cause of (3), and why it is not an Android bug:** `app/reel/[id].tsx:822` layers the
+  overlay bar as a SINGLE bar on top of the horizontal pager, deliberately **not** inside
+  its items, so bottom touches cannot reach the FlatList. Its identity updates from
+  `onOverlayViewable` (`:1053`), which fires on settle — so mid-swipe you get the new video
+  under the old caption. Same JS on both platforms; the window is just longer on an A54
+  because the transition settles and React re-renders slower. **That alone explains
+  "Android is worse than iOS" with no Android-specific defect.**
+
+  🚫 **Do not "fix" it before launch, and read `:830-836` before ever touching it** — it
+  records that weaving the TV ad into this same pager (toggling `scrollEnabled` /
+  `scrollToIndex`) **froze it mid-scroll between two posts, which was itself "the reported
+  glitch."** That area has already traded a worse bug for this one. The cosmetic fix, if it
+  is ever wanted, is additive and does not touch the pager or the video: fade the overlay's
+  contents while `overlayDraggingRef.current` is true so the stale caption is not visible
+  mid-swipe. It needs a rebuild (no OTA) and a device to verify on — so it belongs in 1.0.1,
+  not in the launch build.
 - **Do not automate Stripe's hosted Express form.** It asks for SSN and bank details on
   the owner's real account. Laybell's half is proven; the first real creator exercises
   Stripe's.
