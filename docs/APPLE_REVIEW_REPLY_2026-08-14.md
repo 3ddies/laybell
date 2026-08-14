@@ -62,8 +62,13 @@ impossible. Use `+minor1` and `+guardian1`.
 
 - **Do Not Disturb ON** — a notification banner mid-recording means a re-take.
 - **Good Wi-Fi.** The Android clip that cost a day of diagnosis was shot on bad wifi.
-- **Sandbox account signed in** — Settings → App Store → Sandbox Account →
-  `3ddiehall+sandbox@gmail.com`. Purchases are then free.
+- 🚨 **Sandbox account signed in BEFORE you record** — Settings → App Store → scroll to the
+  bottom → **Sandbox Account** → `3ddiehall+sandbox@gmail.com` / `Eddie123$`.
+  **This bit the first take on 2026-08-14.** With the slot empty, iOS falls back to the
+  device's real Apple Account and the purchase sheet demands the owner's **personal Apple ID
+  password — on camera.** Refusing was correct; the answer is to fill the slot, not to type
+  it. The sandbox slot is independent of the real Apple ID, signs you out of nothing, and
+  sandbox purchases never charge a card.
 - 🚨 **Register as 18 or over.** Under-18 accounts have livestream broadcasting blocked and
   location capture disabled by design — film one of those and the reviewer sees a crippled
   app and asks why.
