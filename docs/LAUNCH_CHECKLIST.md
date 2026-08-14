@@ -310,10 +310,17 @@ Everything else is three inbox waits and one test that needs Android hardware.
   worked in July and the recordings are now purged when a broadcast ends, but only a real
   stream proves a viewer can actually watch one.
 
-### 🐛 ACCOUNT DELETION IS BROKEN IN PRODUCTION — found 2026-08-14, FIX NOT YET RUN
+### 🐛 ACCOUNT DELETION WAS BROKEN IN PRODUCTION — found AND FIXED 2026-08-14
 
-**`supabase/sql/fix_follow_events_blocks_deletion.sql` is written and unrun.** SQL only —
-**no rebuild**, so it can ship any time before or after launch.
+✅ **`supabase/sql/fix_follow_events_blocks_deletion.sql` RAN against production 2026-08-14.**
+Verified in `pg_proc`, not assumed: `log_follow_event` carries the existence guard,
+`sweep_deletable_accounts` carries the `exception when others` handler, exactly one copy of
+each function exists (no accidental overload), and both triggers are still attached to
+`public.follows`. SQL only — no rebuild was needed.
+
+🔬 **STILL UNPROVEN BY EXERCISE — the owner is running that test.** The verification above
+reads the deployed source; it does not prove the delete succeeds. See the ⚠️ at the bottom of
+this entry for the test that does.
 
 Found by force-deleting one throwaway test account: `delete from auth.users` fails with
 `23503` on `follow_events_follower_id_fkey`. `follow_events` FKs to `auth.users`, and the
