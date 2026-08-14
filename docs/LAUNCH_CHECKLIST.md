@@ -310,6 +310,39 @@ Everything else is three inbox waits and one test that needs Android hardware.
   worked in July and the recordings are now purged when a broadcast ends, but only a real
   stream proves a viewer can actually watch one.
 
+### 🐛 ACCOUNT DELETION IS BROKEN IN PRODUCTION — found 2026-08-14, FIX NOT YET RUN
+
+**`supabase/sql/fix_follow_events_blocks_deletion.sql` is written and unrun.** SQL only —
+**no rebuild**, so it can ship any time before or after launch.
+
+Found by force-deleting one throwaway test account: `delete from auth.users` fails with
+`23503` on `follow_events_follower_id_fkey`. `follow_events` FKs to `auth.users`, and the
+AFTER DELETE trigger on `public.follows` inserts an 'unfollow' row — so deleting a user
+cascades into `follows`, fires that trigger, and the trigger writes a row pointing at the
+user that was just deleted. **This hits every account that has followed or been followed by
+anyone**, i.e. every real user.
+
+Two reasons it is worse than one failed delete:
+- `sweep_deletable_accounts()` has **no exception handling** and runs as one transaction, so
+  a single throwing account **rolls back every other deletion in the batch** — deletion stops
+  for everybody, hourly, silently.
+- The in-app flow still *looks* correct: "Delete now" only flags the row and signs the user
+  out. It is the hard delete 48h later that fails. So the app promises the email frees up in
+  48 hours and it never does, and the Privacy Policy's deletion commitment is not kept.
+
+**Why nothing caught it:** production had **zero** accounts pending deletion, so the failing
+path had never executed once. Same shape as the hidden-profiles RLS gap — no data in the
+failing state, therefore no symptom. Both audits would have missed it: the objects all exist
+and are deployed. **Only exercising the path finds this class of bug.**
+
+Not a store-review risk — a reviewer sees the in-app flow, which works. It is a compliance
+and data-retention problem, and Apple requires a working deletion under 5.1.1(v).
+
+⚠️ **Verify by exercising it, not by reading it:** after running the fix, make a throwaway
+account, **follow someone with it** (that is what arms the bug), delete it in-app, then run
+`delete from auth.users where id = '<id>'` and confirm it succeeds *without* clearing
+`public.follows` first.
+
 ### 🗓️ THE SEPTEMBER 1 PLAN — target **Tuesday, 2026-09-01**, set by the owner 2026-08-13
 
 **Android ships as-is.** The reels overlay glitch goes to 1.0.1 — owner's call, made
