@@ -209,11 +209,12 @@ can't reach a feature assumes it doesn't work.
 **Demo account: required.** Create a real account, seed it with a few posts, a
 shop listing, and some credits, and hand over working credentials.
 
-> ⚠️ **Checked 2026-08-10: `laybellreview` has 0 shop listings.** The notes below
-> promise the reviewer one. Either publish a listing from that account first, or cut
-> the claim — this doc's own rule is that a reviewer who cannot reach a feature
-> assumes it does not work, and pointing them at something that isn't there is worse
-> than staying quiet. Credits (~$482) and both subscription tiers ARE active on it.
+> ✅ **RESOLVED 2026-08-14 — `laybellreview` now has a shop listing** (plus two more
+> posted elsewhere), so the promise the notes make to the reviewer is now true.
+> Credits (~$482) and both subscription tiers were already active on it.
+> *(It had 0 listings from 08-10 until then. Re-check this whenever the demo account is
+> re-seeded — the notes claim a shop listing, and a reviewer who cannot reach a feature
+> assumes it does not work.)*
 
 **Notes field:**
 

@@ -13,20 +13,20 @@ the bottom of the message thread. "Resubmit to App Review" is greyed out and is 
 
 ---
 
-## 0. FIX THIS BEFORE YOU REPLY — the second-rejection trap
+## 0. ~~FIX THIS BEFORE YOU REPLY~~ ✅ CLEARED 2026-08-14
 
-`STORE_LISTING.md` §3 carries its own warning, dated 2026-08-10:
+`STORE_LISTING.md` §3 had warned since 2026-08-10 that `laybellreview` had **0 shop
+listings** while the review notes promised the reviewer one — the exact dead end that earns a
+second, deserved 2.1 rejection, on that doc's own rule that *a reviewer who cannot reach a
+feature assumes it does not work.*
 
-> ⚠️ **`laybellreview` has 0 shop listings.** The notes below promise the reviewer one.
+**The owner published a listing from `laybellreview` plus two others on 2026-08-14.** The
+shop claim in the notes below is now true. Credits (~$482) and both subscription tiers were
+already active on that account.
 
-The review notes tell Apple the demo account "has posts, a shop listing, and a credit
-balance already loaded." **If the reviewer taps through to a shop that isn't there, that is a
-fresh 2.1 rejection** — and this time a deserved one. That doc's own rule is the reason:
-*a reviewer who cannot reach a feature assumes it does not work.*
-
-**Either publish one shop listing from `laybellreview`, or delete the shop claim from the
-notes below.** Publishing one is better — it demonstrates a core feature. Credits (~$482)
-and both subscription tiers are already active on that account and need nothing.
+*(Note for later, not now: the fresh-start reset keeps **only** `laybellreview` and its
+content. Any of those listings posted from other accounts will not survive it, so the Shop
+will be sparser at launch than it is during review. That is expected and is not a defect.)*
 
 ---
 
