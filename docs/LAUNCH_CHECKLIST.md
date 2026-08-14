@@ -24,10 +24,45 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 thing left is the production build — deliberately paused by the owner (2026-08-10) to
 keep polishing, because there is no OTA here and whatever is in that build ships.**
 
-# 🚀 **SUBMITTED TO APPLE — 2026-08-12.** `1.0.0 (4)` is **Waiting for Review** with
-all NINE items in one submission: the version, 5 credit consumables, 2 subscriptions
-and the Laybell Premium subscription group. Build 4 was smoke-tested from TestFlight
-first, including the RTMP go-live path.
+# 🚀 **SUBMITTED TO APPLE — 2026-08-12.** `1.0.0 (4)`, all NINE items in one submission:
+the version, 5 credit consumables, 2 subscriptions and the Laybell Premium subscription
+group. Build 4 was smoke-tested from TestFlight first, including the RTMP go-live path.
+
+## 🔁 **REJECTED 2026-08-14 02:09 — Guideline 2.1, and it was NOT a defect. ANSWERED THE SAME DAY.**
+
+Apple's message was titled *"Information Needed — New App Submission"*: the standard
+questionnaire a first-time app gets, asking for a demo video and eight written answers. **No
+crash, no broken feature, no policy finding — so no code change and no rebuild.** Answered by
+**replying to the message thread**, not resubmitting ("Resubmit to App Review" stays greyed
+out; nothing needed editing).
+
+**Sent 2026-08-14 ~10:37** — a 15:28 screen recording plus a 3,962-character reply. Full
+working notes, the shot list and the long-form answers are in
+**`docs/APPLE_REVIEW_REPLY_2026-08-14.md`**.
+
+⚠️ **BOTH Apple text boxes cap at 4,000 characters** — the reply field *and* App Review
+Information → Notes. The first draft was 6,617 and had to be cut; the working doc is far
+longer still and pasting it whole overflows by ~9,900. **Trim to the limit before pasting,
+and never paste the working doc — it contains internal commentary written for us, not Apple.**
+
+🚨 **The save that mattered: HAND OVER THE EMAIL, NOT THE USERNAME.** Both the old review
+notes and the first draft said *"Username: laybellreview"* — but `app/(auth)/login.tsx:33`
+calls `signInWithPassword({ email })`, so that string **cannot sign in**. A reviewer who
+cannot log in rejects immediately. Caught only because the owner instinctively typed the
+email. The account is **`3ddiemusic@gmail.com`**, profile @laybellreview, and sign-in was
+then confirmed by actually signing out and back in.
+
+Also done that day, all verified: App Review Information → Sign-In Information updated to the
+working email/password, Notes replaced with a purpose-written 3,976-character block (it names
+the exact block path — the **"..." menu on any post**, `contexts/PostOptionsContext.tsx:465`,
+which is the one Guideline 1.2 protection the video does not show), and `laybellreview` given
+a shop listing so the notes' promise is true.
+
+**Video handling, for next time:** the 15:28 recording was **839.7 MB**; ffmpeg to 720×1560 /
+30fps / H.264 CRF 30 brought it to **45.1 MB** with text still legible and narration intact,
+which uploaded to the reply fine. Also: a `.sendanywhere` file is a **failed transfer** — it
+had no `moov` atom and could not be decoded or repaired. Check the real recording is intact
+before building anything on it.
 
 **Manual release is set, so approval does NOT publish the app.** That is deliberate and
 load-bearing: the launch-day sequence in §0.0 has not run. ✅ **The $58 demo wallet balance
@@ -318,9 +353,21 @@ Verified in `pg_proc`, not assumed: `log_follow_event` carries the existence gua
 each function exists (no accidental overload), and both triggers are still attached to
 `public.follows`. SQL only — no rebuild was needed.
 
-🔬 **STILL UNPROVEN BY EXERCISE — the owner is running that test.** The verification above
-reads the deployed source; it does not prove the delete succeeds. See the ⚠️ at the bottom of
-this entry for the test that does.
+🔬 **STILL UNPROVEN BY EXERCISE — but a free, natural test is already running.** The
+verification above reads the deployed source; it does not prove a delete succeeds.
+
+🗓️ **CHECK ON 2026-08-16.** The throwaway account used for the review video (`@thebestever`)
+was deleted in-app at the end of the recording on 08-14, **and it had followed other accounts
+during the take** — which is exactly what arms this bug. Its 48-hour deferred delete therefore
+comes due on **2026-08-16**, when the hourly `sweep_deletable_accounts()` cron will try it for
+real. That is the exercise-verification, for free, on the real path:
+
+```sql
+select count(*) from auth.users where email ilike '%review1%';  -- 0 = the fix works
+```
+
+Zero means the sweep deleted an account that follows people, which is precisely what failed
+before. Non-zero on 08-17 means the fix did not hold and the sweep is still stuck.
 
 Found by force-deleting one throwaway test account: `delete from auth.users` fails with
 `23503` on `follow_events_follower_id_fkey`. `follow_events` FKs to `auth.users`, and the
