@@ -143,8 +143,9 @@ direct creator support through tips; playlists; and communities.
 Sign-in is required for all features.
 
 Demo account
-Username: laybellreview
+Email: 3ddiemusic@gmail.com   <-- the EMAIL. Sign-in does NOT accept the username.
 Password: [FILL IN]
+(the profile is @laybellreview)
 
 This account is pre-loaded with posts, a credit balance, and both subscription tiers active,
 so every paid feature — including Films, the ad-free experience, and offline downloads — is

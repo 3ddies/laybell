@@ -209,6 +209,14 @@ can't reach a feature assumes it doesn't work.
 **Demo account: required.** Create a real account, seed it with a few posts, a
 shop listing, and some credits, and hand over working credentials.
 
+> 🚨 **HAND OVER THE EMAIL, NOT THE USERNAME.** `app/(auth)/login.tsx:33` calls
+> `signInWithPassword({ email })` and the field's placeholder is `auth.email`, so
+> **`laybellreview` typed into the sign-in screen does not work.** This block said
+> "Username: laybellreview" until 2026-08-14 and was caught only because the owner
+> instinctively wrote the email instead while filling in Apple's reply. A reviewer who
+> cannot sign in rejects the app, so verify by actually signing out and back in with the
+> exact strings being sent — the account is `3ddiemusic@gmail.com`, profile @laybellreview.
+
 > ✅ **RESOLVED 2026-08-14 — `laybellreview` now has a shop listing** (plus two more
 > posted elsewhere), so the promise the notes make to the reviewer is now true.
 > Credits (~$482) and both subscription tiers were already active on it.
@@ -222,8 +230,9 @@ shop listing, and some credits, and hand over working credentials.
 Laybell is a music-focused social platform for independent artists.
 
 DEMO ACCOUNT
-Username: laybellreview
+Email: 3ddiemusic@gmail.com
 Password: [fill in]
+(the profile is @laybellreview — but sign-in takes the EMAIL, see the warning below)
 This account has posts, a shop listing, and a credit balance already loaded, and both subscription tiers are active on it, so every feature — including Films and the ad-free experience — is reachable without making a purchase.
 
 USER-GENERATED CONTENT (Guideline 1.2)
