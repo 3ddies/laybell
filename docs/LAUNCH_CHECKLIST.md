@@ -322,15 +322,22 @@ submitting or *after* approval, **never during** — reviewers would hit an app 
 under them. Apple has been in review since 08-12, so the reset is blocked today. 19 days
 is comfortable **if approval lands by ~08-27**; past that, see the fallback.
 
-**Phase 0 — NOW, while Apple reviews.** Nothing here is blocked.
-- 🎯 **Re-try managed publishing on Play.** The 08-13 refusal came while App content was
-  still unsubmitted and "Send app for review" was locked — that may have been the cause
-  rather than the never-published rule. Now that a production draft exists, **try again**.
-  Five minutes, and if it takes, Play gains a real hold and Sept 1 becomes *exact* on both
-  stores instead of approximate on one.
-- Verify **App Store Connect → Pricing and Availability → Territories = United States only**.
-  §0.0 lists it as must-be-right-before-approval and it has never been confirmed on screen.
+**Phase 0 — CLOSED 2026-08-13.** Both checks came back:
+- ❌ **Managed publishing is genuinely unavailable** — re-tried with the production draft in
+  place and it still refused, so the never-published rule is real, not a side effect of the
+  incomplete App content. **Play has no release gate for 1.0.0. Settled — do not try again.**
+  The unsent draft is the only hold, and Android's go-live date is Google's to pick.
+- ✅ **Apple Territories = United States only**, confirmed on screen by the owner.
 - ⛔ **Do NOT run the fresh-start reset.** Apple is mid-review.
+
+⏳ **THE ONE ITEM WITH EXTERNAL LEAD TIME — start it now or decide to skip it.**
+`LEGAL_ROLLOUT.md` **step 9, the one-time attorney review** of `terms.json` + `privacy.json`
++ `marketplace.json`, cannot be booked and turned around inside launch week. Steps 7 and 8
+are already done (the web pages are live and generated on push; the store privacy forms were
+filed 08-10), so this is the *only* legal item left. It is marked **strongly recommended**,
+not required — so the real decision is whether v1 launches with counsel's eyes on the
+marketplace and music/copyright sections or without them. **Deciding by running out of
+calendar is the failure mode to avoid.**
 
 **Phase 1 — the day Apple approves (expect ~08-14 → 08-20).** Do **not** release; manual
 release is holding it for Sept 1.
