@@ -310,6 +310,67 @@ Everything else is three inbox waits and one test that needs Android hardware.
   worked in July and the recordings are now purged when a broadcast ends, but only a real
   stream proves a viewer can actually watch one.
 
+### 🗓️ THE SEPTEMBER 1 PLAN — target **Tuesday, 2026-09-01**, set by the owner 2026-08-13
+
+**Android ships as-is.** The reels overlay glitch goes to 1.0.1 — owner's call, made
+because fixing it means a new build and a replaced Play draft, and it buys nothing a user
+would notice.
+
+🔑 **The long pole is APPLE'S APPROVAL, and it is not in your hands.** Almost everything
+below waits on it for one reason: `FRESH_START_RESET.md` says the reset must run *before*
+submitting or *after* approval, **never during** — reviewers would hit an app that changed
+under them. Apple has been in review since 08-12, so the reset is blocked today. 19 days
+is comfortable **if approval lands by ~08-27**; past that, see the fallback.
+
+**Phase 0 — NOW, while Apple reviews.** Nothing here is blocked.
+- 🎯 **Re-try managed publishing on Play.** The 08-13 refusal came while App content was
+  still unsubmitted and "Send app for review" was locked — that may have been the cause
+  rather than the never-published rule. Now that a production draft exists, **try again**.
+  Five minutes, and if it takes, Play gains a real hold and Sept 1 becomes *exact* on both
+  stores instead of approximate on one.
+- Verify **App Store Connect → Pricing and Availability → Territories = United States only**.
+  §0.0 lists it as must-be-right-before-approval and it has never been confirmed on screen.
+- ⛔ **Do NOT run the fresh-start reset.** Apple is mid-review.
+
+**Phase 1 — the day Apple approves (expect ~08-14 → 08-20).** Do **not** release; manual
+release is holding it for Sept 1.
+- **Fresh-start reset** — irreversible, and the doc requires an explicit go-ahead in the
+  moment. Re-seed afterwards: `seed_review_account.sql` for `laybellreview`'s $500 credits,
+  or the "full access" declaration on Play becomes false. Sweep **Supabase Storage** and
+  **Cloudflare Stream** separately — deleting rows does not delete media, and both keep
+  billing and serving.
+- **Re-run both audits** (§ STANDING RULES): schema-vs-prod, and `supabase functions list`
+  vs the repo. They found six real problems last time, including a two-day-stale RevenueCat
+  webhook that would have granted Premium+ buyers the $9.99 tier.
+
+**Phase 2 — 08-24 → 08-27, money and legal.**
+- **Stripe live**: swap `STRIPE_SECRET_KEY` to `sk_live_…`, **fund the balance**, then flip
+  `payoutsAvailable()`. Credits money arrives in a *bank* account, not Stripe, so transfers
+  fail until it is topped up.
+- **Legal rollout** leftovers — `LEGAL_ROLLOUT.md` step 7 (host the web pages) and step 9
+  (one-time attorney review). Everything else there is done.
+- **Parent-consent email, end-to-end** — one 13–17 signup with a guardian address you
+  control, watching Resend → Logs. Never proven since the secrets were set. ⚠️ **This needs
+  a spare email address, which the owner has run out of** — if it cannot be run, say so
+  rather than launching on the assumption it works: the ToS promises this protection.
+- **Universal links** re-checked on a device against the real store build.
+- **SBP fee flip** (§0.3) if the approval has landed.
+
+**Phase 3 — 08-26 → 08-28, light the Play fuse.**
+- **Play → Production → Send app for review.** First reviews run ~3–7 days. It publishes on
+  approval and **you cannot stop it** — which is safe *only because* phases 1–2 are already
+  done. If it lands early, Android is simply live early on a production-ready backend.
+- If managed publishing worked in phase 0, hold it and publish on Sept 1 instead.
+
+**Phase 4 — Tuesday 09-01.** App Store Connect → release the held version. One click.
+
+**What can break this, in order of likelihood:**
+1. **Apple rejects.** Resets the clock and is the single biggest risk — which is exactly why
+   phases 1–2 are packed early instead of the week of launch.
+2. **Apple approves late.** Past ~08-27, move Play's fuse to after Sept 1 and let Android
+   trail iOS by a week. Do not compress the reset to catch up.
+3. **The parent-consent test cannot run** for want of an email address.
+
 ### 🚀 LAUNCH-DAY SEQUENCE — only when the owner says "we are going live"
 
 0. ~~💵 **REVERSE THE DEMO WALLET BALANCE**~~ ✅ **DONE 2026-08-13 — ran early, not on
