@@ -207,6 +207,12 @@ shown on the purchase sheet, alongside links to the Terms of Use and Privacy Pol
 Creator earnings are a separate balance from credits. They are paid out by bank transfer
 through Stripe and are never redeemable as credits or as App Store currency.
 
+The recording shows the subscription paywall with each tier's title, length and price and the
+links to the Terms of Use and Privacy Policy, but does not complete a subscription
+transaction. The demo account above already has both tiers active, so the entitlement and
+every paid feature it unlocks — Films, the ad-free experience, and offline downloads — can be
+verified on that account directly, with no purchase required.
+
 ADDITIONAL CONTEXT
 
 User-generated content (Guideline 1.2) — all four required protections are implemented:
