@@ -45,35 +45,61 @@ proved this works — the Apple sandbox tester is `3ddiehall+sandbox@gmail.com`.
 This also unblocks the **parent-consent end-to-end test** that Phase 2 flagged as possibly
 impossible. Use `+minor1` and `+guardian1`.
 
-### Shot list — record once, in this order
+### Format, length, editing
 
-Apple named four things explicitly. **All four must be on camera** or you invite a second
-round. They are marked 🎯.
+- **A plain iOS screen recording** (Control Center). Physical device on the latest iOS. Not a
+  simulator, and not the phone filmed with a second camera.
+- **Turn the Microphone ON** — long-press the record button first. Narrating each screen is
+  the cheapest possible quality upgrade and answers half of Apple's questions out loud.
+- **No length limit.** 8–12 minutes is normal here. Coverage beats brevity.
+- **Do not edit.** No music, no transitions, no effects, no speed-up. This is evidence, not
+  marketing, and **a cut inside a flow reads as something being hidden.** Trim dead air at
+  the head and tail only.
+- **Delivery:** attach it to the reply if it fits; otherwise put it on an unlisted YouTube or
+  Drive link and paste the URL in the reply. Both are accepted.
 
-1. **Cold launch** from the home screen. Do not start the recording on an already-open app.
-2. 🎯 **Registration** — sign up with the plus-addressed email, including the age step.
+### Before you press record
+
+- **Do Not Disturb ON** — a notification banner mid-recording means a re-take.
+- **Good Wi-Fi.** The Android clip that cost a day of diagnosis was shot on bad wifi.
+- **Sandbox account signed in** — Settings → App Store → Sandbox Account →
+  `3ddiehall+sandbox@gmail.com`. Purchases are then free.
+- 🚨 **Register as 18 or over.** Under-18 accounts have livestream broadcasting blocked and
+  location capture disabled by design — film one of those and the reviewer sees a crippled
+  app and asks why.
+
+### Shot list — ONE continuous take, one throwaway account
+
+Apple named four things explicitly; all four are marked 🎯 and all four must be on camera.
+The order below does everything on a single fresh account so there is no signing in and out
+mid-take, and it ends on deletion, which is where deletion naturally belongs.
+
+1. **Cold launch** from the home screen. Do not start recording on an already-open app.
+2. 🎯 **Registration** — sign up with `3ddiehall+review1@gmail.com`, through the age step
+   (**18+**), username, and the About-you onboarding step.
 3. 🎯 **Permission prompts as they appear** — camera, microphone, photos, contacts, location.
-   Let each dialog sit on screen for a beat so the purpose string is readable.
-   *(There is no App Tracking Transparency prompt — Laybell does not track across apps and
-   ad personalisation is opt-in and off by default. Say that in the reply rather than leaving
-   Apple to wonder why the prompt never appears.)*
-4. **Core flow** — the feed, play a music post, play a video post, open a profile, Explore,
-   the Music tab.
-5. **Create a post** — this is the user-generated content Apple asks about.
-6. 🎯 **Reporting and blocking** — report a post *and* block a user. Apple lists
-   "content reporting and blocking mechanisms" by name. This is the single most commonly
-   missed item in a 2.1 reply.
-7. 🎯 **Paid content and the IAP flow** — open Settings → Credits, show the credit packs with
-   prices; then the subscription sheet showing **title, length, and price** for both tiers
-   plus the Terms and Privacy links. Sign in with the **sandbox tester**
-   (`3ddiehall+sandbox@gmail.com`, Settings → App Store → Sandbox Account) so no real money
-   moves.
-8. **Premium+ content** — Films, reached by rotating the device or the TV entry beside the
-   home logo. The demo account has Premium+ so it opens without buying.
-9. **A livestream** — the LIVE button beside the home logo. Start and end one.
-10. 🎯 **Account deletion** — Settings → Account → delete. Apple lists "account deletion
-    flows" explicitly, and it is the other commonly missed one.
-11. Sign back in as `laybellreview` to show the seeded state.
+   Let each dialog sit for a beat so the purpose string is readable, and say what it is for.
+   *(No App Tracking Transparency prompt exists — Laybell does not track across apps and ad
+   personalisation is opt-in and off by default. Say so aloud, or Apple wonders why it never
+   appeared.)*
+4. **Browse** — the feed, play a music post, play a video post, a profile, Explore, Music.
+5. **Create a post** — the user-generated content Apple asks about.
+6. 🎯 **Report a post, then block a user.** Apple names "content reporting and blocking
+   mechanisms" directly. **This is the most commonly missed item in a 2.1 reply.**
+   Block one of the other test accounts — *never* `laybellreview`.
+7. 🎯 **The IAP flow** — Settings → Credits, show the packs and prices, and complete one
+   sandbox purchase so the flow is proven end to end. Then Settings → Promotion Tools → the
+   Premium card: show **title, length, price** and the Terms and Privacy links, and buy a
+   tier in sandbox.
+8. **Paid content, now unlocked** — Films, via rotating the device or the TV entry beside the
+   home logo. Buying it on camera is stronger than showing a pre-entitled account.
+9. **The Shop** — open the listing published from `laybellreview` and buy it with credits.
+10. **A livestream** — the LIVE button beside the home logo. Start one, then end it.
+11. 🎯 **Account deletion** — Settings → Account → delete.
+    🚨 **Delete the THROWAWAY account, never `laybellreview`** — Apple still needs those
+    credentials to work.
+12. **Optional but worth it:** sign in as `laybellreview` to prove the credentials handed to
+    Apple actually work. Ten seconds, removes a whole category of doubt.
 
 ---
 
