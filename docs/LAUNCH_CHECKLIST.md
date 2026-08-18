@@ -64,6 +64,32 @@ which uploaded to the reply fine. Also: a `.sendanywhere` file is a **failed tra
 had no `moov` atom and could not be decoded or repaired. Check the real recording is intact
 before building anything on it.
 
+## 🚨 **REPLYING DOES NOT RESUME THE REVIEW. IT IS A TWO-STEP RESUBMIT — AND THIS COST FOUR DAYS.**
+
+**Resubmitted 2026-08-18 1:52 PM** — all nine items now **Waiting for Review**, "Unresolved
+Issues" cleared, Last Updated By flipped from *Apple* to the owner.
+
+The reply went in on **08-14 10:39 AM** and the version then **sat at `Rejected` until 08-18**,
+doing nothing, because a reply is only a message. Apple was not being slow — Apple was waiting.
+The banner said so all along: *"Accepted items won't be available for release until all items
+with issues are **resubmitted** and accepted."*
+
+**The actual sequence, both halves required:**
+1. **Version page → `Update Review`** — clears the rejection; the item goes `Rejected` →
+   `Ready for Review`, and `Resubmit to App Review` turns from grey to blue.
+2. **Submission page → `Resubmit to App Review`** — the item goes `Ready for Review` →
+   `Waiting for Review` and it is actually back in Apple's queue.
+
+Neither alone is enough, and **"Ready for Review" is a staging state, not a submitted one** —
+that wording is the trap. Verify by the two signals that cannot be faked: **"Unresolved
+Issues" disappears** and **Last Updated By stops saying "Apple."**
+
+⏱️ **Cost: four days of the Sept 1 buffer**, on an assumption that replying was sufficient
+because Apple's own message said *"Reply in App Store Connect with all of the following
+information."* It is necessary and not sufficient. **Standing rule from here: if a store
+status has not moved within 48 hours of an action, treat the silence as a question about our
+own state, not as the store being slow.**
+
 **Manual release is set, so approval does NOT publish the app.** That is deliberate and
 load-bearing: the launch-day sequence in §0.0 has not run. ✅ **The $58 demo wallet balance
 was REVERSED 2026-08-13** (`available_cents_should_be_0` = 0, `invariant_violations` = 0),
