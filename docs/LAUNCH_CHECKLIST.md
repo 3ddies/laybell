@@ -530,11 +530,18 @@ screen.
   dating to 08-09. **No swap needed; that step is done.** The 08-09 money-test calls were all
   `/v1/accounts`, `/v1/account_links`, `/v1/tokens` and `/persons` — Connect onboarding, not
   charges or transfers — so no real money moved through a live key during testing.
-- 🚨 **Stripe shows "Action required — We need some information for your account. Provide it to
-  keep capabilities enabled."** That is the live-mode review asking for verification, and the
-  capabilities at stake include **transfers**, which is the payout rail. **OWNER-ONLY work:**
-  the GATES section already forbids automating Stripe's hosted forms, because they ask for SSN
-  and bank details on a real account.
+- 🚨🚨 **STRIPE VERIFICATION — HARD DEADLINE Sep 9, AND IT LANDS INSIDE THE LAUNCH WINDOW.**
+  Stripe's restricted-business screen fired on 2026-08-21: *"you may be violating our Terms of
+  Service related to content creation."* **Payouts pause Sep 9; payments pause Oct 9.** Launch
+  is Sep 1 and earnings sit on a 14-day hold, so the first creator becomes eligible to withdraw
+  around **Sep 15 — after the rail would already be dead.** Review takes 24h to 3 business
+  days, so submitting on 08-21 leaves 19 days of slack; submitting in September leaves none.
+  **Full draft answer and reasoning: `docs/STRIPE_VERIFICATION_2026-08-21.md`.**
+  The fact to lead with: **Stripe processes no consumer payments for Laybell** — every purchase
+  is Apple/Google IAP, and Connect is used only to pay creators out. Stripe is not underwriting
+  content sales at all.
+  **OWNER-ONLY to submit:** the GATES section forbids automating Stripe's hosted forms, which
+  ask for SSN and bank details on a real account.
 - **Still to do: fund the Stripe balance.** Credits money arrives in a *bank* account, not
   Stripe, so transfers fail until it is topped up.
 - ⚠️ The fresh-start reset deleted the test users who held live Connect accounts, so a few
