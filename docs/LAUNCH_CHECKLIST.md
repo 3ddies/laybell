@@ -459,7 +459,38 @@ account, **follow someone with it** (that is what arms the bug), delete it in-ap
 `delete from auth.users where id = '<id>'` and confirm it succeeds *without* clearing
 `public.follows` first.
 
-### 🗓️ THE SEPTEMBER 1 PLAN — target **Tuesday, 2026-09-01**, set by the owner 2026-08-13
+### 🗓️ **LAUNCH MOVED UP TO TUESDAY 2026-08-25** — owner's call, 2026-08-21
+
+**It is achievable because the launch-day sequence is already RUN**, not because anything is
+being skipped. That sequence was the reason Sept 1 needed three weeks:
+
+| Step | State |
+|---|---|
+| 0 · Reverse the $58 demo balance | ✅ 08-13, verified 0/0 |
+| 1 · Fresh-start reset | ✅ 08-21 — 1 account, storage 248→8, 32 Stream orphans purged |
+| 2 · Legal rollout | ✅ steps 7 and 8 done; step 9 (attorney) declined deliberately |
+| 3 · Email DNS + parent consent | ✅ DNS long done, and the consent round-trip **proven end to end 08-21** |
+| 4 · Stripe live key | ✅ already `sk_live_` — funding is not needed until someone can withdraw |
+| 5 · Universal links on device | 🔴 **retest — the first attempt failed** |
+| 6 · Send Play for review | 🔴 **light it now, see below** |
+
+🔑 **PLAY'S FUSE IS NOW SAFE TO LIGHT IMMEDIATELY.** It was scheduled last for one reason: Play
+publishes on approval with no hold, and the launch sequence had not run, so an early approval
+would have gone live over a dirty database with a withdrawable demo balance. **That reason is
+gone.** The backend is launch-ready today, so an early Android publish lands on a prepared
+platform. Sending on 08-21 with a 3–7 day first review puts Android around 08-24 to 08-28 —
+roughly alongside iOS, which is the best synchronisation available given Play has no release gate.
+
+**What actually gates 08-25 now is CONTENT, not engineering.** The feed holds 2 posts and one
+account. The owner is creating `3ddie` and `Laybell` and seeding them. That is the real work
+between here and launch, and it is the thing most likely to make or break a first impression.
+
+⚠️ **Stripe is unresolved and the dates are tight either way.** Payouts pause **Sep 9**. A
+creator earning on 08-25 clears the 14-day hold on **09-08** — one day of margin. Launching
+earlier does not make this worse in practice (a Sept 1 launch cleared the hold on 09-15, after
+the pause), but it does mean **Stripe approval matters before ~09-08 regardless of launch date.**
+
+### 🗓️ ~~THE SEPTEMBER 1 PLAN~~ — superseded 2026-08-21, kept for the reasoning
 
 **Android ships as-is.** The reels overlay glitch goes to 1.0.1 — owner's call, made
 because fixing it means a new build and a replaced Play draft, and it buys nothing a user
