@@ -1,5 +1,16 @@
 # Stripe Content Creation Due Diligence — answers to paste
 
+> ✅ **FILLED IN AND SUBMITTED 2026-08-21.** Both attestations were verified true first, on the
+> live surfaces rather than in the repo:  served the new nudity
+> prohibition with no permissive language left, and  reached **v18** at 19:22
+> carrying . The optional uploads were skipped — the 45 MB recording
+> exceeded the attachment limit, and a 2.0 MB cut of just the report flow lives at
+>  if Stripe asks for evidence.
+>
+> ⏳ **Now waiting on Stripe: 24 hours to 3 business days.** Payouts pause **Sep 9** if it is
+> not resolved. If they ask for app access, the answer is a TestFlight invite — the app is not
+> public until Sep 1.
+
 **Both prerequisites are now TRUE, so the attestation is honest.** Q2 was made true by
 deploying `business_profile[url]` per creator (`stripe-connect`, 2026-08-21); Q5 was made true
 by removing the artistic-nudity allowance from the Community Guidelines the same day.
