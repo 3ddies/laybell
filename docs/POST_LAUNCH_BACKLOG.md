@@ -66,6 +66,29 @@ test it or drop iPad from the supported device families in a future version.
 
 ---
 
+## 0. ⚠️ HIGHEST PRIORITY — the in-app Community Guidelines are STALE
+*Created 2026-08-21 by the Stripe-driven policy change. Needs a rebuild, so it cannot ship
+before 1.0.1.*
+
+`app/community-guidelines.tsx` does `import community from '../lib/legal/community.json'` —
+**bundled at build time.** Build 4 is approved and staged on both stores, so the shipped app
+will show users the OLD text saying *"tasteful and artistic nudity is allowed"*, while
+`laybell.app/community` — the version Stripe read and Laybell attested to — says nudity is
+prohibited and non-monetizable.
+
+**The risk is a user relying on what the app told them**, posting nudity in good faith, and
+being moderated under a stricter rule they never saw. Low volume at launch, and such content
+would likely have been moderated anyway under the 13+ rating, but it is a knowingly wrong
+state and should not sit for long.
+
+**The fix is free** — the JSON is already correct in the repo, so 1.0.1 picks it up with no
+code change at all. It just needs a build. **Ship 1.0.1 promptly after launch.**
+
+*(A remote-fetched legal screen would prevent this class of drift entirely, and is worth
+considering while touching this — the web pages already regenerate on push.)*
+
+---
+
 ## 5b. Wire up `payoutsAvailable()` — or delete it
 *Found 2026-08-21 while auditing Phase 2. Needs a rebuild (no OTA).*
 
