@@ -499,10 +499,34 @@ release is holding it for Sept 1.
   vs the repo. They found six real problems last time, including a two-day-stale RevenueCat
   webhook that would have granted Premium+ buyers the $9.99 tier.
 
-**Phase 2 — 08-24 → 08-27, money and legal.**
-- **Stripe live**: swap `STRIPE_SECRET_KEY` to `sk_live_…`, **fund the balance**, then flip
-  `payoutsAvailable()`. Credits money arrives in a *bank* account, not Stripe, so transfers
-  fail until it is topped up.
+**Phase 2 — money and legal.** ✅ **BOTH AUDITS RE-RUN CLEAN 2026-08-21.** Schema: 69 tables,
+167 functions, 155 columns, 44 triggers, 137 indexes declared, **zero missing**. Deploy drift:
+25/25 present, none inactive, none orphaned. Two functions flagged "stale" were **false
+positives from filesystem mtimes** (git touches files); checked against git history instead —
+`stream-backfill` deployed 07-17 against a 07-15 source, and `live-input` v25 deployed 08-10
+21:28, *after* the `0325f3e` encoder/TV-lives fix, so that fix is live. ⚠️ **Compare deploy
+dates to GIT history, not to mtimes** — mtime drift detection cries wolf.
+
+🚨 **`payoutsAvailable()` IS DEAD CODE — THERE IS NOTHING TO "FLIP".** This document says to
+flip it in four places. It is defined in `lib/wallet.ts:126`, described as "the kill switch for
+the payout RAIL", and **never called anywhere in the app**. The only references are its own
+definition and comments.
+
+The consequence is the opposite of what the plan assumed: **the Transfer button ships
+ENABLED.** `app/wallet.tsx:206` gates it on `total <= 0` and nothing else. So any creator who
+accumulates an *available* balance can tap Transfer, which invokes `stripe-connect` — and if
+`STRIPE_SECRET_KEY` is still a test key, that call fails. It errors rather than silently doing
+nothing, which is better than the historical bug, but it is still a broken promise on a money
+screen.
+
+- **Stripe live is therefore MORE load-bearing than "deliberately post-launch" suggests, and
+  needs NO rebuild** — swap `STRIPE_SECRET_KEY` to `sk_live_…` and **fund the balance**. Both
+  are server-side. Credits money arrives in a *bank* account, not Stripe, so transfers fail
+  until it is topped up.
+- **The pressure is bounded, not absent:** earnings sit on a 14-day hold, so the earliest any
+  balance can become *available* is ~14 days after a creator's first sale. A Sept 1 launch
+  means nothing is withdrawable before roughly Sept 15 — that is the real deadline, not launch
+  day. Wiring the gate up properly belongs in `POST_LAUNCH_BACKLOG.md`.
 - **Legal rollout** leftovers — `LEGAL_ROLLOUT.md` step 7 (host the web pages) and step 9
   (one-time attorney review). Everything else there is done.
 - **Parent-consent email, end-to-end** — one 13–17 signup with a guardian address you

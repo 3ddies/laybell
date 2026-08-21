@@ -66,6 +66,21 @@ test it or drop iPad from the supported device families in a future version.
 
 ---
 
+## 5b. Wire up `payoutsAvailable()` — or delete it
+*Found 2026-08-21 while auditing Phase 2. Needs a rebuild (no OTA).*
+
+`lib/wallet.ts:126` defines `payoutsAvailable()`, and `LAUNCH_CHECKLIST.md` calls it "the kill
+switch for the payout RAIL" in four separate places. **Nothing calls it.** The Transfer button
+at `app/wallet.tsx:206` is gated on `total <= 0` and nothing else, so the rail is always on and
+the switch controls nothing.
+
+Survivable at launch only because Stripe going live is server-side and earnings sit on a
+14-day hold — see §0.0. But **a documented safety control that does not exist is worse than no
+control, because it gets trusted.** Either gate the Transfer button on it, or delete the
+function and its four references so nobody plans around a switch that was never wired.
+
+---
+
 ## 5. Trademark — `LAYBELL` wordmark
 Filing spec is ready in `LAUNCH_CHECKLIST.md` (Class 9, Intent to Use, ~$350). Preliminary
 clearance looked clear. Nice-to-have; the ™ is already shown in-app.
