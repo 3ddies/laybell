@@ -101,10 +101,22 @@ That one change would have turned this launch defect into an invisible extra sec
 
 **2. Handle the nonce properly.** Generate a raw nonce, pass its SHA-256 to the Google SDK, and
 pass the raw value to `signInWithIdToken({ provider, token, nonce })` — so both sides carry it.
-Alternatively, if Supabase's Google provider exposes a skip-nonce-check option, enabling it
-resolves the mismatch without touching the client.
 
-⚠️ **Check `socialAuth.ts:152` at the same time** — Apple uses the identical no-nonce shape.
+**3. Then turn the skip back OFF.** This is the step that is easy to forget, because by then
+nothing will appear broken. Supabase Dashboard → Authentication → Sign In / Providers → Google
+→ disable the nonce-check skip, **and re-test sign-in on a real device afterwards** — the whole
+point is that this path only fails where it is exercised.
+
+⚠️ **Check `socialAuth.ts:152` at the same time** — Apple uses the identical no-nonce shape, so
+it may carry the same latent bug even if it currently works.
+
+### Two general lessons worth keeping
+
+- **A native-first path with a working fallback must fail INTO the fallback.** Returning the
+  error instead of falling through is what turned a recoverable hiccup into a launch defect.
+- **A console toggle is worth trying before a rebuild.** Twice on 2026-08-21 a server-side
+  setting fixed something that looked like it needed a new binary — this, and the earlier
+  `redirect_uri` registration. Reach for configuration first when the symptom is auth-shaped.
 
 ---
 
