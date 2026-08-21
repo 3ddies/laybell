@@ -477,8 +477,8 @@ build 4**, which is approved and staged for release.
 ✅ **DECIDED 2026-08-21: LAUNCH ANYWAY, FIX IN 1.0.1.** Nobody is locked out — email/password
 and Apple sign-in both work. The cost is a headline button erroring on day one, and it is the
 single reason to ship 1.0.1 quickly. The exact fix is written up as item 00 in
-, including the three-line change that makes the native path fail INTO
-the working browser fallback instead of out of it.
+`docs/POST_LAUNCH_BACKLOG.md`, including the three-line change that makes the native path fail
+INTO the working browser fallback instead of out of it.
 
 **Options as they stood:**
 1. 🎯 **Supabase Dashboard → Authentication → Sign In / Providers → Google → a nonce-check
