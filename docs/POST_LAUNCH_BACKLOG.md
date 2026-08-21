@@ -89,6 +89,28 @@ considering while touching this — the web pages already regenerate on push.)*
 
 ---
 
+## 1b. A deleted account leaves the app glitchy instead of signing out
+*Found 2026-08-21 the hard way — the owner was signed in when their test account was
+deleted server-side. Needs a rebuild.*
+
+The Supabase JWT stays valid until it expires, so the client keeps a working session for a
+user that no longer exists. Every query returns empty, and the UI renders a broken shell
+rather than logging the person out.
+
+**This is not an edge case — it is what moderation looks like.** The Community Guidelines say
+repeat violators are terminated, and every one of them who is signed in at the time gets this
+experience instead of a clear "your account has been removed" screen. It is also what any user
+sees during the 48-hour window if their own deletion is force-completed.
+
+**The fix:** treat "authenticated but no profile row" as a signed-out state. On profile fetch
+returning nothing for a live session, sign out and route to login with an explanatory message.
+`app/_layout.tsx` already has a login guard for accounts flagged for deletion — this is the
+same idea one step later, for accounts already gone.
+
+**Workaround meanwhile:** sign out and back in. A reinstall also clears it.
+
+---
+
 ## 5b. Wire up `payoutsAvailable()` — or delete it
 *Found 2026-08-21 while auditing Phase 2. Needs a rebuild (no OTA).*
 
