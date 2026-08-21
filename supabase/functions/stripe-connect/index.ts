@@ -115,13 +115,18 @@ serve(async (req) => {
 
     // The creator's Stripe account id, if they've started onboarding.
     const { data: prof } = await db
-      .from('profiles').select('stripe_account_id, username').eq('id', uid).maybeSingle();
+      .from('profiles').select('stripe_account_id').eq('id', uid).maybeSingle();
     let acct: string | null = (prof as any)?.stripe_account_id ?? null;
-    // Stripe's content-creation due diligence (2026-08-21) requires a UNIQUE,
-    // publicly reachable URL per connected creator, so their reviewers can look at
-    // what the person actually publishes. laybell.app/profile/<username> is that
-    // page and is already served to logged-out visitors by share-page.
-    const username: string | null = (prof as any)?.username ?? null;
+    // Stripe's content-creation due diligence (2026-08-21) requires a UNIQUE URL
+    // per connected creator.
+    //
+    // ⚠️ IT MUST BE share-page, NOT laybell.app/profile/<username>. That path 404s:
+    // laybell.app is static GitHub Pages and has no /profile route, which is exactly
+    // what the first universal-link test found. Laybell has no public web view of a
+    // creator's content at all — the app requires sign-in, which is what the
+    // questionnaire truthfully answered. share-page is the only per-creator URL that
+    // resolves, and it carries the creator's name, handle and avatar in its card.
+    const creatorUrl = `https://open.laybell.app/functions/v1/share-page?t=profile&id=${uid}`;
 
     if (action === 'status') {
       if (!acct) return json({ connected: false, payoutsEnabled: false, detailsSubmitted: false });
@@ -151,11 +156,10 @@ serve(async (req) => {
           // account so support can match them up, but our own profiles row stays
           // the source of truth.
           'metadata[laybell_user_id]': uid,
-          // The creator's own public page, attested to Stripe in the content-creation
-          // due diligence questionnaire. Omitted rather than guessed if the username
-          // is somehow absent — a wrong URL is worse than none, because it sends a
-          // reviewer to someone else's content.
-          ...(username ? { 'business_profile[url]': `https://laybell.app/profile/${username}` } : {}),
+          // The creator's own page, attested to Stripe in the content-creation due
+          // diligence questionnaire. Keyed on the user id because that is what
+          // share-page looks up; the username is carried in the card it renders.
+          'business_profile[url]': creatorUrl,
           'business_profile[product_description]':
             'Independent music creator on Laybell. Earnings come from listener tips and sales of their own beats and songs.',
         });
