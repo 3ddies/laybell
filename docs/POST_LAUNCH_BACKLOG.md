@@ -108,7 +108,7 @@ nothing will appear broken. Supabase Dashboard → Authentication → Sign In / 
 point is that this path only fails where it is exercised.
 
 ⚠️ **Check `socialAuth.ts:152` at the same time** — Apple uses the identical no-nonce shape, so
-it may carry the same latent bug even if it currently works.
+it may carry the same latent bug even if it currently works. ✅ **Apple sign-in was verified working on 2026-08-21** (account created through a privaterelay.appleid.com address), so this is latent rather than live — fix it while the Google path is open, not as its own errand.
 
 ### Two general lessons worth keeping
 
