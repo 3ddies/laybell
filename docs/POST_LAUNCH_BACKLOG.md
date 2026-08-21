@@ -66,16 +66,21 @@ test it or drop iPad from the supported device families in a future version.
 
 ---
 
-## 00. 🔴 SHIP FIRST — iOS "Continue with Google" errors for every user
-*Found 2026-08-21. Owner decided the same day to launch anyway and fix in 1.0.1.*
+## 00. iOS Google sign-in — WORKING via a server-side skip; close the loop properly
+*Broken and fixed 2026-08-21. No longer user-facing, so this is hygiene rather than urgency.*
 
-Tapping it returns `Passed nonce and nonce in id_token should either both exist or not.`
-`lib/socialAuth.ts:79` calls `signInWithIdToken({ provider: 'google', token: idToken })` with
-**no nonce**, while `@react-native-google-signin` on iOS mints an id_token that contains one.
+Tapping **Continue with Google** returned `Passed nonce and nonce in id_token should either
+both exist or not.` `lib/socialAuth.ts:79` calls `signInWithIdToken({ provider: 'google',
+token: idToken })` with **no nonce**, while `@react-native-google-signin` on iOS mints an
+id_token that contains one.
 
-**Nobody is locked out** — email/password and Apple sign-in both work — but a headline button
-on the login screen errors, which is the worst possible first impression for a new user who
-prefers Google. **This is the single reason to ship 1.0.1 quickly.**
+✅ **Unblocked by enabling the nonce-check skip on the Supabase Google provider** — server-side,
+applied to the already-shipped build, verified working.
+
+**Why this still belongs on the list.** The skip disables a real protection: the nonce binds a
+token to the request that asked for it, which is what stops a captured token being replayed.
+The remaining bar is high — a validly signed, unexpired token carrying Laybell's own audience —
+but doing the two fixes below lets the check be turned back **on**.
 
 ### The fix — two parts, do both
 

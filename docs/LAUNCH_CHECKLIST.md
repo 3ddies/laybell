@@ -459,7 +459,22 @@ account, **follow someone with it** (that is what arms the bug), delete it in-ap
 `delete from auth.users where id = '<id>'` and confirm it succeeds *without* clearing
 `public.follows` first.
 
-### 🔴 **iOS GOOGLE SIGN-IN IS BROKEN IN THE SHIPPING BUILD — found 2026-08-21**
+### ✅ **iOS GOOGLE SIGN-IN — BROKEN AND FIXED THE SAME DAY, 2026-08-21 (no rebuild)**
+
+**Fixed by enabling the nonce-check skip on the Supabase Google provider.** Server-side, so it
+applies to the already-approved build 4 and 08-25 is unaffected. Verified working by the owner.
+
+⚠️ **Know what that toggle traded away.** The OIDC nonce binds an id_token to the specific
+auth request that asked for it, which is what stops a captured token being replayed. Skipping
+the check means Supabase accepts any Google id_token that is validly signed, unexpired, and
+carries the right audience. That is a meaningfully high bar — an attacker needs a live token
+minted for Laybell's own client ID — and it is the trade Supabase offers precisely for this
+iOS case. **It is not free, though: closing item 00 in the backlog (pass the nonce properly)
+lets this be turned back OFF.**
+
+*(history below)*
+
+### ~~🔴 iOS GOOGLE SIGN-IN IS BROKEN IN THE SHIPPING BUILD~~ — found 2026-08-21
 
 Tapping **Continue with Google** on iOS returns:
 `Passed nonce and nonce in id_token should either both exist or not.`
