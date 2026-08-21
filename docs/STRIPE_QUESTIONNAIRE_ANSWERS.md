@@ -1,11 +1,11 @@
 # Stripe Content Creation Due Diligence — answers to paste
 
 > ✅ **FILLED IN AND SUBMITTED 2026-08-21.** Both attestations were verified true first, on the
-> live surfaces rather than in the repo:  served the new nudity
-> prohibition with no permissive language left, and  reached **v18** at 19:22
-> carrying . The optional uploads were skipped — the 45 MB recording
-> exceeded the attachment limit, and a 2.0 MB cut of just the report flow lives at
->  if Stripe asks for evidence.
+> live surfaces rather than in the repo: `laybell.app/community` served the new nudity
+> prohibition with no permissive language left, and `stripe-connect` reached **v18** at 19:22
+> carrying `business_profile[url]`. The optional uploads were skipped — the 45 MB recording
+> exceeded Stripe's attachment limit, and a 2.0 MB cut of just the report flow is kept at
+> `Downloads/laybell_report_flow.mp4` in case Stripe asks for evidence.
 >
 > ⏳ **Now waiting on Stripe: 24 hours to 3 business days.** Payouts pause **Sep 9** if it is
 > not resolved. If they ask for app access, the answer is a TestFlight invite — the app is not
