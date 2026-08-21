@@ -471,8 +471,8 @@ being skipped. That sequence was the reason Sept 1 needed three weeks:
 | 2 · Legal rollout | ✅ steps 7 and 8 done; step 9 (attorney) declined deliberately |
 | 3 · Email DNS + parent consent | ✅ DNS long done, and the consent round-trip **proven end to end 08-21** |
 | 4 · Stripe live key | ✅ already `sk_live_` — funding is not needed until someone can withdraw |
-| 5 · Universal links on device | 🔴 **retest — the first attempt failed** |
-| 6 · Send Play for review | 🔴 **light it now, see below** |
+| 5 · Universal links on device | ✅ **verified working 08-21.** The first failure was real: laybell.app/profile/<username> 404s because laybell.app is static GitHub Pages with no /profile route. The working form is open.html?p=profile/<userId>. That failure also caught a live bug — business_profile[url] sent to Stripe pointed at the same 404. |
+| 6 · Send Play for review | ✅ **SUBMITTED 2026-08-21.** 10 changes: bundle 4 full rollout, US only, 13+, privacy URL, Music & Audio, photo/video declaration. Two blockers cleared on the way — a Photo and Video Permissions declaration (250 chars per permission), and the 16 KB page-size error, bypassed via Proceed anyway and logged as backlog 1c. **Managed publishing is off, so approval publishes automatically: expect Android live 08-24 to 08-28.** |
 
 🔑 **PLAY'S FUSE IS NOW SAFE TO LIGHT IMMEDIATELY.** It was scheduled last for one reason: Play
 publishes on approval with no hold, and the launch sequence had not run, so an early approval
