@@ -479,7 +479,13 @@ is comfortable **if approval lands by ~08-27**; past that, see the fallback.
 - ✅ **Apple Territories = United States only**, confirmed on screen by the owner.
 - ⛔ **Do NOT run the fresh-start reset.** Apple is mid-review.
 
-⏳ **THE ONE ITEM WITH EXTERNAL LEAD TIME — start it now or decide to skip it.**
+✅ **ATTORNEY REVIEW — DECLINED FOR v1.0 by the owner, 2026-08-21.** A deliberate decision
+taken with the calendar still open, which is what the note below asked for. It stays available
+later: the documents are versioned and re-dating them after a review is routine. Revisit if
+the shop takes real volume, if a DMCA or marketplace dispute arrives, or before opening
+outside the US — the marketplace and music/copyright sections carry the most exposure.
+
+⏳ ~~**THE ONE ITEM WITH EXTERNAL LEAD TIME — start it now or decide to skip it.**~~ *(decided)*
 `LEGAL_ROLLOUT.md` **step 9, the one-time attorney review** of `terms.json` + `privacy.json`
 + `marketplace.json`, cannot be booked and turned around inside launch week. Steps 7 and 8
 are already done (the web pages are live and generated on push; the store privacy forms were
