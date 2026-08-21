@@ -64,6 +64,21 @@ which uploaded to the reply fine. Also: a `.sendanywhere` file is a **failed tra
 had no `moov` atom and could not be decoded or repaired. Check the real recording is intact
 before building anything on it.
 
+## 🎉 **APPROVED 2026-08-21. `1.0.0 (4)` IS ELIGIBLE FOR DISTRIBUTION — AND HELD.**
+
+All nine items accepted: the version, 5 credit consumables, both subscriptions and the
+subscription group (`22271421`). Listing is live in Apple's catalogue at
+`apps.apple.com/app/laybell-music-creators/id6795675871`.
+
+**It is NOT public.** Manual release is holding it, which is exactly what §0.0 set it up to do.
+The release button is the LAST step of the launch-day sequence, not the first.
+
+➡️ **PHASE 1 IS NOW UNBLOCKED** — Apple is no longer reviewing, so the fresh-start reset may
+finally run. See the September 1 plan below.
+
+⚠️ Apple's approval mail flags one thing worth confirming: **Agreements, Tax and Banking →
+Paid Apps must be active**, or the app cannot be distributed regardless of approval.
+
 ## 🚨 **REPLYING DOES NOT RESUME THE REVIEW. IT IS A TWO-STEP RESUBMIT — AND THIS COST FOUR DAYS.**
 
 **Resubmitted 2026-08-18 1:52 PM** — all nine items now **Waiting for Review**, "Unresolved
@@ -371,7 +386,7 @@ Everything else is three inbox waits and one test that needs Android hardware.
   worked in July and the recordings are now purged when a broadcast ends, but only a real
   stream proves a viewer can actually watch one.
 
-### 🐛 ACCOUNT DELETION WAS BROKEN IN PRODUCTION — found AND FIXED 2026-08-14
+### 🐛 ACCOUNT DELETION WAS BROKEN IN PRODUCTION — THREE blockers, all fixed by 2026-08-21
 
 ✅ **`supabase/sql/fix_follow_events_blocks_deletion.sql` RAN against production 2026-08-14.**
 Verified in `pg_proc`, not assumed: `log_follow_event` carries the existence guard,
@@ -379,21 +394,42 @@ Verified in `pg_proc`, not assumed: `log_follow_event` carries the existence gua
 each function exists (no accidental overload), and both triggers are still attached to
 `public.follows`. SQL only — no rebuild was needed.
 
-🔬 **STILL UNPROVEN BY EXERCISE — but a free, natural test is already running.** The
-verification above reads the deployed source; it does not prove a delete succeeds.
+## ✅ **DELETION NOW WORKS END TO END — PROVEN 2026-08-21.** There were **THREE** blockers, not one.
 
-🗓️ **CHECK ON 2026-08-16.** The throwaway account used for the review video (`@thebestever`)
-was deleted in-app at the end of the recording on 08-14, **and it had followed other accounts
-during the take** — which is exactly what arms this bug. Its 48-hour deferred delete therefore
-comes due on **2026-08-16**, when the hourly `sweep_deletable_accounts()` cron will try it for
-real. That is the exercise-verification, for free, on the real path:
+`sweep_deletable_accounts()` was run for real and returned **1**; the account is gone,
+`overdue` is **0**, total accounts went 11 → 10. That is exercise-verification on the
+production path, not reading source.
+
+**The three, in the order they surfaced — each one hidden behind the last:**
+
+| # | Blocker | Mechanism | Fixed |
+|---|---|---|---|
+| 1 | `follow_events` | FK to `auth.users`; the AFTER DELETE trigger on `follows` inserts a row pointing at the just-deleted user | `fix_follow_events_blocks_deletion.sql` (08-14) |
+| 2 | `access_log` | `ON DELETE SET NULL` — **and SET NULL is an UPDATE**, which its append-only trigger refused | `fix_access_log_blocks_deletion.sql` (08-21) |
+| 3 | `ledger_accounts` | `ON DELETE RESTRICT` — refused the delete **outright**, so profile and posts survived too. Hit **7 of 10** accounts | `fix_ledger_blocks_deletion.sql` (08-21) |
+
+🚨 **THE LESSON THAT COST A WEEK: the `exception when others` handler added in fix #1 is
+what hid #2 and #3.** Skip-and-continue correctly stops one bad account blocking the batch —
+but it also made pg_cron report **"succeeded" every hour while deleting nothing**. The job
+status is therefore *not* the health signal. **The health signal is the overdue count:**
 
 ```sql
-select count(*) from auth.users where email ilike '%review1%';  -- 0 = the fix works
+select count(*) from public.profiles
+ where delete_immediately = true
+   and delete_requested_at <= now() - interval '48 hours';   -- must be 0
 ```
 
-Zero means the sweep deleted an account that follows people, which is precisely what failed
-before. Non-zero on 08-17 means the fix did not hold and the sweep is still stuck.
+**Also learned:** fixing one blocker only reveals the next. Do not conclude a deletion path
+works because a fix landed — **probe it.** The technique that found #2 and #3 without
+destroying anything: attempt the delete inside a `DO` block, capture `sqlerrm`, then `raise`
+unconditionally so the whole thing rolls back. The error text is the answer and nothing changes.
+For #3 the probe deleted **two** ledger-holding users, because one deletion would never have
+exposed the unique-index collision.
+
+⚠️ **OPEN, and a product decision rather than a bug:** a user who deletes with a positive
+earnings balance leaves that money in an unclaimable anonymised account. Correct accounting —
+deleting the entries would unbalance the ledger — but the app should probably refuse deletion,
+or warn, while `available_cents > 0`. Nobody has real earnings pre-launch.
 
 Found by force-deleting one throwaway test account: `delete from auth.users` fails with
 `23503` on `follow_events_follower_id_fkey`. `follow_events` FKs to `auth.users`, and the
