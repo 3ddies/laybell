@@ -111,6 +111,23 @@ same idea one step later, for accounts already gone.
 
 ---
 
+## 1c. Android: 16 KB memory page sizes not supported
+*Flagged by Play at submission 2026-08-21. Bypassed with "Proceed anyway". Needs a rebuild.*
+
+Play raised it as an error with an explicit bypass, so bundle 4 ships without it. Some Android
+15 devices — Pixel 9 class and newer — run **16 KB memory pages**, and native libraries built
+for 4 KB pages can misbehave there. The affected population is small today and growing, and
+Google's tolerance for the bypass will not last.
+
+**The fix is a rebuild with updated native libraries**, which is why it was not done for launch:
+a new bundle means a new Play review, and the date was four days out. Do it in 1.0.1, and test
+on a 16 KB device or emulator image rather than assuming.
+
+*(A deobfuscation-file warning was also raised and ignored — it only affects how readable crash
+reports are, not behaviour. Worth attaching in a future build for better crash triage.)*
+
+---
+
 ## 5b. Wire up `payoutsAvailable()` — or delete it
 *Found 2026-08-21 while auditing Phase 2. Needs a rebuild (no OTA).*
 
