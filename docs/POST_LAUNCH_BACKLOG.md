@@ -66,6 +66,43 @@ test it or drop iPad from the supported device families in a future version.
 
 ---
 
+## 00. 🔴 SHIP FIRST — iOS "Continue with Google" errors for every user
+*Found 2026-08-21. Owner decided the same day to launch anyway and fix in 1.0.1.*
+
+Tapping it returns `Passed nonce and nonce in id_token should either both exist or not.`
+`lib/socialAuth.ts:79` calls `signInWithIdToken({ provider: 'google', token: idToken })` with
+**no nonce**, while `@react-native-google-signin` on iOS mints an id_token that contains one.
+
+**Nobody is locked out** — email/password and Apple sign-in both work — but a headline button
+on the login screen errors, which is the worst possible first impression for a new user who
+prefers Google. **This is the single reason to ship 1.0.1 quickly.**
+
+### The fix — two parts, do both
+
+**1. Make the fallback actually work (3 lines, and it is the robust half).** The browser flow
+underneath is fine; the native branch just never reaches it, because it returns the error:
+
+```ts
+if (idToken) {
+  const { error } = await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+  if (!error) return {};
+  // Native path failed (nonce mismatch, provider config, anything) — the web
+  // flow below still works, so fall through rather than dead-ending the user.
+}
+```
+
+That one change would have turned this launch defect into an invisible extra second of latency.
+**Any native-first path with a working fallback should fail INTO the fallback, never out of it.**
+
+**2. Handle the nonce properly.** Generate a raw nonce, pass its SHA-256 to the Google SDK, and
+pass the raw value to `signInWithIdToken({ provider, token, nonce })` — so both sides carry it.
+Alternatively, if Supabase's Google provider exposes a skip-nonce-check option, enabling it
+resolves the mismatch without touching the client.
+
+⚠️ **Check `socialAuth.ts:152` at the same time** — Apple uses the identical no-nonce shape.
+
+---
+
 ## 0. ⚠️ HIGHEST PRIORITY — the in-app Community Guidelines are STALE
 *Created 2026-08-21 by the Stripe-driven policy change. Needs a rebuild, so it cannot ship
 before 1.0.1.*

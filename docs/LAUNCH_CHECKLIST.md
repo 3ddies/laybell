@@ -474,7 +474,13 @@ branch `return`s the Supabase error instead of falling through to it — so ever
 taps that button gets an error rather than the working path. **This affects all iOS users in
 build 4**, which is approved and staged for release.
 
-**Fix options, in order of preference:**
+✅ **DECIDED 2026-08-21: LAUNCH ANYWAY, FIX IN 1.0.1.** Nobody is locked out — email/password
+and Apple sign-in both work. The cost is a headline button erroring on day one, and it is the
+single reason to ship 1.0.1 quickly. The exact fix is written up as item 00 in
+, including the three-line change that makes the native path fail INTO
+the working browser fallback instead of out of it.
+
+**Options as they stood:**
 1. 🎯 **Supabase Dashboard → Authentication → Sign In / Providers → Google → a nonce-check
    option** (labelled something like "Skip nonce checks"). If it exists, this is **server-side,
    no rebuild**, and it saves the date. **CHECK THIS FIRST.**
