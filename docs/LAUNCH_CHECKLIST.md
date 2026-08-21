@@ -525,10 +525,21 @@ accumulates an *available* balance can tap Transfer, which invokes `stripe-conne
 nothing, which is better than the historical bug, but it is still a broken promise on a money
 screen.
 
-- **Stripe live is therefore MORE load-bearing than "deliberately post-launch" suggests, and
-  needs NO rebuild** — swap `STRIPE_SECRET_KEY` to `sk_live_…` and **fund the balance**. Both
-  are server-side. Credits money arrives in a *bank* account, not Stripe, so transfers fail
-  until it is topped up.
+- ✅ **`STRIPE_SECRET_KEY` IS ALREADY THE LIVE KEY — verified 2026-08-21** from Stripe →
+  Developers → Logs: requests from `Deno/SupabaseEdgeRuntime` signed with `sk_live_…c2nter`,
+  dating to 08-09. **No swap needed; that step is done.** The 08-09 money-test calls were all
+  `/v1/accounts`, `/v1/account_links`, `/v1/tokens` and `/persons` — Connect onboarding, not
+  charges or transfers — so no real money moved through a live key during testing.
+- 🚨 **Stripe shows "Action required — We need some information for your account. Provide it to
+  keep capabilities enabled."** That is the live-mode review asking for verification, and the
+  capabilities at stake include **transfers**, which is the payout rail. **OWNER-ONLY work:**
+  the GATES section already forbids automating Stripe's hosted forms, because they ask for SSN
+  and bank details on a real account.
+- **Still to do: fund the Stripe balance.** Credits money arrives in a *bank* account, not
+  Stripe, so transfers fail until it is topped up.
+- ⚠️ The fresh-start reset deleted the test users who held live Connect accounts, so a few
+  **orphaned empty Connect accounts** now sit in Stripe. Harmless — no balance, no capability —
+  but worth tidying when convenient.
 - **The pressure is bounded, not absent:** earnings sit on a 14-day hold, so the earliest any
   balance can become *available* is ~14 days after a creator's first sale. A Sept 1 launch
   means nothing is withdrawable before roughly Sept 15 — that is the real deadline, not launch
