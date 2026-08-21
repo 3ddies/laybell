@@ -459,6 +459,40 @@ account, **follow someone with it** (that is what arms the bug), delete it in-ap
 `delete from auth.users where id = '<id>'` and confirm it succeeds *without* clearing
 `public.follows` first.
 
+### 🔴 **iOS GOOGLE SIGN-IN IS BROKEN IN THE SHIPPING BUILD — found 2026-08-21**
+
+Tapping **Continue with Google** on iOS returns:
+`Passed nonce and nonce in id_token should either both exist or not.`
+
+**Mechanism.** `lib/socialAuth.ts:79` calls
+`supabase.auth.signInWithIdToken({ provider: 'google', token: idToken })` with **no nonce**,
+while `@react-native-google-signin` on iOS mints an id_token that **contains** one. Supabase
+sees one side without the other and refuses.
+
+**Why the fallback does not save it.** The browser flow underneath works fine, but the native
+branch `return`s the Supabase error instead of falling through to it — so every iOS user who
+taps that button gets an error rather than the working path. **This affects all iOS users in
+build 4**, which is approved and staged for release.
+
+**Fix options, in order of preference:**
+1. 🎯 **Supabase Dashboard → Authentication → Sign In / Providers → Google → a nonce-check
+   option** (labelled something like "Skip nonce checks"). If it exists, this is **server-side,
+   no rebuild**, and it saves the date. **CHECK THIS FIRST.**
+2. **Rebuild** passing the nonce, or falling through to the web flow on error. Correct, but a
+   new build means a new App Store review and **kills 08-25**.
+3. **Launch with it broken.** Email/password and Apple sign-in still work, so nobody is locked
+   out — but a headline button on the login screen errors on day one.
+
+⚠️ **TEST APPLE SIGN-IN TOO.** `socialAuth.ts:152` uses the same `signInWithIdToken` shape for
+Apple with no nonce. If `expo-apple-authentication` also embeds one, that button is broken the
+same way, and that would be far worse.
+
+📌 **This is the exact failure the 08-13 note predicted and then talked itself out of.** That
+entry said "STILL TEST THIS ON iOS", the test was dropped as low-risk because the *previous*
+Google bug had been fixed console-side, and the reasoning did not survive contact — this is a
+different bug in a different layer. **A platform is not verified because a related bug on
+another platform was fixed.**
+
 ### 🗓️ **LAUNCH MOVED UP TO TUESDAY 2026-08-25** — owner's call, 2026-08-21
 
 **It is achievable because the launch-day sequence is already RUN**, not because anything is
