@@ -145,6 +145,30 @@ which is the only permanent diamond the shipped catalog has. See
 
 ---
 
+## 3c. 🐛 Premium+ "badge freeze" does not preserve tier — it only preserves rows
+*Found 2026-08-21. Affects paying subscribers, not just the owner. Needs a rebuild.*
+
+The freeze is sold as: *"while frozen, lapse-driven drops are skipped entirely — held badges
+**and the tier/points they carry** survive with no maintenance"* (`lib/badges.ts:685`).
+
+Only the first half is true. `:687` skips lapse-driven **deletes** while frozen, so the rows
+stay in `user_badges`. But the point rollup at `:707` counts only
+`isPerm(r) || qKeys.has(r.badge_key)` — a frozen row that no longer qualifies **scores zero**.
+
+**So a Premium+ subscriber who stops posting keeps their badge rows and still loses tier**,
+which is precisely what the feature promises will not happen. Confirmed in production: two
+accounts holding nine badge rows each computed `gold`, because only the two catalogue-permanent
+ones counted (8 + 4 = 12, and diamond needs 16).
+
+**The fix:** include frozen rows in `heldKeys`, not just spare them from deletion — i.e. add
+`|| frozen` to that filter so the freeze covers scoring as well as retention.
+
+**Fix this in the same change as 3b** — both live in `evaluateBadges()`, and 3b's staff map
+also removes the owner's need for the temporary bridge in
+`supabase/sql/_OWNER_diamond_bridge_6mo.sql`.
+
+---
+
 ## 4. Android: 16 KB memory page sizes not supported
 *Flagged by Play at submission 2026-08-21. Bypassed with "Proceed anyway". Needs a rebuild.*
 
