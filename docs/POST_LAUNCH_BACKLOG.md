@@ -115,6 +115,36 @@ already open.
 
 ---
 
+## 3b. 🔒 Remove TEST_FORCE_TIER — it shipped, and it is a claimable privilege
+*Found 2026-08-21. Blocked server-side the same day; the real fix needs a rebuild.*
+
+`lib/badges.ts:628` still carries a block marked **"TEMP TESTING OVERRIDE — REMOVE BEFORE
+RELEASE"**, and it is compiled into build 4:
+
+```ts
+const TEST_FORCE_TIER: Record<string, Tier> = {
+  observer: 'diamond',
+  rachaelhall: 'gold',
+};
+```
+
+`evaluateBadges()` matches it on **username, not user id**, and short-circuits the normal
+recompute — so whoever holds one of those names is handed the tier. The fresh-start reset
+deleted both accounts and thereby **freed the names**, turning a testing shortcut into a
+claimable privilege: `observer` grants Diamond, and Diamond gates creating communities.
+
+✅ **Blocked server-side** by `supabase/sql/reserved_usernames.sql` — a small reserved-name
+table plus a trigger, effective immediately on the shipped build. Proven by exercise:
+attempting the rename raises `username_unavailable`.
+
+**The 1.0.1 fix solves two problems at once.** Rename the map to a staff list, drop the test
+names, and put `laybell` and `3ddie` in it. That removes the exploit *and* gives the official
+accounts their Diamond honestly — today it comes from a badge titled "Log in 90 days in a row",
+which is the only permanent diamond the shipped catalog has. See
+`supabase/sql/_OWNER_official_accounts.sql`, which includes the revert block.
+
+---
+
 ## 4. Android: 16 KB memory page sizes not supported
 *Flagged by Play at submission 2026-08-21. Bypassed with "Proceed anyway". Needs a rebuild.*
 
