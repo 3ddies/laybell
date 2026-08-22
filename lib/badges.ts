@@ -11,7 +11,12 @@ import { COLORS, GRADIENTS } from '../constants/theme';
 // Overall status (the emblem next to a username) is a POINT ROLLUP: within each
 // category a user holds only the highest tier they currently qualify for; weight
 // bronze=1 / silver=2 / gold=4 / diamond=8; sum across categories; the emblem tier
-// is the highest the total funds (>=8 diamond, 4-7 gold, 2-3 silver, 1 bronze).
+// is the highest the total funds — see computeEmblemTier() at :169, which is the
+// authority: >=16 diamond, 8-15 gold, 4-7 silver, 2-3 bronze.
+// (This line previously read ">=8 diamond, 4-7 gold", which is the thresholds one
+// step off. It mattered: the catalog has exactly ONE diamond category, so a single
+// diamond badge is 8 points — gold, not diamond — and reaching diamond needs
+// several categories. Corrected 2026-08-21 after it misled a grant.)
 // This directly encodes the notes' tree (2 bronze = 1 silver, etc.).
 
 export type Tier = 'bronze' | 'silver' | 'gold' | 'diamond';
