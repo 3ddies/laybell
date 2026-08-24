@@ -6,6 +6,17 @@ why it was safe to defer, so a future reader can tell a real decision from an ov
 **This file is for OPTIONAL work.** Anything that must happen belongs in
 `LAUNCH_CHECKLIST.md` §0.0, not here.
 
+🩺 **Run the weekly health check** before planning any update:
+`npx supabase db query --linked -f supabase/sql/_HEALTH_CHECK.sql`
+It watches outcomes rather than job status, because every serious problem this project has hit
+was silent. It also carries the two dated commitments nothing else will remind anyone of.
+
+📦 **Every update should carry improvements, not only fixes** (owner, 2026-08-24). There is no
+OTA, so a release costs a full build and a store review — shipping one that fixes a single bug
+wastes the cycle. When a fix opens a file, pull forward whatever else in this list touches the
+same file or subsystem, and say plainly what was bundled. **Bundle adjacent work, not risky
+work** — `app/reel/[id].tsx:830-836` records what happened last time that line was crossed.
+
 **Ordered by priority, highest first.** Items 1–3 are the case for shipping 1.0.1 promptly;
 everything from 5 down can wait for a quiet week.
 
