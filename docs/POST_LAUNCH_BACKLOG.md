@@ -169,6 +169,31 @@ also removes the owner's need for the temporary bridge in
 
 ---
 
+## 3d. Hide the `laybellreview` account — but never delete it
+*Owner's decision 2026-08-24: do it after Play approves, not before.*
+
+`laybellreview` exists only so Apple and Google reviewers can sign in. It should not be visible
+to real users, but it must **never be deleted** — both stores hold its credentials permanently
+in their review settings, so removing it means the next submission fails at the login screen
+before a reviewer sees anything.
+
+**Hiding is one flag:** `update public.profiles set hidden = true where lower(username) =
+'laybellreview';` The restrictive policies in `account_hidden.sql` then remove its posts,
+stories and playlists from every surface server-side, and its profile page is blocked.
+
+🚨 **THE TRAP: hidden accounts cannot comment or DM.** `components/Comments.tsx:248` refuses
+outright with an alert. The review notes promise reporting on "every post, profile, comment and
+message", so a reviewer on a hidden account meets a dead feature and reasonably reads it as
+broken.
+
+**Therefore: UNHIDE BEFORE EVERY STORE SUBMISSION.** Not just the next one — every one. This is
+the kind of flag that gets set once and silently fails a review eight months later.
+
+⏳ **Timing:** not while a review is in flight. Play was still reviewing on 2026-08-24, which is
+exactly why this was deferred rather than done immediately.
+
+---
+
 ## 4. Android: 16 KB memory page sizes not supported
 *Flagged by Play at submission 2026-08-21. Bypassed with "Proceed anyway". Needs a rebuild.*
 
