@@ -26,8 +26,8 @@ keep polishing, because there is no OTA here and whatever is in that build ships
 
 # 🎉🎉 **LAYBELL IS LIVE ON THE APP STORE — released 2026-08-24 21:30 UTC.**
 
-Verified through Apple's lookup API, not the storefront: , version
-1.0.0, id . Direct link:
+Verified through Apple's lookup API rather than the storefront (which was rate-limiting):
+`Laybell: Music & Creators`, version 1.0.0, id `6795675871`. Direct link:
 https://apps.apple.com/us/app/laybell-music-creators/id6795675871
 
 Seeded with 19 posts at launch (15 from @3ddie, 2 from @laybell, 2 from @laybellreview).
@@ -38,9 +38,9 @@ the link meanwhile.
 
 📱 **Android is still with Google** (submitted 08-21, publishes automatically on approval).
 
-**Next:** the weekly health check (), App Store Connect →
+**Next:** the weekly health check (`supabase/sql/_HEALTH_CHECK.sql`), App Store Connect →
 Analytics and Play Console → Android vitals for the first-week crash picture, and 1.0.1 from
- — items 1, 2 and 3c are user-facing.
+`docs/POST_LAUNCH_BACKLOG.md` — items 1, 2 and 3c are user-facing.
 
 ---
 
