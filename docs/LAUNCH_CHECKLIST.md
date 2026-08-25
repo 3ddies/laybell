@@ -24,6 +24,26 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 thing left is the production build — deliberately paused by the owner (2026-08-10) to
 keep polishing, because there is no OTA here and whatever is in that build ships.**
 
+# 🎉🎉 **LAYBELL IS LIVE ON THE APP STORE — released 2026-08-24 21:30 UTC.**
+
+Verified through Apple's lookup API, not the storefront: , version
+1.0.0, id . Direct link:
+https://apps.apple.com/us/app/laybell-music-creators/id6795675871
+
+Seeded with 19 posts at launch (15 from @3ddie, 2 from @laybell, 2 from @laybellreview).
+
+⏳ **Search will lag by a day or more.** App Store availability and search indexing are separate
+systems — the direct link works immediately, the search result does not. Nothing to fix; share
+the link meanwhile.
+
+📱 **Android is still with Google** (submitted 08-21, publishes automatically on approval).
+
+**Next:** the weekly health check (), App Store Connect →
+Analytics and Play Console → Android vitals for the first-week crash picture, and 1.0.1 from
+ — items 1, 2 and 3c are user-facing.
+
+---
+
 # 🚀 **SUBMITTED TO APPLE — 2026-08-12.** `1.0.0 (4)`, all NINE items in one submission:
 the version, 5 credit consumables, 2 subscriptions and the Laybell Premium subscription
 group. Build 4 was smoke-tested from TestFlight first, including the RTMP go-live path.
