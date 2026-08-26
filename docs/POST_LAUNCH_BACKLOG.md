@@ -237,7 +237,7 @@ readability. Worth attaching in a future build for better triage.)*
 
 ---
 
-## 5. Warn before deleting an account with a positive balance
+## 5. ✅ DONE IN 1.0.1 — warn before deleting an account with a positive balance
 *Deferred 2026-08-21 by the owner. Product change, needs a rebuild.*
 
 A user who deletes with unspent credits or unwithdrawn earnings leaves that money in an
@@ -257,7 +257,7 @@ than destroyed — but it becomes real the first time a creator with a balance d
 
 ---
 
-## 6. Wire up `payoutsAvailable()` — or delete it
+## 6. ✅ DONE IN 1.0.1 — payoutsAvailable() deleted; the real gate was already there
 *Found 2026-08-21 while auditing Phase 2. Needs a rebuild.*
 
 `lib/wallet.ts:126` defines `payoutsAvailable()`, and `LAUNCH_CHECKLIST.md` calls it "the kill

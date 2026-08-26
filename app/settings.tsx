@@ -15,6 +15,8 @@ import { usePremium } from '../contexts/PremiumContext';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { formatBytes } from '../lib/format';
+import { fetchWalletBalance } from '../lib/wallet';
+import { fmtCents } from '../lib/donations';
 import { LANGUAGES } from '../lib/i18n';
 import BadgeEmblem from '../components/BadgeEmblem';
 import PremiumBubbles from '../components/PremiumBubbles';
@@ -216,6 +218,32 @@ export default function SettingsScreen() {
     setDialog(null);
     const ok = await setHidden(true, { delete_requested_at: new Date().toISOString(), delete_immediately: false });
     if (ok) setToast({ title: t('delete.hiddenTitle'), message: t('delete.hiddenBody') });
+  }
+
+  // Deleting strands any withdrawable balance. The ledger is append-only and
+  // deliberately refuses to erase the entries (fix_ledger_blocks_deletion.sql), so
+  // the money survives in an anonymised account that nobody can reach — correct
+  // accounting, and a horrible surprise if the app never mentioned it.
+  //
+  // WARN, never block: it is their account and their decision. And a failed
+  // balance lookup must not stand between someone and deleting their account, so
+  // every error path here falls through to the delete.
+  async function confirmDeleteWithBalance() {
+    let availableCents = 0;
+    try { availableCents = (await fetchWalletBalance()).totalCents ?? 0; } catch { /* fall through */ }
+    if (availableCents > 0) {
+      setDialog(null);
+      Alert.alert(
+        t('delete.balanceTitle'),
+        t('delete.balanceBody', { amount: fmtCents(availableCents) }),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('delete.balanceDeleteAnyway'), style: 'destructive', onPress: () => { void doDeletePermanent(); } },
+        ],
+      );
+      return;
+    }
+    void doDeletePermanent();
   }
 
   async function doDeletePermanent() {
@@ -751,7 +779,7 @@ export default function SettingsScreen() {
         title={t('delete.permTitle')}
         message={t('delete.permBody')}
         confirmLabel={t('common.delete')}
-        onConfirm={doDeletePermanent}
+        onConfirm={confirmDeleteWithBalance}
         onCancel={() => setDialog(null)}
       />
       <Toast

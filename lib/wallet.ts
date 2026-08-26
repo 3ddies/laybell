@@ -116,13 +116,16 @@ export async function fetchWalletBalance(): Promise<WalletBalance> {
 // feedback. Deleted rather than disabled, because that is the worst failure this
 // screen can have.
 
-/**
- * True once Laybell actually collects money it could pay out.
- *
- * Tips now settle through the ledger from real purchased credits, so donations
- * ARE collected — this no longer gates the rail, it records which revenue
- * streams reach Laybell's own balance.
- */
-export function payoutsAvailable(): boolean {
-  return PLATFORM_COLLECTS_DONATIONS || PLATFORM_COLLECTS_SHOP;
-}
+// `payoutsAvailable()` used to live here, and several documents still described it
+// as "the kill switch for the payout RAIL". It was DELETED in 1.0.1 because it was
+// never wired to anything — and, more to the point, was never needed:
+//
+//   app/wallet.tsx:146 gates cashing out on `payout.payoutsEnabled`, which comes
+//   from Stripe's own `payouts_enabled` on the connected account. That is a real,
+//   SERVER-side gate that already knows about verification, restriction and
+//   suspension. A client constant could not have improved on it, and with no OTA
+//   could not even be flipped in an emergency without shipping a build.
+//
+// A documented control that does not exist is worse than no control, because it
+// gets planned around. If a rail-wide kill switch is ever genuinely wanted, it
+// belongs server-side — a flag the app reads, not a constant compiled into it.

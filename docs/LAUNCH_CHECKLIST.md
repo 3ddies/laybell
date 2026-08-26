@@ -619,6 +619,16 @@ positives from filesystem mtimes** (git touches files); checked against git hist
 21:28, *after* the `0325f3e` encoder/TV-lives fix, so that fix is live. ⚠️ **Compare deploy
 dates to GIT history, not to mtimes** — mtime drift detection cries wolf.
 
+✅ **`payoutsAvailable()` WAS DELETED IN 1.0.1.** Every later mention of "flipping" it in this
+file is historical and should be read as describing a control that never existed. **The real
+gate was already there and is better:** `app/wallet.tsx:146` refuses to cash out unless Stripe's
+own `payouts_enabled` is true on the connected account, which knows about verification,
+restriction and suspension — none of which a compiled constant could. And with no OTA, a client
+constant could not have been flipped in an emergency anyway. If a rail-wide kill switch is ever
+genuinely wanted it must be **server-side**, a flag the app reads.
+
+*(the finding, kept)*
+
 🚨 **`payoutsAvailable()` IS DEAD CODE — THERE IS NOTHING TO "FLIP".** This document says to
 flip it in four places. It is defined in `lib/wallet.ts:126`, described as "the kill switch for
 the payout RAIL", and **never called anywhere in the app**. The only references are its own
