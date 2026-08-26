@@ -630,16 +630,26 @@ function emitTierUpgrade(tier: Tier) {
   for (const f of tierUpgradeListeners) { try { f(tier); } catch {} }
 }
 
-// ── TEMP TESTING OVERRIDE — REMOVE BEFORE RELEASE ────────────────────────────
-// Each listed username is forced to the given tier and skips the normal
-// recompute, so the badge-gated Communities flows (Diamond creates / Gold
-// manages) can be tested on throwaway accounts. To restore normal fairness:
-// empty this map (and run, once, in the SQL editor:
-//   update public.profiles set badge_tier=null, profile_theme='default'
-//   where lower(username) in ('observer','rachaelhall');).
-const TEST_FORCE_TIER: Record<string, Tier> = {
-  observer: 'diamond',
-  rachaelhall: 'gold',
+// ── STAFF TIER ───────────────────────────────────────────────────────────────
+// Laybell's own accounts are held at a fixed tier and skip the normal recompute.
+// Diamond is a CAPABILITY tier — it gates creating communities
+// (communities.sql:380) and raises public-playlist slots — so the operator's
+// accounts need it to run the platform, not for decoration.
+//
+// ⚠️ THIS IS MATCHED ON USERNAME, NOT USER ID. Anyone who registers a name listed
+// here is handed the tier. That is exactly what went wrong with the block this
+// replaced: it shipped in build 4 carrying `observer` and `rachaelhall` as test
+// entries, and the 2026-08-21 fresh-start reset then FREED both names — leaving a
+// claimable Diamond, and with it the ability to create communities, to whoever
+// registered first. It was blocked at the database
+// (supabase/sql/reserved_usernames.sql) until this change removed the cause.
+//
+// **So: only ever list names Laybell permanently owns, and keep them reserved.**
+// Never add a name here for testing — use a real account and earn the badges, or
+// the next reset frees a privilege.
+const STAFF_TIER: Record<string, Tier> = {
+  laybell: 'diamond',
+  '3ddie': 'diamond',
 };
 
 // Recompute which badges the user holds and their emblem tier, reconciling the
@@ -656,12 +666,11 @@ export async function evaluateBadges(opts: { silent?: boolean } = {}): Promise<E
       supabase.from('profiles').select('badge_tier, username').eq('id', user.id).maybeSingle(),
     ]);
 
-    // TEMP TESTING OVERRIDE (see TEST_FORCE_TIER above): force the listed
-    // account(s) to a fixed tier and skip recompute. Only writes/notifies when
-    // the row isn't already that tier, so it can't loop with the ProfileContext
-    // tier-change refresh. Runs before the !state guard so it works even if the
-    // badges SQL is missing.
-    const forcedTier = TEST_FORCE_TIER[(profileRes.data?.username ?? '').toLowerCase()];
+    // STAFF TIER (see STAFF_TIER above): hold Laybell's own accounts at a fixed
+    // tier and skip recompute. Only writes/notifies when the row isn't already
+    // that tier, so it can't loop with the ProfileContext tier-change refresh.
+    // Runs before the !state guard so it works even if the badges SQL is missing.
+    const forcedTier = STAFF_TIER[(profileRes.data?.username ?? '').toLowerCase()];
     if (forcedTier) {
       if (asTier(profileRes.data?.badge_tier) !== forcedTier) {
         await supabase.from('profiles').update({ badge_tier: forcedTier, profile_theme: forcedTier }).eq('id', user.id);
@@ -709,9 +718,16 @@ export async function evaluateBadges(opts: { silent?: boolean } = {}): Promise<E
     }
 
     // Final held set = kept existing (permanent OR still qualifying) + inserts.
+    // `frozen` belongs here, not only in toDelete above. The freeze promises that
+    // held badges "and the tier/points they carry" survive with no maintenance —
+    // but sparing a row from deletion while still scoring it zero means a Premium+
+    // subscriber who stops posting keeps their badges and loses their tier anyway,
+    // which is precisely what they are paying for it not to do. Confirmed in
+    // production 2026-08-21: two accounts holding nine badge rows each computed
+    // `gold`, because only the two catalogue-permanent ones counted.
     const heldKeys = new Set<string>([
       ...existing
-        .filter(r => BADGES_BY_KEY[r.badge_key] && (isPerm(r) || qKeys.has(r.badge_key)))
+        .filter(r => BADGES_BY_KEY[r.badge_key] && (frozen || isPerm(r) || qKeys.has(r.badge_key)))
         .map(r => r.badge_key),
       ...toInsert,
     ]);

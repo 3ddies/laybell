@@ -126,7 +126,7 @@ already open.
 
 ---
 
-## 3b. 🔒 Remove TEST_FORCE_TIER — it shipped, and it is a claimable privilege
+## 3b. ✅ DONE IN 1.0.1 — TEST_FORCE_TIER removed, replaced by STAFF_TIER
 *Found 2026-08-21. Blocked server-side the same day; the real fix needs a rebuild.*
 
 `lib/badges.ts:628` still carries a block marked **"TEMP TESTING OVERRIDE — REMOVE BEFORE
@@ -156,7 +156,7 @@ which is the only permanent diamond the shipped catalog has. See
 
 ---
 
-## 3c. 🐛 Premium+ "badge freeze" does not preserve tier — it only preserves rows
+## 3c. ✅ DONE IN 1.0.1 — the badge freeze now preserves tier, not just rows
 *Found 2026-08-21. Affects paying subscribers, not just the owner. Needs a rebuild.*
 
 The freeze is sold as: *"while frozen, lapse-driven drops are skipped entirely — held badges
