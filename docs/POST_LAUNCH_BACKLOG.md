@@ -106,17 +106,32 @@ if (idToken) {
 }
 ```
 
-**2. Handle the nonce properly.** Generate a raw nonce, pass its SHA-256 to the Google SDK, and
-pass the raw value to `signInWithIdToken({ provider, token, nonce })`, so both sides carry it.
+✅ **DONE in 1.0.1** — the native branch now falls through to the browser flow on any failure
+instead of returning the error.
 
-**3. Then turn the skip back OFF** — the step most likely to be forgotten, because by then
-nothing looks broken. Supabase → Authentication → Sign In / Providers → Google, then **re-test
-on a real device**: this path only fails where it is exercised.
+**2. Handle the nonce properly.** 🚫 **BLOCKED — not achievable on the current library.**
+Investigated 2026-08-26: **custom nonce support is a PAID feature** of
+`@react-native-google-signin`. The installed free build (v16.1.2) contains **no nonce code at
+all** — the only occurrence of the word in the whole package is a README line advertising it
+under the paid tier. So the raw-nonce/SHA-256 approach cannot be implemented as written.
 
-⚠️ **Check `socialAuth.ts:152` at the same time** — Apple uses the identical no-nonce shape.
-✅ Apple sign-in was **verified working 2026-08-21** (account created via a
-`privaterelay.appleid.com` address), so it is latent rather than live. Fix it while this code is
-already open.
+Three ways forward, none urgent now that the fallback works:
+- **Buy the paid tier** of `@react-native-google-signin`.
+- **Drop the native sheet** and use the browser OAuth flow on iOS too — Supabase handles the
+  nonce itself there. Costs the native look, removes the whole problem.
+- **Leave it.** The remaining exposure is a validly signed, unexpired token carrying Laybell's
+  own audience being replayed. A high bar, and the trade Supabase offers for exactly this case.
+
+**3. Turn the skip back OFF** — only possible after 2 above, so it stays on for now. That is a
+**decision, not an oversight**: it is recorded here so nobody finds the toggle later and assumes
+it was forgotten.
+
+✅ **`socialAuth.ts` Apple path — checked 2026-08-26, no bug there.**
+`AppleAuthentication.signInAsync` embeds a nonce only when one is passed in its options, and
+none is — so neither side carries one and Supabase is satisfied. Google's SDK mints one unasked,
+which is the entire difference. Commented in place, including the warning that adding a nonce to
+those options later would break it exactly as Google broke. There is deliberately no fallback on
+the Apple branch either: it is native-only on iOS, so there is nothing to fall through to.
 
 ### Two lessons worth keeping
 - **A native-first path with a working fallback must fail INTO the fallback.** Returning the

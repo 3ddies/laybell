@@ -77,10 +77,29 @@ export async function signInWithGoogle(): Promise<SocialAuthResult> {
         const idToken = res?.data?.idToken ?? res?.idToken ?? null;
         if (idToken) {
           const { error } = await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
-          return error ? { error: error.message } : {};
+          if (!error) return {};
+          // FALL THROUGH ON FAILURE — do not return the error.
+          //
+          // This line cost a launch. On 2026-08-21 every iOS user tapping
+          // "Continue with Google" got `Passed nonce and nonce in id_token should
+          // either both exist or not`, because the Google SDK mints a nonce into
+          // the token and this call sends none. The browser flow below was working
+          // the whole time; returning the error just meant nobody ever reached it.
+          //
+          // The general rule, worth more than this specific bug: **a native-first
+          // path with a working fallback must fail INTO the fallback, never out of
+          // it.** Whatever breaks the native path next — provider config, an SDK
+          // change, a Google outage — costs a second of latency instead of an
+          // outage.
+          //
+          // ⚠️ The nonce mismatch itself is NOT fixed here and cannot be: passing a
+          // custom nonce is a PAID feature of @react-native-google-signin (v16.1.2
+          // free tier contains no nonce code at all). It is currently worked around
+          // by the skip-nonce-check toggle on the Supabase Google provider, which
+          // disables replay protection. See POST_LAUNCH_BACKLOG item 3.
         }
-        // Signed in natively but no idToken (misconfigured webClientId) — the
-        // web flow below still works, so fall through rather than dead-end.
+        // Signed in natively but no idToken (misconfigured webClientId) — same
+        // outcome, same reason: the web flow below still works.
       } catch (e: any) {
         if (e?.code === mod?.statusCodes?.SIGN_IN_CANCELLED) return { cancelled: true };
         // Native side missing (pre-rebuild client) or SDK error → web fallback.
@@ -149,6 +168,17 @@ export async function signInWithApple(): Promise<SocialAuthResult> {
       ],
     });
     if (!cred.identityToken) return { error: 'Apple returned no identity token' };
+    // No nonce here, and that is CORRECT — not the Google bug repeated.
+    // `AppleAuthentication.signInAsync` only embeds a nonce when one is passed in
+    // its options, and none is; so neither side has one and Supabase is satisfied.
+    // Google's SDK mints one into the token unasked, which is why that path
+    // needed the provider-level skip and this one never did. Verified working
+    // 2026-08-21. If a nonce is ever added to the options above, it MUST also be
+    // passed to signInWithIdToken or this breaks exactly as Google did.
+    //
+    // There is deliberately no fallback below: Apple sign-in is native-only on
+    // iOS, so unlike Google there is nothing to fall through to and returning the
+    // error is the right behaviour.
     const { error } = await supabase.auth.signInWithIdToken({ provider: 'apple', token: cred.identityToken });
     if (error) return { error: error.message };
     // Apple shares the name ONLY on the very first authorization — stash it in
