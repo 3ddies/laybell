@@ -284,6 +284,21 @@ true. Additive; touches neither the pager nor the video pipeline.
 Google sign-in falls through to the browser. **The browser flow works and is verified**, so this
 is polish, not function.
 
+⚠️ **The Android OAuth client will be gone by then — expect to recreate it.** Google flagged
+`Android client 1` (`…qjpa…`, created 2026-08-09) as inactive on 2026-08-26 and gives 30 days
+before deleting it. That is correct and harmless: nothing references it. `socialAuth.ts` uses
+only the **web** client (`…k3lr…`, the ID-token audience) and the **iOS** client (`…qmqp…`), and
+Android's browser fallback uses the web one — so the Android client has never been called, which
+is precisely why it lapsed.
+
+Recreating it is a two-minute job: APIs & Services → Credentials → Create OAuth client ID →
+Android, package `com.laybell.app`, with the **Play app-signing SHA-1** (`07:4F:FE:52…`, already
+confirmed matching on 2026-08-13). There is also a 30-day restore window after deletion.
+
+*Unaffected by any of this: the `firebase-adminsdk` and `revenuecat-play` service accounts, and
+the Firebase browser API key. They are not OAuth clients — `revenuecat-play` in particular is
+load-bearing for Play billing and is fine.*
+
 ---
 
 ## 9. iPad and Apple Watch
