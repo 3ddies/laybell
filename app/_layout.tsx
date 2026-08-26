@@ -608,8 +608,26 @@ function RootLayout() {
   }, [session, initialized, segments]);
 
   async function checkOnboarding(silent = false) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
+    if (!user) {
+      // The account is GONE server-side but this device still holds a valid JWT —
+      // the token stays good until it expires, so every query returns empty and the
+      // UI renders a shell with no data instead of logging anyone out. That is what
+      // a moderated user sees the moment their account is terminated, and it is how
+      // the owner's own device behaved on 2026-08-21 after a test account was
+      // deleted underneath it.
+      //
+      // Sign out ONLY on a definite answer from the server. `getUser()` also returns
+      // no user when the request never landed, and signing people out on a subway
+      // blip would be a far worse bug than the one being fixed — so a retryable
+      // network failure (no HTTP status) falls through to the old silent return.
+      const status = (userErr as any)?.status;
+      if (status === 401 || status === 403) {
+        await supabase.auth.signOut();
+        Alert.alert(tg('session.goneTitle'), tg('session.goneBody'));
+      }
+      return;
+    }
 
     let { data: profile } = await supabase
       .from('profiles').select('*').eq('id', user.id).single();

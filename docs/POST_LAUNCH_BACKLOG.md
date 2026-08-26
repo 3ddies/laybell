@@ -35,7 +35,7 @@ everything from 5 down can wait for a quiet week.
 
 ---
 
-## 1. ⚠️ The in-app Community Guidelines are STALE
+## 1. ✅ FIXED BY THE 1.0.1 BUILD — the in-app Community Guidelines were stale
 *Created 2026-08-21 by the Stripe-driven policy change. Needs a rebuild, so it cannot ship
 before 1.0.1.*
 
@@ -57,7 +57,7 @@ considering while touching this — the web pages already regenerate on push.)*
 
 ---
 
-## 2. A deleted account leaves the app glitchy instead of signing out
+## 2. ✅ DONE IN 1.0.1 — a deleted account now signs out cleanly
 *Found 2026-08-21 the hard way — the owner was signed in when their test account was deleted
 server-side. Needs a rebuild.*
 
