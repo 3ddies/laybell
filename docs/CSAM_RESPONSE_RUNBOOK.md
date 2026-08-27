@@ -34,8 +34,27 @@ bounded*, not an engineering programme.
 
 ## One-time setup
 
-1. **Register as an Electronic Service Provider** at
-   <https://esp.ncmec.org/registration>. Free. Over 2,000 providers are registered.
+✅ **REGISTRATION IS COMPLETE — approved 2026-08-26.** NCMEC confirmed Laybell LLC is registered
+with the CyberTipline and may submit a report from that point forward. The account is under
+`laybellapp@gmail.com`; credentials arrived as a **password-protected PDF**, with the password
+sent in a separate follow-up email from the analyst (Samuel M. Carducci, Senior Analyst).
+
+**Do these three things now, once:**
+1. **Set the account password** from the "Create Password for New Account" email.
+2. **Open the PDF and move the credentials into a password manager.** Step 4 below says "not
+   only in a browser password manager" — but an email inbox is worse than either. The password
+   for that PDF is sitting in a *second* email in the same inbox, so anyone with inbox access
+   has both halves.
+3. **Confirm `laybellapp@gmail.com` is genuinely monitored.** Step 3 below is not boilerplate:
+   this is the address NCMEC and law enforcement use.
+
+⚠️ **Registration is permission, not process.** Being registered means Laybell *can* file. It
+does not file anything by itself. The rest of this runbook — preserve, report, then delete — is
+what actually discharges the obligation, and it only works if the moderation queue is read.
+Steps 5 and 6 below are the ones with teeth.
+
+1. ~~**Register as an Electronic Service Provider** at
+   <https://esp.ncmec.org/registration>. Free. Over 2,000 providers are registered.~~ ✅ done
 2. Supply the required contact information: mailing address, phone, email, and a
    **named individual point of contact**. That is you.
 3. Use an email address you genuinely monitor. This is the address NCMEC and law
