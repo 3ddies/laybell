@@ -28,8 +28,21 @@ import { useTheme } from '../contexts/ThemeContext';
 // Costs nothing meaningful: two static gradients, one opacity driven on the
 // native driver. No layout, no re-render, no image to decode.
 
-const CYCLE_MS = 11000;
+// Tuning lives here — the owner iterates on these on the dev client, so they are
+// one place rather than scattered through the JSX.
+//
+// Was 11000 / 0.20 / 0.24 on the first pass; the owner asked for "a little
+// stronger and faster" after seeing it on device, which is what these are.
+// Still slow enough to be felt rather than watched, which is the constraint that
+// matters next to a password field — do not take this much below ~6s.
+const CYCLE_MS = 7500;
 const FADE_IN_MS = 900;
+
+// Peak alpha at the very top edge, and the mid-stop that carries it down.
+const GOLD_TOP = 0.29;
+const GOLD_MID = 0.11;
+const RED_TOP = 0.34;
+const RED_MID = 0.12;
 
 export default function AuthBackdrop() {
   const { mode } = useTheme();
@@ -65,13 +78,13 @@ export default function AuthBackdrop() {
   const a = (v: number) => Math.round(v * k * 100) / 100;
 
   const gold = [
-    `rgba(250,181,37,${a(0.20)})`,
-    `rgba(242,101,34,${a(0.07)})`,
+    `rgba(250,181,37,${a(GOLD_TOP)})`,
+    `rgba(242,101,34,${a(GOLD_MID)})`,
     'rgba(242,101,34,0)',
   ] as const;
   const red = [
-    `rgba(232,64,28,${a(0.24)})`,
-    `rgba(242,101,34,${a(0.08)})`,
+    `rgba(232,64,28,${a(RED_TOP)})`,
+    `rgba(242,101,34,${a(RED_MID)})`,
     'rgba(242,101,34,0)',
   ] as const;
 
