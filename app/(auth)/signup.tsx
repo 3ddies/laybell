@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { authRedirectUrl } from '../../lib/authLink';
@@ -23,6 +24,7 @@ export default function SignupScreen() {
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -134,7 +136,22 @@ export default function SignupScreen() {
       enabled={Platform.OS !== 'ios'}
     >
       <AuthBackdrop progress={progress} />
-      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets showsVerticalScrollIndicator={false}>
+      {/* The top padding is computed, not a constant, and that is the fix for
+          the logo sitting under the Dynamic Island.
+          This screen's content OVERFLOWS the viewport — five fields, consent,
+          the button and two social buttons — so justifyContent:'center' has no
+          slack to work with and everything simply starts at y=0, hard against
+          the status bar. (Sign-in has two fields, so it centres and never showed
+          this.) A fixed paddingTop cannot be right across devices because the
+          inset differs; adding the real safe-area inset to the existing rhythm
+          puts the mark clear of the island on every handset and gives it room
+          to breathe on the ones without one. */}
+      <ScrollView
+        contentContainerStyle={[styles.inner, { paddingTop: insets.top + SPACING.xxl }]}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+        showsVerticalScrollIndicator={false}
+      >
 
         <View style={styles.logoSection}>
           <AuthLogoMark size={72} />
@@ -230,7 +247,11 @@ export default function SignupScreen() {
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg, paddingVertical: SPACING.xxl },
+  // paddingBottom only — the top is supplied inline from the safe-area inset.
+  // Deliberately NOT paddingVertical: a shorthand here plus a longhand paddingTop
+  // in the inline override is exactly the kind of overlap that resolves by array
+  // order and quietly stops working when someone reorders the styles.
+  inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xxl },
 
   logoSection: { alignItems: 'center', marginBottom: SPACING.xl, gap: SPACING.sm },
   logo: { fontSize: 36, fontWeight: '800', color: colors.text, letterSpacing: 1 },

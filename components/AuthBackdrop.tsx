@@ -175,12 +175,19 @@ export default function AuthBackdrop({ progress = 0 }: Props) {
     'rgba(242,101,34,0)',
   ] as const;
 
-  // Reaches further down than it used to (was 0.72) so the warmth is a wash over
-  // the screen rather than a band across the top — but the middle stop stays low,
-  // so what arrives at the form is a tint and not a colour. Do not push the last
-  // stop past ~0.85: below that the fields start sitting ON the bloom instead of
-  // in front of it, and legibility is the one thing here that is not negotiable.
-  const stops = [0, 0.36, 0.84] as const;
+  // Runs almost the full page now (0.72 → 0.84 → 0.96 across three rounds of
+  // owner feedback), so the warmth is a wash over the screen rather than a band
+  // across the top. The middle stop stays comparatively low, which is what keeps
+  // this a tint by the time it reaches the form rather than a colour.
+  //
+  // An earlier note here said not to pass ~0.85 for legibility. That was written
+  // before the fields had their own opaque fill, and it is no longer what binds:
+  // input text sits on `surface`, and the Google/Apple buttons are solid white
+  // and near-black, so none of them are reading through the wash at all. What
+  // still binds is the CONSENT LINE — grey text directly on the backdrop, the
+  // lowest-contrast thing on the screen. Check that line before deepening the
+  // middle stop; the last stop is safe because the tail is already faint.
+  const stops = [0, 0.40, 0.96] as const;
 
   // The completion layer sits between the two base hues so it never fights
   // whichever one is currently winning — it reads as "more of the same warmth",
@@ -190,11 +197,12 @@ export default function AuthBackdrop({ progress = 0 }: Props) {
     `rgba(242,101,34,${a(BOOST_MID)})`,
     'rgba(242,101,34,0)',
   ] as const;
-  // Deeper than the base pair so completion spreads the warmth down the screen.
-  // 0.94 is past the ~0.85 floor the base layers respect, and that is fine only
-  // because this layer is at full strength solely when the form is COMPLETE —
-  // at which point the next thing the user does is press the button, not read.
-  const boostStops = [0, 0.42, 0.94] as const;
+  // Deeper still than the base pair, so completing the form spreads the warmth
+  // the last of the way down rather than only strengthening what is already
+  // there. Reaching 1.0 is fine here specifically because this layer is at full
+  // strength only when the form is COMPLETE — at which point the next thing the
+  // user does is press the button, not read the small print.
+  const boostStops = [0, 0.46, 1] as const;
 
   // pulse + (1 - pulse) * boost.
   //

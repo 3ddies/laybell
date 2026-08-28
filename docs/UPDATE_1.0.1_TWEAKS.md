@@ -65,6 +65,24 @@ stops.
 | 9 | Login + Signup | Sheen sweep on the primary button, like the Listen pill | Cosmetic | ✅ done |
 | 10 | Login + Signup | Text fields given an edge and a real focus state | Cosmetic | ✅ done |
 | 11 | All 4 auth screens | The form leaping when the keyboard opens — worst on login | Functional | ✅ done |
+| 12 | Signup | Logo sat hard against the Dynamic Island | Cosmetic | ✅ done |
+
+### 12 · Why the signup logo was jammed under the island
+
+Not a padding oversight — a consequence of the same property behind tweak 11.
+
+Signup's content **overflows the viewport**: five fields, the consent row, the button and two
+social buttons. `justifyContent: 'center'` only does something when there is slack, so with none
+the content simply starts at `y=0`, hard against the status bar. Login has two fields, centres
+happily, and never showed it.
+
+Fixed with `paddingTop: insets.top + SPACING.xxl` — the **real** safe-area inset plus the
+existing rhythm. A fixed number cannot be right across devices, since the inset differs between
+a Dynamic Island, a notch and neither.
+
+The base style now sets `paddingBottom` rather than `paddingVertical`, deliberately: a shorthand
+there plus a longhand `paddingTop` in the inline override resolves by array order, and would
+quietly stop working the day someone reorders the styles.
 
 ### 11 · Why the form "glitched into place", and why signup was better
 
