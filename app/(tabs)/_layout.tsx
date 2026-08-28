@@ -286,6 +286,28 @@ function TabBar({ state, navigation, position, jumpTo }: MaterialTopTabBarProps)
     ? (isLight ? 'rgba(255,255,255,0.97)' : mode === 'grey' ? 'rgba(46,44,43,0.97)' : 'rgba(30,30,30,0.97)')
     : (isLight ? 'rgba(242,241,237,0.94)' : mode === 'grey' ? 'rgba(22,21,20,0.92)' : 'rgba(9,9,9,0.9)');
 
+  // Condensed-state ground.
+  //
+  // The chips themselves were never the problem — they are a near-solid wash
+  // (chipBg above) and the icons sit on them cleanly. What reads as clutter is
+  // the GAPS between them: once the panel has fully dissolved, raw feed runs
+  // right up to the icons, and on a busy frame that competes with them instead
+  // of sitting behind them. Screenshots taken 2026-08-28 caught a post header
+  // and a Follow button threading between the icons; the owner confirmed it
+  // looks the same in the app.
+  //
+  // So the row keeps a floor. This is the SAME gradient as the panel scrim at
+  // roughly half strength, faded in by `chip` — it arrives exactly as the chips
+  // do, so the rest state is untouched and the edge-to-edge feel survives.
+  //
+  // It deliberately does NOT ride panelSink. The panel sinks 46px as it fades,
+  // which is what sells the detach; this layer has to stay where the icons
+  // actually land, and the icons DROP on the same gesture. Sinking it too would
+  // slide the floor out from under the thing it exists to support.
+  const chipScrimColors = [
+    `rgba(${bgRgb},0)`, `rgba(${bgRgb},0.05)`, `rgba(${bgRgb},0.18)`, `rgba(${bgRgb},0.32)`, `rgba(${bgRgb},0.42)`,
+  ] as const;
+
   // The swipe-land haptic now fires NATIVELY from react-native-pager-view (see
   // patches/react-native-pager-view+*.patch) at the pager's own commit moment —
   // instant and consistent on every swipe, with no JS prediction needed.
@@ -511,6 +533,14 @@ function TabBar({ state, navigation, position, jumpTo }: MaterialTopTabBarProps)
           through). Opaque base makes the bar deterministic regardless. */}
       {Platform.OS === 'android' && (
         <View pointerEvents="none" style={[styles.blurFill, { backgroundColor: colors.background }]} />
+      )}
+      {/* The floor under the condensed chips (see chipScrimColors). Drawn BELOW
+          the panel so it is simply invisible at rest — the two never both
+          matter: panelFade is ~1 exactly where `chip` is 0, and vice versa. */}
+      {Platform.OS !== 'android' && (
+        <Animated.View pointerEvents="none" style={[styles.blurFill, { opacity: chip }]}>
+          <LinearGradient colors={chipScrimColors} locations={[0, 0.28, 0.55, 0.8, 1]} style={styles.blurFill} />
+        </Animated.View>
       )}
       {/* Android pins the chrome at the condensed state (lib/feedChrome.ts), so
           the panel would be permanently invisible there — skip compositing it. */}

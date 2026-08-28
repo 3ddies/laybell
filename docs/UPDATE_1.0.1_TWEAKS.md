@@ -55,24 +55,37 @@ stops.
 
 | # | Screen | Change | Type | Status |
 |---|---|---|---|---|
-| 1 | Bottom tab bar (all tabs) | Content behind the bar is fully legible and collides with the nav icons | Cosmetic | ⬜ awaiting confirmation |
+| 1 | Bottom nav, condensed state (iOS) | Feed showing between the floating chips competed with the icons — added a soft ground under the row | Cosmetic | ✅ done, needs a look on device |
 
-### 1 · Tab bar reads as clutter, not depth
+### 1 · Condensed nav had no floor
 
-Spotted 2026-08-28 in screenshots taken for the Stripe review — visible on **both** the home
-feed and Explore, so it is not one screen's problem.
+Spotted 2026-08-28 in the Stripe review screenshots, on **both** the feed and Explore, so not one
+screen's problem. Owner confirmed it looks the same in the app.
 
-The bar is meant to be a frosted iOS blur (see `[[bottom-bar-upgrade]]`). In practice the content
-scrolling underneath comes through at close to full contrast and tangles with the icons: a post
-header's "3ddie / @3ddi" and a **Follow** button sat directly behind the nav row on the feed, and
-"@laybell" and "RAP" did the same on Explore. The eye reads it as a rendering glitch rather than
-as translucency.
+**My first read was wrong and worth recording.** I guessed the blur was too weak or not mounting.
+It is neither: the bar has two states, and the screenshots caught the second one. At rest it is a
+frosted panel; once you scroll, `feedChrome` dissolves that panel and the icons become floating
+chips over the feed — deliberate, and the chips themselves are a near-solid wash
+(`rgba(9,9,9,0.9)` on iOS dark). Nothing shows through a chip.
 
-Likely one of: blur intensity too low, no scrim/tint layer between the blur and the icons, or
-the blur view not actually mounting and leaving plain transparency.
+What showed through were **the gaps between chips**. With the panel fully gone, raw feed ran right
+up to the icons — a post header and a **Follow** button threaded between them on the feed,
+"@laybell" and "RAP" on Explore. Busy content in those gaps competes with the icons instead of
+sitting behind them.
 
-**Unconfirmed** — screenshots can exaggerate this, and it may look fine in motion on device.
-Confirm on the dev client before changing anything.
+**Fix:** a dedicated scrim layer that fades in on `chip` — the same gradient as the panel at about
+half strength, so the row always has a floor. The rest state is untouched (the two layers are
+never both visible), and content still shows through, just knocked back.
+
+It deliberately does **not** ride `panelSink`. The panel sinks 46px as it fades, which is what
+sells the detach — but the icons *drop* on that same gesture, so sinking the floor too would
+slide it out from under the thing it exists to support.
+
+iOS only. Android already draws its chips on an opaque base, for reasons recorded in
+`app/(tabs)/_layout.tsx` (other pager scenes were compositing into the band on a Samsung).
+
+⚠️ **Alpha values are a first guess** — `0 / 0.05 / 0.18 / 0.32 / 0.42`. Look at it on the dev
+client and say lighter or heavier; it is one line to tune.
 
 ---
 
