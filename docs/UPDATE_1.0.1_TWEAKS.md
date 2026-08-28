@@ -96,9 +96,31 @@ saturated orange, its LAYBELL wordmark colliding with the screen's own, a hard l
 applied because there was a form and it looped.** Here there is neither. What was wrong behind a
 login is exactly right as the moment after one.
 
-The asset is the original trimmed to 5.6s and run 1.5× faster — note, bell drawing itself, ring,
-settle, resolve to the wordmark. **3.77s and 433 KB**, because a flat gradient compresses to
-nearly nothing even at high quality.
+**It is drawn, not played — and that was the third attempt.** The first two played the brand
+video full screen and it looked soft and banded at every encode. That could not be fixed, because
+nothing could fix it: the source is a ~2 Mbps H.264 at 1080×1920, a phone is **taller** than 9:16
+so `cover` upscales before cropping, and a smooth gradient is the worst possible case for
+block-transform compression — **banding reads as "low resolution" far more than softness does.**
+Every version of that trade was upscaling something already lossy.
+
+So the animation is rebuilt from its parts:
+
+- **The gradient is a real `LinearGradient`** — GPU-rendered at native resolution, smooth at any
+  screen size, and incapable of banding because it is never compressed. That is most of the
+  screen area and most of the fix.
+- **The mark and wordmark are white-on-transparent PNGs** (400×448 and 608×116) shown at 150 and
+  264 points — **downscaled**, the one direction that cannot soften. **23 KB together**, against
+  433 KB of video.
+- **The motion is `Animated` on the native driver**, so it is frame-perfect rather than sampled at
+  whatever rate the asset was exported at.
+
+The wordmark is lifted from the original's own final frame, keyed off the **blue channel** (the
+mark is pure white; the orange ground has no blue in it), so it is the real brand typeface rather
+than a system font pretending to be it. The mark comes from `android-icon-foreground.png`, which
+is vector-derived and cleaner than any frame of the video ever was.
+
+Sequence: the mark pops in with a slight overshoot → **rings**, a damped four-stop swing echoing
+the original → gives way to the wordmark → holds. ~2.5s, tighter than the 3.77s video.
 
 **Three defects in the first cut of this, all worth recording:**
 
