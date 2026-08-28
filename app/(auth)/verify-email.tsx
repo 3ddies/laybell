@@ -103,7 +103,6 @@ export default function VerifyEmailScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.inner}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
         // Adjusts contentInset rather than resizing — see the KeyboardAvoidingView above.
         automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator={false}

@@ -180,11 +180,16 @@ All four now share the same recipe:
 
 - `ScrollView` + `keyboardShouldPersistTaps="handled"` — tap-outside closes, buttons still work.
   Without `"handled"` the first tap anywhere is swallowed merely closing the keyboard.
-- `keyboardDismissMode="on-drag"` — dragging the form closes it too.
 - `Keyboard.dismiss()` on submit, placed **after** the validation guards. Tapping a button should
   close the keyboard, but "fill in all fields" should not — that user has to go straight back
   into a field. It also uncovers the button, which matters now that the spinner keeps running
   (tweak 4): a spinner behind a keyboard communicates nothing.
+
+**Taps only.** `keyboardDismissMode="on-drag"` shipped in the first pass and was removed on the
+owner's call: *"for scrolls and drags, I don't want it to exit the keyboard, only on taps."* He is
+right — scrolling a form while the keyboard is up is a normal thing to want (checking a field
+further down before submitting), and closing the keyboard out from under that is a fight rather
+than a help. Dismissal should be something you *did*, not something that happened to you.
 
 Two things worth knowing for the sweep:
 

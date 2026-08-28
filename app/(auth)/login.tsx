@@ -98,20 +98,23 @@ export default function LoginScreen() {
       enabled={Platform.OS !== 'ios'}
     >
       <AuthBackdrop />
-      {/* A ScrollView, not a plain View, and the two keyboard props are the
-          point of it — this screen had NEITHER, which is why the keyboard here
-          never dismissed while sign-up (which has always had them) behaved.
-            • keyboardShouldPersistTaps="handled" — a tap on empty space closes
-              the keyboard, but a tap that a control handles still fires. Without
-              it the first tap anywhere is swallowed just closing the keyboard.
-            • keyboardDismissMode="on-drag" — dragging the form closes it too.
-          Scrolling is a genuine second win: on a small screen with the keyboard
-          up, the form no longer has nowhere to go. */}
+      {/* A ScrollView, not a plain View. keyboardShouldPersistTaps="handled" is
+          the point of it: a tap on empty space closes the keyboard, while a tap
+          a control handles still fires. This screen had no ScrollView at all,
+          which is why its keyboard never dismissed while sign-up (which has
+          always had one) behaved.
+
+          TAPS ONLY — keyboardDismissMode="on-drag" was here and was removed on
+          the owner's call. Scrolling a form while the keyboard is up is a normal
+          thing to want to do (checking a field further down before submitting),
+          and closing the keyboard out from under that is a fight, not a help.
+
+          Scrolling is a genuine second win regardless: on a small screen with
+          the keyboard up, the form no longer has nowhere to go. */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.inner}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
         // Adjusts contentInset rather than resizing — see the KeyboardAvoidingView above.
         automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator={false}

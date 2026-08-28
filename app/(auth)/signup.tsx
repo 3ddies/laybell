@@ -120,7 +120,7 @@ export default function SignupScreen() {
       enabled={Platform.OS !== 'ios'}
     >
       <AuthBackdrop />
-      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets showsVerticalScrollIndicator={false}>
 
         <View style={styles.logoSection}>
           <AuthLogoMark size={72} />

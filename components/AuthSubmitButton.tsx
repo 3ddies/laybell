@@ -28,12 +28,18 @@ import { LISTEN_FILL } from './ListenButton';
 // message, and a sheen crossing behind it just adds noise to the one moment the
 // button most needs to say a single clear thing.
 
-// Was 1400/5200, matching the Listen pill exactly; the owner asked for the bar
-// itself to move a bit faster after seeing it on device. Only the SWEEP moved —
-// the rest is what keeps this from being a distraction under a password field,
-// so it stays long.
+// Two rounds of owner tuning on device, and they moved independently — which is
+// exactly why these are two constants rather than one "speed".
+//   • SWEEP is how fast the bar crosses. 1400 → 950: "move a bit faster". Settled.
+//   • REST is how often it happens at all. 4800 → 10550: "half as frequently".
+// A full period is SWEEP + REST, so 5750ms became 11500ms — an actual halving of
+// the frequency rather than just a longer pause.
+//
+// The rest is the half that protects the screen. This sits under a password
+// field, and a highlight that returns too often stops reading as a material
+// catching light and starts reading as something demanding attention.
 const SWEEP_MS = 950;
-const REST_MS = 4800;
+const REST_MS = 10550;
 
 type Props = {
   label: string;
