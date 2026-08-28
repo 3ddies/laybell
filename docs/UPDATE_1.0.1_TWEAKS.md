@@ -53,11 +53,26 @@ stops.
 
 ## Tweaks
 
-*(empty — add them as they come up)*
-
 | # | Screen | Change | Type | Status |
 |---|---|---|---|---|
-| | | | | |
+| 1 | Bottom tab bar (all tabs) | Content behind the bar is fully legible and collides with the nav icons | Cosmetic | ⬜ awaiting confirmation |
+
+### 1 · Tab bar reads as clutter, not depth
+
+Spotted 2026-08-28 in screenshots taken for the Stripe review — visible on **both** the home
+feed and Explore, so it is not one screen's problem.
+
+The bar is meant to be a frosted iOS blur (see `[[bottom-bar-upgrade]]`). In practice the content
+scrolling underneath comes through at close to full contrast and tangles with the icons: a post
+header's "3ddie / @3ddi" and a **Follow** button sat directly behind the nav row on the feed, and
+"@laybell" and "RAP" did the same on Explore. The eye reads it as a rendering glitch rather than
+as translucency.
+
+Likely one of: blur intensity too low, no scrim/tint layer between the blur and the icons, or
+the blur view not actually mounting and leaving plain transparency.
+
+**Unconfirmed** — screenshots can exaggerate this, and it may look fine in motion on device.
+Confirm on the dev client before changing anything.
 
 ---
 
