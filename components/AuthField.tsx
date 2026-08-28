@@ -48,7 +48,7 @@ export default function AuthField({ icon, right, hint, onFocus, onBlur, ...input
         <Ionicons
           name={icon}
           size={18}
-          color={focused ? colors.primary : colors.textMeta}
+          color={focused ? colors.text : colors.textMeta}
           style={styles.icon}
         />
         <TextInput
@@ -78,9 +78,19 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     height: 52,
   },
   wrapFocused: {
-    borderColor: c.primary,
-    // One step up the surface ramp, so the live field is the brightest thing in
-    // the stack without changing size and shoving the layout around.
+    // NEUTRAL, not brand (owner, 2026-08-28): "instead of the text boxes
+    // highlighting orange, have them highlight a more neutral color like black".
+    // c.text is the right token for that rather than a hardcoded black — it is
+    // #16161A on the light theme he runs, and #F5F5F5 on dark, so the focus ring
+    // is the strongest neutral available in whichever theme is active instead of
+    // being invisible in one of them.
+    //
+    // Orange was also doing real harm here beyond taste: it made the focused
+    // field compete with the gradient submit button, so two different things
+    // were shouting brand colour at once on a screen with only one action.
+    borderColor: c.text,
+    // One step up the surface ramp, so the live field separates from the page
+    // without changing size and shoving the layout around.
     backgroundColor: c.surfaceLight,
   },
   // Fixed width so the text baseline does not shift by a pixel between fields

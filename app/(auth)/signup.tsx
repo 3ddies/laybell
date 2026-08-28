@@ -111,9 +111,16 @@ export default function SignupScreen() {
   ];
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior="height"
+      // OFF on iOS on purpose. Resizing the container re-centres the form and
+      // makes it leap; automaticallyAdjustKeyboardInsets on the ScrollView
+      // below handles iOS without touching layout at all.
+      enabled={Platform.OS !== 'ios'}
+    >
       <AuthBackdrop />
-      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets showsVerticalScrollIndicator={false}>
 
         <View style={styles.logoSection}>
           <AuthLogoMark size={72} />

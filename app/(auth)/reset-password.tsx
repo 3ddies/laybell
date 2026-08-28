@@ -74,7 +74,14 @@ export default function ResetPasswordScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior="height"
+      // OFF on iOS on purpose. Resizing the container re-centres the form and
+      // makes it leap; automaticallyAdjustKeyboardInsets on the ScrollView
+      // below handles iOS without touching layout at all.
+      enabled={Platform.OS !== 'ios'}
+    >
       <AuthBackdrop />
       {/* Same treatment as login.tsx: keyboardShouldPersistTaps="handled" makes a
           tap on empty space close the keyboard while a tap on a control still
@@ -84,6 +91,8 @@ export default function ResetPasswordScreen() {
         contentContainerStyle={styles.inner}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        // Adjusts contentInset rather than resizing — see the KeyboardAvoidingView above.
+        automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.logoSection}>

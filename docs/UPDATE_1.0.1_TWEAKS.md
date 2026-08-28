@@ -64,6 +64,31 @@ stops.
 | 8 | All 4 auth screens | Slow warm brand bloom behind the form, so the screen is not flat | Cosmetic | ✅ done, tuned |
 | 9 | Login + Signup | Sheen sweep on the primary button, like the Listen pill | Cosmetic | ✅ done |
 | 10 | Login + Signup | Text fields given an edge and a real focus state | Cosmetic | ✅ done |
+| 11 | All 4 auth screens | The form leaping when the keyboard opens — worst on login | Functional | ✅ done |
+
+### 11 · Why the form "glitched into place", and why signup was better
+
+The owner's clue was the whole answer again: *"the create account screen seems to do a better job
+at not glitching."*
+
+`KeyboardAvoidingView` with `behavior="padding"` **shrinks the container**. The content container
+is `justifyContent: 'center'`, so a shorter box re-centres everything and the whole form leaps.
+**Sign-up barely showed it because five fields nearly fill the viewport** — almost no slack left
+to re-centre within. Sign-in has two fields and a screen full of slack, so it jumped hard. Visible
+in the 2026-08-28 screen recording: the logo and button sit in completely different places before
+and after focus.
+
+**Fix:** iOS uses `automaticallyAdjustKeyboardInsets` on the ScrollView, which adjusts the scroll
+view's `contentInset` instead of resizing it. The layout never recomputes, so nothing re-centres,
+and iOS scrolls the focused field into view itself. `KeyboardAvoidingView` is switched **off on
+iOS** and kept for Android, which has no equivalent.
+
+Note this was not the field styling — the border is 1px in both states precisely so focus cannot
+shift layout. It was the container all along.
+
+**Still on the old inline fields:** `verify-email.tsx` and `reset-password.tsx`. They got the
+keyboard and backdrop work but not `AuthField`/`AuthSubmitButton`, so their inputs have no focus
+state and their buttons no gradient. Worth finishing for consistency.
 
 ### 10 · What was actually wrong with the text fields
 

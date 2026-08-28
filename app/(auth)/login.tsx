@@ -89,7 +89,14 @@ export default function LoginScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior="height"
+      // OFF on iOS on purpose. Resizing the container re-centres the form and
+      // makes it leap; automaticallyAdjustKeyboardInsets on the ScrollView
+      // below handles iOS without touching layout at all.
+      enabled={Platform.OS !== 'ios'}
+    >
       <AuthBackdrop />
       {/* A ScrollView, not a plain View, and the two keyboard props are the
           point of it — this screen had NEITHER, which is why the keyboard here
@@ -105,6 +112,8 @@ export default function LoginScreen() {
         contentContainerStyle={styles.inner}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        // Adjusts contentInset rather than resizing — see the KeyboardAvoidingView above.
+        automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator={false}
       >
         {/* Logo */}

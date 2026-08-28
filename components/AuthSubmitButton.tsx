@@ -28,8 +28,12 @@ import { LISTEN_FILL } from './ListenButton';
 // message, and a sheen crossing behind it just adds noise to the one moment the
 // button most needs to say a single clear thing.
 
-const SWEEP_MS = 1400;
-const REST_MS = 5200;
+// Was 1400/5200, matching the Listen pill exactly; the owner asked for the bar
+// itself to move a bit faster after seeing it on device. Only the SWEEP moved —
+// the rest is what keeps this from being a distraction under a password field,
+// so it stays long.
+const SWEEP_MS = 950;
+const REST_MS = 4800;
 
 type Props = {
   label: string;
