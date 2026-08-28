@@ -85,9 +85,29 @@ same device inherits the previous one's cached profile, stories and now-playing 
 fix is to cover the handoff, not remove the cause.
 
 `components/AuthHandoff.tsx` is a branded cover from the moment the session lands to the moment
-routing completes — the warm backdrop at full steady strength with the mark settling in. The ~2s
-wait (profile fetch, deleted-account and geo-block checks) was always there; this makes it read
-as **the app opening** rather than as the form failing.
+routing completes. The ~2s wait (profile fetch, deleted-account and geo-block checks) was always
+there; this makes it read as **the app opening** rather than as the form failing.
+
+**What it shows — the owner's call, and the better one.** The first version was a small icon
+scaling in over the warm gradient; he asked for the orange to fill the screen and suggested using
+the brand animation itself. That is right, and it resolves an earlier decision rather than
+contradicting it: every objection to that video as a sign-in *background* (a form unreadable on
+saturated orange, its LAYBELL wordmark colliding with the screen's own, a hard loop seam) **only
+applied because there was a form and it looped.** Here there is neither. What was wrong behind a
+login is exactly right as the moment after one.
+
+The asset is the original trimmed to 5.6s and run 1.5× faster — note, bell drawing itself, ring,
+settle, resolve to the wordmark. **3.77s and 107 KB**, because a flat gradient compresses to
+nearly nothing.
+
+**The minimum hold is a feature.** It waits for the animation to finish *and* for routing,
+whichever is later. Sign-in resolves in about two seconds, so the remainder is the feed mounting
+and fetching behind the cover — the owner's own point: the user watches something deliberate
+instead of a spinner, and lands on a feed with a head start. The dead time existed either way;
+this spends it.
+
+Total tap-to-feed is now ~4.2s. If that feels long, `VIDEO_MS` and the asset's trim are the two
+dials — but shortening it hands the time back to the feed's own loading skeletons.
 
 Details that matter:
 

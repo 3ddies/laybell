@@ -507,7 +507,11 @@ function RootLayout() {
   // checkOnboarding lowers it; this is the guarantee for the paths that throw or
   // hang before reaching one.
   const handoffTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const endHandoff = useCallback((delay = 420) => {
+  // No delay here on purpose: this signals "routing is done", and AuthHandoff
+  // owns how long the cover actually stays — it will not leave before its
+  // animation has run. Padding the time in two places is how you end up with a
+  // transition nobody can find the length of.
+  const endHandoff = useCallback((delay = 0) => {
     if (handoffTimer.current) clearTimeout(handoffTimer.current);
     handoffTimer.current = setTimeout(() => setHandoff(false), delay);
   }, []);

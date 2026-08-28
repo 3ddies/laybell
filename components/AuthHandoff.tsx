@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, StyleSheet, View } from 'react-native';
-import { useTheme } from '../contexts/ThemeContext';
-import AuthBackdrop from './AuthBackdrop';
+import { Animated, Easing, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
 // The bridge between signing in and the app appearing.
 //
-// WHY THIS HAS TO EXIST, and it is not really a cosmetic reason.
+// WHY THIS HAS TO EXIST, and it is not a cosmetic reason.
 //
 // app/_layout.tsx keys the whole per-user tree on the user id, deliberately —
 // without it, a second account signing in on the same device inherits the
@@ -15,75 +15,109 @@ import AuthBackdrop from './AuthBackdrop';
 //
 // So between tapping Log in and the feed arriving, the form VISIBLY RESET:
 // fields blank, logo replaying from the start, button back to idle. The owner
-// described it as looking like a freeze or a glitch, and he was reading it
-// correctly — it looks exactly like a failed submit.
+// read that as a freeze, and he read it correctly — it looks exactly like a
+// failed submit. The key cannot go; it is preventing a real data leak between
+// accounts. So this covers the handoff instead.
 //
-// The key cannot go; it is preventing a genuine data-leak between accounts. So
-// this covers the handoff instead: from the moment the session arrives to the
-// moment the app has routed, the user sees a steady branded screen rather than
-// the machinery. The wait was always there — roughly two seconds of profile
-// fetch and account checks — and this makes it read as the app opening rather
-// than as the form failing.
+// WHAT IT SHOWS. The brand animation, full screen — the owner's own asset,
+// finally used the way it was made. Every objection to it as a sign-in
+// BACKGROUND (a form unreadable on saturated orange, its LAYBELL wordmark
+// colliding with the screen's own wordmark, a hard loop seam) evaporates here,
+// because there is no form and it plays exactly once. What was wrong behind a
+// login is precisely right as the moment after one.
 //
-// It must be rendered OUTSIDE the keyed view, or it would be torn down by the
-// very remount it exists to hide.
+// The asset is the full 6.9s original trimmed to 5.6s and run 1.5× faster:
+// note, bell drawing itself, ring, settle, resolve to the wordmark. 3.77s, and
+// 107 KB — a flat gradient compresses to almost nothing.
+//
+// THE MINIMUM HOLD IS A FEATURE, NOT A COST. It waits for the animation to
+// finish AND for routing to complete, whichever is later. Sign-in resolves in
+// roughly two seconds, so the extra time is the feed mounting and fetching
+// behind this — the owner's point exactly: the user watches something
+// deliberate instead of a spinner, and lands on a feed that has had a head
+// start. Dead time either way; this spends it.
 
-const IN_MS = 260;
-const OUT_MS = 320;
+const VIDEO_MS = 3780;
+const IN_MS = 200;
+const OUT_MS = 420;
+
+// Sampled from the asset's own first frame, so the fallback is the same red the
+// video opens on rather than an approximation of it. This shows for the frame
+// before the video paints, and stays visible if it never does — a decode failure
+// on this screen should look like a brand moment, not a black hole.
+const FALLBACK = ['#FF1100', '#FD3700', '#FC5F01'] as const;
+
+const HANDOFF_VIDEO = require('../assets/logo-handoff.mp4');
 
 export default function AuthHandoff({ visible }: { visible: boolean }) {
-  const { colors } = useTheme();
-  // Kept mounted through the fade-out so the reveal is a fade rather than a cut.
+  // Kept mounted through the fade-out so the reveal is a fade, not a cut.
   const [mounted, setMounted] = useState(visible);
+  // The animation has been given its full run. Until then the cover stays up
+  // even if routing has already finished.
+  const [played, setPlayed] = useState(false);
   const fade = useRef(new Animated.Value(0)).current;
-  // The mark settles in rather than appearing at full size — a small move, but
-  // it is the difference between "a screen arrived" and "something is loading".
-  const rise = useRef(new Animated.Value(0.94)).current;
 
+  const player = useVideoPlayer(HANDOFF_VIDEO, (p) => {
+    p.loop = false;
+    // The asset has no audio track, but muting is also what keeps this away from
+    // the audio session — the app holds a persistent player and a sign-in must
+    // never interrupt it.
+    p.muted = true;
+  });
+
+  // Restart from frame 0 on every raise. A player reused across two sign-ins in
+  // one app run would otherwise sit on its final frame — the wordmark, already
+  // resolved — and the animation would never play again.
   useEffect(() => {
-    if (visible) {
-      setMounted(true);
-      fade.setValue(0);
-      rise.setValue(0.94);
-      Animated.parallel([
-        Animated.timing(fade, { toValue: 1, duration: IN_MS, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(rise, { toValue: 1, duration: 420, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      ]).start();
-      return;
-    }
-    // Fading OUT reveals whatever mounted underneath. Unmount only once the
-    // animation is done, so this never blinks off mid-fade.
+    if (!visible) return;
+    setMounted(true);
+    setPlayed(false);
+    fade.setValue(0);
+    try { player.currentTime = 0; player.play(); } catch { /* fallback gradient carries it */ }
+    Animated.timing(fade, {
+      toValue: 1, duration: IN_MS, easing: Easing.out(Easing.quad), useNativeDriver: true,
+    }).start();
+    const t = setTimeout(() => setPlayed(true), VIDEO_MS);
+    return () => clearTimeout(t);
+  }, [visible, fade, player]);
+
+  // Leave only when BOTH are true: routing is done and the animation has run.
+  useEffect(() => {
+    if (visible || !played || !mounted) return;
     Animated.timing(fade, {
       toValue: 0, duration: OUT_MS, easing: Easing.in(Easing.quad), useNativeDriver: true,
-    }).start(({ finished }) => { if (finished) setMounted(false); });
-  }, [visible, fade, rise]);
+    }).start(({ finished }) => {
+      if (finished) { setMounted(false); try { player.pause(); } catch {} }
+    });
+  }, [visible, played, mounted, fade, player]);
 
   if (!mounted) return null;
 
   return (
     <Animated.View
-      // Swallows taps for as long as it is up: the screen underneath is being
-      // rebuilt, and a tap landing on a half-mounted tree is how you get a
-      // crash report nobody can reproduce.
-      style={[StyleSheet.absoluteFill, styles.fill, { backgroundColor: colors.background, opacity: fade }]}
+      // Swallows taps while it is up: the tree underneath is being rebuilt, and
+      // a tap landing on a half-mounted screen is how you get a crash report
+      // nobody can reproduce.
+      style={[StyleSheet.absoluteFill, styles.fill, { opacity: fade }]}
     >
-      {/* progress={1} — steady, strong warmth with the breathing damped out.
-          This is a moment of arrival, not a moment of waiting, so nothing here
-          should pulse. */}
-      <AuthBackdrop progress={1} />
-      <View style={styles.center}>
-        <Animated.View style={{ transform: [{ scale: rise }] }}>
-          <Image source={require('../assets/icon.png')} style={styles.mark} resizeMode="cover" />
-        </Animated.View>
-      </View>
+      <LinearGradient colors={FALLBACK} style={StyleSheet.absoluteFill} />
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        // cover, not contain: the asset is 9:16 and phones are taller, and a
+        // letterboxed brand moment is worse than a slightly cropped one.
+        contentFit="cover"
+        nativeControls={false}
+        allowsFullscreen={false}
+        allowsPictureInPicture={false}
+        accessible={false}
+      />
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  // zIndex as well as order: this sits among providers, and relying on JSX order
-  // alone would put it behind anything that later gains its own elevation.
+  // zIndex as well as JSX order — this sits among providers, and order alone
+  // would put it behind anything that later gains its own elevation.
   fill: { zIndex: 100 },
-  center: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  mark: { width: 96, height: 96, borderRadius: 26 },
 });
