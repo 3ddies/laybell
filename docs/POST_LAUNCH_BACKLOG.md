@@ -256,17 +256,38 @@ reels leftovers (`FeedGateCard` mount-only `onArm`, feed-mode switch keeping the
 
 ---
 
-## 4. Android: 16 KB memory page sizes not supported
-*Flagged by Play at submission 2026-08-21. Bypassed with "Proceed anyway". Needs a rebuild.*
+## 4. ✅ FIXED IN 1.0.1 — Android 16 KB memory page sizes
+*Flagged by Play at submission 2026-08-21, bypassed with "Proceed anyway". Diagnosed and fixed
+2026-08-27 by inspecting the submitted binary — no device required.*
 
-Play raised it as an error with an explicit bypass, so bundle 4 ships without support. Some
-Android 15 devices — Pixel 9 class and newer — run **16 KB memory pages**, and native libraries
-built for 4 KB pages can misbehave there. The population is small today and growing, and the
-bypass will not be offered forever.
+**It was one library out of forty.** The build-4 AAB was downloaded from EAS and every `.so` in
+it had its ELF `PT_LOAD` alignment read directly. On both 64-bit ABIs (`arm64-v8a`, `x86_64`)
+**39 of 40 libraries were already aligned to 16384**, and exactly one was not:
 
-**The fix is a rebuild with updated native libraries.** Not done for launch because a new bundle
-means a new Play review with the date four days out. Test on a 16 KB device or emulator image
-rather than assuming.
+    *** librtmpdroid.so    align=4096 (4K)
+
+`librtmpdroid.so` came from `video.api:rtmpdroid:1.2.1-packed`, pulled in by
+`@api.video/react-native-livestream` — **the phone-RTMP engine that was already switched off**.
+`lib/rtmp.ts` had `RTMP_LIVE_ENABLED = false` since it hard-crashed iOS, so the whole library
+was dead weight that shipped anyway.
+
+There was no version to upgrade to: `rtmpdroid`'s last release was **January 2024**,
+`android-live-stream`'s was October 2024, and we were already on the newest
+`@api.video/react-native-livestream` (2.0.2). Upstream is not coming back.
+
+**So the library was removed.** It also took `plugins/withHaishinKitSwiftFix.js` with it — the
+plugin that forced `-Onone` on the HaishinKit pod because the *Swift 6.2 optimizer itself*
+crashed compiling it. `app/live/go-live.tsx` needed **no code changes**: every call site already
+handled the disabled case. External-encoder RTMP (OBS, `mode === 'rtmp'`) never touched this
+engine and is unaffected.
+
+⚠️ **Unverified until a build runs.** The reasoning is tight — one `.so`, from one Gradle
+dependency, in one npm package, now gone — but the alignment claim is only *proven* by
+re-running the ELF check on the next AAB. **Do that before submitting.** The script is
+`elfalign.mjs`; point it at `base/lib/arm64-v8a` from the unzipped bundle.
+
+*(A deobfuscation-file warning was also raised and ignored — it only affects crash-report
+readability. Worth attaching in a future build for better triage.)*
 
 *(A deobfuscation-file warning was also raised and ignored — it only affects crash-report
 readability. Worth attaching in a future build for better triage.)*
@@ -328,12 +349,37 @@ true. Additive; touches neither the pager nor the video pipeline.
 
 ---
 
-## 8. Native Google sign-in on Android
-*Deferred 2026-08-13. Needs a rebuild.*
+## 8. Native Google sign-in on Android — CUT FROM 1.0.1, and the stated fix is wrong
+*Deferred 2026-08-13. Re-examined 2026-08-27; the premise did not survive.*
 
 `android.googleServicesFile` is unset, so the build has no `default_web_client_id` and native
 Google sign-in falls through to the browser. **The browser flow works and is verified**, so this
 is polish, not function.
+
+🛑 **"Just set `android.googleServicesFile`" is not a real fix.** Reading the library's own
+config plugin (`node_modules/@react-native-google-signin/google-signin/plugin/build/withGoogleSignIn.js`)
+shows it has two mutually exclusive modes:
+
+- **With options** — what `app.json` uses today, `{ iosUrlScheme }` — runs
+  `withGoogleSignInWithoutFirebase`, which applies **iOS changes only**. It does nothing on
+  Android, and no `android.googleServicesFile` value will make it.
+- **Without options** — the bare plugin string — runs the Firebase path, applying
+  `AndroidConfig.GoogleServices.*` **and** `IOSConfig.Google.withGoogleServicesFile`.
+
+So getting the Android half means switching the whole integration to Firebase mode, which needs
+a `google-services.json` **and** a `GoogleService-Info.plist`, and drops the explicit
+`iosUrlScheme` in favour of one derived from the plist. **That reworks the iOS sign-in path that
+is currently live and working in production** — to gain a faster sign-in on Android that we
+cannot test this cycle (no Android device, and an emulator cannot exercise a Play-signed SHA-1
+flow anyway).
+
+Bad trade. **Cut from 1.0.1.** The `1a3e1e3` fall-through fix already made the browser fallback
+reliable, which is what Android users get and what they have always got.
+
+*Worth checking before anyone tries again:* the non-Firebase Android flow does not actually need
+`google-services.json` at all — it needs `webClientId` (already passed in `configure()`) plus an
+Android OAuth client whose SHA-1 matches Play app signing. **That is console work, not code**,
+and it may be all that was ever missing.
 
 ⚠️ **The Android OAuth client will be gone by then — expect to recreate it.** Google flagged
 `Android client 1` (`…qjpa…`, created 2026-08-09) as inactive on 2026-08-26 and gives 30 days

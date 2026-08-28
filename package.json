@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
-    "@api.video/react-native-livestream": "^2.0.2",
     "@config-plugins/react-native-webrtc": "^15.0.1",
     "@expo/vector-icons": "^15.0.3",
     "@livekit/react-native": "^2.11.1",

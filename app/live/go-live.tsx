@@ -87,12 +87,14 @@ export default function GoLiveScreen() {
   useEffect(() => () => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
   }, []);
-  // Mount the RTMP camera view only AFTER the landscape rotation has settled.
-  // The api.video engine (HaishinKit on iOS) spins up an AVCaptureSession the
-  // instant its view mounts; doing that WHILE the interface is mid-rotation
-  // races the capture/preview-layer setup and hard-crashes the app. A short
-  // settle after the orientation lock avoids the collision. Reset when leaving
-  // landscape so the next horizontal go-live delays again.
+  // DORMANT — the api.video engine was removed from the build (see lib/rtmp.ts).
+  // getRtmpView() now always returns null, so nothing mounts and this timer runs
+  // for nobody. Kept because it is the re-enable path, and because the reason is
+  // worth not rediscovering: the engine (HaishinKit on iOS) spins up an
+  // AVCaptureSession the instant its view mounts, and doing that WHILE the
+  // interface is mid-rotation races the capture/preview-layer setup and hard-
+  // crashes the app. The settle after the orientation lock avoids the collision.
+  // Reset when leaving landscape so the next horizontal go-live delays again.
   const [rtmpCamReady, setRtmpCamReady] = useState(false);
   useEffect(() => {
     if (!wantLandscape) { setRtmpCamReady(false); return; }
@@ -100,11 +102,16 @@ export default function GoLiveScreen() {
     return () => clearTimeout(timer);
   }, [wantLandscape]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  // True when this phone broadcast publishes RTMPS (horizontal + native lib
-  // present): Cloudflare then serves live HLS, so the stream can cast to real
-  // TVs and gets recorded. Vertical lives keep WHIP (sub-second, feed-only);
-  // pre-rebuild binaries fall back to WHIP for horizontal too. Decided once in
-  // prepare() so a mid-flow orientation change can't split the pipeline.
+  // DORMANT, always false — rtmpAvailable() is hard-false since the native
+  // engine left the build (lib/rtmp.ts). ALL phone lives are WHIP now, both
+  // orientations, which is already what build 4 shipped.
+  //
+  // What it meant: true when a phone broadcast published RTMPS (horizontal +
+  // native lib present), so Cloudflare served live HLS and the stream could cast
+  // to real TVs and get recorded. Decided once in prepare() so a mid-flow
+  // orientation change could not split the pipeline. Hosts who want a
+  // TV-castable live use the 'rtmp' mode with an external encoder, which never
+  // touched this engine and is unaffected.
   const [phoneRtmpActive, setPhoneRtmpActive] = useState(false);
   // EVERY host earns donations now (Premium just lowers the fee — the "Earn More"
   // perk); take-home total, polled while live.

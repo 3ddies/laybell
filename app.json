@@ -200,8 +200,7 @@
           "project": "react-native",
           "url": "https://sentry.io/"
         }
-      ],
-      "./plugins/withHaishinKitSwiftFix"
+      ]
     ],
     "extra": {
       "router": {},

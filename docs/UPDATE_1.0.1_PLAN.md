@@ -22,19 +22,32 @@ is committed on `dev` and nothing is released; the shipped 1.0.0 build 4 is froz
 | **C** · Wallet | ✅ done — balance warning added, dead `payoutsAvailable()` deleted | `bd9fc65` |
 | **D** · `app/_layout.tsx` | ✅ done — a deleted account now signs out | `d02d7f2` |
 | **E** · Guidelines text | ✅ nothing to do — the rebuild carries it | — |
-| **F** · Android build config | ⬜ **not started** — the only remaining code work | — |
+| **F** · Android build config | ✅ 16 KB fixed; `googleServicesFile` **cut**, see below | *(this commit)* |
 | **G** · Audio races | ✅ 3 of 5 fixed, 2 left deliberately; `PostMusicContext` untouched | `bd88c16` |
 
-**Still open, in priority order:**
-1. **Group F** — both items are Android build-level and need a device to test against. This is
-   the last thing between here and a version bump.
-2. **Group B's nonce half.** The fall-through shipped, but the Supabase *skip-nonce-check* toggle
-   is still ON in production, which means **replay protection on Google sign-in is still off**.
-   Passing the nonce properly and turning that skip back off needs a device re-test, so it
-   belongs with the Group F build pass.
-3. **Group G's `PostMusicContext` half** — three claims, none re-verified against current code
+**Group F resolved without a device.** The 16 KB failure was diagnosed by downloading the
+submitted build-4 AAB from EAS and reading ELF segment alignment out of all 40 native libraries:
+**39 were already correct**, and the single offender — `librtmpdroid.so` — belonged to a
+livestream engine that was already switched off for crashing iOS, with no upstream release since
+January 2024. Removing it fixed the alignment, deleted an iOS compiler workaround, and required
+zero changes to `go-live.tsx`. Backlog item 4 has the full write-up.
+
+The second half, `android.googleServicesFile`, was **cut** — the one-line fix in the backlog does
+not exist. The library's plugin only touches Android in its Firebase mode, which would also
+rewrite the **working, live** iOS sign-in path, to gain something untestable this cycle. Backlog
+item 8, rewritten.
+
+**Still open:**
+1. ~~**Group B's nonce half.**~~ **Not fixable here.** Passing a custom nonce is a **paid feature**
+   of `@react-native-google-signin` — v16.1.2's free tier contains no nonce code at all (see the
+   comment in `lib/socialAuth.ts:95`). The Supabase *skip-nonce-check* toggle therefore stays ON
+   and **replay protection on Google sign-in stays off**. That is a standing accepted risk, not a
+   task. Changing it means paying for the library or replacing it.
+2. **Group G's `PostMusicContext` half** — three claims, none re-verified against current code
    yet. Treat them as unverified: item 1 of that same list was already found stale once and cost
    three reverts.
+3. **Re-run the ELF alignment check on the next AAB before submitting.** The 16 KB fix is
+   well-reasoned but only *proven* by the next build.
 
 ---
 
