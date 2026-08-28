@@ -2,11 +2,15 @@ import {
   View, Text, TextInput, TouchableOpacity, Image,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
+// The same fill as the Listen-mode pill, imported rather than copied so the two
+// can never drift apart.
+import { LISTEN_FILL } from '../../components/ListenButton';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -21,6 +25,10 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  // Backstop for the deliberate "keep spinning on success" below. Cleared on
+  // unmount so the usual path — screen goes away — never fires it.
+  const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (stuckTimer.current) clearTimeout(stuckTimer.current); }, []);
 
   async function handleLogin() {
     if (!email || !password) { setError(t('auth.fillAllFields')); return; }
@@ -48,8 +56,31 @@ export default function LoginScreen() {
       } else {
         setError(error.message);
       }
+      // Every branch here leaves the user ON this screen — including the
+      // verify-email push, which is a push and not a replace, so coming back
+      // must not find a dead button.
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    // SUCCESS — and deliberately do NOT stop the spinner.
+    //
+    // This is the "hitch that looks like it didn't work". Sign-in resolves in a
+    // few hundred ms, but it does not navigate: the root auth listener in
+    // app/_layout.tsx then fetches the profile, checks the account state and
+    // only then routes to /(tabs) or /onboarding. Clearing loading here put the
+    // button back to a normal, idle "Log in" for that whole ~2s window, so the
+    // app looked like it had simply ignored the tap — a few people press it a
+    // second time. The work is still running; the button should still say so.
+    //
+    // The screen unmounts when the route changes, which is what ends the
+    // spinner on the happy path.
+    stuckTimer.current = setTimeout(() => setLoading(false), 8000);
+    // ...but not every post-login path navigates. A geo-blocked or deleted
+    // account signs straight back out and lands here again, and an offline
+    // profile fetch can hang. The timer is the guarantee that no route through
+    // this function can leave a permanently spinning button — the property the
+    // old unconditional setLoading(false) was protecting, kept.
   }
 
   return (
@@ -106,8 +137,18 @@ export default function LoginScreen() {
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleLogin}
             disabled={loading}
+            activeOpacity={0.85}
           >
-            {loading ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>{t('auth.login')}</Text>}
+            {/* Gradient fill rather than a flat orange, matching the Listen pill.
+                It sits UNDER the label as an absolute layer so the button keeps
+                its own layout and disabled-state opacity. */}
+            <LinearGradient
+              colors={LISTEN_FILL}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>{t('auth.login')}</Text>}
           </TouchableOpacity>
 
           {/* Express sign-in — Google (and Apple where available). New accounts
@@ -154,11 +195,16 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   input: { flex: 1, paddingVertical: SPACING.md, color: colors.text, fontSize: 15 },
 
   button: {
-    backgroundColor: colors.primary, borderRadius: RADIUS.md,
+    // The fill is the LinearGradient child, not a backgroundColor. The solid
+    // here is only what shows for the frame before the gradient paints, and
+    // overflow:hidden is what keeps the gradient inside the rounded corners.
+    backgroundColor: colors.primary, borderRadius: RADIUS.md, overflow: 'hidden',
     paddingVertical: SPACING.md + 2, alignItems: 'center', marginTop: SPACING.sm,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  // White, not colors.text: the label sits on the gold end of the gradient in
+  // both themes, so it must not follow the theme's text colour into black.
+  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: SPACING.xl },
   footerText: { color: colors.textSecondary, fontSize: 14 },

@@ -56,6 +56,31 @@ stops.
 | # | Screen | Change | Type | Status |
 |---|---|---|---|---|
 | 1 | Bottom nav, condensed state (iOS) | Feed showing between the floating chips competed with the icons — added a soft ground under the row | Cosmetic | ✅ done, needs a look on device |
+| 2 | Login + Signup | Log in / Create account buttons now carry the Listen-mode gradient instead of flat orange | Cosmetic | ✅ done |
+| 3 | Signup | ToS + Privacy links neutral (white, underlined) instead of orange | Cosmetic | ✅ done |
+| 4 | Login + Signup | The ~2s freeze after a successful sign-in that looked like the tap failed | Functional | ✅ done |
+| 5 | Login | Looping logo-animation background | Cosmetic | ⬜ **needs a decision — see below** |
+
+### 4 · The login "hitch" was not a slow network
+
+Worth writing down because the cause was not where it looked.
+
+`handleLogin` never navigates. It signs in, and the root auth listener in `app/_layout.tsx` then
+fetches the profile, checks account state (deleted, geo-blocked) and only *then* routes to
+`/(tabs)` or `/onboarding`. But `setLoading(false)` ran **unconditionally**, including on success —
+so the spinner stopped and the button went back to a normal, idle **Log in** for that whole ~2s
+window while the app was still working. It looked like the tap had been ignored. Same bug in
+`handleSignup`.
+
+**Fix:** on success the spinner keeps running until the screen unmounts, which is the moment the
+work is actually finished. Error paths clear it as before — including the verify-email branch,
+which is a `push`, so coming back must not find a dead button.
+
+⚠️ **The old unconditional clear was protecting something real** — two comments in those files
+say so explicitly ("can never leave the button stuck disabled"). Not every post-login path
+navigates: a geo-blocked or deleted account signs straight back out and lands here again, and an
+offline profile fetch can hang. So an 8s safety timer now backs the spinner, cleared on unmount.
+The property is kept; only the hitch is gone.
 
 ### 1 · Condensed nav had no floor
 

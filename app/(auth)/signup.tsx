@@ -2,12 +2,15 @@ import {
   View, Text, TextInput, TouchableOpacity, Image,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from 'react-native';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
 import { authRedirectUrl } from '../../lib/authLink';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
+// Same fill as the Listen-mode pill and the Log in button — imported, not copied.
+import { LISTEN_FILL } from '../../components/ListenButton';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -29,6 +32,9 @@ export default function SignupScreen() {
   const [showPass, setShowPass] = useState(false);
   // Must be checked before an account can be created (ToS + Privacy consent).
   const [agreed, setAgreed] = useState(false);
+  // Backstop for the deliberate "keep spinning on success" in handleSignup.
+  const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (stuckTimer.current) clearTimeout(stuckTimer.current); }, []);
 
   async function handleSignup() {
     // Ignore surrounding whitespace (e.g. a trailing space) on the username so it
@@ -65,7 +71,10 @@ export default function SignupScreen() {
       if (/already registered/i.test(signUpError.message)) setError(t('auth.emailInUse'));
       else if (/rate|security purposes/i.test(signUpError.message)) setError(t('auth.rateLimited'));
       else setError(signUpError.message);
-    } else if (data.user && !data.session) {
+      setLoading(false);
+      return;
+    }
+    if (data.user && !data.session) {
       // Email confirmation is required. Supabase obfuscates repeat signups (a
       // fake user with no identities, and no email is sent) — surface that as
       // "already registered" instead of sending the user to wait on a code
@@ -75,10 +84,17 @@ export default function SignupScreen() {
       } else {
         router.push({ pathname: '/(auth)/verify-email', params: { email: email.trim() } });
       }
+      // Both land the user back on, or still on, this screen.
+      setLoading(false);
+      return;
     }
-    // With confirmation disabled a session arrives right away and the root
-    // auth listener routes into onboarding — nothing to do here.
-    setLoading(false);
+
+    // A session arrived immediately (confirmation disabled), so the root auth
+    // listener is now fetching the profile and routing into onboarding. The
+    // spinner deliberately keeps running until this screen unmounts — see the
+    // matching note in login.tsx: stopping it here is what made a working
+    // sign-up look like a tap that did nothing.
+    stuckTimer.current = setTimeout(() => setLoading(false), 8000);
   }
 
   const fields: Field[] = [
@@ -161,8 +177,16 @@ export default function SignupScreen() {
             style={[styles.button, (loading || !agreed) && styles.buttonDisabled]}
             onPress={handleSignup}
             disabled={loading || !agreed}
+            activeOpacity={0.85}
           >
-            {loading ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>{t('auth.createAccount')}</Text>}
+            {/* Gradient fill, matching the Listen pill and the Log in button. */}
+            <LinearGradient
+              colors={LISTEN_FILL}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>{t('auth.createAccount')}</Text>}
           </TouchableOpacity>
 
           {/* Express sign-up — Google (and Apple where available). The provider
@@ -206,9 +230,12 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   inputIcon: { flexShrink: 0 },
   input: { flex: 1, paddingVertical: SPACING.md, color: colors.text, fontSize: 15 },
 
-  button: { backgroundColor: colors.primary, borderRadius: RADIUS.md, paddingVertical: SPACING.md + 2, alignItems: 'center', marginTop: SPACING.sm },
+  // backgroundColor is only the pre-paint frame; the fill is the LinearGradient
+  // child, and overflow:hidden keeps it inside the rounded corners.
+  button: { backgroundColor: colors.primary, borderRadius: RADIUS.md, overflow: 'hidden', paddingVertical: SPACING.md + 2, alignItems: 'center', marginTop: SPACING.sm },
   buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  // White, not colors.text — the label sits on the gradient in both themes.
+  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   consentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm, marginTop: SPACING.xs },
   checkbox: {
     width: 22, height: 22, borderRadius: 6, marginTop: 1,
@@ -217,7 +244,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
   consent: { flex: 1, color: colors.textTertiary, fontSize: 12, lineHeight: 18 },
-  consentLink: { color: colors.primary, fontWeight: '700' },
+  // Neutral, not orange (owner, 2026-08-28). These are the ToS and Privacy
+  // links inside the consent line, and orange made them read as the loudest
+  // thing on the screen — competing with the Create account button for the eye
+  // when they are a legal footnote. The underline is what keeps them obviously
+  // tappable once the colour is gone, so this stays a11y-sound rather than
+  // relying on colour alone.
+  consentLink: { color: colors.text, fontWeight: '700', textDecorationLine: 'underline' },
 
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: SPACING.xl },
   footerText: { color: colors.textSecondary, fontSize: 14 },
