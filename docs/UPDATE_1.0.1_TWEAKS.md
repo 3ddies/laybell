@@ -81,17 +81,27 @@ from the top edge, behind the logo, breathing slowly between a gold-led and a re
 same colours, the same feeling, and the form stays perfectly legible because the bloom is gone by
 72% down, above the inputs on every handset.
 
-**Pace is the whole point: 11 seconds a cycle, eased in and out.** Long enough that it is felt
-rather than watched, which is the only acceptable speed next to a password field. It also eases
-in on mount rather than snapping on.
+**Pace is the whole point: 7.5 seconds a cycle, eased in and out.** Slow enough to be felt rather
+than watched, which is the only acceptable speed next to a password field. It also eases in on
+mount rather than snapping on.
 
 Cheap: two static gradients and one opacity on the native driver. No layout, no re-render, no
 image to decode. Light theme runs at 55% strength — the same alphas on a near-white ground read
 as a stain rather than a glow.
 
-⚠️ **Alphas are a first guess** (`0.20 / 0.07` gold, `0.24 / 0.08` red). Say stronger or weaker.
-If you actually want the literal white→orange version to judge for yourself, say so — it is not
-hard, I just think it makes the screen worse.
+**Tuned on device, 2026-08-28.** First pass was 11s at `0.20`/`0.24`; the owner asked for a little
+stronger and faster, so it is now **7.5s** at `0.29 / 0.11` gold and `0.34 / 0.12` red. All five
+numbers are named constants at the top of `AuthBackdrop.tsx` — this is plainly a dial that gets
+turned, not a decision made once, and it was already scattered through the JSX after a single
+round of feedback.
+
+The 72% cutoff was left alone on purpose. It is what keeps the form off colour, and raising the
+strength is exactly when that guarantee starts to matter.
+
+⚠️ **Do not take the cycle much below ~6s.** That is not taste — the motion has to stay
+felt-rather-than-watched next to a password field, which is the entire reason it is slow.
+
+Owner verdict on the whole auth pass: *"everything feels and looks a lot better."*
 | 7 | Rest of the app (41 files) | Same keyboard sweep everywhere else | Functional | ⬜ **not started** |
 
 ### 6 · Why the keyboard behaved on sign-up but not sign-in
