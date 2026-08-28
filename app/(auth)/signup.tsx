@@ -1,6 +1,6 @@
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
+  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Keyboard,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useRouter } from 'expo-router';
@@ -50,6 +50,10 @@ export default function SignupScreen() {
     if (!/^[a-zA-Z0-9_]+$/.test(uname)) { setError(t('auth.usernameChars')); return; }
     if (!agreed) { setError(t('auth.acceptTerms')); return; }
 
+    // Close the keyboard now that we are actually submitting — after the
+    // validation guards, so a rejected field does not shut the keyboard on
+    // someone who has to go straight back into it. Same reasoning as login.tsx.
+    Keyboard.dismiss();
     setLoading(true); setError('');
     // Capture a thrown network/timeout error into the returned shape so a rejected
     // sign-up can't leave the button stuck — the setLoading(false) below always runs.
@@ -108,7 +112,7 @@ export default function SignupScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}>
 
         <View style={styles.logoSection}>
           <AuthLogoMark size={72} />

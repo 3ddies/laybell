@@ -1,6 +1,6 @@
 import {
   View, Text, TextInput, TouchableOpacity, Image,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
+  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Keyboard,
 } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -31,6 +31,10 @@ export default function ResetPasswordScreen() {
     if (password !== confirm) { setError(t('auth.passwordsNoMatch')); return; }
     if (password.length < 6) { setError(t('auth.passwordMin')); return; }
 
+    // Close the keyboard now that we are actually submitting — after the
+    // guards, so a rejected password does not shut it on someone who has to go
+    // straight back into the field. Same reasoning as login.tsx.
+    Keyboard.dismiss();
     setSaving(true); setError('');
     const { error: err } = await supabase.auth.updateUser({ password });
     setSaving(false);
@@ -49,7 +53,9 @@ export default function ResetPasswordScreen() {
   if (done) {
     return (
       <View style={styles.container}>
-        <View style={styles.inner}>
+        {/* The success state has no inputs, so it needs no scroll or keyboard
+            handling — a plain centred View is right here. */}
+        <View style={styles.innerStatic}>
           <View style={styles.logoSection}>
             <Ionicons name="checkmark-circle" size={64} color={colors.primary} />
             <Text style={styles.title}>{t('rpw.doneTitle')}</Text>
@@ -65,7 +71,16 @@ export default function ResetPasswordScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View style={styles.inner}>
+      {/* Same treatment as login.tsx: keyboardShouldPersistTaps="handled" makes a
+          tap on empty space close the keyboard while a tap on a control still
+          fires, and on-drag closes it on a scroll. */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.inner}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.logoSection}>
           <Image source={require('../../assets/icon.png')} style={styles.logoMark} resizeMode="cover" />
           <Text style={styles.title}>{t('rpw.title')}</Text>
@@ -123,14 +138,18 @@ export default function ResetPasswordScreen() {
             {saving ? <ActivityIndicator color={colors.text} /> : <Text style={styles.buttonText}>{t('rpw.save')}</Text>}
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  inner: { flex: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
+  scroll: { flex: 1 },
+  innerStatic: { flex: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
+  // flexGrow, not flex — see login.tsx: flex:1 on a contentContainer pins it
+  // to the viewport and kills scrolling.
+  inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
 
   logoSection: { alignItems: 'center', marginBottom: SPACING.xl, gap: SPACING.sm },
   logoMark: { width: 72, height: 72, borderRadius: RADIUS.xl },

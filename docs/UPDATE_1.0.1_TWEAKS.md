@@ -60,6 +60,50 @@ stops.
 | 3 | Signup | ToS + Privacy links neutral (white, underlined) instead of orange | Cosmetic | ✅ done |
 | 4 | Login + Signup | The ~2s freeze after a successful sign-in that looked like the tap failed | Functional | ✅ done |
 | 5 | Login + Signup | Logo mark now draws itself in, using the brand animation | Cosmetic | ✅ done |
+| 6 | All 4 auth screens | Keyboard now dismisses on tap-outside, on drag, and on submit | Functional | ✅ done |
+| 7 | Rest of the app (41 files) | Same keyboard sweep everywhere else | Functional | ⬜ **not started** |
+
+### 6 · Why the keyboard behaved on sign-up but not sign-in
+
+The owner's own observation split this open: *"for the login screen it isn't consistent but the
+signup screen works pretty well."* That is exactly right, and the reason is one prop.
+
+**Sign-up** wraps its form in a `ScrollView` with `keyboardShouldPersistTaps="handled"` — which
+means a tap on empty space closes the keyboard while a tap a control handles still fires.
+**Sign-in had no `ScrollView` at all**, just a plain `View`, so nothing could dismiss anything.
+Same for verify-email and reset-password.
+
+All four now share the same recipe:
+
+- `ScrollView` + `keyboardShouldPersistTaps="handled"` — tap-outside closes, buttons still work.
+  Without `"handled"` the first tap anywhere is swallowed merely closing the keyboard.
+- `keyboardDismissMode="on-drag"` — dragging the form closes it too.
+- `Keyboard.dismiss()` on submit, placed **after** the validation guards. Tapping a button should
+  close the keyboard, but "fill in all fields" should not — that user has to go straight back
+  into a field. It also uncovers the button, which matters now that the spinner keeps running
+  (tweak 4): a spinner behind a keyboard communicates nothing.
+
+Two things worth knowing for the sweep:
+
+- `flexGrow: 1`, **not** `flex: 1`, on a ScrollView's `contentContainerStyle`. `flex: 1` pins
+  content to the viewport and silently kills scrolling. `flexGrow` keeps the form centred while
+  it fits and lets it scroll when it does not — which is a real second win on a small screen with
+  the keyboard up.
+- `reset-password.tsx` has **two** blocks using `styles.inner`, and the first is the success
+  screen, which has no inputs. A blind find-and-replace converted the wrong one and broke the
+  build. **Check for early returns before converting a screen.**
+
+### 7 · The remaining sweep — deliberately not done yet
+
+45 files contain a `TextInput`. Today 33 set `keyboardShouldPersistTaps`, 10 set
+`keyboardDismissMode`, and 26 call `Keyboard.dismiss` somewhere — so the app is not unhandled,
+it is *inconsistently* handled, which is why it feels random.
+
+Doing all 41 remaining files in one pass is a wide blast radius on screens that cannot be
+typechecked into correctness — the reset-password near-miss above happened on file three of four.
+Worth doing, worth doing in reviewable batches, and worth the owner spot-checking each batch on
+the dev client. Suggested order by how often they are touched: comments → messages → composer →
+edit-profile → search surfaces → everything else.
 
 ### 4 · The login "hitch" was not a slow network
 

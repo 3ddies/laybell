@@ -1,6 +1,6 @@
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
+  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Keyboard,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useRouter } from 'expo-router';
@@ -33,6 +33,11 @@ export default function LoginScreen() {
 
   async function handleLogin() {
     if (!email || !password) { setError(t('auth.fillAllFields')); return; }
+    // Close the keyboard now that we are actually submitting — deliberately
+    // AFTER the validation guard, so "fill in all fields" does not shut the
+    // keyboard on someone who has to go straight back into a field.
+    // It also uncovers the button: the spinner is no use behind a keyboard.
+    Keyboard.dismiss();
     setLoading(true); setError('');
     // Capture a thrown network/timeout error into the same shape the branches
     // below already handle, so a rejected sign-in can never leave the button
@@ -86,7 +91,22 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View style={styles.inner}>
+      {/* A ScrollView, not a plain View, and the two keyboard props are the
+          point of it — this screen had NEITHER, which is why the keyboard here
+          never dismissed while sign-up (which has always had them) behaved.
+            • keyboardShouldPersistTaps="handled" — a tap on empty space closes
+              the keyboard, but a tap that a control handles still fires. Without
+              it the first tap anywhere is swallowed just closing the keyboard.
+            • keyboardDismissMode="on-drag" — dragging the form closes it too.
+          Scrolling is a genuine second win: on a small screen with the keyboard
+          up, the form no longer has nowhere to go. */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.inner}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Logo */}
         <View style={styles.logoSection}>
           <AuthLogoMark size={72} />
@@ -165,14 +185,18 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </Link>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  inner: { flex: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
+  scroll: { flex: 1 },
+  // flexGrow, not flex: on a ScrollView's contentContainer, flex:1 pins the
+  // content to the viewport and kills scrolling. flexGrow keeps the form
+  // vertically centred while it fits, and lets it scroll once it does not.
+  inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
 
   logoSection: { alignItems: 'center', marginBottom: SPACING.xxl, gap: SPACING.sm },
   logo: { fontSize: 40, fontWeight: '800', color: colors.text, letterSpacing: 1 },

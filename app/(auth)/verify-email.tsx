@@ -1,6 +1,6 @@
 import {
   View, Text, TextInput, TouchableOpacity, Image,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
+  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Keyboard,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocalSearchParams } from 'expo-router';
@@ -45,6 +45,9 @@ export default function VerifyEmailScreen() {
   async function verify(token: string) {
     if (!email || verifyingRef.current) return;
     verifyingRef.current = true;
+    // The code is submitted the moment it is complete, so close the keyboard
+    // with it rather than leaving it covering the result. See login.tsx.
+    Keyboard.dismiss();
     setVerifying(true); setError(''); setNotice('');
     // 'signup' is the type for confirmation-email codes; some configurations
     // issue them as generic 'email' OTPs instead, so fall back before failing.
@@ -87,7 +90,13 @@ export default function VerifyEmailScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View style={styles.inner}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.inner}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.logoSection}>
           <Image source={require('../../assets/icon.png')} style={styles.logoMark} resizeMode="cover" />
           <Text style={styles.title}>{t('auth.verifyTitle')}</Text>
@@ -151,14 +160,17 @@ export default function VerifyEmailScreen() {
             <TouchableOpacity><Text style={styles.linkText}>{t('auth.signUp')}</Text></TouchableOpacity>
           </Link>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  inner: { flex: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
+  scroll: { flex: 1 },
+  // flexGrow, not flex — see login.tsx: flex:1 on a contentContainer pins it
+  // to the viewport and kills scrolling.
+  inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
 
   logoSection: { alignItems: 'center', marginBottom: SPACING.xl, gap: SPACING.sm },
   logoMark: { width: 72, height: 72, borderRadius: RADIUS.xl },
