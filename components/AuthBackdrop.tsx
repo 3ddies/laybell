@@ -17,12 +17,20 @@ import { useTheme } from '../contexts/ThemeContext';
 //     (components/AuthLogoMark). Two motions competing makes both read cheaper.
 //
 // So this keeps the theme's own ground and puts the brand INTO it: a warm wash
-// from the top edge, behind the logo, doing two independent things at once —
-// drifting between a gold-led and a red-led mix, and BREATHING from nearly
-// absent up to full and back. The second one is what makes it read as an effect
-// rather than as wallpaper; without it the amount of colour never changed and
-// the eye stopped seeing it. Same brand colours either way, and the form stays
-// legible because what reaches the inputs is a tint rather than a colour.
+// from the top edge, behind the logo, doing three things at once —
+//
+//   • drifting between a gold-led and a red-led mix (hue),
+//   • BREATHING from nearly absent up to full and back (intensity), which is
+//     what makes it read as an effect rather than as wallpaper; without it the
+//     amount of colour never changed and the eye stopped seeing it,
+//   • and WARMING as the form gets filled in, while the breathing damps out.
+//
+// That last pairing is the good bit. An empty form gets a restless screen; a
+// completed one gets steady, strong, calm colour. The motion is there while
+// there is something to do and gone once there is not.
+//
+// Same brand colours throughout, and the form stays legible because what
+// reaches the inputs is a tint rather than a colour.
 //
 // PACE IS THE WHOLE POINT. Slow enough that it never pulls the eye while someone
 // is typing a password — it is felt rather than watched. See CYCLE_MS below for
@@ -68,9 +76,15 @@ const PULSE_MIN = 0.28;
 // JS, so making progress feed them would re-render two LinearGradients on every
 // keystroke. As its own layer the whole effect is one opacity on the native
 // driver — no re-render, no work on the JS thread while someone is typing.
+// Progress also STILLS the breathing. At an empty form the bloom pulses; as the
+// form fills, the pulse damps out and the screen settles into steady warmth, so
+// a completed form is calm rather than throbbing. Owner's call — "don't make the
+// effect fade in and out after it gets stronger, this may be too
+// overstimulating" — and it reads better than either state alone: the screen is
+// restless while there is work to do and resolved once there is not.
 const BOOST_MS = 520;
-const BOOST_TOP = 0.34;
-const BOOST_MID = 0.17;
+const BOOST_TOP = 0.54;
+const BOOST_MID = 0.30;
 
 // Peak alpha at the very top edge, and the mid-stop that carries it down.
 // Raised alongside the pulse — these are now the TOP of a breath rather than a
@@ -182,11 +196,20 @@ export default function AuthBackdrop({ progress = 0 }: Props) {
   // at which point the next thing the user does is press the button, not read.
   const boostStops = [0, 0.42, 0.94] as const;
 
+  // pulse + (1 - pulse) * boost.
+  //
+  // At an empty form this is just `pulse` and the bloom breathes. As progress
+  // rises it lifts the TROUGHS toward full while the peaks are already there, so
+  // the breathing flattens out instead of speeding up or stopping abruptly — at a
+  // complete form it is a constant 1. One expression, still on the native driver,
+  // and no second animation to keep in sync.
+  const steadied = Animated.add(pulse, Animated.multiply(Animated.subtract(1, pulse), boost));
+
   return (
     // The pulse wraps BOTH layers, so it changes how much colour there is
     // without disturbing which colour is winning — the two effects stay
     // independent and can be tuned separately.
-    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: pulse }]}>
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: steadied }]}>
       <Animated.View
         style={[StyleSheet.absoluteFill, { opacity: mix.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}
       >

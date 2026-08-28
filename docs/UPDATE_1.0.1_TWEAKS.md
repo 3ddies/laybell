@@ -168,6 +168,15 @@ not read.
 
 Wired on login (2 fields), sign-up (6), and reset-password (2). Verify-email has no form to fill.
 
+**Progress also stills the breathing** (owner, after seeing it: *"don't make the effect fade in
+and out after it gets stronger — this may be too overstimulating"*). It reads better than either
+state alone: an empty form gets a **restless** screen, a completed one gets **steady, strong,
+calm** colour. Motion while there is something to do, none once there is not.
+
+Done as one expression — `pulse + (1 - pulse) * boost` — which lifts the pulse's *troughs* toward
+full as progress rises, so the breathing flattens out rather than speeding up or stopping
+abruptly. Still one value on the native driver, and no second animation to keep in sync.
+
 ### 9 · Sheen on the primary button
 
 Same idea and the same timings as the Listen-mode pill, on request — a 1.4s sweep, then a long
