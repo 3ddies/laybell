@@ -82,7 +82,7 @@ export default function ResetPasswordScreen() {
       // below handles iOS without touching layout at all.
       enabled={Platform.OS !== 'ios'}
     >
-      <AuthBackdrop />
+      <AuthBackdrop progress={((password ? 1 : 0) + (confirm ? 1 : 0)) / 2} />
       {/* Same treatment as login.tsx: keyboardShouldPersistTaps="handled" makes a
           tap on empty space close the keyboard while a tap on a control still
           fires, and on-drag closes it on a scroll. */}

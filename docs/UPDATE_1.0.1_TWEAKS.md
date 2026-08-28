@@ -141,6 +141,33 @@ duration) and `AuthSubmitButton` holds its first sweep until that plus a beat, s
 video cannot silently desynchronise them. Sequenced, it reads as one arrival: the mark draws, it
 settles, then the thing you are meant to press catches the light.
 
+### 8c · The screen warms as the form fills in
+
+Owner's idea, and a good one — on a five-field sign-up it turns filling in a form into something
+with momentum, and it says *"you are nearly there"* without a progress bar or a word of copy. The
+colour is doing work rather than decoration.
+
+**Built as a separate layer, not by changing the base alphas.** The gradient colours are computed
+in JS, so feeding progress into them would re-render two `LinearGradient`s on **every keystroke**.
+As its own layer the whole effect is one opacity on the native driver — no re-render, no JS work
+while someone is typing. That constraint is the entire reason for the shape of this.
+
+**Counted in fields, not characters.** A value that moved per keystroke would shimmer, and
+"another field done" is the unit that actually means something to the person filling it in.
+
+**Sign-up counts six steps, not five** — the consent checkbox is included. Leaving it out would
+let the screen reach full warmth while the Create account button was still disabled, which is the
+one thing this mechanic must never say. Full colour and a live button arrive together.
+
+The layer sits *inside* the pulse wrapper, so a completed form still breathes with the rest of
+the screen rather than becoming a flat slab. Its stops run deeper than the base pair (0.94 vs
+0.84), so completion spreads the warmth down as well as strengthening it. That is past the floor
+the base layers respect, and is only acceptable because this layer is at full strength solely
+when the form is **complete** — at which point the next thing the user does is press the button,
+not read.
+
+Wired on login (2 fields), sign-up (6), and reset-password (2). Verify-email has no form to fill.
+
 ### 9 · Sheen on the primary button
 
 Same idea and the same timings as the Listen-mode pill, on request — a 1.4s sweep, then a long

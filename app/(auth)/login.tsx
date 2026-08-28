@@ -30,6 +30,11 @@ export default function LoginScreen() {
   const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (stuckTimer.current) clearTimeout(stuckTimer.current); }, []);
 
+  // The screen warms as the form fills in. Counted in FIELDS, not characters:
+  // a value that moved on every keystroke would shimmer, and "another field
+  // done" is the unit that means something to the person filling it in.
+  const progress = ((email ? 1 : 0) + (password ? 1 : 0)) / 2;
+
   async function handleLogin() {
     if (!email || !password) { setError(t('auth.fillAllFields')); return; }
     // Close the keyboard now that we are actually submitting — deliberately
@@ -97,7 +102,7 @@ export default function LoginScreen() {
       // below handles iOS without touching layout at all.
       enabled={Platform.OS !== 'ios'}
     >
-      <AuthBackdrop />
+      <AuthBackdrop progress={progress} />
       {/* A ScrollView, not a plain View. keyboardShouldPersistTaps="handled" is
           the point of it: a tap on empty space closes the keyboard, while a tap
           a control handles still fires. This screen had no ScrollView at all,

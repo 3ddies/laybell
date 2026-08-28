@@ -56,6 +56,22 @@ const CYCLE_MS = 7500;
 const PULSE_MS = 5200;
 const PULSE_MIN = 0.28;
 
+// Completion warmth — the screen gets more orange as the form fills in.
+//
+// Owner's idea, and a good one: on a five-field sign-up it turns filling in a
+// form into something with momentum, and it says "you are nearly there" without
+// a progress bar or a single word of copy. The colour is doing work rather than
+// decoration.
+//
+// It is a SEPARATE LAYER on top of the breathing pair rather than a change to
+// their alphas, for a reason that matters: the gradient colours are computed in
+// JS, so making progress feed them would re-render two LinearGradients on every
+// keystroke. As its own layer the whole effect is one opacity on the native
+// driver — no re-render, no work on the JS thread while someone is typing.
+const BOOST_MS = 520;
+const BOOST_TOP = 0.34;
+const BOOST_MID = 0.17;
+
 // Peak alpha at the very top edge, and the mid-stop that carries it down.
 // Raised alongside the pulse — these are now the TOP of a breath rather than a
 // constant, so the average on screen is lower than these numbers suggest.
@@ -64,7 +80,17 @@ const GOLD_MID = 0.20;
 const RED_TOP = 0.54;
 const RED_MID = 0.23;
 
-export default function AuthBackdrop() {
+type Props = {
+  /**
+   * How far through the form the user is, 0 to 1. Drives the completion warmth.
+   * Quantise it by FIELDS FILLED rather than characters typed — a value that
+   * moves on every keystroke would shimmer, and "another field done" is the unit
+   * that actually means something to the person filling it in.
+   */
+  progress?: number;
+};
+
+export default function AuthBackdrop({ progress = 0 }: Props) {
   const { mode } = useTheme();
   const isLight = mode === 'light';
 
@@ -73,6 +99,18 @@ export default function AuthBackdrop() {
   // How MUCH colour there is at all, independent of which colour. Starts at full
   // so the screen is already warm on arrival — see the no-entrance-fade note.
   const pulse = useRef(new Animated.Value(1)).current;
+  // Follows `progress`, eased, so completing a field is a warm swell rather than
+  // a step change.
+  const boost = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(boost, {
+      toValue: Math.max(0, Math.min(1, progress)),
+      duration: BOOST_MS,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [progress, boost]);
 
   // There is deliberately NO entrance fade. The first version eased the bloom in
   // over 900ms; the owner asked for the screen to simply BE that colour on
@@ -130,6 +168,20 @@ export default function AuthBackdrop() {
   // in front of it, and legibility is the one thing here that is not negotiable.
   const stops = [0, 0.36, 0.84] as const;
 
+  // The completion layer sits between the two base hues so it never fights
+  // whichever one is currently winning — it reads as "more of the same warmth",
+  // not as a third colour arriving.
+  const boostFill = [
+    `rgba(240,120,30,${a(BOOST_TOP)})`,
+    `rgba(242,101,34,${a(BOOST_MID)})`,
+    'rgba(242,101,34,0)',
+  ] as const;
+  // Deeper than the base pair so completion spreads the warmth down the screen.
+  // 0.94 is past the ~0.85 floor the base layers respect, and that is fine only
+  // because this layer is at full strength solely when the form is COMPLETE —
+  // at which point the next thing the user does is press the button, not read.
+  const boostStops = [0, 0.42, 0.94] as const;
+
   return (
     // The pulse wraps BOTH layers, so it changes how much colour there is
     // without disturbing which colour is winning — the two effects stay
@@ -142,6 +194,14 @@ export default function AuthBackdrop() {
       </Animated.View>
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: mix }]}>
         <LinearGradient colors={red} locations={stops} style={StyleSheet.absoluteFill} />
+      </Animated.View>
+      {/* Completion warmth. Inside the pulse wrapper on purpose: a filled-in form
+          should breathe with the rest of the screen rather than sit on top of it
+          as a flat slab that never moves. Its own stops run deeper than the base
+          pair, so finishing the form spreads the colour down as well as
+          strengthening it — the screen fills up as the form does. */}
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: boost }]}>
+        <LinearGradient colors={boostFill} locations={boostStops} style={StyleSheet.absoluteFill} />
       </Animated.View>
     </Animated.View>
   );

@@ -37,6 +37,20 @@ export default function SignupScreen() {
   const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (stuckTimer.current) clearTimeout(stuckTimer.current); }, []);
 
+  // The screen warms as the form fills in — this is the screen the idea was for.
+  // Six steps, not five: the consent box is required to submit, so leaving it out
+  // would mean the screen hit full warmth while the button was still disabled,
+  // which is the one thing this must never say. Full colour and a live button
+  // arrive together.
+  //
+  // Counted in FIELDS rather than characters. A value moving on every keystroke
+  // would shimmer, and "another one done" is the unit that means something to the
+  // person filling it in.
+  const progress = (
+    (displayName ? 1 : 0) + (username ? 1 : 0) + (email ? 1 : 0)
+    + (password ? 1 : 0) + (confirmPassword ? 1 : 0) + (agreed ? 1 : 0)
+  ) / 6;
+
   async function handleSignup() {
     // Ignore surrounding whitespace (e.g. a trailing space) on the username so it
     // never trips the length checks or the letters/numbers/underscores-only rule —
@@ -119,7 +133,7 @@ export default function SignupScreen() {
       // below handles iOS without touching layout at all.
       enabled={Platform.OS !== 'ios'}
     >
-      <AuthBackdrop />
+      <AuthBackdrop progress={progress} />
       <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets showsVerticalScrollIndicator={false}>
 
         <View style={styles.logoSection}>
