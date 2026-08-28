@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet } from 'react-native';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -21,9 +21,9 @@ import { useTheme } from '../contexts/ThemeContext';
 // red-led mix. Same colours, same feeling, and the form stays perfectly legible
 // because the bloom is gone well before the inputs start.
 //
-// PACE IS THE WHOLE POINT. 11 seconds a cycle, easing in and out. Long enough
-// that it never pulls the eye while someone is typing a password — it is felt
-// rather than watched. Anything faster is a distraction on a login screen.
+// PACE IS THE WHOLE POINT. Slow enough that it never pulls the eye while someone
+// is typing a password — it is felt rather than watched. See CYCLE_MS below for
+// the current value and the floor it should not go under.
 //
 // Costs nothing meaningful: two static gradients, one opacity driven on the
 // native driver. No layout, no re-render, no image to decode.
@@ -36,7 +36,6 @@ import { useTheme } from '../contexts/ThemeContext';
 // Still slow enough to be felt rather than watched, which is the constraint that
 // matters next to a password field — do not take this much below ~6s.
 const CYCLE_MS = 7500;
-const FADE_IN_MS = 900;
 
 // Peak alpha at the very top edge, and the mid-stop that carries it down.
 const GOLD_TOP = 0.29;
@@ -50,14 +49,13 @@ export default function AuthBackdrop() {
 
   // 0 = gold-led mix, 1 = red-led mix. One value cross-fades the two layers.
   const mix = useRef(new Animated.Value(0)).current;
-  // Never snap on: the bloom eases in behind the form as the screen settles.
-  const entrance = useRef(new Animated.Value(0)).current;
 
+  // There is deliberately NO entrance fade. The first version eased the bloom in
+  // over 900ms; the owner asked for the screen to simply BE that colour on
+  // arrival. He is right — the fade drew attention to the background at the one
+  // moment the eye should be going to the logo and the form, and it made a
+  // static screen look like it was still loading.
   useEffect(() => {
-    Animated.timing(entrance, {
-      toValue: 1, duration: FADE_IN_MS, easing: Easing.out(Easing.quad), useNativeDriver: true,
-    }).start();
-
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(mix, {
@@ -70,7 +68,7 @@ export default function AuthBackdrop() {
     );
     loop.start();
     return () => loop.stop();
-  }, [mix, entrance]);
+  }, [mix]);
 
   // Light theme sits on a near-white ground, where the same alphas would read as
   // a stain rather than a glow. Roughly half strength there.
@@ -93,7 +91,7 @@ export default function AuthBackdrop() {
   const stops = [0, 0.34, 0.72] as const;
 
   return (
-    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: entrance }]}>
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <Animated.View
         style={[StyleSheet.absoluteFill, { opacity: mix.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}
       >
@@ -102,6 +100,6 @@ export default function AuthBackdrop() {
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: mix }]}>
         <LinearGradient colors={red} locations={stops} style={StyleSheet.absoluteFill} />
       </Animated.View>
-    </Animated.View>
+    </View>
   );
 }

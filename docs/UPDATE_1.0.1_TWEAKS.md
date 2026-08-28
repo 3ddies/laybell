@@ -61,7 +61,44 @@ stops.
 | 4 | Login + Signup | The ~2s freeze after a successful sign-in that looked like the tap failed | Functional | ✅ done |
 | 5 | Login + Signup | Logo mark now draws itself in, using the brand animation | Cosmetic | ✅ done |
 | 6 | All 4 auth screens | Keyboard now dismisses on tap-outside, on drag, and on submit | Functional | ✅ done |
-| 8 | All 4 auth screens | Slow warm brand bloom behind the form, so the screen is not flat | Cosmetic | ✅ done, tune on device |
+| 8 | All 4 auth screens | Slow warm brand bloom behind the form, so the screen is not flat | Cosmetic | ✅ done, tuned |
+| 9 | Login + Signup | Sheen sweep on the primary button, like the Listen pill | Cosmetic | ✅ done |
+| 10 | Login + Signup | Text fields given an edge and a real focus state | Cosmetic | ✅ done |
+
+### 10 · What was actually wrong with the text fields
+
+The owner could not name it — *"something about them just doesn't seem like it's at its full
+potential"* — so it was worth diagnosing rather than restyling at random. Three things:
+
+1. **No focus state at all.** Tapping a field changed nothing: same fill, same edge, same icon.
+   The keyboard appearing was the only evidence anything had happened. **This is the big one.**
+   Every field a person trusts with a password should tell them which field they are in.
+2. **No edge.** A filled box with no border on a dark ground has no defined shape — it reads as a
+   slightly lighter smudge rather than a control.
+3. **The icon was `textTertiary`** (`#484848` on dark), *dimmer than the placeholder beside it*.
+   It sat there as grey furniture instead of labelling the field.
+
+`components/AuthField.tsx` gives the field a hairline that turns brand-warm on focus, a fill that
+lifts one step up the surface ramp, and an icon that goes from muted to full brand when live.
+
+**Deliberately not animated.** Focus happens at exactly the moment the keyboard is animating up,
+and a JS-driven colour interpolation competing with that is how you get a stutter on the first
+interaction anyone has with the app. Native fields snap too, and the instant change is clearer
+feedback than a fade.
+
+### 9 · Sheen on the primary button
+
+Same idea and the same timings as the Listen-mode pill, on request — a 1.4s sweep, then a long
+rest. **The rest is the important half:** a highlight crossing continuously would be a
+distraction under a password field, while one that crosses briefly reads as a material catching
+the light.
+
+It respects **Reduce Motion** (someone who asked the OS to stop animations asked for this too),
+and it stops while `loading` is true — during the wait the spinner *is* the message, and a sheen
+crossing behind it adds noise at the one moment the button most needs to say a single thing.
+
+Both screens now share `AuthSubmitButton`, so the gradient, sheen, spinner and disabled state
+exist once rather than in three copies that would drift within a release.
 
 ### 8 · Animated background — built, but not the version asked for
 

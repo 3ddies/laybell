@@ -1,18 +1,17 @@
 import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Keyboard,
+  View, Text, TouchableOpacity,
+  StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Keyboard,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
 import { authRedirectUrl } from '../../lib/authLink';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
 import AuthLogoMark from '../../components/AuthLogoMark';
 import AuthBackdrop from '../../components/AuthBackdrop';
-// Same fill as the Listen-mode pill and the Log in button — imported, not copied.
-import { LISTEN_FILL } from '../../components/ListenButton';
+import AuthField from '../../components/AuthField';
+import AuthSubmitButton from '../../components/AuthSubmitButton';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -134,25 +133,29 @@ export default function SignupScreen() {
           )}
 
           {fields.map((f, i) => (
-            <View key={i} style={styles.inputWrap}>
-              <Ionicons name={f.icon} size={18} color={colors.textTertiary} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder={f.placeholder}
-                placeholderTextColor={colors.textTertiary}
-                value={f.value}
-                onChangeText={f.onChange}
-                secureTextEntry={f.secure && !showPass}
-                keyboardType={f.keyboard}
-                autoCapitalize={f.capitalize ?? 'words'}
-                maxLength={f.maxLength}
-              />
-              {f.secure && (
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={showPass ? t('a11y.hidePassword') : t('a11y.showPassword')} onPress={() => setShowPass(p => !p)}>
-                  <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textTertiary} />
+            <AuthField
+              key={i}
+              icon={f.icon}
+              placeholder={f.placeholder}
+              value={f.value}
+              onChangeText={f.onChange}
+              secureTextEntry={f.secure && !showPass}
+              keyboardType={f.keyboard}
+              autoCapitalize={f.capitalize ?? 'words'}
+              maxLength={f.maxLength}
+              // One toggle for BOTH password fields, as before — they are
+              // "password" and "confirm password", and revealing one while the
+              // other stays masked helps nobody.
+              right={f.secure ? (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={showPass ? t('a11y.hidePassword') : t('a11y.showPassword')}
+                  onPress={() => setShowPass(p => !p)}
+                >
+                  <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textMeta} />
                 </TouchableOpacity>
-              )}
-            </View>
+              ) : undefined}
+            />
           ))}
 
           <View style={styles.consentRow}>
@@ -180,21 +183,12 @@ export default function SignupScreen() {
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={[styles.button, (loading || !agreed) && styles.buttonDisabled]}
+          <AuthSubmitButton
+            label={t('auth.createAccount')}
             onPress={handleSignup}
+            loading={loading}
             disabled={loading || !agreed}
-            activeOpacity={0.85}
-          >
-            {/* Gradient fill, matching the Listen pill and the Log in button. */}
-            <LinearGradient
-              colors={LISTEN_FILL}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>{t('auth.createAccount')}</Text>}
-          </TouchableOpacity>
+          />
 
           {/* Express sign-up — Google (and Apple where available). The provider
               account IS the consent-carrying identity; new users still complete
@@ -228,20 +222,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.error + '18', borderRadius: RADIUS.md, padding: SPACING.sm + 2 },
   errorText: { color: colors.error, fontSize: 13, flex: 1 },
 
-  inputWrap: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, gap: SPACING.sm,
-  },
-  inputIcon: { flexShrink: 0 },
-  input: { flex: 1, paddingVertical: SPACING.md, color: colors.text, fontSize: 15 },
-
-  // backgroundColor is only the pre-paint frame; the fill is the LinearGradient
-  // child, and overflow:hidden keeps it inside the rounded corners.
-  button: { backgroundColor: colors.primary, borderRadius: RADIUS.md, overflow: 'hidden', paddingVertical: SPACING.md + 2, alignItems: 'center', marginTop: SPACING.sm },
-  buttonDisabled: { opacity: 0.5 },
-  // White, not colors.text — the label sits on the gradient in both themes.
-  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   consentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm, marginTop: SPACING.xs },
   checkbox: {
     width: 22, height: 22, borderRadius: 6, marginTop: 1,

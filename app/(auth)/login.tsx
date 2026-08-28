@@ -1,18 +1,16 @@
 import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Keyboard,
+  View, Text, TouchableOpacity,
+  StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Keyboard,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
 import AuthLogoMark from '../../components/AuthLogoMark';
 import AuthBackdrop from '../../components/AuthBackdrop';
-// The same fill as the Listen-mode pill, imported rather than copied so the two
-// can never drift apart.
-import { LISTEN_FILL } from '../../components/ListenButton';
+import AuthField from '../../components/AuthField';
+import AuthSubmitButton from '../../components/AuthSubmitButton';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -128,51 +126,38 @@ export default function LoginScreen() {
             </View>
           )}
 
-          <View style={styles.inputWrap}>
-            <Ionicons name="mail-outline" size={18} color={colors.textTertiary} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder={t('auth.email')}
-              placeholderTextColor={colors.textTertiary}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-          </View>
+          <AuthField
+            icon="mail-outline"
+            placeholder={t('auth.email')}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
 
-          <View style={styles.inputWrap}>
-            <Ionicons name="lock-closed-outline" size={18} color={colors.textTertiary} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder={t('auth.password')}
-              placeholderTextColor={colors.textTertiary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel={showPassword ? t('a11y.hidePassword') : t('a11y.showPassword')} onPress={() => setShowPassword(p => !p)}>
-              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textTertiary} />
-            </TouchableOpacity>
-          </View>
+          <AuthField
+            icon="lock-closed-outline"
+            placeholder={t('auth.password')}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+            right={(
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? t('a11y.hidePassword') : t('a11y.showPassword')}
+                onPress={() => setShowPassword(p => !p)}
+              >
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textMeta} />
+              </TouchableOpacity>
+            )}
+          />
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+          <AuthSubmitButton
+            label={t('auth.login')}
             onPress={handleLogin}
+            loading={loading}
             disabled={loading}
-            activeOpacity={0.85}
-          >
-            {/* Gradient fill rather than a flat orange, matching the Listen pill.
-                It sits UNDER the label as an absolute layer so the button keeps
-                its own layout and disabled-state opacity. */}
-            <LinearGradient
-              colors={LISTEN_FILL}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>{t('auth.login')}</Text>}
-          </TouchableOpacity>
+          />
 
           {/* Express sign-in — Google (and Apple where available). New accounts
               flow into onboarding automatically. */}
@@ -212,25 +197,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.error + '18', borderRadius: RADIUS.md, padding: SPACING.sm + 2 },
   errorText: { color: colors.error, fontSize: 13, flex: 1 },
 
-  inputWrap: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
-    borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, gap: SPACING.sm,
-  },
-  inputIcon: { flexShrink: 0 },
-  input: { flex: 1, paddingVertical: SPACING.md, color: colors.text, fontSize: 15 },
 
-  button: {
-    // The fill is the LinearGradient child, not a backgroundColor. The solid
-    // here is only what shows for the frame before the gradient paints, and
-    // overflow:hidden is what keeps the gradient inside the rounded corners.
-    backgroundColor: colors.primary, borderRadius: RADIUS.md, overflow: 'hidden',
-    paddingVertical: SPACING.md + 2, alignItems: 'center', marginTop: SPACING.sm,
-  },
-  buttonDisabled: { opacity: 0.6 },
   // White, not colors.text: the label sits on the gold end of the gradient in
   // both themes, so it must not follow the theme's text colour into black.
-  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: SPACING.xl },
   footerText: { color: colors.textSecondary, fontSize: 14 },
