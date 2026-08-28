@@ -39,11 +39,21 @@
 // comes back, that crash probably comes back with it — see the plugin's own
 // commit for the full diagnosis.
 //
+// It ALSO needed a patch to compile on Android at all. patch-package carried
+// `patches/@api.video+react-native-livestream+2.0.2.patch`, which stripped
+// `private val` off the `viewTag` constructor parameter in five Kotlin event
+// classes (OnConnectionFailed / OnConnectionSuccess / OnDisconnect /
+// OnPermissionsDenied / OnStartStreaming) — the base `Event` class already
+// declares viewTag, so redeclaring it as a property clashed. That patch was
+// deleted with the package. Note the shape of the problem: this library needed
+// hand-holding on BOTH platforms simultaneously, which is most of why it is not
+// worth carrying for a feature that was switched off.
+//
 // TO RE-ENABLE: reinstall @api.video/react-native-livestream, restore the
-// require in getRtmpView, flip RTMP_LIVE_ENABLED, and expect to re-solve both
-// the iOS crash and the 16 KB alignment. Check whether rtmpdroid has shipped
-// anything since January 2024 first — if it has not, the alignment problem is
-// still there and is still yours.
+// require in getRtmpView, flip RTMP_LIVE_ENABLED, and expect to re-solve the
+// iOS crash, the 16 KB alignment, AND that Android Kotlin patch. Check whether
+// rtmpdroid has shipped anything since January 2024 first — if it has not, the
+// alignment problem is still there and is still yours.
 //
 // What still works without it: the 'rtmp' mode in go-live.tsx, where the host
 // broadcasts from an EXTERNAL encoder (OBS and friends). That path only hands
