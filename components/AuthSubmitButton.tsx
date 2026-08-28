@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useThemedStyles } from '../contexts/ThemeContext';
 import { LISTEN_FILL } from './ListenButton';
+import { MARK_ANIMATION_MS } from './AuthLogoMark';
 
 // The primary action on the auth screens: Log in, Create account, Save password.
 //
@@ -40,6 +41,20 @@ import { LISTEN_FILL } from './ListenButton';
 // catching light and starts reading as something demanding attention.
 const SWEEP_MS = 950;
 const REST_MS = 10550;
+
+// Hold the FIRST sweep until the logo has finished drawing itself in.
+//
+// The owner's words: a button flashing while the bell is still ringing is
+// overstimulating. He is right, and it is worth naming why — two animations
+// running at once on the first screen of the app means the eye has nowhere to
+// settle, so neither one actually lands. Sequenced, they read as one considered
+// arrival: the mark draws, it settles, and then the thing you are meant to press
+// catches the light.
+//
+// Derived from the asset's real duration rather than hardcoded, so re-cutting
+// the video cannot silently desynchronise these. The extra beat is a breath
+// between the two, not a guess at the timing.
+const START_DELAY_MS = MARK_ANIMATION_MS + 450;
 
 type Props = {
   label: string;
@@ -76,10 +91,13 @@ export default function AuthSubmitButton({ label, onPress, loading = false, disa
       }),
       Animated.delay(REST_MS),
     ]));
-    loop.start();
+    // A plain timer rather than Animated.delay in front of the loop: the loop has
+    // to be stoppable on its own, and a delay wrapped around it would still be
+    // pending — and would still fire — after loading started.
+    const start = setTimeout(() => loop.start(), START_DELAY_MS);
     // Stopping alone is not enough: a stopped value holds wherever it stood,
     // which would strand the highlight mid-button the moment loading starts.
-    return () => { loop.stop(); sweep.setValue(0); };
+    return () => { clearTimeout(start); loop.stop(); sweep.setValue(0); };
   }, [animate, sweep]);
 
   const translateX = sweep.interpolate({

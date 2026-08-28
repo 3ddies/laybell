@@ -36,6 +36,18 @@ import { RADIUS } from '../constants/theme';
 const MARK_VIDEO = require('../assets/logo-mark.mp4');
 const MARK_STILL = require('../assets/icon.png');
 
+/**
+ * How long the mark takes to draw itself in, in ms — the real duration of
+ * assets/logo-mark.mp4, so it moves if the asset is ever re-cut.
+ *
+ * Exported because other things on these screens have to WAIT for it.
+ * AuthSubmitButton holds its sheen back until this is over: the owner's note was
+ * that a button flashing while the bell is still ringing is overstimulating, and
+ * he is right — two animations at once on the first screen means the eye has
+ * nowhere to settle and neither one lands.
+ */
+export const MARK_ANIMATION_MS = 3800;
+
 type Props = { size?: number };
 
 export default function AuthLogoMark({ size = 72 }: Props) {

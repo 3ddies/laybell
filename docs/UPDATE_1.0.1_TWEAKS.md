@@ -111,6 +111,36 @@ and a JS-driven colour interpolation competing with that is how you get a stutte
 interaction anyone has with the app. Native fields snap too, and the instant change is clearer
 feedback than a fade.
 
+### 8b · Making the bloom actually visible, and 9b · sequencing it after the logo
+
+Two rounds later, both worth recording because the first fix was in the wrong dimension.
+
+**The bloom read as wallpaper because only the HUE moved.** Two layers cross-fading gold against
+red keeps *total* strength near-constant, and a constant wash stops being seen within seconds —
+raising the alphas (which is what the first "stronger" pass did) does not fix that, it just makes
+a brighter constant. The owner's phrasing named the missing dimension exactly: *"fade more into
+orange, and back to white."*
+
+So there is now a second, independent loop: an **intensity pulse** taking the whole bloom from
+28% to full and back. It runs on a **deliberately different period** (5.2s vs the hue's 7.5s) —
+two loops on one clock lock together and read as a single mechanical pulse, while drifting ones
+never repeat the same combination twice in a row.
+
+Peaks were raised alongside it (`0.46/0.54` top), but these are now the top of a breath rather
+than a constant, so the average on screen is lower than the numbers suggest. Reach extended to
+84% and the light-theme damping softened from 0.55 to 0.76, since the owner runs Light and asked
+for more.
+
+⚠️ **Do not push the last stop past ~0.85.** Below that the fields start sitting *on* the bloom
+instead of in front of it, and legibility is the one thing here that is not negotiable.
+
+**The sheen now waits for the logo.** Owner: a button flashing while the bell is still ringing is
+overstimulating. Correct — two animations at once on the first screen of the app means the eye has
+nowhere to settle and neither lands. `AuthLogoMark` exports `MARK_ANIMATION_MS` (the asset's real
+duration) and `AuthSubmitButton` holds its first sweep until that plus a beat, so re-cutting the
+video cannot silently desynchronise them. Sequenced, it reads as one arrival: the mark draws, it
+settles, then the thing you are meant to press catches the light.
+
 ### 9 · Sheen on the primary button
 
 Same idea and the same timings as the Listen-mode pill, on request — a 1.4s sweep, then a long

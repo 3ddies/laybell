@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { Animated, Easing, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -16,10 +16,13 @@ import { useTheme } from '../contexts/ThemeContext';
 //   • It would run at the same time as the logo drawing itself in
 //     (components/AuthLogoMark). Two motions competing makes both read cheaper.
 //
-// So this keeps the dark ground and puts the brand INTO it: a warm glow from
-// the top edge, behind the logo, that breathes slowly between a gold-led and a
-// red-led mix. Same colours, same feeling, and the form stays perfectly legible
-// because the bloom is gone well before the inputs start.
+// So this keeps the theme's own ground and puts the brand INTO it: a warm wash
+// from the top edge, behind the logo, doing two independent things at once —
+// drifting between a gold-led and a red-led mix, and BREATHING from nearly
+// absent up to full and back. The second one is what makes it read as an effect
+// rather than as wallpaper; without it the amount of colour never changed and
+// the eye stopped seeing it. Same brand colours either way, and the form stays
+// legible because what reaches the inputs is a tint rather than a colour.
 //
 // PACE IS THE WHOLE POINT. Slow enough that it never pulls the eye while someone
 // is typing a password — it is felt rather than watched. See CYCLE_MS below for
@@ -37,11 +40,29 @@ import { useTheme } from '../contexts/ThemeContext';
 // matters next to a password field — do not take this much below ~6s.
 const CYCLE_MS = 7500;
 
+// Intensity pulse — the change that made this actually visible.
+//
+// The first two versions only cross-faded gold against red, so total strength
+// was near-constant: the HUE moved but the amount of colour never did, and the
+// eye reads a constant wash as part of the wallpaper. The owner asked for it to
+// "fade more into orange, and back to white", which is exactly the missing
+// dimension. Now the whole bloom breathes from nearly-absent up to full and
+// back, so it visibly arrives and leaves.
+//
+// Deliberately a DIFFERENT period from the hue cycle. Two loops on the same
+// clock lock together and read as one mechanical pulse; drifting against each
+// other means the screen never repeats the same combination twice in a row and
+// the whole thing feels alive rather than looped.
+const PULSE_MS = 5200;
+const PULSE_MIN = 0.28;
+
 // Peak alpha at the very top edge, and the mid-stop that carries it down.
-const GOLD_TOP = 0.29;
-const GOLD_MID = 0.11;
-const RED_TOP = 0.34;
-const RED_MID = 0.12;
+// Raised alongside the pulse — these are now the TOP of a breath rather than a
+// constant, so the average on screen is lower than these numbers suggest.
+const GOLD_TOP = 0.46;
+const GOLD_MID = 0.20;
+const RED_TOP = 0.54;
+const RED_MID = 0.23;
 
 export default function AuthBackdrop() {
   const { mode } = useTheme();
@@ -49,6 +70,9 @@ export default function AuthBackdrop() {
 
   // 0 = gold-led mix, 1 = red-led mix. One value cross-fades the two layers.
   const mix = useRef(new Animated.Value(0)).current;
+  // How MUCH colour there is at all, independent of which colour. Starts at full
+  // so the screen is already warm on arrival — see the no-entrance-fade note.
+  const pulse = useRef(new Animated.Value(1)).current;
 
   // There is deliberately NO entrance fade. The first version eased the bloom in
   // over 900ms; the owner asked for the screen to simply BE that colour on
@@ -66,13 +90,26 @@ export default function AuthBackdrop() {
         }),
       ]),
     );
+    const breathe = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: PULSE_MIN, duration: PULSE_MS, easing: Easing.inOut(Easing.sin), useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1, duration: PULSE_MS, easing: Easing.inOut(Easing.sin), useNativeDriver: true,
+        }),
+      ]),
+    );
     loop.start();
-    return () => loop.stop();
-  }, [mix]);
+    breathe.start();
+    return () => { loop.stop(); breathe.stop(); };
+  }, [mix, pulse]);
 
-  // Light theme sits on a near-white ground, where the same alphas would read as
-  // a stain rather than a glow. Roughly half strength there.
-  const k = isLight ? 0.55 : 1;
+  // Light theme still runs softer — the same alphas on a near-white ground read
+  // as a stain rather than a glow — but less softly than before. It was 0.55,
+  // and the owner (who runs Light) asked for more, so the damping is lighter now
+  // that the pulse takes the peaks away again on its own.
+  const k = isLight ? 0.76 : 1;
   const a = (v: number) => Math.round(v * k * 100) / 100;
 
   const gold = [
@@ -86,12 +123,18 @@ export default function AuthBackdrop() {
     'rgba(242,101,34,0)',
   ] as const;
 
-  // Gone by 72% down the screen, which is above the inputs on every handset —
-  // the form never sits on colour.
-  const stops = [0, 0.34, 0.72] as const;
+  // Reaches further down than it used to (was 0.72) so the warmth is a wash over
+  // the screen rather than a band across the top — but the middle stop stays low,
+  // so what arrives at the form is a tint and not a colour. Do not push the last
+  // stop past ~0.85: below that the fields start sitting ON the bloom instead of
+  // in front of it, and legibility is the one thing here that is not negotiable.
+  const stops = [0, 0.36, 0.84] as const;
 
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    // The pulse wraps BOTH layers, so it changes how much colour there is
+    // without disturbing which colour is winning — the two effects stay
+    // independent and can be tuned separately.
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: pulse }]}>
       <Animated.View
         style={[StyleSheet.absoluteFill, { opacity: mix.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}
       >
@@ -100,6 +143,6 @@ export default function AuthBackdrop() {
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: mix }]}>
         <LinearGradient colors={red} locations={stops} style={StyleSheet.absoluteFill} />
       </Animated.View>
-    </View>
+    </Animated.View>
   );
 }
