@@ -66,6 +66,42 @@ stops.
 | 10 | Login + Signup | Text fields given an edge and a real focus state | Cosmetic | ✅ done |
 | 11 | All 4 auth screens | The form leaping when the keyboard opens — worst on login | Functional | ✅ done |
 | 12 | Signup | Logo sat hard against the Dynamic Island | Cosmetic | ✅ done |
+| 13 | Sign-in handoff | The auth screen visibly **reset itself** before the feed appeared | Functional | ✅ done |
+
+### 13 · The "freeze" after a successful login was a remount
+
+Reported as *"a split second where the page looks like it freezes/glitches — the spinner stops
+and the bell logo animates"*. The screen recording shows something worse than a rough transition:
+**the login form resets.** Fields blank, logo replaying from frame one, button back to idle — and
+only then the feed.
+
+**Cause:** `app/_layout.tsx` keys the entire per-user tree on the user id. On sign-in that key
+goes `'signed-out'` → the id, so React tears the subtree down and rebuilds it — **including the
+sign-in screen the user is still looking at.** It looks exactly like a failed submit, which is
+why the instinct is to tap again.
+
+**That key stays.** It is preventing a real defect: without it, a second account signing in on the
+same device inherits the previous one's cached profile, stories and now-playing for a beat. The
+fix is to cover the handoff, not remove the cause.
+
+`components/AuthHandoff.tsx` is a branded cover from the moment the session lands to the moment
+routing completes — the warm backdrop at full steady strength with the mark settling in. The ~2s
+wait (profile fetch, deleted-account and geo-block checks) was always there; this makes it read
+as **the app opening** rather than as the form failing.
+
+Details that matter:
+
+- **Rendered as a sibling AFTER the keyed view.** Inside it, the remount would destroy the very
+  thing covering the remount. After it, it paints on top without depending on `zIndex`. The
+  `EmailVerifiedToast` directly above it sits there for the same reason.
+- **Raised only on a genuine sign-in** — `SIGNED_IN` *and* a previous user id of `null`. A token
+  refresh or the cold-start `INITIAL_SESSION` would otherwise put a splash in front of someone
+  who never left.
+- **Lowered in a `finally`**, not at each return. The early exits (deleted account, geo-block)
+  sign back out and never navigate, and the next person adding a branch there will not remember
+  to add the call.
+- **A 9s hard ceiling** on top of that. An offline profile fetch can hang for the client's full
+  deadline, and a permanent splash is worse than the glitch it replaced.
 
 ### 12 · Why the signup logo was jammed under the island
 

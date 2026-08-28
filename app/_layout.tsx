@@ -7,6 +7,7 @@ import { FullWindowOverlay } from 'react-native-screens';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
+import AuthHandoff from '../components/AuthHandoff';
 import { handleAuthLink } from '../lib/authLink';
 import Toast from '../components/Toast';
 import { initMonitoring, wrapRoot, reportError } from '../lib/monitoring';
@@ -497,6 +498,27 @@ initMonitoring();
 function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [initialized, setInitialized] = useState(false);
+  // Covers the sign-in → app handoff. The per-user tree below is keyed on the
+  // user id and therefore REMOUNTS on sign-in, which visibly reset the sign-in
+  // form under the user's thumb — see components/AuthHandoff.tsx.
+  const [handoff, setHandoff] = useState(false);
+  const prevUserId = useRef<string | null>(null);
+  // Never let the cover outlive the work it is covering. Every exit from
+  // checkOnboarding lowers it; this is the guarantee for the paths that throw or
+  // hang before reaching one.
+  const handoffTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endHandoff = useCallback((delay = 420) => {
+    if (handoffTimer.current) clearTimeout(handoffTimer.current);
+    handoffTimer.current = setTimeout(() => setHandoff(false), delay);
+  }, []);
+  useEffect(() => () => { if (handoffTimer.current) clearTimeout(handoffTimer.current); }, []);
+  useEffect(() => {
+    if (!handoff) return;
+    // Hard ceiling. An offline profile fetch can hang for the client's full
+    // deadline, and a permanent splash is worse than any glitch it was hiding.
+    const bail = setTimeout(() => setHandoff(false), 9000);
+    return () => clearTimeout(bail);
+  }, [handoff]);
   const segments = useSegments();
   const router = useRouter();
 
@@ -507,6 +529,16 @@ function RootLayout() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const nextId = session?.user?.id ?? null;
+      // Raise the handoff cover on a REAL sign-in only — someone going from
+      // signed-out to signed-in. Not a token refresh (same id), and not the
+      // initial session restore on a cold start, which arrives as
+      // INITIAL_SESSION rather than SIGNED_IN. Both of those would put a splash
+      // in front of someone who never left.
+      if (event === 'SIGNED_IN' && prevUserId.current === null && nextId) setHandoff(true);
+      if (event === 'SIGNED_OUT') setHandoff(false);
+      prevUserId.current = nextId;
+
       setSession(session);
       // Drop the cached age on any identity change so a second account signing in
       // on this device can't inherit the first one's adult status and unlock the
@@ -608,6 +640,22 @@ function RootLayout() {
   }, [session, initialized, segments]);
 
   async function checkOnboarding(silent = false) {
+    // Wrapped so EVERY exit lowers the handoff cover — the early returns below
+    // sign the user back out (deleted account, geo-block) and never navigate, and
+    // a cover left up over those would hide the very alert explaining what
+    // happened. try/finally rather than a call at each return, because the next
+    // person adding a branch here will not remember to add the call.
+    try {
+      await runOnboardingChecks(silent);
+    } finally {
+      // One delay for every path. The beat lets the destination mount before the
+      // cover fades, and on the signed-out paths it costs nothing: those raise a
+      // native Alert, which the OS draws above this anyway.
+      endHandoff();
+    }
+  }
+
+  async function runOnboardingChecks(silent = false) {
     const { data: { user }, error: userErr } = await supabase.auth.getUser();
     if (!user) {
       // The account is GONE server-side but this device still holds a valid JWT —
@@ -765,6 +813,12 @@ function RootLayout() {
         which remounts that whole subtree — a toast inside it would be
         destroyed at the exact moment it should appear. */}
     <EmailVerifiedToast visible={verifiedToast} onHide={() => setVerifiedToast(false)} />
+    {/* Same reasoning as the toast above, and the same placement for the same
+        reason: a SIBLING of the keyed View, after it. This one exists precisely
+        to cover that remount, so being inside it would destroy it at the moment
+        it is needed — and being after it means it paints on top without relying
+        on zIndex. See components/AuthHandoff.tsx. */}
+    <AuthHandoff visible={handoff} />
     </LanguageProvider>
     </ThemeProvider>
     </GestureHandlerRootView>
