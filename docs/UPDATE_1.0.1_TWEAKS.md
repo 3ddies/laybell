@@ -97,8 +97,30 @@ applied because there was a form and it looped.** Here there is neither. What wa
 login is exactly right as the moment after one.
 
 The asset is the original trimmed to 5.6s and run 1.5× faster — note, bell drawing itself, ring,
-settle, resolve to the wordmark. **3.77s and 107 KB**, because a flat gradient compresses to
-nearly nothing.
+settle, resolve to the wordmark. **3.77s and 433 KB**, because a flat gradient compresses to
+nearly nothing even at high quality.
+
+**Three defects in the first cut of this, all worth recording:**
+
+1. **It never left.** The timer marking the animation complete lived in the raise-effect's
+   **cleanup**. `visible` flips false the moment routing finishes — about two seconds in, well
+   before the animation ends — which re-ran the effect, cleared the pending timer, and left the
+   completion flag false forever. Cleanup now happens on unmount only. *A cleanup that cancels
+   the thing it is waiting for is an easy shape to write and a hard one to see.*
+2. **"The audio is still attached and delayed."** It is not — both assets are video-only, checked
+   with ffprobe. What he heard was **the feed**: holding the cover so the app loads behind it
+   means a video post mounts and **autoplays** under the animation. Fixed with
+   `MediaSuspendContext`, which already existed for exactly this (full-screen takeovers pausing
+   background media) and which every video component plus `PostMusicContext` honours. The
+   suspender has to live *inside* the keyed tree, where the ref-counted provider is.
+3. **Low resolution.** The first encode was CRF 23 at 1080×1920 — and a phone is *taller* than
+   9:16, so `cover` upscales ~1.33× before cropping. Smooth gradients also band badly at that
+   bitrate, which reads as "low res" more than softness does. Re-encoded at CRF 15,
+   lanczos-scaled to 1242×2208, `aq-mode=3`.
+
+**The fade-in also went away.** It exists to hide a remount that happens in the *same React
+commit* that raises it, so any fade-in is a window straight onto the thing being hidden. It now
+appears opaque; the cut from a light screen to brand red reads as "here we go".
 
 **The minimum hold is a feature.** It waits for the animation to finish *and* for routing,
 whichever is later. Sign-in resolves in about two seconds, so the remainder is the feed mounting

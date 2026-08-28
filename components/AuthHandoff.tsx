@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { useMediaSuspend } from '../contexts/MediaSuspendContext';
 
 // The bridge between signing in and the app appearing.
 //
@@ -14,37 +15,28 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 // everything under it. Including the sign-in screen the user is still looking at.
 //
 // So between tapping Log in and the feed arriving, the form VISIBLY RESET:
-// fields blank, logo replaying from the start, button back to idle. The owner
-// read that as a freeze, and he read it correctly — it looks exactly like a
-// failed submit. The key cannot go; it is preventing a real data leak between
-// accounts. So this covers the handoff instead.
+// fields blank, logo replaying, button back to idle. That looks exactly like a
+// failed submit. The key cannot go — it prevents a real data leak between
+// accounts — so this covers the handoff instead.
 //
-// WHAT IT SHOWS. The brand animation, full screen — the owner's own asset,
+// WHAT IT SHOWS is the brand animation, full screen: the owner's own asset,
 // finally used the way it was made. Every objection to it as a sign-in
 // BACKGROUND (a form unreadable on saturated orange, its LAYBELL wordmark
-// colliding with the screen's own wordmark, a hard loop seam) evaporates here,
-// because there is no form and it plays exactly once. What was wrong behind a
-// login is precisely right as the moment after one.
+// colliding with the screen's own, a hard loop seam) only held because there was
+// a form and because it looped. Here there is neither.
 //
-// The asset is the full 6.9s original trimmed to 5.6s and run 1.5× faster:
-// note, bell drawing itself, ring, settle, resolve to the wordmark. 3.77s, and
-// 107 KB — a flat gradient compresses to almost nothing.
-//
-// THE MINIMUM HOLD IS A FEATURE, NOT A COST. It waits for the animation to
-// finish AND for routing to complete, whichever is later. Sign-in resolves in
-// roughly two seconds, so the extra time is the feed mounting and fetching
-// behind this — the owner's point exactly: the user watches something
-// deliberate instead of a spinner, and lands on a feed that has had a head
-// start. Dead time either way; this spends it.
+// THE MINIMUM HOLD IS A FEATURE. It waits for the animation to finish AND for
+// routing, whichever is later. Sign-in resolves in about two seconds, so the
+// remainder is the feed mounting and fetching behind this — dead time either
+// way, and this spends it.
 
-const VIDEO_MS = 3780;
-const IN_MS = 200;
-const OUT_MS = 420;
+const VIDEO_MS = 3770;
+const OUT_MS = 460;
 
 // Sampled from the asset's own first frame, so the fallback is the same red the
-// video opens on rather than an approximation of it. This shows for the frame
-// before the video paints, and stays visible if it never does — a decode failure
-// on this screen should look like a brand moment, not a black hole.
+// video opens on rather than an approximation. It shows for the frame before the
+// video paints, and stays if it never does — a decode failure here should look
+// like a brand moment, not a black hole.
 const FALLBACK = ['#FF1100', '#FD3700', '#FC5F01'] as const;
 
 const HANDOFF_VIDEO = require('../assets/logo-handoff.mp4');
@@ -52,40 +44,51 @@ const HANDOFF_VIDEO = require('../assets/logo-handoff.mp4');
 export default function AuthHandoff({ visible }: { visible: boolean }) {
   // Kept mounted through the fade-out so the reveal is a fade, not a cut.
   const [mounted, setMounted] = useState(visible);
-  // The animation has been given its full run. Until then the cover stays up
-  // even if routing has already finished.
+  // The animation has had its full run. Until then the cover stays up even if
+  // routing already finished.
   const [played, setPlayed] = useState(false);
-  const fade = useRef(new Animated.Value(0)).current;
+  // Starts OPAQUE. There is deliberately no fade-in: this exists to hide a
+  // remount that happens in the same React commit that raises it, so any
+  // fade-in is a window straight onto the thing being hidden. The cut from a
+  // light screen to brand red is abrupt by design — it reads as "here we go".
+  const fade = useRef(new Animated.Value(1)).current;
+
+  // The timer lives in a ref, NOT in the raise effect's cleanup.
+  //
+  // It was in the cleanup, and that was the "video just stays on the screen"
+  // bug: `visible` flips false the moment routing finishes — about two seconds
+  // in, well before the animation ends — which re-ran the effect, cleared the
+  // pending timer, and left `played` false forever. The cover then had no way
+  // out. Cleanup on unmount only.
+  const playedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (playedTimer.current) clearTimeout(playedTimer.current); }, []);
 
   const player = useVideoPlayer(HANDOFF_VIDEO, (p) => {
     p.loop = false;
-    // The asset has no audio track, but muting is also what keeps this away from
-    // the audio session — the app holds a persistent player and a sign-in must
-    // never interrupt it.
+    // The asset carries no audio track at all, but muting is also what keeps
+    // this away from the audio session — the app holds a persistent player and
+    // a sign-in must never interrupt it.
     p.muted = true;
   });
 
-  // Restart from frame 0 on every raise. A player reused across two sign-ins in
-  // one app run would otherwise sit on its final frame — the wordmark, already
-  // resolved — and the animation would never play again.
   useEffect(() => {
     if (!visible) return;
     setMounted(true);
     setPlayed(false);
-    fade.setValue(0);
-    try { player.currentTime = 0; player.play(); } catch { /* fallback gradient carries it */ }
-    Animated.timing(fade, {
-      toValue: 1, duration: IN_MS, easing: Easing.out(Easing.quad), useNativeDriver: true,
-    }).start();
-    const t = setTimeout(() => setPlayed(true), VIDEO_MS);
-    return () => clearTimeout(t);
+    fade.setValue(1);
+    // Rewind on every raise. A player reused across two sign-ins in one app run
+    // would otherwise sit on its final frame — the wordmark, already resolved —
+    // and never play again.
+    try { player.currentTime = 0; player.play(); } catch { /* fallback carries it */ }
+    if (playedTimer.current) clearTimeout(playedTimer.current);
+    playedTimer.current = setTimeout(() => setPlayed(true), VIDEO_MS);
   }, [visible, fade, player]);
 
-  // Leave only when BOTH are true: routing is done and the animation has run.
+  // Leave only when BOTH are true: routing done, and the animation has run.
   useEffect(() => {
     if (visible || !played || !mounted) return;
     Animated.timing(fade, {
-      toValue: 0, duration: OUT_MS, easing: Easing.in(Easing.quad), useNativeDriver: true,
+      toValue: 0, duration: OUT_MS, easing: Easing.inOut(Easing.quad), useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished) { setMounted(false); try { player.pause(); } catch {} }
     });
@@ -95,16 +98,16 @@ export default function AuthHandoff({ visible }: { visible: boolean }) {
 
   return (
     <Animated.View
-      // Swallows taps while it is up: the tree underneath is being rebuilt, and
-      // a tap landing on a half-mounted screen is how you get a crash report
-      // nobody can reproduce.
+      // Swallows taps while up: the tree underneath is being rebuilt, and a tap
+      // landing on a half-mounted screen is how you get a crash nobody can
+      // reproduce.
       style={[StyleSheet.absoluteFill, styles.fill, { opacity: fade }]}
     >
       <LinearGradient colors={FALLBACK} style={StyleSheet.absoluteFill} />
       <VideoView
         player={player}
         style={StyleSheet.absoluteFill}
-        // cover, not contain: the asset is 9:16 and phones are taller, and a
+        // cover, not contain: the asset is 9:16 and phones are taller. A
         // letterboxed brand moment is worse than a slightly cropped one.
         contentFit="cover"
         nativeControls={false}
@@ -114,6 +117,33 @@ export default function AuthHandoff({ visible }: { visible: boolean }) {
       />
     </Animated.View>
   );
+}
+
+/**
+ * Silences the app while the cover is up. Renders nothing.
+ *
+ * The whole point of holding the cover is that the feed mounts and fetches
+ * behind it — but a mounted feed AUTOPLAYS. The owner heard a video post's audio
+ * starting under the animation and reasonably read it as the animation having a
+ * delayed soundtrack. It has no audio track at all; what he heard was the app
+ * arriving early.
+ *
+ * MediaSuspendContext already exists for exactly this (full-screen takeovers
+ * pausing background playback) and every video component plus PostMusicContext
+ * honours it. It is ref-counted, so this composes with any other suspender.
+ *
+ * Must be rendered INSIDE the keyed per-user tree — that is where the provider
+ * lives, and the provider's count resets with it. Mounting fresh with
+ * `active` already true is the normal case and suspends immediately.
+ */
+export function SuspendMediaWhile({ active }: { active: boolean }) {
+  const { suspend, resume } = useMediaSuspend();
+  useEffect(() => {
+    if (!active) return;
+    suspend();
+    return () => resume();
+  }, [active, suspend, resume]);
+  return null;
 }
 
 const styles = StyleSheet.create({

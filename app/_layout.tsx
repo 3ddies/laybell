@@ -7,7 +7,7 @@ import { FullWindowOverlay } from 'react-native-screens';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
-import AuthHandoff from '../components/AuthHandoff';
+import AuthHandoff, { SuspendMediaWhile } from '../components/AuthHandoff';
 import { handleAuthLink } from '../lib/authLink';
 import Toast from '../components/Toast';
 import { initMonitoring, wrapRoot, reportError } from '../lib/monitoring';
@@ -758,6 +758,10 @@ function RootLayout() {
         id — never triggers a remount. */}
     <View style={{ flex: 1 }} key={session?.user?.id ?? 'signed-out'}>
     <MediaSuspendProvider>
+    {/* Keeps the feed silent while the sign-in cover is up. It has to be INSIDE
+        this provider (and so inside the keyed view), because that is where the
+        ref-counted state lives — see components/AuthHandoff.tsx. */}
+    <SuspendMediaWhile active={handoff} />
     <AudioProvider>
       <PostMusicProvider>
         <ProfileProvider>
