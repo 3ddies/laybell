@@ -253,7 +253,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const queueRef = useRef<Track[]>([]);
   const queueIndexRef = useRef(0);
   const queueLoaderRef = useRef<QueueLoader | null>(null);
-  const loadingMoreRef = useRef(false);
+  // The in-flight appendFromLoader, so concurrent callers JOIN it instead of being
+  // told the loader is dry (which used to close the player mid-queue).
+  const inflightAppendRef = useRef<Promise<boolean> | null>(null);
   const playTokenRef = useRef(0); // guards against overlapping plays (rapid next/prev)
   const holdForCommentRef = useRef(false); // user is composing a comment in Now Playing
   const engagedNearEndRef = useRef(false); // user touched the comments past 80% → keep the player open
@@ -840,35 +842,55 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // queue grew. Dedupes against what's already queued.
   async function appendFromLoader(): Promise<boolean> {
     const loader = queueLoaderRef.current;
-    if (!loader || loadingMoreRef.current) return false;
-    loadingMoreRef.current = true;
-    try {
-      const more = await loader(new Set(queueRef.current.map((t) => t.id)));
-      const fresh = (more ?? []).filter((t) => !queueRef.current.some((q) => q.id === t.id));
-      if (fresh.length) {
-        queueRef.current = [...queueRef.current, ...fresh];
-        setQueueLength(queueRef.current.length);
-        // Mirror into the ENGINE queue: the lock screen's NEXT button and
-        // native auto-advance see the new tracks the moment we do.
-        if (mainLoadedRef.current) {
-          try {
-            const items = await Promise.all(fresh.map(async (t) => ({
-              url: (await resolveLocalUri(t.id, t.uri)) ?? t.uri,
-              title: t.caption || t.artist || 'Laybell',
-              artist: t.artist || '',
-              artwork: t.cover || undefined,
-            })));
-            await TrackPlayer.add(items);
-          } catch {}
+    if (!loader) return false;
+    // JOIN an in-flight fetch rather than reporting failure.
+    //
+    // This used to `return false` when one was already running — indistinguishable
+    // from "the loader is dry". advanceOrEnd reads that as the end of the queue and
+    // calls endQueue(), so a track finishing during a pre-extension fetch CLOSED
+    // THE PLAYER while more songs were already on their way; the late loader then
+    // appended into a queue nobody was listening to. Returning the same promise
+    // gives every caller the real answer.
+    if (inflightAppendRef.current) return inflightAppendRef.current;
+    const run = (async (): Promise<boolean> => {
+      // The queue can be REBUILT while the loader is out — play()/startQueue bump
+      // playTokenRef. Without this, tracks chosen for a queue that no longer exists
+      // get spliced into the one that replaced it, and TrackPlayer.add can land
+      // inside startQueue's reset+add window.
+      const epoch = playTokenRef.current;
+      try {
+        const more = await loader(new Set(queueRef.current.map((t) => t.id)));
+        if (epoch !== playTokenRef.current) return false;
+        const fresh = (more ?? []).filter((t) => !queueRef.current.some((q) => q.id === t.id));
+        if (fresh.length) {
+          queueRef.current = [...queueRef.current, ...fresh];
+          setQueueLength(queueRef.current.length);
+          // Mirror into the ENGINE queue: the lock screen's NEXT button and
+          // native auto-advance see the new tracks the moment we do.
+          if (mainLoadedRef.current) {
+            try {
+              const items = await Promise.all(fresh.map(async (t) => ({
+                url: (await resolveLocalUri(t.id, t.uri)) ?? t.uri,
+                title: t.caption || t.artist || 'Laybell',
+                artist: t.artist || '',
+                artwork: t.cover || undefined,
+              })));
+              // Re-check after the URI resolution above — another await, another
+              // chance for the queue to have been replaced underneath us.
+              if (epoch !== playTokenRef.current) return false;
+              await TrackPlayer.add(items);
+            } catch {}
+          }
+          return true;
         }
-        return true;
-      }
-      // Loader is dry — stop advertising "more" so the UI can settle.
-      queueLoaderRef.current = null;
-      setHasMore(false);
-    } catch { /* keep the loader; a transient failure shouldn't kill the queue */ }
-    finally { loadingMoreRef.current = false; }
-    return false;
+        // Loader is dry — stop advertising "more" so the UI can settle.
+        queueLoaderRef.current = null;
+        setHasMore(false);
+      } catch { /* keep the loader; a transient failure shouldn't kill the queue */ }
+      return false;
+    })();
+    inflightAppendRef.current = run;
+    try { return await run; } finally { inflightAppendRef.current = null; }
   }
 
   // Advance to a (now-valid) queue index — a native skip within the engine
@@ -951,7 +973,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     // rolls on (appendFromLoader extends the engine queue too); only close the
     // player if the loader is genuinely dry.
     setIsBuffering(true);
+    // Capture the epoch too. appendFromLoader now returns false when the queue was
+    // rebuilt mid-fetch, and without this that false would be read as "dry" and
+    // CLOSE a player that a fresh play() had just opened on a new song. When a new
+    // play owns the player, neither advancing nor ending is ours to do.
+    const epoch = playTokenRef.current;
     appendFromLoader().then((grew) => {
+      if (epoch !== playTokenRef.current) return;
       if (grew) advanceTo(queueIndexRef.current + 1);
       else endQueue();
     });
@@ -1297,7 +1325,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       pendingStartIndexRef.current = startIndex;
       await TrackPlayer.add(items);
       if (token !== playTokenRef.current) { TrackPlayer.reset().catch(() => {}); return; }
-      if (startIndex > 0) await TrackPlayer.skip(startIndex);
+      // Only take our start index if nothing superseded it while we were loading.
+      // advanceTo() nulls this latch precisely to say "the user has moved on" — but
+      // this skip used to run anyway and yank them BACK to startIndex, so a skip
+      // during a load silently reverted itself. The token guards above do not cover
+      // it: advanceTo deliberately does not bump playTokenRef, because two of those
+      // guards reset the engine queue and advanceTo needs that queue to skip within.
+      if (pendingStartIndexRef.current === startIndex && startIndex > 0) {
+        await TrackPlayer.skip(startIndex);
+      }
       if (token !== playTokenRef.current) { TrackPlayer.reset().catch(() => {}); return; }
       mainLoadedRef.current = true;
       // A break is due and the user just MOVED to a different song: the ad

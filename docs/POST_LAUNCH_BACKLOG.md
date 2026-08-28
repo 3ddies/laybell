@@ -220,6 +220,42 @@ exactly why this was deferred rather than done immediately.
 
 ---
 
+## G. Audio race family — 3 of 5 fixed in 1.0.1, 2 left deliberately
+*Verified against current code 2026-08-26 before anything was touched. The source list was from
+2026-07-16 and one of its own entries had already gone stale and cost three reverts, so every
+claim was re-checked rather than trusted.*
+
+**All five were real.** Three are fixed:
+
+- ✅ **The player closed itself mid-queue.** `appendFromLoader` returned `false` when a fetch was
+  already in flight — indistinguishable from "the loader is dry" — and `advanceOrEnd` read that
+  as the end of the queue and called `endQueue()`. A track finishing during a pre-extension
+  fetch shut the player while more songs were already arriving, and the late loader then
+  appended into a dead queue. Callers now **join** the in-flight promise.
+  **This is the one a listener would actually notice.**
+- ✅ **A skip during a load reverted itself.** `advanceTo` nulls `pendingStartIndexRef` to mean
+  "the user moved on", but `startQueue` carried on and ran its own `TrackPlayer.skip(startIndex)`
+  anyway, yanking them back. That skip is now conditional on the latch still being its own. The
+  token guards cannot cover this: `advanceTo` deliberately does not bump `playTokenRef`, because
+  two of those guards reset the engine queue that `advanceTo` needs to skip within.
+- ✅ **No epoch guard in `appendFromLoader`.** It mutated `queueRef` after an await without
+  checking the queue was still the same one. Now guarded on `playTokenRef` and re-checked after
+  the second await — **and `advanceOrEnd` guards on it too**, so a rebuilt queue is not mistaken
+  for a dry loader and does not close a player a fresh `play()` just opened.
+
+**Left alone, deliberately:**
+- `advanceTo` swallowing a rejected `skip()` while leaving `isBuffering` true. Real, but the only
+  path that reaches it (`next`) awaits the engine add first, so it is narrow.
+- The near-end comment-hold pause having no fallback if JS misses the window. The most
+  timing-dependent of the five, and the likeliest to be made worse by a fix.
+
+**Still open from the same list, untouched:** the three `PostMusicContext` ambient issues
+(same-song host transfer aborting an in-flight `replace()`, stream accrual crediting the wrong
+song during handoffs, `ambientPlayingRef` desyncing after provider-internal stops) and the two
+reels leftovers (`FeedGateCard` mount-only `onArm`, feed-mode switch keeping the old gate timer).
+
+---
+
 ## 4. Android: 16 KB memory page sizes not supported
 *Flagged by Play at submission 2026-08-21. Bypassed with "Proceed anyway". Needs a rebuild.*
 
