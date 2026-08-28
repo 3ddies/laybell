@@ -48,6 +48,31 @@ sent in a separate follow-up email from the analyst (Samuel M. Carducci, Senior 
 3. **Confirm `laybellapp@gmail.com` is genuinely monitored.** Step 3 below is not boilerplate:
    this is the address NCMEC and law enforcement use.
 
+### Trusted flaggers — NCMEC asked, 2026-08-27
+
+In the credentials email, Samuel Carducci asked whether Laybell recognises NCMEC or other
+hotlines as **trusted flaggers**, and whether there is a workstream for those notifications
+separate from the general abuse email.
+
+**The policy, as answered:** NCMEC and established hotlines are treated as trusted reporters.
+Their notifications are actioned directly by the owner rather than entering the ordinary
+user-report queue, and content can be placed under legal hold, pulled from circulation, and the
+account suspended on receipt — no corroborating user report required.
+
+**The channel is `abuse@laybell.app`**, kept separate from general support.
+
+⚠️ **A named channel must be a read channel.** The whole point of a trusted-flagger lane is that
+it is faster than the normal one; naming an address nobody reads makes it slower than the normal
+one while looking like a commitment. `laybellapp@gmail.com` was explicitly **not** offered for
+this reason — it stood at 70 unread on 2026-08-28. If `abuse@` routing ever lapses, tell NCMEC
+the new address the same day.
+
+Carducci also offered a walkthrough call on the reporting form, and CC'd Hannah as a second
+contact. The team address is `ESPteam@ncmec.org`. The reporting portal is
+<https://report.cybertip.org/cybertip/login>; there is also a web-services API for automated
+reporting at <https://report.cybertip.org/ispws/documentation/>, which is worth considering only
+if report volume ever makes manual filing impractical.
+
 ⚠️ **Registration is permission, not process.** Being registered means Laybell *can* file. It
 does not file anything by itself. The rest of this runbook — preserve, report, then delete — is
 what actually discharges the obligation, and it only works if the moderation queue is read.
