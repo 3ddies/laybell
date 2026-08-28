@@ -9,6 +9,35 @@ both stores — an update that fixes one bug wastes the cycle it spent. Work is 
 
 ---
 
+## Status — 2026-08-27
+
+**Code work is essentially done, twelve days early.** Everything except the Android build config
+is committed on `dev` and nothing is released; the shipped 1.0.0 build 4 is frozen at
+`bfe0638` and cannot be affected by any of this.
+
+| Group | State | Commit |
+|---|---|---|
+| **A** · `lib/badges.ts` | ✅ done — test override removed, staff list in, freeze fixed | `f819beb` |
+| **B** · `lib/socialAuth.ts` | ✅ **fall-through fixed** — nonce work still open, see below | `1a3e1e3` |
+| **C** · Wallet | ✅ done — balance warning added, dead `payoutsAvailable()` deleted | `bd9fc65` |
+| **D** · `app/_layout.tsx` | ✅ done — a deleted account now signs out | `d02d7f2` |
+| **E** · Guidelines text | ✅ nothing to do — the rebuild carries it | — |
+| **F** · Android build config | ⬜ **not started** — the only remaining code work | — |
+| **G** · Audio races | ✅ 3 of 5 fixed, 2 left deliberately; `PostMusicContext` untouched | `bd88c16` |
+
+**Still open, in priority order:**
+1. **Group F** — both items are Android build-level and need a device to test against. This is
+   the last thing between here and a version bump.
+2. **Group B's nonce half.** The fall-through shipped, but the Supabase *skip-nonce-check* toggle
+   is still ON in production, which means **replay protection on Google sign-in is still off**.
+   Passing the nonce properly and turning that skip back off needs a device re-test, so it
+   belongs with the Group F build pass.
+3. **Group G's `PostMusicContext` half** — three claims, none re-verified against current code
+   yet. Treat them as unverified: item 1 of that same list was already found stale once and cost
+   three reverts.
+
+---
+
 ## ⛔ Blocking question: Android v1 has not published
 
 `play.google.com/store/apps/details?id=com.laybell.app` returned **404 on 2026-08-26** — five
@@ -82,17 +111,29 @@ This is the "improvements" half rather than bug-fixing, and the largest single c
 From the deferred polish backlog, **verify each against current code before trusting it** — that
 list is from 2026-07-16 and one of its own entries was already found stale.
 
-- `contexts/AudioContext.tsx` — five races: `advanceOrEnd` treating an in-flight
-  `appendFromLoader` as dry; no queue-epoch guard in `appendFromLoader`; `advanceTo` skipping to
-  an index the engine does not have yet; `pendingStartIndexRef` cleared mid-`startQueue`; the
-  near-end pause with no fallback if JS misses the window.
-- `contexts/PostMusicContext.tsx` — same-song host transfer aborting the only in-flight
-  `replace()`; ambient stream accrual crediting the wrong song; `ambientPlayingRef` desyncing
-  after provider-internal stops.
+**`contexts/AudioContext.tsx` — ✅ done, `bd88c16`.** All five claims were re-verified against
+current code first and all five were real. Three fixed, two left:
 
-**Scope this to appetite.** All eight is a lot of surface in the most timing-sensitive code in
-the app. A sensible cut is the three with user-visible symptoms — stuck buffering, silence, the
-wrong song — and leave the accounting-only one.
+- ✅ **`advanceOrEnd` treated an in-flight `appendFromLoader` as dry.** Worse than the note above
+  suggested: a last track finishing during a pre-extension fetch did not merely fail to roll on,
+  it **closed the player** — while more songs were already arriving. Callers now join the
+  in-flight promise. The highest-value fix in the group.
+- ✅ **No queue-epoch guard in `appendFromLoader`.** Now guarded on `playTokenRef`, re-checked
+  after the second await. This one needed a **matching guard in `advanceOrEnd`**, or it would
+  have introduced a fresh bug: "the queue was rebuilt" and "the loader is dry" both return
+  `false`, so a new song would have had its player closed underneath it.
+- ✅ **`pendingStartIndexRef` cleared mid-`startQueue`**, reverting the user's skip. The skip is
+  now conditional on the latch still being its own. The existing token guards cannot cover this —
+  `advanceTo` deliberately does not bump `playTokenRef`.
+- ⬜ **`advanceTo` skipping to an index the engine lacks.** Left alone: its only caller awaits the
+  engine add first, so the window is narrow.
+- ⬜ **Near-end pause with no fallback.** Left alone: most timing-dependent of the five, and the
+  likeliest to be made worse by a fix.
+
+**`contexts/PostMusicContext.tsx` — ⬜ not started.** Three claims (same-song host transfer
+aborting the only in-flight `replace()`; ambient stream accrual crediting the wrong song, which
+is accounting-only; `ambientPlayingRef` desyncing after provider-internal stops). **None of the
+three has been re-verified yet** — do not act on them as written.
 
 ---
 
