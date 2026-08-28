@@ -1,5 +1,5 @@
 import {
-  View, Text, TextInput, TouchableOpacity, Image,
+  View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
 import { authRedirectUrl } from '../../lib/authLink';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
+import AuthLogoMark from '../../components/AuthLogoMark';
 // Same fill as the Listen-mode pill and the Log in button — imported, not copied.
 import { LISTEN_FILL } from '../../components/ListenButton';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
@@ -110,7 +111,7 @@ export default function SignupScreen() {
       <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
         <View style={styles.logoSection}>
-          <Image source={require('../../assets/icon.png')} style={styles.logoMark} resizeMode="cover" />
+          <AuthLogoMark size={72} />
           <View style={styles.logoWrap}>
             <Text style={styles.logo}>Laybell</Text>
             <Text style={styles.tm}>™</Text>
@@ -211,7 +212,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg, paddingVertical: SPACING.xxl },
 
   logoSection: { alignItems: 'center', marginBottom: SPACING.xl, gap: SPACING.sm },
-  logoMark: { width: 72, height: 72, borderRadius: RADIUS.xl },
   logo: { fontSize: 36, fontWeight: '800', color: colors.text, letterSpacing: 1 },
   // Wordmark + ™ tucked into the bottom-right corner — matches login/home header.
   logoWrap: { flexDirection: 'row', alignItems: 'flex-end' },

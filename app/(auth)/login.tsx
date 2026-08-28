@@ -1,5 +1,5 @@
 import {
-  View, Text, TextInput, TouchableOpacity, Image,
+  View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
+import AuthLogoMark from '../../components/AuthLogoMark';
 // The same fill as the Listen-mode pill, imported rather than copied so the two
 // can never drift apart.
 import { LISTEN_FILL } from '../../components/ListenButton';
@@ -88,7 +89,7 @@ export default function LoginScreen() {
       <View style={styles.inner}>
         {/* Logo */}
         <View style={styles.logoSection}>
-          <Image source={require('../../assets/icon.png')} style={styles.logoMark} resizeMode="cover" />
+          <AuthLogoMark size={72} />
           <View style={styles.logoWrap}>
             <Text style={styles.logo}>Laybell</Text>
             <Text style={styles.tm}>™</Text>
@@ -174,7 +175,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   inner: { flex: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
 
   logoSection: { alignItems: 'center', marginBottom: SPACING.xxl, gap: SPACING.sm },
-  logoMark: { width: 72, height: 72, borderRadius: RADIUS.xl },
   logo: { fontSize: 40, fontWeight: '800', color: colors.text, letterSpacing: 1 },
   // Wordmark + ™ tucked into the bottom-right corner — matches the home header
   // (app/(tabs)/index.tsx). Kept small and light so it reads as a discreet mark.

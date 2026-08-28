@@ -59,7 +59,7 @@ stops.
 | 2 | Login + Signup | Log in / Create account buttons now carry the Listen-mode gradient instead of flat orange | Cosmetic | ✅ done |
 | 3 | Signup | ToS + Privacy links neutral (white, underlined) instead of orange | Cosmetic | ✅ done |
 | 4 | Login + Signup | The ~2s freeze after a successful sign-in that looked like the tap failed | Functional | ✅ done |
-| 5 | Login | Looping logo-animation background | Cosmetic | ⬜ **needs a decision — see below** |
+| 5 | Login + Signup | Logo mark now draws itself in, using the brand animation | Cosmetic | ✅ done |
 
 ### 4 · The login "hitch" was not a slow network
 
@@ -81,6 +81,38 @@ say so explicitly ("can never leave the button stuck disabled"). Not every post-
 navigates: a geo-blocked or deleted account signs straight back out and lands here again, and an
 offline profile fetch can hang. So an 8s safety timer now backs the spinner, cleared on unmount.
 The property is kept; only the hitch is gone.
+
+### 5 · The logo draws itself in — and why not as a background
+
+The ask was the brand animation (`#LogoAnimation_03-Vertical.MP4`) looping full-screen behind the
+sign-in form. I pulled frames before building it, and the source argues against that use:
+
+- It is a **saturated red-to-orange gradient, edge to edge**. The form is white text over dark
+  inputs, so it would need darkening to roughly a quarter brightness to stay readable — paying a
+  video's cost to display a dark orange smudge.
+- It **ends on the LAYBELL wordmark**, which would land directly behind the "Laybell" wordmark
+  the screen already renders. Two wordmarks stacked.
+- It ends on the wordmark and **starts on empty gradient**, so looping is a hard cut every 7
+  seconds, on the first screen a new user ever sees.
+
+Contained in the logo tile it has none of those problems and keeps all of the motion. The asset is
+the **first 3.8s only** — the bell half, before the wordmark cut — square-cropped and stripped of
+audio. **35 KB.**
+
+The crop was measured, not eyeballed: the mark's white pixels were bounding-boxed across the whole
+draw-in, and the widest moment is the ring lines at ~2.0s (x 273→786). A 640px square centred on
+the bell contains that *and* frames the resting mark at ~55% width — within a few percent of how
+`assets/icon.png` frames it, so the tile reads as the app icon coming alive.
+
+**It plays once and holds** rather than looping. Its last frame is very nearly `icon.png`, so it
+settles into the logo that was always there. Looping would make the mark vanish and redraw every
+3.8s beside someone typing a password: a logo that draws itself on arrival reads as craft, one
+that keeps redrawing reads as a GIF. `loop = true` in `components/AuthLogoMark.tsx` is the whole
+change if that turns out to be wrong.
+
+The still icon renders **underneath** the video at identical size and framing. That is the
+fallback, not decoration — if the video fails to decode or is still loading, what is left is
+exactly the logo this screen showed before, never a hole.
 
 ### 1 · Condensed nav had no floor
 
