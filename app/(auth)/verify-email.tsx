@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import AuthBackdrop from '../../components/AuthBackdrop';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -90,6 +91,7 @@ export default function VerifyEmailScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <AuthBackdrop />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.inner}

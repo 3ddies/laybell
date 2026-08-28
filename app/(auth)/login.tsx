@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
 import AuthLogoMark from '../../components/AuthLogoMark';
+import AuthBackdrop from '../../components/AuthBackdrop';
 // The same fill as the Listen-mode pill, imported rather than copied so the two
 // can never drift apart.
 import { LISTEN_FILL } from '../../components/ListenButton';
@@ -91,6 +92,7 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <AuthBackdrop />
       {/* A ScrollView, not a plain View, and the two keyboard props are the
           point of it — this screen had NEITHER, which is why the keyboard here
           never dismissed while sign-up (which has always had them) behaved.

@@ -61,6 +61,37 @@ stops.
 | 4 | Login + Signup | The ~2s freeze after a successful sign-in that looked like the tap failed | Functional | ✅ done |
 | 5 | Login + Signup | Logo mark now draws itself in, using the brand animation | Cosmetic | ✅ done |
 | 6 | All 4 auth screens | Keyboard now dismisses on tap-outside, on drag, and on submit | Functional | ✅ done |
+| 8 | All 4 auth screens | Slow warm brand bloom behind the form, so the screen is not flat | Cosmetic | ✅ done, tune on device |
+
+### 8 · Animated background — built, but not the version asked for
+
+The ask was a background **fading from white into the Laybell gradient**. The intent is right —
+that screen is flat — but that execution fights the screen three ways:
+
+- **The app is dark-first.** Starting white and landing in a dark app is a jolt at the exact
+  moment a new user is forming their impression.
+- **The form is white text on dark inputs.** There is no point along a white → orange sweep where
+  white text is legible, so the text and inputs would have to animate too. That is a lot of
+  moving parts on the first screen anyone sees.
+- **It would run against the logo animation** added in tweak 5. Two motions competing makes both
+  read cheaper than either alone.
+
+`components/AuthBackdrop.tsx` keeps the dark ground and puts the brand *into* it: a warm glow
+from the top edge, behind the logo, breathing slowly between a gold-led and a red-led mix — the
+same colours, the same feeling, and the form stays perfectly legible because the bloom is gone by
+72% down, above the inputs on every handset.
+
+**Pace is the whole point: 11 seconds a cycle, eased in and out.** Long enough that it is felt
+rather than watched, which is the only acceptable speed next to a password field. It also eases
+in on mount rather than snapping on.
+
+Cheap: two static gradients and one opacity on the native driver. No layout, no re-render, no
+image to decode. Light theme runs at 55% strength — the same alphas on a near-white ground read
+as a stain rather than a glow.
+
+⚠️ **Alphas are a first guess** (`0.20 / 0.07` gold, `0.24 / 0.08` red). Say stronger or weaker.
+If you actually want the literal white→orange version to judge for yourself, say so — it is not
+hard, I just think it makes the screen worse.
 | 7 | Rest of the app (41 files) | Same keyboard sweep everywhere else | Functional | ⬜ **not started** |
 
 ### 6 · Why the keyboard behaved on sign-up but not sign-in

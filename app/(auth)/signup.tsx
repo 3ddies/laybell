@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { authRedirectUrl } from '../../lib/authLink';
 import SocialAuthButtons from '../../components/SocialAuthButtons';
 import AuthLogoMark from '../../components/AuthLogoMark';
+import AuthBackdrop from '../../components/AuthBackdrop';
 // Same fill as the Listen-mode pill and the Log in button — imported, not copied.
 import { LISTEN_FILL } from '../../components/ListenButton';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
@@ -112,6 +113,7 @@ export default function SignupScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <AuthBackdrop />
       <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}>
 
         <View style={styles.logoSection}>

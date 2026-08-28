@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import AuthBackdrop from '../../components/AuthBackdrop';
 import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
@@ -53,6 +54,9 @@ export default function ResetPasswordScreen() {
   if (done) {
     return (
       <View style={styles.container}>
+        {/* Also here, or the bloom would blink out the instant the save lands —
+            this state replaces the form in place, it is not a new screen. */}
+        <AuthBackdrop />
         {/* The success state has no inputs, so it needs no scroll or keyboard
             handling — a plain centred View is right here. */}
         <View style={styles.innerStatic}>
@@ -71,6 +75,7 @@ export default function ResetPasswordScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <AuthBackdrop />
       {/* Same treatment as login.tsx: keyboardShouldPersistTaps="handled" makes a
           tap on empty space close the keyboard while a tap on a control still
           fires, and on-drag closes it on a scroll. */}
