@@ -1666,7 +1666,11 @@ const en: Record<string, string> = {
   'gif.make.title': 'Make GIF',
   'gif.make.loadingVideo': 'Loading video…',
   'gif.make.editHint': 'Pinch to zoom · drag to reposition',
-  'gif.make.clipLength': 'Clip length: {sec}s · drag the bar to move, drag the ends to resize',
+  // "drag the ends to resize" was already here and was NOT true — the grips were
+  // pointerEvents="none" decoration. They are real now, so the promise is kept
+  // rather than removed, and pinch-to-zoom is added because it is the thing that
+  // makes a long video workable at all.
+  'gif.make.clipLength': 'Clip length: {sec}s · drag to move, drag the ends to resize, pinch to zoom',
   'gif.make.reset': 'Reset',
   'gif.make.create': 'Create GIF',
   'gif.make.creating': 'Creating your GIF…',

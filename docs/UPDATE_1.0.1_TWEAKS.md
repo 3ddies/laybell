@@ -67,6 +67,44 @@ stops.
 | 11 | All 4 auth screens | The form leaping when the keyboard opens — worst on login | Functional | ✅ done |
 | 12 | Signup | Logo sat hard against the Dynamic Island | Cosmetic | ✅ done |
 | 13 | Sign-in handoff | The auth screen visibly **reset itself** before the feed appeared | Functional | ✅ done |
+| 14 | GIF maker | Trim bar unusable on long videos — pinch now zooms the timeline | Functional | ✅ done |
+
+### 14 · The GIF trim bar was two pixels wide
+
+Owner: *"for longer videos the gif frame is so tiny that it is hard to control."* The arithmetic
+agrees with him precisely. The strip always spanned the **whole** video across ~345pt:
+
+| Video | Selection was drawn | After zoom |
+|---|---|---|
+| 10s | 103 px | 256 px |
+| 60s | 17 px | 256 px |
+| 3 min | 6 px | 256 px |
+| 9 min | **1.9 px** | 256 px |
+
+At nine minutes, one pixel of finger movement was worth **1.6 seconds**. Pinch existed but resized
+*duration*, which is capped at 3s, so it could never help.
+
+**The strip is now a viewport, not the whole clip.** Pinch zooms the timeline (down to ~4s across),
+drag inside moves the selection, drag on a grip sets duration, drag outside travels the video. It
+still opens fully zoomed out, so the mental model is unchanged and the whole clip stays one drag
+away — the intended flow is coarse, then zoom, then exact.
+
+Three things worth knowing:
+
+- **The grips were decoration.** They had `pointerEvents="none"`, and the existing translated
+  string has been promising *"drag the ends to resize"* the whole time. With pinch reassigned to
+  zoom, duration needed a home, and the grips were already the obvious one — so the copy is now
+  true rather than removed.
+- **Frames re-extract for the visible range**, debounced to the end of a gesture. Without that,
+  zooming would only magnify eight stretched thumbnails — more pixels, no more information, which
+  is not zoom. The debounce matters because each frame is a real decode and firing per gesture
+  frame would stall the interaction it exists to serve.
+- **The drawn window has a 46 px floor** regardless of true duration. Zoomed out on a long video
+  the honest width is unhittable, and a control you cannot touch is not a control.
+
+Zoom centres on the **selection**, not the pinch focal point — the selection is the thing being
+placed, and keeping it under the fingers is what makes zooming feel like help rather than the bar
+running away.
 
 ### 13 · The "freeze" after a successful login was a remount
 
