@@ -130,34 +130,28 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     onChangeRef.current(after);
   };
 
-  // ── Press-and-hold to reorder ───────────────────────────────────────────────
-  // ⚠️ THE TILES NEVER REORDER MID-DRAG. The rendered order is frozen for the
-  // length of the gesture: the dragged tile is pure finger delta with nothing to
-  // correct, and the others spring aside around it. Reordering live meant the
-  // dragged tile's own slot kept moving underneath it, and the correction landed
-  // a render later than the finger — that lag WAS the unresponsiveness.
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const dragIndexRef = useRef<number | null>(null);
-  const targetRef = useRef<number | null>(null);
+  // ── Press-and-hold to reorder: SWAP, never insert ───────────────────────────
+  //
+  // The tiles TRADE PLACES. Dragging one over another swaps the pair, so every
+  // slot holds exactly one tile at every moment and a gap is not a state this
+  // row can be in. The previous version slid its neighbours aside to open a
+  // landing space instead, and any glitch in those displacement springs left a
+  // hole with nothing in it — which is exactly what kept showing up.
+  //
+  // That also deletes the machinery the holes came from. There are no per-tile
+  // offset values and no springs to strand: the array itself reorders, so the
+  // untouched tiles are simply laid out by flexbox, where they cannot be wrong.
+  //
+  // The dragged tile's position is recomputed from ABSOLUTE numbers every move —
+  // finger position minus the centre of the slot it currently occupies. Nothing
+  // accumulates, so a swap needs no correction and cannot drift or lag behind
+  // the finger. That was the flaw in the very first version: it tracked deltas
+  // and had to keep subtracting how far its own slot had moved, a render late.
+  const [order, setOrder] = useState<ArrangerSlide[] | null>(null);
+  const orderRef = useRef<ArrangerSlide[] | null>(null);
+  const [dragUri, setDragUri] = useState<string | null>(null);
+  const dragUriRef = useRef<string | null>(null);
   const dragX = useRef(new Animated.Value(0)).current;
-
-  // ⚠️ Displacement values are keyed by the slide's URI — by IDENTITY, never by
-  // position. Held per-slot, a tile that moved in one drag came back holding a
-  // DIFFERENT Animated.Value on the next render, so the springs ended up driving
-  // views they no longer belonged to. That is why the first drag was always
-  // clean and every one after it was not.
-  const offsetMap = useRef(new Map<string, Animated.Value>()).current;
-  const offsetFor = (uri: string) => {
-    let v = offsetMap.get(uri);
-    if (!v) { v = new Animated.Value(0); offsetMap.set(uri, v); }
-    return v;
-  };
-  const offsetForRef = useRef(offsetFor); offsetForRef.current = offsetFor;
-  // Belt and braces: outside a drag, no tile may hold a displacement. Guarantees
-  // a stuck offset can never survive into the next gesture.
-  useEffect(() => {
-    if (dragIndexRef.current == null) offsetMap.forEach((o) => { o.stopAnimation(); o.setValue(0); });
-  }, [slides, offsetMap]);
 
   const stripRef = useRef<View>(null);
   const stripX = useRef(0);
@@ -175,81 +169,73 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   const moved = useRef(false);
   const clearHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
 
-  const displace = (from: number, to: number) => {
-    const list = slidesRef.current;
-    const p = pitchRef.current;
-    for (let i = 0; i < list.length; i++) {
-      if (i === from) continue;
-      const shift = to > from ? (i > from && i <= to ? -p : 0)
-        : to < from ? (i >= to && i < from ? p : 0)
-          : 0;
-      Animated.spring(offsetForRef.current(list[i].uri), {
-        toValue: shift, useNativeDriver: true, friction: 14, tension: 220,
-      }).start();
-    }
+  /** Where the dragged tile must sit so its centre is under the finger. */
+  const trackFinger = (fingerX: number, slot: number) => {
+    dragX.setValue(fingerX - (slot * pitchRef.current + TILE / 2));
   };
 
   const endDrag = () => {
     clearHold();
-    const from = dragIndexRef.current;
-    const to = targetRef.current;
-    dragIndexRef.current = null;
-    targetRef.current = null;
-    setDragIndex(null);
-    // Zero everything BEFORE publishing — the tiles are about to re-render in
-    // their new order, and a leftover offset shows as a one-frame jump.
+    const final = orderRef.current;
+    const uri = dragUriRef.current;
+    orderRef.current = null;
+    dragUriRef.current = null;
+    setDragUri(null);
     dragX.setValue(0);
-    offsetMap.forEach((o) => { o.stopAnimation(); o.setValue(0); });
-    if (from != null && to != null && to !== from) {
-      const list = slidesRef.current.slice();
-      const [item] = list.splice(from, 1);
-      list.splice(to, 0, item);
-      onChangeRef.current(list);
-      setIndex(to);
-      requestAnimationFrame(() => pagerRef.current?.scrollTo({ x: to * frameW, animated: false }));
+    setOrder(null);
+    if (final && uri) {
+      onChangeRef.current(final);
+      const landed = final.findIndex((s) => s.uri === uri);
+      if (landed >= 0) {
+        setIndex(landed);
+        requestAnimationFrame(() => pagerRef.current?.scrollTo({ x: landed * frameW, animated: false }));
+      }
     }
   };
 
   const pan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
-    onPanResponderTerminationRequest: () => dragIndexRef.current == null,
+    onPanResponderTerminationRequest: () => dragUriRef.current == null,
     onPanResponderGrant: (e) => {
       startX.current = e.nativeEvent.pageX - stripX.current + scrollX.current - STRIP_PAD;
       moved.current = false;
       startIdx.current = idxAtRef.current(e.nativeEvent.pageX);
       clearHold();
       holdTimer.current = setTimeout(() => {
-        // Zero every displacement AT PICKUP, not only at release.
-        //
-        // Releasing cannot be trusted to have cleaned up: those springs run on
-        // the native driver, so stopAnimation is a round trip and the stop can
-        // land after the setValue that follows it — leaving the spring to finish
-        // on its toValue and the tile permanently shoved a slot sideways. That
-        // is the overlap. Clearing here means the drag always starts from a row
-        // that is genuinely flat, whatever the last one left behind.
-        offsetMap.forEach((o) => { o.stopAnimation(); o.setValue(0); });
-        dragIndexRef.current = startIdx.current;
-        targetRef.current = startIdx.current;
-        setDragIndex(startIdx.current);
-        dragX.setValue(0);
+        const list = slidesRef.current.slice();
+        const i = Math.max(0, Math.min(list.length - 1, startIdx.current));
+        orderRef.current = list;
+        setOrder(list);
+        dragUriRef.current = list[i].uri;
+        setDragUri(list[i].uri);
+        trackFinger(startX.current, i);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       }, HOLD_MS);
     },
     onPanResponderMove: (_e, g) => {
       if (Math.abs(g.dx) > HOLD_SLOP || Math.abs(g.dy) > HOLD_SLOP) moved.current = true;
-      const from = dragIndexRef.current;
-      if (from == null) { if (moved.current) clearHold(); return; }
-      dragX.setValue(g.dx);
-      const target = Math.max(0, Math.min(slidesRef.current.length - 1,
-        Math.round((startX.current + g.dx - pitchRef.current / 2) / pitchRef.current)));
-      if (target !== targetRef.current) {
-        displace(from, target);
-        targetRef.current = target;
+      const uri = dragUriRef.current;
+      const list = orderRef.current;
+      if (!uri || !list) { if (moved.current) clearHold(); return; }
+
+      const fingerX = startX.current + g.dx;
+      const held = list.findIndex((s) => s.uri === uri);
+      const slot = Math.max(0, Math.min(list.length - 1, Math.floor(fingerX / pitchRef.current)));
+
+      if (slot !== held && held >= 0) {
+        // TRADE PLACES. Both tiles keep a slot, so the row is never short one.
+        const next = list.slice();
+        const tmp = next[held]; next[held] = next[slot]; next[slot] = tmp;
+        orderRef.current = next;
+        setOrder(next);
         Haptics.selectionAsync().catch(() => {});
+        trackFinger(fingerX, slot);
+        return;
       }
+      trackFinger(fingerX, held >= 0 ? held : slot);
     },
     onPanResponderRelease: (e) => {
-      if (dragIndexRef.current == null) {
+      if (dragUriRef.current == null) {
         clearHold();
         if (!moved.current) goToRef.current(idxAtRef.current(e.nativeEvent.pageX));
         return;
@@ -393,7 +379,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
         showsHorizontalScrollIndicator={false}
         // Frozen while a tile is held, so the strip cannot scroll out from under
         // the drag.
-        scrollEnabled={dragIndex == null}
+        scrollEnabled={dragUri == null}
         onScroll={(e) => { scrollX.current = e.nativeEvent.contentOffset.x; }}
         scrollEventThrottle={16}
         contentContainerStyle={styles.stripContent}
@@ -402,8 +388,8 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
           style={styles.strip}
           {...pan.panHandlers}
         >
-          {slides.map((s, i) => {
-            const dragging = dragIndex === i;
+          {(order ?? slides).map((s, i) => {
+            const dragging = dragUri === s.uri;
             return (
               <Animated.View
                 // Keyed on URI alone. With the index in the key, every reorder
@@ -412,18 +398,17 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                 key={s.uri}
                 style={[
                   styles.tile,
-                  { marginRight: i === slides.length - 1 ? 0 : TILE_GAP, borderColor: i === index ? colors.text : 'transparent' },
-                  // Displacements are applied ONLY while a drag is live. At rest
-                  // the tiles carry no transform at all, so a value left stranded
-                  // by a native spring cannot push a tile out of its slot — the
-                  // row is always laid out by flexbox alone between gestures.
-                  dragIndex == null ? null
-                    : dragging ? {
-                      transform: [{ translateX: dragX }, { scale: 1.16 }],
-                      zIndex: 5, elevation: 8,
-                      shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 9, shadowOffset: { width: 0, height: 5 },
-                      borderColor: colors.text,
-                    } : { transform: [{ translateX: offsetFor(s.uri) }] },
+                  { marginRight: i === (order ?? slides).length - 1 ? 0 : TILE_GAP, borderColor: i === index ? colors.text : 'transparent' },
+                  // ONLY the dragged tile is ever transformed. Every other tile
+                  // sits where flexbox puts it, because the array itself has
+                  // already swapped — so there is no per-tile animated value that
+                  // could be left stranded, and no slot that can end up empty.
+                  dragging ? {
+                    transform: [{ translateX: dragX }, { scale: 1.16 }],
+                    zIndex: 5, elevation: 8,
+                    shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 9, shadowOffset: { width: 0, height: 5 },
+                    borderColor: colors.text,
+                  } : null,
                 ]}
               >
                 <ExpoImage
@@ -435,14 +420,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                 {s.type === 'video' && (
                   <View style={styles.tileVideo}><Ionicons name="videocam" size={11} color="#fff" /></View>
                 )}
-                {/* Hidden while dragging. The rendered order is frozen for the
-                    length of the gesture, so these numbers describe where each
-                    tile STARTED, not where it is heading — leaving them up put
-                    a wrong answer next to the question the user is asking. The
-                    gap the others open is the honest indicator. */}
-                {dragIndex == null && (
-                  <View style={styles.tileNum}><Text style={styles.tileNumText}>{i + 1}</Text></View>
-                )}
+                {/* Always shown, and always correct: the order really does
+                    change as you swap, so these numbers are live rather than a
+                    stale record of where each tile started. */}
+                <View style={styles.tileNum}><Text style={styles.tileNumText}>{i + 1}</Text></View>
               </Animated.View>
             );
           })}
