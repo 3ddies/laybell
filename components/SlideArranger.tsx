@@ -56,9 +56,14 @@ const TILE = 58;
 // can actually land a thumb on.
 const HOLD_MS = 140;
 const HOLD_SLOP = 12;
-// How far the finger travels on the STAGE to move a slide one position. A full
-// frame width per step would mean dragging a whole screen to move one place.
-const STAGE_STEP = 76;
+// How far the finger travels on the STAGE to move a slide one position.
+//
+// Wider than the thumbnails purposely. The strip maps an ABSOLUTE finger
+// position onto a slot, so a small movement there is unambiguous; the stage is
+// a relative step, and every unit of travel is a whole position moved. 76 was
+// twitchy even after the runaway was fixed — 100 is roughly a thumb-length per
+// slot, which reads as deliberate.
+const STAGE_STEP = 100;
 
 const SlideArranger = forwardRef<SlideArrangerHandle, {
   slides: ArrangerSlide[];
@@ -288,14 +293,12 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   // Reordering from here steps by STAGE_STEP rather than a full frame width:
   // dragging a whole screen per position would be unusable, and the strip below
   // is where the result is legible anyway.
-  const stageStart = useRef(0);
   const stageOffset = useRef(0);
   const stageIdx = useRef(0);
   const stagePan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onPanResponderTerminationRequest: () => dragUriRef.current == null,
     onPanResponderGrant: (e) => {
-      stageStart.current = e.nativeEvent.pageX;
       stageOffset.current = -indexRef.current * frameW;
       stageIdx.current = indexRef.current;
       moved.current = false;
@@ -307,13 +310,14 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     onPanResponderMove: (_e, g) => {
       if (Math.abs(g.dx) > HOLD_SLOP || Math.abs(g.dy) > HOLD_SLOP) moved.current = true;
       if (dragUriRef.current) {
-        const to = swapTo(stageIdx.current + Math.round(g.dx / STAGE_STEP));
-        if (to >= 0 && to !== stageIdx.current) {
-          // Rebase so the next step is measured from where it landed, not from
-          // where the finger began.
-          stageStart.current += (to - stageIdx.current) * STAGE_STEP;
-          stageIdx.current = to;
-        }
+        // Measured from the slot the slide was PICKED UP in, which does not move
+        // for the length of the gesture.
+        //
+        // Advancing that base on each swap was the runaway: g.dx is cumulative
+        // from grant, so a moving base and a growing delta compounded. One step
+        // of travel moved one slot, two steps moved three, and a short drag
+        // walked the slide to the end of the list.
+        swapTo(stageIdx.current + Math.round(g.dx / STAGE_STEP));
         return;
       }
       if (moved.current) clearHold();
