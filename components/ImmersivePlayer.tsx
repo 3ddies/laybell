@@ -218,6 +218,11 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
           <View style={{ width: artW, height: artH, backgroundColor: '#111' }} />
         )}
       </Animated.View>
+      {/* Notes go UNDER the scrim on purpose: its top and bottom bands then dim
+          any note drifting into the title or the transport, so they never
+          compete with the text they are floating past. */}
+      <FloatingNotes playing={visible && isPlaying} w={SW} h={SH} />
+
       {/* Legibility scrim. Heavier at top and bottom, where all the text is —
           the middle stays clear so the artwork is actually visible, which is the
           entire point of the screen. */}
@@ -288,6 +293,102 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
           </TouchableOpacity>
         </View>
       </View>
+    </Animated.View>
+  );
+}
+
+// ── Floating notes ───────────────────────────────────────────────────────────
+// Musical notes drift up through the artwork while the song plays, so the screen
+// reads as something happening rather than a still image with audio behind it.
+//
+// One Animated.Value per note, all on the native driver, so the whole effect
+// costs nothing on the JS thread — it has to survive scrubbing and a panning
+// full-screen image at the same time.
+//
+// The layer is visible only while the song is actually PLAYING — a paused song
+// with notes still rising would be saying the opposite of the truth. It unmounts
+// with the screen, so nothing animates behind a closed player.
+const NOTE_COUNT = 9;
+const NOTE_GLYPHS = ['musical-note', 'musical-notes'] as const;
+// Birth height and rise are tuned against the scrim above: the stretch of a
+// note's life where it is actually bright (roughly 15%–70% through its arc)
+// lands inside the scrim's clear middle band. Born lower and it would fade in
+// underneath the darkest part and read as a smudge.
+const NOTE_BOTTOM = 0.36;
+const NOTE_RISE = 0.54;
+
+function FloatingNotes({ playing, w, h }: { playing: boolean; w: number; h: number }) {
+  // Pausing has to STOP the notes, but stopping a loop leaves every note frozen
+  // in mid-air at whatever opacity it happened to be — a stuck screen, which is
+  // the opposite of what this effect is for. So the whole layer fades out first
+  // and the loops keep turning behind it: nine native-driver timings cost
+  // essentially nothing, and resuming picks up in phase instead of snapping
+  // everything back to the bottom of the screen at once.
+  const gate = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(gate, {
+      toValue: playing ? 1 : 0,
+      duration: playing ? 600 : 420,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [playing, gate]);
+
+  return (
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: gate }]}>
+      {Array.from({ length: NOTE_COUNT }).map((_, i) => (
+        <FloatingNote key={i} index={i} w={w} h={h} />
+      ))}
+    </Animated.View>
+  );
+}
+
+function FloatingNote({ index, w, h }: { index: number; w: number; h: number }) {
+  const t = useRef(new Animated.Value(0)).current;
+
+  // Everything about a note is derived from its index, so the drift is varied
+  // but stable — no Math.random, which would reshuffle on every re-render and
+  // make notes visibly jump.
+  const f = (index * 2654435761) % 1000 / 1000;      // 0..1, well spread
+  const g = (index * 40503) % 997 / 997;
+  const startX = 0.12 + 0.76 * f;                     // fraction of the width
+  const drift = (g < 0.5 ? -1 : 1) * (18 + 34 * g);   // sideways sway, px
+  const dur = 5200 + Math.round(3400 * g);            // 5.2s–8.6s
+  // Flat stagger, NOT one scaled to this note's duration — scaling it meant the
+  // slowest note also waited longest, and the screen took over seven seconds to
+  // reach full density. A fixed step gets there in four, which is about how long
+  // someone looks at the screen before deciding whether it is alive.
+  const delay = index * 520;
+  const size = 15 + Math.round(13 * f);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(t, { toValue: 1, duration: dur, easing: Easing.linear, useNativeDriver: true }),
+    );
+    // Staggered by a timer rather than an Animated.delay inside the loop: a delay
+    // inside would repeat every cycle and leave a gap, where this offsets each
+    // note once and then they run continuously.
+    const kick = setTimeout(() => loop.start(), delay);
+    return () => { clearTimeout(kick); loop.stop(); };
+  }, [t, dur, delay]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: startX * w,
+        bottom: h * NOTE_BOTTOM,
+        opacity: t.interpolate({ inputRange: [0, 0.14, 0.7, 1], outputRange: [0, 0.5, 0.4, 0] }),
+        transform: [
+          { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [0, -h * NOTE_RISE] }) },
+          { translateX: t.interpolate({ inputRange: [0, 0.35, 0.7, 1], outputRange: [0, drift, -drift * 0.6, drift * 0.25] }) },
+          { scale: t.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.6, 1, 1.08] }) },
+          { rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['-10deg', '12deg'] }) },
+        ],
+      }}
+    >
+      <Ionicons name={NOTE_GLYPHS[index % NOTE_GLYPHS.length]} size={size} color="#fff" />
     </Animated.View>
   );
 }

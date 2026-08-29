@@ -53,17 +53,21 @@ export default function Scrubber({
   // effect to survive, only its colour to change. Light keeps the brand warm
   // ramp; dark gets a white one.
   //
-  // Dark runs WHITE → GOLD → DEEP ORANGE: the played part starts neutral and
-  // warms hard into brand by the playhead, so the accent arrives where the eye
-  // already is instead of washing the whole bar. Three stops rather than two on
-  // purpose — a straight white-to-orange interpolation passes through washed-out
-  // salmon in the middle, and routing it via the brand gold keeps the whole ramp
-  // saturated, which is what "stronger" actually needs.
+  // Dark runs WHITE → BRAND GOLD → DEEP AMBER. It used to end on the brand red
+  // (#E8401C) and that was too loud for something this small and this permanent —
+  // a scrubber sits on screen for the entire length of every song, so the colour
+  // it settles on is the one you live with. Ending on a dark yellow keeps the
+  // warmth without the bar shouting.
+  //
+  // Three stops rather than two, still: the midpoint pins the ramp to the actual
+  // brand gold so the identity colour is the one you see mid-song, and the final
+  // stop is that same gold taken darker rather than a different hue. The result
+  // reads as one colour deepening rather than a fade between two.
   // Light keeps the brand warm ramp; white at the start would be near-invisible
   // on a pale track.
   const fillStops = (isLight
     ? GRADIENTS.primaryWarm
-    : ['#FFFFFF', '#FAB525', '#E8401C']) as readonly [string, string, ...string[]];
+    : ['#FFFFFF', '#FAB525', '#C97F08']) as readonly [string, string, ...string[]];
 
   // The ring is the PAGE colour in both themes, which is not the obvious choice
   // and is the only one that survives the thumb being sampled.
