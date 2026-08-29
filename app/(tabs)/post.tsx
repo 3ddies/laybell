@@ -41,7 +41,10 @@ import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../co
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { showPermissionDenied } from '../../lib/permissions';
-import { IMAGE_FORMATS, aspectToNumber, clampVideoAspect, defaultFormatFor } from '../../lib/aspectRatio';
+import {
+  IMAGE_FORMATS, SLIDESHOW_FORMATS, aspectToNumber, clampVideoAspect, defaultFormatFor,
+  defaultFitFor, isSlideshowMode, resolveSlideshowAspect, type SlideFit,
+} from '../../lib/aspectRatio';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
@@ -76,6 +79,11 @@ type PickedSlide = {
   thumbnailUri?: string | null; // poster for video slides
   posterUri?: string | null;    // ph:// poster (video) — renders reliably via expo-image
   crop?: CropRect | null;       // user's drag/pinch crop (image slides) — baked on upload
+  // How this slide meets the frame. Unset means "whatever the chosen format
+  // implies" — see defaultFitFor. Set only once the user overrides it on the
+  // Arrange screen, so changing format still moves the slides that were left
+  // alone.
+  fit?: SlideFit | null;
 };
 
 // A slideshow's combined video time must stay under this — uploads of several
@@ -509,7 +517,13 @@ export default function PostScreen() {
   // Cropper frame within the preview cap. Videos use their native aspect (clamped
   // to IG bounds) so they fill without being force-cropped; images use the chosen
   // format and are cropped to it interactively.
-  const previewAspect = postType === 'video' ? videoAspect : aspectToNumber(format, 1);
+  // Slideshows resolve 'full'/'mixed' against slide 1 — those are modes, not
+  // ratios, and there is no number in the label to read.
+  const previewAspect = postType === 'video'
+    ? videoAspect
+    : postType === 'slideshow'
+      ? resolveSlideshowAspect(format, slides[0])
+      : aspectToNumber(format, 1);
   let frameW = SCREEN_W;
   let frameH = SCREEN_W / previewAspect;
   if (frameH > PREVIEW_MAX_H) { frameH = PREVIEW_MAX_H; frameW = PREVIEW_MAX_H * previewAspect; }
@@ -677,8 +691,15 @@ export default function PostScreen() {
   }
 
   function cycleFormat() {
-    const i = IMAGE_FORMATS.indexOf(format as any);
-    setFormat(IMAGE_FORMATS[(i + 1) % IMAGE_FORMATS.length]);
+    // Slideshows get two options photos don't: 'full' (slide 1's own shape) and
+    // 'mixed' (same frame, but nothing cropped). Both only make sense for a set.
+    const opts: readonly string[] = slideshowMode ? SLIDESHOW_FORMATS : IMAGE_FORMATS;
+    const i = opts.indexOf(format);
+    setFormat(opts[(i + 1) % opts.length]);
+    // Nothing to do to the slides. `fit` stays UNDEFINED until the user sets it
+    // on the Arrange screen, so every untouched slide re-reads its default from
+    // the new format on the next render, while the ones they chose deliberately
+    // keep what they chose.
   }
 
   // (The old "Large video" system alert lived here. It measured the RAW pick,
@@ -1267,7 +1288,12 @@ export default function PostScreen() {
           if (s.type === 'image') {
             let outUri = s.uri;
             try {
-              const crop = s.crop;
+              // A 'contain' slide is one the poster chose NOT to crop, so the
+              // crop rect is deliberately ignored and the whole frame is
+              // uploaded — the carousel letterboxes it at render time. Baking
+              // the crop anyway would silently cut off the thing they kept.
+              const fit = s.fit ?? defaultFitFor(format);
+              const crop = fit === 'contain' ? null : s.crop;
               const ops: any[] = [];
               if (crop && crop.width > 1 && crop.height > 1) ops.push({ crop });
               ops.push({ resize: { width: crop && crop.width > 1 ? Math.min(1440, crop.width) : 1440 } });
@@ -1284,7 +1310,10 @@ export default function PostScreen() {
           }
           let thumb: string | null = s.type === 'image' ? url : null;
           if (s.type === 'video' && s.thumbnailUri) thumb = await uploadToStorage(user.id, s.thumbnailUri, 'jpg', 'image/jpeg');
-          built.push({ type: s.type, url, thumbnail_url: thumb, aspect_ratio: format });
+          built.push({
+            type: s.type, url, thumbnail_url: thumb, aspect_ratio: format,
+            fit: s.fit ?? defaultFitFor(format),
+          });
         }
         slidesPayload = built;
         mediaUrl = built[0].url;
@@ -1326,7 +1355,13 @@ export default function PostScreen() {
         ...(genre && showGenre ? { genre } : {}),
         ...(audioDuration !== null ? { duration_seconds: audioDuration } : {}),
         ...(postType === 'image' ? { aspect_ratio: format } : {}),
-        ...(postType === 'slideshow' ? { aspect_ratio: format, slides: slidesPayload } : {}),
+        // 'full' and 'mixed' are composer modes, never storage values — the feed
+        // lays a carousel out from a NUMBER, so they resolve to slide 1's ratio
+        // on the way into the row.
+        ...(postType === 'slideshow' ? {
+          aspect_ratio: isSlideshowMode(format) ? String(resolveSlideshowAspect(format, slides[0])) : format,
+          slides: slidesPayload,
+        } : {}),
         ...(trimmed
           ? { trim_start: trimStart, trim_end: trimEnd > trimStart ? trimEnd : Math.min(trimStart + videoWindowSec, videoDuration) }
           : {}),
@@ -1442,6 +1477,7 @@ export default function PostScreen() {
             slides={slides}
             frameW={frameW}
             frameH={frameH}
+            format={format}
             onChange={(next) => setSlides(next as typeof slides)}
           />
         </ErrorBoundary>
@@ -2243,7 +2279,11 @@ export default function PostScreen() {
             {((!slideshowMode && postType === 'image' && media) || (slideshowMode && slides.length > 0)) && (
               <TouchableOpacity style={styles.aspectBtn} onPress={cycleFormat}>
                 <Ionicons name="resize-outline" size={16} color={colors.text} />
-                <Text style={styles.aspectBtnText}>{format}</Text>
+                {/* '1:1' and '4:5' read as ratios on their own; the two modes
+                    need a word, since there is no number to show. */}
+                <Text style={styles.aspectBtnText}>
+                  {isSlideshowMode(format) ? t(`post.format.${format}`) : format}
+                </Text>
               </TouchableOpacity>
             )}
             {/* Remove the selected media from the square (single mode) */}

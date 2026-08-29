@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { RADIUS } from '../constants/theme';
 import { useTabSwipeControl } from '../contexts/PagerContext';
 import { trackVideoProgress } from '../lib/viewTracker';
-import { type Slide } from '../lib/slideshow';
+import { type Slide, slideFit } from '../lib/slideshow';
 
 // Swipeable carousel for slideshow posts. A horizontal paging ScrollView (NOT a
 // nested PagerView — those have a freeze history here). Page counter + dots.
@@ -153,7 +153,10 @@ export default function SlideshowCarousel({
                     : <View style={{ width, height }} />
                 )
               ) : (
-                <ExpoImage source={{ uri: s.url }} style={{ width, height }} contentFit="cover" cachePolicy="memory-disk" />
+                // Per-slide, not hard-coded: a slide published as 'contain' is
+                // one the poster chose NOT to crop, so filling it here would
+                // undo exactly the decision they made on the Arrange screen.
+                <ExpoImage source={{ uri: s.url }} style={{ width, height }} contentFit={slideFit(s)} cachePolicy="memory-disk" />
               )}
             </View>
           );

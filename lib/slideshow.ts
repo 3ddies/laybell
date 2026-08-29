@@ -10,6 +10,11 @@ export type Slide = {
   url: string;
   thumbnail_url?: string | null; // poster for video slides (and convenient for images)
   aspect_ratio?: string | null;  // the slide's native ratio (videos); informational
+  // How this slide meets the carousel's frame: 'cover' crops it to fill,
+  // 'contain' letterboxes it so nothing is cut off. Absent on every post made
+  // before the Arrange screen existed, which is why the reader below falls back
+  // to 'cover' — that is what those posts were published as.
+  fit?: 'cover' | 'contain' | null;
 };
 
 export function isSlideshow(type?: string | null): boolean {
@@ -28,7 +33,14 @@ export function parseSlides(post: any): Slide[] {
       url: s.url,
       thumbnail_url: s.thumbnail_url ?? null,
       aspect_ratio: s.aspect_ratio ?? null,
+      fit: s.fit === 'contain' ? 'contain' : 'cover',
     }));
+}
+
+/** How a slide should meet the frame. Older posts carry no `fit` and were
+ *  published cropped, so cover is the only safe default. */
+export function slideFit(s: Slide): 'cover' | 'contain' {
+  return s.fit === 'contain' ? 'contain' : 'cover';
 }
 
 // A guaranteed-image cover URL for a slide (its poster for videos, the image

@@ -3,6 +3,45 @@
 export const IMAGE_FORMATS = ['1:1', '4:5'] as const;
 export const VIDEO_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
 
+// Slideshow frame options. '1:1' and '4:5' are literal ratios; 'full' and
+// 'mixed' are MODES, resolved to a real ratio from the media at share time —
+// they never reach the database, because a carousel has exactly one frame and
+// posts.aspect_ratio has to be a number the feed can lay out from.
+//
+// The two modes differ in what happens to slides that do not match that frame,
+// not in the frame itself:
+//   full  — frame takes slide 1's own shape, and the rest are FILLED (cropped).
+//   mixed — same frame, but every slide is FITTED (letterboxed) instead, so a
+//           set of different shapes publishes with nothing cut off.
+// Either default can be overridden per slide on the Arrange screen.
+export const SLIDESHOW_FORMATS = ['1:1', '4:5', 'full', 'mixed'] as const;
+export type SlideFit = 'cover' | 'contain';
+
+export function isSlideshowMode(format?: string | null): boolean {
+  return format === 'full' || format === 'mixed';
+}
+
+/** The fit a slide gets when the user has not chosen one for it. */
+export function defaultFitFor(format?: string | null): SlideFit {
+  return format === 'mixed' ? 'contain' : 'cover';
+}
+
+/**
+ * The numeric frame ratio for a slideshow. For the two modes this comes from
+ * the FIRST slide, clamped to the feed's bounds — a 9:16 phone photo would
+ * otherwise publish a carousel taller than the screen.
+ */
+export function resolveSlideshowAspect(
+  format: string,
+  first?: { width?: number | null; height?: number | null } | null,
+): number {
+  if (!isSlideshowMode(format)) return aspectToNumber(format, 1);
+  const w = first?.width ?? 0;
+  const h = first?.height ?? 0;
+  if (!(w > 0 && h > 0)) return 1;
+  return clampFeedAspect(w / h);
+}
+
 // Numeric width/height ratio for React Native's `aspectRatio` style.
 // Accepts preset labels ("9:16"), any "W:H" string, or a plain numeric string
 // (e.g. "0.8") so media can be stored at its exact native aspect ratio.

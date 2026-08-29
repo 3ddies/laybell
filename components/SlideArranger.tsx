@@ -4,6 +4,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from './MediaCropper';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { defaultFitFor, type SlideFit } from '../lib/aspectRatio';
 import { useThemedStyles, useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -28,6 +29,7 @@ export type ArrangerSlide = {
   posterUri?: string | null;
   thumbnailUri?: string | null;
   crop?: CropRect | null;
+  fit?: SlideFit | null;
 };
 
 export type SlideArrangerHandle = {
@@ -55,8 +57,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   slides: ArrangerSlide[];
   frameW: number;
   frameH: number;
+  /** The composer's chosen format, which decides each slide's DEFAULT fit. */
+  format: string;
   onChange: (next: ArrangerSlide[]) => void;
-}>(function SlideArranger({ slides, frameW, frameH, onChange }, ref) {
+}>(function SlideArranger({ slides, frameW, frameH, format, onChange }, ref) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
@@ -219,6 +223,19 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   useEffect(() => () => clearHold(), []);
 
   const cur = slides[Math.min(index, slides.length - 1)];
+  const curFit: SlideFit = cur?.fit ?? defaultFitFor(format);
+
+  const setFit = (next: SlideFit) => {
+    const i = indexRef.current;
+    const list = slidesRef.current;
+    if (!list[i] || list[i].type !== 'image') return;
+    // Take the crop with us on the way out of Fill — switching to Fit and back
+    // should return you to the framing you had, not to a reset one.
+    if (curFit === 'cover' && next === 'contain') commitRef.current();
+    const after = slidesRef.current.slice();
+    after[i] = { ...after[i], fit: next };
+    onChangeRef.current(after);
+  };
 
   return (
     <View style={styles.root}>
@@ -227,17 +244,33 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
           own saved crop rather than carrying the last one over. */}
       <View style={[styles.stage, { width: frameW, height: frameH }]}>
         {cur && (cur.type === 'image' ? (
-          <MediaCropper
-            key={cur.uri}
-            ref={cropperRef}
-            uri={cur.uri}
-            mediaWidth={cur.width}
-            mediaHeight={cur.height}
-            frameW={frameW}
-            frameH={frameH}
-            type="image"
-            initialCrop={cur.crop ?? null}
-          />
+          curFit === 'contain' ? (
+            // FITTED: there is nothing to crop, so no cropper. The whole photo
+            // is shown inside the frame exactly as it will publish, blank space
+            // and all — the point of this mode is that you can see what you are
+            // keeping rather than what you are cutting.
+            <ExpoImage
+              source={{ uri: cur.uri }}
+              style={StyleSheet.absoluteFill}
+              contentFit="contain"
+              cachePolicy="memory-disk"
+            />
+          ) : (
+            <MediaCropper
+              // Keyed on fit as well as uri: coming back from Fit has to rebuild
+              // the cropper, or it would remount holding the previous slide's
+              // transform.
+              key={`${cur.uri}-cover`}
+              ref={cropperRef}
+              uri={cur.uri}
+              mediaWidth={cur.width}
+              mediaHeight={cur.height}
+              frameW={frameW}
+              frameH={frameH}
+              type="image"
+              initialCrop={cur.crop ?? null}
+            />
+          )
         ) : (
           // Video slides show their poster and are NOT croppable — the crop is
           // baked into a still at upload, and there is no equivalent for a clip.
@@ -256,8 +289,33 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
         ))}
       </View>
 
+      {/* Fill / Fit, per slide. Images only — a clip has no crop to bake. */}
+      {cur?.type === 'image' && (
+        <View style={styles.fitRow}>
+          {(['cover', 'contain'] as const).map((f) => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.fitBtn, curFit === f && styles.fitBtnOn]}
+              onPress={() => setFit(f)}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name={f === 'cover' ? 'crop' : 'scan-outline'}
+                size={14}
+                color={curFit === f ? colors.background : colors.textSecondary}
+              />
+              <Text style={[styles.fitBtnText, curFit === f && styles.fitBtnTextOn]}>
+                {t(f === 'cover' ? 'post.slideFill' : 'post.slideFit')}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       <Text style={styles.hint}>
-        {cur?.type === 'image' ? t('post.slideCropHint') : t('post.slideOrderHint')}
+        {cur?.type !== 'image' ? t('post.slideOrderHint')
+          : curFit === 'contain' ? t('post.slideFitHint')
+            : t('post.slideCropHint')}
       </Text>
 
       {/* Filmstrip. Tap selects, press-and-hold picks up and drags. */}
@@ -330,6 +388,18 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     paddingVertical: 4, paddingHorizontal: 9,
   },
   videoBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  fitRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
+  fitBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingVertical: 7, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, backgroundColor: c.surfaceLight,
+    borderWidth: 1, borderColor: c.border,
+  },
+  // Selected inverts rather than taking the accent — same rule as the rest of
+  // the sweep: brand is for terminal actions, and this is a mode switch.
+  fitBtnOn: { backgroundColor: c.text, borderColor: c.text },
+  fitBtnText: { color: c.textSecondary, fontSize: 13, fontWeight: '700' },
+  fitBtnTextOn: { color: c.background, fontWeight: '800' },
   hint: {
     color: c.textTertiary, fontSize: 12, fontWeight: '600',
     marginTop: SPACING.sm, marginBottom: SPACING.xs, paddingHorizontal: SPACING.md, textAlign: 'center',
