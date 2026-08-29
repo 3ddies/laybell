@@ -482,7 +482,7 @@ export default function PostDetailScreen() {
                   ) : (
                     // No artwork: the bare glyph carries the button on its own
                     // (white when playing — the active card gradient is primary-bright).
-                    <Ionicons name={audioPlaying ? 'stop-circle' : 'play-circle'} size={48} color={audioPlaying ? '#fff' : colors.primary} />
+                    <Ionicons name={audioPlaying ? 'stop-circle' : 'play-circle'} size={48} color={audioPlaying ? '#fff' : colors.text} />
                   )}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.audioTitle} numberOfLines={1}>{post.caption || t('postView.audioTrack')}</Text>

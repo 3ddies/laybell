@@ -2073,7 +2073,7 @@ export default function PostScreen() {
             <View style={styles.audioSelected}>
               {/* Borderless filled-circle glyph, same as Today's Pick */}
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={isPreviewPlaying ? t('a11y.pause') : t('a11y.play')} onPress={togglePreview} activeOpacity={0.8} hitSlop={6}>
-                <Ionicons name={isPreviewPlaying ? 'pause-circle' : 'play-circle'} size={72} color={colors.primary} />
+                <Ionicons name={isPreviewPlaying ? 'pause-circle' : 'play-circle'} size={72} color={colors.text} />
               </TouchableOpacity>
               <Text style={styles.audioPickTitle} numberOfLines={1}>{audioFile.name || t('post.audioSelected')}</Text>
               <Text style={styles.audioPickSub}>

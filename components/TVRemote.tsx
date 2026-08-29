@@ -357,18 +357,18 @@ export default function TVRemote({ visible, onClose }: { visible: boolean; onClo
           activeOpacity={0.85}
           accessibilityLabel={ended ? t('tv.cast.replay') : undefined}
         >
-          <LinearGradient colors={GRADIENTS.primary} style={styles.playBtn}>
+          <View style={[styles.playBtn, { backgroundColor: colors.text }]}>
             {busy ? (
-              <ActivityIndicator size="large" color="#fff" />
+              <ActivityIndicator size="large" color={colors.background} />
             ) : (
               <Ionicons
                 name={ended ? 'refresh' : isPlaying ? 'pause' : 'play'}
                 size={38}
-                color="#fff"
+                color={colors.background}
                 style={ended || isPlaying ? undefined : { marginLeft: 4 }}
               />
             )}
-          </LinearGradient>
+          </View>
         </TouchableOpacity>
         {!isLive && (
           <TouchableOpacity onPress={() => doSkip(10)} disabled={!!current.isAd} hitSlop={10} style={styles.skipBtn}>

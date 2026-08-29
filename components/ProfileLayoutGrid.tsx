@@ -283,7 +283,7 @@ export default function ProfileLayoutGrid({
             <Text style={styles.songStreams} numberOfLines={1}>{post.stream_count ?? 0}</Text>
           </View>
         </View>
-        <Ionicons name={playing ? 'pause-circle' : 'play-circle'} size={30} color={colors.primary} />
+        <Ionicons name={playing ? 'pause-circle' : 'play-circle'} size={30} color={colors.text} />
       </TouchableOpacity>
     );
   }

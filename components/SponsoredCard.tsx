@@ -179,8 +179,8 @@ const SponsoredCard = memo(function SponsoredCard({ item, onCta, onOptions, vide
           song the way a song-attached post does. */}
       {isSimple && (
         <TouchableOpacity style={styles.songStrip} onPress={togglePreview} activeOpacity={0.85}>
-          <View style={[styles.songPlayBtn, previewOn && { backgroundColor: colors.primary }]}>
-            <Ionicons name={previewOn ? 'pause' : 'play'} size={15} color="#fff" style={previewOn ? undefined : { marginLeft: 2 }} />
+          <View style={[styles.songPlayBtn, previewOn && { backgroundColor: colors.text }]}>
+            <Ionicons name={previewOn ? 'pause' : 'play'} size={15} color={previewOn ? colors.background : '#fff'} style={previewOn ? undefined : { marginLeft: 2 }} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.songTitle} numberOfLines={1}>{ad?.headline || brand}</Text>

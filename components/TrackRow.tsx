@@ -98,7 +98,7 @@ export default function TrackRow({
       {/* Play / pause — borderless filled-circle glyph, same as Today's Pick */}
       {!hidePlayButton && (
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={isPlaying ? t('a11y.pause') : t('a11y.play')} onPress={safePlay} onLongPress={onOptions} activeOpacity={0.8} hitSlop={6}>
-          <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={44} color={colors.primary} />
+          <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={44} color={colors.text} />
         </TouchableOpacity>
       )}
 

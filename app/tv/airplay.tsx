@@ -476,13 +476,13 @@ export default function AirPlayTvScreen() {
               <Ionicons name="play-skip-back" size={26} color={adLocked ? colors.textTertiary : colors.text} />
             </TouchableOpacity>
             <TouchableOpacity onPress={togglePlay} disabled={buffering} activeOpacity={0.85}>
-              <LinearGradient colors={GRADIENTS.primary} style={styles.playBtn}>
+              <View style={[styles.playBtn, { backgroundColor: colors.text }]}>
                 {buffering ? (
-                  <ActivityIndicator size="large" color="#fff" />
+                  <ActivityIndicator size="large" color={colors.background} />
                 ) : (
-                  <Ionicons name={playing ? 'pause' : 'play'} size={36} color="#fff" style={playing ? undefined : { marginLeft: 4 }} />
+                  <Ionicons name={playing ? 'pause' : 'play'} size={36} color={colors.background} style={playing ? undefined : { marginLeft: 4 }} />
                 )}
-              </LinearGradient>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity onPress={goNext} disabled={adLocked} hitSlop={10} style={styles.sideBtn} accessibilityRole="button" accessibilityLabel={t('a11y.nextTrack')}>
               <Ionicons name="play-skip-forward" size={26} color={adLocked ? colors.textTertiary : colors.text} />

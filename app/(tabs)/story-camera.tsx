@@ -828,7 +828,7 @@ export default function StoryCameraScreen() {
                 onPress={() => (previewing ? stopSong('story-editor') : playSong('story-editor', song.id))}
                 hitSlop={6}
               >
-                <Ionicons name={previewing ? 'pause-circle' : 'play-circle'} size={44} color={colors.primary} />
+                <Ionicons name={previewing ? 'pause-circle' : 'play-circle'} size={44} color={colors.text} />
               </TouchableOpacity>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.flipCamera')} style={styles.songCardBtn} onPress={() => setShowSongPicker(true)} hitSlop={6}>
                 <Ionicons name="swap-horizontal" size={20} color="#fff" />

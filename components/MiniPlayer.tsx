@@ -455,7 +455,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
           {isBuffering ? (
             <Ionicons name="hourglass" size={18} color={colors.primary} />
           ) : (
-            <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={34} color={colors.primary} />
+            <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={34} color={colors.text} />
           )}
         </TouchableOpacity>
 

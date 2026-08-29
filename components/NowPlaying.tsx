@@ -197,9 +197,9 @@ function Controls() {
         accessibilityLabel={isBuffering ? t('a11y.buffering') : isPlaying ? t('a11y.pause') : t('a11y.play')}
       >
         {isBuffering ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.background} />
         ) : (
-          <Ionicons name={isPlaying ? 'pause' : 'play'} size={38} color="#fff" style={!isPlaying && styles.playGlyphNudge} />
+          <Ionicons name={isPlaying ? 'pause' : 'play'} size={38} color={colors.background} style={!isPlaying && styles.playGlyphNudge} />
         )}
       </TouchableOpacity>
       {hasQueue && (
@@ -862,7 +862,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   navBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   playBtn: {
     width: 84, height: 84, borderRadius: 42,
-    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.text, alignItems: 'center', justifyContent: 'center',
   },
   // The play triangle's visual weight leans left — nudge it for optical center.
   playGlyphNudge: { marginLeft: 4 },
