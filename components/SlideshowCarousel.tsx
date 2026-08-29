@@ -85,15 +85,30 @@ export default function SlideshowCarousel({
   // ScrollView claims — so the slide paged instead of the photo zooming. The
   // reel viewer never hit this because its list scrolls vertically.
   //
-  // Two things had to be true, and the first attempt only did one of them.
+  // The scroll now STANDS DOWN for the pinch: waitFor below means paging cannot
+  // start until the pinch handler has failed.
   //
-  // 1. The scroll must not CANCEL the pinch. That is what simultaneousHandlers
-  //    is for, and it only works because the zoom now wraps the scroll view
-  //    rather than each slide — see the note at the wrapper below.
-  // 2. The scroll must not PAGE. multiTouch keys off the second finger touching
-  //    DOWN, before anything has moved: waiting for the zoom to start is too
-  //    late, because by then the scroll already owns the gesture.
-  const [multiTouch, setMultiTouch] = useState(false);
+  // Two earlier attempts tried to get out of the scroll's way instead, and both
+  // were unsound. Flipping scrollEnabled off when a second finger lands could
+  // never be fast enough — it is React state, so it lands a frame after the
+  // scroll already owns the gesture — and the detection itself was dead code,
+  // because a plain View's onTouchStart only fires while that view is the touch
+  // responder, which the native ScrollView had taken. Declaring the two handlers
+  // simultaneous stopped the cancellation but not the paging, so the slide still
+  // moved out from under the zoom.
+  //
+  // waitFor is the one that actually arbitrates, and it is safe for ordinary
+  // paging: RNGH only defers to a handler in BEGAN or ACTIVE, and a pinch does
+  // not begin until a SECOND pointer is down. One finger leaves it undetermined,
+  // so a normal swipe pages with no delay at all.
+  const pinchRef = useRef(null);
+  // waitFor resolves the handler's TAG, which RNGH attaches on commit — and the
+  // scroll view, as a child, commits before the pinch that owns the ref. Wiring
+  // it on the first render would read a null ref and silently never arbitrate
+  // (exactly how the last attempt failed). One post-mount flip re-sends the
+  // config when the tag exists.
+  const [handlersReady, setHandlersReady] = useState(false);
+  useEffect(() => { setHandlersReady(true); }, []);
   const [zooming, setZooming] = useState(false);
   const gestureSincePress = useRef(false);
   const zoomCbRef = useRef(onZoomChange);
@@ -131,25 +146,10 @@ export default function SlideshowCarousel({
   }
 
   return (
-    <View
-      style={{ width, height }}
-      // Multi-touch is detected on THIS wrapper, not the ScrollView, and before
-      // any movement — the scroll has to be off before the fingers travel, not
-      // after the zoom starts.
-      onTouchStart={(e) => { if (e.nativeEvent.touches.length > 1) setMultiTouch(true); }}
-      onTouchEnd={(e) => { if (e.nativeEvent.touches.length < 2) setMultiTouch(false); }}
-      onTouchCancel={() => setMultiTouch(false)}
-    >
-      {/* The zoom wraps the SCROLL VIEW, not each slide, and that placement is
-          the fix rather than a tidy-up.
-
-          Per-slide, each pinch handler was a CHILD of the scroll view, and React
-          commits children before parents — so every pinch registered its
-          simultaneousHandlers while the scroll view's ref was still null, the
-          relation was never made, and the scroll cancelled the pinch on contact
-          (the zoom visibly started and was yanked back). As an ancestor the ref
-          is already populated when the pinch mounts, so the two are genuinely
-          declared simultaneous.
+    <View style={{ width, height }}>
+      {/* The zoom wraps the SCROLL VIEW rather than each slide, which is what
+          lets the scroll wait on it: the pinch has to own a ref the scroll can
+          name, and one zoom above the pager is simpler than N inside it.
 
           Scaling the viewport looks identical to scaling the slide — the scroll
           view clips its content to its own frame first, so what grows is exactly
@@ -160,7 +160,7 @@ export default function SlideshowCarousel({
         height={height}
         style={{ width, height }}
         resetOnRelease
-        simultaneousHandlers={scrollRef}
+        pinchRef={pinchRef}
         onGesture={() => { gestureSincePress.current = true; }}
         onZoomChange={(z) => { setZooming(z); zoomCbRef.current?.(z); }}
       >
@@ -171,9 +171,10 @@ export default function SlideshowCarousel({
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={onMomentumEnd}
           contentOffset={{ x: initialIndex * width, y: 0 }}
-          // Paging is off from the moment a second finger lands until every finger
-          // is up — see the note by multiTouch above.
-          scrollEnabled={!multiTouch && !zooming}
+          // Stand down for the pinch. Attached only once the pinch handler has a
+          // tag to resolve — see handlersReady above.
+          waitFor={handlersReady ? pinchRef : undefined}
+          scrollEnabled={!zooming}
           // Hold the tab swipe off while a slide swipe is in progress (re-enabled on end).
           onTouchStart={() => setTabSwipe(false)}
           onScrollBeginDrag={() => setTabSwipe(false)}

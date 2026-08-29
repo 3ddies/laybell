@@ -30,7 +30,7 @@ function dampGesture(raw: number): number {
 
 export default function ZoomableView({
   width, height, active = true, style, onZoomChange, onGesture, resetOnRelease = false,
-  simultaneousHandlers, children,
+  simultaneousHandlers, pinchRef: pinchRefProp, children,
 }: {
   width: number;
   height: number;
@@ -58,6 +58,9 @@ export default function ZoomableView({
    *  pinch survive; whether the scroll itself should also move is a separate
    *  question the host answers with scrollEnabled. */
   simultaneousHandlers?: React.Ref<unknown> | React.Ref<unknown>[];
+  /** Supply the ref for the pinch handler instead of letting this own one, so a
+   *  scrollable INSIDE the zoom can `waitFor` it and stand down for a pinch. */
+  pinchRef?: React.MutableRefObject<unknown>;
   children: ReactNode;
 }) {
   const baseScale = useRef(new Animated.Value(1)).current;
@@ -105,7 +108,8 @@ export default function ZoomableView({
   const curTY = useRef(0);
   const [panEnabled, setPanEnabled] = useState(false);
 
-  const pinchRef = useRef(null);
+  const ownPinchRef = useRef(null);
+  const pinchRef = (pinchRefProp ?? ownPinchRef) as React.MutableRefObject<null>;
   const panRef = useRef(null);
 
   const lockedRef = useRef(false);
