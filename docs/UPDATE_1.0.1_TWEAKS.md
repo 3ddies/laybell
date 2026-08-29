@@ -3,6 +3,9 @@
 Running list of cosmetic and behavioural changes for 1.0.1. Add anything here; nothing in this
 file touches the released app until a **production** build is submitted.
 
+⚠️ **As of 2026-08-28 that means TWO submissions, not one.** Android went live on Google Play,
+so 1.0.1 ships to both stores — and with no OTA on this project, each one needs its own build.
+
 **How to add one:** screenshot the screen on your phone, say what bothers you. "The like count
 sits too close to the avatar" is enough — precise pixel direction is my job, not yours.
 
@@ -68,6 +71,43 @@ stops.
 | 12 | Signup | Logo sat hard against the Dynamic Island | Cosmetic | ✅ done |
 | 13 | Sign-in handoff | The auth screen visibly **reset itself** before the feed appeared | Functional | ✅ done |
 | 14 | GIF maker | Trim bar unusable on long videos — separate zoom slider, gestures untouched | Functional | ✅ done |
+| 15 | App-wide | Neutral-colour sweep: brand orange reserved for terminal actions only | Cosmetic | ✅ done |
+| 16 | Now Playing | SoundCloud-style immersive player, opened by tapping the artwork | Feature | ✅ done |
+| 17 | Post song corner | Blooms into the real artwork while that song plays, then folds back | Cosmetic | ✅ done |
+| 18 | Song cards | Dancing equaliser, a real PAUSED state, and a STOP glyph that tells the truth | Functional | ✅ done |
+| 19 | Home feed | Two-finger pinch to zoom a photo | Feature | ✅ done |
+| 20 | Home header | Wordmark settles yellow → neutral; the bar dissolves instead of ending on a rule | Cosmetic | ✅ done |
+| 21 | Reels | Kind dropdown — All / Vertical / Horizontal / Films | Feature | ✅ done |
+| — | Slideshows | Pinch-to-zoom — **attempted 3×, reverted.** See below. | Feature | ⛔ abandoned |
+
+### ⛔ Slideshow pinch-to-zoom — three attempts, all reverted
+
+Worth writing down so nobody spends a fourth session on it. To a **horizontal paging
+ScrollView**, a two-finger pinch and a one-finger page drag are *the same movement*: both drag
+the touch centroid sideways. Reels and single feed photos never hit this because the lists
+around them scroll vertically.
+
+Four things were tried and each failed for its own reason:
+
+1. **`scrollEnabled` off on the second finger** — React state, so it lands a frame after the
+   scroll already owns the gesture.
+2. **The multi-touch detection behind it was dead code** — a plain `View`'s `onTouchStart` only
+   fires while that view is the touch responder, and the native ScrollView had taken it. It
+   never ran at all.
+3. **`simultaneousHandlers`** — stopped the scroll cancelling the pinch, but not the paging, so
+   the slide still slid out from under the zoom. (It also silently did nothing at first: RNGH
+   attaches the `handlerTag` in `useImperativeHandle`, which runs on commit, and children commit
+   before parents — so a per-slide pinch registered against a still-null scroll ref.)
+4. **`waitFor`** — stopped the paging by stopping the pager outright. Slides stopped swiping.
+
+`components/SlideshowCarousel.tsx` and `components/ZoomableView.tsx` are byte-identical to
+before the attempts (verified by diff, not assumed). **Do not retry without a different
+interaction model** — a full-screen zoom overlay outside the pager's touch domain, rather than
+another attempt to arbitrate between two gestures that look identical to the OS.
+
+One real bug was found along the way and is fixed: `ElasticSwipeView` was claiming pinches
+app-wide, because `PanResponder`'s `dx` is the centroid of *all* touches, so spreading two
+fingers cleared its 12px threshold. It now refuses any gesture with more than one touch down.
 
 ### 14 · The GIF trim bar — reverted, then solved with a separate zoom slider
 

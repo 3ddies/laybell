@@ -18,29 +18,72 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-08-12 (end of session)
+## 0.0 ✅ THE CURRENT STATE — updated 2026-08-29 (end of session)
 
-**One-line status: both store listings are COMPLETE and submission-ready. The only
-thing left is the production build — deliberately paused by the owner (2026-08-10) to
-keep polishing, because there is no OTA here and whatever is in that build ships.**
+**One-line status: the launch is DONE — Laybell is live on both stores. All work now is
+1.0.1, which is unreleased and lives only on `dev`.**
 
-# 🎉🎉 **LAYBELL IS LIVE ON THE APP STORE — released 2026-08-24 21:30 UTC.**
+# 🎉🎉 **LIVE ON BOTH STORES.**
 
-Verified through Apple's lookup API rather than the storefront (which was rate-limiting):
-`Laybell: Music & Creators`, version 1.0.0, id `6795675871`. Direct link:
-https://apps.apple.com/us/app/laybell-music-creators/id6795675871
+**App Store — released 2026-08-24 21:30 UTC.** `Laybell: Music & Creators`, version 1.0.0,
+id `6795675871`. Verified through Apple's lookup API rather than the storefront (which was
+rate-limiting): https://apps.apple.com/us/app/laybell-music-creators/id6795675871
+
+**Google Play — published 2026-08-28.** Production track, **100% rollout**, phones and tablets
++2 more. Confirmed twice on 08-29: the Play Console dashboard reports *"no unpublished
+changes"*, and the **public listing renders correctly** at
+https://play.google.com/store/apps/details?id=com.laybell.app — Install button live, five
+screenshots, Teen rating (*Users Interact, In-App Purchases*), Data safety populated,
+*"Laybell 1.0 — the first release."*, developer **Edwin Devron Hall**, category Music & Audio.
 
 Seeded with 19 posts at launch (15 from @3ddie, 2 from @laybell, 2 from @laybellreview).
 
-⏳ **Search will lag by a day or more.** App Store availability and search indexing are separate
-systems — the direct link works immediately, the search result does not. Nothing to fix; share
-the link meanwhile.
+⏳ Store metrics read `-` on both consoles for now. Install/crash data needs a reporting window;
+App Store search indexing lags availability by a day or more. Neither is a fault.
 
-📱 **Android is still with Google** (submitted 08-21, publishes automatically on approval).
+## 🔧 1.0.1 — in development, NOT released
 
-**Next:** the weekly health check (`supabase/sql/_HEALTH_CHECK.sql`), App Store Connect →
-Analytics and Play Console → Android vitals for the first-week crash picture, and 1.0.1 from
-`docs/POST_LAUNCH_BACKLOG.md` — items 1, 2 and 3c are user-facing.
+**140 commits on `dev` since `v1.0.0-build4`.** Tree clean, pushed, typecheck clean. The
+released build is untouched and still tagged `v1.0.0-build4`.
+
+What is in it so far, by area:
+
+- **Auth screen** — animated brand backdrop, the sign-in handoff that covers the per-user
+  remount, warmth that builds as the form fills, gradient submit buttons with a sweeping
+  sheen, tap-only keyboard dismissal.
+- **GIF maker** — a separate zoom slider for the trim bar (after four failed attempts at
+  pinch-zooming the bar itself; see the revert), neutral colours, matched window edges.
+- **Neutral-colour sweep** — brand orange is now reserved for terminal actions (Share, Create,
+  Follow back). @mentions, play buttons, switches, empty states, the RECORD panel, the post
+  visibility icons and the comment send arrow all went neutral.
+- **Music surfaces** — a SoundCloud-style immersive player reached by tapping the artwork
+  (full-bleed panning cover, synthetic waveform scrubber, whole-screen scrub/tap, floating
+  notes); the post song-corner blooms into real artwork while playing; the song card gained a
+  dancing equaliser that folds into a pause symbol, a true paused state, and a STOP glyph that
+  finally tells the truth about what that button does.
+- **Feed and reels** — pinch-to-zoom on feed photos, a wordmark that settles from brand yellow
+  to neutral, a header that dissolves into the feed instead of ending on a hairline, and a
+  reels kind dropdown (All / Vertical / Horizontal / Films).
+
+⛔ **Slideshow pinch-to-zoom was attempted three times and REVERTED.** A horizontal pinch and a
+horizontal page drag are the same movement to a paging ScrollView. `scrollEnabled` toggling is
+a frame too late, the touch detection was dead code (a View's `onTouchStart` needs the
+responder, which the ScrollView holds), `simultaneousHandlers` stopped the cancel but not the
+paging, and `waitFor` stopped the paging by killing paging outright. `SlideshowCarousel.tsx` is
+byte-identical to before the attempts. Do not retry without a different interaction model.
+
+**Before 1.0.1 can ship:** version bump, EAS build, submit — **to BOTH stores now**, which the
+old plan did not assume. Still open: `verify-email.tsx` / `reset-password.tsx` on the old
+inputs, the keyboard sweep across the other 41 `TextInput` files, the `PostMusicContext`
+ambient-audio races (three claims, none re-verified), and four new `reel.filter.*` strings that
+exist in English only (`translate()` falls back per key, so the other nine locales read English).
+
+**Also next:** the weekly health check (`supabase/sql/_HEALTH_CHECK.sql`), and now that both
+stores have real users — App Store Connect → Analytics and Play Console → Android vitals for
+the first-week crash picture.
+
+⚠️ **Owner-only, still open:** NCMEC (forward `laybellapp@gmail.com` → `3ddiehall@gmail.com`)
+and the Stripe verdict — **payouts pause 2026-09-09**.
 
 ---
 
