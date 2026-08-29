@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from './MediaCropper';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
-import { SLIDESHOW_FORMATS, defaultFitFor, isAutoFormat, type SlideFit } from '../lib/aspectRatio';
+import { SLIDESHOW_FORMATS, defaultSlideFit, isAutoFormat, type SlideFit } from '../lib/aspectRatio';
 import { useThemedStyles, useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -122,7 +122,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   const stageStep = stageStepFor(frameW, slides.length);
   const stageStepRef = useRef(stageStep); stageStepRef.current = stageStep;
 
-  const fitOf = (s?: ArrangerSlide | null): SlideFit => s?.fit ?? defaultFitFor(format);
+  // The frame the slides are measured against, so a tall photo can be told from
+  // a wide one relative to THIS post rather than in the abstract.
+  const frameAspect = frameH > 0 ? frameW / frameH : 1;
+  const fitOf = (s?: ArrangerSlide | null): SlideFit => s?.fit ?? defaultSlideFit(frameAspect, s);
   const cur = slides[Math.min(index, Math.max(0, slides.length - 1))];
 
   // ── Crop, read out of the Adjust sheet ──────────────────────────────────────

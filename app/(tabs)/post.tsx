@@ -43,7 +43,7 @@ import { useTranslation } from '../../contexts/LanguageContext';
 import { showPermissionDenied } from '../../lib/permissions';
 import {
   IMAGE_FORMATS, aspectToNumber, clampVideoAspect, defaultFormatFor,
-  defaultFitFor, isAutoFormat, resolveFrameAspect, type SlideFit,
+  defaultSlideFit, isAutoFormat, resolveFrameAspect, type SlideFit,
 } from '../../lib/aspectRatio';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
@@ -80,7 +80,7 @@ type PickedSlide = {
   posterUri?: string | null;    // ph:// poster (video) — renders reliably via expo-image
   crop?: CropRect | null;       // user's drag/pinch crop (image slides) — baked on upload
   // How this slide meets the frame. Unset means "whatever the chosen format
-  // implies" — see defaultFitFor. Set only once the user overrides it on the
+  // implies" — see defaultSlideFit. Set only once the user overrides it on the
   // Arrange screen, so changing format still moves the slides that were left
   // alone.
   fit?: SlideFit | null;
@@ -833,9 +833,10 @@ export default function PostScreen() {
   }
   function enterSlideshow() {
     if (postType === 'slideshow') return;
-    // 'full' — each slide keeps its own shape until someone crops one. A frame
-    // chosen up front would letterbox photos that never needed changing.
-    setPostType('slideshow'); setFormat('full');
+    // 4:5 — a PORTRAIT frame, so a landscape photo lands with bars above and
+    // below it rather than down its sides. See defaultSlideFit for why that
+    // asymmetry matters.
+    setPostType('slideshow'); setFormat('4:5');
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null;
     forgetResumedDraft();
   }
@@ -1291,7 +1292,7 @@ export default function PostScreen() {
               // crop rect is deliberately ignored and the whole frame is
               // uploaded — the carousel letterboxes it at render time. Baking
               // the crop anyway would silently cut off the thing they kept.
-              const fit = s.fit ?? defaultFitFor(format);
+              const fit = s.fit ?? defaultSlideFit(previewAspect, s);
               const crop = fit === 'contain' ? null : s.crop;
               const ops: any[] = [];
               if (crop && crop.width > 1 && crop.height > 1) ops.push({ crop });
@@ -1311,7 +1312,7 @@ export default function PostScreen() {
           if (s.type === 'video' && s.thumbnailUri) thumb = await uploadToStorage(user.id, s.thumbnailUri, 'jpg', 'image/jpeg');
           built.push({
             type: s.type, url, thumbnail_url: thumb, aspect_ratio: format,
-            fit: s.fit ?? defaultFitFor(format),
+            fit: s.fit ?? defaultSlideFit(previewAspect, s),
           });
         }
         slidesPayload = built;

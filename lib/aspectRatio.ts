@@ -8,10 +8,10 @@
 export const IMAGE_FORMATS = ['1:1', '4:5'] as const;
 export const VIDEO_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
 
-// The shapes a slideshow can be CROPPED to. Not a frame the user picks up front
-// — a slideshow starts as 'full', meaning it takes the shape of its first slide
-// and every slide is shown whole inside it. These are the choices offered once
-// somebody decides to crop.
+// The shapes a slideshow can be CROPPED to. A slideshow starts at 4:5 — a
+// portrait frame, so a landscape photo fits inside it with bars above and below
+// rather than down the sides. These are the choices offered once somebody
+// decides to crop; 'full' (Original) is the third, and means no crop at all.
 //
 // 'full' and 'mixed' are MODES rather than ratios, resolved against the media at
 // share time; they never reach the database, because a carousel has exactly one
@@ -26,18 +26,29 @@ export function isAutoFormat(format?: string | null): boolean {
 }
 
 /**
- * The fit a slide gets when nobody has chosen one for it: FITTED.
+ * The fit a slide gets when nobody has chosen one for it.
  *
- * A slideshow is a set of photos that were never taken to match each other, so
- * the honest default is to show each one whole, at the proportions it was shot
- * at. Filling by default cropped photos the poster never asked to have cropped,
- * and then needed a Fill/Fit control to undo — a switch that only existed to
- * take back a decision nothing had asked for.
+ * ⚠️ NEVER SIDE BARS. The two kinds of letterboxing are not equally acceptable:
+ * bars above and below a wide photo read as the photo BEING wide, but bars down
+ * the sides of a tall one read as the app failing to fill its own frame.
  *
- * Cropping is now the only thing that fills, which is what cropping means.
+ * Which one you get is decided entirely by whether the slide is wider or
+ * narrower than the frame. So anything WIDER may fit — its bars land top and
+ * bottom, which is fine — and anything NARROWER must fill, because fitting it
+ * would put bars down the sides. A tall photo is cropped by default for that
+ * reason, and the poster reframes which part of it survives.
+ *
+ * A slide with no dimensions fills, since a bar cannot be ruled out without
+ * knowing the shape.
  */
-export function defaultFitFor(_format?: string | null): SlideFit {
-  return 'contain';
+export function defaultSlideFit(
+  frameAspect: number,
+  media?: { width?: number | null; height?: number | null } | null,
+): SlideFit {
+  const w = media?.width ?? 0;
+  const h = media?.height ?? 0;
+  if (!(w > 0 && h > 0)) return 'cover';
+  return w / h < frameAspect ? 'cover' : 'contain';
 }
 
 /**
