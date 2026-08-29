@@ -28,7 +28,7 @@ import { selection } from '../lib/haptics';
 //   • Following   — already connected, one way. Quiet outline; nothing to do.
 //   • Friends     — mutual. Same quiet weight as Following (there is no action
 //                   left) but marked as its own thing with the people icon and a
-//                   faintly brand-tinted edge.
+//                   stronger neutral edge — distinguished by weight, not hue.
 //
 // The white of Follow is written from the palette, not hardcoded: on the LIGHT
 // theme a white pill on off-white paper (#F2F1ED) would vanish, so it inverts to
@@ -66,7 +66,11 @@ export default function FollowButton({ userId, style }: { userId?: string | null
 
   const inner = (
     <View style={styles.inner}>
-      {isFriend && <Ionicons name="people" size={12} color={colors.primary} />}
+      {/* textSecondary, matching friendsText beside it — Friends is a settled
+          state with no action left, so its glyph should sit at the same quiet
+          weight as its label rather than pulling brand attention to a button
+          there is no reason to tap. */}
+      {isFriend && <Ionicons name="people" size={12} color={colors.textSecondary} />}
       <Text
         style={[
           styles.text,
@@ -155,9 +159,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
 
   following: { borderColor: colors.border },
-  // Mutual: the edge picks up a trace of brand so it is not just "Following
-  // with an icon" at a glance.
-  friends: { borderColor: colors.primary + '55' },
+  // Mutual: a STRONGER NEUTRAL edge, not a brand-tinted one.
+  //
+  // The point of this border was that Friends should not read as "Following with
+  // an icon" at a glance, and that still holds — it is just made with weight now
+  // instead of hue. borderStrong against border is a clear step in both themes
+  // (#3B3B3B vs #242424 on dark, #B8B4A8 vs #D4D1C9 on light), so the two states
+  // stay distinguishable without brand on a button that has nothing left to do.
+  friends: { borderColor: colors.borderStrong },
 
   // Slight negative tracking: at 12px, tight caps read as a deliberate label
   // rather than shrunken body text.
