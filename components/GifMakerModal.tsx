@@ -438,7 +438,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 5,
   },
   resetText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  durLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
+  // colors.text, not textSecondary: white on dark, near-black on light. This is
+  // the clip length — the number the whole bar exists to set — and it was the
+  // dimmest thing under a control it is meant to explain.
+  durLabel: { color: colors.text, fontSize: 13, fontWeight: '700' },
   resultBtns: { alignSelf: 'stretch', gap: SPACING.sm, paddingHorizontal: SPACING.lg },
   primaryBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,

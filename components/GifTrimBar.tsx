@@ -45,6 +45,14 @@ import { useTheme } from '../contexts/ThemeContext';
 // for free and gets stretched rather than re-cut. Stretching is the honest
 // trade: the point of zooming is finer CONTROL, and the video preview above the
 // bar is what shows the actual frame.
+//
+// COLOUR. The selection window, its grips and the zoom slider are colors.text —
+// white on dark, near-black on light — not the brand orange they used to be.
+// Owner's call, and it earns it twice over: these sit on ARBITRARY VIDEO FRAMES,
+// where a mid-tone orange can land on orange content and vanish, while the
+// theme's strongest neutral is the one colour guaranteed to separate from the
+// surface behind it. It also stops the trim controls competing with the Create
+// button, which is the only thing on this screen that should be reading as brand.
 const FRAMES = 8;
 
 // Tightest view, in seconds across the bar — enough for the longest GIF plus
@@ -175,9 +183,9 @@ export default function GifTrimBar({
             <View pointerEvents="none" style={[styles.dim, { left: leftX + winW, width: Math.max(0, width - leftX - winW), height }]} />
 
             {/* Selection window + edge grips (visual only) */}
-            <View pointerEvents="none" style={[styles.window, { left: leftX, width: winW, height, borderColor: colors.primary }]} />
-            <View pointerEvents="none" style={[styles.grip, { left: leftX + 3, backgroundColor: colors.primary }]} />
-            <View pointerEvents="none" style={[styles.grip, { left: leftX + winW - 6, backgroundColor: colors.primary }]} />
+            <View pointerEvents="none" style={[styles.window, { left: leftX, width: winW, height, borderColor: colors.text }]} />
+            <View pointerEvents="none" style={[styles.grip, { left: leftX + 3, backgroundColor: colors.text }]} />
+            <View pointerEvents="none" style={[styles.grip, { left: leftX + winW - 6, backgroundColor: colors.text }]} />
           </View>
         </PanGestureHandler>
       </PinchGestureHandler>
@@ -220,15 +228,15 @@ function ZoomSlider({ width, value, onChange, label }: {
     <View style={styles.zoomRow}>
       <View style={styles.zoomHead}>
         <Text style={[styles.zoomLabel, { color: colors.textMeta }]}>Zoom</Text>
-        <Text style={[styles.zoomLabel, { color: colors.primary }]}>{label}</Text>
+        <Text style={[styles.zoomLabel, { color: colors.text }]}>{label}</Text>
       </View>
       <PanGestureHandler onGestureEvent={onEvent} onHandlerStateChange={onState}>
         <View style={[styles.zoomTrackHit, { width }]}>
           <View style={[styles.zoomTrack, { backgroundColor: colors.surfaceLight }]} />
-          <View style={[styles.zoomFill, { width: value * travel + KNOB / 2, backgroundColor: colors.primary }]} />
+          <View style={[styles.zoomFill, { width: value * travel + KNOB / 2, backgroundColor: colors.text }]} />
           <View style={[styles.zoomKnob, {
             left: value * travel, width: KNOB, height: KNOB,
-            backgroundColor: colors.primary, borderColor: colors.background,
+            backgroundColor: colors.text, borderColor: colors.background,
           }]} />
         </View>
       </PanGestureHandler>
