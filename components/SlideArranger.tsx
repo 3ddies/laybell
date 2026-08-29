@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, PanResponder, Animated } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -142,92 +142,106 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   // fires. A release before it fires is a tap, which selects.
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const dragIndexRef = useRef<number | null>(null);
-  // The order being dragged, held LOCALLY until the finger lifts.
-  //
-  // Publishing every boundary crossing up to the composer was what made this
-  // feel dead: post.tsx is a very large component, so each swap re-rendered the
-  // entire New Post screen mid-gesture. The drag now mutates a local array and
-  // the parent hears once, on release.
-  const [draft, setDraft] = useState<ArrangerSlide[] | null>(null);
-  const draftRef = useRef<ArrangerSlide[] | null>(null);
+  // Where the tile would land if the finger lifted now. Kept in a ref, not
+  // state: nothing re-renders during a drag, which is the point.
+  const targetRef = useRef<number | null>(null);
   const dragX = useRef(new Animated.Value(0)).current;
+  // One displacement value per tile, so the others can spring aside natively
+  // while the dragged one tracks the finger. Rebuilt only when the count
+  // changes — a crop edit must not hand the row a fresh set of values.
+  const offsets = useMemo(
+    () => Array.from({ length: slides.length }, () => new Animated.Value(0)),
+    [slides.length],
+  );
+  const offsetsRef = useRef(offsets); offsetsRef.current = offsets;
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startIdx = useRef(0);
   const startX = useRef(0);
-  // Total distance the dragged tile's SLOT has travelled from live reordering.
-  const rebase = useRef(0);
   const moved = useRef(false);
 
   const clearHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
+
+  // Push every tile out of the dragged tile's way, or back. Springs, on the
+  // NATIVE driver — this is the part that makes the row feel alive instead of
+  // snapping between arrangements.
+  const displace = (from: number, to: number) => {
+    const list = offsetsRef.current;
+    const p = pitchRef.current;
+    for (let i = 0; i < list.length; i++) {
+      if (i === from) continue;
+      const shift = to > from ? (i > from && i <= to ? -p : 0)
+        : to < from ? (i >= to && i < from ? p : 0)
+          : 0;
+      Animated.spring(list[i], {
+        toValue: shift, useNativeDriver: true, friction: 14, tension: 220,
+      }).start();
+    }
+  };
+
   const endDrag = () => {
     clearHold();
-    // Publish once, here — the only time the composer hears about a reorder.
-    const d = draftRef.current;
-    if (d) onChangeRef.current(d);
-    draftRef.current = null;
-    setDraft(null);
+    const from = dragIndexRef.current;
+    const to = targetRef.current;
     dragIndexRef.current = null;
+    targetRef.current = null;
     setDragIndex(null);
-    rebase.current = 0;
+
+    // Zero everything BEFORE publishing. The tiles are about to re-render in
+    // their new order, and a leftover offset would show as a one-frame jump.
     dragX.setValue(0);
+    offsetsRef.current.forEach((o: Animated.Value) => { o.stopAnimation(); o.setValue(0); });
+
+    if (from != null && to != null && to !== from) {
+      const list = slidesRef.current.slice();
+      const [item] = list.splice(from, 1);
+      list.splice(to, 0, item);
+      onChangeRef.current(list);
+      setIndex(to);
+    }
   };
 
   const pan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onPanResponderTerminationRequest: () => dragIndexRef.current == null,
     onPanResponderGrant: (e) => {
-      const i = idxAtRef.current(e.nativeEvent.pageX);
-      // Kept in tile-space (0 = the strip's first tile) so g.dx adds to it
-      // directly.
       startX.current = e.nativeEvent.pageX - stripX.current - STRIP_PAD;
-      rebase.current = 0;
       moved.current = false;
-      startIdx.current = i;
+      startIdx.current = idxAtRef.current(e.nativeEvent.pageX);
       clearHold();
       holdTimer.current = setTimeout(() => {
-        // Picking a tile up also selects it — you are about to move the thing
-        // you are looking at, which is what makes the reorder legible. Commit
-        // BEFORE seeding the draft, so the crop lands on the real array.
+        // Picking a tile up selects it too — you are about to move the thing you
+        // are looking at. Commit first so the crop lands on the real array.
         if (startIdx.current !== indexRef.current) { commitRef.current(); setIndex(startIdx.current); }
-        draftRef.current = slidesRef.current.slice();
-        setDraft(draftRef.current);
         dragIndexRef.current = startIdx.current;
+        targetRef.current = startIdx.current;
         setDragIndex(startIdx.current);
         dragX.setValue(0);
-        // The tile is now yours. Without this the pickup has no moment — the
-        // hold just silently becomes a drag, which is what made it feel like
-        // nothing had happened.
+        // The tile is now yours. Without this the pickup has no moment.
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       }, HOLD_MS);
     },
     onPanResponderMove: (_e, g) => {
       if (Math.abs(g.dx) > HOLD_SLOP || Math.abs(g.dy) > HOLD_SLOP) moved.current = true;
-      const di = dragIndexRef.current;
-      if (di == null) { if (moved.current) clearHold(); return; }
+      const from = dragIndexRef.current;
+      if (from == null) { if (moved.current) clearHold(); return; }
 
-      // The tile follows the finger MINUS however far its own slot has already
-      // slid out from under it. Every live reorder moves the slot by a whole
-      // tile, so without subtracting that the tile would jump a tile-width on
-      // each swap — it would track the finger only until the first one.
-      dragX.setValue(g.dx - rebase.current);
+      // ⚠️ THE TILES NEVER REORDER MID-DRAG, and that is the whole point.
+      //
+      // The old version spliced the array on every crossing and re-rendered, so
+      // the dragged tile's own slot kept moving underneath it and had to be
+      // compensated for — a correction applied a render later than the finger.
+      // That lag IS the unresponsiveness. Now the rendered order is frozen for
+      // the length of the gesture: the dragged tile is pure finger delta with
+      // nothing to correct, and the others spring aside around it.
+      dragX.setValue(g.dx);
 
-      // Reorder as the finger crosses into another slot.
-      const fingerX = startX.current + g.dx;
       const target = Math.max(0, Math.min(slidesRef.current.length - 1,
-        Math.floor(fingerX / pitchRef.current)));
-      if (target !== di) {
-        const list = (draftRef.current ?? slidesRef.current).slice();
-        const [item] = list.splice(di, 1);
-        list.splice(target, 0, item);
-        draftRef.current = list;
-        setDraft(list);
-        rebase.current += (target - di) * pitchRef.current;
-        dragIndexRef.current = target;
-        setDragIndex(target);
-        setIndex(target);
-        dragX.setValue(g.dx - rebase.current);
-        // A tick per swap. This is the feedback that tells you the reorder
-        // actually took, without having to look away from your finger.
+        Math.round((startX.current + g.dx - pitchRef.current / 2) / pitchRef.current)));
+      if (target !== targetRef.current) {
+        displace(from, target);
+        targetRef.current = target;
+        // A tick per swap — the feedback that tells you it took, without having
+        // to look away from your finger.
         Haptics.selectionAsync().catch(() => {});
       }
     },
@@ -248,9 +262,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
 
   useEffect(() => () => clearHold(), []);
 
-  // While a drag is live the strip renders the local draft; everywhere else it
-  // is the composer's array.
-  const view = draft ?? slides;
+  const view = slides;
   const cur = view[Math.min(index, view.length - 1)];
   const curFit: SlideFit = cur?.fit ?? defaultFitFor(format);
 
@@ -392,16 +404,17 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                   marginRight: i === view.length - 1 ? 0 : TILE_GAP,
                   borderColor: i === index ? colors.text : 'transparent',
                 },
-                // A picked-up tile has to look picked up. Bigger, lifted off the
-                // row with a real shadow, and drawn over its neighbours — without
-                // that the only thing that changes is which slot it is in, which
-                // is why the drag read as static.
-                dragging && {
+                // Every tile carries its displacement spring; the dragged one
+                // swaps that for the raw finger delta and lifts. Bigger,
+                // shadowed and drawn over its neighbours — without that the only
+                // thing that changed was which slot it sat in, which is what
+                // read as static.
+                dragging ? {
                   transform: [{ translateX: dragX }, { scale: 1.22 }],
                   zIndex: 5, elevation: 8,
                   shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
                   borderColor: colors.text,
-                },
+                } : { transform: [{ translateX: offsets[i] ?? 0 }] },
               ]}
             >
               <ExpoImage

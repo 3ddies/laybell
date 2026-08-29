@@ -1,9 +1,11 @@
 // Post format options (Instagram-style). Stored as a string on posts.aspect_ratio.
 //   1:1 square · 4:5 portrait  (1.91:1 landscape dropped for photos — too narrow)
-// Single photos get the two choices that actually matter: square, or the shape
-// the photo already is. 4:5 was a third crop nobody reached for — if you don't
-// want a square you want your photo, not a different rectangle.
-export const IMAGE_FORMATS = ['1:1', 'full'] as const;
+// Single photos: square, or tall. Written as the literal 4:5 rather than 'full'
+// because for the photos people actually post they are the SAME THING —
+// clampFeedAspect floors at 4/5, so a portrait phone photo (3:4, 9:16) resolves
+// to exactly 4:5 anyway. Naming the ratio is honest about where it lands, and
+// spares a resolution step that only ever returned the same number.
+export const IMAGE_FORMATS = ['1:1', '4:5'] as const;
 export const VIDEO_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
 
 // Slideshow frame options. '1:1' and '4:5' are literal ratios; 'full' and
