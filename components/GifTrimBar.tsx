@@ -109,6 +109,10 @@ export default function GifTrimBar({
   const gFocalFrac = useRef(0.5);
   const gFocalTime = useRef(0);
   const mode = useRef<Mode>('move');
+  // Guards against a missed BEGAN: if the first move arrives unarmed, the
+  // baseline is taken from current values rather than left as a stale number
+  // from a previous drag.
+  const panArmed = useRef(false);
   const pinchRef = useRef<any>(null);
   const panRef = useRef<any>(null);
 
@@ -126,16 +130,28 @@ export default function GifTrimBar({
 
   const pxPerSec = width / (viewSec || 1);
 
-  // Keep the viewport containing the selection. Called after any change that
-  // could push the selection out of frame — a grip drag near an edge, or a
-  // move that ran past it.
+  // Keep the viewport containing the selection — by PAGING, never by tracking.
+  //
+  // This tracked 1:1: the instant the selection touched an edge, viewStart moved
+  // by exactly the amount start did. So `start - viewStart` was constant, the
+  // window froze against the edge, and because the filmstrip only re-extracts
+  // after a debounce the strip did not move either. The video kept scrubbing
+  // underneath. That is precisely the reported "dragging changes the video's
+  // position, but not the preview box" — everything visible was pinned while
+  // the value behind it ran on.
+  //
+  // Paging instead puts the selection back around a third in from the edge it
+  // crossed, so the window visibly springs off the edge and keeps moving, and
+  // the strip re-extracts once per page rather than continuously.
   const follow = useCallback((s: number, d: number) => {
     const vs = viewSecRef.current;
-    let v = viewStartRef.current;
-    if (s < v) v = s;
-    else if (s + d > v + vs) v = s + d - vs;
-    v = Math.max(0, Math.min(Math.max(0, duration - vs), v));
-    if (v !== viewStartRef.current) { viewStartRef.current = v; setViewStart(v); }
+    const v = viewStartRef.current;
+    if (s >= v && s + d <= v + vs) return; // already fully in view — do nothing
+    const nv = Math.max(0, Math.min(
+      Math.max(0, duration - vs),
+      s < v ? s - vs * 0.35 : s + d - vs * 0.65,
+    ));
+    if (nv !== v) { viewStartRef.current = nv; setViewStart(nv); }
   }, [duration]);
 
   // Local state updates every frame — that is what makes the window track the
@@ -194,19 +210,36 @@ export default function GifTrimBar({
   }, [uri, frameUrlAt, viewStart, viewSec]);
 
   // ── PINCH → zoom the timeline ───────────────────────────────────────────────
+  //
+  // The baseline is captured through a helper rather than only in the BEGAN
+  // branch, and gets re-taken lazily if the first event arrives without it.
+  // gViewSec starting at 0 is not a harmless default: `0 / scale` is 0, which
+  // clamps to minView, so a single missed BEGAN would slam the timeline to
+  // maximum zoom on the first pinch frame — indistinguishable from "pinch to
+  // zoom doesn't work".
+  const armPinch = (focalX: number) => {
+    gViewSec.current = viewSecRef.current;
+    gViewStart.current = viewStartRef.current;
+    // The fraction along the bar the fingers are centred on, and the time that
+    // sits there right now. Taken ONCE per gesture: recomputing it per frame
+    // would chase the focal point as it drifts and make the timeline slide.
+    const frac = Math.max(0, Math.min(1, focalX / width));
+    gFocalFrac.current = frac;
+    gFocalTime.current = viewStartRef.current + frac * viewSecRef.current;
+  };
+
   function onPinchState(e: any) {
-    if (e.nativeEvent.state === State.BEGAN) {
-      gViewSec.current = viewSecRef.current;
-      gViewStart.current = viewStartRef.current;
-      // The fraction along the bar the fingers are centred on, and the time that
-      // sits there right now. Captured once at BEGAN: recomputing it per frame
-      // would chase the focal point as it drifts and make the timeline slide.
-      const frac = Math.max(0, Math.min(1, (e.nativeEvent.focalX ?? width / 2) / width));
-      gFocalFrac.current = frac;
-      gFocalTime.current = viewStartRef.current + frac * viewSecRef.current;
+    const st = e.nativeEvent.state;
+    if (st === State.BEGAN || st === State.ACTIVE) {
+      if (!gViewSec.current) armPinch(e.nativeEvent.focalX ?? width / 2);
+      return;
     }
+    // Disarm at the end so the next pinch re-reads the view rather than
+    // resuming from a baseline that is now stale.
+    if (st === State.END || st === State.CANCELLED || st === State.FAILED) gViewSec.current = 0;
   }
   function onPinchEvent(e: any) {
+    if (!gViewSec.current) armPinch(e.nativeEvent.focalX ?? width / 2);
     const minView = Math.min(minViewFor(maxDur), duration);
     const next = Math.max(minView, Math.min(duration, gViewSec.current / (e.nativeEvent.scale || 1)));
     // Zoom about the FOCAL POINT — the time under the fingers stays under them.
@@ -234,11 +267,16 @@ export default function GifTrimBar({
   // to the edge of the viewport and the viewport comes with it.
   function onPanState(e: any) {
     const st = e.nativeEvent.state;
-    if (st === State.END || st === State.CANCELLED || st === State.FAILED) { flush(); return; }
+    if (st === State.END || st === State.CANCELLED || st === State.FAILED) {
+      panArmed.current = false;
+      flush();
+      return;
+    }
     if (st !== State.BEGAN) return;
 
     gDur.current = durRef.current;
     gStart.current = startRef.current;
+    panArmed.current = true;
 
     const x = e.nativeEvent.x;
     const left = (startRef.current - viewStartRef.current) * pxPerSec;
@@ -258,6 +296,11 @@ export default function GifTrimBar({
   }
 
   function onPanEvent(e: any) {
+    if (!panArmed.current) {
+      gStart.current = startRef.current;
+      gDur.current = durRef.current;
+      panArmed.current = true;
+    }
     const dt = e.nativeEvent.translationX / pxPerSec;
 
     if (mode.current === 'move') {
