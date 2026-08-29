@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -72,20 +72,40 @@ export default function SongAttribution({
   const cover = isThisTrack ? currentTrack?.cover : null;
   const showArt = !inline && isThisTrack && isPlaying && !!cover;
 
+  // MOUNTED FOR AS LONG AS THIS IS THE CURRENT TRACK — deliberately NOT for as
+  // long as it is visible.
+  //
+  // The first version unmounted the card in the fade-out's completion callback:
+  // setArtMounted(false) once the animation finished. That is a setState, and so
+  // a React re-render plus a view teardown, landing at the exact moment the fade
+  // ends — and on a post that also has a VIDEO decoding, that is a dropped frame.
+  // It is the hitch the owner saw on video posts and only on video posts, right
+  // at the end of the transition.
+  //
+  // Keying the mount on isThisTrack instead means the whole fade is pure
+  // native-driver opacity with no JS work at either end. The unmount still
+  // happens, but when the TRACK changes — a moment that is already a re-render
+  // and is nowhere near the animation.
+  const mountArt = !inline && isThisTrack && !!cover;
+
   const bloom = useRef(new Animated.Value(0)).current;
-  // Held mounted through the fade-out so leaving is a fade rather than a cut.
-  const [artMounted, setArtMounted] = useState(false);
+  // Snap back to closed the moment the card leaves. Without this, the next song
+  // on this post would bloom from already-open, and — because the pill's opacity
+  // is 1 - bloom — a card that unmounted while open would leave the pill
+  // invisible until something re-animated it.
+  useEffect(() => { if (!mountArt) bloom.setValue(0); }, [mountArt, bloom]);
   useEffect(() => {
-    if (showArt) {
-      setArtMounted(true);
-      Animated.timing(bloom, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-      return;
-    }
-    Animated.timing(bloom, { toValue: 0, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true })
-      .start(({ finished }) => { if (finished) setArtMounted(false); });
+    Animated.timing(bloom, {
+      toValue: showArt ? 1 : 0,
+      duration: showArt ? 260 : 220,
+      easing: showArt ? Easing.out(Easing.cubic) : Easing.in(Easing.quad),
+      useNativeDriver: true,
+    }).start();
   }, [showArt, bloom]);
 
   // The pill fades out as the card fades in, so the two never both read as solid.
+  // Guarded on mountArt: when the track changes away the card unmounts in the
+  // same commit, and an un-reset bloom would otherwise leave the pill invisible.
   const pillOpacity = bloom.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const artScale = bloom.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] });
 
@@ -149,7 +169,7 @@ export default function SongAttribution({
 
   return (
     <>
-      {artMounted && (
+      {mountArt && (
         <Animated.View
           style={[styles.artCard, style, { opacity: bloom, transform: [{ scale: artScale }] }]}
           // While the pill is still fading it must not eat taps meant for the
@@ -175,7 +195,7 @@ export default function SongAttribution({
       <Animated.View
         style={[
           styles.base, inline ? styles.inline : styles.floating, style,
-          !inline && { opacity: pillOpacity },
+          !inline && { opacity: mountArt ? pillOpacity : 1 },
         ]}
         pointerEvents={showArt ? 'none' : 'auto'}
       >

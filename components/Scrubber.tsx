@@ -35,18 +35,25 @@ export default function Scrubber({
   // effect to survive, only its colour to change. Light keeps the brand warm
   // ramp; dark gets a white one.
   //
-  // Dark runs WHITE → ORANGE: the played part starts neutral and warms into brand
-  // as it approaches the playhead, so the accent arrives where the eye already is
-  // instead of washing the whole bar. Light keeps the brand warm ramp, since white
-  // at the start would be near-invisible on a pale track.
-  const fillStops = (isLight ? GRADIENTS.primaryWarm : ['#FFFFFF', '#F26522']) as readonly [string, string];
+  // Dark runs WHITE → GOLD → DEEP ORANGE: the played part starts neutral and
+  // warms hard into brand by the playhead, so the accent arrives where the eye
+  // already is instead of washing the whole bar. Three stops rather than two on
+  // purpose — a straight white-to-orange interpolation passes through washed-out
+  // salmon in the middle, and routing it via the brand gold keeps the whole ramp
+  // saturated, which is what "stronger" actually needs.
+  // Light keeps the brand warm ramp; white at the start would be near-invisible
+  // on a pale track.
+  const fillStops = (isLight
+    ? GRADIENTS.primaryWarm
+    : ['#FFFFFF', '#FAB525', '#E8401C']) as readonly [string, string, ...string[]];
 
   // The thumb straddles the boundary between fill and empty track, so its ring
   // has to separate it from BOTH. On light that is the brand orange it always
-  // had, against a near-black dot. On dark the dot is white on a now-white fill,
-  // so a white ring would let it dissolve into the bar exactly where it matters —
-  // the ring goes dark instead.
-  const thumbRing = isLight ? colors.primary : colors.background;
+  // had, against a near-black dot. On dark the thumb now CARRIES the same
+  // gradient as the bar (see the render), so the ring goes white — it is the one
+  // value that separates a warm disc from both the warm fill behind it and the
+  // dark empty track ahead of it.
+  const thumbRing = isLight ? colors.primary : '#FFFFFF';
   const [width, setWidth] = useState(0);
   const ref = useRef<View>(null);
   const layout = useRef({ x: 0, w: 0 });
@@ -124,7 +131,17 @@ export default function Scrubber({
             top: (height - thumbSize) / 2, left: 0, transform: [{ translateX: thumbX }],
             borderColor: thumbRing,
           }]}
-        />
+        >
+          {/* The thumb carries the SAME gradient as the fill, so the circle at
+              the playhead is made of the bar it is riding rather than a separate
+              flat dot. Diagonal rather than horizontal: across 14pt a left-right
+              ramp is barely two pixels per stop and reads as a flat average. */}
+          <LinearGradient
+            colors={fillStops}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
       )}
     </View>
   );
@@ -134,6 +151,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   area: { width: '100%', justifyContent: 'center' },
   track: { width: '100%', backgroundColor: colors.border, overflow: 'hidden' },
   // borderColor is supplied inline (thumbRing) — it is theme-dependent in a
-  // way this palette-only factory cannot express.
-  thumb: { position: 'absolute', backgroundColor: colors.text, borderWidth: 2 },
+  // way this palette-only factory cannot express. overflow:hidden is what clips
+  // the gradient child to the circle; the backgroundColor is only what shows for
+  // the frame before that gradient paints.
+  thumb: { position: 'absolute', backgroundColor: colors.text, borderWidth: 2, overflow: 'hidden' },
 });
