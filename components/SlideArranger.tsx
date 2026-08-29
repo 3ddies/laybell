@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, PanResponder, Animated, ScrollView,
 } from 'react-native';
@@ -148,6 +148,12 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   useEffect(() => () => { commitRef.current(); }, []);
   const adjustCbRef = useRef(onAdjustingChange); adjustCbRef.current = onAdjustingChange;
   useEffect(() => { adjustCbRef.current?.(adjusting); }, [adjusting]);
+  // The sheet only renders for an IMAGE, so landing on a video with it still
+  // flagged open would leave the header showing a tick for a sheet that is not
+  // there. Close it whenever the slide underneath changes.
+  useEffect(() => {
+    if (adjusting && cur?.type !== 'image') setAdjusting(false);
+  }, [adjusting, cur?.type]);
 
   const goTo = (i: number) => {
     const clamped = Math.max(0, Math.min(slidesRef.current.length - 1, i));
@@ -325,6 +331,14 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     },
     onPanResponderTerminate: () => { endDrag(); },
   })).current;
+  // Snap to the nearest page. Velocity counts so a flick pages without having
+  // to travel half a screen first.
+  const settlePage = (dx: number, vx: number) => {
+    const n = slidesRef.current.length;
+    const raw = -(stageOffset.current + dx) / Math.max(1, frameW);
+    const bias = Math.abs(vx) > 0.35 ? (vx < 0 ? 0.35 : -0.35) : 0;
+    goToRef.current(Math.max(0, Math.min(n - 1, Math.round(raw + bias))));
+  };
   const goToRef = useRef(goTo); goToRef.current = goTo;
   useEffect(() => () => clearHold(), []);
 
@@ -368,19 +382,28 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     onPanResponderRelease: (_e, g) => {
       clearHold();
       if (dragUriRef.current) { endDrag(); return; }
-      // Snap. Velocity counts so a flick pages without having to travel half a
-      // screen first.
-      const n = slidesRef.current.length;
-      const raw = -(stageOffset.current + g.dx) / Math.max(1, frameW);
-      const bias = Math.abs(g.vx) > 0.35 ? (g.vx < 0 ? 0.35 : -0.35) : 0;
-      goToRef.current(Math.max(0, Math.min(n - 1, Math.round(raw + bias))));
+      settlePage(g.dx, g.vx);
     },
-    onPanResponderTerminate: () => { clearHold(); if (dragUriRef.current) endDrag(); },
+    // A TERMINATED swipe has to settle too. This only handled the drag case
+    // before, so a page swipe that something else interrupted was simply left
+    // wherever the finger stopped — the slide stuck half on one photo and half
+    // on the next, with nothing to nudge it either way.
+    onPanResponderTerminate: (_e, g) => {
+      clearHold();
+      if (dragUriRef.current) { endDrag(); return; }
+      settlePage(g?.dx ?? 0, g?.vx ?? 0);
+    },
   })).current;
 
-  // Keep the stage on the selected slide when something else moves it (a
-  // thumbnail tap, a deletion) and after the first layout.
-  useEffect(() => {
+  // Keep the stage on the selected slide when something else moves it — a
+  // thumbnail tap, a deletion, or a change of RATIO.
+  //
+  // useLayoutEffect, not useEffect, and that is the whole point: changing the
+  // ratio changes frameW, so the row is laid out at its new width while pageX
+  // still holds an offset measured in the OLD one. After paint, the stage shows
+  // that wrong position for a frame before being corrected — which is the jump
+  // seen on pressing the ratio button. Before paint, it is never visible.
+  useLayoutEffect(() => {
     if (dragUriRef.current) return;
     pageX.setValue(-Math.min(index, Math.max(0, slides.length - 1)) * frameW);
   }, [index, frameW, slides.length, pageX]);
