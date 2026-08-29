@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, PanResponder, Animated } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -146,14 +146,25 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   // state: nothing re-renders during a drag, which is the point.
   const targetRef = useRef<number | null>(null);
   const dragX = useRef(new Animated.Value(0)).current;
-  // One displacement value per tile, so the others can spring aside natively
-  // while the dragged one tracks the finger. Rebuilt only when the count
-  // changes — a crop edit must not hand the row a fresh set of values.
-  const offsets = useMemo(
-    () => Array.from({ length: slides.length }, () => new Animated.Value(0)),
-    [slides.length],
-  );
-  const offsetsRef = useRef(offsets); offsetsRef.current = offsets;
+  // ⚠️ Displacement values are keyed by the slide's URI — by IDENTITY, never by
+  // position. This is what makes the second drag work.
+  //
+  // Held in an array indexed by position, a tile that moved in the first drag
+  // came back on the next render holding a DIFFERENT Animated.Value than it had
+  // before, so every animated node had to be detached and re-bound across the
+  // reorder. The first drag was always clean because nothing had moved yet;
+  // every drag after it was animating values that no longer belonged to the
+  // tiles they were attached to, which is why the wrong tiles slid.
+  //
+  // Keyed by URI, a tile keeps the same value for its whole life no matter where
+  // it sits, and a reorder re-binds nothing at all.
+  const offsetMap = useRef(new Map<string, Animated.Value>()).current;
+  const offsetFor = (uri: string) => {
+    let v = offsetMap.get(uri);
+    if (!v) { v = new Animated.Value(0); offsetMap.set(uri, v); }
+    return v;
+  };
+  const offsetForRef = useRef(offsetFor); offsetForRef.current = offsetFor;
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startIdx = useRef(0);
   const startX = useRef(0);
@@ -165,14 +176,14 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   // NATIVE driver — this is the part that makes the row feel alive instead of
   // snapping between arrangements.
   const displace = (from: number, to: number) => {
-    const list = offsetsRef.current;
+    const list = slidesRef.current;
     const p = pitchRef.current;
     for (let i = 0; i < list.length; i++) {
       if (i === from) continue;
       const shift = to > from ? (i > from && i <= to ? -p : 0)
         : to < from ? (i >= to && i < from ? p : 0)
           : 0;
-      Animated.spring(list[i], {
+      Animated.spring(offsetForRef.current(list[i].uri), {
         toValue: shift, useNativeDriver: true, friction: 14, tension: 220,
       }).start();
     }
@@ -189,7 +200,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     // Zero everything BEFORE publishing. The tiles are about to re-render in
     // their new order, and a leftover offset would show as a one-frame jump.
     dragX.setValue(0);
-    offsetsRef.current.forEach((o: Animated.Value) => { o.stopAnimation(); o.setValue(0); });
+    offsetMap.forEach((o) => { o.stopAnimation(); o.setValue(0); });
 
     if (from != null && to != null && to !== from) {
       const list = slidesRef.current.slice();
@@ -414,7 +425,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                   zIndex: 5, elevation: 8,
                   shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
                   borderColor: colors.text,
-                } : { transform: [{ translateX: offsets[i] ?? 0 }] },
+                } : { transform: [{ translateX: offsetFor(s.uri) }] },
               ]}
             >
               <ExpoImage
