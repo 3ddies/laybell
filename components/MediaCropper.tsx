@@ -19,13 +19,15 @@ type Props = {
   // of getCrop). Used when re-opening a resumed draft's image so its saved crop
   // is shown — and re-committed unchanged — instead of snapping back to center.
   initialCrop?: CropRect | null;
+  /** false = render the crop but attach no gestures (a preview page). */
+  interactive?: boolean;
 };
 
 // Instagram-style cropper: the media is shown to COVER the frame and the user
 // pans (1 finger) / pinches (2 fingers) to reposition & zoom. getCrop() converts
 // the on-screen transform into a source-pixel crop rect for expo-image-manipulator.
 const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper(
-  { uri, mediaWidth, mediaHeight, frameW, frameH, type, maxScale = 6, initialCrop = null }, ref,
+  { uri, mediaWidth, mediaHeight, frameW, frameH, type, maxScale = 6, initialCrop = null, interactive = true }, ref,
 ) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -129,7 +131,11 @@ const MediaCropper = forwardRef<MediaCropperHandle, Props>(function MediaCropper
   return (
     <View
       style={[styles.frame, { width: frameW, height: frameH }]}
-      {...(type === 'image' ? responder.panHandlers : {})}
+      // Non-interactive instances still SEED from initialCrop, so they render the
+      // saved crop faithfully — they just attach no gestures. That is what lets a
+      // pager show each slide exactly as it will publish without its pages
+      // fighting the swipe for the same one-finger drag.
+      {...(interactive && type === 'image' ? responder.panHandlers : {})}
     >
       {type === 'video' ? (
         <AppVideo
