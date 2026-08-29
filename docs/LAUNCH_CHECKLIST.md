@@ -82,12 +82,16 @@ exist in English only (`translate()` falls back per key, so the other nine local
 stores have real users — App Store Connect → Analytics and Play Console → Android vitals for
 the first-week crash picture.
 
-⚠️ **Owner-only, still open — two items, both with someone waiting:**
+✅ **NCMEC is CLOSED.** Registration approved 08-26, credentials secured, `abuse@laybell.app`
+verified end to end, the trusted-flagger question answered 08-28, and `laybellapp@gmail.com`
+forwarded to `3ddiehall@gmail.com` on 08-29 — so `support`, `privacy` and `dmca`, which carry
+statutory clocks, now reach an inbox that is read. The standing commitments made to NCMEC (and
+the accepted walkthrough call, not yet held) are recorded in `docs/CSAM_RESPONSE_RUNBOOK.md`.
+**Registration is permission, not process** — what discharges the obligation is reading the
+moderation queue and following that runbook.
 
-- **NCMEC:** reply to Samuel Carducci's trusted-flagger question (asked 2026-08-27, still
-  unanswered; draft policy in `docs/CSAM_RESPONSE_RUNBOOK.md`). ✅ The mail forwarding
-  `laybellapp@gmail.com` → `3ddiehall@gmail.com` was done 2026-08-29, so `support`, `privacy`
-  and `dmca` now reach an inbox that is actually read — those carry statutory clocks.
+⚠️ **Owner-only, one item left:**
+
 - **Stripe:** verdict pending, **payouts pause 2026-09-09**. As of 08-29 Stripe has everything
   it asked for and said it will come back to us, so nothing is owed by us. **If 09-05 passes in
   silence, chase it** — that leaves four days on a live app with real creator earnings.

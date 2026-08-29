@@ -61,35 +61,27 @@ account suspended on receipt — no corroborating user report required.
 
 **The channel is `abuse@laybell.app`**, kept separate from general support.
 
-#### ✅ Ready to send — reply to Carducci's credentials email (team: `ESPteam@ncmec.org`, Hannah CC'd)
+#### ✅ ANSWERED — replied to Carducci 2026-08-28 10:00
 
-Nothing to decide or look up; this describes what Laybell already does. Copy it as-is.
+Recorded here because **these are standing commitments to NCMEC**, and the thread itself was
+deleted along with the credentials emails (correctly — see step 2 above), so Gmail will purge
+it. What was promised:
 
-> Hi Samuel,
->
-> Thanks again for getting us registered.
->
-> Yes — Laybell recognises NCMEC and other established hotlines as trusted flaggers, and we
-> have a separate workstream for those notifications.
->
-> Please send them to **abuse@laybell.app**. That address is monitored directly by me
-> (Edwin Hall, owner) and is kept separate from general support, so reports from you do not
-> enter the ordinary user-report queue.
->
-> On receipt of a notification from NCMEC or a recognised hotline we act immediately and do
-> not wait for a corroborating user report: the content is placed under legal hold and pulled
-> from circulation, and the account is suspended. We then preserve, report through the
-> CyberTipline, and retain per your guidance.
->
-> I'd also like to take you up on the walkthrough call on the reporting form — happy to work
-> around your availability.
->
-> Best,
-> Edwin Hall
-> Laybell LLC
+- NCMEC and other established hotlines are recognised as **trusted reporters**.
+- Their notifications are **actioned directly by the owner**, not queued with user reports.
+- On receipt: **legal hold, removed from circulation, account suspended immediately** — no
+  corroborating user report required.
+- The channel is **`abuse@laybell.app`**, separate from general support. A **direct phone
+  line** was also given for anything urgent.
+- Laybell LLC is a one-person company, so the owner is the **named point of contact** with no
+  queue in between.
+- There is a **written internal procedure covering preservation, reporting and ONE-YEAR
+  retention** — that is this runbook, and the retention figure is now a commitment, not a
+  preference.
+- The offered **walkthrough call on the reporting form was accepted** and has not happened yet.
 
 ⚠️ If `abuse@laybell.app` routing ever changes, tell NCMEC the new address **the same day** —
-naming a channel is a commitment that it is read.
+naming a channel is a commitment that it is read. The same goes for the phone number.
 
 ⚠️ **A named channel must be a read channel.** The whole point of a trusted-flagger lane is that
 it is faster than the normal one; naming an address nobody reads makes it slower than the normal
