@@ -21,7 +21,7 @@ import {
   setVisibleVideoId, setWarmVideoIds, setFeedFastScrolling, setFeedFocused, resetFeedVideo, useCardPlayback, getVisibleVideoId,
 } from '../../lib/feedVideo';
 import { acquireFeedPlayer, releaseFeedPlayer } from '../../lib/feedVideoPool';
-import { feedChromeTop, feedDragEnd, feedDragStart, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
+import { feedChromeTop, feedDragEnd, feedDragStart, isFeedChromeTopHidden, onFeedChromeTop, setFeedChromeHidden, settleFeedChrome, trackFeedScroll } from '../../lib/feedChrome';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet,
@@ -1419,7 +1419,10 @@ export default function HomeScreen() {
   }, [chevronOpacity]);
   useEffect(() => () => { if (chevronTimer.current) clearTimeout(chevronTimer.current); }, []);
 
-  // The wordmark drifts from brand yellow to neutral and back, every ~11s.
+  // The wordmark settles from brand yellow to neutral once, and STAYS neutral.
+  // It only reloads when the header tucks away, so the fade plays again each
+  // time the header comes back — the flourish belongs to the header arriving,
+  // not to a clock. Nothing pulses while you are reading.
   //
   // ⚠️ THIS IS AN OPACITY ANIMATION, NOT A COLOUR ONE, and that is the entire
   // reason it is safe to run here. Animating `color` cannot use the native
@@ -1433,26 +1436,29 @@ export default function HomeScreen() {
   //     alpha x neutral + (1 - alpha) x yellow
   // which is the colour interpolation, arrived at with a property the native
   // driver can carry. Nothing runs on the JS thread per frame.
-  //
-  // Long rest between passes on purpose: it should be something you catch, not
-  // something pulsing in the corner of the screen while you read the feed.
   const logoFade = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
   useEffect(() => {
     // Gated on focus as well: HomeScreen stays mounted behind the other tabs, so
-    // without this the wordmark would go on quietly breathing on a screen nobody
-    // is looking at for as long as the app is open.
-    if (reduceMotion || !isFocused) return;
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(logoFade, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.delay(500),
-      Animated.timing(logoFade, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.delay(6000),
-    ]));
-    loop.start();
-    // A stopped value holds where it was, which would strand the wordmark
-    // mid-blend on an unmount.
-    return () => { loop.stop(); logoFade.setValue(0); };
+    // without this the wordmark would replay on a screen nobody is looking at.
+    if (reduceMotion || !isFocused) { logoFade.setValue(reduceMotion ? 0 : 1); return; }
+    const settle = () => {
+      logoFade.setValue(0);
+      Animated.timing(logoFade, {
+        toValue: 1, duration: 2200, easing: Easing.inOut(Easing.quad), useNativeDriver: true,
+      }).start();
+    };
+    // Recharge to yellow WHILE the header is tucked away, over roughly the
+    // 260ms the slide takes, so the reset happens behind the motion instead of
+    // flicking back to yellow in the user's eye.
+    const recharge = () => {
+      Animated.timing(logoFade, {
+        toValue: 0, duration: 220, easing: Easing.out(Easing.quad), useNativeDriver: true,
+      }).start();
+    };
+    if (isFeedChromeTopHidden()) recharge(); else settle();
+    const off = onFeedChromeTop((hidden) => (hidden ? recharge() : settle()));
+    return () => { off(); logoFade.stopAnimation(); };
   }, [reduceMotion, isFocused, logoFade]);
 
   useEffect(() => {

@@ -90,10 +90,26 @@ function glideBottom(to: 0 | 1) {
 // mid-glide reverses immediately; retargeting an Animated.timing on the same
 // value auto-stops the previous one.
 let topTarget: 0 | 1 = 0;
+
+// Discrete notifications for the header tucking away and coming back.
+//
+// Deliberately hung off glideTop rather than a listener on feedChromeTop: that
+// value is native-driven, so subscribing to it would pull a frame-by-frame
+// stream back across the bridge for the entire length of every scroll. glideTop
+// already dedupes by target, so it fires exactly once per flip — which is all
+// anyone watching the header actually needs.
+const topSubs = new Set<(hidden: boolean) => void>();
+export function onFeedChromeTop(fn: (hidden: boolean) => void): () => void {
+  topSubs.add(fn);
+  return () => { topSubs.delete(fn); };
+}
+export function isFeedChromeTopHidden(): boolean { return topTarget === 1; }
+
 function glideTop(to: 0 | 1) {
   if (topTarget === to) return;
   topTarget = to;
   Animated.timing(feedChromeTop, { toValue: to, duration: 260, easing: EASE, useNativeDriver: true }).start();
+  for (const fn of topSubs) fn(to === 1);
 }
 
 function stopBottomGlide() {
