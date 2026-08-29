@@ -35,10 +35,11 @@ export default function Scrubber({
   // effect to survive, only its colour to change. Light keeps the brand warm
   // ramp; dark gets a white one.
   //
-  // Dimmer stop first, brightest at the LEADING edge, which mirrors how
-  // primaryWarm already runs (#F26522 → the brighter #FAB525). The bright end
-  // lands on the playhead, so the bar reads as being lit from where it is up to.
-  const fillStops = (isLight ? GRADIENTS.primaryWarm : ['#C6C6CE', '#FFFFFF']) as readonly [string, string];
+  // Dark runs WHITE → ORANGE: the played part starts neutral and warms into brand
+  // as it approaches the playhead, so the accent arrives where the eye already is
+  // instead of washing the whole bar. Light keeps the brand warm ramp, since white
+  // at the start would be near-invisible on a pale track.
+  const fillStops = (isLight ? GRADIENTS.primaryWarm : ['#FFFFFF', '#F26522']) as readonly [string, string];
 
   // The thumb straddles the boundary between fill and empty track, so its ring
   // has to separate it from BOTH. On light that is the brand orange it always

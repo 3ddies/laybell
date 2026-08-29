@@ -1,5 +1,6 @@
-import { useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -46,11 +47,47 @@ export default function SongAttribution({
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
-  const { play, expand, currentTrack } = useAudio();
+  const { play, expand, currentTrack, isPlaying } = useAudio();
   const { stop: stopPostMusic } = usePostMusicActions();
   const { show } = usePostOptions();
   const { profile } = useProfile();
   const busyRef = useRef(false); // guards against rapid re-taps piling up audio loads
+
+  // ── Artwork mode ────────────────────────────────────────────────────────────
+  // While THIS post's song is the one actually playing, the corner blooms from a
+  // pill into the real cover art with the title and artist under it, and settles
+  // back when it stops. The point is exposure: a song being heard right now gets
+  // the artist's artwork on screen instead of six words of truncated text.
+  //
+  // The cover costs no extra fetch — playSong already puts cover_url on the
+  // track, so whenever this song is `currentTrack` the art is in hand. If the
+  // track genuinely has no cover there is nothing to bloom into, so it stays a
+  // pill rather than showing an empty box.
+  //
+  // FLOATING ONLY. Reels and stories render this `inline`, inside real layout,
+  // where a 72pt card would shove their captions around. The corner variant is
+  // absolutely positioned and owns its space, which is what makes the two states
+  // safe to cross-fade in place.
+  const isThisTrack = currentTrack?.id === songId;
+  const cover = isThisTrack ? currentTrack?.cover : null;
+  const showArt = !inline && isThisTrack && isPlaying && !!cover;
+
+  const bloom = useRef(new Animated.Value(0)).current;
+  // Held mounted through the fade-out so leaving is a fade rather than a cut.
+  const [artMounted, setArtMounted] = useState(false);
+  useEffect(() => {
+    if (showArt) {
+      setArtMounted(true);
+      Animated.timing(bloom, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+      return;
+    }
+    Animated.timing(bloom, { toValue: 0, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true })
+      .start(({ finished }) => { if (finished) setArtMounted(false); });
+  }, [showArt, bloom]);
+
+  // The pill fades out as the card fades in, so the two never both read as solid.
+  const pillOpacity = bloom.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const artScale = bloom.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] });
 
   function openArtist() {
     if (!artistId) return;
@@ -111,7 +148,37 @@ export default function SongAttribution({
   }
 
   return (
-    <View style={[styles.base, inline ? styles.inline : styles.floating, style]}>
+    <>
+      {artMounted && (
+        <Animated.View
+          style={[styles.artCard, style, { opacity: bloom, transform: [{ scale: artScale }] }]}
+          // While the pill is still fading it must not eat taps meant for the
+          // card, and vice versa — whichever is arriving owns the touches.
+          pointerEvents={showArt ? 'auto' : 'none'}
+        >
+          <TouchableOpacity onPress={playSong} activeOpacity={0.85}>
+            <Image source={{ uri: cover! }} style={styles.artImage} contentFit="cover" transition={180} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={openOptions} style={styles.artDots} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
+            <Ionicons name="ellipsis-horizontal" size={14} color="#fff" />
+          </TouchableOpacity>
+          {/* Title then artist, mirroring the pill's order and for the same
+              reason: hearing the song is the point, the profile is secondary. */}
+          <TouchableOpacity onPress={playSong} hitSlop={{ top: 4, bottom: 2, left: 6, right: 6 }}>
+            <Text style={styles.artTitle} numberOfLines={1}>{title || t('songAttr.audioTrack')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={openArtist} hitSlop={{ top: 2, bottom: 4, left: 6, right: 6 }} disabled={!artistId}>
+            <Text style={styles.artArtist} numberOfLines={1}>{artist || t('songAttr.unknownArtist')}</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+      <Animated.View
+        style={[
+          styles.base, inline ? styles.inline : styles.floating, style,
+          !inline && { opacity: pillOpacity },
+        ]}
+        pointerEvents={showArt ? 'none' : 'auto'}
+      >
       <Ionicons name="musical-notes" size={13} color="#fff" style={styles.note} />
       <View style={[styles.textCol, inline && styles.textColInline]}>
         {/* Song FIRST and larger. Playing the track is what this card is for;
@@ -128,7 +195,8 @@ export default function SongAttribution({
       <TouchableOpacity onPress={openOptions} style={styles.dots} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
         <Ionicons name="ellipsis-horizontal" size={18} color="#fff" />
       </TouchableOpacity>
-    </View>
+      </Animated.View>
+    </>
   );
 }
 
@@ -147,4 +215,32 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   song: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: -0.2, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3 },
   artist: { color: 'rgba(255,255,255,0.82)', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3, marginTop: 1 },
   dots: { paddingLeft: 2 },
+
+  // ── Artwork card (playing state) ────────────────────────────────────────────
+  // Same anchor as the pill it replaces, so the corner does not jump when they
+  // swap. Sized to sit under a caption rather than compete with the post: 76pt
+  // of art is enough to recognise an album at a glance and no more.
+  artCard: {
+    position: 'absolute', right: SPACING.sm, bottom: SPACING.sm,
+    alignItems: 'flex-end',
+    // Its own scrim, a shade stronger than the pill's — text sits directly under
+    // artwork here rather than on a single dark bar, so it needs the extra help
+    // on a bright cover.
+    backgroundColor: 'rgba(0,0,0,0.42)',
+    borderRadius: RADIUS.md, padding: 6, gap: 1,
+  },
+  artImage: { width: 76, height: 76, borderRadius: RADIUS.sm, backgroundColor: 'rgba(255,255,255,0.08)' },
+  // Sits ON the art, top-right, so the menu stays reachable without widening the
+  // card or pushing the text down.
+  artDots: {
+    position: 'absolute', top: 8, right: 8,
+    width: 24, height: 24, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  artTitle: {
+    color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: -0.2, maxWidth: 76,
+    marginTop: 4, textAlign: 'right',
+  },
+  artArtist: { color: 'rgba(255,255,255,0.82)', fontSize: 10.5, fontWeight: '600', maxWidth: 76, textAlign: 'right' },
 });
