@@ -67,13 +67,53 @@ stops.
 | 11 | All 4 auth screens | The form leaping when the keyboard opens — worst on login | Functional | ✅ done |
 | 12 | Signup | Logo sat hard against the Dynamic Island | Cosmetic | ✅ done |
 | 13 | Sign-in handoff | The auth screen visibly **reset itself** before the feed appeared | Functional | ✅ done |
-| 14 | GIF maker | Trim bar unusable on long videos | Functional | ⏪ **reverted — see below** |
+| 14 | GIF maker | Trim bar unusable on long videos — separate zoom slider, gestures untouched | Functional | ✅ done |
 
-### 14 · The GIF trim bar — ⏪ REVERTED. Read this before trying again.
+### 14 · The GIF trim bar — reverted, then solved with a separate zoom slider
 
-**Four commits, each fixing a bug the previous one introduced, and the owner's verdict was
-"everything just feels bad, not nearly as good as it did originally". He was right. Reverted to
-the last known-good version (`1ce1edc^`); only the on-screen hint was kept, corrected.**
+**✅ Done, on the owner's design.** After the revert he proposed the answer: *"lets just add a
+separate slide bar OUTSIDE of the preview bar, that allows you to zoom into the preview section.
+This may be the best way to get it done while keeping the working functionality."* That is exactly
+right, and it is the additive approach the failed attempt should have taken.
+
+**The gestures are byte-identical to the version that worked** — verified, not assumed. `onPanEvent`,
+`onPanState`, `onPinchEvent` and `onPinchState` are unchanged. All that changes is the *scale* they
+operate at, which was the actual problem.
+
+Two properties keep it safe, and both should survive any future edit:
+
+1. **`viewStart` is derived, never state.** It is always the window centring the selection, clamped
+   to the video. No `follow()`, no paging, no auto-scroll. The failed attempt's worst bug was a
+   viewport that tracked the selection 1:1 and so pinned the window against the edge while the
+   video kept moving — **a derivation cannot do that.**
+2. **At zoom 1 the maths collapses to the original exactly.** `viewSec == duration`, so `viewStart`
+   clamps to 0 and `pxPerSec` is `width/duration`. Verified for 10s, 60s and 9-minute videos: the
+   zoomed-out bar *is* the old bar, not an approximation.
+
+The strip is **not** re-extracted when zooming — the same whole-video frames are laid out `zoom`
+times wider and translated, so it scrolls smoothly for free and gets stretched rather than re-cut.
+Stretching is the honest trade: zooming exists for finer *control*, and the video preview above the
+bar is what shows the actual frame.
+
+Zoom is exponential across the slider (`maxZoom^t`). Linear would spend nearly all the travel in
+levels nobody wants — on a 9-minute video the useful range is the last few percent of a linear
+scale. Result at full zoom, any video length: a **259 px** selection.
+
+| Video | Selection at zoom 1 | Max zoom | At full zoom |
+|---|---|---|---|
+| 10s | 103 px | 3× | 259 px |
+| 60s | 17 px | 15× | 259 px |
+| 3 min | 6 px | 45× | 259 px |
+| 9 min | **1.9 px** | 135× | 259 px |
+
+The slider hides itself on videos short enough that the bar was never the problem.
+
+---
+
+#### What went wrong the first time — keep this
+
+**Four commits, each fixing a bug the previous one introduced, and the verdict was "everything just
+feels bad, not nearly as good as it did originally". Reverted to `1ce1edc^`.**
 
 **The problem is real** and the arithmetic below still stands — on a 9-minute video the selection
 really is drawn ~2px. But the fix attempted was a viewport/zoom rewrite, and every round added
