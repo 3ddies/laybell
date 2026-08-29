@@ -1419,7 +1419,7 @@ export default function PostScreen() {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('post.trim')}</Text>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.forward')} style={styles.headerAction} onPress={() => setStep('details')}>
-            <Ionicons name="arrow-forward" size={24} color={colors.primary} />
+            <Ionicons name="arrow-forward" size={24} color={colors.text} />
           </TouchableOpacity>
         </View>
         <View style={styles.trimBody}>
@@ -1820,7 +1820,7 @@ export default function PostScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('post.public')}
           >
-            <Ionicons name={hasCommunity || isPublic ? 'globe-outline' : 'people-outline'} size={20} color={colors.primary} />
+            <Ionicons name={hasCommunity || isPublic ? 'globe-outline' : 'people-outline'} size={20} color={colors.text} />
             <View style={styles.visText}>
               <Text style={styles.visLabel}>{hasCommunity || isPublic ? t('post.public') : t('post.friendsOnly')}</Text>
               <Text style={styles.visSub} numberOfLines={1}>
@@ -2041,7 +2041,7 @@ export default function PostScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('post.newPost')}</Text>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.forward')} style={styles.headerAction} onPress={goNext} disabled={!hasMedia}>
-          <Ionicons name="arrow-forward" size={24} color={hasMedia ? colors.primary : colors.textTertiary} />
+          <Ionicons name="arrow-forward" size={24} color={hasMedia ? colors.text : colors.textTertiary} />
         </TouchableOpacity>
       </View>
 
@@ -2451,6 +2451,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   headerBtn: { width: 64, paddingVertical: 4 },
   headerTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   headerAction: { width: 64, alignItems: 'flex-end', paddingVertical: 4, paddingRight: SPACING.xs },
+  // Still brand, deliberately, while the step-forward ARROWS in this same slot
+  // went neutral (owner, 2026-08-28). They are not the same kind of thing: the
+  // arrows advance a step and there is another screen after them, whereas Share
+  // is the terminal action that publishes the post. Exactly one control in this
+  // flow should be wearing brand, and this is it.
   headerActionText: { color: colors.primary, fontSize: 16, fontWeight: '700' },
   // Byte-level upload progress under the header while a big file streams up.
   uploadBarTrack: { height: 3, backgroundColor: colors.surfaceLight, overflow: 'hidden' },
