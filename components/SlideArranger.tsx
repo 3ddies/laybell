@@ -175,13 +175,41 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
-  const cycleFormat = () => {
-    // Take the crop with us. Changing ratio rebuilds the cropper, and anything
-    // the user had framed but not yet committed would go with the old one.
-    // (A no-op unless the crop sheet is open — nothing else holds a cropper.)
+  // ── Crop shape ──────────────────────────────────────────────────────────────
+  // Three states, and only one of them is really a ratio.
+  //
+  // 'full' means ORIGINAL: this slide is not cropped at all and shows whole, at
+  // the proportions it was shot at. The other two are shapes to crop TO, and
+  // they set the post's frame, because a carousel has one frame and a slide
+  // cropped square has to be square inside something.
+  //
+  // So the state shown is per-slide — a fitted slide reads Original whatever the
+  // post's frame happens to be — while choosing a ratio acts on both: the slide
+  // starts filling, and the frame becomes that shape.
+  const CROP_SHAPES = ['full', ...SLIDESHOW_FORMATS] as const;
+  const curShape = fitOf(cur) === 'contain' ? 'full' : format;
+  const cycleShape = () => {
+    const i = CROP_SHAPES.indexOf(curShape as (typeof CROP_SHAPES)[number]);
+    const next = CROP_SHAPES[(i + 1) % CROP_SHAPES.length];
+    const slot = indexRef.current;
+    const list = slidesRef.current;
+    if (!list[slot]) return;
+
+    if (next === 'full') {
+      // Back to uncropped. The rect goes with it — a saved crop on a slide that
+      // is no longer cropped would come back the moment it was filled again,
+      // which is not what "original" was asked to mean.
+      const after = list.slice();
+      after[slot] = { ...after[slot], fit: 'contain', crop: null };
+      onChangeRef.current(after);
+      return;
+    }
+    // Carry the in-progress crop across the rebuild the new frame causes.
     commitRef.current();
-    const i = SLIDESHOW_FORMATS.indexOf(format as (typeof SLIDESHOW_FORMATS)[number]);
-    onFormatChange(SLIDESHOW_FORMATS[(i + 1) % SLIDESHOW_FORMATS.length]);
+    const after = slidesRef.current.slice();
+    after[slot] = { ...after[slot], fit: 'cover' };
+    onChangeRef.current(after);
+    onFormatChange(next);
   };
 
   // ── Press-and-hold to reorder: SWAP, never insert ───────────────────────────
@@ -478,19 +506,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
             they were shot at, and cropping is the only thing that changes them,
             which is what cropping already meant. */}
 
-        {/* Images only. A clip cannot be cropped — expo-image-manipulator is
-            stills-only — so on a video page this offered a choice that could not
-            be honoured, and pressing it only ever reshaped the frame around a
-            video that would still be letterboxed. */}
-        {cur?.type === 'image' && (
-          <TouchableOpacity style={[styles.cornerBase, styles.cornerBL]} onPress={cycleFormat} activeOpacity={0.85}>
-            <Ionicons name="resize-outline" size={15} color={colors.text} />
-            <Text style={styles.cornerText}>
-              {isAutoFormat(format) ? t(`post.format.${format}`) : format}
-            </Text>
-          </TouchableOpacity>
-        )}
-
+        {/* No shape control out here. Shape is a question about a crop, so it
+            belongs to crop mode and nowhere else — and keeping it off this
+            screen means it can no longer reshape the frame under a slide that
+            is only being browsed. */}
         {cur?.type === 'image' && (
           <TouchableOpacity style={[styles.cornerBase, styles.cornerBR]} onPress={() => setAdjusting(true)} activeOpacity={0.85}>
             <Ionicons name="crop-outline" size={14} color={colors.text} />
@@ -574,33 +593,47 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
       {adjusting && cur?.type === 'image' && (
         <View style={styles.sheet}>
           <View style={{ width: frameW, height: frameH }}>
-            <MediaCropper
-              // Keyed on the FRAME as well as the photo. Changing ratio while
-              // cropping changes the frame the crop is measured against, and the
-              // cropper works its transform out once at mount — so it has to be
-              // rebuilt to reseed against the new shape rather than keep a
-              // transform that meant something else.
-              key={`${cur.uri}-adjust-${Math.round(frameW)}x${Math.round(frameH)}`}
-              ref={cropperRef}
-              uri={cur.uri}
-              mediaWidth={cur.width}
-              mediaHeight={cur.height}
-              frameW={frameW}
-              frameH={frameH}
-              type="image"
-              initialCrop={cur.crop ?? null}
-            />
-            {/* The ratio stays reachable while cropping: choosing a shape and
-                framing the photo for it is one decision, so making the user
-                leave to change it would split the job in half. */}
-            <TouchableOpacity style={[styles.cornerBase, styles.cornerBL]} onPress={cycleFormat} activeOpacity={0.85}>
+            {curShape === 'full' ? (
+              // Original: nothing to drag, because nothing is being cut. Showing
+              // a cropper here would invite framing a photo that is already
+              // entirely in view.
+              <ExpoImage
+                source={{ uri: cur.uri }}
+                style={StyleSheet.absoluteFill}
+                contentFit="contain"
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <MediaCropper
+                // Keyed on the FRAME as well as the photo. Changing shape while
+                // cropping changes what the crop is measured against, and the
+                // cropper works its transform out once at mount — so it has to
+                // be rebuilt to reseed against the new shape rather than keep a
+                // transform that meant something else.
+                key={`${cur.uri}-adjust-${Math.round(frameW)}x${Math.round(frameH)}`}
+                ref={cropperRef}
+                uri={cur.uri}
+                mediaWidth={cur.width}
+                mediaHeight={cur.height}
+                frameW={frameW}
+                frameH={frameH}
+                type="image"
+                initialCrop={cur.crop ?? null}
+              />
+            )}
+            {/* Shape lives HERE and only here: picking a shape and framing the
+                photo into it is one decision, so splitting them across two
+                screens would split the job in half. */}
+            <TouchableOpacity style={[styles.cornerBase, styles.cornerBL]} onPress={cycleShape} activeOpacity={0.85}>
               <Ionicons name="resize-outline" size={15} color={colors.text} />
               <Text style={styles.cornerText}>
-                {isAutoFormat(format) ? t(`post.format.${format}`) : format}
+                {isAutoFormat(curShape) ? t('post.format.full') : curShape}
               </Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.sheetHint}>{t('post.slideCropHint')}</Text>
+          <Text style={styles.sheetHint}>
+            {curShape === 'full' ? t('post.slideOriginalHint') : t('post.slideCropHint')}
+          </Text>
         </View>
       )}
     </View>
