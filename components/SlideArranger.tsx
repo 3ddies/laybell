@@ -80,6 +80,11 @@ const STAGE_STEP_MAX = 150;
 // halves is what makes the far end reachable for the hand actually holding the
 // phone, rather than for an idealised one starting in the exact centre.
 const STAGE_REACH = 0.28;
+/** A crop rect as a key fragment, so a re-crop can force a page to rebuild. */
+function cropKey(c?: CropRect | null): string {
+  return c ? `${c.originX}.${c.originY}.${c.width}.${c.height}` : 'none';
+}
+
 function stageStepFor(frameW: number, count: number): number {
   if (count < 2) return STAGE_STEP_MAX;
   return Math.max(STAGE_STEP_MIN, Math.min(STAGE_STEP_MAX, (frameW * STAGE_REACH) / (count - 1)));
@@ -468,7 +473,13 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                 // A cropper with its gestures off: shows the real saved crop
                 // without competing for the drag.
                 <MediaCropper
-                  key={`${s.uri}-page`}
+                  // Keyed on the CROP, not just the photo. MediaCropper works
+                  // its transform out once at mount and never again, so a page
+                  // keyed on the uri alone kept showing the framing it was born
+                  // with — you would crop a slide, come back, and see the old
+                  // one, as though the edit had been thrown away. Folding the
+                  // rect into the key rebuilds the page so it reseeds.
+                  key={`${s.uri}-page-${cropKey(s.crop)}`}
                   uri={s.uri}
                   mediaWidth={s.width}
                   mediaHeight={s.height}
