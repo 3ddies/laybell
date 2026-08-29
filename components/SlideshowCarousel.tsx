@@ -6,6 +6,7 @@ import {
 import { Image as ExpoImage } from 'expo-image';
 import AppVideo from './AppVideo';
 import { Ionicons } from '@expo/vector-icons';
+import ZoomableView from './ZoomableView';
 import { RADIUS } from '../constants/theme';
 import { useTabSwipeControl } from '../contexts/PagerContext';
 import { trackVideoProgress } from '../lib/viewTracker';
@@ -39,6 +40,9 @@ type Props = {
   // Reports whether the CURRENT slide is a video with its audio turned on, so the
   // host can pause/resume an attached song. Fires on slide change + toggle + unmount.
   onVideoAudioActiveChange?: (active: boolean) => void;
+  // Raised while a slide is being pinch-zoomed, so the host can stop ITS scroll
+  // too (the feed's vertical list) and lift the card over its neighbours.
+  onZoomChange?: (zooming: boolean) => void;
 };
 
 function SlideVideo({
@@ -64,10 +68,27 @@ function SlideVideo({
 }
 
 export default function SlideshowCarousel({
-  slides, width, aspectRatio, active = true, initialIndex = 0, postId, onOpen, onVideoAudioActiveChange,
+  slides, width, aspectRatio, active = true, initialIndex = 0, postId, onOpen, onVideoAudioActiveChange, onZoomChange,
 }: Props) {
   const height = Math.round(width / (aspectRatio || 1));
   const [index, setIndex] = useState(initialIndex);
+  // ── Pinch-to-zoom on a slide ────────────────────────────────────────────────
+  // The hard part here is not the zoom, it is that this carousel scrolls
+  // HORIZONTALLY. A pinch spreads two fingers apart sideways, which moves the
+  // touch centroid sideways, which is precisely what a horizontal paging
+  // ScrollView claims — so the slide paged instead of the photo zooming. The
+  // reel viewer never hit this because its list scrolls vertically.
+  //
+  // The fix has to land BEFORE any movement, so it keys off the second finger
+  // TOUCHING DOWN rather than off the zoom starting (by which time the scroll
+  // has already been claimed and it is too late). Two fingers on the carousel
+  // means the user is not paging, so scrolling switches off for as long as they
+  // are down and the pinch handler is free to take the gesture.
+  const [multiTouch, setMultiTouch] = useState(false);
+  const [zooming, setZooming] = useState(false);
+  const gestureSincePress = useRef(false);
+  const zoomCbRef = useRef(onZoomChange);
+  zoomCbRef.current = onZoomChange;
   const [videoAudioOn, setVideoAudioOn] = useState(false); // local: current video's own audio (default muted)
   const scrollRef = useRef<ScrollView>(null);
   const didInit = useRef(false);
@@ -109,11 +130,14 @@ export default function SlideshowCarousel({
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onMomentumEnd}
         contentOffset={{ x: initialIndex * width, y: 0 }}
+        // Paging is off from the moment a second finger lands until every finger
+        // is up — see the note by multiTouch above.
+        scrollEnabled={!multiTouch && !zooming}
         // Hold the tab swipe off while a slide swipe is in progress (re-enabled on end).
-        onTouchStart={() => setTabSwipe(false)}
+        onTouchStart={(e) => { setTabSwipe(false); if (e.nativeEvent.touches.length > 1) setMultiTouch(true); }}
         onScrollBeginDrag={() => setTabSwipe(false)}
-        onTouchEnd={() => setTabSwipe(true)}
-        onTouchCancel={() => setTabSwipe(true)}
+        onTouchEnd={(e) => { setTabSwipe(true); if (e.nativeEvent.touches.length < 2) setMultiTouch(false); }}
+        onTouchCancel={() => { setTabSwipe(true); setMultiTouch(false); }}
         onScrollEndDrag={() => setTabSwipe(true)}
         // Android ignores contentOffset before layout — jump once we have a frame.
         onLayout={() => {
@@ -157,12 +181,34 @@ export default function SlideshowCarousel({
               )}
             </View>
           );
-          return onOpen ? (
-            <TouchableOpacity key={i} activeOpacity={0.95} onPress={() => onOpen(i)}>
+          // Springs back on release (resetOnRelease): holding the zoom would arm
+          // ZoomableView's one-finger pan, and that is the same finger the user
+          // needs to page to the next slide.
+          const zoomable = (
+            <ZoomableView
+              width={width}
+              height={height}
+              style={{ width, height }}
+              resetOnRelease
+              onGesture={() => { gestureSincePress.current = true; }}
+              onZoomChange={(z) => { setZooming(z); zoomCbRef.current?.(z); }}
+            >
               {body}
+            </ZoomableView>
+          );
+          return onOpen ? (
+            <TouchableOpacity
+              key={i}
+              activeOpacity={0.95}
+              onPressIn={() => { gestureSincePress.current = false; }}
+              // A pinch marks itself, so the tap that ends it doesn't also open
+              // the full viewer.
+              onPress={() => { if (!gestureSincePress.current) onOpen(i); }}
+            >
+              {zoomable}
             </TouchableOpacity>
           ) : (
-            <View key={i}>{body}</View>
+            <View key={i}>{zoomable}</View>
           );
         })}
       </ScrollView>
