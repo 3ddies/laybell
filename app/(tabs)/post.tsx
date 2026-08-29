@@ -2100,14 +2100,22 @@ export default function PostScreen() {
           // reads as a near-horizontal diagonal; content counter-rotates upright.
           <View style={styles.audioChoices}>
             <View style={styles.diagBoard}>
-              <TouchableOpacity style={styles.diagHalf} onPress={startRecording} activeOpacity={0.9}>
-                <LinearGradient colors={GRADIENTS.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              {/* RECORD used to be a full-bleed brand gradient. Neutral now
+                  (owner, 2026-08-28), which meant everything sitting on it had to
+                  move with it: the label and sub were hardcoded #fff for that
+                  orange ground and would have been white-on-near-white the moment
+                  the light theme loaded, and the mic's white-22% badge had nothing
+                  left to sit on.
+                  The two halves stay distinguishable by TONE rather than hue —
+                  `surface` here is recessed, `surfaceElevated` on Upload is
+                  raised — which the diagonal seam and its border already lean on. */}
+              <TouchableOpacity style={[styles.diagHalf, styles.diagRecord]} onPress={startRecording} activeOpacity={0.9}>
                 <View style={styles.diagContent}>
                   <View style={[styles.diagIconWrap, styles.diagIconWrapRecord]}>
-                    <Ionicons name="mic" size={42} color="#fff" />
+                    <Ionicons name="mic" size={42} color={colors.text} />
                   </View>
-                  <Text style={styles.diagTitleOnPrimary}>{t('post.record')}</Text>
-                  <Text style={styles.diagSubOnPrimary}>{t('post.recordSub')}</Text>
+                  <Text style={styles.diagTitle}>{t('post.record')}</Text>
+                  <Text style={styles.diagSub}>{t('post.recordSub')}</Text>
                 </View>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.diagHalf, styles.diagUpload]} onPress={pickAudio} activeOpacity={0.9}>
@@ -2516,7 +2524,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   typeStripBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.md },
   typeStripText: { color: colors.textTertiary, fontSize: 13, fontWeight: '700', letterSpacing: 1 },
-  typeStripTextActive: { color: colors.primary, fontWeight: '900', fontSize: 14 },
+  // Neutral, not brand: this is a MODE SWITCH between Posts and Music, not an
+  // action. colors.text is white on dark and near-black on light.
+  typeStripTextActive: { color: colors.text, fontWeight: '900', fontSize: 14 },
 
   audioPickArea: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.lg },
   audioPickBtn: {
@@ -2537,16 +2547,20 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     color: 'rgba(255,255,255,0.75)', fontSize: 12, textAlign: 'center', paddingHorizontal: SPACING.lg,
   },
   diagHalf: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  // Recessed against Upload's raised surfaceElevated — the two halves separate by
+  // tone now that neither carries the brand.
+  diagRecord: { backgroundColor: colors.surface },
   diagUpload: { backgroundColor: colors.surfaceElevated, borderTopWidth: 2, borderTopColor: colors.background },
   diagContent: { alignItems: 'center', gap: SPACING.sm, transform: [{ rotate: '7deg' }] },
   // Prominent circular icon badge behind each glyph.
   diagIconWrap: { width: 82, height: 82, borderRadius: 41, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
-  diagIconWrapRecord: { backgroundColor: 'rgba(255,255,255,0.22)' },
+  // Was rgba(255,255,255,0.22) — a white wash that only read on the orange
+  // ground this half used to have. surfaceLight is the theme's own next step up,
+  // so the badge stays visible on both themes.
+  diagIconWrapRecord: { backgroundColor: colors.surfaceLight },
   diagIconWrapUpload: {
     backgroundColor: 'rgba(242,101,34,0.12)', borderWidth: 1.5, borderColor: 'rgba(242,101,34,0.35)',
   },
-  diagTitleOnPrimary: { color: '#fff', fontSize: 24, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
-  diagSubOnPrimary: { color: 'rgba(255,255,255,0.92)', fontSize: 13.5, fontWeight: '600' },
   diagTitle: { color: colors.text, fontSize: 24, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
   diagSub: { color: colors.textSecondary, fontSize: 13.5, fontWeight: '600' },
 
