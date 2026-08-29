@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PinchGestureHandler, PanGestureHandler, State } from 'react-native-gesture-handler';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { RADIUS } from '../constants/theme';
@@ -19,12 +19,12 @@ import { useTheme } from '../contexts/ThemeContext';
 // WHAT IT DOES NOW. The strip is a VIEWPORT onto the video rather than the whole
 // of it:
 //
-//   • PINCH zooms the timeline, around the selection, down to a couple of
-//     seconds across. This is the actual fix — zoomed in, a 3-second GIF is most
-//     of the bar and can be placed on the frame.
-//   • DRAG ANYWHERE moves the selection, and the viewport follows it past an
-//     edge. Touching away from the window jumps it to the finger first, so a
-//     single tap is coarse positioning.
+//   • PINCH zooms the timeline about the FOCAL POINT, down to a couple of
+//     seconds across — put two fingers on the moment you want and it grows in
+//     place. This is the actual fix: zoomed in, a 3-second GIF is most of the
+//     bar and can be placed on the frame.
+//   • DRAG ANYWHERE moves the selection, relatively, and the viewport follows it
+//     past an edge.
 //   • DRAG on an edge GRIP sets the duration. The grips used to be
 //     pointerEvents="none" decoration; with pinch reassigned to zoom, they have
 //     to become real, and they are the natural place for that anyway.
@@ -58,6 +58,16 @@ const GRIP_HIT_PX = 30;
 // Closest zoom, in seconds across the bar. Tied to the longest GIF so the
 // selection can always be framed with a little room either side.
 const minViewFor = (maxDur: number) => Math.max(maxDur * 1.35, 1.5);
+// How often the parent hears about a change mid-gesture.
+//
+// This is the fix for "very shaky". The bar's own state can update every frame
+// cheaply, but onChange goes to GifMakerModal, which feeds trimStartSec and
+// trimEndSec straight into an <AppVideo> — so at 60 reports a second the video
+// player was being told to reconfigure its trim window sixty times a second,
+// while a finger was on the screen. The preview does not need that resolution to
+// be useful; it needs to keep up. Every gesture still flushes its final value on
+// END, so nothing is ever left stale.
+const EMIT_MS = 90;
 
 type Mode = 'move' | 'left' | 'right';
 
@@ -95,7 +105,9 @@ export default function GifTrimBar({
   const gStart = useRef(0);
   const gDur = useRef(0);
   const gViewSec = useRef(0);
-  const gCenter = useRef(0);
+  const gViewStart = useRef(0);
+  const gFocalFrac = useRef(0.5);
+  const gFocalTime = useRef(0);
   const mode = useRef<Mode>('move');
   const pinchRef = useRef<any>(null);
   const panRef = useRef<any>(null);
@@ -126,8 +138,30 @@ export default function GifTrimBar({
     if (v !== viewStartRef.current) { viewStartRef.current = v; setViewStart(v); }
   }, [duration]);
 
+  // Local state updates every frame — that is what makes the window track the
+  // finger. The PARENT is throttled, because that is what makes it smooth.
+  const lastEmit = useRef(0);
+  const pending = useRef<{ s: number; d: number } | null>(null);
+
   const commit = useCallback((s: number, d: number) => {
-    setStart(s); setDurS(d); onChange(s, d);
+    setStart(s); setDurS(d);
+    const now = Date.now();
+    if (now - lastEmit.current >= EMIT_MS) {
+      lastEmit.current = now;
+      pending.current = null;
+      onChange(s, d);
+    } else {
+      pending.current = { s, d };
+    }
+  }, [onChange]);
+
+  // Always land on the exact final value, whatever the throttle swallowed.
+  const flush = useCallback(() => {
+    if (!pending.current) return;
+    const { s, d } = pending.current;
+    pending.current = null;
+    lastEmit.current = Date.now();
+    onChange(s, d);
   }, [onChange]);
 
   // ── Frames for the VISIBLE range ────────────────────────────────────────────
@@ -163,16 +197,24 @@ export default function GifTrimBar({
   function onPinchState(e: any) {
     if (e.nativeEvent.state === State.BEGAN) {
       gViewSec.current = viewSecRef.current;
-      gCenter.current = startRef.current + durRef.current / 2;
+      gViewStart.current = viewStartRef.current;
+      // The fraction along the bar the fingers are centred on, and the time that
+      // sits there right now. Captured once at BEGAN: recomputing it per frame
+      // would chase the focal point as it drifts and make the timeline slide.
+      const frac = Math.max(0, Math.min(1, (e.nativeEvent.focalX ?? width / 2) / width));
+      gFocalFrac.current = frac;
+      gFocalTime.current = viewStartRef.current + frac * viewSecRef.current;
     }
   }
   function onPinchEvent(e: any) {
     const minView = Math.min(minViewFor(maxDur), duration);
     const next = Math.max(minView, Math.min(duration, gViewSec.current / (e.nativeEvent.scale || 1)));
-    // Zoom about the SELECTION, not the pinch focal point. The selection is the
-    // thing being placed, and keeping it under the fingers is what makes zooming
-    // feel like it is helping rather than like the bar is running away.
-    let v = gCenter.current - next / 2;
+    // Zoom about the FOCAL POINT — the time under the fingers stays under them.
+    // The owner asked to "zoom into a specific area", and this is what makes that
+    // true: you put two fingers on the moment you care about and it grows in
+    // place. Zooming about the selection instead (the previous behaviour) meant
+    // the part of the video you were looking at slid away as you pinched.
+    let v = gFocalTime.current - gFocalFrac.current * next;
     v = Math.max(0, Math.min(Math.max(0, duration - next), v));
     // Once the user has zoomed, a late `duration` must not reset their view.
     zoomedRef.current = next < duration - 0.01;
@@ -191,28 +233,28 @@ export default function GifTrimBar({
   // Travelling a long video is handled by follow() instead: drag the selection
   // to the edge of the viewport and the viewport comes with it.
   function onPanState(e: any) {
-    if (e.nativeEvent.state !== State.BEGAN) return;
+    const st = e.nativeEvent.state;
+    if (st === State.END || st === State.CANCELLED || st === State.FAILED) { flush(); return; }
+    if (st !== State.BEGAN) return;
+
     gDur.current = durRef.current;
+    gStart.current = startRef.current;
 
     const x = e.nativeEvent.x;
     const left = (startRef.current - viewStartRef.current) * pxPerSec;
     const right = left + Math.max(MIN_WIN_PX, durRef.current * pxPerSec);
 
-    if (Math.abs(x - left) <= GRIP_HIT_PX) { mode.current = 'left'; gStart.current = startRef.current; return; }
-    if (Math.abs(x - right) <= GRIP_HIT_PX) { mode.current = 'right'; gStart.current = startRef.current; return; }
-
-    mode.current = 'move';
-    if (x > left && x < right) { gStart.current = startRef.current; return; }
-    // Touched away from the window: JUMP it here first, centred on the finger,
-    // then let the drag refine from there. Coarse positioning in one tap, which
-    // is most of what the old drag-anywhere was actually being used for.
-    const s = Math.max(0, Math.min(
-      duration - durRef.current,
-      viewStartRef.current + x / pxPerSec - durRef.current / 2,
-    ));
-    gStart.current = s;
-    commit(s, durRef.current);
-    follow(s, durRef.current);
+    // Edges first, then everything else moves the selection.
+    //
+    // There is deliberately NO jump-to-finger here. A previous version snapped
+    // the window to the touch point when you started outside it, and that is
+    // exactly the "teleporty" the owner reported: zoomed out the window is only
+    // MIN_WIN_PX wide, so most touches land outside it and the selection leapt
+    // before the drag had even begun. Relative dragging from wherever the finger
+    // is has no such surprise, and it is what the component did originally.
+    if (Math.abs(x - left) <= GRIP_HIT_PX) mode.current = 'left';
+    else if (Math.abs(x - right) <= GRIP_HIT_PX) mode.current = 'right';
+    else mode.current = 'move';
   }
 
   function onPanEvent(e: any) {
@@ -241,6 +283,16 @@ export default function GifTrimBar({
     follow(gStart.current, d);
   }
 
+  const strip = useMemo(() => (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.strip]}>
+      {Array.from({ length: FRAMES }).map((_, i) => (
+        frames[i]
+          ? <Image key={i} source={{ uri: frames[i] }} style={{ width: width / FRAMES, height }} contentFit="cover" />
+          : <View key={i} style={{ width: width / FRAMES, height, backgroundColor: colors.surface }} />
+      ))}
+    </View>
+  ), [frames, width, height, colors.surface]);
+
   // ── Geometry ────────────────────────────────────────────────────────────────
   const rawLeft = (start - viewStart) * pxPerSec;
   const rawWin = durS * pxPerSec;
@@ -261,14 +313,13 @@ export default function GifTrimBar({
       <PinchGestureHandler ref={pinchRef} simultaneousHandlers={panRef} onGestureEvent={onPinchEvent} onHandlerStateChange={onPinchState}>
         <PanGestureHandler ref={panRef} simultaneousHandlers={pinchRef} maxPointers={1} onGestureEvent={onPanEvent} onHandlerStateChange={onPanState}>
           <View style={[styles.track, { width, height, borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight }]}>
-            {/* Filmstrip — the VISIBLE range, re-extracted as it changes. */}
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.strip]}>
-              {Array.from({ length: FRAMES }).map((_, i) => (
-                frames[i]
-                  ? <Image key={i} source={{ uri: frames[i] }} style={{ width: width / FRAMES, height }} contentFit="cover" />
-                  : <View key={i} style={{ width: width / FRAMES, height, backgroundColor: colors.surface }} />
-              ))}
-            </View>
+            {/* Filmstrip — the VISIBLE range, re-extracted as it changes.
+                Memoised on the frames themselves: during a drag this component
+                re-renders every frame to track the finger, and rebuilding ten
+                <Image> elements each time is work the strip never needs — the
+                pictures do not change while you are dragging. Part of the same
+                fix as EMIT_MS. */}
+            {strip}
 
             {/* Dim outside the selection */}
             <View pointerEvents="none" style={[styles.dim, { left: 0, width: leftX, height }]} />
