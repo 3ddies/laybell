@@ -33,10 +33,9 @@ import { useReduceMotion } from '../../lib/a11y';
 
 const SCREEN_W = Dimensions.get('window').width;
 
-// How far the header's fill runs out before its bottom edge. Long enough to read
-// as a dissolve rather than a soft line, short enough that the stories tray
-// underneath isn't visibly washing out.
-const HEADER_FADE = 20;
+// How far past its edge the header's fill runs out. Short: the job is to blur
+// the boundary, not to lay a band of shade over the top of the feed.
+const HEADER_FADE = 11;
 
 // The bell and the messages button are ~28-31pt glyphs with 2pt of padding, so
 // their real target was ~32pt — under the 44pt minimum, and you had to land the
@@ -2144,11 +2143,22 @@ export default function HomeScreen() {
           <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} pointerEvents="none" />
         )}
         <LinearGradient
-          // Starts at full strength on Android, where it continues a solid fill.
-          // On iOS it continues frosted glass, which is itself translucent — so
-          // it starts translucent too. Beginning opaque there would swap one
-          // hard edge for another, just a softer-coloured one.
-          colors={[Platform.OS === 'ios' ? colors.background + 'A6' : colors.background, colors.background + '00']}
+          // Three stops, front-loaded: most of the falloff happens in the first
+          // third, then it trails off. A straight two-stop ramp spends its whole
+          // length visibly dark and reads as a shadow laid over the feed; this
+          // one is only dense right at the seam, which is the only place it has
+          // any work to do.
+          //
+          // It starts at full strength on Android, where it is continuing a
+          // solid fill and anything less would leave a step at the edge. On iOS
+          // it continues frosted glass, which is translucent already, so it
+          // starts translucent to match.
+          colors={
+            Platform.OS === 'ios'
+              ? [colors.background + '5C', colors.background + '17', colors.background + '00']
+              : [colors.background, colors.background + '26', colors.background + '00']
+          }
+          locations={[0, 0.4, 1]}
           style={styles.headerFade}
           pointerEvents="none"
         />
