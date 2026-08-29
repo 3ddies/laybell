@@ -431,7 +431,12 @@ const PostCard = memo(function PostCard({
             active={shouldPlayVideo}
             postId={item.id}
             onVideoAudioActiveChange={(a) => onSlideAudioActive(item, a)}
-            onOpen={(idx) => onMediaTap(() => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }, idx)))}
+            // Tapping a slideshow opens REELS, not the post viewer. It is the
+            // same full-screen surface a video tap leads to, so the format stops
+            // being a dead end in the feed — and it is how someone arrives in
+            // the reels flow without having gone looking for it. Reels itself
+            // still rarely serves slideshows; see the damping in feedScorer.
+            onOpen={() => onMediaTap(() => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenReel(item, { x, y, width: w, height: h })))}
           />
           {!!item.song_id && (
             <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />

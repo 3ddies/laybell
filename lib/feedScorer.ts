@@ -212,6 +212,16 @@ export const ORIGINALITY_LIMIT_MUL = 0.3;
 // multiplier, so money alone can't fake an engaging film.
 export const FILM_MIN_SEC_SCORE = 540; // matches FILM_MIN_SEC (lib/entitlements) + the SQL trigger
 export const FILM_BASE_MUL = 0.5;      // where an unproven film starts
+
+// Slideshows in REELS, same shape as films and for the same reason. Reels is a
+// video surface, and a carousel arriving mid-swipe breaks that expectation — but
+// a slideshow people genuinely engage with has earned the reach, and burying it
+// outright would mean the format could never be discovered that way at all.
+// So it enters heavily damped and climbs back to full weight on engagement:
+// rare by default, ordinary once it is proven. Home and Explore are untouched;
+// this only applies where the opt is set.
+export const SLIDESHOW_REELS_BASE_MUL = 0.12;
+export const SLIDESHOW_REELS_PROVEN = 900;
 // Weighted engagement (same weights as the score's own engagement sum, sans
 // BASE) at which the dampener is fully lifted — ≈20 likes, or 12 comments, or
 // any mix. One knob: raise it to make Home stingier with films.
@@ -248,6 +258,9 @@ function isMan(gender?: string | null): boolean {
 export type ScoreOpts = {
   viewerGender?: string | null;
   girlSpaceIds?: Set<string>; // official "Girl space" community ids
+  /** Reels only. Damps slideshows so the swipe feed stays about video — see
+   *  SLIDESHOW_REELS_BASE_MUL. Home and Explore never set it. */
+  dampSlideshows?: boolean;
 };
 
 export function scorePost(
@@ -297,7 +310,18 @@ export function scorePost(
     filmMul = Math.min(1, FILM_BASE_MUL + (1 - FILM_BASE_MUL) * (weighted / FILM_PROVEN_ENGAGEMENT));
   }
 
-  return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul * girlSpaceMul * origMul * filmMul;
+  // Slideshows in reels: the same dampened-entry curve as films, only steeper.
+  // Reels is a video surface, so a carousel has to be genuinely engaging before
+  // it belongs in the swipe — but it CAN get there, which is the difference
+  // between rare and excluded.
+  let slideshowMul = 1.0;
+  if (opts?.dampSlideshows && post.type === 'slideshow') {
+    const weighted = likes * 3 + comments * 5 + saves * 4 + reposts * 6 + streams;
+    slideshowMul = Math.min(1, SLIDESHOW_REELS_BASE_MUL
+      + (1 - SLIDESHOW_REELS_BASE_MUL) * (weighted / SLIDESHOW_REELS_PROVEN));
+  }
+
+  return decayed * creatorBoost * typeBoost * genreBoost * followMul * badgeMul * seenMul * girlSpaceMul * origMul * filmMul * slideshowMul;
 }
 
 // ── Instagram-style feed arrangement ─────────────────────────────────────────

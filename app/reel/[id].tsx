@@ -1,4 +1,6 @@
 import AppVideo, { type AppVideoHandle } from '../../components/AppVideo';
+import SlideshowCarousel from '../../components/SlideshowCarousel';
+import { isSlideshow, parseSlides } from '../../lib/slideshow';
 import { songPlaysFor } from '../../lib/postSong';
 import VideoScrubBar, { type VideoScrubBarHandle } from '../../components/VideoScrubBar';
 import ZoomableView from '../../components/ZoomableView';
@@ -306,6 +308,23 @@ const ReelPage = memo(function ReelPage({
           onZoomChange={api.onZoomChange}
           onGesture={api.markGesture}
         >
+        {/* A SLIDESHOW reel is the carousel, centred, and nothing else — no
+            player, no poster handoff, no scrub bar, because none of it applies.
+            Its horizontal paging sits inside the vertical one, which is the one
+            nesting React Native handles cleanly: the two axes never contend. */}
+        {isSlideshow(item.type) ? (
+          <View style={styles.slideshowReel}>
+            <SlideshowCarousel
+              key={item.id}
+              slides={parseSlides(item)}
+              width={SCREEN_W}
+              aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
+              active={active}
+              postId={item.id}
+            />
+          </View>
+        ) : (
+        <>
         {/* Poster ALWAYS rendered underneath. Non-settled pages carry NO
             native player (creating an AVPlayer during a page mount was the
             reels mid-swipe freeze); when the player mounts at snap-settle,
@@ -351,6 +370,8 @@ const ReelPage = memo(function ReelPage({
             <Spinner size={12} thickness={2} color="#fff" />
             <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '600' }}>{t('upload.almostDone')}</Text>
           </View>
+        )}
+        </>
         )}
         </ZoomableView>
       </TouchableOpacity>
@@ -1364,11 +1385,13 @@ export default function ReelScreen() {
       (reelFilter === 'films'
         ? supabase
           .from('posts').select(SELECT)
+          // Films are video by definition — a slideshow has no duration to be
+          // long. Stated rather than left to the duration filter to imply it.
           .eq('is_public', true).eq('type', 'video')
           .gt('duration_seconds', FILM_SECONDS)
         : supabase
           .from('posts').select(SELECT)
-          .eq('is_public', true).eq('type', 'video')
+          .eq('is_public', true).in('type', ['video', 'slideshow'])
           .or(`duration_seconds.is.null,duration_seconds.lte.${FILM_SECONDS}`)
       ).order('created_at', { ascending: false }).limit(40),
       uid ? supabase.from('likes').select('post_id').eq('user_id', uid) : Promise.resolve({ data: [] as any }),
@@ -1379,7 +1402,10 @@ export default function ReelScreen() {
 
     const now = Date.now();
     let list = attachEngagementCountsAll(data)
-      .map((p) => ({ p, s: scorePost(p, profile, followingSet, seen, now) }))
+      // dampSlideshows: reels stays a video surface. A carousel enters heavily
+      // damped and climbs back on engagement, so slideshows are rare here
+      // without being shut out — see SLIDESHOW_REELS_BASE_MUL.
+      .map((p) => ({ p, s: scorePost(p, profile, followingSet, seen, now, { dampSlideshows: true }) }))
       .sort((a, b) => b.s - a.s)
       .map((x) => x.p);
 
@@ -1948,6 +1974,9 @@ export default function ReelScreen() {
 }
 
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
+  // Centred in the full-screen page: a carousel is as tall as its own aspect,
+  // not the screen, so the bands above and below are simply the page showing.
+  slideshowReel: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   root: { flex: 1 },
   container: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
