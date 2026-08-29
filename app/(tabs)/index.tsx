@@ -26,9 +26,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet,
   TouchableOpacity, Platform,
-  RefreshControl, Dimensions, Modal, Animated, ActivityIndicator,
+  RefreshControl, Dimensions, Modal, Animated, ActivityIndicator, Easing,
 } from 'react-native';
 import { FeedSkeleton } from '../../components/Skeleton';
+import { useReduceMotion } from '../../lib/a11y';
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -1418,6 +1419,42 @@ export default function HomeScreen() {
   }, [chevronOpacity]);
   useEffect(() => () => { if (chevronTimer.current) clearTimeout(chevronTimer.current); }, []);
 
+  // The wordmark drifts from brand yellow to neutral and back, every ~11s.
+  //
+  // ⚠️ THIS IS AN OPACITY ANIMATION, NOT A COLOUR ONE, and that is the entire
+  // reason it is safe to run here. Animating `color` cannot use the native
+  // driver, and this header is mounted for as long as the user is on the feed —
+  // an interpolation on the JS thread would be competing with the scroll for
+  // exactly as long as anyone is scrolling.
+  //
+  // So two copies of the wordmark are stacked instead: an OPAQUE yellow one
+  // underneath, and a neutral one on top whose opacity is animated. Because the
+  // bottom copy is opaque, the composite is exactly
+  //     alpha x neutral + (1 - alpha) x yellow
+  // which is the colour interpolation, arrived at with a property the native
+  // driver can carry. Nothing runs on the JS thread per frame.
+  //
+  // Long rest between passes on purpose: it should be something you catch, not
+  // something pulsing in the corner of the screen while you read the feed.
+  const logoFade = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
+  useEffect(() => {
+    // Gated on focus as well: HomeScreen stays mounted behind the other tabs, so
+    // without this the wordmark would go on quietly breathing on a screen nobody
+    // is looking at for as long as the app is open.
+    if (reduceMotion || !isFocused) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(logoFade, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.delay(500),
+      Animated.timing(logoFade, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.delay(6000),
+    ]));
+    loop.start();
+    // A stopped value holds where it was, which would strand the wordmark
+    // mid-blend on an unmount.
+    return () => { loop.stop(); logoFade.setValue(0); };
+  }, [reduceMotion, isFocused, logoFade]);
+
   useEffect(() => {
     if (initialized) fetchPosts(currentUserId || undefined, seenPostIds);
   }, [feedMode]);
@@ -2030,9 +2067,16 @@ export default function HomeScreen() {
                 text mask (masked-view / svg / skia) — all native deps, so a
                 rebuild — and an unmasked sweep is a rectangle crossing a
                 rectangle, which read as a glitch rather than a finish. */}
+            {/* Two stacked copies — see the logoFade note above. The yellow pair
+                stays opaque underneath and sizes the box; the neutral pair rides
+                on top and only its opacity moves. */}
             <View style={styles.logoWrap}>
               <Text style={styles.headerLogo}>Laybell</Text>
               <Text style={styles.tm}>™</Text>
+              <Animated.View style={[styles.logoOverlay, { opacity: logoFade }]} pointerEvents="none">
+                <Text style={[styles.headerLogo, styles.logoNeutral]}>Laybell</Text>
+                <Text style={[styles.tm, styles.logoNeutral]}>™</Text>
+              </Animated.View>
             </View>
             <Animated.View style={[styles.logoChevron, { opacity: chevronOpacity }]} pointerEvents="none">
               <Ionicons name="chevron-down" size={20} color={colors.primaryLight} />
@@ -2331,6 +2375,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   logoChevron: { marginLeft: 2, marginTop: 4 },
   // Wordmark + ™ tucked into the bottom-right corner of "Laybell".
   logoWrap: { flexDirection: 'row', alignItems: 'flex-end' },
+  // The neutral copy, pinned over the yellow one. Same flex rules as logoWrap so
+  // the two lay out identically and the letters land on each other exactly.
+  logoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row', alignItems: 'flex-end',
+  },
+  logoNeutral: { color: colors.text },
   tm: { fontSize: 11, fontWeight: '700', color: colors.primaryLight, marginLeft: 1, marginBottom: 3 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   headerIconBtn: { position: 'relative', padding: 2 },
