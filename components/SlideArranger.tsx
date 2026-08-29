@@ -219,6 +219,15 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
       startIdx.current = idxAtRef.current(e.nativeEvent.pageX);
       clearHold();
       holdTimer.current = setTimeout(() => {
+        // Zero every displacement AT PICKUP, not only at release.
+        //
+        // Releasing cannot be trusted to have cleaned up: those springs run on
+        // the native driver, so stopAnimation is a round trip and the stop can
+        // land after the setValue that follows it — leaving the spring to finish
+        // on its toValue and the tile permanently shoved a slot sideways. That
+        // is the overlap. Clearing here means the drag always starts from a row
+        // that is genuinely flat, whatever the last one left behind.
+        offsetMap.forEach((o) => { o.stopAnimation(); o.setValue(0); });
         dragIndexRef.current = startIdx.current;
         targetRef.current = startIdx.current;
         setDragIndex(startIdx.current);
@@ -404,12 +413,17 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                 style={[
                   styles.tile,
                   { marginRight: i === slides.length - 1 ? 0 : TILE_GAP, borderColor: i === index ? colors.text : 'transparent' },
-                  dragging ? {
-                    transform: [{ translateX: dragX }, { scale: 1.16 }],
-                    zIndex: 5, elevation: 8,
-                    shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 9, shadowOffset: { width: 0, height: 5 },
-                    borderColor: colors.text,
-                  } : { transform: [{ translateX: offsetFor(s.uri) }] },
+                  // Displacements are applied ONLY while a drag is live. At rest
+                  // the tiles carry no transform at all, so a value left stranded
+                  // by a native spring cannot push a tile out of its slot — the
+                  // row is always laid out by flexbox alone between gestures.
+                  dragIndex == null ? null
+                    : dragging ? {
+                      transform: [{ translateX: dragX }, { scale: 1.16 }],
+                      zIndex: 5, elevation: 8,
+                      shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 9, shadowOffset: { width: 0, height: 5 },
+                      borderColor: colors.text,
+                    } : { transform: [{ translateX: offsetFor(s.uri) }] },
                 ]}
               >
                 <ExpoImage
@@ -421,7 +435,14 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                 {s.type === 'video' && (
                   <View style={styles.tileVideo}><Ionicons name="videocam" size={11} color="#fff" /></View>
                 )}
-                <View style={styles.tileNum}><Text style={styles.tileNumText}>{i + 1}</Text></View>
+                {/* Hidden while dragging. The rendered order is frozen for the
+                    length of the gesture, so these numbers describe where each
+                    tile STARTED, not where it is heading — leaving them up put
+                    a wrong answer next to the question the user is asking. The
+                    gap the others open is the honest indicator. */}
+                {dragIndex == null && (
+                  <View style={styles.tileNum}><Text style={styles.tileNumText}>{i + 1}</Text></View>
+                )}
               </Animated.View>
             );
           })}
