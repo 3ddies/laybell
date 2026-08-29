@@ -23,11 +23,18 @@ import { useNowPlaying } from '../contexts/AudioContext';
 // on the loaded row — one in the whole app at a time — which is what makes it
 // affordable on lists this long.
 //
-// PAUSING MORPHS IT INTO THE PAUSE SYMBOL rather than stamping an icon on top.
-// The outer two bars fade away and the inner two rise to full height, widen and
-// part, so the thing that was dancing becomes the thing that says it stopped.
-// A separate badge in the corner was competing with the artwork for a job the
-// equaliser was already sitting there able to do.
+// HOW IT PAUSES DEPENDS ON WHAT IT SITS NEXT TO, and that is the whole reason
+// there are two shapes rather than one.
+//
+//   'pause' — over the artwork, the bars fold into the pause symbol: the outer
+//     two fade away while the inner two rise to full height, widen and part. It
+//     works there because nothing on the artwork can be mistaken for a control.
+//
+//   'rest' — beside the transport button, the bars simply settle to a low flat
+//     line and dim. The pause shape CANNOT be used here: rendered next to the
+//     round play button it reads as a pause button sitting beside a play button,
+//     which is two controls contradicting each other. A flat line is unmistakably
+//     a meter at rest and unmistakably not something you press.
 //
 // All of it is native-driver: opacity, translate and scale only, nothing that
 // touches layout.
@@ -43,12 +50,18 @@ const EQ_BARS = [
   { low: 0.40, high: 0.95, dur: 560, inner: false, shift: 0 },
 ];
 const EQ_PAUSE_SCALE = 1.6;
+// Where the bars come to rest, and how far they fade doing it. Low enough to be
+// clearly dormant, tall enough to still be four bars rather than four dots.
+const EQ_REST_H = 0.2;
+const EQ_REST_OPACITY = 0.55;
 
 function EqBar({
-  low, high, dur, inner, shift, color, playing,
+  low, high, dur, inner, shift, color, playing, shape,
 }: {
-  low: number; high: number; dur: number; inner: boolean; shift: number; color: string; playing: boolean;
+  low: number; high: number; dur: number; inner: boolean; shift: number;
+  color: string; playing: boolean; shape: 'pause' | 'rest';
 }) {
+  const toPause = shape === 'pause';
   const v = useRef(new Animated.Value(0)).current;      // the dance
   const morph = useRef(new Animated.Value(playing ? 0 : 1)).current;  // 0 dancing, 1 paused
 
@@ -74,14 +87,25 @@ function EqBar({
   // pass per frame off the native driver: the bar is full height, flush with its
   // container's bottom edge, and sliding it DOWN pushes its top out of view.
   //
-  // Multiplying by (1 - morph) is what blends the two states — at morph 1 the
-  // offset is exactly 0, which IS full height, so the pause bars arrive at their
-  // final shape without a second animation fighting the first.
+  // One lerp blends the dance into whichever resting shape this variant wants:
+  // 0 for a pause bar (offset 0 IS full height) and a large offset for a bar at
+  // rest. Both states are the same animation, so nothing fights anything.
   const danceY = v.interpolate({
     inputRange: [0, 1],
     outputRange: [EQ_H * (1 - low), EQ_H * (1 - high)],
   });
-  const translateY = Animated.multiply(danceY, Animated.subtract(1, morph));
+  const restY = toPause ? 0 : EQ_H * (1 - EQ_REST_H);
+  const translateY = Animated.add(
+    Animated.multiply(danceY, Animated.subtract(1, morph)),
+    Animated.multiply(morph, restY),
+  );
+
+  // Only the pause shape fades, parts and widens. The rest shape keeps all four
+  // bars, in place and unscaled, and just dims — the moment one of them starts
+  // looking like a glyph, it starts looking like a button.
+  const opacity = toPause
+    ? (inner ? 1 : morph.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }))
+    : morph.interpolate({ inputRange: [0, 1], outputRange: [1, EQ_REST_OPACITY] });
 
   // translateX and scaleX ride the CONTAINER, not the bar. The container is the
   // clip, so scaling the bar inside it would just crop the extra width away.
@@ -91,10 +115,10 @@ function EqBar({
     <Animated.View
       style={{
         width: EQ_BAR_W, height: EQ_H, overflow: 'hidden', justifyContent: 'flex-end',
-        opacity: inner ? 1 : morph.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+        opacity,
         transform: [
-          { translateX: morph.interpolate({ inputRange: [0, 1], outputRange: [0, shift] }) },
-          { scaleX: inner ? morph.interpolate({ inputRange: [0, 1], outputRange: [1, EQ_PAUSE_SCALE] }) : 1 },
+          { translateX: toPause ? morph.interpolate({ inputRange: [0, 1], outputRange: [0, shift] }) : 0 },
+          { scaleX: toPause && inner ? morph.interpolate({ inputRange: [0, 1], outputRange: [1, EQ_PAUSE_SCALE] }) : 1 },
         ],
       }}
     >
@@ -221,7 +245,7 @@ export default function TrackRow({
             ) : (
               <View style={styles.eq}>
                 {EQ_BARS.map((b, i) => (
-                  <EqBar key={i} {...b} color={colors.text} playing={playing} />
+                  <EqBar key={i} {...b} color={colors.text} playing={playing} shape="pause" />
                 ))}
               </View>
             )}
@@ -243,15 +267,16 @@ export default function TrackRow({
       </TouchableOpacity>
 
       {/* Feed variant: the indicator sits in the control area instead, so the
-          post's cover art stays untouched. Same four bars, same morph — only
-          the address changes. */}
+          post's cover art stays untouched. Same four bars — but the RESTING
+          shape, never the pause symbol, because a pause glyph rendered right
+          next to the round play button reads as two controls disagreeing. */}
       {active && indicator === 'button' && (
         reduced ? (
-          <Ionicons name={playing ? 'musical-notes' : 'pause'} size={16} color={colors.textSecondary} />
+          <Ionicons name="musical-notes" size={16} color={colors.textSecondary} style={{ opacity: playing ? 1 : EQ_REST_OPACITY }} />
         ) : (
           <View style={[styles.eq, styles.eqInline]}>
             {EQ_BARS.map((b, i) => (
-              <EqBar key={i} {...b} color={colors.textSecondary} playing={playing} />
+              <EqBar key={i} {...b} color={colors.textSecondary} playing={playing} shape="rest" />
             ))}
           </View>
         )
