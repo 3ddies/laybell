@@ -1454,7 +1454,19 @@ export default function PostScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => { arrangerRef.current?.commit(); setStep('pick'); }}>
+          {/* One back affordance, not two. With the crop sheet open this arrow
+              closes it — keeping the crop — rather than leaving the step, which
+              is why the sheet needs no Done button of its own. */}
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={t('a11y.back')}
+            style={styles.headerBtn}
+            onPress={() => {
+              if (arrangerRef.current?.isAdjusting()) { arrangerRef.current.closeAdjust(); return; }
+              arrangerRef.current?.commit();
+              setStep('pick');
+            }}
+          >
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('post.arrangeTitle')}</Text>

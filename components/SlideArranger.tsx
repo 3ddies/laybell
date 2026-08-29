@@ -44,8 +44,13 @@ export type ArrangerSlide = {
 };
 
 export type SlideArrangerHandle = {
-  /** Flush the crop the open Adjust sheet is holding, if any. */
+  /** Flush the crop the open crop sheet is holding, if any. */
   commit: () => void;
+  /** True while the crop sheet is open, so the screen's own back arrow can
+   *  close it instead of leaving the step — one back affordance, not two. */
+  isAdjusting: () => boolean;
+  /** Keep the crop and close the sheet. */
+  closeAdjust: () => void;
 };
 
 const STRIP_H = 76;
@@ -76,7 +81,7 @@ const STAGE_STEP_MAX = 150;
 // Fraction of the frame a drag is assumed to have room for. Half is the honest
 // geometric answer from a centred start, but it measured a touch slow in the
 // hand — this trims it so every set size moves a little more per pixel.
-const STAGE_REACH = 0.42;
+const STAGE_REACH = 0.37;
 function stageStepFor(frameW: number, count: number): number {
   if (count < 2) return STAGE_STEP_MAX;
   return Math.max(STAGE_STEP_MIN, Math.min(STAGE_STEP_MAX, (frameW * STAGE_REACH) / (count - 1)));
@@ -134,7 +139,12 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     onChangeRef.current(next);
   };
   const commitRef = useRef(commit); commitRef.current = commit;
-  useImperativeHandle(ref, () => ({ commit: () => commitRef.current() }), []);
+  const adjustingRef = useRef(adjusting); adjustingRef.current = adjusting;
+  useImperativeHandle(ref, () => ({
+    commit: () => commitRef.current(),
+    isAdjusting: () => adjustingRef.current,
+    closeAdjust: () => { commitRef.current(); setAdjusting(false); },
+  }), []);
   useEffect(() => () => { commitRef.current(); }, []);
 
   const goTo = (i: number) => {
@@ -558,13 +568,6 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
             initialCrop={cur.crop ?? null}
           />
           <Text style={styles.sheetHint}>{t('post.slideCropHint')}</Text>
-          <TouchableOpacity
-            style={styles.sheetDone}
-            onPress={() => { commitRef.current(); setAdjusting(false); }}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.sheetDoneText}>{t('post.slideDone')}</Text>
-          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -624,9 +627,4 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     color: c.textTertiary, fontSize: 12, fontWeight: '600',
     marginTop: SPACING.md, paddingHorizontal: SPACING.lg, textAlign: 'center',
   },
-  sheetDone: {
-    marginTop: SPACING.md, paddingVertical: 10, paddingHorizontal: SPACING.xl,
-    borderRadius: RADIUS.full, backgroundColor: c.text,
-  },
-  sheetDoneText: { color: c.background, fontSize: 15, fontWeight: '800' },
 });
