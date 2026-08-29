@@ -204,7 +204,7 @@ export default function TVVideoList({ posts, featured, films, currentUserId, ref
             </View>
             <View style={styles.filmSeeAll}>
               <Text style={styles.filmSeeAllText}>{t('tv.seeAll')}</Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+              <Ionicons name="chevron-forward" size={16} color={colors.text} />
             </View>
           </TouchableOpacity>
           <ScrollView
@@ -386,7 +386,9 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     letterSpacing: -0.6,
   },
   filmSeeAll: { flexDirection: 'row', alignItems: 'center', gap: 1, paddingBottom: 4 },
-  filmSeeAllText: { color: c.primary, fontSize: 14, fontWeight: '800' },
+  // Neutral in both themes — white on dark, near-black on light. "See all" is
+  // navigation, not a terminal action, so it does not spend the accent.
+  filmSeeAllText: { color: c.text, fontSize: 14, fontWeight: '800' },
   featRow: { gap: GRID_GAP, paddingRight: H_PADDING },
   featTile: {
     width: FEAT_W, height: FEAT_H, borderRadius: RADIUS.md, overflow: 'hidden',

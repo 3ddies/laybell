@@ -67,7 +67,7 @@ const TV_FEAT_H = Math.round(TV_FEAT_W * 1.3);
 
 export default function LaybellTVScreen() {
   const styles = useThemedStyles(makeStyles);
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -266,16 +266,30 @@ export default function LaybellTVScreen() {
               <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.85)" />
             </View>
           ) : (
-            <LinearGradient
-              colors={GRADIENTS.primary}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.tvBanner}
-            >
-              <Ionicons name="tv" size={18} color="#fff" />
-              <Text style={styles.tvBannerText}>{t('tv.setup.watchOnTv')}</Text>
-              <Ionicons name="chevron-forward" size={16} color="#fff" />
-            </LinearGradient>
+            /* DARK ONLY gets the inverted pill — a solid light slab with dark
+               glyphs, which on a near-black page is the loudest a control can be
+               without spending the accent.
+               Light keeps the gradient, and that asymmetry is deliberate rather
+               than an oversight: a white pill on the light theme's near-white
+               page would have almost no edge left to see. */
+            mode === 'light' ? (
+              <LinearGradient
+                colors={GRADIENTS.primary}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.tvBanner}
+              >
+                <Ionicons name="tv" size={18} color="#fff" />
+                <Text style={styles.tvBannerText}>{t('tv.setup.watchOnTv')}</Text>
+                <Ionicons name="chevron-forward" size={16} color="#fff" />
+              </LinearGradient>
+            ) : (
+              <View style={[styles.tvBanner, { backgroundColor: colors.text }]}>
+                <Ionicons name="tv" size={18} color={colors.background} />
+                <Text style={[styles.tvBannerText, { color: colors.background }]}>{t('tv.setup.watchOnTv')}</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.background} />
+              </View>
+            )
           )}
         </TouchableOpacity>
 
