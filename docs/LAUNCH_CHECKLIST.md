@@ -82,8 +82,15 @@ exist in English only (`translate()` falls back per key, so the other nine local
 stores have real users — App Store Connect → Analytics and Play Console → Android vitals for
 the first-week crash picture.
 
-⚠️ **Owner-only, still open:** NCMEC (forward `laybellapp@gmail.com` → `3ddiehall@gmail.com`)
-and the Stripe verdict — **payouts pause 2026-09-09**.
+⚠️ **Owner-only, still open — two items, both with someone waiting:**
+
+- **NCMEC:** reply to Samuel Carducci's trusted-flagger question (asked 2026-08-27, still
+  unanswered; draft policy in `docs/CSAM_RESPONSE_RUNBOOK.md`). ✅ The mail forwarding
+  `laybellapp@gmail.com` → `3ddiehall@gmail.com` was done 2026-08-29, so `support`, `privacy`
+  and `dmca` now reach an inbox that is actually read — those carry statutory clocks.
+- **Stripe:** verdict pending, **payouts pause 2026-09-09**. As of 08-29 Stripe has everything
+  it asked for and said it will come back to us, so nothing is owed by us. **If 09-05 passes in
+  silence, chase it** — that leaves four days on a live app with real creator earnings.
 
 ---
 

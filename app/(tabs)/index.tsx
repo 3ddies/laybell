@@ -33,8 +33,8 @@ import { useReduceMotion } from '../../lib/a11y';
 
 const SCREEN_W = Dimensions.get('window').width;
 
-// How far past its edge the header's fill runs out. Short: the job is to blur
-// the boundary, not to lay a band of shade over the top of the feed.
+// How far the header's shadow reaches past its edge. Short: the job is to give
+// the bar depth, not to lay a band of shade over the top of the feed.
 const HEADER_FADE = 11;
 
 // The bell and the messages button are ~28-31pt glyphs with 2pt of padding, so
@@ -2127,11 +2127,11 @@ export default function HomeScreen() {
             colors.background, so with no rule between them there is barely a
             boundary left to see.
 
-            The gradient below carries the rest. It hangs BELOW the block rather
-            than eating into it, so the fill stays at full strength behind the
-            header row and the stories tray — the tray only has 8pt of bottom
-            padding, and a fade inside the block would wash out the story
-            labels instead of the edge. */}
+            The gradient below is a shadow that grounds the bar. It hangs BELOW
+            the block rather than eating into it, so the fill stays at full
+            strength behind the header row and the stories tray — the tray only
+            has 8pt of bottom padding, and shading inside the block would darken
+            the story labels instead of the edge. */}
         {Platform.OS === 'ios' ? (
           <BlurView
             tint={mode === 'light' ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark'}
@@ -2143,21 +2143,30 @@ export default function HomeScreen() {
           <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} pointerEvents="none" />
         )}
         <LinearGradient
-          // Three stops, front-loaded: most of the falloff happens in the first
-          // third, then it trails off. A straight two-stop ramp spends its whole
-          // length visibly dark and reads as a shadow laid over the feed; this
-          // one is only dense right at the seam, which is the only place it has
-          // any work to do.
+          // A SHADOW, not a continuation of the fill — and on the light theme
+          // that distinction is the whole thing. Fading colors.background there
+          // meant fading #F2F1ED, a near-white haze spilling onto the feed:
+          // it read as fog or a smeared lens rather than an edge, because a pale
+          // wash over pale content carries no depth information at all.
           //
-          // It starts at full strength on Android, where it is continuing a
-          // solid fill and anything less would leave a step at the edge. On iOS
-          // it continues frosted glass, which is translucent already, so it
-          // starts translucent to match.
+          // Black at low alpha does the job a header edge actually wants doing.
+          // It also turns out nothing was lost by dropping the fill-matching:
+          // the header and the post cards are BOTH colors.background, so there
+          // was never a colour step at that seam for the gradient to hide. The
+          // hairline was the entire visible artefact, and that is already gone.
+          //
+          // Dark carries more of it than light. Over a near-black feed a black
+          // shadow barely registers, so it needs the extra alpha to do anything
+          // at all — and where it does register is over a bright photo at the
+          // top of the feed, which is exactly where the bar wants grounding.
           colors={
-            Platform.OS === 'ios'
-              ? [colors.background + '5C', colors.background + '17', colors.background + '00']
-              : [colors.background, colors.background + '26', colors.background + '00']
+            mode === 'light'
+              ? ['rgba(0,0,0,0.15)', 'rgba(0,0,0,0.05)', 'rgba(0,0,0,0)']
+              : ['rgba(0,0,0,0.30)', 'rgba(0,0,0,0.10)', 'rgba(0,0,0,0)']
           }
+          // Front-loaded: nearly all the density sits at the seam, then it trails
+          // off. A linear ramp is visibly dark along its whole run, which is what
+          // reads as a band laid over the feed instead of a shadow cast by the bar.
           locations={[0, 0.4, 1]}
           style={styles.headerFade}
           pointerEvents="none"
@@ -2456,7 +2465,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   },
   // The block itself never paints: its children do, so the bottom can dissolve.
   headerGlass: { backgroundColor: 'transparent' },
-  // The dissolve, hanging just BELOW the block so it falls over the feed rather
+  // The shadow, hanging just BELOW the block so it falls over the feed rather
   // than over the tray. Android can clip a child drawn outside its parent; if it
   // does, the fallback is simply the hairline-free edge, which is already the
   // larger half of the fix.
