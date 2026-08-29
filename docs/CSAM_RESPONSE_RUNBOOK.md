@@ -61,6 +61,36 @@ account suspended on receipt — no corroborating user report required.
 
 **The channel is `abuse@laybell.app`**, kept separate from general support.
 
+#### ✅ Ready to send — reply to Carducci's credentials email (team: `ESPteam@ncmec.org`, Hannah CC'd)
+
+Nothing to decide or look up; this describes what Laybell already does. Copy it as-is.
+
+> Hi Samuel,
+>
+> Thanks again for getting us registered.
+>
+> Yes — Laybell recognises NCMEC and other established hotlines as trusted flaggers, and we
+> have a separate workstream for those notifications.
+>
+> Please send them to **abuse@laybell.app**. That address is monitored directly by me
+> (Edwin Hall, owner) and is kept separate from general support, so reports from you do not
+> enter the ordinary user-report queue.
+>
+> On receipt of a notification from NCMEC or a recognised hotline we act immediately and do
+> not wait for a corroborating user report: the content is placed under legal hold and pulled
+> from circulation, and the account is suspended. We then preserve, report through the
+> CyberTipline, and retain per your guidance.
+>
+> I'd also like to take you up on the walkthrough call on the reporting form — happy to work
+> around your availability.
+>
+> Best,
+> Edwin Hall
+> Laybell LLC
+
+⚠️ If `abuse@laybell.app` routing ever changes, tell NCMEC the new address **the same day** —
+naming a channel is a commitment that it is read.
+
 ⚠️ **A named channel must be a read channel.** The whole point of a trusted-flagger lane is that
 it is faster than the normal one; naming an address nobody reads makes it slower than the normal
 one while looking like a commitment. `laybellapp@gmail.com` was explicitly **not** offered for
