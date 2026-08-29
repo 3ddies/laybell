@@ -529,7 +529,7 @@ export default function Comments({
             multiline maxLength={300}
           />
           <TouchableOpacity style={[styles.sendBtn, (!text.trim() && !pendingAttachment) && styles.sendDisabled]} onPress={submit} disabled={(!text.trim() && !pendingAttachment) || sending}>
-            {sending ? <ActivityIndicator color={colors.text} size="small" /> : <Ionicons name="arrow-up" size={20} color={colors.text} />}
+            {sending ? <ActivityIndicator color={colors.background} size="small" /> : <Ionicons name="arrow-up" size={20} color={colors.background} />}
           </TouchableOpacity>
         </View>
       </View>
@@ -608,6 +608,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     borderRadius: 22, paddingHorizontal: SPACING.md + 2, paddingVertical: 11, minHeight: 44,
     color: colors.text, fontSize: 15, lineHeight: 20, maxHeight: 110,
   },
-  sendBtn: { width: 44, height: 44, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  // Inverted disc, not brand: white circle with a dark arrow on dark, black
+  // circle with a light arrow on light. Same treatment as the play buttons -
+  // the glyph colour has to invert WITH the fill or a colors.text arrow on a
+  // colors.text disc is an empty circle.
+  sendBtn: { width: 44, height: 44, borderRadius: RADIUS.full, backgroundColor: colors.text, alignItems: 'center', justifyContent: 'center' },
   sendDisabled: { opacity: 0.4 },
 });

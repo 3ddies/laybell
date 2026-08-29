@@ -179,7 +179,7 @@ export default function CommentsScreen() {
           onPress={handleSendComment}
           disabled={!newComment.trim() || sending}
         >
-          {sending ? <ActivityIndicator color={colors.text} size="small" /> : <Ionicons name="arrow-up" size={18} color={colors.text} />}
+          {sending ? <ActivityIndicator color={colors.background} size="small" /> : <Ionicons name="arrow-up" size={18} color={colors.background} />}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -214,6 +214,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   inputAvatar: { width: 32, height: 32, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
   inputAvatarText: { color: colors.text, fontSize: 12, fontWeight: '700' },
   input: { flex: 1, backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, color: colors.text, fontSize: 15, maxHeight: 100 },
-  sendBtn: { width: 36, height: 36, borderRadius: RADIUS.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  // Matches the in-post composer and the DM composer: inverted disc, glyph in
+  // the background colour so it flips with the fill.
+  sendBtn: { width: 36, height: 36, borderRadius: RADIUS.full, backgroundColor: colors.text, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.35 },
 });
