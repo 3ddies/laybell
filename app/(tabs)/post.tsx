@@ -251,6 +251,9 @@ export default function PostScreen() {
   const cropperRef = useRef<MediaCropperHandle>(null);
   const cropRef = useRef<CropRect | null>(null);
   const arrangerRef = useRef<SlideArrangerHandle>(null);
+  // Mirrors the arranger crop sheet, so the header can re-render and swap its
+  // buttons. A ref check cannot drive that — it does not trigger a render.
+  const [arrangeCropping, setArrangeCropping] = useState(false);
   // Preview height is animated with a single spring on collapse/expand (see the
   // threshold effect below) — deliberately NOT bound frame-by-frame to the grid
   // scroll. The old scroll-linked interpolation resized the grid container every
@@ -1462,7 +1465,7 @@ export default function PostScreen() {
             accessibilityLabel={t('a11y.back')}
             style={styles.headerBtn}
             onPress={() => {
-              if (arrangerRef.current?.isAdjusting()) { arrangerRef.current.closeAdjust(); return; }
+              if (arrangeCropping) { arrangerRef.current?.closeAdjust(); return; }
               arrangerRef.current?.commit();
               setStep('pick');
             }}
@@ -1470,11 +1473,23 @@ export default function PostScreen() {
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('post.arrangeTitle')}</Text>
-          {/* commit() before EITHER exit: the crop lives inside the cropper until
-              something asks for it, so leaving without asking silently discards
-              whatever the user just did to the slide they were looking at. */}
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.forward')} style={styles.headerAction} onPress={() => { arrangerRef.current?.commit(); setStep('details'); }}>
-            <Ionicons name="arrow-forward" size={24} color={colors.text} />
+          {/* While cropping, the right-hand action is a TICK that keeps the crop
+              and returns — not the arrow onward. Advancing straight out of a
+              crop skips the step of seeing what it did, and the arrow next to a
+              crop reads as "go on" when what the user wants is "that's it".
+              Both paths commit first: the crop lives inside the cropper until
+              something asks for it, so leaving without asking discards it. */}
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={arrangeCropping ? t('a11y.save') : t('a11y.forward')}
+            style={styles.headerAction}
+            onPress={() => {
+              if (arrangeCropping) { arrangerRef.current?.closeAdjust(); return; }
+              arrangerRef.current?.commit();
+              setStep('details');
+            }}
+          >
+            <Ionicons name={arrangeCropping ? 'checkmark' : 'arrow-forward'} size={24} color={colors.text} />
           </TouchableOpacity>
         </View>
         <ErrorBoundary label={t('post.cantOpenPhoto')}>
@@ -1485,6 +1500,7 @@ export default function PostScreen() {
             frameH={frameH}
             format={format}
             onFormatChange={setFormat}
+            onAdjustingChange={setArrangeCropping}
             onChange={(next) => setSlides(next as typeof slides)}
           />
         </ErrorBoundary>

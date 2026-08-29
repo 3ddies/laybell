@@ -46,9 +46,6 @@ export type ArrangerSlide = {
 export type SlideArrangerHandle = {
   /** Flush the crop the open crop sheet is holding, if any. */
   commit: () => void;
-  /** True while the crop sheet is open, so the screen's own back arrow can
-   *  close it instead of leaving the step — one back affordance, not two. */
-  isAdjusting: () => boolean;
   /** Keep the crop and close the sheet. */
   closeAdjust: () => void;
 };
@@ -95,7 +92,11 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   format: string;
   onFormatChange: (next: string) => void;
   onChange: (next: ArrangerSlide[]) => void;
-}>(function SlideArranger({ slides, frameW, frameH, format, onFormatChange, onChange }, ref) {
+  /** Raised when the crop sheet opens or closes, so the screen header can swap
+   *  its actions for it. A ref check cannot do this — the header has to
+   *  RE-RENDER to change what its buttons are. */
+  onAdjustingChange?: (open: boolean) => void;
+}>(function SlideArranger({ slides, frameW, frameH, format, onFormatChange, onChange, onAdjustingChange }, ref) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
@@ -140,13 +141,13 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     onChangeRef.current(next);
   };
   const commitRef = useRef(commit); commitRef.current = commit;
-  const adjustingRef = useRef(adjusting); adjustingRef.current = adjusting;
   useImperativeHandle(ref, () => ({
     commit: () => commitRef.current(),
-    isAdjusting: () => adjustingRef.current,
     closeAdjust: () => { commitRef.current(); setAdjusting(false); },
   }), []);
   useEffect(() => () => { commitRef.current(); }, []);
+  const adjustCbRef = useRef(onAdjustingChange); adjustCbRef.current = onAdjustingChange;
+  useEffect(() => { adjustCbRef.current?.(adjusting); }, [adjusting]);
 
   const goTo = (i: number) => {
     const clamped = Math.max(0, Math.min(slidesRef.current.length - 1, i));
