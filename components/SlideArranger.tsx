@@ -71,11 +71,15 @@ const HOLD_SLOP = 12;
 //
 // Dividing that half by the number of moves puts the whole list within reach of
 // one drag from the centre, whatever its length.
-const STAGE_STEP_MIN = 24;
+const STAGE_STEP_MIN = 20;
 const STAGE_STEP_MAX = 150;
+// Fraction of the frame a drag is assumed to have room for. Half is the honest
+// geometric answer from a centred start, but it measured a touch slow in the
+// hand — this trims it so every set size moves a little more per pixel.
+const STAGE_REACH = 0.42;
 function stageStepFor(frameW: number, count: number): number {
   if (count < 2) return STAGE_STEP_MAX;
-  return Math.max(STAGE_STEP_MIN, Math.min(STAGE_STEP_MAX, (frameW / 2) / (count - 1)));
+  return Math.max(STAGE_STEP_MIN, Math.min(STAGE_STEP_MAX, (frameW * STAGE_REACH) / (count - 1)));
 }
 
 const SlideArranger = forwardRef<SlideArrangerHandle, {
@@ -476,7 +480,6 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
         )}
       </View>
 
-      <Text style={styles.hint}>{t('post.slideOrderHint')}</Text>
 
       {/* ── Filmstrip: tap to jump, hold to drag ─────────────────────────────── */}
       {/* The ref is on the VIEWPORT, not the scrolling content. The content's
@@ -597,10 +600,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   cornerBR: { bottom: SPACING.sm, right: SPACING.sm },
 
 
-  hint: {
-    color: c.textTertiary, fontSize: 12, fontWeight: '600',
-    marginTop: SPACING.sm, marginBottom: SPACING.xs, paddingHorizontal: SPACING.md, textAlign: 'center',
-  },
   stripViewport: { alignSelf: 'stretch', height: STRIP_H },
   stripContent: { alignItems: 'center' },
   strip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: STRIP_PAD, height: STRIP_H },
