@@ -1718,7 +1718,7 @@ export default function ReelScreen() {
                 accessibilityRole="button"
               >
                 <Text style={styles.filterPillText}>{t(`reel.filter.${reelFilter}`)}</Text>
-                <Ionicons name={filterOpen ? 'chevron-up' : 'chevron-down'} size={13} color="#fff" />
+                <Ionicons name={filterOpen ? 'chevron-up' : 'chevron-down'} size={17} color="#fff" />
               </TouchableOpacity>
               {filterOpen && (
                 <View style={styles.filterMenu}>
@@ -1910,15 +1910,20 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // pill stays optically centred no matter how long the translated label is.
   // Height matches `back` so the two read as one row.
   filterWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  // Bare text, no pill. A chip would read as a control sitting on the video;
+  // this is a title that happens to open, which is how the big apps carry it.
   filterPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    height: 32, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, backgroundColor: 'rgba(0,0,0,0.45)',
-    marginTop: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    height: 44, paddingHorizontal: SPACING.sm,
   },
   // Fixed white, never the theme text colour: this floats over video, which is
-  // dark whatever theme the app is in.
-  filterPillText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  // dark whatever theme the app is in. The shadow is doing the work the removed
+  // pill used to — it is the only thing keeping the label legible over a bright
+  // frame now that there is no scrim behind it.
+  filterPillText: {
+    color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.4,
+    textShadowColor: 'rgba(0,0,0,0.55)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5,
+  },
   filterMenu: {
     marginTop: 6, minWidth: 150, overflow: 'hidden',
     borderRadius: RADIUS.md, backgroundColor: 'rgba(20,20,20,0.96)',
