@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -77,7 +77,20 @@ export default function SongAttribution({
   if (isThisTrack && currentTrack?.cover) coverRef.current = currentTrack.cover;
   const cover = coverRef.current;
 
-  const showArt = !inline && isThisTrack && isPlaying && !!cover;
+  // The bloom waits for the ARTWORK ITSELF to be decoded.
+  //
+  // "Sometimes the animation starts and then quickly freezes, and then resumes."
+  // The opacity is native-driven and cannot stall — what stalls is the picture.
+  // The card mounts the instant the song starts, so the fade and the image fetch
+  // were racing: the fade opened on an empty box and the artwork popped in
+  // partway through, which reads exactly like a freeze in the middle of it.
+  //
+  // Gating on onLoad means the animation never begins until it can finish
+  // smoothly, which is the rule the owner asked for. It costs nothing after the
+  // first play: the card no longer unmounts, so the image stays decoded and every
+  // later bloom starts already-ready.
+  const [artReady, setArtReady] = useState(false);
+  const showArt = !inline && isThisTrack && isPlaying && !!cover && artReady;
 
   // ONCE MOUNTED, NEVER UNMOUNTED. This is the whole fix for the hitch, and it
   // took two goes to get right.
@@ -102,11 +115,7 @@ export default function SongAttribution({
   const mountArt = !inline && !!cover;
 
   const bloom = useRef(new Animated.Value(0)).current;
-  // Snap back to closed the moment the card leaves. Without this, the next song
-  // on this post would bloom from already-open, and — because the pill's opacity
-  // is 1 - bloom — a card that unmounted while open would leave the pill
-  // invisible until something re-animated it.
-  // No reset needed any more: mountArt no longer flips while a fade is running,
+  // No reset needed: mountArt no longer flips while a fade is running,
   // so bloom is only ever driven by the animation below and always lands at 0
   // before the card is idle.
   useEffect(() => {
@@ -192,7 +201,16 @@ export default function SongAttribution({
           pointerEvents={showArt ? 'auto' : 'none'}
         >
           <TouchableOpacity onPress={playSong} activeOpacity={0.85}>
-            <Image source={{ uri: cover! }} style={styles.artImage} contentFit="cover" transition={180} />
+            <Image
+              source={{ uri: cover! }}
+              style={styles.artImage}
+              contentFit="cover"
+              // transition={0}: expo-image's own cross-fade would run INSIDE the
+              // bloom, so the artwork faded while the card was also fading.
+              // One fade per element - the bloom owns it.
+              transition={0}
+              onLoad={() => setArtReady(true)}
+            />
           </TouchableOpacity>
           <TouchableOpacity onPress={openOptions} style={styles.artDots} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('a11y.moreOptions')}>
             <Ionicons name="ellipsis-horizontal" size={14} color="#fff" />
