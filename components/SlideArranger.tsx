@@ -78,6 +78,21 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   // gesture to fight the drag for, which is most of what makes reordering
   // inside a list fiddly.
   const [stripW, setStripW] = useState(0);
+  // ⚠️ The strip's absolute x, measured — NOT locationX.
+  //
+  // locationX is relative to the view that was actually TOUCHED, which is a tile,
+  // not the strip the responder sits on. So pressing the sixth tile reported a
+  // coordinate a few points from that tile's own left edge, which divided back
+  // to tile 0 or 1: every press selected the wrong photo. Absolute pageX minus
+  // the strip's measured origin is the same fix Scrubber uses, for the same
+  // reason.
+  const stripRef = useRef<View>(null);
+  const stripX = useRef(0);
+  const measureStrip = () => stripRef.current?.measureInWindow((x) => { stripX.current = x; });
+  /** Tile index under an absolute touch x. */
+  const idxAt = (pageX: number) => Math.max(0, Math.min(slidesRef.current.length - 1,
+    Math.floor((pageX - stripX.current - STRIP_PAD) / pitchRef.current)));
+  const idxAtRef = useRef(idxAt); idxAtRef.current = idxAt;
   // onLayout reports the strip's full width, padding included, so the padding
   // comes off before dividing — otherwise every tile is a couple of points too
   // wide and the last one runs off the end.
@@ -142,13 +157,13 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     onStartShouldSetPanResponder: () => true,
     onPanResponderTerminationRequest: () => dragIndexRef.current == null,
     onPanResponderGrant: (e) => {
-      // locationX is measured from the strip's own left edge, padding included,
-      // so the padding has to come off before it means anything in tile terms.
-      const x = e.nativeEvent.locationX - STRIP_PAD;
-      startX.current = x;
+      const i = idxAtRef.current(e.nativeEvent.pageX);
+      // Kept in tile-space (0 = the strip's first tile) so g.dx adds to it
+      // directly.
+      startX.current = e.nativeEvent.pageX - stripX.current - STRIP_PAD;
       rebase.current = 0;
       moved.current = false;
-      startIdx.current = Math.max(0, Math.min(slidesRef.current.length - 1, Math.floor(x / pitchRef.current)));
+      startIdx.current = i;
       clearHold();
       holdTimer.current = setTimeout(() => {
         dragIndexRef.current = startIdx.current;
@@ -191,8 +206,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
         clearHold();
         // A short press with no travel is a tap: select that tile.
         if (!moved.current) {
-          const i = Math.max(0, Math.min(slidesRef.current.length - 1,
-            Math.floor((e.nativeEvent.locationX - STRIP_PAD) / pitchRef.current)));
+          const i = idxAtRef.current(e.nativeEvent.pageX);
           if (i !== indexRef.current) { commitRef.current(); setIndex(i); }
         }
         return;
@@ -248,15 +262,23 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
 
       {/* Filmstrip. Tap selects, press-and-hold picks up and drags. */}
       <View
+        ref={stripRef}
         style={[styles.strip, { height: STRIP_H }]}
-        onLayout={(e) => setStripW(e.nativeEvent.layout.width)}
+        // Width for sizing, window origin for hit-testing — re-measured on every
+        // layout so a rotation or a slide being removed can't leave it stale.
+        onLayout={(e) => { setStripW(e.nativeEvent.layout.width); measureStrip(); }}
         {...pan.panHandlers}
       >
         {slides.map((s, i) => {
           const dragging = dragIndex === i;
           return (
             <Animated.View
-              key={`${s.uri}-${i}`}
+              // Keyed on the URI ALONE, never the index. With the index in the
+              // key, every reorder changed every key after the moved tile, so
+              // React tore those tiles down and rebuilt them — the thumbnails
+              // visibly reloaded mid-drag, which is most of what made the strip
+              // feel broken.
+              key={s.uri}
               style={[
                 styles.tile,
                 {
