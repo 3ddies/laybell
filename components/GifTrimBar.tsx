@@ -64,6 +64,14 @@ const FRAMES = 8;
 // Tightest view, in seconds across the bar — enough for the longest GIF plus
 // room either side.
 const MIN_VIEW_SEC = 4;
+// Selection outline thickness and grip width. Named because the grip offsets are
+// derived from them - the old literals (+3, winW-6) silently encoded both, and
+// changing either one would have quietly misaligned the grips.
+const BORDER = 3;
+const GRIP_W = 3;
+// Below this the window cannot hold two grips plus its own borders, so it does
+// not try.
+const GRIP_MIN_WIN = BORDER * 2 + GRIP_W * 2 + 6;
 // Zoom is exponential across the slider. Linear would spend most of the travel
 // in zoom levels nobody wants: on a 9-minute video the useful range is the last
 // few percent of a linear scale.
@@ -193,8 +201,17 @@ export default function GifTrimBar({
 
             {/* Selection window + edge grips (visual only) */}
             <View pointerEvents="none" style={[styles.window, { left: leftX, width: winW, height, borderColor: winColor }]} />
-            <View pointerEvents="none" style={[styles.grip, { left: leftX + 3, backgroundColor: winColor }]} />
-            <View pointerEvents="none" style={[styles.grip, { left: leftX + winW - 6, backgroundColor: winColor }]} />
+            {/* Grips only once the window is wide enough to contain them. At
+                zoom 1 on a long video winW is a couple of pixels, and the right
+                grip's `winW - 6` then lands at a NEGATIVE offset — drawn outside
+                the box it belongs to, which is half of what "the edges aren't
+                matched up" was. */}
+            {winW >= GRIP_MIN_WIN ? (
+              <>
+                <View pointerEvents="none" style={[styles.grip, { left: leftX + BORDER, backgroundColor: winColor }]} />
+                <View pointerEvents="none" style={[styles.grip, { left: leftX + winW - BORDER - GRIP_W, backgroundColor: winColor }]} />
+              </>
+            ) : null}
           </View>
         </PanGestureHandler>
       </PinchGestureHandler>
@@ -255,10 +272,20 @@ function ZoomSlider({ width, value, onChange, label }: {
 
 const styles = StyleSheet.create({
   track: { overflow: 'hidden', justifyContent: 'center' },
+  // ⚠️ borderRadius 0, deliberately. It was RADIUS.md (14pt), and the dim panels
+  // either side are SQUARE rectangles that stop exactly at the selection edges —
+  // so every corner left an undimmed wedge of filmstrip sitting outside the
+  // coloured outline. Rounding cannot be matched here: the dim would need
+  // CONCAVE corners, which RN has no way to draw. Square edges meet the dim
+  // exactly, at every zoom, which is the whole ask.
+  //
+  // The bar does not look boxy for it — the TRACK keeps its own 14pt radius and
+  // clips with overflow:hidden, so the outer ends stay rounded. This is also how
+  // iOS Photos draws its trimmer: rounded filmstrip, crisp rectangular selection.
   strip: { flexDirection: 'row', position: 'absolute', left: 0, top: 0 },
   dim: { position: 'absolute', top: 0, backgroundColor: 'rgba(0,0,0,0.55)' },
-  window: { position: 'absolute', top: 0, borderWidth: 3, borderRadius: RADIUS.md, backgroundColor: 'transparent' },
-  grip: { position: 'absolute', top: '50%', marginTop: -9, width: 3, height: 18, borderRadius: 2 },
+  window: { position: 'absolute', top: 0, borderWidth: BORDER, borderRadius: 0, backgroundColor: 'transparent' },
+  grip: { position: 'absolute', top: '50%', marginTop: -9, width: GRIP_W, height: 18, borderRadius: 2 },
 
   zoomRow: { marginTop: 10 },
   zoomHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
