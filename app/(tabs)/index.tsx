@@ -33,6 +33,11 @@ import { useReduceMotion } from '../../lib/a11y';
 
 const SCREEN_W = Dimensions.get('window').width;
 
+// How far the header's fill runs out before its bottom edge. Long enough to read
+// as a dissolve rather than a soft line, short enough that the stories tray
+// underneath isn't visibly washing out.
+const HEADER_FADE = 20;
+
 // The bell and the messages button are ~28-31pt glyphs with 2pt of padding, so
 // their real target was ~32pt — under the 44pt minimum, and you had to land the
 // tap almost dead centre.
@@ -2099,10 +2104,10 @@ export default function HomeScreen() {
       <Animated.View
         style={[
           styles.headerFloat,
-          Platform.OS === 'ios' && styles.headerGlass,
-          // BOTH platforms host the StoriesTray inside this block (see below), so
-          // the hairline sits on the block's true bottom edge, under the tray.
-          { borderBottomWidth: 0.5, borderBottomColor: colors.border },
+          // The block carries NO fill of its own on either platform now — the
+          // surface is drawn by the two children below so its bottom edge can
+          // dissolve. See headerSurface.
+          styles.headerGlass,
           headerSlideStyle,
         ]}
         // Only measure while the tray is EXPANDED, so headerH always describes the
@@ -2115,15 +2120,39 @@ export default function HomeScreen() {
             It backs the WHOLE block — header row + tray — because `headerGlass`
             makes the block itself transparent, and the tray moving in here would
             otherwise sit on nothing with the feed scrolling behind it. */}
-        {Platform.OS === 'ios' && (
+        {/* ── The header's surface ─────────────────────────────────────────────
+            The sliver was a 0.5pt rule across the bottom of this block — the
+            hardest edge on the screen, drawn exactly where the chrome should be
+            letting go of the feed. It is gone, and that alone removes most of
+            it: the header's fill and the cards below it are both
+            colors.background, so with no rule between them there is barely a
+            boundary left to see.
+
+            The gradient below carries the rest. It hangs BELOW the block rather
+            than eating into it, so the fill stays at full strength behind the
+            header row and the stories tray — the tray only has 8pt of bottom
+            padding, and a fade inside the block would wash out the story
+            labels instead of the edge. */}
+        {Platform.OS === 'ios' ? (
           <BlurView
             tint={mode === 'light' ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark'}
             intensity={40}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} pointerEvents="none" />
         )}
-      <View style={[styles.header, Platform.OS === 'ios' && styles.headerGlass, { borderBottomWidth: 0 }]}>
+        <LinearGradient
+          // Starts at full strength on Android, where it continues a solid fill.
+          // On iOS it continues frosted glass, which is itself translucent — so
+          // it starts translucent too. Beginning opaque there would swap one
+          // hard edge for another, just a softer-coloured one.
+          colors={[Platform.OS === 'ios' ? colors.background + 'A6' : colors.background, colors.background + '00']}
+          style={styles.headerFade}
+          pointerEvents="none"
+        />
+      <View style={[styles.header, styles.headerGlass]}>
         <View style={styles.headerLeft}>
           <TouchableOpacity
             style={styles.logoBtn}
@@ -2405,8 +2434,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.xxl + SPACING.sm,
     paddingBottom: SPACING.sm,
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.border,
+    // No rule here either. It was already being cancelled inline at the call
+    // site, so it only survived as a trap for the next person to reintroduce.
   },
   // Reactive chrome: the header floats over the feed (which pads itself by the
   // measured height) so it can slide away without reflowing the list.
@@ -2414,10 +2443,14 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0,
     zIndex: 20,
-    backgroundColor: colors.background,
   },
-  // iOS: drop the solid fill so the BlurView behind provides a real frosted surface.
+  // The block itself never paints: its children do, so the bottom can dissolve.
   headerGlass: { backgroundColor: 'transparent' },
+  // The dissolve, hanging just BELOW the block so it falls over the feed rather
+  // than over the tray. Android can clip a child drawn outside its parent; if it
+  // does, the fallback is simply the hairline-free edge, which is already the
+  // larger half of the fix.
+  headerFade: { position: 'absolute', left: 0, right: 0, bottom: -HEADER_FADE, height: HEADER_FADE },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   logoBtn: { flexDirection: 'row', alignItems: 'center' },
   liveBtn: { position: 'relative', padding: 2, marginTop: 2 },
