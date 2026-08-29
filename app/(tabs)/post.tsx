@@ -833,7 +833,9 @@ export default function PostScreen() {
   }
   function enterSlideshow() {
     if (postType === 'slideshow') return;
-    setPostType('slideshow'); setFormat('1:1');
+    // 'full' — each slide keeps its own shape until someone crops one. A frame
+    // chosen up front would letterbox photos that never needed changing.
+    setPostType('slideshow'); setFormat('full');
     setMedia(null); setPickedId(null); setThumbnailUri(null); cropRef.current = null;
     forgetResumedDraft();
   }

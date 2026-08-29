@@ -124,7 +124,6 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
 
   const fitOf = (s?: ArrangerSlide | null): SlideFit => s?.fit ?? defaultFitFor(format);
   const cur = slides[Math.min(index, Math.max(0, slides.length - 1))];
-  const curFit = fitOf(cur);
 
   // ── Crop, read out of the Adjust sheet ──────────────────────────────────────
   const commit = () => {
@@ -137,7 +136,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     if (s.crop && s.crop.originX === c.originX && s.crop.originY === c.originY
       && s.crop.width === c.width && s.crop.height === c.height) return;
     const next = list.slice();
-    next[i] = { ...next[i], crop: c };
+    // Cropping is what FILLS. A slide arrives fitted, showing the whole photo;
+    // choosing a crop is the moment the poster says which part of it they want,
+    // so the slide switches to filling the frame with exactly that.
+    next[i] = { ...next[i], crop: c, fit: 'cover' };
     onChangeRef.current(next);
   };
   const commitRef = useRef(commit); commitRef.current = commit;
@@ -180,15 +182,6 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     commitRef.current();
     const i = SLIDESHOW_FORMATS.indexOf(format as (typeof SLIDESHOW_FORMATS)[number]);
     onFormatChange(SLIDESHOW_FORMATS[(i + 1) % SLIDESHOW_FORMATS.length]);
-  };
-
-  const setFit = (next: SlideFit) => {
-    const i = indexRef.current;
-    const list = slidesRef.current;
-    if (!list[i] || list[i].type !== 'image') return;
-    const after = list.slice();
-    after[i] = { ...after[i], fit: next };
-    onChangeRef.current(after);
   };
 
   // ── Press-and-hold to reorder: SWAP, never insert ───────────────────────────
@@ -475,35 +468,30 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
           </TouchableOpacity>
         )}
 
-        {/* The four corners. Everything that acts on the photo you are looking
-            at lives ON that photo, so the eye never has to leave it: what this
-            slide does with the frame (top-left), removing it (top-right), the
-            frame for the whole set (bottom-left), and cropping (bottom-right).
+        {/* Everything that acts on the photo you are looking at lives ON that
+            photo: removing it (top-right), the crop shape (bottom-left) and
+            cropping itself (bottom-right).
             All are SIBLINGS of the pan surface — that responder claims every
-            touch inside itself, so a button in there could never fire. */}
+            touch inside itself, so a button in there could never fire.
+
+            There is no Fill/Fit control any more. Slides keep the proportions
+            they were shot at, and cropping is the only thing that changes them,
+            which is what cropping already meant. */}
+
+        {/* Images only. A clip cannot be cropped — expo-image-manipulator is
+            stills-only — so on a video page this offered a choice that could not
+            be honoured, and pressing it only ever reshaped the frame around a
+            video that would still be letterboxed. */}
         {cur?.type === 'image' && (
-          <TouchableOpacity
-            style={[styles.cornerBase, styles.cornerTL]}
-            onPress={() => setFit(curFit === 'cover' ? 'contain' : 'cover')}
-            activeOpacity={0.85}
-          >
-            <Ionicons name={curFit === 'cover' ? 'crop' : 'scan-outline'} size={14} color={colors.text} />
+          <TouchableOpacity style={[styles.cornerBase, styles.cornerBL]} onPress={cycleFormat} activeOpacity={0.85}>
+            <Ionicons name="resize-outline" size={15} color={colors.text} />
             <Text style={styles.cornerText}>
-              {t(curFit === 'cover' ? 'post.slideFill' : 'post.slideFit')}
+              {isAutoFormat(format) ? t(`post.format.${format}`) : format}
             </Text>
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={[styles.cornerBase, styles.cornerBL]} onPress={cycleFormat} activeOpacity={0.85}>
-          <Ionicons name="resize-outline" size={15} color={colors.text} />
-          <Text style={styles.cornerText}>
-            {isAutoFormat(format) ? t(`post.format.${format}`) : format}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Crop only exists for a FILLED photo. A fitted one is entirely on
-            screen already, so there is nothing outside the frame to choose. */}
-        {cur?.type === 'image' && curFit === 'cover' && (
+        {cur?.type === 'image' && (
           <TouchableOpacity style={[styles.cornerBase, styles.cornerBR]} onPress={() => setAdjusting(true)} activeOpacity={0.85}>
             <Ionicons name="crop-outline" size={14} color={colors.text} />
             <Text style={styles.cornerText}>{t('post.slideAdjust')}</Text>
@@ -643,7 +631,6 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     paddingVertical: 5, paddingHorizontal: SPACING.sm,
   },
   cornerText: { color: c.text, fontSize: 12, fontWeight: '700' },
-  cornerTL: { top: SPACING.sm, left: SPACING.sm },
   cornerBL: { bottom: SPACING.sm, left: SPACING.sm },
   cornerBR: { bottom: SPACING.sm, right: SPACING.sm },
 

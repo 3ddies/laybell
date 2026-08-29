@@ -8,26 +8,15 @@
 export const IMAGE_FORMATS = ['1:1', '4:5'] as const;
 export const VIDEO_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
 
-// Slideshow frame options. '1:1' and '4:5' are literal ratios; 'full' and
-// 'mixed' are MODES, resolved to a real ratio from the media at share time —
-// they never reach the database, because a carousel has exactly one frame and
-// posts.aspect_ratio has to be a number the feed can lay out from.
+// The shapes a slideshow can be CROPPED to. Not a frame the user picks up front
+// — a slideshow starts as 'full', meaning it takes the shape of its first slide
+// and every slide is shown whole inside it. These are the choices offered once
+// somebody decides to crop.
 //
-// The two modes differ in what happens to slides that do not match that frame,
-// not in the frame itself:
-//   full  — frame takes slide 1's own shape, and the rest are FILLED (cropped).
-//   mixed — same frame, but every slide is FITTED (letterboxed) instead, so a
-//           set of different shapes publishes with nothing cut off.
-// Either default can be overridden per slide on the Arrange screen.
-// Just the two shapes. 'full' was dropped because it landed on 4:5 for the
-// photos people actually post, and 'mixed' because it was never really a frame —
-// it was a preset that set every slide to Fit. A set only becomes mixed by
-// someone deciding, slide by slide, that some should be filled and some fitted,
-// and that decision is already the Fill/Fit control. Offering it twice, once as
-// a whole-set mode and once per photo, made two ways to say the same thing that
-// could disagree with each other.
-//
-// isAutoFormat still understands both, because drafts saved earlier carry them.
+// 'full' and 'mixed' are MODES rather than ratios, resolved against the media at
+// share time; they never reach the database, because a carousel has exactly one
+// frame and posts.aspect_ratio has to be a number the feed can lay out from.
+// 'mixed' is legacy — a set is mixed now simply by being left alone.
 export const SLIDESHOW_FORMATS = ['1:1', '4:5'] as const;
 export type SlideFit = 'cover' | 'contain';
 
@@ -37,15 +26,18 @@ export function isAutoFormat(format?: string | null): boolean {
 }
 
 /**
- * The fit a slide gets when the user has not chosen one for it: filled.
+ * The fit a slide gets when nobody has chosen one for it: FITTED.
  *
- * The 'mixed' branch is for DRAFTS SAVED BEFORE that option was withdrawn, and
- * exists so reopening one still honours what it was set to. Nothing produces it
- * any more — a mixed set is now simply what you get by fitting some slides and
- * filling others, which is the per-photo control doing its job.
+ * A slideshow is a set of photos that were never taken to match each other, so
+ * the honest default is to show each one whole, at the proportions it was shot
+ * at. Filling by default cropped photos the poster never asked to have cropped,
+ * and then needed a Fill/Fit control to undo — a switch that only existed to
+ * take back a decision nothing had asked for.
+ *
+ * Cropping is now the only thing that fills, which is what cropping means.
  */
-export function defaultFitFor(format?: string | null): SlideFit {
-  return format === 'mixed' ? 'contain' : 'cover';
+export function defaultFitFor(_format?: string | null): SlideFit {
+  return 'contain';
 }
 
 /**
