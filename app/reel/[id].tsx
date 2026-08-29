@@ -293,7 +293,37 @@ const ReelPage = memo(function ReelPage({
   const activeRef = useRef(active);
   activeRef.current = active;
   return (
-    <ElasticSwipeView style={{ width: SCREEN_W, height: SCREEN_H }} disabled={zoomed}>
+    <ElasticSwipeView
+      style={{ width: SCREEN_W, height: SCREEN_H }}
+      // OFF for a slideshow. The rubber-band claims any clearly horizontal drag,
+      // which on a video reel means nothing and is free to be decorative — but
+      // on a carousel it IS the swipe between slides, and the two cannot both
+      // have it. A photo set gets to page; the elastic gives way.
+      disabled={zoomed || isSlideshow(item.type)}
+    >
+      {/* ── A SLIDESHOW reel is the carousel and nothing else ─────────────────
+          Rendered OUTSIDE the tap layer and the zoom, not inside them, and that
+          placement is the whole thing. Nested in the ZoomableView its horizontal
+          scroll was competing with RNGH handlers for the same one-finger drag,
+          so a swipe between slides landed only when it happened to win — the
+          same arbitration that has failed everywhere else it was tried here.
+          Standing alone, the only thing above it is the vertical pager, and
+          crossed axes are the one nesting React Native settles cleanly.
+
+          No player, no poster handoff, no scrub bar, no tap-to-pause: none of it
+          applies to a set of photos. */}
+      {isSlideshow(item.type) ? (
+        <View style={styles.slideshowReel}>
+          <SlideshowCarousel
+            key={item.id}
+            slides={parseSlides(item)}
+            width={SCREEN_W}
+            aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
+            active={active}
+            postId={item.id}
+          />
+        </View>
+      ) : (
       <TouchableOpacity
         activeOpacity={1}
         style={StyleSheet.absoluteFill}
@@ -308,22 +338,6 @@ const ReelPage = memo(function ReelPage({
           onZoomChange={api.onZoomChange}
           onGesture={api.markGesture}
         >
-        {/* A SLIDESHOW reel is the carousel, centred, and nothing else — no
-            player, no poster handoff, no scrub bar, because none of it applies.
-            Its horizontal paging sits inside the vertical one, which is the one
-            nesting React Native handles cleanly: the two axes never contend. */}
-        {isSlideshow(item.type) ? (
-          <View style={styles.slideshowReel}>
-            <SlideshowCarousel
-              key={item.id}
-              slides={parseSlides(item)}
-              width={SCREEN_W}
-              aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
-              active={active}
-              postId={item.id}
-            />
-          </View>
-        ) : (
         <>
         {/* Poster ALWAYS rendered underneath. Non-settled pages carry NO
             native player (creating an AVPlayer during a page mount was the
@@ -372,9 +386,9 @@ const ReelPage = memo(function ReelPage({
           </View>
         )}
         </>
-        )}
         </ZoomableView>
       </TouchableOpacity>
+      )}
 
       {/* "Turn your phone" nudge, in the empty letterbox band above the video. */}
       <RotateHint visible={showRotateHint} top={band - 52} />
