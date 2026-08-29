@@ -1,6 +1,9 @@
 // Post format options (Instagram-style). Stored as a string on posts.aspect_ratio.
 //   1:1 square · 4:5 portrait  (1.91:1 landscape dropped for photos — too narrow)
-export const IMAGE_FORMATS = ['1:1', '4:5'] as const;
+// Single photos get the two choices that actually matter: square, or the shape
+// the photo already is. 4:5 was a third crop nobody reached for — if you don't
+// want a square you want your photo, not a different rectangle.
+export const IMAGE_FORMATS = ['1:1', 'full'] as const;
 export const VIDEO_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
 
 // Slideshow frame options. '1:1' and '4:5' are literal ratios; 'full' and
@@ -17,7 +20,8 @@ export const VIDEO_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
 export const SLIDESHOW_FORMATS = ['1:1', '4:5', 'full', 'mixed'] as const;
 export type SlideFit = 'cover' | 'contain';
 
-export function isSlideshowMode(format?: string | null): boolean {
+/** Formats with no ratio in them — resolved from the media itself. */
+export function isAutoFormat(format?: string | null): boolean {
   return format === 'full' || format === 'mixed';
 }
 
@@ -27,17 +31,19 @@ export function defaultFitFor(format?: string | null): SlideFit {
 }
 
 /**
- * The numeric frame ratio for a slideshow. For the two modes this comes from
- * the FIRST slide, clamped to the feed's bounds — a 9:16 phone photo would
- * otherwise publish a carousel taller than the screen.
+ * The numeric frame ratio for a post. An auto format takes it from the media —
+ * for a slideshow, from the FIRST slide, since a carousel has one frame.
+ *
+ * Clamped to the feed's bounds: a 9:16 phone photo would otherwise publish
+ * taller than the screen it is being read on.
  */
-export function resolveSlideshowAspect(
+export function resolveFrameAspect(
   format: string,
-  first?: { width?: number | null; height?: number | null } | null,
+  media?: { width?: number | null; height?: number | null } | null,
 ): number {
-  if (!isSlideshowMode(format)) return aspectToNumber(format, 1);
-  const w = first?.width ?? 0;
-  const h = first?.height ?? 0;
+  if (!isAutoFormat(format)) return aspectToNumber(format, 1);
+  const w = media?.width ?? 0;
+  const h = media?.height ?? 0;
   if (!(w > 0 && h > 0)) return 1;
   return clampFeedAspect(w / h);
 }

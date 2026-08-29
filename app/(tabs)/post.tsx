@@ -42,8 +42,8 @@ import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { showPermissionDenied } from '../../lib/permissions';
 import {
-  IMAGE_FORMATS, SLIDESHOW_FORMATS, aspectToNumber, clampVideoAspect, defaultFormatFor,
-  defaultFitFor, isSlideshowMode, resolveSlideshowAspect, type SlideFit,
+  IMAGE_FORMATS, aspectToNumber, clampVideoAspect, defaultFormatFor,
+  defaultFitFor, isAutoFormat, resolveFrameAspect, type SlideFit,
 } from '../../lib/aspectRatio';
 import { GENRES, genreLabel } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
@@ -517,13 +517,11 @@ export default function PostScreen() {
   // Cropper frame within the preview cap. Videos use their native aspect (clamped
   // to IG bounds) so they fill without being force-cropped; images use the chosen
   // format and are cropped to it interactively.
-  // Slideshows resolve 'full'/'mixed' against slide 1 — those are modes, not
-  // ratios, and there is no number in the label to read.
+  // 'full' and 'mixed' carry no ratio, so they resolve against the media — the
+  // first slide for a carousel, the single pick otherwise.
   const previewAspect = postType === 'video'
     ? videoAspect
-    : postType === 'slideshow'
-      ? resolveSlideshowAspect(format, slides[0])
-      : aspectToNumber(format, 1);
+    : resolveFrameAspect(format, postType === 'slideshow' ? slides[0] : media);
   let frameW = SCREEN_W;
   let frameH = SCREEN_W / previewAspect;
   if (frameH > PREVIEW_MAX_H) { frameH = PREVIEW_MAX_H; frameW = PREVIEW_MAX_H * previewAspect; }
@@ -690,16 +688,12 @@ export default function PostScreen() {
     forgetResumedDraft(); // the resumed draft's media is gone — stop tracking it
   }
 
+  // Single photos only. A slideshow's frame is chosen on the Arrange screen
+  // instead, where you can see what it does to every slide rather than to the
+  // one thumbnail the picker happens to be showing.
   function cycleFormat() {
-    // Slideshows get two options photos don't: 'full' (slide 1's own shape) and
-    // 'mixed' (same frame, but nothing cropped). Both only make sense for a set.
-    const opts: readonly string[] = slideshowMode ? SLIDESHOW_FORMATS : IMAGE_FORMATS;
-    const i = opts.indexOf(format);
-    setFormat(opts[(i + 1) % opts.length]);
-    // Nothing to do to the slides. `fit` stays UNDEFINED until the user sets it
-    // on the Arrange screen, so every untouched slide re-reads its default from
-    // the new format on the next render, while the ones they chose deliberately
-    // keep what they chose.
+    const i = IMAGE_FORMATS.indexOf(format as any);
+    setFormat(IMAGE_FORMATS[(i + 1) % IMAGE_FORMATS.length]);
   }
 
   // (The old "Large video" system alert lived here. It measured the RAW pick,
@@ -1359,7 +1353,7 @@ export default function PostScreen() {
         // lays a carousel out from a NUMBER, so they resolve to slide 1's ratio
         // on the way into the row.
         ...(postType === 'slideshow' ? {
-          aspect_ratio: isSlideshowMode(format) ? String(resolveSlideshowAspect(format, slides[0])) : format,
+          aspect_ratio: isAutoFormat(format) ? String(resolveFrameAspect(format, slides[0])) : format,
           slides: slidesPayload,
         } : {}),
         ...(trimmed
@@ -1478,6 +1472,7 @@ export default function PostScreen() {
             frameW={frameW}
             frameH={frameH}
             format={format}
+            onFormatChange={setFormat}
             onChange={(next) => setSlides(next as typeof slides)}
           />
         </ErrorBoundary>
@@ -2275,14 +2270,15 @@ export default function PostScreen() {
                 <Text style={styles.previewPlaceholderText}>{t('post.pickPlaceholder')}</Text>
               </View>
             )}
-            {/* Aspect toggle — single images + slideshows (videos use native ratio) */}
-            {((!slideshowMode && postType === 'image' && media) || (slideshowMode && slides.length > 0)) && (
+            {/* Aspect toggle — SINGLE images only. Videos already publish at
+                their native shape, and a slideshow's frame moved to Arrange. */}
+            {!slideshowMode && postType === 'image' && media && (
               <TouchableOpacity style={styles.aspectBtn} onPress={cycleFormat}>
                 <Ionicons name="resize-outline" size={16} color={colors.text} />
-                {/* '1:1' and '4:5' read as ratios on their own; the two modes
-                    need a word, since there is no number to show. */}
+                {/* '1:1' reads as a ratio on its own; 'full' needs a word, since
+                    there is no number to show. */}
                 <Text style={styles.aspectBtnText}>
-                  {isSlideshowMode(format) ? t(`post.format.${format}`) : format}
+                  {isAutoFormat(format) ? t(`post.format.${format}`) : format}
                 </Text>
               </TouchableOpacity>
             )}

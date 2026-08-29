@@ -2,9 +2,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { View, Text, StyleSheet, TouchableOpacity, PanResponder, Animated } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from './MediaCropper';
 import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
-import { defaultFitFor, type SlideFit } from '../lib/aspectRatio';
+import { SLIDESHOW_FORMATS, defaultFitFor, isAutoFormat, type SlideFit } from '../lib/aspectRatio';
 import { useThemedStyles, useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -46,9 +47,9 @@ const STRIP_PAD = SPACING.md;
 const TILE_GAP = 6;
 const TILE_MAX = 56;
 const TILE_MIN = 34;
-// How long a press has to be held before it becomes a drag. Below this it is a
-// tap that selects the slide.
-const HOLD_MS = 220;
+// How long a press has to be held before it becomes a drag. 220ms read as a
+// lag between pressing and anything happening; 150 still leaves a clean tap.
+const HOLD_MS = 150;
 // Movement that cancels the pending hold. A finger that travels before the timer
 // fires was never trying to pick the tile up.
 const HOLD_SLOP = 10;
@@ -59,8 +60,9 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   frameH: number;
   /** The composer's chosen format, which decides each slide's DEFAULT fit. */
   format: string;
+  onFormatChange: (next: string) => void;
   onChange: (next: ArrangerSlide[]) => void;
-}>(function SlideArranger({ slides, frameW, frameH, format, onChange }, ref) {
+}>(function SlideArranger({ slides, frameW, frameH, format, onFormatChange, onChange }, ref) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { t } = useTranslation();
@@ -140,6 +142,14 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   // fires. A release before it fires is a tap, which selects.
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const dragIndexRef = useRef<number | null>(null);
+  // The order being dragged, held LOCALLY until the finger lifts.
+  //
+  // Publishing every boundary crossing up to the composer was what made this
+  // feel dead: post.tsx is a very large component, so each swap re-rendered the
+  // entire New Post screen mid-gesture. The drag now mutates a local array and
+  // the parent hears once, on release.
+  const [draft, setDraft] = useState<ArrangerSlide[] | null>(null);
+  const draftRef = useRef<ArrangerSlide[] | null>(null);
   const dragX = useRef(new Animated.Value(0)).current;
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startIdx = useRef(0);
@@ -151,6 +161,11 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   const clearHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
   const endDrag = () => {
     clearHold();
+    // Publish once, here — the only time the composer hears about a reorder.
+    const d = draftRef.current;
+    if (d) onChangeRef.current(d);
+    draftRef.current = null;
+    setDraft(null);
     dragIndexRef.current = null;
     setDragIndex(null);
     rebase.current = 0;
@@ -170,12 +185,19 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
       startIdx.current = i;
       clearHold();
       holdTimer.current = setTimeout(() => {
+        // Picking a tile up also selects it — you are about to move the thing
+        // you are looking at, which is what makes the reorder legible. Commit
+        // BEFORE seeding the draft, so the crop lands on the real array.
+        if (startIdx.current !== indexRef.current) { commitRef.current(); setIndex(startIdx.current); }
+        draftRef.current = slidesRef.current.slice();
+        setDraft(draftRef.current);
         dragIndexRef.current = startIdx.current;
         setDragIndex(startIdx.current);
         dragX.setValue(0);
-        // Picking a tile up also selects it — you are about to move the thing
-        // you are looking at, which is what makes the reorder legible.
-        if (startIdx.current !== indexRef.current) { commitRef.current(); setIndex(startIdx.current); }
+        // The tile is now yours. Without this the pickup has no moment — the
+        // hold just silently becomes a drag, which is what made it feel like
+        // nothing had happened.
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       }, HOLD_MS);
     },
     onPanResponderMove: (_e, g) => {
@@ -194,15 +216,19 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
       const target = Math.max(0, Math.min(slidesRef.current.length - 1,
         Math.floor(fingerX / pitchRef.current)));
       if (target !== di) {
-        const list = slidesRef.current.slice();
+        const list = (draftRef.current ?? slidesRef.current).slice();
         const [item] = list.splice(di, 1);
         list.splice(target, 0, item);
-        onChangeRef.current(list);
+        draftRef.current = list;
+        setDraft(list);
         rebase.current += (target - di) * pitchRef.current;
         dragIndexRef.current = target;
         setDragIndex(target);
         setIndex(target);
         dragX.setValue(g.dx - rebase.current);
+        // A tick per swap. This is the feedback that tells you the reorder
+        // actually took, without having to look away from your finger.
+        Haptics.selectionAsync().catch(() => {});
       }
     },
     onPanResponderRelease: (e) => {
@@ -222,7 +248,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
 
   useEffect(() => () => clearHold(), []);
 
-  const cur = slides[Math.min(index, slides.length - 1)];
+  // While a drag is live the strip renders the local draft; everywhere else it
+  // is the composer's array.
+  const view = draft ?? slides;
+  const cur = view[Math.min(index, view.length - 1)];
   const curFit: SlideFit = cur?.fit ?? defaultFitFor(format);
 
   const setFit = (next: SlideFit) => {
@@ -289,6 +318,25 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
         ))}
       </View>
 
+      {/* The frame, for the whole set. It lives HERE rather than on the picker
+          because this is the only screen where you can see what a frame does to
+          every slide, instead of to whichever thumbnail the picker happened to
+          be showing. */}
+      <View style={styles.fmtRow}>
+        {SLIDESHOW_FORMATS.map((f) => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.fmtBtn, format === f && styles.fmtBtnOn]}
+            onPress={() => { commitRef.current(); onFormatChange(f); }}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.fmtText, format === f && styles.fmtTextOn]} numberOfLines={1}>
+              {isAutoFormat(f) ? t(`post.format.${f}`) : f}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {/* Fill / Fit, per slide. Images only — a clip has no crop to bake. */}
       {cur?.type === 'image' && (
         <View style={styles.fitRow}>
@@ -327,7 +375,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
         onLayout={(e) => { setStripW(e.nativeEvent.layout.width); measureStrip(); }}
         {...pan.panHandlers}
       >
-        {slides.map((s, i) => {
+        {view.map((s, i) => {
           const dragging = dragIndex === i;
           return (
             <Animated.View
@@ -341,12 +389,18 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                 styles.tile,
                 {
                   width: tile, height: tile,
-                  marginRight: i === slides.length - 1 ? 0 : TILE_GAP,
+                  marginRight: i === view.length - 1 ? 0 : TILE_GAP,
                   borderColor: i === index ? colors.text : 'transparent',
                 },
+                // A picked-up tile has to look picked up. Bigger, lifted off the
+                // row with a real shadow, and drawn over its neighbours — without
+                // that the only thing that changes is which slot it is in, which
+                // is why the drag read as static.
                 dragging && {
-                  transform: [{ translateX: dragX }, { scale: 1.12 }],
-                  zIndex: 5, elevation: 5,
+                  transform: [{ translateX: dragX }, { scale: 1.22 }],
+                  zIndex: 5, elevation: 8,
+                  shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
+                  borderColor: colors.text,
                 },
               ]}
             >
@@ -388,6 +442,15 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
     paddingVertical: 4, paddingHorizontal: 9,
   },
   videoBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  fmtRow: { flexDirection: 'row', gap: 6, marginTop: SPACING.sm, paddingHorizontal: SPACING.md },
+  fmtBtn: {
+    paddingVertical: 6, paddingHorizontal: SPACING.sm + 2,
+    borderRadius: RADIUS.full, backgroundColor: c.surfaceLight,
+    borderWidth: 1, borderColor: c.border,
+  },
+  fmtBtnOn: { backgroundColor: c.text, borderColor: c.text },
+  fmtText: { color: c.textSecondary, fontSize: 12.5, fontWeight: '700' },
+  fmtTextOn: { color: c.background, fontWeight: '800' },
   fitRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
   fitBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
