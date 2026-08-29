@@ -6,6 +6,24 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 
+// Sample a multi-stop ramp at t (0..1) and return one solid colour.
+//
+// The thumb used to paint the WHOLE gradient into its 14pt disc, which looked
+// the same at 3 seconds as at three minutes — pretty, but it told you nothing.
+// Sampling means the thumb is the exact colour the bar has reached underneath
+// it: white at the start, brand-deep by the end, and genuinely mid-ramp in
+// between. The circle becomes a readout rather than a decoration.
+const hex = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+function sampleRamp(stops: readonly string[], t: number): string {
+  const p = clamp(t) * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(p));
+  const f = p - i;
+  const a = hex(stops[i]);
+  const b = hex(stops[i + 1]);
+  const mix = a.map((v, k) => Math.round(v + (b[k] - v) * f));
+  return `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})`;
+}
+
 // A draggable progress scrubber. Uses absolute pageX vs the bar's measured
 // window position, and an Animated value so playback glides smoothly between
 // status updates and dragging doesn't re-render the parent.
@@ -47,13 +65,16 @@ export default function Scrubber({
     ? GRADIENTS.primaryWarm
     : ['#FFFFFF', '#FAB525', '#E8401C']) as readonly [string, string, ...string[]];
 
-  // The thumb straddles the boundary between fill and empty track, so its ring
-  // has to separate it from BOTH. On light that is the brand orange it always
-  // had, against a near-black dot. On dark the thumb now CARRIES the same
-  // gradient as the bar (see the render), so the ring goes white — it is the one
-  // value that separates a warm disc from both the warm fill behind it and the
-  // dark empty track ahead of it.
-  const thumbRing = isLight ? colors.primary : '#FFFFFF';
+  // The ring is the PAGE colour in both themes, which is not the obvious choice
+  // and is the only one that survives the thumb being sampled.
+  //
+  // Now that the thumb takes its colour from its own position on the ramp, it is
+  // by definition close to the fill directly behind it — white on white at the
+  // start, deep orange on deep orange at the end. Any fixed ring colour is
+  // therefore invisible at one end or the other: white vanishes at 0%, orange
+  // vanishes at 100%. colors.background belongs to neither end of the ramp, so it
+  // reads as a thin cut-out around the disc wherever the disc happens to be.
+  const thumbRing = colors.background;
   const [width, setWidth] = useState(0);
   const ref = useRef<View>(null);
   const layout = useRef({ x: 0, w: 0 });
@@ -68,6 +89,25 @@ export default function Scrubber({
   // backward before the seek lands.
   const seekGuard = useRef(0);
   const seekRatio = useRef(0);
+
+  // Position for the THUMB'S COLOUR only.
+  //
+  // Playback already re-renders this component ~4×/s through the `progress`
+  // prop, so sampling from it costs nothing extra. A drag deliberately does NOT
+  // re-render (that is the whole point of the Animated value), so it publishes
+  // its position here on a 60ms throttle — a handful of tiny re-renders while a
+  // finger is actually down, and none at all the rest of the time. Without it
+  // the thumb would hold its old colour through the drag and jump on release,
+  // which is exactly the "same no matter where you are" problem this fixes.
+  const [dragRatio, setDragRatio] = useState<number | null>(null);
+  const lastPublish = useRef(0);
+  const publish = (r: number, force = false) => {
+    const now = Date.now();
+    if (!force && now - lastPublish.current < 60) return;
+    lastPublish.current = now;
+    setDragRatio(r);
+  };
+  const thumbFill = sampleRamp(fillStops, dragRatio ?? clamp(progress));
 
   // Glide toward the playback position when not actively dragging.
   useEffect(() => {
@@ -92,10 +132,10 @@ export default function Scrubber({
       onStartShouldSetPanResponder: () => !disabledRef.current,
       onMoveShouldSetPanResponder: () => !disabledRef.current,
       onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: e => { dragging.current = true; anim.stopAnimation(); anim.setValue(ratioFor(e.nativeEvent.pageX)); },
-      onPanResponderMove: e => anim.setValue(ratioFor(e.nativeEvent.pageX)),
-      onPanResponderRelease: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); dragging.current = false; seekGuard.current = Date.now(); seekRatio.current = r; onSeekRef.current(r); },
-      onPanResponderTerminate: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); dragging.current = false; seekGuard.current = Date.now(); seekRatio.current = r; onSeekRef.current(r); },
+      onPanResponderGrant: e => { dragging.current = true; anim.stopAnimation(); const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); publish(r, true); },
+      onPanResponderMove: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); publish(r); },
+      onPanResponderRelease: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); dragging.current = false; seekGuard.current = Date.now(); seekRatio.current = r; setDragRatio(null); onSeekRef.current(r); },
+      onPanResponderTerminate: e => { const r = ratioFor(e.nativeEvent.pageX); anim.setValue(r); dragging.current = false; seekGuard.current = Date.now(); seekRatio.current = r; setDragRatio(null); onSeekRef.current(r); },
     })
   ).current;
 
@@ -129,19 +169,9 @@ export default function Scrubber({
           style={[styles.thumb, {
             width: thumbSize, height: thumbSize, borderRadius: thumbSize / 2,
             top: (height - thumbSize) / 2, left: 0, transform: [{ translateX: thumbX }],
-            borderColor: thumbRing,
+            borderColor: thumbRing, backgroundColor: thumbFill,
           }]}
-        >
-          {/* The thumb carries the SAME gradient as the fill, so the circle at
-              the playhead is made of the bar it is riding rather than a separate
-              flat dot. Diagonal rather than horizontal: across 14pt a left-right
-              ramp is barely two pixels per stop and reads as a flat average. */}
-          <LinearGradient
-            colors={fillStops}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
+        />
       )}
     </View>
   );
@@ -150,9 +180,8 @@ export default function Scrubber({
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   area: { width: '100%', justifyContent: 'center' },
   track: { width: '100%', backgroundColor: colors.border, overflow: 'hidden' },
-  // borderColor is supplied inline (thumbRing) — it is theme-dependent in a
-  // way this palette-only factory cannot express. overflow:hidden is what clips
-  // the gradient child to the circle; the backgroundColor is only what shows for
-  // the frame before that gradient paints.
-  thumb: { position: 'absolute', backgroundColor: colors.text, borderWidth: 2, overflow: 'hidden' },
+  // Both colours are supplied inline: the fill is SAMPLED from the ramp at the
+  // current position and the ring is derived from it, neither of which this
+  // palette-only factory can express.
+  thumb: { position: 'absolute', borderWidth: 2 },
 });

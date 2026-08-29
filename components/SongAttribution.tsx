@@ -69,31 +69,46 @@ export default function SongAttribution({
   // absolutely positioned and owns its space, which is what makes the two states
   // safe to cross-fade in place.
   const isThisTrack = currentTrack?.id === songId;
-  const cover = isThisTrack ? currentTrack?.cover : null;
+
+  // Remembered, not read live. Once this post's song has played we keep its cover
+  // for the life of the component — see the mount note below for why that
+  // matters more than it looks.
+  const coverRef = useRef<string | null>(null);
+  if (isThisTrack && currentTrack?.cover) coverRef.current = currentTrack.cover;
+  const cover = coverRef.current;
+
   const showArt = !inline && isThisTrack && isPlaying && !!cover;
 
-  // MOUNTED FOR AS LONG AS THIS IS THE CURRENT TRACK — deliberately NOT for as
-  // long as it is visible.
+  // ONCE MOUNTED, NEVER UNMOUNTED. This is the whole fix for the hitch, and it
+  // took two goes to get right.
   //
-  // The first version unmounted the card in the fade-out's completion callback:
-  // setArtMounted(false) once the animation finished. That is a setState, and so
-  // a React re-render plus a view teardown, landing at the exact moment the fade
-  // ends — and on a post that also has a VIDEO decoding, that is a dropped frame.
-  // It is the hitch the owner saw on video posts and only on video posts, right
-  // at the end of the transition.
+  // v1 unmounted in the fade-out's completion callback. That is a setState —
+  // a React re-render plus a view teardown — landing at the exact instant the
+  // animation ends. Invisible on a still post; a dropped frame every time on one
+  // with a video decoding, which is precisely what the owner saw.
   //
-  // Keying the mount on isThisTrack instead means the whole fade is pure
-  // native-driver opacity with no JS work at either end. The unmount still
-  // happens, but when the TRACK changes — a moment that is already a re-render
-  // and is nowhere near the animation.
-  const mountArt = !inline && isThisTrack && !!cover;
+  // v2 keyed the mount on isThisTrack. That fixed PAUSE but not STOP: stopping
+  // clears currentTrack, so showArt and the mount both went false in the same
+  // commit — the card vanished with no fade at all, and the teardown still landed
+  // next to the transition.
+  //
+  // So the mount is keyed on nothing but "has this song ever played here",
+  // remembered in coverRef. The card fades to opacity 0 and simply stays, which
+  // means there is no React work anywhere in the transition, at either end, for
+  // pause or stop. The fade the owner likes is untouched; only its ending moved.
+  //
+  // The cost is one <Image> held at opacity 0 — and only on a post whose song has
+  // actually been played, which is one post at a time, not one per feed row.
+  const mountArt = !inline && !!cover;
 
   const bloom = useRef(new Animated.Value(0)).current;
   // Snap back to closed the moment the card leaves. Without this, the next song
   // on this post would bloom from already-open, and — because the pill's opacity
   // is 1 - bloom — a card that unmounted while open would leave the pill
   // invisible until something re-animated it.
-  useEffect(() => { if (!mountArt) bloom.setValue(0); }, [mountArt, bloom]);
+  // No reset needed any more: mountArt no longer flips while a fade is running,
+  // so bloom is only ever driven by the animation below and always lands at 0
+  // before the card is idle.
   useEffect(() => {
     Animated.timing(bloom, {
       toValue: showArt ? 1 : 0,
