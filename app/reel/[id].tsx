@@ -413,6 +413,13 @@ const ReelPage = memo(function ReelPage({
 
 // Reel kinds the dropdown can lead with. Order here is the menu order.
 const REEL_FILTERS = ['all', 'vertical', 'horizontal', 'films'] as const;
+// The chevron sits to the RIGHT of the label, so centring the pair puts the
+// LABEL half a chevron left of the screen's centre line — which is the "not
+// quite centred" wrongness. Padding the opposite side by the chevron's whole
+// footprint re-centres the label itself: the pair is then symmetric about the
+// text. Constants so the padding cannot drift from the icon it compensates for.
+const FILTER_CHEVRON = 21;
+const FILTER_GAP = 6;
 type ReelFilter = (typeof REEL_FILTERS)[number];
 // Longer than this is a film. The same 540s boundary the query and the TV shelf
 // use — it lives in several places, so it is a constant here rather than a
@@ -1718,7 +1725,7 @@ export default function ReelScreen() {
                 accessibilityRole="button"
               >
                 <Text style={styles.filterPillText}>{t(`reel.filter.${reelFilter}`)}</Text>
-                <Ionicons name={filterOpen ? 'chevron-up' : 'chevron-down'} size={17} color="#fff" />
+                <Ionicons name={filterOpen ? 'chevron-up' : 'chevron-down'} size={FILTER_CHEVRON} color="#fff" />
               </TouchableOpacity>
               {filterOpen && (
                 <View style={styles.filterMenu}>
@@ -1913,16 +1920,19 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Bare text, no pill. A chip would read as a control sitting on the video;
   // this is a title that happens to open, which is how the big apps carry it.
   filterPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    height: 44, paddingHorizontal: SPACING.sm,
+    flexDirection: 'row', alignItems: 'center', gap: FILTER_GAP,
+    height: 44,
+    // Not paddingHorizontal — the asymmetry is the point. See FILTER_CHEVRON.
+    paddingLeft: FILTER_CHEVRON + FILTER_GAP,
+    paddingRight: 0,
   },
   // Fixed white, never the theme text colour: this floats over video, which is
   // dark whatever theme the app is in. The shadow is doing the work the removed
   // pill used to — it is the only thing keeping the label legible over a bright
   // frame now that there is no scrim behind it.
   filterPillText: {
-    color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.4,
-    textShadowColor: 'rgba(0,0,0,0.55)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5,
+    color: '#fff', fontSize: 25, fontWeight: '900', letterSpacing: -0.5,
+    textShadowColor: 'rgba(0,0,0,0.6)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6,
   },
   filterMenu: {
     marginTop: 6, minWidth: 150, overflow: 'hidden',

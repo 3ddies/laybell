@@ -414,7 +414,7 @@ const PostCard = memo(function PostCard({
       )}
 
       {isSlideshow(item.type) && (
-        <View ref={slideRef} style={zooming && { zIndex: 30, elevation: 30 }}>
+        <View ref={slideRef}>
           {/* key={item.id}: the carousel holds REAL local state (slide index,
               scroll-x, unmute) that must never carry onto a recycled cell's
               new post. Keying just this subtree remounts only the carousel —
@@ -427,7 +427,6 @@ const PostCard = memo(function PostCard({
             active={shouldPlayVideo}
             postId={item.id}
             onVideoAudioActiveChange={(a) => onSlideAudioActive(item, a)}
-            onZoomChange={(z) => { setZooming(z); onMediaZoom?.(z); }}
             onOpen={(idx) => onMediaTap(() => slideRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h }, idx)))}
           />
           {!!item.song_id && (

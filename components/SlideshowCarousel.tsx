@@ -1,18 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, TouchableOpacity, StyleSheet, Text,
+  View, ScrollView, TouchableOpacity, StyleSheet, Text,
   type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
-// Gesture-handler's ScrollView, NOT React Native's. Identical props and methods
-// (it is RN's, native-wrapped), but its forwarded ref carries a handlerTag, so
-// the pinch below can name it as a simultaneous handler. With RN's plain
-// ScrollView the scroll claiming the touch CANCELS the pinch, and a cancelled
-// pinch springs straight back — the zoom starts and is yanked away a beat later.
-import { ScrollView } from 'react-native-gesture-handler';
 import { Image as ExpoImage } from 'expo-image';
 import AppVideo from './AppVideo';
 import { Ionicons } from '@expo/vector-icons';
-import ZoomableView from './ZoomableView';
 import { RADIUS } from '../constants/theme';
 import { useTabSwipeControl } from '../contexts/PagerContext';
 import { trackVideoProgress } from '../lib/viewTracker';
@@ -46,9 +39,6 @@ type Props = {
   // Reports whether the CURRENT slide is a video with its audio turned on, so the
   // host can pause/resume an attached song. Fires on slide change + toggle + unmount.
   onVideoAudioActiveChange?: (active: boolean) => void;
-  // Raised while a slide is being pinch-zoomed, so the host can stop ITS scroll
-  // too (the feed's vertical list) and lift the card over its neighbours.
-  onZoomChange?: (zooming: boolean) => void;
 };
 
 function SlideVideo({
@@ -74,45 +64,10 @@ function SlideVideo({
 }
 
 export default function SlideshowCarousel({
-  slides, width, aspectRatio, active = true, initialIndex = 0, postId, onOpen, onVideoAudioActiveChange, onZoomChange,
+  slides, width, aspectRatio, active = true, initialIndex = 0, postId, onOpen, onVideoAudioActiveChange,
 }: Props) {
   const height = Math.round(width / (aspectRatio || 1));
   const [index, setIndex] = useState(initialIndex);
-  // ── Pinch-to-zoom on a slide ────────────────────────────────────────────────
-  // The hard part here is not the zoom, it is that this carousel scrolls
-  // HORIZONTALLY. A pinch spreads two fingers apart sideways, which moves the
-  // touch centroid sideways, which is precisely what a horizontal paging
-  // ScrollView claims — so the slide paged instead of the photo zooming. The
-  // reel viewer never hit this because its list scrolls vertically.
-  //
-  // The scroll now STANDS DOWN for the pinch: waitFor below means paging cannot
-  // start until the pinch handler has failed.
-  //
-  // Two earlier attempts tried to get out of the scroll's way instead, and both
-  // were unsound. Flipping scrollEnabled off when a second finger lands could
-  // never be fast enough — it is React state, so it lands a frame after the
-  // scroll already owns the gesture — and the detection itself was dead code,
-  // because a plain View's onTouchStart only fires while that view is the touch
-  // responder, which the native ScrollView had taken. Declaring the two handlers
-  // simultaneous stopped the cancellation but not the paging, so the slide still
-  // moved out from under the zoom.
-  //
-  // waitFor is the one that actually arbitrates, and it is safe for ordinary
-  // paging: RNGH only defers to a handler in BEGAN or ACTIVE, and a pinch does
-  // not begin until a SECOND pointer is down. One finger leaves it undetermined,
-  // so a normal swipe pages with no delay at all.
-  const pinchRef = useRef(null);
-  // waitFor resolves the handler's TAG, which RNGH attaches on commit — and the
-  // scroll view, as a child, commits before the pinch that owns the ref. Wiring
-  // it on the first render would read a null ref and silently never arbitrate
-  // (exactly how the last attempt failed). One post-mount flip re-sends the
-  // config when the tag exists.
-  const [handlersReady, setHandlersReady] = useState(false);
-  useEffect(() => { setHandlersReady(true); }, []);
-  const [zooming, setZooming] = useState(false);
-  const gestureSincePress = useRef(false);
-  const zoomCbRef = useRef(onZoomChange);
-  zoomCbRef.current = onZoomChange;
   const [videoAudioOn, setVideoAudioOn] = useState(false); // local: current video's own audio (default muted)
   const scrollRef = useRef<ScrollView>(null);
   const didInit = useRef(false);
@@ -147,99 +102,70 @@ export default function SlideshowCarousel({
 
   return (
     <View style={{ width, height }}>
-      {/* The zoom wraps the SCROLL VIEW rather than each slide, which is what
-          lets the scroll wait on it: the pinch has to own a ref the scroll can
-          name, and one zoom above the pager is simpler than N inside it.
-
-          Scaling the viewport looks identical to scaling the slide — the scroll
-          view clips its content to its own frame first, so what grows is exactly
-          the visible slide — and it costs ONE zoom per carousel instead of one
-          per slide. */}
-      <ZoomableView
-        width={width}
-        height={height}
-        style={{ width, height }}
-        resetOnRelease
-        pinchRef={pinchRef}
-        onGesture={() => { gestureSincePress.current = true; }}
-        onZoomChange={(z) => { setZooming(z); zoomCbRef.current?.(z); }}
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={onMomentumEnd}
+        contentOffset={{ x: initialIndex * width, y: 0 }}
+        // Hold the tab swipe off while a slide swipe is in progress (re-enabled on end).
+        onTouchStart={() => setTabSwipe(false)}
+        onScrollBeginDrag={() => setTabSwipe(false)}
+        onTouchEnd={() => setTabSwipe(true)}
+        onTouchCancel={() => setTabSwipe(true)}
+        onScrollEndDrag={() => setTabSwipe(true)}
+        // Android ignores contentOffset before layout — jump once we have a frame.
+        onLayout={() => {
+          if (!didInit.current && initialIndex > 0) {
+            didInit.current = true;
+            scrollRef.current?.scrollTo({ x: initialIndex * width, animated: false });
+          }
+        }}
       >
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={onMomentumEnd}
-          contentOffset={{ x: initialIndex * width, y: 0 }}
-          // Stand down for the pinch. Attached only once the pinch handler has a
-          // tag to resolve — see handlersReady above.
-          waitFor={handlersReady ? pinchRef : undefined}
-          scrollEnabled={!zooming}
-          // Hold the tab swipe off while a slide swipe is in progress (re-enabled on end).
-          onTouchStart={() => setTabSwipe(false)}
-          onScrollBeginDrag={() => setTabSwipe(false)}
-          onTouchEnd={() => setTabSwipe(true)}
-          onTouchCancel={() => setTabSwipe(true)}
-          onScrollEndDrag={() => setTabSwipe(true)}
-          // Android ignores contentOffset before layout — jump once we have a frame.
-          onLayout={() => {
-            if (!didInit.current && initialIndex > 0) {
-              didInit.current = true;
-              scrollRef.current?.scrollTo({ x: initialIndex * width, animated: false });
-            }
-          }}
-        >
-          {slides.map((s, i) => {
-            const isVideo = s.type === 'video';
-            const body = (
-              <View style={{ width, height, backgroundColor: '#000' }}>
-                {isVideo ? (
-                  engaged && Math.abs(i - current) <= 1 ? (
-                    <SlideVideo
-                      uri={s.url}
-                      poster={s.thumbnail_url}
-                      width={width}
-                      height={height}
-                      play={!!active && i === current}
-                      muted={!videoAudioOn}
-                      // Watch time on video slides counts toward the post's
-                      // (internal-only) view tally — same tracker + server caps
-                      // as regular videos. Paused slides report no forward
-                      // progress, so only the playing slide accrues.
-                      onProgress={postId ? (pos, dur) => trackVideoProgress(postId, pos, dur) : undefined}
-                    />
-                  ) : (
-                    // FAR video slides hold their poster instead of a live native
-                    // player — a paging swipe only ever moves one slide, so the
-                    // incoming slide's player (current ± 1) is always already
-                    // mounted; nothing visibly changes, but a multi-video
-                    // slideshow no longer allocates every AVPlayer at mount.
-                    s.thumbnail_url
-                      ? <ExpoImage source={{ uri: s.thumbnail_url }} style={{ width, height }} contentFit="contain" cachePolicy="memory-disk" />
-                      : <View style={{ width, height }} />
-                  )
+        {slides.map((s, i) => {
+          const isVideo = s.type === 'video';
+          const body = (
+            <View style={{ width, height, backgroundColor: '#000' }}>
+              {isVideo ? (
+                engaged && Math.abs(i - current) <= 1 ? (
+                  <SlideVideo
+                    uri={s.url}
+                    poster={s.thumbnail_url}
+                    width={width}
+                    height={height}
+                    play={!!active && i === current}
+                    muted={!videoAudioOn}
+                    // Watch time on video slides counts toward the post's
+                    // (internal-only) view tally — same tracker + server caps
+                    // as regular videos. Paused slides report no forward
+                    // progress, so only the playing slide accrues.
+                    onProgress={postId ? (pos, dur) => trackVideoProgress(postId, pos, dur) : undefined}
+                  />
                 ) : (
-                  <ExpoImage source={{ uri: s.url }} style={{ width, height }} contentFit="cover" cachePolicy="memory-disk" />
-                )}
-              </View>
-            );
-            return onOpen ? (
-              <TouchableOpacity
-                key={i}
-                activeOpacity={0.95}
-                onPressIn={() => { gestureSincePress.current = false; }}
-                // A pinch marks itself, so the tap that ends it doesn't also open
-                // the full viewer.
-                onPress={() => { if (!gestureSincePress.current) onOpen(i); }}
-              >
-                {body}
-              </TouchableOpacity>
-            ) : (
-              <View key={i}>{body}</View>
-            );
-          })}
-        </ScrollView>
-      </ZoomableView>
+                  // FAR video slides hold their poster instead of a live native
+                  // player — a paging swipe only ever moves one slide, so the
+                  // incoming slide's player (current ± 1) is always already
+                  // mounted; nothing visibly changes, but a multi-video
+                  // slideshow no longer allocates every AVPlayer at mount.
+                  s.thumbnail_url
+                    ? <ExpoImage source={{ uri: s.thumbnail_url }} style={{ width, height }} contentFit="contain" cachePolicy="memory-disk" />
+                    : <View style={{ width, height }} />
+                )
+              ) : (
+                <ExpoImage source={{ uri: s.url }} style={{ width, height }} contentFit="cover" cachePolicy="memory-disk" />
+              )}
+            </View>
+          );
+          return onOpen ? (
+            <TouchableOpacity key={i} activeOpacity={0.95} onPress={() => onOpen(i)}>
+              {body}
+            </TouchableOpacity>
+          ) : (
+            <View key={i}>{body}</View>
+          );
+        })}
+      </ScrollView>
 
       {/* Audio button — video slides only (image slides have no original audio). */}
       {currentIsVideo && (
