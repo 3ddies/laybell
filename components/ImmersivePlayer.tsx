@@ -107,6 +107,12 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
   // onSeekRef for the same reason; this file failed to copy it.
   const durRef = useRef(durationMs); durRef.current = durationMs;
   const seekRef = useRef(seekTo); seekRef.current = seekTo;
+  // Same discipline for everything the SCREEN responder reads.
+  const ratioRef = useRef(ratio); ratioRef.current = ratio;
+  const playingRef = useRef(isPlaying); playingRef.current = isPlaying;
+  const pauseRef = useRef(pause); pauseRef.current = pause;
+  const resumeRef = useRef(resume); resumeRef.current = resume;
+  const swRef = useRef(SW); swRef.current = SW;
 
   const ratioAt = (pageX: number) => Math.max(0, Math.min(1, (pageX - wrapX.current) / (wrapW.current || 1)));
 
@@ -128,6 +134,52 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
         const r = ratioAt(e.nativeEvent.pageX);
         dragging.current = false; setDragRatio(null);
         if (durRef.current > 0) seekRef.current(Math.floor(r * durRef.current));
+      },
+      onPanResponderTerminate: () => { dragging.current = false; setDragRatio(null); },
+    }),
+  ).current;
+
+  // ── The whole screen is the control ─────────────────────────────────────────
+  // Drag anywhere to scrub, tap anywhere to play/pause.
+  //
+  // RELATIVE, not absolute. Mapping x-position straight to song-position would be
+  // simpler, but then a TAP is also a seek — and tap has to mean play/pause. A
+  // drag that moves nothing changes nothing, which is what lets the two gestures
+  // share the same surface without argument.
+  //
+  // It sits BELOW the header and transport in the tree, so those keep their own
+  // touches: responder negotiation offers a touch to the deepest view first, and
+  // this only claims what nothing else wanted. The waveform's own responder wins
+  // over it for the same reason.
+  const screenStart = useRef(0);
+  const screenMoved = useRef(false);
+  const screenPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      // Only take over once the finger has actually travelled, and travelled
+      // MORE HORIZONTALLY than vertically — otherwise a vertical swipe would
+      // scrub, which is nobody's intent.
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => { screenStart.current = ratioRef.current; screenMoved.current = false; },
+      onPanResponderMove: (_e, g) => {
+        if (Math.abs(g.dx) > 6) screenMoved.current = true;
+        if (!screenMoved.current) return;
+        dragging.current = true;
+        // A full screen-width drag covers the whole song, matching the waveform
+        // below it so the two controls feel like one scale.
+        const r = Math.max(0, Math.min(1, screenStart.current + g.dx / (swRef.current || 1)));
+        prog.setValue(r); setDragRatio(r);
+      },
+      onPanResponderRelease: (_e, g) => {
+        if (screenMoved.current) {
+          const r = Math.max(0, Math.min(1, screenStart.current + g.dx / (swRef.current || 1)));
+          dragging.current = false; setDragRatio(null);
+          if (durRef.current > 0) seekRef.current(Math.floor(r * durRef.current));
+          return;
+        }
+        // Never moved → it was a tap.
+        if (playingRef.current) pauseRef.current(); else resumeRef.current();
       },
       onPanResponderTerminate: () => { dragging.current = false; setDragRatio(null); },
     }),
@@ -174,6 +226,10 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
         locations={[0, 0.22, 0.5, 0.88]}
         style={StyleSheet.absoluteFill}
       />
+
+      {/* The gesture surface. Above the artwork so it can be touched, below the
+          controls so they still win their own taps. */}
+      <View style={StyleSheet.absoluteFill} {...screenPan.panHandlers} />
 
       <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}>
         <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
