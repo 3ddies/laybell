@@ -405,6 +405,10 @@ const PostCard = memo(function PostCard({
             duration={item.duration_seconds}
             isPlaying={audioActive}
             trackId={item.id}
+            // In the feed the cover is the post's hero image, not a list
+            // thumbnail — the playing/paused bars go beside the transport
+            // control rather than over the artwork.
+            indicator="button"
             onPlay={() => onPlayTrack(item)}
             onCoverPress={() => onExpandTrack(item)}
             onOptions={() => onOptions(item)}

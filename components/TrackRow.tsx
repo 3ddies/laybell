@@ -118,7 +118,7 @@ function formatDuration(seconds?: number | null) {
 export default function TrackRow({
   caption, artist, username, duration, streams, cover, avatarUrl, badgeProfile, badgeOwnerId,
   isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, onOptions, hidePlayButton, highlightQuery, spotlighted,
-  trackId,
+  trackId, indicator = 'cover',
 }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
   cover?: string | null; avatarUrl?: string | null; hidePlayButton?: boolean;
@@ -138,6 +138,17 @@ export default function TrackRow({
   // The track's own id. Optional so older call sites keep working, but without
   // it the row cannot tell PAUSED from CLOSED — see the note below.
   trackId?: string | null;
+  // Where the playing/paused indicator lives.
+  //
+  // 'cover' (default) lays it over the artwork, which suits the dense lists in
+  // Music, Explore and profiles: the covers there are list thumbnails, and an
+  // overlay is the quickest way to pick the live row out of a column of them.
+  //
+  // 'button' puts it beside the transport control and leaves the artwork alone.
+  // That is for the HOME FEED, where the same 50pt cover is not a list thumbnail
+  // but the post's own hero image — scrimming it reads like artwork that failed
+  // to load rather than a row that is playing.
+  indicator?: 'cover' | 'button';
 }) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -201,8 +212,9 @@ export default function TrackRow({
         )}
         {/* The artwork carries the whole play/pause distinction, and it is the
             SAME four bars doing both: dancing while the track plays, folding
-            into the pause symbol when it is held. */}
-        {active && (
+            into the pause symbol when it is held. Suppressed entirely under the
+            'button' indicator — see the prop's note. */}
+        {active && indicator === 'cover' && (
           <View style={styles.coverOverlayActive}>
             {reduced ? (
               <Ionicons name={playing ? 'musical-notes' : 'pause'} size={16} color={colors.text} />
@@ -229,6 +241,21 @@ export default function TrackRow({
           {durationLabel && <Text style={styles.artist}>· {durationLabel}</Text>}
         </View>
       </TouchableOpacity>
+
+      {/* Feed variant: the indicator sits in the control area instead, so the
+          post's cover art stays untouched. Same four bars, same morph — only
+          the address changes. */}
+      {active && indicator === 'button' && (
+        reduced ? (
+          <Ionicons name={playing ? 'musical-notes' : 'pause'} size={16} color={colors.textSecondary} />
+        ) : (
+          <View style={[styles.eq, styles.eqInline]}>
+            {EQ_BARS.map((b, i) => (
+              <EqBar key={i} {...b} color={colors.textSecondary} playing={playing} />
+            ))}
+          </View>
+        )
+      )}
 
       {/* Play / STOP — borderless filled-circle glyph, same as Today's Pick.
           The glyph is a square stop, not a pause, because that is what the
@@ -297,6 +324,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background + '8C',
   },
   eq: { flexDirection: 'row', alignItems: 'flex-end', gap: EQ_GAP, height: EQ_H },
+  // Pulls the bars in against the transport button. The row's own 16pt gap on
+  // both sides would leave them floating as a third column of their own, when
+  // the whole point is that they belong to the control beside them.
+  eqInline: { marginRight: -SPACING.sm },
   info: { flex: 1 },
   // The song name is the row's headline and its primary tap target (the whole
   // info column plays the track), so it carries real weight; the handle and the
