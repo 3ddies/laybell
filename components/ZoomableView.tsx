@@ -29,7 +29,7 @@ function dampGesture(raw: number): number {
 }
 
 export default function ZoomableView({
-  width, height, active = true, style, onZoomChange, onGesture, children,
+  width, height, active = true, style, onZoomChange, onGesture, resetOnRelease = false, children,
 }: {
   width: number;
   height: number;
@@ -39,6 +39,15 @@ export default function ZoomableView({
   /** Fires the moment a pinch or pan actually activates (any zoom level), so the
    *  parent can tell a tap apart from a zoom movement. */
   onGesture?: () => void;
+  /** Springs back to fit the moment the pinch ends, instead of staying zoomed.
+   *
+   *  For a viewer, holding the zoom is right — you got there to look around, and
+   *  one finger then pans. Inside a SCROLLING FEED it is a trap: holding the zoom
+   *  also means enabling the one-finger pan, which swallows the drag the user
+   *  needs to scroll the list, and a post left zoomed as it scrolls out of view
+   *  is a state nobody asked for. A peek that lets go is the right feed gesture,
+   *  and it keeps the pan handler disabled entirely. */
+  resetOnRelease?: boolean;
   children: ReactNode;
 }) {
   const baseScale = useRef(new Animated.Value(1)).current;
@@ -162,7 +171,10 @@ export default function ZoomableView({
       const product = curScale.current * dampGesture(e.nativeEvent.scale);
       baseScale.setValue(Math.max(0, product));
       pinchScale.setValue(1);
-      if (product <= FIT_EPSILON) {
+      // resetOnRelease never takes the committing branch, so setPanEnabled stays
+      // false and the one-finger pan handler is never armed — which is exactly
+      // what leaves the feed's own scroll gesture alone.
+      if (resetOnRelease || product <= FIT_EPSILON) {
         settleToFit();
       } else {
         const committed = Math.min(MAX_SCALE, product);

@@ -183,6 +183,7 @@ import { useUploadQueue } from '../../contexts/UploadQueueContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import SongAttribution from '../../components/SongAttribution';
 import SlideshowCarousel from '../../components/SlideshowCarousel';
+import ZoomableView from '../../components/ZoomableView';
 import { useDoubleTapLike } from '../../components/DoubleTapLike';
 import MentionText from '../../components/MentionText';
 import TranslatableText from '../../components/TranslatableText';
@@ -256,6 +257,9 @@ type PostCardProps = {
   onShare: (item: Post) => void;
   // A slideshow video slide turned its audio on/off → pause/resume its song.
   onSlideAudioActive: (item: Post, active: boolean) => void;
+  /** Raised while a pinch is live on this card's photo, so the feed can stop
+   *  scrolling underneath the gesture. */
+  onMediaZoom?: (zooming: boolean) => void;
 };
 
 // Memoized so that toggling a like/save on one post (which changes the feed's
@@ -264,7 +268,7 @@ type PostCardProps = {
 // unchanged posts, so React.memo's shallow compare skips them.
 const PostCard = memo(function PostCard({
   item, isOwn, isLiked, isSaved, audioActive, videoMuted, songMuted,
-  onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive,
+  onProfile, onOptions, onOpenPost, onOpenReel, onComments, onPlayTrack, onExpandTrack, onToggleMuted, onToggleSongMute, onLike, onSave, onShare, onSlideAudioActive, onMediaZoom,
 }: PostCardProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -286,6 +290,19 @@ const PostCard = memo(function PostCard({
   // Recycling reset (FlashList reuses this instance across items): a mid-bounce
   // like-pop must not ride onto the next post's heart.
   useEffect(() => { likeScale.stopAnimation(); likeScale.setValue(1); }, [item.id, likeScale]);
+  // Pinch-to-zoom state. `zooming` raises the card over its neighbours for the
+  // duration of the gesture; gestureSincePress lets the tap that ends a pinch
+  // know it was part of a zoom and not an intent to open the post.
+  const [zooming, setZooming] = useState(false);
+  const gestureSincePress = useRef(false);
+  // Recycled into a different post mid-pinch: clear the lift, and release the
+  // feed's scroll lock, or the list would stay frozen with no gesture running.
+  useEffect(() => {
+    setZooming(false);
+    gestureSincePress.current = false;
+    onMediaZoom?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id]);
   const popLike = () => {
     likeScale.setValue(1);
     Animated.sequence([
@@ -342,19 +359,45 @@ const PostCard = memo(function PostCard({
         <TouchableOpacity
           ref={imgRef}
           activeOpacity={1}
-          onPress={() => onMediaTap(() => imgRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h })))}
+          // Cleared on every fresh press so a pinch can mark itself and the tap
+          // that ends it knows not to open the post.
+          onPressIn={() => { gestureSincePress.current = false; }}
+          onPress={() => {
+            if (gestureSincePress.current) return;
+            onMediaTap(() => imgRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => onOpenPost(item, { x, y, width: w, height: h })));
+          }}
+          // Lifted over its neighbours only WHILE pinching. FlashList cells are
+          // siblings, so at rest z-order is paint order and a zoomed image would
+          // slide under the next post. Applied transiently because a permanently
+          // raised cell changes how every card composites.
+          style={zooming && { zIndex: 30, elevation: 30 }}
         >
-          {/* expo-image: decodes at DISPLAYED size (RN Image decodes the full
-              multi-MP original — memory spikes + dropped frames mid-scroll). */}
-          <ExpoImage
-            source={{ uri: item.media_url }}
-            // Recycled cells must never flash the PREVIOUS post's image while
-            // the new one decodes — recyclingKey clears the view on reuse.
-            recyclingKey={item.id}
-            style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-          />
+          {/* Two-finger pinch peek. Springs back on release (see resetOnRelease)
+              — in a feed, holding the zoom would arm the one-finger pan and eat
+              the scroll gesture. */}
+          <ZoomableView
+            width={SCREEN_W}
+            height={SCREEN_W / aspectToNumber(item.aspect_ratio, 1)}
+            // Explicit rather than relying on flex stretch: this style lands on
+            // the view the scale transform rides, and a box that is not exactly
+            // the image's would put the zoom's origin off-centre.
+            style={styles.zoomWrap}
+            resetOnRelease
+            onGesture={() => { gestureSincePress.current = true; }}
+            onZoomChange={(z) => { setZooming(z); onMediaZoom?.(z); }}
+          >
+            {/* expo-image: decodes at DISPLAYED size (RN Image decodes the full
+                multi-MP original — memory spikes + dropped frames mid-scroll). */}
+            <ExpoImage
+              source={{ uri: item.media_url }}
+              // Recycled cells must never flash the PREVIOUS post's image while
+              // the new one decodes — recyclingKey clears the view on reuse.
+              recyclingKey={item.id}
+              style={[styles.postMedia, { aspectRatio: aspectToNumber(item.aspect_ratio, 1), backgroundColor: '#000' }]}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+            />
+          </ZoomableView>
           {!!item.song_id && (
             <TouchableOpacity style={styles.videoAudioBtn} onPress={onToggleSongMute}>
               {/* On a dark media pill — always white, never the theme text color
@@ -738,6 +781,11 @@ export default function HomeScreen() {
 
   // The just-posted confirmation was tapped — bring the pinned new post into view.
   const feedListRef = useRef<FlashListRef<Post>>(null);
+  // The feed stops scrolling while a photo is being pinched. Without it the list
+  // and the pinch fight for the same two fingers and the post slides out from
+  // under the gesture. Stable identity so it never breaks PostCard's memo.
+  const [zoomLock, setZoomLock] = useState(false);
+  const onMediaZoom = useCallback((z: boolean) => setZoomLock(z), []);
   useEffect(() => {
     if (homeScrollTick > 0) feedListRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, [homeScrollTick]);
@@ -2012,6 +2060,7 @@ export default function HomeScreen() {
           onSave={onSave}
           onShare={onShare}
           onSlideAudioActive={onSlideAudioActive}
+          onMediaZoom={onMediaZoom}
         />
       )}
     </ElasticSwipeView>
@@ -2197,6 +2246,7 @@ export default function HomeScreen() {
 
       <FlashList
         ref={feedListRef}
+        scrollEnabled={!zoomLock}
         data={gatedFeedData}
         // Spotlight instances key off their campaign so a promoted post can
         // never key-collide with itself (organic copies are filtered at merge).
@@ -2474,6 +2524,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     width: '100%',
     backgroundColor: colors.surfaceLight,
   },
+  // Carries no background: it sits between the card and the photo, and a fill
+  // here would show through wherever the pinch lifts the image off its bed.
+  zoomWrap: { width: '100%' },
   postVideo: {
     width: '100%',
     backgroundColor: '#000',
