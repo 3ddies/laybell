@@ -350,7 +350,7 @@ const en: Record<string, string> = {
   'post.slideFitHint': 'Fitted — the whole photo is kept, with space added to reach the frame',
   'post.slideCropHint': 'Drag to reposition · pinch to zoom',
   'post.slideOrderHint': 'Swipe to browse · tap a thumbnail to jump · hold one to reorder',
-  'post.slideAdjust': 'Adjust',
+  'post.slideAdjust': 'Crop',
   'post.slideDone': 'Done',
   'post.slideVideoNoCrop': 'Video · not croppable',
   'post.slideRemove': 'Remove this slide',

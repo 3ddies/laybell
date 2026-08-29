@@ -63,14 +63,19 @@ const HOLD_SLOP = 12;
 // no gain; eight slides need seven moves, and at that same step the far end sits
 // past the edge of the screen and cannot be reached in one drag at all.
 //
-// Dividing the frame by the number of moves means a drag across the stage covers
-// the whole list, whatever its length. The clamps stop the extremes: a two-slide
-// set would otherwise demand a 390pt haul, and a full eight would go twitchy.
-const STAGE_STEP_MIN = 58;
+// The budget is HALF the frame, not all of it. A drag begins wherever the finger
+// already is — usually somewhere around the middle — so only about half the
+// width is available in the direction being dragged. Sizing the step against the
+// full width meant the far end of a longer set sat off the edge of the screen
+// and could not be reached without lifting and starting again.
+//
+// Dividing that half by the number of moves puts the whole list within reach of
+// one drag from the centre, whatever its length.
+const STAGE_STEP_MIN = 24;
 const STAGE_STEP_MAX = 150;
 function stageStepFor(frameW: number, count: number): number {
   if (count < 2) return STAGE_STEP_MAX;
-  return Math.max(STAGE_STEP_MIN, Math.min(STAGE_STEP_MAX, frameW / (count - 1)));
+  return Math.max(STAGE_STEP_MIN, Math.min(STAGE_STEP_MAX, (frameW / 2) / (count - 1)));
 }
 
 const SlideArranger = forwardRef<SlideArrangerHandle, {
@@ -427,14 +432,40 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
           </TouchableOpacity>
         )}
 
-        {/* Frame, in the corner the single-photo composer puts it in — same
-            control, same place, so it is one thing to learn rather than two. */}
-        <TouchableOpacity style={styles.aspectBtn} onPress={cycleFormat} activeOpacity={0.85}>
+        {/* The four corners. Everything that acts on the photo you are looking
+            at lives ON that photo, so the eye never has to leave it: what this
+            slide does with the frame (top-left), removing it (top-right), the
+            frame for the whole set (bottom-left), and cropping (bottom-right).
+            All are SIBLINGS of the pan surface — that responder claims every
+            touch inside itself, so a button in there could never fire. */}
+        {cur?.type === 'image' && (
+          <TouchableOpacity
+            style={[styles.cornerBase, styles.cornerTL]}
+            onPress={() => setFit(curFit === 'cover' ? 'contain' : 'cover')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name={curFit === 'cover' ? 'crop' : 'scan-outline'} size={14} color={colors.text} />
+            <Text style={styles.cornerText}>
+              {t(curFit === 'cover' ? 'post.slideFill' : 'post.slideFit')}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity style={[styles.cornerBase, styles.cornerBL]} onPress={cycleFormat} activeOpacity={0.85}>
           <Ionicons name="resize-outline" size={15} color={colors.text} />
-          <Text style={styles.aspectBtnText}>
+          <Text style={styles.cornerText}>
             {isAutoFormat(format) ? t(`post.format.${format}`) : format}
           </Text>
         </TouchableOpacity>
+
+        {/* Crop only exists for a FILLED photo. A fitted one is entirely on
+            screen already, so there is nothing outside the frame to choose. */}
+        {cur?.type === 'image' && curFit === 'cover' && (
+          <TouchableOpacity style={[styles.cornerBase, styles.cornerBR]} onPress={() => setAdjusting(true)} activeOpacity={0.85}>
+            <Ionicons name="crop-outline" size={14} color={colors.text} />
+            <Text style={styles.cornerText}>{t('post.slideAdjust')}</Text>
+          </TouchableOpacity>
+        )}
 
         {slides.length > 1 && (
           <View style={styles.dots} pointerEvents="none">
@@ -444,36 +475,6 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
           </View>
         )}
       </View>
-
-      {/* ── Per-photo: fill or fit, and reposition ───────────────────────────── */}
-      {cur?.type === 'image' && (
-        <View style={styles.toolRow}>
-          {(['cover', 'contain'] as const).map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.tool, curFit === f && styles.toolOn]}
-              onPress={() => setFit(f)}
-              activeOpacity={0.85}
-            >
-              <Ionicons
-                name={f === 'cover' ? 'crop' : 'scan-outline'}
-                size={14}
-                color={curFit === f ? colors.background : colors.textSecondary}
-              />
-              <Text style={[styles.toolText, curFit === f && styles.toolTextOn]}>
-                {t(f === 'cover' ? 'post.slideFill' : 'post.slideFit')}
-              </Text>
-            </TouchableOpacity>
-          ))}
-          {/* Only Fill has anything to reposition — a fitted photo is all there. */}
-          {curFit === 'cover' && (
-            <TouchableOpacity style={styles.tool} onPress={() => setAdjusting(true)} activeOpacity={0.85}>
-              <Ionicons name="move-outline" size={14} color={colors.textSecondary} />
-              <Text style={styles.toolText}>{t('post.slideAdjust')}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
 
       <Text style={styles.hint}>{t('post.slideOrderHint')}</Text>
 
@@ -583,27 +584,18 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   dot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'rgba(255,255,255,0.4)' },
   dotOn: { backgroundColor: '#fff' },
 
-  // Same corner, same shape as the single-photo composer's.
-  aspectBtn: {
-    position: 'absolute', left: SPACING.md, bottom: SPACING.md,
+  // One shape for all four corner controls; only the corner differs.
+  cornerBase: {
+    position: 'absolute',
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full,
     paddingVertical: 5, paddingHorizontal: SPACING.sm,
   },
-  aspectBtnText: { color: c.text, fontSize: 12, fontWeight: '700' },
+  cornerText: { color: c.text, fontSize: 12, fontWeight: '700' },
+  cornerTL: { top: SPACING.sm, left: SPACING.sm },
+  cornerBL: { bottom: SPACING.sm, left: SPACING.sm },
+  cornerBR: { bottom: SPACING.sm, right: SPACING.sm },
 
-  toolRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
-  tool: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingVertical: 7, paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full, backgroundColor: c.surfaceLight,
-    borderWidth: 1, borderColor: c.border,
-  },
-  // Selected inverts rather than taking the accent — brand is for terminal
-  // actions, and these are mode switches.
-  toolOn: { backgroundColor: c.text, borderColor: c.text },
-  toolText: { color: c.textSecondary, fontSize: 13, fontWeight: '700' },
-  toolTextOn: { color: c.background, fontWeight: '800' },
 
   hint: {
     color: c.textTertiary, fontSize: 12, fontWeight: '600',
