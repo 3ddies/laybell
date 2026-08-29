@@ -404,6 +404,7 @@ const PostCard = memo(function PostCard({
             avatarUrl={item.profiles?.avatar_url}
             duration={item.duration_seconds}
             isPlaying={audioActive}
+            trackId={item.id}
             onPlay={() => onPlayTrack(item)}
             onCoverPress={() => onExpandTrack(item)}
             onOptions={() => onOptions(item)}

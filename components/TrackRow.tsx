@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
 // expo-image (NOT RN Image): decodes at DISPLAYED size and memory-caches the
 // decoded bitmap, so covers paint instantly on re-appearance instead of
@@ -16,163 +16,101 @@ import HighlightText from './HighlightText';
 import BadgeEmblem from './BadgeEmblem';
 import { type ProfileBadgeFields } from '../lib/badges';
 import { useReduceMotion } from '../lib/a11y';
-import { useAudioPosition } from '../contexts/AudioContext';
+import { useNowPlaying } from '../contexts/AudioContext';
 
-// ── The playing card ─────────────────────────────────────────────────────────
-// Everything below renders ONLY on the row that is currently playing, which is
-// exactly one row in the whole app at a time. That is what makes it affordable:
-// these rows live in FlatLists on the home feed, Music, Explore, profiles,
-// playlists and Saved, so anything that ran per-row would run hundreds of times.
-// Mounting on isPlaying means one equaliser, one progress line, one sheen.
+// ── The playing card's waveform ──────────────────────────────────────────────
+// A strip of mirrored bars scrolling across the artwork while the track plays.
 //
-// It is also why PlayingProgress can subscribe to the audio position at all —
-// one subscriber re-rendering 4x/s, not one per visible card.
+// ⚠️ IT IS NOT REAL AUDIO. expo-audio exposes metering for RECORDING only —
+// there is no amplitude or FFT data on the playback side, and getting it would
+// mean a native module, which this project does not take without asking. So the
+// shape is hashed from the TRACK ID instead: every song gets its own bar pattern
+// AND its own scroll speed, identical every time you play it, different from the
+// song above it in the list. It is a per-song signature rather than a reading of
+// the audio, and it is honest about being decorative.
+//
+// The whole thing is ONE animated value. The strip holds the pattern TWICE and
+// slides left by exactly one pattern width before looping, so bar N+PATTERN is
+// by construction the same height as bar N and the wrap is seamless. No JS runs
+// per frame, and no per-bar animation exists to fall out of sync.
+const WAVE_H = 17;          // tallest a bar can be
+const BAR_W = 2;
+const PITCH = BAR_W + 1.5;
+const PATTERN = 12;         // bars per loop unit
+const WAVE_W = PITCH * 9;   // visible window — about nine bars over a 50pt cover
 
-// Bar heights are fractions of EQ_H, and the durations are deliberately
-// co-prime-ish so the four bars drift out of step and never pulse together.
-const EQ_H = 15;
-const EQ_BARS = [
-  { low: 0.30, high: 0.75, dur: 620 },
-  { low: 0.45, high: 1.00, dur: 470 },
-  { low: 0.25, high: 0.85, dur: 780 },
-  { low: 0.40, high: 0.95, dur: 560 },
-];
-
-function EqBar({ low, high, dur, color, animate }: { low: number; high: number; dur: number; color: string; animate: boolean }) {
-  const v = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!animate) return;
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(v, { toValue: 1, duration: dur, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.timing(v, { toValue: 0, duration: dur, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-    ]));
-    loop.start();
-    return () => { loop.stop(); };
-  }, [animate, v, dur]);
-
-  // Bottom-anchored growth WITHOUT animating height, which would be a layout
-  // pass per frame off the native driver. The bar is full height and sits flush
-  // with the container's bottom edge; sliding it DOWN pushes its top out of view
-  // and the clip does the rest, so the visible stub always grows from the floor.
-  const translateY = v.interpolate({
-    inputRange: [0, 1],
-    outputRange: [EQ_H * (1 - low), EQ_H * (1 - high)],
-  });
-
-  return (
-    <View style={{ width: 2.5, height: EQ_H, overflow: 'hidden', justifyContent: 'flex-end' }}>
-      <Animated.View
-        style={{ width: 2.5, height: EQ_H, borderRadius: 1.25, backgroundColor: color, transform: [{ translateY }] }}
-      />
-    </View>
-  );
+// FNV-1a over the id, then xorshift per bar. Cheap, stable, and spread enough
+// that neighbouring ids do not produce lookalike patterns.
+function waveFor(seed: string): number[] {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  const out: number[] = [];
+  let x = h || 1;
+  for (let i = 0; i < PATTERN; i++) {
+    x ^= x << 13; x >>>= 0; x ^= x >> 17; x ^= x << 5; x >>>= 0;
+    // Floor at 0.28 so no bar collapses to a dot, which reads as a gap rather
+    // than a quiet moment.
+    out.push(0.28 + (x % 1000) / 1000 * 0.72);
+  }
+  return out;
 }
 
-// Live progress along the bottom of the playing card. The fill is a solid bar
-// slid in from the left behind a clip rather than an animated width — same
-// native-driver reveal Scrubber uses, for the same reason.
-function PlayingProgress({ color, track }: { color: string; track: string }) {
-  const { positionMs, durationMs } = useAudioPosition();
-  const [w, setW] = useState(0);
-  const anim = useRef(new Animated.Value(0)).current;
-  const ratio = durationMs > 0 ? Math.max(0, Math.min(1, positionMs / durationMs)) : 0;
+function Waveform({ seed, color, playing }: { seed: string; color: string; playing: boolean }) {
+  const scroll = useRef(new Animated.Value(0)).current;
+  const dim = useRef(new Animated.Value(playing ? 1 : 0)).current;
+
+  const bars = useMemo(() => waveFor(seed), [seed]);
+  // Scroll speed is seeded too, so a slow song and a fast one do not animate at
+  // an identical rate just because they are both playing.
+  const dur = useMemo(() => 1500 + (bars.reduce((a, b) => a + b, 0) * 220) % 1100, [bars]);
 
   useEffect(() => {
-    // Before measurement, SEED instead of animating — otherwise opening a screen
-    // mid-song shows the line visibly sliding in from zero.
-    if (w === 0) { anim.setValue(ratio); return; }
-    Animated.timing(anim, { toValue: ratio, duration: 240, useNativeDriver: true }).start();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ratio, w]);
+    if (!playing) return;
+    const loop = Animated.loop(
+      Animated.timing(scroll, { toValue: 1, duration: dur, easing: Easing.linear, useNativeDriver: true }),
+    );
+    loop.start();
+    // Paused deliberately FREEZES rather than resets: the strip holds its
+    // position so resuming continues from where it stopped, the way the audio
+    // does. Restarting at zero would say the track went back to the beginning.
+    return () => { loop.stop(); };
+  }, [playing, scroll, dur]);
+
+  useEffect(() => {
+    Animated.timing(dim, {
+      toValue: playing ? 1 : 0, duration: 260, easing: Easing.out(Easing.quad), useNativeDriver: true,
+    }).start();
+  }, [playing, dim]);
 
   return (
-    <View
+    <Animated.View
       pointerEvents="none"
-      onLayout={(e) => setW(e.nativeEvent.layout.width)}
-      style={[styles0.progressTrack, { backgroundColor: track }]}
+      style={{
+        width: WAVE_W, height: WAVE_H, overflow: 'hidden', justifyContent: 'center',
+        opacity: dim.interpolate({ inputRange: [0, 1], outputRange: [0.42, 1] }),
+      }}
     >
       <Animated.View
         style={{
-          width: '100%', height: '100%', backgroundColor: color,
-          transform: [{ translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [-Math.max(1, w), 0] }) }],
+          flexDirection: 'row', alignItems: 'center', height: WAVE_H,
+          transform: [{ translateX: scroll.interpolate({ inputRange: [0, 1], outputRange: [0, -PATTERN * PITCH] }) }],
         }}
-      />
-    </View>
+      >
+        {/* Pattern twice over — the second copy is what the window shows while
+            the first scrolls out, which is what makes the loop invisible. */}
+        {[...bars, ...bars].map((h, i) => (
+          <View
+            key={i}
+            style={{
+              width: BAR_W, height: Math.round(WAVE_H * h), borderRadius: BAR_W / 2,
+              backgroundColor: color, marginRight: PITCH - BAR_W,
+            }}
+          />
+        ))}
+      </Animated.View>
+    </Animated.View>
   );
 }
-
-// The same sweeping sheen the Listen button uses, slowed right down. On a button
-// it is an invitation to press; here it is just a sign of life, so it crosses
-// once every several seconds instead of constantly.
-const SHEEN_MS = 1500;
-const SHEEN_REST_MS = 4200;
-
-function CardSheen({ animate, color }: { animate: boolean; color: string }) {
-  const [w, setW] = useState(0);
-  const sweep = useRef(new Animated.Value(0)).current;
-  const on = animate && w > 0;
-
-  useEffect(() => {
-    if (!on) return;
-    sweep.setValue(0);
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(sweep, { toValue: 1, duration: SHEEN_MS, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.delay(SHEEN_REST_MS),
-    ]));
-    loop.start();
-    // A stopped value holds where it was, which would strand the bar mid-card.
-    return () => { loop.stop(); sweep.setValue(0); };
-  }, [on, sweep]);
-
-  return (
-    <View
-      pointerEvents="none"
-      onLayout={(e) => setW(e.nativeEvent.layout.width)}
-      style={styles0.sheenClip}
-    >
-      {on && (
-        <Animated.View
-          style={[
-            styles0.sheen,
-            { backgroundColor: color },
-            { transform: [{ translateX: sweep.interpolate({ inputRange: [0, 1], outputRange: [-w * 0.5, w * 1.25] }) }, { rotate: '18deg' }] },
-          ]}
-        />
-      )}
-    </View>
-  );
-}
-
-// Palette-independent styles for the three flourishes. Kept out of makeStyles
-// because none of them need a theme colour — the colours are passed in from the
-// row so they track colors.text, and these are pure geometry.
-const styles0 = StyleSheet.create({
-  progressTrack: {
-    position: 'absolute', left: SPACING.md, right: SPACING.md, bottom: 6,
-    height: 2, borderRadius: 1, overflow: 'hidden',
-  },
-  // Clips the sheen to the card. It has to be a CHILD rather than overflow on
-  // the card itself: the row draws a shadow, and clipping the row's own layer
-  // makes iOS compute that shadow from the layer alpha instead of its bounds.
-  sheenClip: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: RADIUS.lg, overflow: 'hidden',
-  },
-  sheen: { position: 'absolute', top: -30, bottom: -30, width: 34 },
-});
-
-// The sheen always sweeps toward WHITE, in both themes — a dark sweep on a pale
-// card reads as a smudge passing over it, not a shine. What changes is how much
-// white is needed, and it is counter-intuitive: the LIGHT theme needs far more.
-//
-// A playing card is washed with the text colour, so on dark it sits near-black
-// and 13% white is already a bright bar. On light the same wash makes a grey
-// card sitting just under white, leaving almost no headroom — 13% moves it about
-// four values out of 255 and is invisible. 55% lifts it back to near-white,
-// which is what actually reads as a highlight crossing the card.
-const SHEEN_DARK = 'rgba(255,255,255,0.13)';
-const SHEEN_LIGHT = 'rgba(255,255,255,0.55)';
 
 function formatDuration(seconds?: number | null) {
   if (!seconds || seconds <= 0) return null;
@@ -184,6 +122,7 @@ function formatDuration(seconds?: number | null) {
 export default function TrackRow({
   caption, artist, username, duration, streams, cover, avatarUrl, badgeProfile, badgeOwnerId,
   isPlaying, onPlay, onCoverPress, onAddToPlaylist, onAvatarPress, onOptions, hidePlayButton, highlightQuery, spotlighted,
+  trackId,
 }: {
   caption: string; artist: string; username: string; duration?: number | null; streams?: number;
   cover?: string | null; avatarUrl?: string | null; hidePlayButton?: boolean;
@@ -200,8 +139,11 @@ export default function TrackRow({
   onOptions?: () => void;
   // When set (search results), matches in the caption + handle are highlighted.
   highlightQuery?: string;
+  // The track's own id. Optional so older call sites keep working, but without
+  // it the row cannot tell PAUSED from CLOSED — see the note below.
+  trackId?: string | null;
 }) {
-  const { colors, mode } = useTheme();
+  const { colors } = useTheme();
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const durationLabel = formatDuration(duration);
@@ -211,31 +153,46 @@ export default function TrackRow({
   const safeCover = guardPress(onCoverPress ?? onPlay)!;
   const safeAdd = guardPress(onAddToPlaylist);
   const safeAvatar = guardPress(onAvatarPress);
+  // PAUSED vs CLOSED.
+  //
+  // The `isPlaying` prop cannot tell these apart. Most callers derive it from a
+  // `playingId` that goes NULL the moment playback pauses, so a paused track's
+  // card fell all the way back to looking like any other row — the user had no
+  // way to see which song was still loaded.
+  //
+  // useNowPlaying is a useSyncExternalStore slice built for exactly this kind of
+  // hot list surface: it publishes { id, playing } and re-renders a subscriber
+  // only when one of those two flips, never on buffering or queue churn. The id
+  // survives a pause (it is currentTrack?.id), so comparing against our own
+  // trackId gives the state the prop could not.
+  const np = useNowPlaying();
+  const isCurrent = !!trackId && np.id === trackId;
+  const playing = trackId ? isCurrent && np.playing : isPlaying;
+  const paused = isCurrent && !np.playing;
+  // Both playing AND paused wear the highlight — being the loaded track is what
+  // the highlight means. Only the artwork says which of the two it is.
+  const active = playing || paused;
+
   // Card background derived from the active theme so the sound cards fit every
   // mode (grey card in Grey, white card in Light, dark card in Dark) instead of
   // a fixed near-black.
   //
-  // The playing row is marked by a wash of the TEXT colour rather than brand —
-  // it lifts on dark and deepens on light, so "this is the one playing" reads in
+  // The active row is marked by a wash of the TEXT colour rather than brand —
+  // it lifts on dark and deepens on light, so "this is the one loaded" reads in
   // every theme without spending the accent on it. Brand is for things you press.
-  const cardColors = (isPlaying
+  const cardColors = (active
     ? [colors.text + '1A', colors.surfaceLight]
     : [colors.surfaceLight, colors.surface]) as readonly [string, string];
-  // Reduce Motion turns off the equaliser and the sheen — both are decorative.
-  // The progress line stays: it is information, not decoration.
+  // Reduce Motion swaps the scrolling waveform for a static glyph. The paused
+  // state itself is unaffected — it is information, not decoration.
   const reduced = useReduceMotion();
-  const flourish = isPlaying && !reduced;
   return (
     <LinearGradient
       colors={cardColors}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={[styles.row, isPlaying && styles.rowActive]}
+      style={[styles.row, active && styles.rowActive]}
     >
-      {/* Sheen first so it sits UNDER everything — it is a highlight passing
-          across the card, not a film over the artwork and text. */}
-      {flourish && <CardSheen animate color={mode === 'light' ? SHEEN_LIGHT : SHEEN_DARK} />}
-
       {/* Cover art (left) — tap to expand to the now-playing screen.
           Long-press opens the options sheet from ANY part of the row. */}
       <TouchableOpacity style={styles.coverWrap} onPress={safeCover} onLongPress={onOptions}>
@@ -246,19 +203,20 @@ export default function TrackRow({
             <Ionicons name="musical-notes" size={18} color={colors.primary} />
           </LinearGradient>
         )}
-        {/* A dancing equaliser rather than a static note: on a card that IS the
-            thing currently making sound, a frozen glyph was the one detail
-            saying nothing is happening. Falls back to the note under Reduce
-            Motion so the playing row is still marked. */}
-        {isPlaying && (
+        {/* The artwork carries the whole play/pause distinction. Playing: the
+            song's own waveform scrolling across. Paused: the same waveform,
+            frozen where it stopped and dimmed, with a pause glyph beside it —
+            visibly held rather than visibly over. */}
+        {active && (
           <View style={styles.coverOverlayActive}>
             {reduced ? (
-              <Ionicons name="musical-notes" size={16} color={colors.text} />
+              <Ionicons name={playing ? 'musical-notes' : 'pause'} size={16} color={colors.text} />
             ) : (
-              <View style={styles.eq}>
-                {EQ_BARS.map((b, i) => (
-                  <EqBar key={i} low={b.low} high={b.high} dur={b.dur} color={colors.text} animate />
-                ))}
+              <Waveform seed={trackId || caption || 'laybell'} color={colors.text} playing={playing} />
+            )}
+            {paused && !reduced && (
+              <View style={styles.pauseChip}>
+                <Ionicons name="pause" size={9} color={colors.background} />
               </View>
             )}
           </View>
@@ -280,8 +238,8 @@ export default function TrackRow({
 
       {/* Play / pause — borderless filled-circle glyph, same as Today's Pick */}
       {!hidePlayButton && (
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel={isPlaying ? t('a11y.pause') : t('a11y.play')} onPress={safePlay} onLongPress={onOptions} activeOpacity={0.8} hitSlop={6}>
-          <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={44} color={colors.text} />
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={playing ? t('a11y.pause') : t('a11y.play')} onPress={safePlay} onLongPress={onOptions} activeOpacity={0.8} hitSlop={6}>
+          <Ionicons name={playing ? 'pause-circle' : 'play-circle'} size={44} color={colors.text} />
         </TouchableOpacity>
       )}
 
@@ -304,10 +262,6 @@ export default function TrackRow({
         </TouchableOpacity>
       )}
 
-      {/* Live position along the foot of the card. Last child so it draws over
-          the wash, and inset to the card's own padding so it never has to fight
-          the corner radius. */}
-      {isPlaying && <PlayingProgress color={colors.text} track={colors.text + '24'} />}
     </LinearGradient>
   );
 }
@@ -342,7 +296,15 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background + '8C',
   },
-  eq: { flexDirection: 'row', alignItems: 'flex-end', gap: 2.5, height: EQ_H },
+  // Small pause badge tucked into the artwork's corner while the track is held.
+  // The dimmed waveform alone reads as "quieter", not "stopped" — this is the
+  // part that actually says paused.
+  pauseChip: {
+    position: 'absolute', right: 3, bottom: 3,
+    width: 14, height: 14, borderRadius: 7,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.text,
+  },
   info: { flex: 1 },
   // The song name is the row's headline and its primary tap target (the whole
   // info column plays the track), so it carries real weight; the handle and the

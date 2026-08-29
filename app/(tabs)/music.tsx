@@ -1181,6 +1181,7 @@ export default function MusicScreen() {
               avatarUrl={item.profiles?.avatar_url}
               highlightQuery={item.id === searchTopId ? searchQuery : undefined}
               isPlaying={playingId === item.id}
+              trackId={item.id}
               onPlay={() => play(item.id, item.media_url, item.caption, item.profiles?.display_name, item.cover_url)}
               onCoverPress={() => { play(item.id, item.media_url, item.caption, item.profiles?.display_name, item.cover_url); openNowPlaying(); }}
               onAvatarPress={() => router.push(`/profile/${item.user_id}`)}
@@ -1336,6 +1337,7 @@ export default function MusicScreen() {
                     cover={track.cover_url}
                     avatarUrl={track.profiles?.avatar_url}
                     isPlaying={playingId === track.id}
+                    trackId={track.id}
                     onPlay={() => playQueue(trendingQueue(), i)}
                     onCoverPress={() => { playQueue(trendingQueue(), i); openNowPlaying(); }}
                     onAvatarPress={() => router.push(`/profile/${track.user_id}`)}
@@ -1410,6 +1412,7 @@ export default function MusicScreen() {
                       cover={track.cover_url}
                       avatarUrl={track.profiles?.avatar_url}
                       isPlaying={playingId === track.id}
+                      trackId={track.id}
                       onPlay={() => playQueue(top20Queue(), i)}
                       onCoverPress={() => { playQueue(top20Queue(), i); openNowPlaying(); }}
                       onAvatarPress={() => router.push(`/profile/${track.user_id}`)}
@@ -1726,6 +1729,7 @@ export default function MusicScreen() {
                   cover={item.posts.cover_url}
                   avatarUrl={item.posts.profiles?.avatar_url}
                   isPlaying={playingId === item.post_id}
+                  trackId={item.post_id}
                   onPlay={() => playQueue(playlistQueue(), index)}
                   onCoverPress={() => { playQueue(playlistQueue(), index); openNowPlaying(); }}
                   onAvatarPress={() => router.push(`/profile/${item.posts.user_id}`)}
@@ -1787,6 +1791,7 @@ export default function MusicScreen() {
               cover={item.posts?.cover_url}
               avatarUrl={item.posts?.profiles?.avatar_url}
               isPlaying={playingId === item.posts?.id}
+              trackId={item.posts?.id}
               hidePlayButton
               onPlay={() => play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url)}
               onCoverPress={() => { play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url); openNowPlaying(); }}
@@ -1847,6 +1852,7 @@ export default function MusicScreen() {
               cover={item.posts?.cover_url}
               avatarUrl={item.posts?.profiles?.avatar_url}
               isPlaying={playingId === item.posts?.id}
+              trackId={item.posts?.id}
               hidePlayButton
               onPlay={() => playQueue(likedQueue(), index)}
               onCoverPress={() => { playQueue(likedQueue(), index); openNowPlaying(); }}
@@ -1927,6 +1933,7 @@ export default function MusicScreen() {
                   cover={item.posts.cover_url}
                   avatarUrl={item.posts.profiles?.avatar_url}
                   isPlaying={playingId === item.posts.id}
+                  trackId={item.posts.id}
                   onPlay={() => playCommunityTrack(index)}
                   onCoverPress={() => { playCommunityTrack(index); openNowPlaying(); }}
                   onAvatarPress={() => router.push(`/profile/${item.posts.user_id}`)}

@@ -166,6 +166,7 @@ export default function PlaylistScreen() {
                 cover={item.posts?.cover_url}
                 avatarUrl={item.posts?.profiles?.avatar_url}
                 isPlaying={currentTrack?.id === item.posts?.id && isPlaying}
+                trackId={item.posts?.id}
                 onPlay={() => playFrom(index)}
                 onCoverPress={() => { playFrom(index); expand(); }}
                 onAvatarPress={() => router.push(`/profile/${item.posts?.user_id}`)}

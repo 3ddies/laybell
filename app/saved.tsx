@@ -151,6 +151,7 @@ export default function SavedScreen() {
                 badgeProfile={item.posts?.profiles}
                 badgeOwnerId={item.posts?.user_id}
                 isPlaying={playingId === item.posts?.id}
+                trackId={item.posts?.id}
                 hidePlayButton
                 onPlay={() => play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url)}
                 onCoverPress={() => { play(item.posts?.id, item.posts?.media_url, item.posts?.caption, item.posts?.profiles?.display_name, item.posts?.cover_url); expand(); }}

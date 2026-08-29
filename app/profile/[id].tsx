@@ -409,6 +409,7 @@ export default function PublicProfileScreen() {
             badgeOwnerId={id}
             spotlighted={spotlightIds.has(track.id)}
             isPlaying={playingId === track.id}
+            trackId={track.id}
             onPlay={() => playQueue(queue, i)}
             onCoverPress={() => { playQueue(queue, i); expand(); }}
           />
