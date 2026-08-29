@@ -1,7 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, PanResponder, Animated, ScrollView,
-  type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,12 +17,15 @@ import { useTranslation } from '../contexts/LanguageContext';
 // screen mounts one cropper, on the newest item, so everything picked before it
 // published at whatever centred cover crop it happened to land on.
 //
-// ── Why browsing and cropping are separate ──────────────────────────────────
-// Both want the same one-finger drag, so they cannot share a surface. The pager
-// wins the stage (swiping between photos is what you do most), and repositioning
-// moves behind Adjust, which opens the cropper over the top with paging gone.
-// The pager's pages are NON-INTERACTIVE croppers, so each one still shows its
-// real saved crop without competing for the swipe.
+// ── Why nothing here is a ScrollView ────────────────────────────────────────
+// Browsing, reordering and cropping all want the same one-finger drag. A native
+// pager OWNS the touch it receives, so a long press inside one can never take
+// the gesture back — every attempt to arbitrate between them on this screen has
+// failed. So the stage is driven by ONE responder that decides for itself: move
+// first and it pages, hold first and it reorders. Cropping stays out of the
+// contest entirely, behind Adjust, which opens over the top with paging gone.
+// The stage pages are NON-INTERACTIVE croppers, so each still shows its real
+// saved crop without competing for anything.
 //
 // ⚠️ NO COLOUR FILTERS, and that is a platform limit rather than a decision.
 // The only image processing this project has is expo-image-manipulator, which
@@ -54,6 +56,9 @@ const TILE = 58;
 // can actually land a thumb on.
 const HOLD_MS = 140;
 const HOLD_SLOP = 12;
+// How far the finger travels on the STAGE to move a slide one position. A full
+// frame width per step would mean dragging a whole screen to move one place.
+const STAGE_STEP = 76;
 
 const SlideArranger = forwardRef<SlideArrangerHandle, {
   slides: ArrangerSlide[];
@@ -70,7 +75,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   const [index, setIndex] = useState(0);
   const [adjusting, setAdjusting] = useState(false);
   const cropperRef = useRef<MediaCropperHandle>(null);
-  const pagerRef = useRef<ScrollView>(null);
+  // The stage's own transform. pageX is the strip offset (-index * frameW);
+  // stageScale dips while a slide is held, so picking one up has a moment.
+  const pageX = useRef(new Animated.Value(0)).current;
+  const stageScale = useRef(new Animated.Value(1)).current;
 
   // Anything the gesture handlers read lives behind a ref: PanResponder.create
   // runs ONCE and closes over its first render forever.
@@ -106,7 +114,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   const goTo = (i: number) => {
     const clamped = Math.max(0, Math.min(slidesRef.current.length - 1, i));
     setIndex(clamped);
-    pagerRef.current?.scrollTo({ x: clamped * frameW, animated: true });
+    Animated.spring(pageX, { toValue: -clamped * frameW, useNativeDriver: true, friction: 12, tension: 140 }).start();
   };
 
   const removeAt = (i: number) => {
@@ -116,8 +124,8 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     onChangeRef.current(next);
     const to = Math.max(0, Math.min(next.length - 1, i > next.length - 1 ? next.length - 1 : i));
     setIndex(to);
-    // Without this the pager keeps its old offset and lands on the wrong photo.
-    requestAnimationFrame(() => pagerRef.current?.scrollTo({ x: to * frameW, animated: false }));
+    // Without this the stage keeps its old offset and lands on the wrong photo.
+    pageX.setValue(-to * frameW);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
@@ -152,6 +160,9 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   const [dragUri, setDragUri] = useState<string | null>(null);
   const dragUriRef = useRef<string | null>(null);
   const dragX = useRef(new Animated.Value(0)).current;
+  // What both the stage and the strip render: the live drag order while a slide
+  // is held, the committed array otherwise.
+  const view = order ?? slides;
 
   const stripRef = useRef<View>(null);
   const stripX = useRef(0);
@@ -174,6 +185,44 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     dragX.setValue(fingerX - (slot * pitchRef.current + TILE / 2));
   };
 
+  // ── Shared by both surfaces ─────────────────────────────────────────────────
+  /** Take hold of a slide. Also MOVES THE SELECTION to it, so the row never
+   *  shows two highlights — the one you are holding is the one you are on. */
+  const beginDrag = (slot: number, snapStage: boolean) => {
+    const list = slidesRef.current.slice();
+    const i = Math.max(0, Math.min(list.length - 1, slot));
+    orderRef.current = list;
+    setOrder(list);
+    dragUriRef.current = list[i].uri;
+    setDragUri(list[i].uri);
+    setIndex(i);
+    if (snapStage) Animated.spring(pageX, { toValue: -i * frameW, useNativeDriver: true, friction: 12, tension: 140 }).start();
+    Animated.spring(stageScale, { toValue: 0.94, useNativeDriver: true, friction: 9, tension: 160 }).start();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    return i;
+  };
+
+  /** Trade the held slide into `slot`, if it isn't already there. */
+  const swapTo = (slot: number): number => {
+    const uri = dragUriRef.current;
+    const list = orderRef.current;
+    if (!uri || !list) return -1;
+    const held = list.findIndex((s) => s.uri === uri);
+    const to = Math.max(0, Math.min(list.length - 1, slot));
+    if (held < 0 || to === held) return held;
+    const next = list.slice();
+    const tmp = next[held]; next[held] = next[to]; next[to] = tmp;
+    orderRef.current = next;
+    setOrder(next);
+    setIndex(to);
+    // The stage keeps showing the slide you are holding, which has just moved to
+    // a different page. Jumping without animation means it does not appear to
+    // move at all — only the row beneath it changes.
+    pageX.setValue(-to * frameW);
+    Haptics.selectionAsync().catch(() => {});
+    return to;
+  };
+
   const endDrag = () => {
     clearHold();
     const final = orderRef.current;
@@ -183,13 +232,11 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     setDragUri(null);
     dragX.setValue(0);
     setOrder(null);
+    Animated.spring(stageScale, { toValue: 1, useNativeDriver: true, friction: 9, tension: 160 }).start();
     if (final && uri) {
       onChangeRef.current(final);
       const landed = final.findIndex((s) => s.uri === uri);
-      if (landed >= 0) {
-        setIndex(landed);
-        requestAnimationFrame(() => pagerRef.current?.scrollTo({ x: landed * frameW, animated: false }));
-      }
+      if (landed >= 0) { setIndex(landed); pageX.setValue(-landed * frameW); }
     }
   };
 
@@ -202,14 +249,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
       startIdx.current = idxAtRef.current(e.nativeEvent.pageX);
       clearHold();
       holdTimer.current = setTimeout(() => {
-        const list = slidesRef.current.slice();
-        const i = Math.max(0, Math.min(list.length - 1, startIdx.current));
-        orderRef.current = list;
-        setOrder(list);
-        dragUriRef.current = list[i].uri;
-        setDragUri(list[i].uri);
+        // Selecting the held tile is what keeps a single highlight on screen —
+        // and it brings the stage to the photo you are about to move.
+        const i = beginDrag(startIdx.current, true);
         trackFinger(startX.current, i);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       }, HOLD_MS);
     },
     onPanResponderMove: (_e, g) => {
@@ -221,18 +264,9 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
       const fingerX = startX.current + g.dx;
       const held = list.findIndex((s) => s.uri === uri);
       const slot = Math.max(0, Math.min(list.length - 1, Math.floor(fingerX / pitchRef.current)));
-
-      if (slot !== held && held >= 0) {
-        // TRADE PLACES. Both tiles keep a slot, so the row is never short one.
-        const next = list.slice();
-        const tmp = next[held]; next[held] = next[slot]; next[slot] = tmp;
-        orderRef.current = next;
-        setOrder(next);
-        Haptics.selectionAsync().catch(() => {});
-        trackFinger(fingerX, slot);
-        return;
-      }
-      trackFinger(fingerX, held >= 0 ? held : slot);
+      // TRADE PLACES. Both tiles keep a slot, so the row is never short one.
+      const landed = slot !== held ? swapTo(slot) : held;
+      trackFinger(fingerX, landed >= 0 ? landed : slot);
     },
     onPanResponderRelease: (e) => {
       if (dragUriRef.current == null) {
@@ -247,24 +281,81 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   const goToRef = useRef(goTo); goToRef.current = goTo;
   useEffect(() => () => clearHold(), []);
 
-  const onPagerEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const i = Math.round(e.nativeEvent.contentOffset.x / Math.max(1, frameW));
-    if (i !== indexRef.current) setIndex(Math.max(0, Math.min(slides.length - 1, i)));
-  };
+  // ── The stage's own responder ───────────────────────────────────────────────
+  // Move first and it pages; hold first and it reorders. One piece of code
+  // decides which, so there is nothing to arbitrate.
+  //
+  // Reordering from here steps by STAGE_STEP rather than a full frame width:
+  // dragging a whole screen per position would be unusable, and the strip below
+  // is where the result is legible anyway.
+  const stageStart = useRef(0);
+  const stageOffset = useRef(0);
+  const stageIdx = useRef(0);
+  const stagePan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => dragUriRef.current == null,
+    onPanResponderGrant: (e) => {
+      stageStart.current = e.nativeEvent.pageX;
+      stageOffset.current = -indexRef.current * frameW;
+      stageIdx.current = indexRef.current;
+      moved.current = false;
+      clearHold();
+      holdTimer.current = setTimeout(() => {
+        stageIdx.current = beginDrag(indexRef.current, false);
+      }, HOLD_MS);
+    },
+    onPanResponderMove: (_e, g) => {
+      if (Math.abs(g.dx) > HOLD_SLOP || Math.abs(g.dy) > HOLD_SLOP) moved.current = true;
+      if (dragUriRef.current) {
+        const to = swapTo(stageIdx.current + Math.round(g.dx / STAGE_STEP));
+        if (to >= 0 && to !== stageIdx.current) {
+          // Rebase so the next step is measured from where it landed, not from
+          // where the finger began.
+          stageStart.current += (to - stageIdx.current) * STAGE_STEP;
+          stageIdx.current = to;
+        }
+        return;
+      }
+      if (moved.current) clearHold();
+      pageX.setValue(stageOffset.current + g.dx);
+    },
+    onPanResponderRelease: (_e, g) => {
+      clearHold();
+      if (dragUriRef.current) { endDrag(); return; }
+      // Snap. Velocity counts so a flick pages without having to travel half a
+      // screen first.
+      const n = slidesRef.current.length;
+      const raw = -(stageOffset.current + g.dx) / Math.max(1, frameW);
+      const bias = Math.abs(g.vx) > 0.35 ? (g.vx < 0 ? 0.35 : -0.35) : 0;
+      goToRef.current(Math.max(0, Math.min(n - 1, Math.round(raw + bias))));
+    },
+    onPanResponderTerminate: () => { clearHold(); if (dragUriRef.current) endDrag(); },
+  })).current;
+
+  // Keep the stage on the selected slide when something else moves it (a
+  // thumbnail tap, a deletion) and after the first layout.
+  useEffect(() => {
+    if (dragUriRef.current) return;
+    pageX.setValue(-Math.min(index, Math.max(0, slides.length - 1)) * frameW);
+  }, [index, frameW, slides.length, pageX]);
 
   return (
     <View style={styles.root}>
-      {/* ── Stage: swipe between photos ─────────────────────────────────────── */}
+      {/* ── Stage: swipe to browse, hold to reorder ──────────────────────────
+          Hand-driven rather than a paging ScrollView, and that is the enabling
+          change rather than a preference. A native pager OWNS the touch, so a
+          long press inside it can never take the gesture back — the drag would
+          have to wrestle the scroll for it, which is the arbitration that has
+          failed on this screen every time it has been tried. One responder that
+          decides for itself can do both: move first and it pages, hold first and
+          it reorders. Nothing has to be negotiated. */}
       <View style={{ width: frameW, height: frameH }}>
-        <ScrollView
-          ref={pagerRef}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={onPagerEnd}
-          scrollEventThrottle={16}
-        >
-          {slides.map((s) => (
+      <Animated.View
+        style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, { transform: [{ scale: stageScale }] }]}
+        {...stagePan.panHandlers}
+      >
+        <Animated.View style={{ flexDirection: 'row', width: frameW * Math.max(1, view.length), height: frameH, transform: [{ translateX: pageX }] }}>
+          {view.map((s) => (
             <View key={s.uri} style={{ width: frameW, height: frameH, backgroundColor: '#000' }}>
               {s.type === 'video' ? (
                 <ExpoImage
@@ -281,8 +372,8 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
                   cachePolicy="memory-disk"
                 />
               ) : (
-                // A cropper with its gestures off: shows the real saved crop and
-                // leaves the swipe alone.
+                // A cropper with its gestures off: shows the real saved crop
+                // without competing for the drag.
                 <MediaCropper
                   key={`${s.uri}-page`}
                   uri={s.uri}
@@ -297,9 +388,12 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
               )}
             </View>
           ))}
-        </ScrollView>
+        </Animated.View>
+      </Animated.View>
 
-        {/* Delete the photo you are looking at. */}
+        {/* Delete the photo you are looking at. Deliberately a SIBLING of the
+            pan surface, not a child: that responder claims every touch inside
+            itself, so a button in there could never fire. */}
         {slides.length > 1 && (
           <TouchableOpacity
             style={styles.stageClose}
