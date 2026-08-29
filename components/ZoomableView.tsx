@@ -29,7 +29,8 @@ function dampGesture(raw: number): number {
 }
 
 export default function ZoomableView({
-  width, height, active = true, style, onZoomChange, onGesture, resetOnRelease = false, children,
+  width, height, active = true, style, onZoomChange, onGesture, resetOnRelease = false,
+  simultaneousHandlers, children,
 }: {
   width: number;
   height: number;
@@ -48,6 +49,15 @@ export default function ZoomableView({
    *  is a state nobody asked for. A peek that lets go is the right feed gesture,
    *  and it keeps the pan handler disabled entirely. */
   resetOnRelease?: boolean;
+  /** Handlers this zoom should be allowed to run ALONGSIDE — in practice the
+   *  scrollable it lives inside.
+   *
+   *  Without it, a scroll view that claims the touch CANCELS the pinch, and a
+   *  cancelled pinch under resetOnRelease springs straight back to fit: the zoom
+   *  visibly starts and is yanked away. Declaring them simultaneous lets the
+   *  pinch survive; whether the scroll itself should also move is a separate
+   *  question the host answers with scrollEnabled. */
+  simultaneousHandlers?: React.Ref<unknown> | React.Ref<unknown>[];
   children: ReactNode;
 }) {
   const baseScale = useRef(new Animated.Value(1)).current;
@@ -207,6 +217,15 @@ export default function ZoomableView({
     }
   };
 
+  // The two internal handlers always run together; anything the host named is
+  // appended, so a surrounding scroll view can be listed without the two losing
+  // sight of each other.
+  const extra = simultaneousHandlers
+    ? (Array.isArray(simultaneousHandlers) ? simultaneousHandlers : [simultaneousHandlers])
+    : [];
+  const panSimul = [pinchRef, ...extra] as React.Ref<unknown>[];
+  const pinchSimul = [panRef, ...extra] as React.Ref<unknown>[];
+
   return (
     <PanGestureHandler
       ref={panRef}
@@ -214,14 +233,14 @@ export default function ZoomableView({
       minPointers={1}
       maxPointers={1}
       avgTouches
-      simultaneousHandlers={pinchRef}
+      simultaneousHandlers={panSimul as never}
       onGestureEvent={onPanEvent}
       onHandlerStateChange={onPanState}
     >
       <Animated.View style={style}>
         <PinchGestureHandler
           ref={pinchRef}
-          simultaneousHandlers={panRef}
+          simultaneousHandlers={pinchSimul as never}
           onGestureEvent={onPinchEvent}
           onHandlerStateChange={onPinchState}
         >

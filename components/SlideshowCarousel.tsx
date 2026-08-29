@@ -1,8 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, ScrollView, TouchableOpacity, StyleSheet, Text,
+  View, TouchableOpacity, StyleSheet, Text,
   type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
+// Gesture-handler's ScrollView, NOT React Native's. Identical props and methods
+// (it is RN's, native-wrapped), but its ref is a gesture handler that the pinch
+// on each slide can name as simultaneous. With RN's plain ScrollView the scroll
+// claiming the touch CANCELS the pinch, and a cancelled pinch springs straight
+// back — the zoom started and was yanked away half a beat later.
+import { ScrollView } from 'react-native-gesture-handler';
 import { Image as ExpoImage } from 'expo-image';
 import AppVideo from './AppVideo';
 import { Ionicons } from '@expo/vector-icons';
@@ -190,6 +196,10 @@ export default function SlideshowCarousel({
               height={height}
               style={{ width, height }}
               resetOnRelease
+              // Named so the carousel's scroll cannot cancel this pinch. The
+              // scroll is separately switched off below so the slide does not
+              // also page while two fingers are down.
+              simultaneousHandlers={scrollRef}
               onGesture={() => { gestureSincePress.current = true; }}
               onZoomChange={(z) => { setZooming(z); zoomCbRef.current?.(z); }}
             >
