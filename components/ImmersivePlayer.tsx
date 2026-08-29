@@ -313,20 +313,25 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
 // The layer is visible only while the song is actually PLAYING — a paused song
 // with notes still rising would be saying the opposite of the truth. It unmounts
 // with the screen, so nothing animates behind a closed player.
-const NOTE_COUNT = 5;
+const NOTE_COUNT = 4;
 const NOTE_GLYPHS = ['musical-note', 'musical-notes'] as const;
-// The corner box, in fractions of the screen. X is the right-hand strip; the
-// rise is short and stops well below the middle so the notes stay a corner
-// flourish rather than a field of them.
-const NOTE_X_MIN = 0.68;
-const NOTE_X_SPAN = 0.20;
-const NOTE_BOTTOM = 0.32;
-const NOTE_RISE = 0.19;
-// Sitting this low means sitting under the heavy part of the scrim, so the peak
-// opacity is higher than it looks — roughly 40% of it survives the black above
-// the transport. Keeping them under the scrim is still right: it dims exactly
-// the notes that stray behind the title, and nothing else.
-const NOTE_PEAK = 0.72;
+// A near-vertical COLUMN, not a spread. The x positions vary by about ten
+// pixels in total — enough that the notes are not stacked on one pixel like a
+// conveyor belt, little enough that the eye reads a single rising line. There is
+// no sideways drift at all; the wander is what made them feel like they were
+// taking over the artwork.
+const NOTE_X_MIN = 0.845;
+const NOTE_X_SPAN = 0.035;
+const NOTE_BOTTOM = 0.34;
+const NOTE_RISE = 0.17;
+// Faint on purpose. This sits under the scrim, which eats about a third of it,
+// so what actually lands on screen is around a quarter opacity — a suggestion of
+// movement in the corner rather than something you look at.
+const NOTE_PEAK = 0.4;
+// Each note is invisible for the last 40% of its cycle. Without that dead time
+// four notes on a ~5s loop are all in flight at once and a single column becomes
+// a continuous stream; the gap keeps it to two or three, arriving irregularly.
+const NOTE_LIFE = 0.6;
 
 function FloatingNotes({ playing, w, h }: { playing: boolean; w: number; h: number }) {
   // Pausing has to STOP the notes, but stopping a loop leaves every note frozen
@@ -363,14 +368,11 @@ function FloatingNote({ index, w, h }: { index: number; w: number; h: number }) 
   const f = (index * 2654435761) % 1000 / 1000;      // 0..1, well spread
   const g = (index * 40503) % 997 / 997;
   const startX = NOTE_X_MIN + NOTE_X_SPAN * f;        // fraction of the width
-  const drift = (g < 0.5 ? -1 : 1) * (6 + 12 * g);    // sideways sway, px
-  const dur = 4200 + Math.round(2600 * g);            // 4.2s–6.8s
+  const dur = 4600 + Math.round(2200 * g);            // 4.6s–6.8s
   // Flat stagger, NOT one scaled to this note's duration — scaling it meant the
   // slowest note also waited longest, and the corner took seven seconds to fill.
-  // A fixed step gets there in under three, which is about how long someone looks
-  // at the screen before deciding whether it is alive.
-  const delay = index * 700;
-  const size = 13 + Math.round(9 * f);
+  const delay = index * 1100;
+  const size = 11 + Math.round(5 * f);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -390,12 +392,19 @@ function FloatingNote({ index, w, h }: { index: number; w: number; h: number }) 
         position: 'absolute',
         left: startX * w,
         bottom: h * NOTE_BOTTOM,
-        opacity: t.interpolate({ inputRange: [0, 0.14, 0.7, 1], outputRange: [0, NOTE_PEAK, NOTE_PEAK * 0.8, 0] }),
+        // Fades in, holds, and is gone by NOTE_LIFE — the rest of the cycle is
+        // the gap. The rise finishes at the same instant, so nothing is moving
+        // while it is invisible and the restart at the bottom is never seen.
+        opacity: t.interpolate({
+          inputRange: [0, NOTE_LIFE * 0.22, NOTE_LIFE * 0.66, NOTE_LIFE, 1],
+          outputRange: [0, NOTE_PEAK, NOTE_PEAK * 0.85, 0, 0],
+        }),
         transform: [
-          { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [0, -h * NOTE_RISE] }) },
-          { translateX: t.interpolate({ inputRange: [0, 0.35, 0.7, 1], outputRange: [0, drift, -drift * 0.6, drift * 0.25] }) },
-          { scale: t.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.6, 1, 1.08] }) },
-          { rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['-10deg', '12deg'] }) },
+          { translateY: t.interpolate({ inputRange: [0, NOTE_LIFE, 1], outputRange: [0, -h * NOTE_RISE, -h * NOTE_RISE] }) },
+          // No translateX. A straight rise is the whole point — any sway at all
+          // and four notes stop reading as one line and start reading as a spread.
+          { scale: t.interpolate({ inputRange: [0, NOTE_LIFE * 0.3, 1], outputRange: [0.82, 1, 1] }) },
+          { rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['-5deg', '5deg'] }) },
         ],
       }}
     >
