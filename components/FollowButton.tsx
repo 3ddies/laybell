@@ -1,8 +1,11 @@
 import { Text, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+// The app's one celebratory gradient — shared, not copied, so the Listen pill,
+// the sign-in buttons and this stay identical.
+import { LISTEN_FILL } from './ListenButton';
 import { useFollow } from '../contexts/FollowContext';
-import { RADIUS, SPACING, GRADIENTS, type ThemePalette } from '../constants/theme';
+import { RADIUS, SPACING, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { selection } from '../lib/haptics';
@@ -17,10 +20,11 @@ import { selection } from '../lib/haptics';
 //                   key rather than a flat rectangle. Most common state, so it
 //                   sets the feed's rhythm.
 //   • Follow back — they already followed YOU. Rarer, warmer, and the highest-
-//                   intent tap in the app, so it gets the BRAND gradient. Orange
-//                   returns here deliberately: it appears occasionally, as a
-//                   little "they like you" moment, not as the wall of orange
-//                   that made every Follow shout.
+//                   intent tap in the app, so it gets the app's one celebratory
+//                   gradient — the same gold-to-orange the Listen pill and the
+//                   sign-in buttons wear. Warmth returns here deliberately: it
+//                   appears occasionally, as a little "they like you" moment,
+//                   not as the wall of orange that made every Follow shout.
 //   • Following   — already connected, one way. Quiet outline; nothing to do.
 //   • Friends     — mutual. Same quiet weight as Following (there is no action
 //                   left) but marked as its own thing with the people icon and a
@@ -88,10 +92,19 @@ export default function FollowButton({ userId, style }: { userId?: string | null
         accessibilityRole="button"
         accessibilityLabel={label}
       >
+        {/* Follow back wears the LISTEN-MODE fill (owner, 2026-08-28) rather than
+            GRADIENTS.primary. Two reasons it is the better pill: it is gold-led
+            instead of red-led, so it reads as an invitation rather than a
+            warning, and it now matches the Listen pill and the sign-in buttons —
+            the app has ONE celebratory gradient instead of two similar oranges
+            nobody could tell apart.
+            The angle goes diagonal with it, matching those; the solid Follow
+            state keeps its vertical fall, which is what makes a plain pill look
+            lit rather than tinted. */}
         <LinearGradient
-          colors={(isFollow ? solidStops : GRADIENTS.primary) as any}
+          colors={(isFollow ? solidStops : LISTEN_FILL) as any}
           start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
+          end={isFollow ? { x: 0, y: 1 } : { x: 1, y: 1 }}
           style={styles.fill}
         >
           {inner}

@@ -404,32 +404,32 @@ export default function MessagesScreen() {
         ListEmptyComponent={
           q ? (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
-                <Ionicons name="search-outline" size={32} color={colors.primary} />
+              <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.emptyIcon}>
+                <Ionicons name="search-outline" size={32} color={colors.text} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>{t('messages.empty.noChatsFound')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.noChatsFoundSub', { query: searchQuery.trim() })}</Text>
             </View>
           ) : tab === 'friends' ? (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
-                <Ionicons name="people-outline" size={34} color={colors.primary} />
+              <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.emptyIcon}>
+                <Ionicons name="people-outline" size={34} color={colors.text} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>{t('messages.empty.friendsTitle')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.friendsSub')}</Text>
             </View>
           ) : tab === 'followers' ? (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
-                <Ionicons name="person-outline" size={34} color={colors.primary} />
+              <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.emptyIcon}>
+                <Ionicons name="person-outline" size={34} color={colors.text} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>{t('messages.empty.followersTitle')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.followersSub')}</Text>
             </View>
           ) : (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={[colors.primary + '24', colors.primary + '12']} style={styles.emptyIcon}>
-                <Ionicons name="chatbubbles-outline" size={36} color={colors.primary} />
+              <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.emptyIcon}>
+                <Ionicons name="chatbubbles-outline" size={36} color={colors.text} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>{t('messages.empty.title')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.sub')}</Text>
