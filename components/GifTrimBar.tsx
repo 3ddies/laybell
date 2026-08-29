@@ -46,13 +46,19 @@ import { useTheme } from '../contexts/ThemeContext';
 // trade: the point of zooming is finer CONTROL, and the video preview above the
 // bar is what shows the actual frame.
 //
-// COLOUR. The selection window, its grips and the zoom slider are colors.text —
-// white on dark, near-black on light — not the brand orange they used to be.
-// Owner's call, and it earns it twice over: these sit on ARBITRARY VIDEO FRAMES,
-// where a mid-tone orange can land on orange content and vanish, while the
-// theme's strongest neutral is the one colour guaranteed to separate from the
-// surface behind it. It also stops the trim controls competing with the Create
-// button, which is the only thing on this screen that should be reading as brand.
+// COLOUR, and it is per-theme rather than one token, on the owner's direction
+// after seeing both:
+//
+//   • DARK  — selection window and grips are colors.text, i.e. white. These sit
+//             on ARBITRARY VIDEO FRAMES, and a mid-tone brand orange can land on
+//             orange content and vanish; white always separates.
+//   • LIGHT — the selection goes back to brand orange. Near-black there reads as
+//             heavy and muddy against the pale surfaces and the thumbnails, and
+//             orange has no trouble being seen on a light ground.
+//
+// The ZOOM SLIDER stays neutral in both. It is a secondary control, and if it
+// wore brand alongside the selection the bar would have two things shouting at
+// once — the selection is the thing that matters.
 const FRAMES = 8;
 
 // Tightest view, in seconds across the bar — enough for the longest GIF plus
@@ -79,7 +85,10 @@ export default function GifTrimBar({
   initialDur?: number;
   onChange: (startSec: number, durSec: number) => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  // Light theme puts the brand back on the selection; dark keeps it white.
+  // See the COLOUR note in the header.
+  const winColor = mode === 'light' ? colors.primary : colors.text;
 
   const [start, setStart] = useState(initialStart);
   const [durS, setDurS] = useState(Math.min(initialDur ?? maxDur, duration));
@@ -183,9 +192,9 @@ export default function GifTrimBar({
             <View pointerEvents="none" style={[styles.dim, { left: leftX + winW, width: Math.max(0, width - leftX - winW), height }]} />
 
             {/* Selection window + edge grips (visual only) */}
-            <View pointerEvents="none" style={[styles.window, { left: leftX, width: winW, height, borderColor: colors.text }]} />
-            <View pointerEvents="none" style={[styles.grip, { left: leftX + 3, backgroundColor: colors.text }]} />
-            <View pointerEvents="none" style={[styles.grip, { left: leftX + winW - 6, backgroundColor: colors.text }]} />
+            <View pointerEvents="none" style={[styles.window, { left: leftX, width: winW, height, borderColor: winColor }]} />
+            <View pointerEvents="none" style={[styles.grip, { left: leftX + 3, backgroundColor: winColor }]} />
+            <View pointerEvents="none" style={[styles.grip, { left: leftX + winW - 6, backgroundColor: winColor }]} />
           </View>
         </PanGestureHandler>
       </PinchGestureHandler>
