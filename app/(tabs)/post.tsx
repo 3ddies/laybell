@@ -45,6 +45,7 @@ import { IMAGE_FORMATS, aspectToNumber, clampVideoAspect, defaultFormatFor } fro
 import { GENRES, genreLabel } from '../../lib/genres';
 import { Image as ExpoImage } from 'expo-image';
 import MediaCropper, { type MediaCropperHandle, type CropRect } from '../../components/MediaCropper';
+import SlideArranger, { type SlideArrangerHandle } from '../../components/SlideArranger';
 import PhotoGrid, { type PickedMedia, type PhotoGridHandle } from '../../components/PhotoGrid';
 import { MAX_SLIDES, type Slide } from '../../lib/slideshow';
 import { uploadToStorageWithProgress, compressVideoIfPossible, fileSizeBytes } from '../../lib/upload';
@@ -62,7 +63,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
 type PostType = 'image' | 'video' | 'audio' | 'slideshow';
-type Step = 'pick' | 'edit' | 'details';
+type Step = 'pick' | 'edit' | 'arrange' | 'details';
 
 // One picked item in a slideshow (before upload).
 type PickedSlide = {
@@ -241,6 +242,7 @@ export default function PostScreen() {
   const [filmTitle, setFilmTitle] = useState('');
   const cropperRef = useRef<MediaCropperHandle>(null);
   const cropRef = useRef<CropRect | null>(null);
+  const arrangerRef = useRef<SlideArrangerHandle>(null);
   // Preview height is animated with a single spring on collapse/expand (see the
   // threshold effect below) — deliberately NOT bound frame-by-frame to the grid
   // scroll. The old scroll-linked interpolation resized the grid container every
@@ -1012,6 +1014,15 @@ export default function PostScreen() {
       return;
     }
     if (postType === 'video' && videoDuration > videoWindowSec) { setStep('edit'); return; }
+    // Slideshows get their own step before the details form. Until now the pick
+    // screen only ever mounted a cropper on the LAST slide, so every earlier
+    // photo published at whatever centred cover crop it landed on, and there was
+    // no way to change the order at all.
+    if (postType === 'slideshow' && slides.length > 0) {
+      captureLastSlideCrop(); // the pick screen's cropper is still mounted — take its crop with us
+      setStep('arrange');
+      return;
+    }
     setStep('details');
   }
 
@@ -1409,6 +1420,35 @@ export default function PostScreen() {
     setLoading(false);
   }
 
+  // ─── Arrange step (slideshows) ─────────────────────────────────────────────
+  if (step === 'arrange' && postType === 'slideshow' && slides.length > 0) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => { arrangerRef.current?.commit(); setStep('pick'); }}>
+            <Ionicons name="chevron-back" size={26} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{t('post.arrangeTitle')}</Text>
+          {/* commit() before EITHER exit: the crop lives inside the cropper until
+              something asks for it, so leaving without asking silently discards
+              whatever the user just did to the slide they were looking at. */}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.forward')} style={styles.headerAction} onPress={() => { arrangerRef.current?.commit(); setStep('details'); }}>
+            <Ionicons name="arrow-forward" size={24} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+        <ErrorBoundary label={t('post.cantOpenPhoto')}>
+          <SlideArranger
+            ref={arrangerRef}
+            slides={slides}
+            frameW={frameW}
+            frameH={frameH}
+            onChange={(next) => setSlides(next as typeof slides)}
+          />
+        </ErrorBoundary>
+      </View>
+    );
+  }
+
   // ─── Trim step (long videos) ───────────────────────────────────────────────
   if (step === 'edit' && media && postType === 'video') {
     return (
@@ -1454,7 +1494,10 @@ export default function PostScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => setStep('pick')}>
+          {/* Back goes to whichever step actually preceded this one. A slideshow
+              came through Arrange, and dropping the user past it to the picker
+              would look like their crops and ordering had been thrown away. */}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('a11y.back')} style={styles.headerBtn} onPress={() => setStep(slideshowMode && slides.length > 0 ? 'arrange' : 'pick')}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('post.newPost')}</Text>
