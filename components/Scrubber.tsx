@@ -53,21 +53,20 @@ export default function Scrubber({
   // effect to survive, only its colour to change. Light keeps the brand warm
   // ramp; dark gets a white one.
   //
-  // Dark runs WHITE → BRAND GOLD → DEEP AMBER. It used to end on the brand red
-  // (#E8401C) and that was too loud for something this small and this permanent —
-  // a scrubber sits on screen for the entire length of every song, so the colour
-  // it settles on is the one you live with. Ending on a dark yellow keeps the
-  // warmth without the bar shouting.
+  // Dark runs WHITE → PALE YELLOW → BRIGHT YELLOW. Two earlier attempts landed
+  // wrong in the same direction: ending on the brand red (#E8401C) was too loud,
+  // and darkening it to amber (#C97F08) only turned it mustard. Both were adding
+  // BLACK to the yellow, when what the bar wants is the opposite.
   //
-  // Three stops rather than two, still: the midpoint pins the ramp to the actual
-  // brand gold so the identity colour is the one you see mid-song, and the final
-  // stop is that same gold taken darker rather than a different hue. The result
-  // reads as one colour deepening rather than a fade between two.
+  // So this ramp holds red at maximum the whole way across and drains only green
+  // and blue — white (255,255,255) → (255,235,150) → (255,214,45). Every stop is
+  // a bright, light yellow, and the bar gets warmer by getting more saturated
+  // rather than by getting darker. That is why it never reads as orange.
   // Light keeps the brand warm ramp; white at the start would be near-invisible
   // on a pale track.
   const fillStops = (isLight
     ? GRADIENTS.primaryWarm
-    : ['#FFFFFF', '#FAB525', '#C97F08']) as readonly [string, string, ...string[]];
+    : ['#FFFFFF', '#FFEB96', '#FFD62D']) as readonly [string, string, ...string[]];
 
   // The ring is the PAGE colour in both themes, which is not the obvious choice
   // and is the only one that survives the thumb being sampled.

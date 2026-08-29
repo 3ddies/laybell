@@ -298,8 +298,13 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
 }
 
 // ── Floating notes ───────────────────────────────────────────────────────────
-// Musical notes drift up through the artwork while the song plays, so the screen
-// reads as something happening rather than a still image with audio behind it.
+// Musical notes drift up out of the BOTTOM-RIGHT CORNER while the song plays, so
+// the screen reads as something happening rather than a still image with audio
+// behind it.
+//
+// Deliberately penned into a small corner: the artwork is the whole point of
+// this screen, and notes wandering across it were covering the thing you came to
+// look at. They rise a short way out of the corner above the transport and stop.
 //
 // One Animated.Value per note, all on the native driver, so the whole effect
 // costs nothing on the JS thread — it has to survive scrubbing and a panning
@@ -308,14 +313,20 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
 // The layer is visible only while the song is actually PLAYING — a paused song
 // with notes still rising would be saying the opposite of the truth. It unmounts
 // with the screen, so nothing animates behind a closed player.
-const NOTE_COUNT = 9;
+const NOTE_COUNT = 5;
 const NOTE_GLYPHS = ['musical-note', 'musical-notes'] as const;
-// Birth height and rise are tuned against the scrim above: the stretch of a
-// note's life where it is actually bright (roughly 15%–70% through its arc)
-// lands inside the scrim's clear middle band. Born lower and it would fade in
-// underneath the darkest part and read as a smudge.
-const NOTE_BOTTOM = 0.36;
-const NOTE_RISE = 0.54;
+// The corner box, in fractions of the screen. X is the right-hand strip; the
+// rise is short and stops well below the middle so the notes stay a corner
+// flourish rather than a field of them.
+const NOTE_X_MIN = 0.68;
+const NOTE_X_SPAN = 0.20;
+const NOTE_BOTTOM = 0.32;
+const NOTE_RISE = 0.19;
+// Sitting this low means sitting under the heavy part of the scrim, so the peak
+// opacity is higher than it looks — roughly 40% of it survives the black above
+// the transport. Keeping them under the scrim is still right: it dims exactly
+// the notes that stray behind the title, and nothing else.
+const NOTE_PEAK = 0.72;
 
 function FloatingNotes({ playing, w, h }: { playing: boolean; w: number; h: number }) {
   // Pausing has to STOP the notes, but stopping a loop leaves every note frozen
@@ -351,15 +362,15 @@ function FloatingNote({ index, w, h }: { index: number; w: number; h: number }) 
   // make notes visibly jump.
   const f = (index * 2654435761) % 1000 / 1000;      // 0..1, well spread
   const g = (index * 40503) % 997 / 997;
-  const startX = 0.12 + 0.76 * f;                     // fraction of the width
-  const drift = (g < 0.5 ? -1 : 1) * (18 + 34 * g);   // sideways sway, px
-  const dur = 5200 + Math.round(3400 * g);            // 5.2s–8.6s
+  const startX = NOTE_X_MIN + NOTE_X_SPAN * f;        // fraction of the width
+  const drift = (g < 0.5 ? -1 : 1) * (6 + 12 * g);    // sideways sway, px
+  const dur = 4200 + Math.round(2600 * g);            // 4.2s–6.8s
   // Flat stagger, NOT one scaled to this note's duration — scaling it meant the
-  // slowest note also waited longest, and the screen took over seven seconds to
-  // reach full density. A fixed step gets there in four, which is about how long
-  // someone looks at the screen before deciding whether it is alive.
-  const delay = index * 520;
-  const size = 15 + Math.round(13 * f);
+  // slowest note also waited longest, and the corner took seven seconds to fill.
+  // A fixed step gets there in under three, which is about how long someone looks
+  // at the screen before deciding whether it is alive.
+  const delay = index * 700;
+  const size = 13 + Math.round(9 * f);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -379,7 +390,7 @@ function FloatingNote({ index, w, h }: { index: number; w: number; h: number }) 
         position: 'absolute',
         left: startX * w,
         bottom: h * NOTE_BOTTOM,
-        opacity: t.interpolate({ inputRange: [0, 0.14, 0.7, 1], outputRange: [0, 0.5, 0.4, 0] }),
+        opacity: t.interpolate({ inputRange: [0, 0.14, 0.7, 1], outputRange: [0, NOTE_PEAK, NOTE_PEAK * 0.8, 0] }),
         transform: [
           { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [0, -h * NOTE_RISE] }) },
           { translateX: t.interpolate({ inputRange: [0, 0.35, 0.7, 1], outputRange: [0, drift, -drift * 0.6, drift * 0.25] }) },
