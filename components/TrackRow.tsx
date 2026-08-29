@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
 // expo-image (NOT RN Image): decodes at DISPLAYED size and memory-caches the
 // decoded bitmap, so covers paint instantly on re-appearance instead of
@@ -18,96 +18,92 @@ import { type ProfileBadgeFields } from '../lib/badges';
 import { useReduceMotion } from '../lib/a11y';
 import { useNowPlaying } from '../contexts/AudioContext';
 
-// ── The playing card's waveform ──────────────────────────────────────────────
-// A strip of mirrored bars scrolling across the artwork while the track plays.
+// ── The equaliser, and how it pauses ─────────────────────────────────────────
+// Four bars dancing over the artwork while the track plays. Only ever mounted
+// on the loaded row — one in the whole app at a time — which is what makes it
+// affordable on lists this long.
 //
-// ⚠️ IT IS NOT REAL AUDIO. expo-audio exposes metering for RECORDING only —
-// there is no amplitude or FFT data on the playback side, and getting it would
-// mean a native module, which this project does not take without asking. So the
-// shape is hashed from the TRACK ID instead: every song gets its own bar pattern
-// AND its own scroll speed, identical every time you play it, different from the
-// song above it in the list. It is a per-song signature rather than a reading of
-// the audio, and it is honest about being decorative.
+// PAUSING MORPHS IT INTO THE PAUSE SYMBOL rather than stamping an icon on top.
+// The outer two bars fade away and the inner two rise to full height, widen and
+// part, so the thing that was dancing becomes the thing that says it stopped.
+// A separate badge in the corner was competing with the artwork for a job the
+// equaliser was already sitting there able to do.
 //
-// The whole thing is ONE animated value. The strip holds the pattern TWICE and
-// slides left by exactly one pattern width before looping, so bar N+PATTERN is
-// by construction the same height as bar N and the wrap is seamless. No JS runs
-// per frame, and no per-bar animation exists to fall out of sync.
-const WAVE_H = 17;          // tallest a bar can be
-const BAR_W = 2;
-const PITCH = BAR_W + 1.5;
-const PATTERN = 12;         // bars per loop unit
-const WAVE_W = PITCH * 9;   // visible window — about nine bars over a 50pt cover
+// All of it is native-driver: opacity, translate and scale only, nothing that
+// touches layout.
+const EQ_H = 15;
+const EQ_BAR_W = 2.5;
+const EQ_GAP = 2.5;
+// `shift` parts the inner pair as they widen — scaleX alone would fatten the two
+// bars into each other and close the gap that makes a pause icon legible.
+const EQ_BARS = [
+  { low: 0.30, high: 0.75, dur: 620, inner: false, shift: 0 },
+  { low: 0.45, high: 1.00, dur: 470, inner: true, shift: -1.6 },
+  { low: 0.25, high: 0.85, dur: 780, inner: true, shift: 1.6 },
+  { low: 0.40, high: 0.95, dur: 560, inner: false, shift: 0 },
+];
+const EQ_PAUSE_SCALE = 1.6;
 
-// FNV-1a over the id, then xorshift per bar. Cheap, stable, and spread enough
-// that neighbouring ids do not produce lookalike patterns.
-function waveFor(seed: string): number[] {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
-  const out: number[] = [];
-  let x = h || 1;
-  for (let i = 0; i < PATTERN; i++) {
-    x ^= x << 13; x >>>= 0; x ^= x >> 17; x ^= x << 5; x >>>= 0;
-    // Floor at 0.28 so no bar collapses to a dot, which reads as a gap rather
-    // than a quiet moment.
-    out.push(0.28 + (x % 1000) / 1000 * 0.72);
-  }
-  return out;
-}
-
-function Waveform({ seed, color, playing }: { seed: string; color: string; playing: boolean }) {
-  const scroll = useRef(new Animated.Value(0)).current;
-  const dim = useRef(new Animated.Value(playing ? 1 : 0)).current;
-
-  const bars = useMemo(() => waveFor(seed), [seed]);
-  // Scroll speed is seeded too, so a slow song and a fast one do not animate at
-  // an identical rate just because they are both playing.
-  const dur = useMemo(() => 1500 + (bars.reduce((a, b) => a + b, 0) * 220) % 1100, [bars]);
+function EqBar({
+  low, high, dur, inner, shift, color, playing,
+}: {
+  low: number; high: number; dur: number; inner: boolean; shift: number; color: string; playing: boolean;
+}) {
+  const v = useRef(new Animated.Value(0)).current;      // the dance
+  const morph = useRef(new Animated.Value(playing ? 0 : 1)).current;  // 0 dancing, 1 paused
 
   useEffect(() => {
     if (!playing) return;
-    const loop = Animated.loop(
-      Animated.timing(scroll, { toValue: 1, duration: dur, easing: Easing.linear, useNativeDriver: true }),
-    );
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(v, { toValue: 1, duration: dur, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(v, { toValue: 0, duration: dur, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
     loop.start();
-    // Paused deliberately FREEZES rather than resets: the strip holds its
-    // position so resuming continues from where it stopped, the way the audio
-    // does. Restarting at zero would say the track went back to the beginning.
+    // Stopping FREEZES v rather than resetting it, so resuming picks the dance
+    // back up mid-step instead of every bar snapping to the same height at once.
     return () => { loop.stop(); };
-  }, [playing, scroll, dur]);
+  }, [playing, v, dur]);
 
   useEffect(() => {
-    Animated.timing(dim, {
-      toValue: playing ? 1 : 0, duration: 260, easing: Easing.out(Easing.quad), useNativeDriver: true,
+    Animated.timing(morph, {
+      toValue: playing ? 0 : 1, duration: 280, easing: Easing.inOut(Easing.quad), useNativeDriver: true,
     }).start();
-  }, [playing, dim]);
+  }, [playing, morph]);
 
+  // Bottom-anchored growth WITHOUT animating height, which would be a layout
+  // pass per frame off the native driver: the bar is full height, flush with its
+  // container's bottom edge, and sliding it DOWN pushes its top out of view.
+  //
+  // Multiplying by (1 - morph) is what blends the two states — at morph 1 the
+  // offset is exactly 0, which IS full height, so the pause bars arrive at their
+  // final shape without a second animation fighting the first.
+  const danceY = v.interpolate({
+    inputRange: [0, 1],
+    outputRange: [EQ_H * (1 - low), EQ_H * (1 - high)],
+  });
+  const translateY = Animated.multiply(danceY, Animated.subtract(1, morph));
+
+  // translateX and scaleX ride the CONTAINER, not the bar. The container is the
+  // clip, so scaling the bar inside it would just crop the extra width away.
+  // Listed translateX-then-scaleX so the scale applies first and the shift is
+  // not itself scaled.
   return (
     <Animated.View
-      pointerEvents="none"
       style={{
-        width: WAVE_W, height: WAVE_H, overflow: 'hidden', justifyContent: 'center',
-        opacity: dim.interpolate({ inputRange: [0, 1], outputRange: [0.42, 1] }),
+        width: EQ_BAR_W, height: EQ_H, overflow: 'hidden', justifyContent: 'flex-end',
+        opacity: inner ? 1 : morph.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+        transform: [
+          { translateX: morph.interpolate({ inputRange: [0, 1], outputRange: [0, shift] }) },
+          { scaleX: inner ? morph.interpolate({ inputRange: [0, 1], outputRange: [1, EQ_PAUSE_SCALE] }) : 1 },
+        ],
       }}
     >
       <Animated.View
         style={{
-          flexDirection: 'row', alignItems: 'center', height: WAVE_H,
-          transform: [{ translateX: scroll.interpolate({ inputRange: [0, 1], outputRange: [0, -PATTERN * PITCH] }) }],
+          width: EQ_BAR_W, height: EQ_H, borderRadius: EQ_BAR_W / 2,
+          backgroundColor: color, transform: [{ translateY }],
         }}
-      >
-        {/* Pattern twice over — the second copy is what the window shows while
-            the first scrolls out, which is what makes the loop invisible. */}
-        {[...bars, ...bars].map((h, i) => (
-          <View
-            key={i}
-            style={{
-              width: BAR_W, height: Math.round(WAVE_H * h), borderRadius: BAR_W / 2,
-              backgroundColor: color, marginRight: PITCH - BAR_W,
-            }}
-          />
-        ))}
-      </Animated.View>
+      />
     </Animated.View>
   );
 }
@@ -203,20 +199,18 @@ export default function TrackRow({
             <Ionicons name="musical-notes" size={18} color={colors.primary} />
           </LinearGradient>
         )}
-        {/* The artwork carries the whole play/pause distinction. Playing: the
-            song's own waveform scrolling across. Paused: the same waveform,
-            frozen where it stopped and dimmed, with a pause glyph beside it —
-            visibly held rather than visibly over. */}
+        {/* The artwork carries the whole play/pause distinction, and it is the
+            SAME four bars doing both: dancing while the track plays, folding
+            into the pause symbol when it is held. */}
         {active && (
           <View style={styles.coverOverlayActive}>
             {reduced ? (
               <Ionicons name={playing ? 'musical-notes' : 'pause'} size={16} color={colors.text} />
             ) : (
-              <Waveform seed={trackId || caption || 'laybell'} color={colors.text} playing={playing} />
-            )}
-            {paused && !reduced && (
-              <View style={styles.pauseChip}>
-                <Ionicons name="pause" size={9} color={colors.background} />
+              <View style={styles.eq}>
+                {EQ_BARS.map((b, i) => (
+                  <EqBar key={i} {...b} color={colors.text} playing={playing} />
+                ))}
               </View>
             )}
           </View>
@@ -236,10 +230,16 @@ export default function TrackRow({
         </View>
       </TouchableOpacity>
 
-      {/* Play / pause — borderless filled-circle glyph, same as Today's Pick */}
+      {/* Play / STOP — borderless filled-circle glyph, same as Today's Pick.
+          The glyph is a square stop, not a pause, because that is what the
+          button does: tapping the loaded track calls play() with the track
+          already playing, and AudioContext's play() toggles that case straight
+          to stop() — the player tears down and closes. A pause glyph promised a
+          hold this control has never performed. The bottom bar's button is the
+          one that actually pauses. */}
       {!hidePlayButton && (
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel={playing ? t('a11y.pause') : t('a11y.play')} onPress={safePlay} onLongPress={onOptions} activeOpacity={0.8} hitSlop={6}>
-          <Ionicons name={playing ? 'pause-circle' : 'play-circle'} size={44} color={colors.text} />
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={playing ? t('a11y.stopPlayback') : t('a11y.play')} onPress={safePlay} onLongPress={onOptions} activeOpacity={0.8} hitSlop={6}>
+          <Ionicons name={playing ? 'stop-circle' : 'play-circle'} size={44} color={colors.text} />
         </TouchableOpacity>
       )}
 
@@ -296,15 +296,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background + '8C',
   },
-  // Small pause badge tucked into the artwork's corner while the track is held.
-  // The dimmed waveform alone reads as "quieter", not "stopped" — this is the
-  // part that actually says paused.
-  pauseChip: {
-    position: 'absolute', right: 3, bottom: 3,
-    width: 14, height: 14, borderRadius: 7,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.text,
-  },
+  eq: { flexDirection: 'row', alignItems: 'flex-end', gap: EQ_GAP, height: EQ_H },
   info: { flex: 1 },
   // The song name is the row's headline and its primary tap target (the whole
   // info column plays the track), so it carries real weight; the handle and the
