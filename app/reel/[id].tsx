@@ -411,6 +411,28 @@ const ReelPage = memo(function ReelPage({
   );
 });
 
+// Reel kinds the dropdown can lead with. Order here is the menu order.
+const REEL_FILTERS = ['all', 'vertical', 'horizontal', 'films'] as const;
+type ReelFilter = (typeof REEL_FILTERS)[number];
+// Longer than this is a film. The same 540s boundary the query and the TV shelf
+// use — it lives in several places, so it is a constant here rather than a
+// literal buried in a comparison.
+const FILM_SECONDS = 540;
+
+// Lead with the chosen kind, then everything else. NOT a hard filter: the owner's
+// ask was that running out of one kind falls through to regular content rather
+// than showing an empty feed, so nothing is ever removed — only reordered.
+function orderByReelKind(list: any[], filter: ReelFilter): any[] {
+  if (filter === 'all' || filter === 'films') return list;
+  const wantHorizontal = filter === 'horizontal';
+  const hit: any[] = [];
+  const rest: any[] = [];
+  for (const p of list) {
+    (aspectToNumber(p.aspect_ratio, 16 / 9) > 1) === wantHorizontal ? hit.push(p) : rest.push(p);
+  }
+  return [...hit, ...rest];
+}
+
 export default function ReelScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -434,6 +456,20 @@ export default function ReelScreen() {
   }, [postParam]);
 
   const [posts, setPosts] = useState<any[]>(seed ? [seed] : []);
+  // ── Reel kind filter ────────────────────────────────────────────────────────
+  // A dropdown rather than a hard switch, because these are not exclusive
+  // universes: picking Vertical does not mean "never show me anything else", it
+  // means "lead with vertical". Matching reels are ordered to the FRONT and the
+  // rest follow, so running out of one kind quietly continues into normal
+  // content instead of dead-ending on an empty feed.
+  //
+  // FILMS ARE THE EXCEPTION, and deliberately so. They are excluded from the
+  // reel query by an explicit earlier decision — reels stay snackable, films
+  // live on the TV shelf and the profile grid (see the query below). Making them
+  // a menu option does not undo that: 'all' still excludes them, and the only
+  // way to see one here is to ask for it by name.
+  const [reelFilter, setReelFilter] = useState<ReelFilter>('all');
+  const [filterOpen, setFilterOpen] = useState(false);
   const [loading, setLoading] = useState(!seed);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [liked, setLiked] = useState<Set<string>>(new Set());
@@ -679,7 +715,11 @@ export default function ReelScreen() {
     }
   }).current;
 
-  useEffect(() => { stop(); setup().catch(() => setLoading(false)); }, [id]);
+  // Re-runs on a filter change as well as a new id: 'films' needs a different
+  // query, and the other kinds need re-ordering from the top rather than
+  // shuffling the list under the reel someone is already watching.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { stop(); setup().catch(() => setLoading(false)); }, [id, reelFilter]);
 
   // The focused reel (used by the attached-song autoplay effect below — it
   // lives AFTER the overlayAd declarations it must react to).
@@ -1277,16 +1317,24 @@ export default function ReelScreen() {
       loadSeenPostIds(),
       uid ? buildAffinityProfile(uid) : Promise.resolve(EMPTY_PROFILE),
       uid ? supabase.from('follows').select('following_id').eq('follower_id', uid) : Promise.resolve({ data: [] as any }),
-      supabase
-        .from('posts').select(SELECT)
-        .eq('is_public', true).eq('type', 'video')
-        // No FILMS in the swipe-through feed (owner decision): reels stay
-        // snackable; films live on the Laybell TV shelf, Home (earned) and the
-        // profile grid. A film the user TAPPED still plays — it arrives via the
-        // tapped-id fetch below, with regular reels flowing after it. NULL
-        // durations (old posts) must stay in, hence the or() over lte().
-        .or('duration_seconds.is.null,duration_seconds.lte.540')
-        .order('created_at', { ascending: false }).limit(40),
+      // No FILMS in the swipe-through feed (owner decision): reels stay
+      // snackable; films live on the Laybell TV shelf, Home (earned) and the
+      // profile grid. A film the user TAPPED still plays — it arrives via the
+      // tapped-id fetch below, with regular reels flowing after it. NULL
+      // durations (old posts) must stay in, hence the or() over lte().
+      //
+      // The one way past that is asking for films BY NAME in the dropdown, which
+      // flips the comparison rather than dropping it. The default is unchanged.
+      (reelFilter === 'films'
+        ? supabase
+          .from('posts').select(SELECT)
+          .eq('is_public', true).eq('type', 'video')
+          .gt('duration_seconds', FILM_SECONDS)
+        : supabase
+          .from('posts').select(SELECT)
+          .eq('is_public', true).eq('type', 'video')
+          .or(`duration_seconds.is.null,duration_seconds.lte.${FILM_SECONDS}`)
+      ).order('created_at', { ascending: false }).limit(40),
       uid ? supabase.from('likes').select('post_id').eq('user_id', uid) : Promise.resolve({ data: [] as any }),
       uid ? supabase.from('saves').select('post_id').eq('user_id', uid) : Promise.resolve({ data: [] as any }),
     ]);
@@ -1313,9 +1361,12 @@ export default function ReelScreen() {
     // the subtle sparkle emblem stays by the username. The TAGGED array is what
     // both setPosts and the later ad-weave use — weaving from the untagged one
     // silently dropped the sparkle again.
-    const ordered = seed?.__spotlight
+    const ordered1 = seed?.__spotlight
       ? ordered0.map((p) => (p.id === seed.id ? { ...p, __spotlight: seed.__spotlight } : p))
       : ordered0;
+    // Applied LAST, over the relevance-scored order, so within each kind the
+    // ranking the scorer produced is preserved intact.
+    const ordered = orderByReelKind(ordered1, reelFilter);
     setPosts(ordered);
     setVisibleId(ordered[0]?.id ?? null);
     // Flag which loaded reels are spotlighted right now (one batched query), so
@@ -1645,6 +1696,50 @@ export default function ReelScreen() {
             <View style={styles.center}><Text style={styles.empty}>{t('reel.noVideos')}</Text></View>
           )}
 
+          {/* Kind dropdown. Portrait only — the landscape overlay is its own
+              fullscreen surface with no room (or need) for it, and it is hidden
+              while an unskippable ad holds the page so the feed cannot be
+              swapped out from under one. */}
+          {/* Tap-anywhere-to-dismiss. Without it the menu sits open while the tap
+              that was meant to close it pauses the video underneath instead. */}
+          {filterOpen && (
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              activeOpacity={1}
+              onPress={() => setFilterOpen(false)}
+            />
+          )}
+          {!landscapeFullscreen && !settledIsLockedAd && (
+            <View style={[styles.filterWrap, { top: insets.top + 8 }]} pointerEvents="box-none">
+              <TouchableOpacity
+                style={styles.filterPill}
+                onPress={() => setFilterOpen((o) => !o)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+              >
+                <Text style={styles.filterPillText}>{t(`reel.filter.${reelFilter}`)}</Text>
+                <Ionicons name={filterOpen ? 'chevron-up' : 'chevron-down'} size={13} color="#fff" />
+              </TouchableOpacity>
+              {filterOpen && (
+                <View style={styles.filterMenu}>
+                  {REEL_FILTERS.map((f) => (
+                    <TouchableOpacity
+                      key={f}
+                      style={styles.filterItem}
+                      onPress={() => { setFilterOpen(false); if (f !== reelFilter) setReelFilter(f); }}
+                      accessibilityRole="button"
+                    >
+                      <Text style={[styles.filterItemText, f === reelFilter && styles.filterItemTextOn]}>
+                        {t(`reel.filter.${f}`)}
+                      </Text>
+                      {f === reelFilter && <Ionicons name="checkmark" size={15} color="#fff" />}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
           {/* Back button */}
           <TouchableOpacity style={[styles.back, { top: insets.top + 8 }]} onPress={dismiss} accessibilityRole="button" accessibilityLabel={t('a11y.back')}>
             <Ionicons name="chevron-back" size={28} color="#fff" />
@@ -1810,6 +1905,31 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   empty: { color: colors.textSecondary, fontSize: 15 },
 
   back: { position: 'absolute', left: SPACING.sm, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+
+  // Centred on the screen rather than laid out beside the back button, so the
+  // pill stays optically centred no matter how long the translated label is.
+  // Height matches `back` so the two read as one row.
+  filterWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  filterPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    height: 32, paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full, backgroundColor: 'rgba(0,0,0,0.45)',
+    marginTop: 6,
+  },
+  // Fixed white, never the theme text colour: this floats over video, which is
+  // dark whatever theme the app is in.
+  filterPillText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  filterMenu: {
+    marginTop: 6, minWidth: 150, overflow: 'hidden',
+    borderRadius: RADIUS.md, backgroundColor: 'rgba(20,20,20,0.96)',
+    borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.16)',
+  },
+  filterItem: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: SPACING.md, paddingVertical: 11, paddingHorizontal: SPACING.md,
+  },
+  filterItemText: { color: 'rgba(255,255,255,0.72)', fontSize: 14, fontWeight: '600' },
+  filterItemTextOn: { color: '#fff', fontWeight: '800' },
   muteBtn: {
     position: 'absolute', right: SPACING.sm, width: 40, height: 40, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)',
