@@ -1486,11 +1486,20 @@ export default function HomeScreen() {
   // driver can carry. Nothing runs on the JS thread per frame.
   const logoFade = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
+  // Whether the wordmark is currently sitting neutral. Lives OUTSIDE the effect
+  // so it survives the effect re-running on a focus change — which is the whole
+  // reason a tab swipe no longer replays the fade.
+  const logoSettled = useRef(false);
   useEffect(() => {
-    // Gated on focus as well: HomeScreen stays mounted behind the other tabs, so
-    // without this the wordmark would replay on a screen nobody is looking at.
-    if (reduceMotion || !isFocused) { logoFade.setValue(reduceMotion ? 0 : 1); return; }
-    const settle = () => {
+    if (reduceMotion) { logoFade.setValue(0); return; }
+    // Leaving the tab HOLDS the current state rather than resetting it. Coming
+    // back used to re-run the fade, which read as the logo flashing yellow every
+    // time you swiped tabs. The fade belongs to the header returning, and
+    // switching tabs is not that.
+    if (!isFocused) { logoFade.setValue(logoSettled.current ? 1 : 0); return; }
+    const settle = (animate: boolean) => {
+      logoSettled.current = true;
+      if (!animate) { logoFade.setValue(1); return; }
       logoFade.setValue(0);
       Animated.timing(logoFade, {
         toValue: 1, duration: 2200, easing: Easing.inOut(Easing.quad), useNativeDriver: true,
@@ -1500,12 +1509,15 @@ export default function HomeScreen() {
     // 260ms the slide takes, so the reset happens behind the motion instead of
     // flicking back to yellow in the user's eye.
     const recharge = () => {
+      logoSettled.current = false;
       Animated.timing(logoFade, {
         toValue: 0, duration: 220, easing: Easing.out(Easing.quad), useNativeDriver: true,
       }).start();
     };
-    if (isFeedChromeTopHidden()) recharge(); else settle();
-    const off = onFeedChromeTop((hidden) => (hidden ? recharge() : settle()));
+    // Animate on arrival only if it is not already neutral — so the very first
+    // view fades, and a return from another tab simply stays put.
+    if (isFeedChromeTopHidden()) recharge(); else settle(!logoSettled.current);
+    const off = onFeedChromeTop((hidden) => (hidden ? recharge() : settle(true)));
     return () => { off(); logoFade.stopAnimation(); };
   }, [reduceMotion, isFocused, logoFade]);
 

@@ -45,8 +45,17 @@ export default function ElasticSwipeView({ children, style, disabled = false, re
     // getting claimed by the rubber-band, blocking the vertical pager for the
     // whole gesture ("my swipe did nothing"). Real horizontal wobbles still
     // clear 12px easily.
+    //
+    // ONE FINGER ONLY. An elastic swipe is a one-finger gesture by definition,
+    // and without this it was eating pinches: PanResponder's dx is the CENTROID
+    // of all active touches, so spreading two fingers apart horizontally — which
+    // is most of what a pinch is — drags the centroid well past 12px with almost
+    // no dy. The rubber-band claimed the responder and the card slid sideways
+    // instead of the photo zooming. The reel viewer only dodges this by passing
+    // `disabled` while zoomed; guarding here fixes it for every host at once.
     onMoveShouldSetPanResponder: (_e, g) =>
       !disabledRef.current
+      && g.numberActiveTouches === 1
       && Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 4,
     onMoveShouldSetPanResponderCapture: () => false,
     // Android only (iOS ignores this): DON'T block native containers from
