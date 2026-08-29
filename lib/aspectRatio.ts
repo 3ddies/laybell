@@ -19,11 +19,16 @@ export const VIDEO_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
 //   mixed — same frame, but every slide is FITTED (letterboxed) instead, so a
 //           set of different shapes publishes with nothing cut off.
 // Either default can be overridden per slide on the Arrange screen.
-// 'full' is deliberately NOT offered. For the photos people actually post it
-// lands on 4:5 anyway — clampFeedAspect floors at 4/5 — so it was a third button
-// that mostly repeated the second. isAutoFormat still understands it, because
-// drafts saved before this change can still carry it.
-export const SLIDESHOW_FORMATS = ['1:1', '4:5', 'mixed'] as const;
+// Just the two shapes. 'full' was dropped because it landed on 4:5 for the
+// photos people actually post, and 'mixed' because it was never really a frame —
+// it was a preset that set every slide to Fit. A set only becomes mixed by
+// someone deciding, slide by slide, that some should be filled and some fitted,
+// and that decision is already the Fill/Fit control. Offering it twice, once as
+// a whole-set mode and once per photo, made two ways to say the same thing that
+// could disagree with each other.
+//
+// isAutoFormat still understands both, because drafts saved earlier carry them.
+export const SLIDESHOW_FORMATS = ['1:1', '4:5'] as const;
 export type SlideFit = 'cover' | 'contain';
 
 /** Formats with no ratio in them — resolved from the media itself. */
@@ -31,7 +36,14 @@ export function isAutoFormat(format?: string | null): boolean {
   return format === 'full' || format === 'mixed';
 }
 
-/** The fit a slide gets when the user has not chosen one for it. */
+/**
+ * The fit a slide gets when the user has not chosen one for it: filled.
+ *
+ * The 'mixed' branch is for DRAFTS SAVED BEFORE that option was withdrawn, and
+ * exists so reopening one still honours what it was set to. Nothing produces it
+ * any more — a mixed set is now simply what you get by fitting some slides and
+ * filling others, which is the per-photo control doing its job.
+ */
 export function defaultFitFor(format?: string | null): SlideFit {
   return format === 'mixed' ? 'contain' : 'cover';
 }

@@ -68,20 +68,21 @@ const HOLD_SLOP = 12;
 // no gain; eight slides need seven moves, and at that same step the far end sits
 // past the edge of the screen and cannot be reached in one drag at all.
 //
-// The budget is HALF the frame, not all of it. A drag begins wherever the finger
-// already is — usually somewhere around the middle — so only about half the
-// width is available in the direction being dragged. Sizing the step against the
-// full width meant the far end of a longer set sat off the edge of the screen
-// and could not be reached without lifting and starting again.
-//
-// Dividing that half by the number of moves puts the whole list within reach of
-// one drag from the centre, whatever its length.
-const STAGE_STEP_MIN = 20;
+// The budget is a FRACTION of the frame, not all of it — a drag begins wherever
+// the finger already is, so only part of the width lies ahead of it. Dividing
+// that by the number of moves puts the whole list within reach of one drag,
+// whatever its length. See STAGE_REACH for which fraction, and why.
+const STAGE_STEP_MIN = 16;
 const STAGE_STEP_MAX = 150;
-// Fraction of the frame a drag is assumed to have room for. Half is the honest
-// geometric answer from a centred start, but it measured a touch slow in the
-// hand — this trims it so every set size moves a little more per pixel.
-const STAGE_REACH = 0.37;
+// Fraction of the frame a drag is assumed to have room for.
+//
+// Half is the geometric answer for a drag starting dead centre, and it is too
+// generous. Most people are right-handed and start the gesture right of middle,
+// which leaves noticeably less than half the width to travel INTO — the
+// direction they are most likely to drag. Sizing against the smaller of the two
+// halves is what makes the far end reachable for the hand actually holding the
+// phone, rather than for an idealised one starting in the exact centre.
+const STAGE_REACH = 0.28;
 function stageStepFor(frameW: number, count: number): number {
   if (count < 2) return STAGE_STEP_MAX;
   return Math.max(STAGE_STEP_MIN, Math.min(STAGE_STEP_MAX, (frameW * STAGE_REACH) / (count - 1)));
@@ -166,6 +167,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   };
 
   const cycleFormat = () => {
+    // Take the crop with us. Changing ratio rebuilds the cropper, and anything
+    // the user had framed but not yet committed would go with the old one.
+    // (A no-op unless the crop sheet is open — nothing else holds a cropper.)
+    commitRef.current();
     const i = SLIDESHOW_FORMATS.indexOf(format as (typeof SLIDESHOW_FORMATS)[number]);
     onFormatChange(SLIDESHOW_FORMATS[(i + 1) % SLIDESHOW_FORMATS.length]);
   };
@@ -553,20 +558,36 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
       </ScrollView>
       </View>
 
-      {/* ── Adjust sheet: the ONLY place the cropper takes gestures ──────────── */}
+      {/* ── Crop sheet: the ONLY place the cropper takes gestures ────────────── */}
       {adjusting && cur?.type === 'image' && (
         <View style={styles.sheet}>
-          <MediaCropper
-            key={`${cur.uri}-adjust`}
-            ref={cropperRef}
-            uri={cur.uri}
-            mediaWidth={cur.width}
-            mediaHeight={cur.height}
-            frameW={frameW}
-            frameH={frameH}
-            type="image"
-            initialCrop={cur.crop ?? null}
-          />
+          <View style={{ width: frameW, height: frameH }}>
+            <MediaCropper
+              // Keyed on the FRAME as well as the photo. Changing ratio while
+              // cropping changes the frame the crop is measured against, and the
+              // cropper works its transform out once at mount — so it has to be
+              // rebuilt to reseed against the new shape rather than keep a
+              // transform that meant something else.
+              key={`${cur.uri}-adjust-${Math.round(frameW)}x${Math.round(frameH)}`}
+              ref={cropperRef}
+              uri={cur.uri}
+              mediaWidth={cur.width}
+              mediaHeight={cur.height}
+              frameW={frameW}
+              frameH={frameH}
+              type="image"
+              initialCrop={cur.crop ?? null}
+            />
+            {/* The ratio stays reachable while cropping: choosing a shape and
+                framing the photo for it is one decision, so making the user
+                leave to change it would split the job in half. */}
+            <TouchableOpacity style={[styles.cornerBase, styles.cornerBL]} onPress={cycleFormat} activeOpacity={0.85}>
+              <Ionicons name="resize-outline" size={15} color={colors.text} />
+              <Text style={styles.cornerText}>
+                {isAutoFormat(format) ? t(`post.format.${format}`) : format}
+              </Text>
+            </TouchableOpacity>
+          </View>
           <Text style={styles.sheetHint}>{t('post.slideCropHint')}</Text>
         </View>
       )}
