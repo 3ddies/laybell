@@ -27,8 +27,25 @@ export default function Scrubber({
   // thumb). Used for ads on the TV remote — a sponsor can't be scrubbed.
   disabled?: boolean;
 }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const isLight = mode === 'light';
+
+  // The fill stays a GRADIENT in both themes — the owner asked for the progress
+  // effect to survive, only its colour to change. Light keeps the brand warm
+  // ramp; dark gets a white one.
+  //
+  // Dimmer stop first, brightest at the LEADING edge, which mirrors how
+  // primaryWarm already runs (#F26522 → the brighter #FAB525). The bright end
+  // lands on the playhead, so the bar reads as being lit from where it is up to.
+  const fillStops = (isLight ? GRADIENTS.primaryWarm : ['#C6C6CE', '#FFFFFF']) as readonly [string, string];
+
+  // The thumb straddles the boundary between fill and empty track, so its ring
+  // has to separate it from BOTH. On light that is the brand orange it always
+  // had, against a near-black dot. On dark the dot is white on a now-white fill,
+  // so a white ring would let it dissolve into the bar exactly where it matters —
+  // the ring goes dark instead.
+  const thumbRing = isLight ? colors.primary : colors.background;
   const [width, setWidth] = useState(0);
   const ref = useRef<View>(null);
   const layout = useRef({ x: 0, w: 0 });
@@ -92,7 +109,7 @@ export default function Scrubber({
           <Animated.View style={{ width: '100%', height: '100%', transform: [{ translateX: gradX }] }}>
             {/* Fixed-width gradient held stationary in track space by the counter-slide */}
             <LinearGradient
-              colors={GRADIENTS.primaryWarm}
+              colors={fillStops}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               style={{ width: w, height: '100%' }}
             />
@@ -104,6 +121,7 @@ export default function Scrubber({
           style={[styles.thumb, {
             width: thumbSize, height: thumbSize, borderRadius: thumbSize / 2,
             top: (height - thumbSize) / 2, left: 0, transform: [{ translateX: thumbX }],
+            borderColor: thumbRing,
           }]}
         />
       )}
@@ -114,5 +132,7 @@ export default function Scrubber({
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   area: { width: '100%', justifyContent: 'center' },
   track: { width: '100%', backgroundColor: colors.border, overflow: 'hidden' },
-  thumb: { position: 'absolute', backgroundColor: colors.text, borderWidth: 2, borderColor: colors.primary },
+  // borderColor is supplied inline (thumbRing) — it is theme-dependent in a
+  // way this palette-only factory cannot express.
+  thumb: { position: 'absolute', backgroundColor: colors.text, borderWidth: 2 },
 });
