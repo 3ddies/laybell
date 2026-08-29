@@ -3,7 +3,7 @@ import { songPlaysFor } from '../../lib/postSong';
 import VideoScrubBar, { type VideoScrubBarHandle } from '../../components/VideoScrubBar';
 import ZoomableView from '../../components/ZoomableView';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, Animated,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, Image, Animated, Easing,
   useWindowDimensions,
 } from 'react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -418,8 +418,12 @@ const REEL_FILTERS = ['all', 'vertical', 'horizontal', 'films'] as const;
 // quite centred" wrongness. Padding the opposite side by the chevron's whole
 // footprint re-centres the label itself: the pair is then symmetric about the
 // text. Constants so the padding cannot drift from the icon it compensates for.
-const FILTER_CHEVRON = 21;
-const FILTER_GAP = 6;
+const FILTER_CHEVRON = 15;
+const FILTER_GAP = 5;
+// Deliberately dimmer than the label. The chevron is a hint that this opens,
+// not a second thing to read — at full white next to 25pt/900 text it was
+// competing with the word it belongs to.
+const FILTER_CHEVRON_COLOR = 'rgba(255,255,255,0.6)';
 type ReelFilter = (typeof REEL_FILTERS)[number];
 // Longer than this is a film. The same 540s boundary the query and the TV shelf
 // use — it lives in several places, so it is a constant here rather than a
@@ -477,6 +481,25 @@ export default function ReelScreen() {
   // way to see one here is to ask for it by name.
   const [reelFilter, setReelFilter] = useState<ReelFilter>('all');
   const [filterOpen, setFilterOpen] = useState(false);
+  // One value drives the menu's fade, its little drop, and the chevron's flip,
+  // so the three cannot drift apart.
+  //
+  // The menu is ALWAYS MOUNTED and gated with pointerEvents rather than being
+  // conditionally rendered. Unmounting it is what makes a fade-out impossible —
+  // the view is gone on the frame the animation starts — and hiding it behind a
+  // setState at the end of the animation would land a re-render exactly on the
+  // last frame, which on a screen with video playing is a dropped one.
+  const menuAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(menuAnim, {
+      toValue: filterOpen ? 1 : 0,
+      // Out faster than in: an opening menu is worth watching, a closing one is
+      // just in the way of whatever you picked.
+      duration: filterOpen ? 170 : 130,
+      easing: filterOpen ? Easing.out(Easing.cubic) : Easing.in(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [filterOpen, menuAnim]);
   const [loading, setLoading] = useState(!seed);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [liked, setLiked] = useState<Set<string>>(new Set());
@@ -863,6 +886,12 @@ export default function ReelScreen() {
     const timer = setTimeout(() => unlockAd(trapped), (Number.isFinite(gate) ? gate : AD_SKIP_MS) + 7000);
     return () => clearTimeout(timer);
   }, [settledIsLockedAd, settledId]);
+
+  // Both of these tear the kind dropdown off screen entirely. Closing it first
+  // means it is not still open — and mid-fade — when it comes back.
+  useEffect(() => {
+    if (landscapeFullscreen || settledIsLockedAd) setFilterOpen(false);
+  }, [landscapeFullscreen, settledIsLockedAd]);
 
   // ── Landscape fullscreen: horizontal pager over landscape-only reels ─────────
   const overlayRefs = useRef<Map<string, AppVideoHandle>>(new Map());
@@ -1725,25 +1754,38 @@ export default function ReelScreen() {
                 accessibilityRole="button"
               >
                 <Text style={styles.filterPillText}>{t(`reel.filter.${reelFilter}`)}</Text>
-                <Ionicons name={filterOpen ? 'chevron-up' : 'chevron-down'} size={FILTER_CHEVRON} color="#fff" />
+                {/* One glyph that turns over, rather than two that swap. The
+                    swap was an instant state change next to an animated menu,
+                    which is the half that read as unfinished. */}
+                <Animated.View
+                  style={{ transform: [{ rotate: menuAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }] }}
+                >
+                  <Ionicons name="chevron-down" size={FILTER_CHEVRON} color={FILTER_CHEVRON_COLOR} />
+                </Animated.View>
               </TouchableOpacity>
-              {filterOpen && (
-                <View style={styles.filterMenu}>
-                  {REEL_FILTERS.map((f) => (
-                    <TouchableOpacity
-                      key={f}
-                      style={styles.filterItem}
-                      onPress={() => { setFilterOpen(false); if (f !== reelFilter) setReelFilter(f); }}
-                      accessibilityRole="button"
-                    >
-                      <Text style={[styles.filterItemText, f === reelFilter && styles.filterItemTextOn]}>
-                        {t(`reel.filter.${f}`)}
-                      </Text>
-                      {f === reelFilter && <Ionicons name="checkmark" size={15} color="#fff" />}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
+              <Animated.View
+                pointerEvents={filterOpen ? 'auto' : 'none'}
+                style={[styles.filterMenu, {
+                  opacity: menuAnim,
+                  transform: [
+                    { translateY: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [-7, 0] }) },
+                  ],
+                }]}
+              >
+                {REEL_FILTERS.map((f) => (
+                  <TouchableOpacity
+                    key={f}
+                    style={styles.filterItem}
+                    onPress={() => { setFilterOpen(false); if (f !== reelFilter) setReelFilter(f); }}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.filterItemText, f === reelFilter && styles.filterItemTextOn]}>
+                      {t(`reel.filter.${f}`)}
+                    </Text>
+                    {f === reelFilter && <Ionicons name="checkmark" size={15} color="#fff" />}
+                  </TouchableOpacity>
+                ))}
+              </Animated.View>
             </View>
           )}
 
