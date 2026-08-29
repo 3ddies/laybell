@@ -22,12 +22,19 @@ import { useTheme } from '../contexts/ThemeContext';
 //   • PINCH zooms the timeline, around the selection, down to a couple of
 //     seconds across. This is the actual fix — zoomed in, a 3-second GIF is most
 //     of the bar and can be placed on the frame.
-//   • DRAG inside the window moves the selection, and the viewport follows if it
-//     is pushed past an edge.
+//   • DRAG ANYWHERE moves the selection, and the viewport follows it past an
+//     edge. Touching away from the window jumps it to the finger first, so a
+//     single tap is coarse positioning.
 //   • DRAG on an edge GRIP sets the duration. The grips used to be
 //     pointerEvents="none" decoration; with pinch reassigned to zoom, they have
 //     to become real, and they are the natural place for that anyway.
-//   • DRAG outside the window pans the viewport, for travelling a long video.
+//
+// ⚠️ THERE IS NO "PAN THE VIEWPORT" MODE, and there must not be one. The first
+// version made dragging outside the window pan the timeline, which broke the
+// component outright: zoomed out — the default — the viewport cannot pan, and
+// the window is only MIN_WIN_PX wide, so nearly the whole bar became a region
+// where dragging did nothing at all. Long videos are travelled by dragging the
+// selection to the edge and letting follow() bring the viewport along.
 //
 // It still opens fully zoomed out, so the mental model is unchanged and the
 // whole clip is one drag away. The intended flow is coarse-then-fine: drag to
@@ -52,7 +59,7 @@ const GRIP_HIT_PX = 30;
 // selection can always be framed with a little room either side.
 const minViewFor = (maxDur: number) => Math.max(maxDur * 1.35, 1.5);
 
-type Mode = 'move' | 'left' | 'right' | 'pan';
+type Mode = 'move' | 'left' | 'right';
 
 export default function GifTrimBar({
   uri, frameUrlAt, duration, minDur, maxDur, width, height = 64, initialStart = 0, initialDur, onChange,
@@ -88,11 +95,22 @@ export default function GifTrimBar({
   const gStart = useRef(0);
   const gDur = useRef(0);
   const gViewSec = useRef(0);
-  const gViewStart = useRef(0);
   const gCenter = useRef(0);
   const mode = useRef<Mode>('move');
   const pinchRef = useRef<any>(null);
   const panRef = useRef<any>(null);
+
+  // `duration` is a PROP and it can change — the modal falls back to 15s until
+  // the real value is known. viewSec is state seeded from it, so without this it
+  // would keep showing a 15-second viewport of a nine-minute video forever. Only
+  // resets while the user has not zoomed, so it can never yank the view out from
+  // under someone mid-edit.
+  const zoomedRef = useRef(false);
+  useEffect(() => {
+    if (zoomedRef.current || !duration) return;
+    viewSecRef.current = duration; setViewSec(duration);
+    viewStartRef.current = 0; setViewStart(0);
+  }, [duration]);
 
   const pxPerSec = width / (viewSec || 1);
 
@@ -156,36 +174,49 @@ export default function GifTrimBar({
     // feel like it is helping rather than like the bar is running away.
     let v = gCenter.current - next / 2;
     v = Math.max(0, Math.min(Math.max(0, duration - next), v));
+    // Once the user has zoomed, a late `duration` must not reset their view.
+    zoomedRef.current = next < duration - 0.01;
     viewSecRef.current = next; viewStartRef.current = v;
     setViewSec(next); setViewStart(v);
   }
 
-  // ── PAN → move / resize / travel, decided by where the finger landed ─────────
+  // ── PAN → move or resize, decided by where the finger landed ────────────────
+  //
+  // There is deliberately NO "pan the viewport" mode. There was one, and it was
+  // a regression: zoomed out (the default) the viewport cannot pan at all, and
+  // the window is only MIN_WIN_PX wide, so almost the whole bar became a region
+  // where dragging did nothing. The original component let you drag ANYWHERE to
+  // move the selection, and that was right — it is restored here.
+  //
+  // Travelling a long video is handled by follow() instead: drag the selection
+  // to the edge of the viewport and the viewport comes with it.
   function onPanState(e: any) {
     if (e.nativeEvent.state !== State.BEGAN) return;
-    gStart.current = startRef.current;
     gDur.current = durRef.current;
-    gViewStart.current = viewStartRef.current;
 
     const x = e.nativeEvent.x;
     const left = (startRef.current - viewStartRef.current) * pxPerSec;
     const right = left + Math.max(MIN_WIN_PX, durRef.current * pxPerSec);
-    if (Math.abs(x - left) <= GRIP_HIT_PX) mode.current = 'left';
-    else if (Math.abs(x - right) <= GRIP_HIT_PX) mode.current = 'right';
-    else if (x > left && x < right) mode.current = 'move';
-    else mode.current = 'pan';
+
+    if (Math.abs(x - left) <= GRIP_HIT_PX) { mode.current = 'left'; gStart.current = startRef.current; return; }
+    if (Math.abs(x - right) <= GRIP_HIT_PX) { mode.current = 'right'; gStart.current = startRef.current; return; }
+
+    mode.current = 'move';
+    if (x > left && x < right) { gStart.current = startRef.current; return; }
+    // Touched away from the window: JUMP it here first, centred on the finger,
+    // then let the drag refine from there. Coarse positioning in one tap, which
+    // is most of what the old drag-anywhere was actually being used for.
+    const s = Math.max(0, Math.min(
+      duration - durRef.current,
+      viewStartRef.current + x / pxPerSec - durRef.current / 2,
+    ));
+    gStart.current = s;
+    commit(s, durRef.current);
+    follow(s, durRef.current);
   }
 
   function onPanEvent(e: any) {
     const dt = e.nativeEvent.translationX / pxPerSec;
-
-    if (mode.current === 'pan') {
-      // Travelling the video. Inverted: dragging left moves you forward, the
-      // same way scrubbing a filmstrip works everywhere else.
-      const v = Math.max(0, Math.min(Math.max(0, duration - viewSecRef.current), gViewStart.current - dt));
-      viewStartRef.current = v; setViewStart(v);
-      return;
-    }
 
     if (mode.current === 'move') {
       const s = Math.max(0, Math.min(duration - durRef.current, gStart.current + dt));
