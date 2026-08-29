@@ -58,12 +58,20 @@ const HOLD_MS = 140;
 const HOLD_SLOP = 12;
 // How far the finger travels on the STAGE to move a slide one position.
 //
-// Wider than the thumbnails purposely. The strip maps an ABSOLUTE finger
-// position onto a slot, so a small movement there is unambiguous; the stage is
-// a relative step, and every unit of travel is a whole position moved. 76 was
-// twitchy even after the runaway was fixed — 100 is roughly a thumb-length per
-// slot, which reads as deliberate.
-const STAGE_STEP = 100;
+// Scaled to the SET, not fixed, because a fixed step cannot serve both ends. A
+// pair of slides only ever needs one move, so a short step there is twitchy for
+// no gain; eight slides need seven moves, and at that same step the far end sits
+// past the edge of the screen and cannot be reached in one drag at all.
+//
+// Dividing the frame by the number of moves means a drag across the stage covers
+// the whole list, whatever its length. The clamps stop the extremes: a two-slide
+// set would otherwise demand a 390pt haul, and a full eight would go twitchy.
+const STAGE_STEP_MIN = 58;
+const STAGE_STEP_MAX = 150;
+function stageStepFor(frameW: number, count: number): number {
+  if (count < 2) return STAGE_STEP_MAX;
+  return Math.max(STAGE_STEP_MIN, Math.min(STAGE_STEP_MAX, frameW / (count - 1)));
+}
 
 const SlideArranger = forwardRef<SlideArrangerHandle, {
   slides: ArrangerSlide[];
@@ -93,6 +101,10 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
 
   const pitch = TILE + TILE_GAP;
   const pitchRef = useRef(pitch); pitchRef.current = pitch;
+  // Recomputed whenever the set changes — behind a ref because the responder
+  // closes over its first render.
+  const stageStep = stageStepFor(frameW, slides.length);
+  const stageStepRef = useRef(stageStep); stageStepRef.current = stageStep;
 
   const fitOf = (s?: ArrangerSlide | null): SlideFit => s?.fit ?? defaultFitFor(format);
   const cur = slides[Math.min(index, Math.max(0, slides.length - 1))];
@@ -132,6 +144,11 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
     // Without this the stage keeps its old offset and lands on the wrong photo.
     pageX.setValue(-to * frameW);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  };
+
+  const cycleFormat = () => {
+    const i = SLIDESHOW_FORMATS.indexOf(format as (typeof SLIDESHOW_FORMATS)[number]);
+    onFormatChange(SLIDESHOW_FORMATS[(i + 1) % SLIDESHOW_FORMATS.length]);
   };
 
   const setFit = (next: SlideFit) => {
@@ -290,7 +307,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
   // Move first and it pages; hold first and it reorders. One piece of code
   // decides which, so there is nothing to arbitrate.
   //
-  // Reordering from here steps by STAGE_STEP rather than a full frame width:
+  // Reordering from here steps by stageStep rather than a full frame width:
   // dragging a whole screen per position would be unusable, and the strip below
   // is where the result is legible anyway.
   const stageOffset = useRef(0);
@@ -317,7 +334,7 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
         // from grant, so a moving base and a growing delta compounded. One step
         // of travel moved one slot, two steps moved three, and a short drag
         // walked the slide to the end of the list.
-        swapTo(stageIdx.current + Math.round(g.dx / STAGE_STEP));
+        swapTo(stageIdx.current + Math.round(g.dx / stageStepRef.current));
         return;
       }
       if (moved.current) clearHold();
@@ -410,6 +427,15 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
           </TouchableOpacity>
         )}
 
+        {/* Frame, in the corner the single-photo composer puts it in — same
+            control, same place, so it is one thing to learn rather than two. */}
+        <TouchableOpacity style={styles.aspectBtn} onPress={cycleFormat} activeOpacity={0.85}>
+          <Ionicons name="resize-outline" size={15} color={colors.text} />
+          <Text style={styles.aspectBtnText}>
+            {isAutoFormat(format) ? t(`post.format.${format}`) : format}
+          </Text>
+        </TouchableOpacity>
+
         {slides.length > 1 && (
           <View style={styles.dots} pointerEvents="none">
             {slides.map((s, i) => (
@@ -417,22 +443,6 @@ const SlideArranger = forwardRef<SlideArrangerHandle, {
             ))}
           </View>
         )}
-      </View>
-
-      {/* ── Frame, for the whole set ─────────────────────────────────────────── */}
-      <View style={styles.fmtRow}>
-        {SLIDESHOW_FORMATS.map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.fmtBtn, format === f && styles.fmtBtnOn]}
-            onPress={() => onFormatChange(f)}
-            activeOpacity={0.85}
-          >
-            <Text style={[styles.fmtText, format === f && styles.fmtTextOn]} numberOfLines={1}>
-              {isAutoFormat(f) ? t(`post.format.${f}`) : f}
-            </Text>
-          </TouchableOpacity>
-        ))}
       </View>
 
       {/* ── Per-photo: fill or fit, and reposition ───────────────────────────── */}
@@ -573,15 +583,14 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   dot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'rgba(255,255,255,0.4)' },
   dotOn: { backgroundColor: '#fff' },
 
-  fmtRow: { flexDirection: 'row', gap: 6, marginTop: SPACING.sm, paddingHorizontal: SPACING.md },
-  fmtBtn: {
-    paddingVertical: 6, paddingHorizontal: SPACING.sm + 2,
-    borderRadius: RADIUS.full, backgroundColor: c.surfaceLight,
-    borderWidth: 1, borderColor: c.border,
+  // Same corner, same shape as the single-photo composer's.
+  aspectBtn: {
+    position: 'absolute', left: SPACING.md, bottom: SPACING.md,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.full,
+    paddingVertical: 5, paddingHorizontal: SPACING.sm,
   },
-  fmtBtnOn: { backgroundColor: c.text, borderColor: c.text },
-  fmtText: { color: c.textSecondary, fontSize: 12.5, fontWeight: '700' },
-  fmtTextOn: { color: c.background, fontWeight: '800' },
+  aspectBtnText: { color: c.text, fontSize: 12, fontWeight: '700' },
 
   toolRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
   tool: {

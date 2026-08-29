@@ -19,7 +19,11 @@ export const VIDEO_FORMATS = ['1:1', '4:5', '1.91:1'] as const;
 //   mixed — same frame, but every slide is FITTED (letterboxed) instead, so a
 //           set of different shapes publishes with nothing cut off.
 // Either default can be overridden per slide on the Arrange screen.
-export const SLIDESHOW_FORMATS = ['1:1', '4:5', 'full', 'mixed'] as const;
+// 'full' is deliberately NOT offered. For the photos people actually post it
+// lands on 4:5 anyway — clampFeedAspect floors at 4/5 — so it was a third button
+// that mostly repeated the second. isAutoFormat still understands it, because
+// drafts saved before this change can still carry it.
+export const SLIDESHOW_FORMATS = ['1:1', '4:5', 'mixed'] as const;
 export type SlideFit = 'cover' | 'contain';
 
 /** Formats with no ratio in them — resolved from the media itself. */
