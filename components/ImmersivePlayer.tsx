@@ -96,7 +96,19 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
   const barW = (trackW - BAR_GAP * (BARS - 1)) / BARS;
   const wrapRef = useRef<View>(null);
   const wrapX = useRef(0);
-  const ratioAt = (pageX: number) => Math.max(0, Math.min(1, (pageX - wrapX.current) / (trackW || 1)));
+  const wrapW = useRef(trackW);
+
+  // PanResponder.create runs ONCE inside a useRef, so its handlers close over the
+  // FIRST render's values forever. durationMs is 0 on that render, so
+  // `if (durationMs > 0) seekTo(...)` was permanently false and the release never
+  // seeked — dragging moved the bar and then snapped back, which is exactly the
+  // "doesn't work that well" the owner hit. Everything the handlers read now
+  // lives in a ref that each render refreshes. Scrubber already does this with
+  // onSeekRef for the same reason; this file failed to copy it.
+  const durRef = useRef(durationMs); durRef.current = durationMs;
+  const seekRef = useRef(seekTo); seekRef.current = seekTo;
+
+  const ratioAt = (pageX: number) => Math.max(0, Math.min(1, (pageX - wrapX.current) / (wrapW.current || 1)));
 
   const pan = useRef(
     PanResponder.create({
@@ -115,7 +127,7 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
       onPanResponderRelease: (e) => {
         const r = ratioAt(e.nativeEvent.pageX);
         dragging.current = false; setDragRatio(null);
-        if (durationMs > 0) seekTo(Math.floor(r * durationMs));
+        if (durRef.current > 0) seekRef.current(Math.floor(r * durRef.current));
       },
       onPanResponderTerminate: () => { dragging.current = false; setDragRatio(null); },
     }),
@@ -123,10 +135,19 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
 
   if (!mounted || !currentTrack) return null;
 
-  // The cover is rendered WIDER than the screen and slid left as the song plays.
-  // 1.55× gives a pan long enough to be felt over a three-minute track without
-  // the crop throwing away most of the artwork.
-  const artW = SW * 1.55;
+  // The cover is rendered wider than the screen and slid left as the song plays.
+  //
+  // artH is the one that controls ZOOM, which is not obvious. A square cover in a
+  // box taller than it is wide gets scaled to the box's HEIGHT no matter how wide
+  // the box is — so widening it only adds pan distance, while the magnification
+  // stays pinned to the screen height. Shortening the box is the only thing that
+  // zooms out, which is why the owner's "photo may be zoomed in a bit too much"
+  // is fixed here at 0.82 rather than by touching artW.
+  //
+  // The missing 18% at the bottom sits under the darkest part of the scrim, where
+  // the controls are, so the edge never shows.
+  const artW = SW * 1.35;
+  const artH = SH * 0.82;
   const panX = prog.interpolate({ inputRange: [0, 1], outputRange: [0, -(artW - SW)] });
   const playedMs = dragRatio != null ? dragRatio * durationMs : positionMs;
 
@@ -137,20 +158,20 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
         {currentTrack.cover ? (
           <ExpoImage
             source={{ uri: currentTrack.cover }}
-            style={{ width: artW, height: SH }}
+            style={{ width: artW, height: artH }}
             contentFit="cover"
             cachePolicy="memory-disk"
           />
         ) : (
-          <View style={{ width: artW, height: SH, backgroundColor: '#111' }} />
+          <View style={{ width: artW, height: artH, backgroundColor: '#111' }} />
         )}
       </Animated.View>
       {/* Legibility scrim. Heavier at top and bottom, where all the text is —
           the middle stays clear so the artwork is actually visible, which is the
           entire point of the screen. */}
       <LinearGradient
-        colors={['rgba(0,0,0,0.72)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.30)', 'rgba(0,0,0,0.88)']}
-        locations={[0, 0.34, 0.58, 1]}
+        colors={['rgba(0,0,0,0.58)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.94)']}
+        locations={[0, 0.22, 0.5, 0.88]}
         style={StyleSheet.absoluteFill}
       />
 
@@ -169,11 +190,14 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
             Scrubber uses, so scrubbing a 68-bar row costs no JS per frame. */}
         <View
           ref={wrapRef}
-          onLayout={() => wrapRef.current?.measureInWindow((x) => { wrapX.current = x; })}
+          // Re-measured on every layout, and the WIDTH is captured too — the
+          // handlers cannot read either from render scope, so both have to be
+          // refs. A stale x is a drag that lands in the wrong place.
+          onLayout={() => wrapRef.current?.measureInWindow((x, _y, w) => { wrapX.current = x; wrapW.current = w || trackW; })}
           style={[styles.wave, { width: trackW }]}
           {...pan.panHandlers}
         >
-          <Row bars={bars} barW={barW} color="rgba(255,255,255,0.34)" />
+          <Row bars={bars} barW={barW} color="rgba(255,255,255,0.28)" />
           <Animated.View
             style={[
               StyleSheet.absoluteFill,
@@ -181,7 +205,7 @@ export default function ImmersivePlayer({ visible, onClose }: { visible: boolean
             ]}
           >
             <Animated.View style={{ transform: [{ translateX: prog.interpolate({ inputRange: [0, 1], outputRange: [trackW, 0] }) }] }}>
-              <Row bars={bars} barW={barW} color="#F26522" />
+              <Row bars={bars} barW={barW} color="#FFFFFF" />
             </Animated.View>
           </Animated.View>
         </View>
