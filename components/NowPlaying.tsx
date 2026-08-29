@@ -23,6 +23,7 @@ import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { formatCount } from '../lib/format';
 import { createNotification } from '../lib/createNotification';
 import Scrubber from './Scrubber';
+import ImmersivePlayer from './ImmersivePlayer';
 import Comments from './Comments';
 import { adDestination, AUDIO_AD_SKIP_MS } from '../lib/ads';
 import { openAdCta } from '../contexts/AdCtaContext';
@@ -262,6 +263,8 @@ export default function NowPlaying() {
   const { show: showOptions } = usePostOptions();
   const router = useRouter();
   const [render, setRender] = useState(false);
+  // Full-bleed listening view, opened by tapping the artwork below.
+  const [immersive, setImmersive] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
   // When a song ENDS, the sheet fades + gently scales down in place (a manual
   // dismiss still slides) so the auto-exit feels clean rather than abrupt.
@@ -746,7 +749,11 @@ export default function NowPlaying() {
                       fires exactly when the source swaps — a native
                       cross-dissolve from the old cover to the new one. */}
                   {track.cover ? (
-                    <ExpoImage source={{ uri: track.cover }} style={styles.art} contentFit="cover" cachePolicy="memory-disk" transition={250} />
+                    // Tapping the art opens the full-bleed listening view. Only
+                    // when there IS art — the placeholder has nothing to pan.
+                    <TouchableOpacity activeOpacity={0.9} onPress={() => setImmersive(true)} accessibilityRole="button" accessibilityLabel={t('a11y.play')}>
+                      <ExpoImage source={{ uri: track.cover }} style={styles.art} contentFit="cover" cachePolicy="memory-disk" transition={250} />
+                    </TouchableOpacity>
                   ) : (
                     <LinearGradient colors={GRADIENTS.primary} style={styles.art}>
                       <Ionicons name="musical-notes" size={64} color={colors.text} />
@@ -822,6 +829,10 @@ export default function NowPlaying() {
         </KeyboardAvoidingView>
         )}
       </LinearGradient>
+      {/* Sibling of the sheet's gradient, inside the sheet itself: the immersive
+          view is a MODE of the player rather than a separate screen, so it rides
+          the same mount and closes back to exactly the sheet it came from. */}
+      <ImmersivePlayer visible={immersive} onClose={() => setImmersive(false)} />
     </Animated.View>
   );
 }
