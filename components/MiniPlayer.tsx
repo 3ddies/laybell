@@ -300,7 +300,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
         >
           <Ionicons
             name={isBuffering ? 'hourglass' : isPlaying ? 'pause-circle' : 'play-circle'}
-            size={28} color={colors.primary}
+            size={28} color={colors.text}
           />
         </TouchableOpacity>
         <TouchableOpacity
@@ -354,7 +354,7 @@ export default function MiniPlayer({ variant = 'bar', bottomDock = false }: { va
         >
           <Ionicons
             name={isBuffering ? 'hourglass' : isPlaying ? 'pause-circle' : 'play-circle'}
-            size={26} color={colors.primary}
+            size={26} color={colors.text}
           />
         </TouchableOpacity>
         <TouchableOpacity
@@ -477,7 +477,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     position: 'absolute', left: SPACING.sm, right: SPACING.sm,
     backgroundColor: colors.surfaceElevated,
     borderRadius: RADIUS.lg, overflow: 'hidden',
-    borderWidth: 0.5, borderColor: colors.primaryLight + '55',
+    borderWidth: 0.5, borderColor: colors.borderStrong,
     // iOS: overflow:'hidden' clips the layer shadow — it drew NOTHING here but
     // still forced alpha-based shadow work on a bar that moves with every
     // scroll. Android elevation is unaffected, so keep the shadow there.
@@ -533,7 +533,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: SPACING.xs + 2,
     backgroundColor: colors.surfaceElevated,
     borderRadius: RADIUS.full,
-    borderWidth: 0.5, borderColor: colors.primaryLight + '55',
+    borderWidth: 0.5, borderColor: colors.borderStrong,
     paddingVertical: 5, paddingLeft: 5, paddingRight: SPACING.sm,
     ...SHADOWS.md,
     zIndex: 100,
@@ -555,7 +555,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     alignItems: 'center', gap: 8,
     backgroundColor: colors.surfaceElevated,
     borderRadius: RADIUS.full,
-    borderWidth: 0.5, borderColor: colors.primaryLight + '55',
+    borderWidth: 0.5, borderColor: colors.borderStrong,
     paddingVertical: 8, paddingHorizontal: 6,
     ...SHADOWS.md,
     zIndex: 100,

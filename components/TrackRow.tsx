@@ -54,9 +54,13 @@ export default function TrackRow({
   const safeAvatar = guardPress(onAvatarPress);
   // Card background derived from the active theme so the sound cards fit every
   // mode (grey card in Grey, white card in Light, dark card in Dark) instead of
-  // a fixed near-black. Playing rows get a warm primary wash over the surface.
+  // a fixed near-black.
+  //
+  // The playing row is marked by a wash of the TEXT colour rather than brand —
+  // it lifts on dark and deepens on light, so "this is the one playing" reads in
+  // every theme without spending the accent on it. Brand is for things you press.
   const cardColors = (isPlaying
-    ? [colors.primary + '26', colors.surfaceLight]
+    ? [colors.text + '1A', colors.surfaceLight]
     : [colors.surfaceLight, colors.surface]) as readonly [string, string];
   return (
     <LinearGradient
@@ -136,7 +140,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
-  rowActive: { borderColor: colors.primary + '55' },
+  rowActive: { borderColor: colors.borderStrong },
   coverWrap: {
     width: 50, height: 50, borderRadius: RADIUS.md, overflow: 'hidden',
     borderWidth: 1, borderColor: colors.borderSubtle,
@@ -146,9 +150,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // (primarySoft is semi-transparent, so a background under it would tint it).
   // Acts as the load placeholder: a neutral theme tile the cover fades in over.
   coverImg: { backgroundColor: colors.surfaceLight },
+  // Scrim over the artwork of the playing row. Takes the PAGE colour, not a
+  // fixed dark: the note glyph on top is colors.text, so a black scrim would
+  // hide a near-black glyph in light mode. Page colour is the one value
+  // guaranteed to contrast with the text colour in every theme.
   coverOverlayActive: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(224,64,28,0.5)',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background + '8C',
   },
   info: { flex: 1 },
   // The song name is the row's headline and its primary tap target (the whole
