@@ -43,7 +43,7 @@ App Store search indexing lags availability by a day or more. Neither is a fault
 
 ## 🔧 1.0.1 — in development, NOT released
 
-**140 commits on `dev` since `v1.0.0-build4`.** Tree clean, pushed, typecheck clean. The
+**169 commits on `dev` since `v1.0.0-build4`.** Tree clean, pushed, typecheck clean. The
 released build is untouched and still tagged `v1.0.0-build4`.
 
 What is in it so far, by area:
@@ -62,15 +62,32 @@ What is in it so far, by area:
   dancing equaliser that folds into a pause symbol, a true paused state, and a STOP glyph that
   finally tells the truth about what that button does.
 - **Feed and reels** — pinch-to-zoom on feed photos, a wordmark that settles from brand yellow
-  to neutral, a header that dissolves into the feed instead of ending on a hairline, and a
-  reels kind dropdown (All / Vertical / Horizontal / Films).
+  to neutral, a header that casts a shadow instead of ending on a hairline, and a reels kind
+  dropdown (All / Vertical / Horizontal / Films).
+- **The slideshow composer** (2026-08-29, the session's biggest piece) — a new **Arrange** step
+  between picking media and writing the post. Swipe to browse, X to delete, tap a thumbnail to
+  jump, hold-and-drag to reorder from either the strip or the big preview, and a crop sheet
+  offering **Original / 1:1 / 4:5**. Slides publish at the proportions they were shot at;
+  cropping is the only thing that fills. **Never side bars** — anything narrower than the frame
+  fills instead, so bars only ever land top and bottom.
+- **Slideshows in reels** — tapping one in the feed opens the reel viewer. Reels stays a video
+  surface: slideshows enter its ranking at 0.12× and climb to full weight on engagement, the
+  same dampened-entry curve films already use. Home and Explore are untouched.
 
 ⛔ **Slideshow pinch-to-zoom was attempted three times and REVERTED.** A horizontal pinch and a
 horizontal page drag are the same movement to a paging ScrollView. `scrollEnabled` toggling is
 a frame too late, the touch detection was dead code (a View's `onTouchStart` needs the
 responder, which the ScrollView holds), `simultaneousHandlers` stopped the cancel but not the
-paging, and `waitFor` stopped the paging by killing paging outright. `SlideshowCarousel.tsx` is
-byte-identical to before the attempts. Do not retry without a different interaction model.
+paging, and `waitFor` stopped the paging by killing paging outright. Do not retry without a
+different interaction model.
+
+🧭 **THE RULE THAT CAME OUT OF ALL OF IT, and it earned its place the expensive way: never put
+a scroller inside a gesture handler and hope one wins.** Give each surface exactly one job.
+Every fight on this screen ended the same way — the arrange stage stopped being a paging
+ScrollView and became one responder that decides for itself (move → page, hold → reorder);
+cropping moved behind its own sheet; the slideshow reel was lifted OUT of the zoom and the tap
+layer so only the vertical pager sits above it. Crossed axes nest cleanly. Same-axis
+competitors never do.
 
 **Before 1.0.1 can ship:** version bump, EAS build, submit — **to BOTH stores now**, which the
 old plan did not assume. Still open: `verify-email.tsx` / `reset-password.tsx` on the old
