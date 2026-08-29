@@ -1851,8 +1851,8 @@ export default function PostScreen() {
                 style={styles.optSwitch}
                 value={allowDownloads}
                 onValueChange={setAllowDownloads}
-                trackColor={{ true: colors.primary, false: colors.surfaceLight }}
-                thumbColor="#fff"
+                trackColor={{ true: colors.text, false: colors.surfaceLight }}
+                thumbColor={allowDownloads ? colors.background : "#fff"}
               />
               <TouchableOpacity onPress={() => setInfo({ icon: 'cloud-download-outline', title: t('offline.downloadableLabel'), body: t('offline.downloadableHelp') })} hitSlop={8}>
                 <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
@@ -1870,8 +1870,8 @@ export default function PostScreen() {
                 style={styles.optSwitch}
                 value={allowSound}
                 onValueChange={setAllowSound}
-                trackColor={{ true: colors.primary, false: colors.surfaceLight }}
-                thumbColor="#fff"
+                trackColor={{ true: colors.text, false: colors.surfaceLight }}
+                thumbColor={allowSound ? colors.background : "#fff"}
               />
               <TouchableOpacity onPress={() => setInfo({ icon: 'musical-notes-outline', title: t('post.allowSoundLabel'), body: t('post.allowSoundHelp') })} hitSlop={8}>
                 <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
@@ -1888,8 +1888,8 @@ export default function PostScreen() {
               style={styles.optSwitch}
               value={mature}
               onValueChange={setMature}
-              trackColor={{ true: colors.primary, false: colors.surfaceLight }}
-              thumbColor="#fff"
+              trackColor={{ true: colors.text, false: colors.surfaceLight }}
+              thumbColor={mature ? colors.background : "#fff"}
             />
             <TouchableOpacity onPress={() => setInfo({ icon: 'alert-circle-outline', title: t('post.matureLabel'), body: t('post.matureHelp') })} hitSlop={8}>
               <Text style={styles.learnMore}>{t('post.learnMore')}</Text>
@@ -1902,8 +1902,8 @@ export default function PostScreen() {
                 style={styles.optSwitch}
                 value={allowGifs}
                 onValueChange={setAllowGifs}
-                trackColor={{ true: colors.primary, false: colors.surfaceLight }}
-                thumbColor="#fff"
+                trackColor={{ true: colors.text, false: colors.surfaceLight }}
+                thumbColor={allowGifs ? colors.background : "#fff"}
               />
               <TouchableOpacity onPress={() => setInfo({ icon: 'film-outline', title: t('post.allowGifsLabel'), body: t('post.allowGifsHelp') })} hitSlop={8}>
                 <Text style={styles.learnMore}>{t('post.learnMore')}</Text>

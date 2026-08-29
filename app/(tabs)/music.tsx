@@ -1219,11 +1219,25 @@ export default function MusicScreen() {
               onPress={() => { setActiveView(view); setSelectedPlaylist(null); setSelectedCommunity(null); }}
             >
               {on && (
-                <LinearGradient
-                  colors={GRADIENTS.primary as any}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[StyleSheet.absoluteFill, { borderRadius: RADIUS.full }]}
+                // A RAISED NEUTRAL SURFACE, not the brand gradient it used to be
+                // and deliberately not the genre pills' treatment either.
+                //
+                // The owner asked for neutral here but explicitly not the same
+                // white/black as the genre chips — those are a solid INVERTED
+                // fill (background: colors.text, label: colors.background), and
+                // repeating it two rails apart would make the screen read as one
+                // long run of identical chips.
+                //
+                // So this stays a segmented control and does the iOS thing
+                // instead: surfaceElevated is lighter than the `surface` track in
+                // both themes, so the selected segment reads as a thumb standing
+                // proud of a groove rather than as a filled pill. Same neutral
+                // family, completely different object.
+                <View
+                  style={[
+                    StyleSheet.absoluteFill,
+                    { borderRadius: RADIUS.full, backgroundColor: colors.surfaceElevated },
+                  ]}
                 />
               )}
               <Text style={[styles.toggleText, on && styles.toggleTextActive]} numberOfLines={1}>{labels[view]}</Text>
@@ -2109,9 +2123,11 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     elevation: 2,
   },
   toggleText: { color: colors.textSecondary, fontSize: 12.5, fontWeight: '600', letterSpacing: -0.1 },
-  // '#fff', not colors.text: the thumb is the brand gradient in both themes, and
-  // on the light theme colors.text is near-black — dark label on orange.
-  toggleTextActive: { color: '#fff', fontWeight: '800' },
+  // colors.text now, NOT '#fff'. The old note here was right for its time — the
+  // thumb was the brand gradient in both themes, so a near-black label would have
+  // sat on orange. The thumb is a neutral surface now, so a hardcoded white label
+  // would be white-on-near-white the moment the light theme loaded.
+  toggleTextActive: { color: colors.text, fontWeight: '800' },
 
   list: { flex: 1 },
   // flexGrow so short/empty lists still fill the screen — lets pull-to-refresh

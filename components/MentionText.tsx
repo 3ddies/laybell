@@ -2,7 +2,7 @@ import { Text, type StyleProp, type TextStyle } from 'react-native';
 import { useState, type ReactNode } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { COLORS } from '../constants/theme';
+import { useTheme } from '../contexts/ThemeContext';
 
 // Renders caption / comment text with @mentions as tappable, highlighted spans
 // that open the mentioned user's profile. Drop-in replacement for a plain <Text>.
@@ -47,6 +47,7 @@ export default function MentionText({
   // (e.g. Now Playing) can close first — otherwise the profile opens BEHIND it.
   onBeforeNavigate?: () => void;
 }) {
+  const { colors } = useTheme();
   const router = useRouter();
   // Which mention span is currently held — drives a brief press underline (a clean
   // link-style tap cue, matching the name tap feedback in the live chat).
@@ -70,7 +71,16 @@ export default function MentionText({
         s.t === 'm' ? (
           <Text
             key={i}
-            style={[{ color: COLORS.primary, fontWeight: '600' }, mentionStyle, pressedIdx === i && styles_underline]}
+            // Neutral and bold, not brand orange (owner, 2026-08-28): near-black
+            // on the light theme, white on dark. Themed rather than the static
+            // COLORS import, which is the DARK palette — a mention rendered on
+            // the light theme was reading a dark-theme colour.
+            //
+            // Weight is what carries it now that hue does not: mentions have to
+            // stay obviously tappable inside a run of body text, and 700 against
+            // the surrounding 400 does that without a second colour competing
+            // with everything else on the screen.
+            style={[{ color: colors.text, fontWeight: '700' }, mentionStyle, pressedIdx === i && styles_underline]}
             onPressIn={() => setPressedIdx(i)}
             onPressOut={() => setPressedIdx(null)}
             onPress={() => go(s.u!)}
