@@ -67,9 +67,43 @@ stops.
 | 11 | All 4 auth screens | The form leaping when the keyboard opens — worst on login | Functional | ✅ done |
 | 12 | Signup | Logo sat hard against the Dynamic Island | Cosmetic | ✅ done |
 | 13 | Sign-in handoff | The auth screen visibly **reset itself** before the feed appeared | Functional | ✅ done |
-| 14 | GIF maker | Trim bar unusable on long videos — pinch now zooms the timeline | Functional | ✅ done |
+| 14 | GIF maker | Trim bar unusable on long videos | Functional | ⏪ **reverted — see below** |
 
-### 14 · The GIF trim bar was two pixels wide
+### 14 · The GIF trim bar — ⏪ REVERTED. Read this before trying again.
+
+**Four commits, each fixing a bug the previous one introduced, and the owner's verdict was
+"everything just feels bad, not nearly as good as it did originally". He was right. Reverted to
+the last known-good version (`1ce1edc^`); only the on-screen hint was kept, corrected.**
+
+**The problem is real** and the arithmetic below still stands — on a 9-minute video the selection
+really is drawn ~2px. But the fix attempted was a viewport/zoom rewrite, and every round added
+machinery that broke feel somewhere else:
+
+1. Pinch reassigned to zoom, viewport introduced → **dragging outside the window did nothing**
+   (the pan mode could not pan when zoomed out, which is the default).
+2. Fixed with jump-to-finger → **"teleporty"**, because zoomed out the window is 46px so most
+   touches land outside it.
+3. Removed the jump, throttled the parent, focal-point zoom → **the window froze against the
+   viewport edge** while the video kept scrubbing, because `follow()` tracked 1:1.
+4. Paging + lazy gesture arming → still bad overall.
+
+**What to learn before attempting this again:**
+
+- **The original interaction is good and should be preserved**: drag anywhere moves the
+  selection, pinch changes the length. Do not reassign those. Whatever fixes the tiny-window
+  problem has to be *additive*.
+- **Every gesture change here has a second-order effect** on either the 46px minimum window, the
+  viewport, or the debounced filmstrip. Those three interact, and that interaction is what kept
+  producing "feels bad" rather than a nameable bug.
+- **`onChange` feeds `trimStartSec`/`trimEndSec` into a live `<AppVideo>`**, and there is no
+  Reanimated in this project, so every gesture frame is JS-thread work that reconfigures a video
+  player. Any future version must throttle that — it is real, and it was the one change in the
+  four that was probably right.
+- **Try the smallest thing first and ship only that.** A fixed drag *sensitivity* (seconds per
+  point, independent of video length) would address "hard to control" without a viewport, a
+  zoom, or a mode. That is the next thing to try, alone.
+
+The measurements that motivated it, kept because they are still the case:
 
 Owner: *"for longer videos the gif frame is so tiny that it is hard to control."* The arithmetic
 agrees with him precisely. The strip always spanned the **whole** video across ~345pt:
