@@ -2180,15 +2180,20 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // adapts to the theme) instead of a hard gradient tile, copy with room to
   // breathe, and a gradient pill CTA.
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 1.6, paddingHorizontal: SPACING.xl, gap: SPACING.sm },
+  // Two concentric discs behind the empty-state glyph. Tinted with the TEXT
+  // colour rather than brand: at 4% and 9% they read as a soft rise out of the
+  // page in either theme, where the orange tint read as a colour choice — and a
+  // 108pt disc is a lot of screen to spend on the accent for something that is
+  // only saying a list is empty.
   emptyHalo: {
     width: 108, height: 108, borderRadius: 54,
-    backgroundColor: colors.primary + '0A',
+    backgroundColor: colors.text + '0A',
     alignItems: 'center', justifyContent: 'center',
     marginBottom: SPACING.xs,
   },
   emptyIconCircle: {
     width: 76, height: 76, borderRadius: 38,
-    backgroundColor: colors.primary + '16',
+    backgroundColor: colors.text + '16',
     alignItems: 'center', justifyContent: 'center',
   },
   emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '700', letterSpacing: -0.3 },
