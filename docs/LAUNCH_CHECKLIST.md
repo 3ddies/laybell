@@ -18,7 +18,7 @@ console access, money, identity), or **[LEGAL]** (needs a professional or a fili
 
 ---
 
-## 0.0 ✅ THE CURRENT STATE — updated 2026-08-29 (end of session)
+## 0.0 ✅ THE CURRENT STATE — updated 2026-08-30 (end of session)
 
 **One-line status: the launch is DONE — Laybell is live on both stores. All work now is
 1.0.1, which is unreleased and lives only on `dev`.**
@@ -43,7 +43,7 @@ App Store search indexing lags availability by a day or more. Neither is a fault
 
 ## 🔧 1.0.1 — in development, NOT released
 
-**169 commits on `dev` since `v1.0.0-build4`.** Tree clean, pushed, typecheck clean. The
+**193 commits on `dev` since `v1.0.0-build4`.** Tree clean, pushed, typecheck clean. The
 released build is untouched and still tagged `v1.0.0-build4`.
 
 What is in it so far, by area:
@@ -74,6 +74,51 @@ What is in it so far, by area:
   surface: slideshows enter its ranking at 0.12× and climb to full weight on engagement, the
   same dampened-entry curve films already use. Home and Explore are untouched.
 
+### Added 2026-08-30
+
+- **Empty states took Apple's shape** — the box is gone; a 64pt glyph, a 19/800 title and a
+  quieter 13.5 line, identical across Messages (4 states) and the Music tab (4).
+- **Laybell TV** — "Watch on TV" is one orange pill on both themes again, glyphs removed,
+  centred bold. The light/dark fork was solving a contrast problem the accent never had.
+- **A film's title and description take turns** (`components/RotatingCaption.tsx`) — a film has
+  two pieces of writing where every other post has one, so the slot alternates on a slow
+  crossfade: title at 20/700, description at 14/400, 8.2s each. Fixed two-line box, top-aligned
+  so the swap reads as substitution rather than the title dropping. A description that really
+  overflows gets an "…" that ends the rotation and stacks both — **overflow is MEASURED** by a
+  hidden unclamped copy, because the character-count guess is wrong in both directions.
+- **Music videos joined that rotation**, with the dedupe that makes it worth having.
+  `songCreditLine` folds the artist in only where the title does not already name them
+  ("Break that - 3ddie" stays as it is), and `captionEchoesTitle` drops a caption that only
+  restates the credit. Matching is loose about SPELLING — diacritics, leetspeak, emoji,
+  punctuation, repeated letters, a length-scaled edit distance — and strict about CONTENT:
+  "shot this with 3ddie in Miami" survives, because voiding it would delete a real description
+  to prevent a repetition that was never going to happen.
+- **The song pill became breathing artwork on music videos** — the cover rises into the corner,
+  holds 12s, leaves for 18s. The pill stays wherever the song is not otherwise named (no cover,
+  no `song_title`, and everywhere outside the feed).
+- **Tapping that artwork hands the song over mid-track.** `playFrom` places the playhead
+  BEFORE the first note, and re-reads the video's position at the moment of the seek rather
+  than using the one captured at the tap — a song row and a stream cost real time, and starting
+  a second behind is the repeat that makes a handoff sound like a glitch. `handoffPositionMs`
+  decides, and answers 0 (from the top) for anything it cannot vouch for. **The rule is that
+  the duration mismatch bounds the worst case, so it is compared against the position itself:**
+  take the seek only when it is the smaller error than restarting. A tap ten seconds into a
+  video running twenty long declines (that may still be the intro); the same tap two minutes in
+  accepts. Every mislabelled shape — a 30s clip, an 8:00 vlog, a promo tag on an unrelated
+  video — plays from 0:00.
+- **Double-tap-to-like works on slideshow reels again** — it rides the carousel's own per-slide
+  touchable, not a layer stacked over its ScrollView, which is what broke the swipe before.
+- **Live's empty state follows the theme.** `root` was hardcoded `#000`, so "No one is live"
+  sat on black in an otherwise white app. Every LiveCard paints its own black.
+- **Sideways reels: the scrub bar leaves with the chrome**, and `pointerEvents` follows the
+  opacity — an invisible bar still holding the bottom band would swallow the tap meant to
+  summon it.
+- **"Swipe sideways for the next video"** (`lib/landscapeSwipeHint.ts`) — one message, two
+  appearances. The INTRO after 20s of settled watching is rationed (3 in a lifetime, one a day,
+  first reel of a sitting, abandoned by any non-pause tap). The PAUSED note after 10s stopped is
+  unrationed, because it interrupts nothing. **Both end permanently the first time the pager is
+  dragged by hand** — that is proof the gesture is known. Translated into all ten locales.
+
 ⛔ **Slideshow pinch-to-zoom was attempted three times and REVERTED.** A horizontal pinch and a
 horizontal page drag are the same movement to a paging ScrollView. `scrollEnabled` toggling is
 a frame too late, the touch detection was dead code (a View's `onTouchStart` needs the
@@ -91,9 +136,22 @@ competitors never do.
 
 **Before 1.0.1 can ship:** version bump, EAS build, submit — **to BOTH stores now**, which the
 old plan did not assume. Still open: `verify-email.tsx` / `reset-password.tsx` on the old
-inputs, the keyboard sweep across the other 41 `TextInput` files, the `PostMusicContext`
-ambient-audio races (three claims, none re-verified), and four new `reel.filter.*` strings that
-exist in English only (`translate()` falls back per key, so the other nine locales read English).
+inputs, the keyboard sweep across the other 41 `TextInput` files, and the `PostMusicContext`
+ambient-audio races (three claims, none re-verified).
+
+⚠️ **THE i18n GAP IS MUCH BIGGER THAN THIS FILE USED TO SAY.** It claimed "four new
+`reel.filter.*` strings"; an audit on 2026-08-30 found **459 English keys missing from at least
+one locale** — 425 each in es/fr/de/pt/it, 459 each in ru/zh/ja/hi, roughly **3,960 strings**
+in total. It is spread across fourteen-plus namespaces and is years of feature work, not this
+session's: communities (112 keys), gif (50), offline (34), live (27), groups (25), post (24),
+report (23), wallet (23), a11y (18), tv (14), linkGuard (13), credits (11), adCreate (10),
+account (10). Nothing is broken — `translate()` falls back per key, so those surfaces render in
+English — but a Spanish speaker opening Communities gets an English screen.
+
+To re-audit: parse the `const <lang>` blocks in `lib/i18n.ts` and diff each key set against
+`en`. Two decisions belong to the owner before any of it starts — whether to do it at all
+before 1.0.1 (it does not block a release), and whether machine translation is acceptable for
+the bulk, given that zh/ja/hi still need a native-speaker pass on what IS already translated.
 
 **Also next:** the weekly health check (`supabase/sql/_HEALTH_CHECK.sql`), and now that both
 stores have real users — App Store Connect → Analytics and Play Console → Android vitals for
