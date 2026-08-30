@@ -15,7 +15,7 @@ import TrackRow from '../../components/TrackRow';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { countLabel } from '../../lib/i18n';
-import { SPACING, RADIUS, GRADIENTS, type ThemePalette } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, quietText, type ThemePalette } from '../../constants/theme';
 import { Skeleton, SkeletonLine, TrackListSkeleton } from '../../components/Skeleton';
 import {
   type Album, type AlbumTrack, albumCover, trackTitle,
@@ -383,7 +383,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   skeletonBody: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center', padding: SPACING.xl, gap: SPACING.sm },
   unavailable: { color: colors.textSecondary, fontSize: 15, textAlign: 'center' },
-  emptyHint: { color: colors.textTertiary, fontSize: 13, textAlign: 'center', maxWidth: 280 },
+  emptyHint: { color: quietText(colors), fontSize: 13, textAlign: 'center', maxWidth: 280 },
 
   // More air above the sleeve than below it: the cover is the first thing the
   // eye lands on after the bar, and sitting it tight under a hairline made the
@@ -409,7 +409,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   // Tabular so the column does not shuffle sideways as it passes 9 to 10.
   rowNum: {
-    width: 26, textAlign: 'center', color: colors.textTertiary,
+    width: 26, textAlign: 'center', color: quietText(colors),
     fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'],
   },
   rowTools: { flexDirection: 'row', alignItems: 'center', paddingRight: SPACING.sm },
@@ -448,7 +448,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     margin: SPACING.md, marginBottom: SPACING.xxl, padding: SPACING.md, gap: SPACING.sm,
     backgroundColor: colors.background, borderRadius: RADIUS.lg,
   },
-  dialogHint: { color: colors.textTertiary, fontSize: 12.5, lineHeight: 17 },
+  dialogHint: { color: quietText(colors), fontSize: 12.5, lineHeight: 17 },
   input: {
     borderWidth: 1, borderColor: colors.border, borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md, paddingVertical: 11,

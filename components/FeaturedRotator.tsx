@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, quietText, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { MAX_FEATURED, type FeaturedItem } from '../lib/musicFeatured';
 
@@ -134,7 +134,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   art: { width: ART, height: ART, borderRadius: RADIUS.md, backgroundColor: colors.surfaceElevated },
   artEmpty: { alignItems: 'center', justifyContent: 'center' },
   meta: { flex: 1, justifyContent: 'center' },
-  kind: { color: colors.textTertiary, fontSize: 10.5, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
+  kind: { color: quietText(colors), fontSize: 10.5, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
   title: { color: colors.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.4, lineHeight: 23 },
   artist: { color: colors.textSecondary, fontSize: 13.5, fontWeight: '600', marginTop: 3 },
   dots: {

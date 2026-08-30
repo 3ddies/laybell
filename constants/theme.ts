@@ -83,6 +83,29 @@ const LIGHT = {
 
 export type ThemeMode = 'dark' | 'grey' | 'light';
 export type ThemePalette = typeof DARK;
+
+/**
+ * True when this palette paints a DARK page. Read from the palette itself — a
+ * light `text` colour only makes sense on a dark ground — so it works inside a
+ * makeStyles factory, which is handed the colours and never the mode name.
+ *
+ * It exists because textTertiary is not equally quiet in both directions.
+ * DARK's #484848 on #181818 is roughly 2:1, which is not "quiet", it is
+ * unreadable; LIGHT's #B4B4BC on its off-white is the same ratio and reads
+ * fine, because dim-on-light is far more forgiving than dim-on-dark. A label
+ * that should recede on both therefore cannot be one colour on both.
+ */
+export function isDarkPalette(c: ThemePalette): boolean {
+  return parseInt(c.text.replace('#', '').slice(0, 2), 16) > 127;
+}
+
+/**
+ * A quiet section label / caption that stays READABLE on a dark page. Light
+ * keeps textTertiary (which is right there); dark and grey step up to textMeta.
+ */
+export function quietText(c: ThemePalette): string {
+  return isDarkPalette(c) ? c.textMeta : c.textTertiary;
+}
 export const THEMES: Record<ThemeMode, ThemePalette> = { dark: DARK, grey: GREY, light: LIGHT };
 
 // Default/static palette. Screens not yet converted to the live theme import this

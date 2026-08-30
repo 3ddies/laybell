@@ -11,7 +11,7 @@ import { MAX_FEATURED, type FeaturedRef, refKey, parseFeatured, saveFeatured } f
 import { type Album, albumCover, fetchAlbums } from '../lib/albums';
 import SwipeBackPager from '../components/SwipeBackPager';
 import { Skeleton, SkeletonLine } from '../components/Skeleton';
-import { SPACING, RADIUS, type ThemePalette } from '../constants/theme';
+import { SPACING, RADIUS, quietText, type ThemePalette } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -203,7 +203,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   intro: { paddingHorizontal: SPACING.md, paddingTop: SPACING.lg, paddingBottom: SPACING.md, gap: 4 },
   title: { color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
   sub: { color: colors.textSecondary, fontSize: 13.5, lineHeight: 19 },
-  count: { color: colors.textTertiary, fontSize: 12.5, fontWeight: '700', marginTop: 2 },
+  count: { color: quietText(colors), fontSize: 12.5, fontWeight: '700', marginTop: 2 },
 
   center: { alignItems: 'center', justifyContent: 'center', padding: SPACING.xl, gap: SPACING.sm },
   empty: { color: colors.textSecondary, fontSize: 15, textAlign: 'center', maxWidth: 300 },
@@ -223,9 +223,9 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   coverEmpty: { alignItems: 'center', justifyContent: 'center' },
   rowText: { flex: 1 },
   rowTitle: { color: colors.text, fontSize: 14.5, fontWeight: '600' },
-  rowSub: { color: colors.textTertiary, fontSize: 12, marginTop: 1 },
+  rowSub: { color: quietText(colors), fontSize: 12, marginTop: 1 },
   groupLabel: {
-    color: colors.textTertiary, fontSize: 12, fontWeight: '800',
+    color: quietText(colors), fontSize: 12, fontWeight: '800',
     letterSpacing: 0.6, textTransform: 'uppercase', marginTop: SPACING.sm,
   },
   pos: {

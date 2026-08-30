@@ -40,7 +40,7 @@ import type { Sticker } from '../../components/StickerLayer';
 import FeaturesModal from '../../components/FeaturesModal';
 import { type Feature } from '../../lib/features';
 import { useAudioControls } from '../../contexts/AudioContext';
-import { SPACING, RADIUS, GRADIENTS, SHADOWS, type ThemePalette } from '../../constants/theme';
+import { SPACING, RADIUS, GRADIENTS, SHADOWS, isDarkPalette, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import { showPermissionDenied } from '../../lib/permissions';
@@ -200,7 +200,11 @@ function fmtClock(sec: number) {
 }
 
 export default function PostScreen() {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  // Ink for the Upload half. Dark themes get a white slab, so its content is
+  // near-black; light keeps its raised off-white and its normal text colours.
+  const uploadInk = mode === 'light' ? colors.text : '#101010';
+  const uploadInkSoft = mode === 'light' ? colors.textSecondary : '#5A5A5A';
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [step, setStep] = useState<Step>('pick');
@@ -2395,13 +2399,20 @@ export default function PostScreen() {
                   <Text style={styles.diagSub}>{t('post.recordSub')}</Text>
                 </View>
               </TouchableOpacity>
+              {/* UPLOAD is the light half. On the dark theme it is a white slab
+                  with black content — the loudest a surface can be on a near-
+                  black page without spending the accent, and the last orange
+                  emblem left on this screen goes with it. Light mode keeps its
+                  raised off-white: a white slab on a near-white page would have
+                  no edge at all, which is the same asymmetry the TV pill and
+                  Live's background both settled on. */}
               <TouchableOpacity style={[styles.diagHalf, styles.diagUpload]} onPress={pickAudio} activeOpacity={0.9}>
                 <View style={styles.diagContent}>
                   <View style={[styles.diagIconWrap, styles.diagIconWrapUpload]}>
-                    <Ionicons name="cloud-upload-outline" size={42} color={colors.primary} />
+                    <Ionicons name="cloud-upload-outline" size={42} color={uploadInk} />
                   </View>
-                  <Text style={styles.diagTitle}>{t('post.upload')}</Text>
-                  <Text style={styles.diagSub}>MP3 · WAV · M4A</Text>
+                  <Text style={[styles.diagTitle, { color: uploadInk }]}>{t('post.upload')}</Text>
+                  <Text style={[styles.diagSub, { color: uploadInkSoft }]}>MP3 · WAV · M4A</Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -2847,7 +2858,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // Recessed against Upload's raised surfaceElevated — the two halves separate by
   // tone now that neither carries the brand.
   diagRecord: { backgroundColor: colors.surface },
-  diagUpload: { backgroundColor: colors.surfaceElevated, borderTopWidth: 2, borderTopColor: colors.background },
+  // White on a dark page, the theme's raised off-white on a light one — see the
+  // note at the JSX. isDarkPalette rather than a mode string, because a styles
+  // factory is handed the colours and never the mode name.
+  diagUpload: {
+    backgroundColor: isDarkPalette(colors) ? '#FFFFFF' : colors.surfaceElevated,
+    borderTopWidth: 2, borderTopColor: colors.background,
+  },
   diagContent: { alignItems: 'center', gap: SPACING.sm, transform: [{ rotate: '7deg' }] },
   // Prominent circular icon badge behind each glyph.
   diagIconWrap: { width: 82, height: 82, borderRadius: 41, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
@@ -2855,8 +2872,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // ground this half used to have. surfaceLight is the theme's own next step up,
   // so the badge stays visible on both themes.
   diagIconWrapRecord: { backgroundColor: colors.surfaceLight },
+  // The orange wash goes with the orange glyph — this was the last accent left
+  // on the screen. A neutral ink badge on the white slab; the theme's own next
+  // step up on the light one.
   diagIconWrapUpload: {
-    backgroundColor: 'rgba(242,101,34,0.12)', borderWidth: 1.5, borderColor: 'rgba(242,101,34,0.35)',
+    backgroundColor: isDarkPalette(colors) ? 'rgba(16,16,16,0.07)' : colors.surfaceLight,
+    borderWidth: 1.5,
+    borderColor: isDarkPalette(colors) ? 'rgba(16,16,16,0.16)' : colors.border,
   },
   diagTitle: { color: colors.text, fontSize: 24, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
   diagSub: { color: colors.textSecondary, fontSize: 13.5, fontWeight: '600' },

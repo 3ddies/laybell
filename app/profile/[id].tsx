@@ -16,7 +16,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { useAudio } from '../../contexts/AudioContext';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { supabase } from '../../lib/supabase';
-import { SPACING, RADIUS, type ThemePalette } from '../../constants/theme';
+import { SPACING, RADIUS, quietText, type ThemePalette } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
 import { useTranslation } from '../../contexts/LanguageContext';
 import TranslatableText from '../../components/TranslatableText';
@@ -873,13 +873,13 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // the shelf bleeds past that padding to run its rail to the screen edge, and
   // reusing it here indented Singles further than every other line on the tab.
   sectionLabel: {
-    color: colors.textTertiary, fontSize: 12, fontWeight: '800',
+    color: quietText(colors), fontSize: 12, fontWeight: '800',
     letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: SPACING.xs,
   },
   featuredWrap: { marginBottom: SPACING.md },
   albumShelf: { marginHorizontal: -SPACING.md, marginBottom: SPACING.md },
   albumShelfLabel: {
-    color: colors.textTertiary, fontSize: 12, fontWeight: '800',
+    color: quietText(colors), fontSize: 12, fontWeight: '800',
     letterSpacing: 0.6, textTransform: 'uppercase',
     paddingHorizontal: SPACING.md, marginBottom: SPACING.sm,
   },
@@ -888,7 +888,7 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   albumCardCover: { width: 124, height: 124, borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight },
   albumCardCoverEmpty: { alignItems: 'center', justifyContent: 'center' },
   albumCardTitle: { color: colors.text, fontSize: 13.5, fontWeight: '700', marginTop: 7 },
-  albumCardMeta: { color: colors.textTertiary, fontSize: 12, marginTop: 1 },
+  albumCardMeta: { color: quietText(colors), fontSize: 12, marginTop: 1 },
 
   musicList: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: SPACING.sm },
   gridItem: { width: (SCREEN_W - 4) / 3, aspectRatio: 1 },
