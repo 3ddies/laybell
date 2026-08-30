@@ -28,6 +28,7 @@ import BadgeEmblem from '../../components/BadgeEmblem';
 import ProfileQRModal from '../../components/ProfileQRModal';
 import { resolveRingColors, resolveBannerColors, chosenTier, specialRingTier, rawTier } from '../../lib/badges';
 import { activePublicIds, fetchFirstTrackCovers } from '../../lib/playlists';
+import { type Album, albumCover, fetchAlbums } from '../../lib/albums';
 import { countLabel } from '../../lib/i18n';
 import { displayUrl } from '../../lib/profileOptions';
 import { useLinkGuard } from '../../contexts/LinkGuardContext';
@@ -104,6 +105,7 @@ export default function ProfileScreen() {
   // Active public playlists (over-limit "locked" ones stay hidden, same as in
   // public discovery), faced with their first track's cover.
   const [publicPlaylists, setPublicPlaylists] = useState<any[]>([]);
+  const [albums, setAlbums] = useState<Album[]>([]);
   const router = useRouter();
   const navigation = useNavigation();
   const isFocused = useIsFocused();
@@ -319,6 +321,10 @@ export default function ProfileScreen() {
       // Flag which of these are currently spotlighted (one batched query).
       fetchSpotlightedPostIds(visible.map((p: any) => p.id)).then(setSpotlightIds);
     }
+    // Albums, same as the visited profile draws them — the point of this tab is
+    // to be what a visitor sees. Swallowed failure: on a database without
+    // albums.sql the shelf is simply absent rather than taking the profile down.
+    if (user?.id) fetchAlbums(user.id).then(setAlbums).catch(() => setAlbums([]));
     // `reposts` may not be migrated yet — degrade to an empty tab if so.
     setRepostedPosts((repostsRes.data ?? []).map((r: any) => r.posts).filter(Boolean));
     // Public playlists tab: only the ones holding an active badge slot, faced
@@ -373,9 +379,17 @@ export default function ProfileScreen() {
       case 'music': return userPosts.filter(p => p.type === 'audio');
       case 'videos': return userPosts.filter(p => p.type === 'video');
       case 'reposts': return repostedPosts;
-      default: return userPosts; // posts
+      // The GRID, and only the grid, honours hide_from_grid — the whole point is
+      // that the post is still there on its own tab. This is also why the owner
+      // sees it hidden here too: the tab is meant to be what a visitor sees, and
+      // a preview that quietly shows more than the public gets is not one.
+      default: return userPosts.filter(p => !p.hide_from_grid); // posts
     }
   }
+  // Hiding is offered only while a picture is left to fill the grid. Slideshows
+  // count — they are pictures — and archived posts do not, since they are
+  // already off the profile.
+  const hasGridPicture = userPosts.some((p: any) => p.type === 'image' || isSlideshow(p.type));
 
   // Posts tab ordering: float live-spotlighted posts to the TOP (newest-first
   // among them), everyone else newest-first. When a spotlight expires the post
@@ -426,12 +440,48 @@ export default function ProfileScreen() {
   // Music tab: a scrollable list of "sound cards" (spotify-style TrackRows),
   // newest at the top — NOT the picture-thumbnail grid the other tabs use. The
   // main Posts grid still shows audio posts as thumbnails (renderGrid, default).
+  // Deliberately a copy of the visited profile's shelf, down to the sizes. This
+  // tab exists so the owner can see what a visitor sees; a shelf that is subtly
+  // different here would be showing them something nobody else gets.
+  function renderAlbumShelf() {
+    if (albums.length === 0) return null;
+    return (
+      <View style={styles.albumShelf}>
+        <Text style={styles.albumShelfLabel}>{t('album.shelf')}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumShelfRow}>
+          {albums.map((a) => {
+            const cover = albumCover(a);
+            return (
+              <TouchableOpacity key={a.id} style={styles.albumCard} onPress={() => router.push(`/album/${a.id}`)} activeOpacity={0.85}>
+                {cover ? (
+                  <Image source={{ uri: cover }} style={styles.albumCardCover} contentFit="cover" cachePolicy="memory-disk" />
+                ) : (
+                  <View style={[styles.albumCardCover, styles.albumCardCoverEmpty]}>
+                    <Ionicons name="disc" size={26} color={colors.textTertiary} />
+                  </View>
+                )}
+                <Text style={styles.albumCardTitle} numberOfLines={1}>{a.title}</Text>
+                <Text style={styles.albumCardMeta} numberOfLines={1}>{countLabel('track', a.track_count ?? 0)}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  }
+
   function renderMusicList(data: any[]) {
     if (data.length === 0) {
       return (
-        <View style={styles.emptyGrid}>
-          <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
+        <View>
+          {/* The shelf survives an empty track list: an album can outlive every
+              song being archived, and the owner should see that rather than a
+              bare "no music" where a visitor sees a shelf. */}
+          {albums.length > 0 && <View style={styles.musicList}>{renderAlbumShelf()}</View>}
+          <View style={styles.emptyGrid}>
+            <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
+            <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
+          </View>
         </View>
       );
     }
@@ -454,6 +504,11 @@ export default function ProfileScreen() {
     }));
     return (
       <View style={styles.musicList}>
+        {/* The shelf leads, exactly as it does publicly. The reorder control
+            sits UNDER it and directly above the list it reorders — an owner
+            tool between the visitor's headline and the tracks would push the
+            public-looking part down and make this a different screen. */}
+        {renderAlbumShelf()}
         {/* Premium: arrange the Music tab in a custom order (see /music-order). */}
         {isPremium && data.length > 1 && (
           <TouchableOpacity style={styles.reorderMusicBtn} onPress={() => router.push('/music-order')} activeOpacity={0.8}>
@@ -482,6 +537,13 @@ export default function ProfileScreen() {
               postId: track.id,
               isOwn: true,
               mediaType: track.type,
+              // Reachable from HERE as well as the grid, and that matters: once
+              // a song is hidden the grid is exactly where it no longer is, so
+              // the Music tab has to be the way back.
+              hideFromGrid: !!track.hide_from_grid,
+              canHideFromGrid: hasGridPicture,
+              onGridVisibilityChanged: (hidden) => setUserPosts(prev =>
+                prev.map(p => (p.id === track.id ? { ...p, hide_from_grid: hidden } : p))),
               onEdit: () => router.push(`/edit-post/${track.id}`),
               onDeleted: () => {
                 setUserPosts(prev => prev.filter(p => p.id !== track.id));
@@ -527,6 +589,13 @@ export default function ProfileScreen() {
       aspect: post.aspect_ratio,
       caption: post.caption,
       thumbnail: post.thumbnail_url,
+      hideFromGrid: !!post.hide_from_grid,
+      canHideFromGrid: hasGridPicture,
+      // Written through the local list rather than refetched: the post is only
+      // leaving one grid, and reloading the whole profile to move one square
+      // would lose the scroll position it was tapped from.
+      onGridVisibilityChanged: (hidden) => setUserPosts(prev =>
+        prev.map(p => (p.id === post.id ? { ...p, hide_from_grid: hidden } : p))),
       onEdit: () => router.push(`/edit-post/${post.id}`),
       onDeleted: () => { setUserPosts(prev => prev.filter(p => p.id !== post.id)); setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) })); },
       onArchived: () => { setUserPosts(prev => prev.filter(p => p.id !== post.id)); setStats(prev => ({ ...prev, posts: Math.max(0, prev.posts - 1) })); },
@@ -594,6 +663,10 @@ export default function ProfileScreen() {
                     aspect: post.aspect_ratio,
                     caption: post.caption,
                     thumbnail: post.thumbnail_url,
+                    hideFromGrid: !!post.hide_from_grid,
+                    canHideFromGrid: hasGridPicture,
+                    onGridVisibilityChanged: (hidden) => setUserPosts(prev =>
+                      prev.map(p => (p.id === post.id ? { ...p, hide_from_grid: hidden } : p))),
                     onEdit: () => router.push(`/edit-post/${post.id}`),
                     onDeleted: () => {
                       setUserPosts(prev => prev.filter(p => p.id !== post.id));
@@ -1003,6 +1076,21 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   // 2px gutters between cells (gap needs pixel-sized items — thirds would overflow the row).
   postsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
+  // ── Album shelf ─────────────────────────────────────────────────────────────
+  // Identical to the visited profile's, on purpose — see renderAlbumShelf.
+  albumShelf: { marginHorizontal: -SPACING.md, marginBottom: SPACING.md },
+  albumShelfLabel: {
+    color: colors.textTertiary, fontSize: 12, fontWeight: '800',
+    letterSpacing: 0.6, textTransform: 'uppercase',
+    paddingHorizontal: SPACING.md, marginBottom: SPACING.sm,
+  },
+  albumShelfRow: { paddingHorizontal: SPACING.md, gap: SPACING.md },
+  albumCard: { width: 124 },
+  albumCardCover: { width: 124, height: 124, borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight },
+  albumCardCoverEmpty: { alignItems: 'center', justifyContent: 'center' },
+  albumCardTitle: { color: colors.text, fontSize: 13.5, fontWeight: '700', marginTop: 7 },
+  albumCardMeta: { color: colors.textTertiary, fontSize: 12, marginTop: 1 },
+
   musicList: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: SPACING.sm },
   reorderMusicBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,

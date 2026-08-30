@@ -334,7 +334,10 @@ export default function PublicProfileScreen() {
       case 'music': return posts.filter((p: any) => p.type === 'audio');
       case 'videos': return posts.filter((p: any) => p.type === 'video');
       case 'reposts': return reposts;
-      default: return posts; // posts
+      // The GRID, and only the grid, honours hide_from_grid. A song hidden here
+      // is still public, still linkable, still on the Music tab — it has just
+      // given up its square so the grid can stay visual.
+      default: return posts.filter((p: any) => !p.hide_from_grid); // posts
     }
   }
 

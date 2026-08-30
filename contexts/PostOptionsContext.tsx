@@ -74,6 +74,19 @@ export type PostOptionsArgs = {
   // When the menu is opened from inside one of the user's own playlists, the
   // "Add to playlist" slot becomes "Remove from playlist" and calls this.
   onRemoveFromPlaylist?: () => void;
+  // ── Hiding a song or video from the profile GRID ──────────────────────────
+  // Not archiving: the post stays public, keeps its link, keeps playing, and
+  // keeps its place on the Music or Videos tab. It just stops taking a square
+  // in the Posts grid, so a musician can keep that grid visual.
+  //
+  // OFFERED ONLY WHEN THE OWNER HAS A PICTURE TO SHOW INSTEAD (canHideFromGrid),
+  // because a grid emptied by hiding is worse than a mixed one — and pictures
+  // themselves are never hideable this way. The only way a photo leaves the
+  // grid is archiving, which takes it off the profile entirely and is therefore
+  // a decision someone makes on purpose.
+  hideFromGrid?: boolean;
+  canHideFromGrid?: boolean;
+  onGridVisibilityChanged?: (hidden: boolean) => void;
   // Fired whenever the sheet closes (any path) — hosts that paused themselves
   // while the menu was up (e.g. the story viewer) resume here.
   onDismiss?: () => void;
@@ -570,6 +583,31 @@ export function PostOptionsSheet({ visible, opts, onClose, onAddToPlaylist, onMa
   if (hasPost && isOwn) {
     options.push({ key: 'edit', label: t('postOptions.editPost'), icon: 'pencil-outline',
       onPress: () => dismissThen(() => optsRef.current?.onEdit?.()) });
+    // Grid visibility — songs and videos only, and only where a picture is left
+    // to fill the space. Sits ABOVE archive because it is the gentler of the two
+    // and the one people actually want: archive removes the post, this only
+    // moves it off one grid.
+    // An ALLOW-list, not "anything that is not a picture": a media type nobody
+    // has thought about yet should not quietly become hideable.
+    if (opts?.canHideFromGrid && (opts?.mediaType === 'video' || isAudioPost(opts?.mediaType))) {
+      const hidden = !!opts?.hideFromGrid;
+      options.push({
+        key: 'gridvis',
+        label: t(hidden ? 'postOptions.showOnGrid' : 'postOptions.hideFromGrid'),
+        icon: hidden ? 'grid-outline' : 'eye-off-outline',
+        onPress: () => {
+          const o = optsRef.current;
+          dismissThen(async () => {
+            if (!o?.postId) return;
+            const next = !o.hideFromGrid;
+            const { error } = await supabase.from('posts').update({ hide_from_grid: next }).eq('id', o.postId);
+            // Silent on failure — the grid is unchanged, which is the truth, and
+            // an alert about a column that may not be migrated yet helps nobody.
+            if (!error) o.onGridVisibilityChanged?.(next);
+          });
+        },
+      });
+    }
     options.push({ key: 'archive', label: t('postOptions.archivePost'), icon: 'archive-outline',
       onPress: () => { const o = optsRef.current; dismissThen(() => { if (o?.postId) confirmArchivePost(o.postId, o.onArchived); }); } });
     options.push({ key: 'delete', label: t('postOptions.deletePost'), icon: 'trash-outline', destructive: true,
