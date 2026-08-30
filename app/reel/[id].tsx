@@ -321,7 +321,15 @@ const ReelPage = memo(function ReelPage({
             aspectRatio={aspectToNumber(item.aspect_ratio, 1)}
             active={active}
             postId={item.id}
+            // Double-tap-to-like rides the carousel's OWN per-slide touchable
+            // (the one the feed drives with onOpen) instead of a tap layer over
+            // the top — see the note above about what stacking handlers on this
+            // ScrollView costs. No single-tap action: tapToggle flips the reel's
+            // paused flag, which a photo set has no player to honour, and that
+            // stale pause would then ride onto the next reel.
+            onTap={() => onMediaTap()}
           />
+          {heart}
         </View>
       ) : (
       <TouchableOpacity

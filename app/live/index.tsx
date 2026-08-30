@@ -595,7 +595,11 @@ export default function LiveScreen() {
 }
 
 const makeStyles = (c: ThemePalette) => StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#000' },
+  // THEMED, not hardcoded black. Every LiveCard paints its own black behind the
+  // broadcast, so this colour is only ever visible on the screens that carry no
+  // video at all — the loading skeleton and the "no one is live" state — and
+  // those belong to the app, not to the player.
+  root: { flex: 1, backgroundColor: c.background },
   center: { alignItems: 'center', justifyContent: 'center', gap: 10 },
   fallbackText: { color: 'rgba(255,255,255,0.7)', fontSize: 13, textAlign: 'center', paddingHorizontal: 40 },
   // Starts right of the floating back button (14 + 40 + 8).
@@ -686,7 +690,7 @@ const makeStyles = (c: ThemePalette) => StyleSheet.create({
   skeletonWrap: { flex: 1, justifyContent: 'flex-end', padding: 18, gap: 12 },
   skeletonTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 36 },
-  emptyTitle: { color: '#fff', fontSize: 17, fontWeight: '700', marginTop: 6 },
+  emptyTitle: { color: c.text, fontSize: 17, fontWeight: '700', marginTop: 6 },
   emptySub: { color: c.textTertiary, fontSize: 13, textAlign: 'center', lineHeight: 19 },
   goLiveCta: { marginTop: 14, borderRadius: 22, overflow: 'hidden' },
   // No gap: the label is the only child now that the radio glyph is gone.

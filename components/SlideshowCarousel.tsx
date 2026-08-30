@@ -36,6 +36,12 @@ type Props = {
   // scoring and the owner's analytics).
   postId?: string;
   onOpen?: (index: number) => void; // tap a slide → open the full viewer there (feed)
+  // A tap on a slide where there is nowhere to open TO — the reel viewer is
+  // already the full-screen surface. Routed to the SAME per-slide touchable as
+  // onOpen so double-tap-to-like can reach a slideshow, rather than a tap layer
+  // stacked over the carousel: that would put a gesture handler back on top of
+  // this ScrollView, which is exactly what broke the swipe here before.
+  onTap?: (index: number) => void;
   // Reports whether the CURRENT slide is a video with its audio turned on, so the
   // host can pause/resume an attached song. Fires on slide change + toggle + unmount.
   onVideoAudioActiveChange?: (active: boolean) => void;
@@ -64,8 +70,11 @@ function SlideVideo({
 }
 
 export default function SlideshowCarousel({
-  slides, width, aspectRatio, active = true, initialIndex = 0, postId, onOpen, onVideoAudioActiveChange,
+  slides, width, aspectRatio, active = true, initialIndex = 0, postId, onOpen, onTap, onVideoAudioActiveChange,
 }: Props) {
+  // One touchable, either purpose. The dim-on-press belongs to onOpen, where it
+  // previews a transition; a reel tap goes nowhere, so it stays flat.
+  const onSlidePress = onTap ?? onOpen;
   const height = Math.round(width / (aspectRatio || 1));
   const [index, setIndex] = useState(initialIndex);
   const [videoAudioOn, setVideoAudioOn] = useState(false); // local: current video's own audio (default muted)
@@ -160,8 +169,8 @@ export default function SlideshowCarousel({
               )}
             </View>
           );
-          return onOpen ? (
-            <TouchableOpacity key={i} activeOpacity={0.95} onPress={() => onOpen(i)}>
+          return onSlidePress ? (
+            <TouchableOpacity key={i} activeOpacity={onTap ? 1 : 0.95} onPress={() => onSlidePress(i)}>
               {body}
             </TouchableOpacity>
           ) : (
