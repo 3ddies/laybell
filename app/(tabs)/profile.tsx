@@ -816,17 +816,17 @@ export default function ProfileScreen() {
       {/* Tabs — tap to switch; swiping ON this row scrolls the pills
           (traversal) rather than stepping the sub-tab.
 
-          The row CENTRES itself when the pills fit, and only then. This strip
-          was drawn for five tabs and filled the width; now that empty showcases
-          are dropped it can be three, and left-aligned pills with a third of the
-          screen blank beside them read as something missing rather than
-          something removed.
+          The pills SHARE the row whenever they fit in it, so three of them span
+          the same width five did. This strip was drawn for five and filled the
+          screen; now that empty showcases are dropped it can be three, and both
+          of the obvious answers look broken — left-aligned leaves a third of the
+          screen blank beside them, centred leaves a sixth on either side.
 
-          Conditional because centring an OVERFLOWING horizontal scroller pushes
-          its first item off the left edge, where nothing can scroll back to it —
-          five tabs genuinely do overflow, so this cannot be unconditional. It
-          settles rather than oscillating: once flexGrow makes the content match
-          the viewport it is still "fits", and a row too wide for it never is. */}
+          Conditional on fitting, because five tabs genuinely do overflow a phone
+          and an overflowing row has to stay scrollable and start at its first
+          item. It settles rather than oscillating: the pills cannot shrink, so a
+          row too wide for the viewport still measures too wide and keeps
+          scrolling. */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -838,11 +838,11 @@ export default function ProfileScreen() {
         onTouchEnd={() => { tabsRowTouchRef.current = false; }}
         onTouchCancel={() => { tabsRowTouchRef.current = false; }}
       >
-        <View style={styles.tabsRow}>
+        <View style={[styles.tabsRow, tabsFit && styles.tabsRowFit]}>
           {orderedTabs.map((tab) => (
             <TouchableOpacity
               key={tab.key}
-              style={[styles.tab, activeTab === tab.key && activeTabDyn]}
+              style={[styles.tab, tabsFit && styles.tabFit, activeTab === tab.key && activeTabDyn]}
               onPress={() => setActiveTab(tab.key)}
             >
               <Ionicons
@@ -971,9 +971,21 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
 
   tabsScroll: { marginTop: SPACING.md, borderBottomWidth: 0.5, borderBottomColor: colors.border, flexGrow: 0 },
   tabsRow: { flexDirection: 'row', paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm, gap: 4 },
-  // Applied to the CONTENT CONTAINER only while the pills fit, so the row grows
-  // to the full width and centres itself in it instead of ending in dead space.
-  tabsContentFit: { flexGrow: 1, justifyContent: 'center' },
+  // While the pills fit, the row SPANS the width and they share it — rather than
+  // bunching left (dead space beside them) or centred (dead space either side).
+  // Both of those read as a strip with something missing from it.
+  tabsContentFit: { flexGrow: 1 },
+  tabsRowFit: { flexGrow: 1 },
+  // flexGrow with flexShrink 0 and a natural basis, deliberately, not flexBasis 0.
+  //
+  // Equal widths would be prettier by a hair and would truncate "Playlists" the
+  // moment a fourth pill appears — and worse, it would break the fit measurement
+  // this depends on: pills that can shrink always report content exactly the
+  // width of the viewport, so the row would never admit to overflowing and would
+  // squeeze five tabs into a phone instead of letting them scroll. Growing from
+  // a natural basis fills the row, keeps every label whole, and still overflows
+  // honestly when there are too many.
+  tabFit: { flexGrow: 1, flexShrink: 0, justifyContent: 'center' },
   tab: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
