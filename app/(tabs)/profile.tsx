@@ -395,10 +395,14 @@ export default function ProfileScreen() {
   // punch a hole in a layout its owner built deliberately, and the fix for that
   // ("why is my page broken?") is nowhere near the menu that caused it. Taking
   // it out of the template first is the honest order of operations.
-  const layoutUsedIds = useMemo(
-    () => (pageLayout ? usedPostIds(pageLayout.blocks) : new Set<string>()),
-    [pageLayout],
-  );
+  //
+  // A PLAIN computation, not useMemo. Everything from here down runs after the
+  // `if (loading) return <ProfileSkeleton/>` above, so a hook placed here is
+  // called on loaded renders and skipped on loading ones — "rendered more hooks
+  // than during the previous render", which is exactly what it did. pageLayout
+  // and hasGridPicture beside it are plain for the same reason, and this costs
+  // one loop over a handful of layout blocks.
+  const layoutUsedIds = pageLayout ? usedPostIds(pageLayout.blocks) : new Set<string>();
   const canHide = (postId: string) => hasGridPicture && !layoutUsedIds.has(postId);
 
   // Posts tab ordering: float live-spotlighted posts to the TOP (newest-first
