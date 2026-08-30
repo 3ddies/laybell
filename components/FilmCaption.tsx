@@ -37,11 +37,13 @@ type Props = {
 };
 
 const COLLAPSED_LINES = 2;
-// The two halves lead differently on purpose — the heavier title needs the extra
-// point, while the description stays on 21, the line height the ordinary feed
-// caption already uses. The box takes the taller of the two so either can wrap
-// to its full two lines without being clipped.
-const TITLE_LINE = 22;
+// The two halves lead differently on purpose. A title is usually ONE line where
+// a description is two, so it earns its presence by size rather than by bulk —
+// 20 over the description's 14, which is what keeps a single line of it from
+// looking stranded in a two-line box. The description stays on 21, the line
+// height the ordinary feed caption already uses. The box takes the taller lead of
+// the two, so either can still wrap to its full two lines without being clipped.
+const TITLE_LINE = 24;
 const DESC_LINE = 21;
 const BOX_H = Math.max(TITLE_LINE, DESC_LINE) * COLLAPSED_LINES;
 // Long enough to read a description without hurrying and to sit with a title
@@ -168,12 +170,16 @@ export default function FilmCaption({ title, caption, tags, active = true }: Pro
 const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   wrap: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm },
   // Fixed height so the crossfade never resizes the card: a one-line title and a
-  // two-line description swap inside the same box, centred, and the feed below
-  // stays exactly where it was.
+  // two-line description swap inside the same box, and the feed below stays
+  // exactly where it was.
   box: { height: BOX_H, overflow: 'hidden' },
-  layer: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center' },
+  // TOP-aligned, not centred. Centring put a one-line title halfway down a
+  // two-line box while a two-line description started at the top, so the title
+  // appeared to drop every time it came round — the swap has to happen on a
+  // shared first line or it reads as movement rather than substitution.
+  layer: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'flex-start' },
   measure: { position: 'absolute', left: 0, right: 0, top: 0, opacity: 0 },
-  title: { color: colors.text, fontSize: 18, lineHeight: TITLE_LINE, fontWeight: '700', letterSpacing: -0.4 },
+  title: { color: colors.text, fontSize: 20, lineHeight: TITLE_LINE, fontWeight: '700', letterSpacing: -0.5 },
   desc: { color: colors.text, fontSize: 14, lineHeight: DESC_LINE, fontWeight: '400' },
   descUnderTitle: { marginTop: 2 },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 2 },
