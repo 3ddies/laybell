@@ -332,12 +332,14 @@ const PostCard = memo(function PostCard({
   // take the alternating block (RotatingCaption); everything else keeps the
   // plain caption row. songCreditLine folds the artist in only when the song
   // title does not already carry it.
-  const rotatingTitle =
-    isFilm(item) && item.film_title?.trim()
-      ? item.film_title.trim()
-      : item.type === 'video' && songIsLinkOnly(item) && item.song_title?.trim()
-        ? songCreditLine(item.song_title, item.song_artist)
-        : null;
+  const filmTitle = isFilm(item) && item.film_title?.trim() ? item.film_title.trim() : null;
+  // Kept separate from filmTitle because it also decides the artwork pulse: the
+  // song's pill only comes down where THIS line is what the card is showing.
+  const songTitle =
+    !filmTitle && item.type === 'video' && songIsLinkOnly(item) && item.song_title?.trim()
+      ? songCreditLine(item.song_title, item.song_artist)
+      : null;
+  const rotatingTitle = filmTitle ?? songTitle;
   // A caption that only restates the credit is dropped, not alternated with it —
   // rotating "Break that · 3ddie" against "Break that - 3ddie" would be the very
   // repetition the title line just removed. The post then simply shows its name.
@@ -562,7 +564,17 @@ const PostCard = memo(function PostCard({
             <Ionicons name={(songPlaysFor(item) ? songMuted : videoMuted) ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
           </TouchableOpacity>
           {!!item.song_id && (
-            <SongAttribution songId={item.song_id} title={item.song_title} artist={item.song_artist} artistId={item.song_artist_id} />
+            <SongAttribution
+              songId={item.song_id}
+              title={item.song_title}
+              artist={item.song_artist}
+              artistId={item.song_artist_id}
+              // The pill comes down ONLY where the rotating title is the song
+              // credit — a music video with no song_title, or a film that also
+              // credits a track, still needs the pill to name it at all.
+              pulse={!!songTitle}
+              active={isVisibleVideo}
+            />
           )}
           <TaggedPeopleButton userIds={item.tagged_user_ids} style={styles.tagBtnOverlay} />
         </View>

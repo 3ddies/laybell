@@ -27,8 +27,52 @@ import { useTranslation } from '../contexts/LanguageContext';
 // behind the host, surfaces in front). It is intentionally NOT used when opening
 // the artist profile — that just pushes on top. onPauseHost pauses while the menu
 // is open.
+// ── The music-video pulse ────────────────────────────────────────────────────
+// A music video already names its song in the card's rotating title, so the
+// standing pill is chrome that sits over the video for its whole duration
+// restating something the text says better. What ISN'T redundant is the
+// artwork — it is the one thing the song has that words cannot show. So the
+// corner breathes the cover instead: in, held long enough to actually look at,
+// out, gone, again. Tapping it still opens the track.
+//
+// The cover has to be FETCHED here. It normally arrives on currentTrack, but a
+// music video's song by definition never plays over the post, so this component
+// is never looking at its own track. One row per song, cached for the session
+// and shared by every card crediting it.
+const coverCache = new Map<string, string | null>();
+const coverInFlight = new Map<string, Promise<string | null>>();
+function loadCover(songId: string): Promise<string | null> {
+  const hit = coverCache.get(songId);
+  if (hit !== undefined) return Promise.resolve(hit);
+  const pending = coverInFlight.get(songId);
+  if (pending) return pending;
+  const p = (async () => {
+    try {
+      const { data } = await supabase.from('posts').select('cover_url').eq('id', songId).maybeSingle();
+      const url = (data as { cover_url?: string | null } | null)?.cover_url ?? null;
+      coverCache.set(songId, url);
+      return url;
+    } catch {
+      // NOT cached. A network blip must not blank this song's artwork for the
+      // rest of the session — the next card crediting it simply tries again.
+      return null;
+    } finally {
+      coverInFlight.delete(songId);
+    }
+  })();
+  coverInFlight.set(songId, p);
+  return p;
+}
+
+const PULSE_FIRST_MS = 1800; // let the video establish itself before anything appears
+const PULSE_IN_MS = 340;
+const PULSE_HOLD_MS = 4200;
+const PULSE_OUT_MS = 420;
+const PULSE_GAP_MS = 9000;
+
 export default function SongAttribution({
-  songId, title, artist, artistId, style, inline = false, onNavigate, onPauseHost, onResumeHost,
+  songId, title, artist, artistId, style, inline = false, pulse = false, active = true,
+  onNavigate, onPauseHost, onResumeHost,
 }: {
   songId: string;
   title?: string | null;
@@ -37,6 +81,12 @@ export default function SongAttribution({
   style?: any;
   // inline = flows in normal layout (left-aligned) instead of floating bottom-right.
   inline?: boolean;
+  // Music video: replace the standing pill with the breathing artwork above.
+  // Set only where something ELSE on the card already names the song, or the
+  // credit would disappear for most of the post's runtime.
+  pulse?: boolean;
+  // False while the card is off-screen, so the pulse doesn't run unwatched.
+  active?: boolean;
   onNavigate?: () => void;
   onPauseHost?: () => void;
   // Fired when the song's 3-dot menu closes — a host paused via onPauseHost
@@ -90,7 +140,50 @@ export default function SongAttribution({
   // first play: the card no longer unmounts, so the image stays decoded and every
   // later bloom starts already-ready.
   const [artReady, setArtReady] = useState(false);
-  const showArt = !inline && isThisTrack && isPlaying && !!cover && artReady;
+
+  // ── Pulse state ─────────────────────────────────────────────────────────────
+  const [pulseCover, setPulseCover] = useState<string | null>(() => coverCache.get(songId) ?? null);
+  useEffect(() => {
+    if (!pulse) return;
+    const hit = coverCache.get(songId);
+    if (hit !== undefined) { setPulseCover(hit); return; }
+    let alive = true;
+    loadCover(songId).then((u) => { if (alive) setPulseCover(u); });
+    return () => { alive = false; };
+  }, [pulse, songId]);
+  // No artwork, no pulse — falling silently back to the pill is better than a
+  // credit that is simply absent, and a song with no cover has nothing to show.
+  const pulsing = pulse && !inline && !!pulseCover;
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  // Drives pointerEvents only. Flipped at the START of each fade so the artwork
+  // stops taking taps the moment it begins to leave, and no setState lands on an
+  // animation's last frame over a playing video.
+  const [pulseShown, setPulseShown] = useState(false);
+  useEffect(() => {
+    if (!pulsing || !active) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const wait = (ms: number, fn: () => void) => {
+      timer = setTimeout(() => { if (!cancelled) fn(); }, ms);
+    };
+    const show = () => {
+      setPulseShown(true);
+      Animated.timing(pulseAnim, { toValue: 1, duration: PULSE_IN_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true })
+        .start(({ finished }) => { if (finished && !cancelled) wait(PULSE_HOLD_MS, hide); });
+    };
+    const hide = () => {
+      setPulseShown(false);
+      Animated.timing(pulseAnim, { toValue: 0, duration: PULSE_OUT_MS, easing: Easing.in(Easing.quad), useNativeDriver: true })
+        .start(({ finished }) => { if (finished && !cancelled) wait(PULSE_GAP_MS, show); });
+    };
+    wait(PULSE_FIRST_MS, show);
+    // Only the CHAIN is cancelled; an in-flight fade is left to land. Stopping a
+    // native-driven animation is a round trip that can resolve after whatever we
+    // set next, which strands the card half-visible.
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [pulsing, active, pulseAnim]);
+
+  const showArt = !inline && !pulsing && isThisTrack && isPlaying && !!cover && artReady;
 
   // ONCE MOUNTED, NEVER UNMOUNTED. This is the whole fix for the hitch, and it
   // took two goes to get right.
@@ -112,7 +205,7 @@ export default function SongAttribution({
   //
   // The cost is one <Image> held at opacity 0 — and only on a post whose song has
   // actually been played, which is one post at a time, not one per feed row.
-  const mountArt = !inline && !!cover;
+  const mountArt = !inline && !pulsing && !!cover;
 
   const bloom = useRef(new Animated.Value(0)).current;
   // No reset needed: mountArt no longer flips while a fade is running,
@@ -225,6 +318,33 @@ export default function SongAttribution({
           </TouchableOpacity>
         </Animated.View>
       )}
+      {pulsing ? (
+        <Animated.View
+          style={[
+            styles.pulseCard, style,
+            {
+              opacity: pulseAnim,
+              transform: [
+                { scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) },
+                { translateY: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
+              ],
+            },
+          ]}
+          pointerEvents={pulseShown ? 'auto' : 'none'}
+        >
+          <TouchableOpacity
+            onPress={playSong}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={title || t('songAttr.audioTrack')}
+          >
+            {/* transition={0} for the same reason as the artwork card: the
+                pulse owns the fade, and expo-image's own cross-fade running
+                inside it reads as the picture stuttering on the way in. */}
+            <Image source={{ uri: pulseCover! }} style={styles.pulseImage} contentFit="cover" transition={0} />
+          </TouchableOpacity>
+        </Animated.View>
+      ) : (
       <Animated.View
         style={[
           styles.base, inline ? styles.inline : styles.floating, style,
@@ -249,6 +369,7 @@ export default function SongAttribution({
         <Ionicons name="ellipsis-horizontal" size={18} color="#fff" />
       </TouchableOpacity>
       </Animated.View>
+      )}
     </>
   );
 }
@@ -296,4 +417,20 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     marginTop: 4, textAlign: 'right',
   },
   artArtist: { color: 'rgba(255,255,255,0.82)', fontSize: 10.5, fontWeight: '600', maxWidth: 76, textAlign: 'right' },
+
+  // ── Pulse (music video) ─────────────────────────────────────────────────────
+  // Same corner as the pill it replaces. No scrim and no text: the cover is the
+  // whole message, and a box around it would put back the standing chrome this
+  // is here to remove. The radius and hairline live on the IMAGE so the shadow
+  // can stay on the wrapper — overflow:hidden and a shadow do not co-operate.
+  pulseCard: {
+    position: 'absolute', right: SPACING.sm, bottom: SPACING.sm,
+    shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  pulseImage: {
+    width: 64, height: 64, borderRadius: RADIUS.sm,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.35)',
+  },
 });

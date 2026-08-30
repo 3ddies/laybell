@@ -53,22 +53,85 @@ export function songIsLinkOnly(post: SongAttachable): boolean {
 // name, which would leave the rotation alternating between two ways of saying
 // one thing. Both collapse to stating the credit once.
 
+// Leetspeak folded to letters, so "3ddie" and "eddie" are one name. Applied for
+// COMPARISON only — nothing displayed is ever rewritten.
+const LEET: Record<string, string> = {
+  '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '@': 'a', '$': 's',
+};
+// Punctuation, and the symbol/emoji blocks, flattened to spacing. Written as
+// explicit ranges rather than \p{…} escapes: a regex the engine cannot parse
+// throws at module load, and on a project with no OTA that ships as a feed that
+// will not render. CJK ideographs are left alone — they are words here.
+const PUNCT = /[\s\-_|/\\,.:;!?"'`()[\]{}#*+=<>~^&%]+/g;
+const SYMBOLS = /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2000-\u2BFF\u3000-\u303F\uFE00-\uFE0F\u20E3\u00A9\u00AE\u00B7]/g;
+
 /**
- * Lowercased, with punctuation flattened to spaces. Latin scripts come out
- * space-delimited; scripts that do not use spaces (CJK) are left as one token,
- * which the callers below account for.
+ * The comparison form: diacritics stripped, leetspeak folded, punctuation and
+ * emoji reduced to spacing, lowercased. "Café — BREAK THAT!! 🔥" and
+ * "cafe break that" arrive here identical.
  */
-function norm(s?: string | null): string {
-  return (s ?? '')
+function canon(s?: string | null): string {
+  let out = s ?? '';
+  // Hermes has normalize, but a missing implementation would throw at the worst
+  // possible moment; without it we simply keep the accents.
+  try { out = out.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch { /* keep as-is */ }
+  return out
     .toLowerCase()
-    .replace(/[\s\-–—_·•|/\\,.:;!?"'`’“”()[\]{}]+/g, ' ')
+    .replace(SYMBOLS, ' ')
+    .replace(/[01345789@$]/g, (c) => LEET[c] ?? c)
+    .replace(PUNCT, ' ')
     .trim();
 }
 
-/** Does `haystack` already name `needle`? */
+/** Runs of a repeated letter collapsed: "thattt" and "that" compare equal. */
+function collapse(s: string): string {
+  return s.replace(/(.)\1+/g, '$1');
+}
+
+/** Levenshtein within `max`, for absorbing a typo rather than a different word. */
+function within(a: string, b: string, max: number): boolean {
+  if (a === b) return true;
+  if (max <= 0 || Math.abs(a.length - b.length) > max) return false;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      row[j] = Math.min(row[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      if (row[j] < best) best = row[j];
+    }
+    if (best > max) return false; // no cell on this row can still reach `max`
+    prev = row;
+  }
+  return prev[b.length] <= max;
+}
+
+/**
+ * Two words that are the same word. Short ones must match exactly — one edit
+ * away from "Ash" is half the dictionary — and the allowance opens up with
+ * length, where a typo is likelier than a coincidence.
+ */
+function sameWord(a: string, b: string): boolean {
+  if (a === b) return true;
+  const ca = collapse(a); const cb = collapse(b);
+  if (ca === cb) return true;
+  const n = Math.min(ca.length, cb.length);
+  return within(ca, cb, n >= 8 ? 2 : n >= 5 ? 1 : 0);
+}
+
+/**
+ * Does `haystack` already name `needle`?
+ *
+ * EXACT tokens only — no sameWord() here, deliberately. This one decides whether
+ * to leave the artist OFF the credit line, and the two mistakes are not
+ * symmetrical: a caption wrongly dropped costs a repetition the user asked us to
+ * remove, while an artist wrongly dropped erases a credit nothing else on the
+ * card will state.
+ */
 function names(haystack?: string | null, needle?: string | null): boolean {
-  const h = norm(haystack);
-  const n = norm(needle);
+  const h = canon(haystack);
+  const n = canon(needle);
   if (!h || !n) return false;
   // WHOLE-token match, so the artist "Ash" is not found inside the title
   // "Ashes" and silently dropped from the credit.
@@ -104,19 +167,30 @@ const FILLER = new Set([
  * and should therefore be dropped rather than alternated with them. Films pass
  * their film_title and no artist.
  *
- * The test is per-WORD and deliberately narrow: every word of the caption has to
- * be one the credit already contains, or filler. A caption that merely mentions
- * the artist inside a sentence — "shot this with 3ddie in Miami" — keeps all its
- * other words and survives, because voiding that would delete a real description
- * to prevent a repetition that was never going to happen.
+ * The test is per-WORD: every word of the caption has to be one the credit
+ * already contains, or filler. Matching is loose about how a word is written —
+ * case, accents, emoji, punctuation, leetspeak and a typo's worth of edits all
+ * compare equal — because a caption is meant to be recognised as the same thing
+ * said again, not matched byte for byte.
+ *
+ * It is loose about SPELLING and strict about CONTENT. A caption that merely
+ * mentions the artist inside a sentence — "shot this with 3ddie in Miami" —
+ * keeps all its other words and survives; voiding it would delete a real
+ * description to prevent a repetition that was never going to happen.
  */
 export function captionEchoesTitle(
   caption?: string | null, title?: string | null, artist?: string | null,
 ): boolean {
-  const words = norm(caption).split(' ').filter(Boolean);
-  if (words.length === 0) return true;
-  const known = new Set(
-    [...norm(title).split(' '), ...norm(artist).split(' ')].filter(Boolean),
-  );
-  return words.every((w) => known.has(w) || FILLER.has(w));
+  const cap = canon(caption);
+  if (!cap) return true;
+  const credit = `${canon(title)} ${canon(artist)}`.trim();
+  if (!credit) return false;
+  // Whole-string first, spaces removed: "Breakthat", "BREAK-THAT" and
+  // "break that" all reduce to something the credit already contains, and none
+  // of the first two tokenise into anything the word test would recognise.
+  const squash = (s: string) => collapse(s.replace(/ /g, ''));
+  if (squash(credit).includes(squash(cap))) return true;
+  const known = credit.split(' ').filter(Boolean);
+  return cap.split(' ').filter(Boolean)
+    .every((w) => FILLER.has(w) || known.some((k) => sameWord(w, k)));
 }
