@@ -404,33 +404,25 @@ export default function MessagesScreen() {
         ListEmptyComponent={
           q ? (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.emptyIcon}>
-                <Ionicons name="search-outline" size={32} color={colors.text} />
-              </LinearGradient>
+              <Ionicons name="search-outline" size={52} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>{t('messages.empty.noChatsFound')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.noChatsFoundSub', { query: searchQuery.trim() })}</Text>
             </View>
           ) : tab === 'friends' ? (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.emptyIcon}>
-                <Ionicons name="people-outline" size={34} color={colors.text} />
-              </LinearGradient>
+              <Ionicons name="people-outline" size={52} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>{t('messages.empty.friendsTitle')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.friendsSub')}</Text>
             </View>
           ) : tab === 'followers' ? (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.emptyIcon}>
-                <Ionicons name="person-outline" size={34} color={colors.text} />
-              </LinearGradient>
+              <Ionicons name="person-outline" size={52} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>{t('messages.empty.followersTitle')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.followersSub')}</Text>
             </View>
           ) : (
             <View style={styles.emptyContainer}>
-              <LinearGradient colors={[colors.surfaceLight, colors.surface]} style={styles.emptyIcon}>
-                <Ionicons name="chatbubbles-outline" size={36} color={colors.text} />
-              </LinearGradient>
+              <Ionicons name="chatbubbles-outline" size={52} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>{t('messages.empty.title')}</Text>
               <Text style={styles.emptySubtitle}>{t('messages.empty.sub')}</Text>
             </View>
@@ -691,8 +683,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   lastMessageOffer: { color: colors.success, fontWeight: '700' },
   sharedPreview: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 
-  emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl, gap: SPACING.md },
-  emptyIcon: { width: 80, height: 80, borderRadius: RADIUS.xl, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
-  emptySubtitle: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', paddingHorizontal: SPACING.xl },
+  // Apple's own empty-state shape: a large muted glyph, a title, a line of
+  // explanation, and nothing drawn around any of it. The boxed icon this
+  // replaces gave the emptiest screen in the app its most decorated object.
+  emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 1.5, gap: SPACING.sm },
+  emptyTitle: { color: colors.text, fontSize: 17, fontWeight: '700', marginTop: SPACING.xs },
+  emptySubtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 19, textAlign: 'center', maxWidth: 260 },
 });

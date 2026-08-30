@@ -1011,11 +1011,11 @@ export default function MusicScreen() {
     action?: { label: string; onPress: () => void },
   ) => (
     <View style={styles.emptyContainer}>
-      <View style={styles.emptyHalo}>
-        <View style={styles.emptyIconCircle}>
-          <Ionicons name={icon} size={30} color={colors.text} />
-        </View>
-      </View>
+      {/* Bare glyph, no discs. Apple's empty states are a large muted symbol and
+          two lines of text with nothing drawn around them — the two concentric
+          circles this replaces made the most decorated object on screen the one
+          announcing there is nothing here. */}
+      <Ionicons name={icon} size={52} color={colors.textTertiary} />
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptySubtitle}>{subtitle}</Text>
       {/* Inverted rather than brand: a solid slab of the text colour, with the
@@ -2180,24 +2180,8 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   // adapts to the theme) instead of a hard gradient tile, copy with room to
   // breathe, and a gradient pill CTA.
   emptyContainer: { alignItems: 'center', paddingTop: SPACING.xxl * 1.6, paddingHorizontal: SPACING.xl, gap: SPACING.sm },
-  // Two concentric discs behind the empty-state glyph. Tinted with the TEXT
-  // colour rather than brand: at 4% and 9% they read as a soft rise out of the
-  // page in either theme, where the orange tint read as a colour choice — and a
-  // 108pt disc is a lot of screen to spend on the accent for something that is
-  // only saying a list is empty.
-  emptyHalo: {
-    width: 108, height: 108, borderRadius: 54,
-    backgroundColor: colors.text + '0A',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: SPACING.xs,
-  },
-  emptyIconCircle: {
-    width: 76, height: 76, borderRadius: 38,
-    backgroundColor: colors.text + '16',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '700', letterSpacing: -0.3 },
-  emptySubtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 270 },
+  emptyTitle: { color: colors.text, fontSize: 17, fontWeight: '700', letterSpacing: -0.3, marginTop: SPACING.xs },
+  emptySubtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 19, textAlign: 'center', maxWidth: 260 },
   emptyCta: {
     height: 42, paddingHorizontal: SPACING.xl, borderRadius: RADIUS.full,
     alignItems: 'center', justifyContent: 'center',
