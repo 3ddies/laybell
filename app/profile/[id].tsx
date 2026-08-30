@@ -24,7 +24,7 @@ import VideoThumb from '../../components/VideoThumb';
 import ThumbStat from '../../components/ThumbStat';
 import SpotlightThumbBadge from '../../components/SpotlightThumbBadge';
 import TrackRow from '../../components/TrackRow';
-import { applyMusicOrder, parseMusicOrder } from '../../lib/musicOrder';
+import { featuredTracks } from '../../lib/musicFeatured';
 import { fetchSpotlightedPostIds } from '../../lib/spotlight';
 import StoryAvatar from '../../components/StoryAvatar';
 import { openAvatarViewer } from '../../lib/imageViewer';
@@ -419,38 +419,75 @@ export default function PublicProfileScreen() {
     );
   }
 
+  // The artist's up-to-four pinned songs (Premium). Drawn from ALL their music,
+  // album tracks included: featuring one says "hear this first", not "move this".
+  function renderFeatured(list: any[]) {
+    if (list.length === 0) return null;
+    const q = list.map((tr) => ({
+      id: tr.id, uri: tr.media_url, caption: tr.caption,
+      artist: tr.profiles?.display_name ?? profile?.display_name ?? '', cover: tr.cover_url,
+    }));
+    return (
+      <View style={styles.albumShelf}>
+        <Text style={styles.albumShelfLabel}>{t('featured.shelf')}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumShelfRow}>
+          {list.map((tr, i) => (
+            <TouchableOpacity key={tr.id} style={styles.albumCard} onPress={() => { playQueue(q, i); expand(); }} activeOpacity={0.85}>
+              {tr.cover_url ? (
+                <Image source={{ uri: tr.cover_url }} style={styles.albumCardCover} contentFit="cover" cachePolicy="memory-disk" />
+              ) : (
+                <View style={[styles.albumCardCover, styles.albumCardCoverEmpty]}>
+                  <Ionicons name="musical-note" size={26} color={colors.textTertiary} />
+                </View>
+              )}
+              <Text style={styles.albumCardTitle} numberOfLines={1}>{tr.caption || t('album.untitled')}</Text>
+              <Text style={styles.albumCardMeta} numberOfLines={1}>{profile?.display_name ?? ''}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  }
+
   function renderMusicList(data: any[]) {
-    if (data.length === 0) {
+    // A song that belongs to an album is shown IN that album and not again
+    // below it — which is what makes "Singles" mean something rather than being
+    // a heading over the same songs a second time.
+    const inAlbum = new Set<string>();
+    albums.forEach((a) => (a.tracks ?? []).forEach((tr) => inAlbum.add(tr.post_id)));
+    const featured = featuredTracks(data, (profile as any)?.music_featured);
+    // Live-spotlighted tracks float to the TOP (newest-first among them), the
+    // rest most-recent → least-recent.
+    const singles = data.filter((p: any) => !inAlbum.has(p.id)).sort((a: any, b: any) => {
+      const sa = spotlightIds.has(a.id) ? 1 : 0;
+      const sb = spotlightIds.has(b.id) ? 1 : 0;
+      if (sa !== sb) return sb - sa;
+      return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+    });
+
+    if (albums.length === 0 && singles.length === 0 && featured.length === 0) {
       return (
-        <View>
-          {renderAlbumShelf()}
-          <View style={styles.emptyGrid}>
-            <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
-            <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
-          </View>
+        <View style={styles.emptyGrid}>
+          <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
+          <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
         </View>
       );
     }
-    // A saved custom order (the owner's Premium arrangement) WINS; otherwise
-    // live-spotlighted tracks float to the TOP (newest-first among them), the rest
-    // most-recent → least-recent.
-    const order = parseMusicOrder((profile as any)?.music_order);
-    const tracks = order.length
-      ? applyMusicOrder([...data], order)
-      : [...data].sort((a, b) => {
-          const sa = spotlightIds.has(a.id) ? 1 : 0;
-          const sb = spotlightIds.has(b.id) ? 1 : 0;
-          if (sa !== sb) return sb - sa;
-          return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
-        });
-    const queue = tracks.map((t) => ({
+    const queue = singles.map((t: any) => ({
       id: t.id, uri: t.media_url, caption: t.caption,
       artist: t.profiles?.display_name ?? profile?.display_name ?? '', cover: t.cover_url,
     }));
     return (
       <View style={styles.musicList}>
+        {renderFeatured(featured)}
         {renderAlbumShelf()}
-        {tracks.map((track, i) => (
+        {/* The heading only appears when there are albums ABOVE it to be single
+            in contrast to. On a profile with no albums every song is a single
+            and saying so is noise. */}
+        {singles.length > 0 && albums.length > 0 && (
+          <Text style={styles.albumShelfLabel}>{t('music.singles')}</Text>
+        )}
+        {singles.map((track: any, i: number) => (
           <TrackRow
             hidePlayButton
             key={track.id}

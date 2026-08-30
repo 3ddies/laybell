@@ -21,7 +21,7 @@ import { usePostOptions } from '../../contexts/PostOptionsContext';
 import { useTabSwipeControl } from '../../contexts/PagerContext';
 import { useProfile } from '../../contexts/ProfileContext';
 import { usePremium } from '../../contexts/PremiumContext';
-import { applyMusicOrder, parseMusicOrder } from '../../lib/musicOrder';
+import { featuredTracks } from '../../lib/musicFeatured';
 import { useStories } from '../../contexts/StoriesContext';
 import StoryAvatar from '../../components/StoryAvatar';
 import BadgeEmblem from '../../components/BadgeEmblem';
@@ -390,6 +390,16 @@ export default function ProfileScreen() {
   // count — they are pictures — and archived posts do not, since they are
   // already off the profile.
   const hasGridPicture = userPosts.some((p: any) => p.type === 'image' || isSlideshow(p.type));
+  // A post PLACED IN THE TEMPLATE cannot be hidden from the grid. The template
+  // is an arrangement of specific posts into specific slots; hiding one would
+  // punch a hole in a layout its owner built deliberately, and the fix for that
+  // ("why is my page broken?") is nowhere near the menu that caused it. Taking
+  // it out of the template first is the honest order of operations.
+  const layoutUsedIds = useMemo(
+    () => (pageLayout ? usedPostIds(pageLayout.blocks) : new Set<string>()),
+    [pageLayout],
+  );
+  const canHide = (postId: string) => hasGridPicture && !layoutUsedIds.has(postId);
 
   // Posts tab ordering: float live-spotlighted posts to the TOP (newest-first
   // among them), everyone else newest-first. When a spotlight expires the post
@@ -470,14 +480,75 @@ export default function ProfileScreen() {
     );
   }
 
+  // The Featured rail — the owner's up-to-four pinned songs. Drawn from ALL of
+  // their music, album tracks included: featuring one is "hear this first", not
+  // "move this", and a song can be both on a record and the thing you lead with.
+  function renderFeatured(list: any[], onEdit?: () => void) {
+    if (list.length === 0 && !onEdit) return null;
+    const q = list.map((tr) => ({
+      id: tr.id, uri: tr.media_url, caption: tr.caption,
+      artist: tr.profiles?.display_name ?? profile?.display_name ?? '', cover: tr.cover_url,
+    }));
+    return (
+      <View style={styles.albumShelf}>
+        <View style={styles.shelfHead}>
+          <Text style={styles.albumShelfLabel}>{t('featured.shelf')}</Text>
+          {!!onEdit && (
+            <TouchableOpacity onPress={onEdit} hitSlop={8}>
+              <Text style={styles.shelfAction}>{list.length ? t('common.edit') : t('featured.choose')}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        {list.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumShelfRow}>
+            {list.map((tr, i) => (
+              <TouchableOpacity
+                key={tr.id}
+                style={styles.albumCard}
+                onPress={() => { playQueue(q, i); expand(); }}
+                activeOpacity={0.85}
+              >
+                {tr.cover_url ? (
+                  <Image source={{ uri: tr.cover_url }} style={styles.albumCardCover} contentFit="cover" cachePolicy="memory-disk" />
+                ) : (
+                  <View style={[styles.albumCardCover, styles.albumCardCoverEmpty]}>
+                    <Ionicons name="musical-note" size={26} color={colors.textTertiary} />
+                  </View>
+                )}
+                <Text style={styles.albumCardTitle} numberOfLines={1}>{tr.caption || t('album.untitled')}</Text>
+                <Text style={styles.albumCardMeta} numberOfLines={1}>{profile?.display_name ?? ''}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+    );
+  }
+
   function renderMusicList(data: any[]) {
-    if (data.length === 0) {
+    // A song that belongs to an album is shown IN that album and not again in
+    // the list below it. The albums shelf is not a summary of the music — it is
+    // where that music now lives, which is what makes "Singles" underneath mean
+    // something rather than being a heading over the same songs again.
+    const inAlbum = new Set<string>();
+    albums.forEach((a) => (a.tracks ?? []).forEach((tr) => inAlbum.add(tr.post_id)));
+    const featured = featuredTracks(data, (profile as any)?.music_featured);
+    // Live-spotlighted tracks float to the top (newest-first among them), the
+    // rest most-recent → least-recent.
+    const singles = data.filter((p) => !inAlbum.has(p.id)).sort((a, b) => {
+      const sa = spotlightIds.has(a.id) ? 1 : 0;
+      const sb = spotlightIds.has(b.id) ? 1 : 0;
+      if (sa !== sb) return sb - sa;
+      return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+    });
+    const canFeature = isPremium && data.length > 0;
+
+    // Empty only when there is genuinely nothing — an album with every song
+    // archived out of it still counts as something to show.
+    if (albums.length === 0 && singles.length === 0 && featured.length === 0) {
       return (
         <View>
-          {/* The shelf survives an empty track list: an album can outlive every
-              song being archived, and the owner should see that rather than a
-              bare "no music" where a visitor sees a shelf. */}
-          {albums.length > 0 && <View style={styles.musicList}>{renderAlbumShelf()}</View>}
+          {canFeature && <View style={styles.musicList}>{renderFeatured([], () => router.push('/music-featured'))}</View>}
           <View style={styles.emptyGrid}>
             <Ionicons name="musical-notes-outline" size={40} color={colors.textTertiary} />
             <Text style={styles.emptyGridText}>{t('profile.noMusic')}</Text>
@@ -485,38 +556,23 @@ export default function ProfileScreen() {
         </View>
       );
     }
-    // A saved custom order (Premium perk — see /music-order) WINS: the tab shows
-    // the user's exact arrangement (new songs appended newest-first). With no
-    // custom order, live-spotlighted tracks float to the TOP (newest-first among
-    // them), the rest most-recent → least-recent.
-    const order = parseMusicOrder((profile as any)?.music_order);
-    const tracks = order.length
-      ? applyMusicOrder([...data], order)
-      : [...data].sort((a, b) => {
-          const sa = spotlightIds.has(a.id) ? 1 : 0;
-          const sb = spotlightIds.has(b.id) ? 1 : 0;
-          if (sa !== sb) return sb - sa;
-          return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
-        });
-    const queue = tracks.map((t) => ({
+
+    const queue = singles.map((t) => ({
       id: t.id, uri: t.media_url, caption: t.caption,
       artist: t.profiles?.display_name ?? profile?.display_name ?? '', cover: t.cover_url,
     }));
     return (
       <View style={styles.musicList}>
-        {/* The shelf leads, exactly as it does publicly. The reorder control
-            sits UNDER it and directly above the list it reorders — an owner
-            tool between the visitor's headline and the tracks would push the
-            public-looking part down and make this a different screen. */}
+        {/* Featured, then albums, then singles — the same order a visitor gets.
+            The only owner-only thing here is the small Edit beside the Featured
+            label, which sits inside that section rather than above everything so
+            the public-looking part of the tab stays contiguous. */}
+        {renderFeatured(featured, canFeature ? () => router.push('/music-featured') : undefined)}
         {renderAlbumShelf()}
-        {/* Premium: arrange the Music tab in a custom order (see /music-order). */}
-        {isPremium && data.length > 1 && (
-          <TouchableOpacity style={styles.reorderMusicBtn} onPress={() => router.push('/music-order')} activeOpacity={0.8}>
-            <Ionicons name="swap-vertical" size={16} color={colors.primary} />
-            <Text style={styles.reorderMusicText}>{t('profile.reorderMusic')}</Text>
-          </TouchableOpacity>
+        {singles.length > 0 && albums.length > 0 && (
+          <Text style={styles.albumShelfLabel}>{t('music.singles')}</Text>
         )}
-        {tracks.map((track, i) => (
+        {singles.map((track, i) => (
           <TrackRow
             hidePlayButton
             key={track.id}
@@ -541,7 +597,7 @@ export default function ProfileScreen() {
               // a song is hidden the grid is exactly where it no longer is, so
               // the Music tab has to be the way back.
               hideFromGrid: !!track.hide_from_grid,
-              canHideFromGrid: hasGridPicture,
+              canHideFromGrid: canHide(track.id),
               onGridVisibilityChanged: (hidden) => setUserPosts(prev =>
                 prev.map(p => (p.id === track.id ? { ...p, hide_from_grid: hidden } : p))),
               onEdit: () => router.push(`/edit-post/${track.id}`),
@@ -590,7 +646,7 @@ export default function ProfileScreen() {
       caption: post.caption,
       thumbnail: post.thumbnail_url,
       hideFromGrid: !!post.hide_from_grid,
-      canHideFromGrid: hasGridPicture,
+      canHideFromGrid: canHide(post.id),
       // Written through the local list rather than refetched: the post is only
       // leaving one grid, and reloading the whole profile to move one square
       // would lose the scroll position it was tapped from.
@@ -664,7 +720,7 @@ export default function ProfileScreen() {
                     caption: post.caption,
                     thumbnail: post.thumbnail_url,
                     hideFromGrid: !!post.hide_from_grid,
-                    canHideFromGrid: hasGridPicture,
+                    canHideFromGrid: canHide(post.id),
                     onGridVisibilityChanged: (hidden) => setUserPosts(prev =>
                       prev.map(p => (p.id === post.id ? { ...p, hide_from_grid: hidden } : p))),
                     onEdit: () => router.push(`/edit-post/${post.id}`),
@@ -1085,6 +1141,10 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
     paddingHorizontal: SPACING.md, marginBottom: SPACING.sm,
   },
   albumShelfRow: { paddingHorizontal: SPACING.md, gap: SPACING.md },
+  // Label and its owner-only action on one line, so the action reads as part of
+  // the section rather than a control floating above the tab.
+  shelfHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: SPACING.md },
+  shelfAction: { color: colors.primaryLight, fontSize: 13, fontWeight: '700', marginBottom: SPACING.sm },
   albumCard: { width: 124 },
   albumCardCover: { width: 124, height: 124, borderRadius: RADIUS.md, backgroundColor: colors.surfaceLight },
   albumCardCoverEmpty: { alignItems: 'center', justifyContent: 'center' },
@@ -1092,12 +1152,6 @@ const makeStyles = (colors: ThemePalette) => StyleSheet.create({
   albumCardMeta: { color: colors.textTertiary, fontSize: 12, marginTop: 1 },
 
   musicList: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, gap: SPACING.sm },
-  reorderMusicBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: SPACING.sm, borderRadius: RADIUS.full,
-    borderWidth: 1, borderColor: colors.primary + '44', backgroundColor: colors.primary + '10',
-  },
-  reorderMusicText: { color: colors.primaryLight, fontSize: 13.5, fontWeight: '700' },
   gridItem: { width: (SCREEN_W - 4) / 3, aspectRatio: 1, position: 'relative' },
   gridImage: { width: '100%', height: '100%' },
   gridPlaceholder: {

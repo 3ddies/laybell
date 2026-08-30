@@ -432,7 +432,7 @@ function AppContent() {
           // took the DEFAULT stack animation on top of the pager's own — the
           // exact double-animation this list exists to prevent. Found by
           // cross-checking every <SwipeBackPager> route against this array.
-          'credits', 'music-order', 'studio/listen/[id]',
+          'credits', 'music-featured', 'studio/listen/[id]', 'album/[id]',
           // The Films catalogue. Opened FROM Laybell TV, which is itself a
           // transparentModal — so unlisted it inherited that presentation and
           // slid up as a sheet instead of pushing in as a page. Exactly the
