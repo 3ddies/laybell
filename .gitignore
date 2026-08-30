@@ -66,3 +66,4 @@ scripts/.schema-audit-map.json
 store/screenshots/raw/*.png
 store/screenshots/raw/*.jpg
 store/screenshots/raw/*.jpeg
+store/screenshots/preview/

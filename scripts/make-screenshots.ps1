@@ -40,7 +40,37 @@
 # ASCII only on purpose: a non-ASCII character in a PowerShell string came back
 # mojibake and broke the parse once already in this repo.
 
+param(
+  # Background scheme. The set is judged as THUMBNAILS in a search-results grid
+  # long before anyone opens it, so this is not decoration - it decides whether
+  # the tile is noticed at all.
+  #   brand     the original red->orange. Loudest in a grid, and the loudest
+  #             thing about it is that it is loud.
+  #   ember     deep burnt orange into charcoal. Brand-adjacent, calmer, and it
+  #             stops competing with the orange still inside the UI.
+  #   graphite  warm near-black. Matches the app, premium, but a dark shot on a
+  #             dark ground risks reading as one dark blob at tile size.
+  #   paper     the light theme's off-white with dark caption text. Highest
+  #             contrast against a dark-UI capture; pops hardest in a grid.
+  [ValidateSet('brand', 'ember', 'graphite', 'paper')]
+  [string]$Bg = 'brand',
+  # Render only the first N shots, into store/screenshots/preview/<Bg>/ - for
+  # comparing schemes without rebuilding all three size sets.
+  [int]$PreviewCount = 0
+)
+
 Add-Type -AssemblyName System.Drawing
+
+# Left colour, right colour, caption ink, device edge alpha. The edge matters
+# most on the dark schemes: a near-black capture on a near-black ground needs a
+# rim to read as a device rather than a hole.
+$SCHEMES = @{
+  brand    = @{ L = @(233, 30, 14);  R = @(255, 140, 0);   Ink = @(255, 255, 255); Edge = 70  }
+  ember    = @{ L = @(122, 42, 16);  R = @(28, 22, 20);    Ink = @(255, 255, 255); Edge = 110 }
+  graphite = @{ L = @(16, 15, 14);   R = @(38, 35, 32);    Ink = @(255, 255, 255); Edge = 140 }
+  paper    = @{ L = @(242, 241, 237); R = @(252, 251, 247); Ink = @(22, 22, 26);   Edge = 40  }
+}
+$SC = $SCHEMES[$Bg]
 
 $repo = Split-Path -Parent $PSScriptRoot
 $rawDir = Join-Path $repo 'store\screenshots\raw'
@@ -81,9 +111,9 @@ if ($raws.Count -eq 0) {
 function Paint-Gradient($g, $w, $h) {
   for ($x = 0; $x -lt $w; $x++) {
     $t = $x / [double]($w - 1)
-    $r = [int](233 + (255 - 233) * $t)
-    $gr = [int](30 + (140 - 30) * $t)
-    $b = [int](14 + (0 - 14) * $t)
+    $r = [int]($SC.L[0] + ($SC.R[0] - $SC.L[0]) * $t)
+    $gr = [int]($SC.L[1] + ($SC.R[1] - $SC.L[1]) * $t)
+    $b = [int]($SC.L[2] + ($SC.R[2] - $SC.L[2]) * $t)
     $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, $r, $gr, $b))
     $g.DrawLine($pen, $x, 0, $x, $h)
     $pen.Dispose()
@@ -129,7 +159,7 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
 
   $lines = Get-CaptionLines $g $caption $font $maxTextW
   $lineH = [int]($fontSize * 1.25)
-  $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
+  $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, $SC.Ink[0], $SC.Ink[1], $SC.Ink[2]))
   $fmt = New-Object System.Drawing.StringFormat
   $fmt.Alignment = 'Center'
 
@@ -168,7 +198,8 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
   $g.DrawImage($src, $dx, $dy, $dw, $dh)
   $g.Restore($state)
 
-  $edge = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(70, 255, 255, 255), [single](3 * $s))
+  $edgeInk = if ($Bg -eq 'paper') { @(0, 0, 0) } else { @(255, 255, 255) }
+  $edge = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb($SC.Edge, $edgeInk[0], $edgeInk[1], $edgeInk[2]), [single](3 * $s))
   $g.DrawPath($edge, $path)
 
   $bmp.Save($destPath, [System.Drawing.Imaging.ImageFormat]::Png)
@@ -177,8 +208,19 @@ function Build-Frame($srcPath, $caption, $canvasW, $canvasH, $destPath) {
   $font.Dispose(); $g.Dispose(); $bmp.Dispose(); $src.Dispose()
 }
 
+# PREVIEW MODE: one Apple-sized frame per shot into its own folder, so two
+# schemes can be compared side by side without rebuilding three size sets each
+# time. Judging a background from a description does not work; judging it from
+# the actual frame takes seconds.
+$preview = $PreviewCount -gt 0
+if ($preview) {
+  $outPreview = Join-Path $repo ('store\screenshots\preview\' + $Bg)
+  if (-not (Test-Path $outPreview)) { New-Item -ItemType Directory -Force $outPreview | Out-Null }
+}
+
 $i = 0
 foreach ($f in $raws) {
+  if ($preview -and $i -ge $PreviewCount) { break }
   $caption = if ($i -lt $CAPTIONS.Count) { $CAPTIONS[$i] } else { '' }
   $n = '{0:d2}' -f ($i + 1)
 
@@ -192,6 +234,14 @@ foreach ($f in $raws) {
   # the "a portrait screenshot of a landscape feature undersells it" that
   # STORE_LISTING.md 4 warns about. Apple lists portrait AND landscape as valid
   # dimensions for the same 6.9" slot, so a mixed set uploads fine.
+  if ($preview) {
+    if ($isLandscape) { Build-Frame $f.FullName $caption 2868 1320 (Join-Path $outPreview "$n.png") }
+    else { Build-Frame $f.FullName $caption 1320 2868 (Join-Path $outPreview "$n.png") }
+    Write-Output ("$n  " + $f.Name + '  -> ' + $Bg)
+    $i++
+    continue
+  }
+
   if ($isLandscape) {
     Build-Frame $f.FullName $caption 2868 1320 (Join-Path $outApple "$n.png")
     Build-Frame $f.FullName $caption 1920 1080 (Join-Path $outPlay "$n.png")
